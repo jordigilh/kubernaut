@@ -412,7 +412,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 	// BR-STORAGE-031-02: Playbook Success Rate API
 	// SECONDARY DIMENSION: Track which playbooks are most effective
 	// ========================================
-	Describe("GET /api/v1/success-rate/playbook", func() {
+	Describe("GET /api/v1/success-rate/workflow", func() {
 		Context("TC-ADR033-06: Basic playbook success rate calculation", func() {
 			It("should calculate playbook success rate correctly with exact counts", func() {
 				playbookID := "integration-test-pod-restart"
@@ -430,7 +430,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// Execute HTTP request
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/playbook?playbook_id=%s&playbook_version=%s&time_range=7d&min_samples=5",
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?playbook_id=%s&playbook_version=%s&time_range=7d&min_samples=5",
 					datastorageURL, playbookID, playbookVersion))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
@@ -440,7 +440,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					"API should return 200 OK for valid playbook request")
 
 				// BEHAVIOR: Response is valid JSON
-				var result models.PlaybookSuccessRateResponse
+				var result models.WorkflowSuccessRateResponse
 				err = json.NewDecoder(resp.Body).Decode(&result)
 				Expect(err).ToNot(HaveOccurred(),
 					"Response should be valid JSON")
@@ -488,12 +488,12 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// Query for v1.0 only
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/playbook?playbook_id=%s&playbook_version=v1.0&time_range=7d&min_samples=1",
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?playbook_id=%s&playbook_version=v1.0&time_range=7d&min_samples=1",
 					datastorageURL, playbookID))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				var result models.PlaybookSuccessRateResponse
+				var result models.WorkflowSuccessRateResponse
 				json.NewDecoder(resp.Body).Decode(&result)
 
 				// CORRECTNESS: Should only count v1.0 (5 records, not 8)
@@ -505,7 +505,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 		Context("TC-ADR033-08: Error handling", func() {
 			It("should return 400 Bad Request for missing playbook_id", func() {
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/playbook?time_range=7d",
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?time_range=7d",
 					datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()

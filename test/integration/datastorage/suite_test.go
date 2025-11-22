@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -70,18 +71,118 @@ func generateTestID() string {
 	return fmt.Sprintf("test-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 }
 
+// generateTestUUID creates a unique UUID for test data isolation
+// Used for audit events and other UUID-based records
+func generateTestUUID() uuid.UUID {
+	return uuid.New()
+}
+
+// preflightCheck validates the test environment before running tests
+// This ensures we have a clean slate and prevents test failures due to corrupted data
+func preflightCheck() error {
+	GinkgoWriter.Println("🔍 Running preflight checks...")
+
+	// 1. Check if podman is available
+	if err := exec.Command("podman", "version").Run(); err != nil {
+		return fmt.Errorf("❌ Podman not available: %w", err)
+	}
+	GinkgoWriter.Println("  ✅ Podman is available")
+
+	// 2. Check for stale containers from previous runs
+	cmd := exec.Command("podman", "ps", "-a", "--filter", "name=datastorage-", "--format", "{{.Names}}")
+	output, err := cmd.Output()
+	if err == nil && len(output) > 0 {
+		GinkgoWriter.Printf("  ⚠️  Found stale containers from previous runs:\n%s", string(output))
+		GinkgoWriter.Println("  🧹 Will clean up stale containers...")
+	}
+
+	// 3. Check for stale networks
+	cmd = exec.Command("podman", "network", "ls", "--filter", "name=datastorage-test", "--format", "{{.Name}}")
+	output, err = cmd.Output()
+	if err == nil && len(output) > 0 {
+		GinkgoWriter.Printf("  ⚠️  Found stale network: %s", string(output))
+		GinkgoWriter.Println("  🧹 Will clean up stale network...")
+	}
+
+	// 4. Check for port conflicts (5433 for PostgreSQL, 6379 for Redis)
+	cmd = exec.Command("sh", "-c", "lsof -i :5433 -i :6379 || true")
+	output, _ = cmd.Output()
+	if len(output) > 0 {
+		GinkgoWriter.Printf("  ⚠️  Ports 5433 or 6379 may be in use:\n%s", string(output))
+		GinkgoWriter.Println("  ⚠️  This may cause test failures if not cleaned up")
+	}
+
+	// 5. Verify we're not in a dirty state (check for running containers)
+	cmd = exec.Command("podman", "ps", "--filter", "name=datastorage-", "--format", "{{.Names}}")
+	output, err = cmd.Output()
+	if err == nil && len(output) > 0 {
+		GinkgoWriter.Printf("  ⚠️  Found running datastorage containers:\n%s", string(output))
+		return fmt.Errorf("❌ Running containers detected - cleanup required")
+	}
+
+	GinkgoWriter.Println("  ✅ No running datastorage containers")
+	GinkgoWriter.Println("✅ Preflight checks passed")
+	return nil
+}
+
 // cleanupContainers removes any existing test containers and networks
+// This is called both in preflight and after tests to ensure clean state
 func cleanupContainers() {
-	// Stop and remove containers (ignore errors if they don't exist)
-	exec.Command("podman", "stop", serviceContainer).Run()
-	exec.Command("podman", "rm", "-f", serviceContainer).Run()
-	exec.Command("podman", "stop", postgresContainer).Run()
-	exec.Command("podman", "rm", "-f", postgresContainer).Run()
-	exec.Command("podman", "stop", redisContainer).Run()
-	exec.Command("podman", "rm", "-f", redisContainer).Run()
+	GinkgoWriter.Println("🧹 Cleaning up test infrastructure...")
+
+	// Stop and remove integration test containers
+	containers := []string{serviceContainer, postgresContainer, redisContainer}
+	for _, container := range containers {
+		// Stop container
+		cmd := exec.Command("podman", "stop", container)
+		if err := cmd.Run(); err == nil {
+			GinkgoWriter.Printf("  🛑 Stopped container: %s\n", container)
+		}
+
+		// Remove container
+		cmd = exec.Command("podman", "rm", "-f", container)
+		if err := cmd.Run(); err == nil {
+			GinkgoWriter.Printf("  🗑️  Removed container: %s\n", container)
+		}
+	}
+
+	// Clean up ANY containers with "datastorage-" prefix (including E2E containers)
+	GinkgoWriter.Println("  🔍 Checking for other datastorage containers...")
+	cmd := exec.Command("podman", "ps", "-a", "--filter", "name=datastorage-", "--format", "{{.Names}}")
+	output, err := cmd.Output()
+	if err == nil && len(output) > 0 {
+		staleContainers := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, container := range staleContainers {
+			if container != "" {
+				GinkgoWriter.Printf("  🧹 Cleaning up stale container: %s\n", container)
+				exec.Command("podman", "stop", container).Run()
+				exec.Command("podman", "rm", "-f", container).Run()
+			}
+		}
+	}
 
 	// Remove network (ignore error if it doesn't exist)
-	exec.Command("podman", "network", "rm", "datastorage-test").Run()
+	cmd = exec.Command("podman", "network", "rm", "datastorage-test")
+	if err := cmd.Run(); err == nil {
+		GinkgoWriter.Println("  🗑️  Removed network: datastorage-test")
+	}
+
+	// Clean up Kind clusters from E2E tests (if any)
+	GinkgoWriter.Println("  🔍 Checking for Kind clusters...")
+	cmd = exec.Command("kind", "get", "clusters")
+	output, err = cmd.Output()
+	if err == nil && len(output) > 0 {
+		clusters := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, cluster := range clusters {
+			if strings.HasPrefix(cluster, "datastorage-e2e-") {
+				GinkgoWriter.Printf("  🧹 Deleting Kind cluster: %s\n", cluster)
+				exec.Command("kind", "delete", "cluster", "--name", cluster).Run()
+			}
+		}
+	}
+
+	// Wait a moment for cleanup to complete
+	time.Sleep(2 * time.Second)
 
 	GinkgoWriter.Println("✅ Cleanup complete")
 }
@@ -93,10 +194,22 @@ var _ = SynchronizedBeforeSuite(
 	func() []byte {
 		GinkgoWriter.Printf("🔧 [Process %d] Setting up shared Podman infrastructure (ADR-016)\n", GinkgoParallelProcess())
 
-		// 0. Force cleanup of any existing containers/networks from previous runs
+		// 0. Preflight check: Validate environment and detect stale resources
 		if os.Getenv("POSTGRES_HOST") == "" {
-			GinkgoWriter.Println("🧹 Cleaning up any existing test infrastructure...")
-			cleanupContainers()
+			GinkgoWriter.Println("🔍 Running preflight checks...")
+			if err := preflightCheck(); err != nil {
+				// If preflight fails, attempt cleanup and retry
+				GinkgoWriter.Printf("⚠️  Preflight check failed: %v\n", err)
+				GinkgoWriter.Println("🧹 Attempting cleanup and retry...")
+				cleanupContainers()
+
+				// Retry preflight after cleanup
+				if err := preflightCheck(); err != nil {
+					Fail(fmt.Sprintf("❌ Preflight check failed after cleanup: %v", err))
+				}
+			}
+		} else {
+			GinkgoWriter.Println("🔍 Skipping preflight checks (using external infrastructure)")
 		}
 
 		// 1. Create shared network for local execution (skip for Docker Compose)
@@ -152,6 +265,16 @@ var _ = SynchronizedBeforeSuite(
 
 		GinkgoWriter.Println("✅ Infrastructure ready!")
 
+		// Export environment variables for tests that create their own connections
+		// This ensures all tests use the correct ports (e.g., graceful shutdown tests)
+		if os.Getenv("POSTGRES_HOST") == "" {
+			os.Setenv("POSTGRES_HOST", "localhost")
+			os.Setenv("POSTGRES_PORT", "5433") // Mapped port from container
+			os.Setenv("REDIS_HOST", "localhost")
+			os.Setenv("REDIS_PORT", "6379")
+			GinkgoWriter.Println("📌 Exported environment variables for test infrastructure")
+		}
+
 		// Return connection info to all processes
 		return []byte(serviceURL)
 	},
@@ -180,7 +303,8 @@ var _ = SynchronizedBeforeSuite(
 		// Create repository and DLQ client instances
 		GinkgoWriter.Printf("🏗️  [Process %d] Creating repository and DLQ client...\n", GinkgoParallelProcess())
 		repo = repository.NewNotificationAuditRepository(db, logger)
-		dlqClient = dlq.NewClient(redisClient, logger)
+		dlqClient, err = dlq.NewClient(redisClient, logger)
+		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests!\n", GinkgoParallelProcess())
 	},
@@ -217,13 +341,20 @@ var _ = AfterSuite(func() {
 		redisClient.Close()
 	}
 
-	// Stop and remove containers
-	exec.Command("podman", "stop", serviceContainer).Run()
-	exec.Command("podman", "rm", serviceContainer).Run()
-	exec.Command("podman", "stop", postgresContainer).Run()
-	exec.Command("podman", "rm", postgresContainer).Run()
-	exec.Command("podman", "stop", redisContainer).Run()
-	exec.Command("podman", "rm", redisContainer).Run()
+	// Use centralized cleanup function
+	cleanupContainers()
+
+	// Post-cleanup verification
+	if os.Getenv("POSTGRES_HOST") == "" {
+		GinkgoWriter.Println("🔍 Verifying cleanup...")
+		cmd := exec.Command("podman", "ps", "-a", "--filter", "name=datastorage-", "--format", "{{.Names}}")
+		output, err := cmd.Output()
+		if err == nil && len(output) > 0 {
+			GinkgoWriter.Printf("⚠️  Warning: Some containers still exist after cleanup:\n%s", string(output))
+		} else {
+			GinkgoWriter.Println("✅ All datastorage containers cleaned up successfully")
+		}
+	}
 
 	// Remove network (only for local execution)
 	if os.Getenv("POSTGRES_HOST") == "" {

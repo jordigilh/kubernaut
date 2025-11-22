@@ -87,7 +87,7 @@ var _ = SynchronizedBeforeSuite(
 		clusterName = "datastorage-e2e"
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
-		// Use unique kubeconfig path to avoid conflicts with Gateway E2E tests
+		// Use unique kubeconfig path to avoid conflicts with other E2E tests
 		kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config-datastorage", homeDir)
 
 		// Create Kind cluster (ONCE for all tests)
@@ -121,10 +121,8 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath = string(data)
 		clusterName = "datastorage-e2e"
 
-		// Set KUBECONFIG environment variable for this process
-		err = os.Setenv("KUBECONFIG", kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred())
-
+		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests
+		// All kubectl commands must use --kubeconfig flag explicitly
 		logger.Info(fmt.Sprintf("Process %d ready - Using kubeconfig: %s", GinkgoParallelProcess(), kubeconfigPath))
 	},
 )

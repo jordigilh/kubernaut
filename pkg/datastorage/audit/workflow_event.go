@@ -13,18 +13,18 @@ package audit
 //
 // Business Requirement: BR-STORAGE-033-010
 type WorkflowEventData struct {
-	WorkflowID       string `json:"workflow_id"`                  // Workflow identifier
-	ExecutionID      string `json:"execution_id,omitempty"`       // Unique execution identifier
-	Phase            string `json:"phase,omitempty"`              // "pending", "executing", "completed", "failed"
-	CurrentStep      int    `json:"current_step,omitempty"`       // Current step number
-	TotalSteps       int    `json:"total_steps,omitempty"`        // Total number of steps
-	StepName         string `json:"step_name,omitempty"`          // Current step name
-	DurationMs       int64  `json:"duration_ms,omitempty"`        // Execution duration
-	Outcome          string `json:"outcome,omitempty"`            // "success", "failed", "cancelled"
-	ApprovalRequired bool   `json:"approval_required"`            // Whether approval is required
-	ApprovalDecision string `json:"approval_decision,omitempty"`  // "approved", "rejected"
-	Approver         string `json:"approver,omitempty"`           // Approver identifier
-	ErrorMessage     string `json:"error_message,omitempty"`      // Error message if failed
+	WorkflowID       string `json:"workflow_id"`                 // Workflow identifier
+	ExecutionID      string `json:"execution_id,omitempty"`      // Unique execution identifier
+	Phase            string `json:"phase,omitempty"`             // "pending", "executing", "completed", "failed"
+	CurrentStep      int    `json:"current_step,omitempty"`      // Current step number
+	TotalSteps       int    `json:"total_steps,omitempty"`       // Total number of steps
+	StepName         string `json:"step_name,omitempty"`         // Current step name
+	DurationMs       int64  `json:"duration_ms,omitempty"`       // Execution duration
+	Outcome          string `json:"outcome,omitempty"`           // "success", "failed", "cancelled"
+	ApprovalRequired bool   `json:"approval_required"`           // Whether approval is required
+	ApprovalDecision string `json:"approval_decision,omitempty"` // "approved", "rejected"
+	Approver         string `json:"approver,omitempty"`          // Approver identifier
+	ErrorMessage     string `json:"error_message,omitempty"`     // Error message if failed
 }
 
 // WorkflowEventBuilder builds Workflow-specific event data.
@@ -209,7 +209,6 @@ func (b *WorkflowEventBuilder) WithErrorMessage(errorMessage string) *WorkflowEv
 //	}
 func (b *WorkflowEventBuilder) Build() (map[string]interface{}, error) {
 	// Add Workflow-specific data to base event
-	b.BaseEventBuilder.WithCustomField("workflow", b.workflowData)
+	b.WithCustomField("workflow", b.workflowData)
 	return b.BaseEventBuilder.Build()
 }
-

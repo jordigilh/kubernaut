@@ -1,0 +1,105 @@
+name: Integration Test Template
+
+# Reusable workflow for service integration tests
+# Usage: Call from main workflow with service name and configuration
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: 'Service name (e.g., datastorage, holmesgpt, gateway)'
+        required: true
+        type: string
+      timeout:
+        description: 'Timeout in minutes'
+        required: true
+        type: number
+      infrastructure:
+        description: 'Infrastructure type (podman, kind, none)'
+        required: true
+        type: string
+    outputs:
+      result:
+        description: 'Test result (success/failure)'
+        value: ${{ jobs.integration.outputs.result }}
+
+jobs:
+  integration:
+    name: integration (${{ inputs.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout }}
+    outputs:
+      result: ${{ steps.test.outcome }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ========================================
+      # Infrastructure Setup (Conditional)
+      # ========================================
+      - name: Install Podman
+        if: inputs.infrastructure == 'podman'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman --version
+
+      - name: Install Kind
+        if: inputs.infrastructure == 'kind'
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind --version
+
+      - name: Set up Python
+        if: inputs.service == 'holmesgpt'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        if: inputs.service == 'holmesgpt'
+        working-directory: holmesgpt-api
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      # ========================================
+      # Run Tests
+      # ========================================
+      - name: Run ${{ inputs.service }} integration tests
+        id: test
+        run: make test-integration-${{ inputs.service }}
+        env:
+          # Use mock mode for HolmesGPT (no real LLM API calls)
+          MOCK_LLM: ${{ inputs.service == 'holmesgpt' && 'true' || '' }}
+
+      # ========================================
+      # Cleanup
+      # ========================================
+      - name: Cleanup Podman resources
+        if: always() && inputs.infrastructure == 'podman'
+        run: |
+          podman ps -a --filter "name=${{ inputs.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
+          podman network rm ${{ inputs.service }}-test 2>/dev/null || true
+
+      - name: Cleanup Kind clusters
+        if: always() && inputs.infrastructure == 'kind'
+        run: |
+          kind delete cluster --name ${{ inputs.service }}-test 2>/dev/null || true
+
+      # ========================================
+      # Upload Artifacts
+      # ========================================
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service }}-integration-results
+          path: |
+            test-results/
+            coverage.out
+          retention-days: 7
+

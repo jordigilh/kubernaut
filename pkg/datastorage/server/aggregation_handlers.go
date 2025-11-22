@@ -177,7 +177,7 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 		zap.String("confidence", response.Confidence))
 }
 
-// HandleGetSuccessRateByPlaybook handles GET /api/v1/success-rate/playbook
+// HandleGetSuccessRateByWorkflow handles GET /api/v1/success-rate/workflow
 // BR-STORAGE-031-02: Calculate success rate by playbook
 //
 // Query Parameters:
@@ -188,9 +188,9 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 //   - min_samples (optional): Minimum sample size for confidence (default: 5)
 //     Must be positive integer
 //
-// Response: 200 OK with PlaybookSuccessRateResponse JSON
+// Response: 200 OK with WorkflowSuccessRateResponse JSON
 // Errors: 400 Bad Request (validation), 500 Internal Server Error (repository)
-func (h *Handler) HandleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.Request) {
 	// 1. Parse and validate query parameters
 	playbookID := r.URL.Query().Get("playbook_id")
 	if playbookID == "" {
@@ -250,12 +250,12 @@ func (h *Handler) HandleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.
 	// TDD REFACTOR COMPLETE: Repository integrated (Day 14) and verified (Day 15)
 	duration, _ := parseTimeRange(timeRange) // Already validated above
 
-	var response *models.PlaybookSuccessRateResponse
+	var response *models.WorkflowSuccessRateResponse
 	var err error
 
 	if h.actionTraceRepository != nil {
 		// Production: Use real repository
-		response, err = h.actionTraceRepository.GetSuccessRateByPlaybook(
+		response, err = h.actionTraceRepository.GetSuccessRateByWorkflow(
 			r.Context(),
 			playbookID,
 			playbookVersion,
@@ -277,7 +277,7 @@ func (h *Handler) HandleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.
 		}
 	} else {
 		// Test mode: Return minimal response (for unit tests without repository)
-		response = &models.PlaybookSuccessRateResponse{
+		response = &models.WorkflowSuccessRateResponse{
 			PlaybookID:           playbookID,
 			PlaybookVersion:      playbookVersion,
 			TimeRange:            timeRange,

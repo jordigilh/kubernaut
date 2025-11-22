@@ -24,71 +24,85 @@
 -- ========================================
 
 -- Create partitioned audit_events table
--- AUTHORITATIVE SOURCE: Updated from 26 to 27 columns (added parent_event_date for FK constraint)
--- See: ADR-034 (updated 2025-11-18 to include parent_event_date)
+-- AUTHORITATIVE SOURCE: ADR-034 (Unified Audit Table Design)
+-- This migration implements the exact schema from ADR-034
 CREATE TABLE IF NOT EXISTS audit_events (
     -- ========================================
-    -- PRIMARY IDENTIFIERS (4 columns)
+    -- EVENT IDENTITY
     -- ========================================
     event_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    event_version VARCHAR(10) NOT NULL DEFAULT '1.0',
+
+    -- ========================================
+    -- TEMPORAL INFORMATION
+    -- ========================================
     event_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    event_date DATE NOT NULL, -- For partitioning (set by trigger from event_timestamp)
-    event_type VARCHAR(255) NOT NULL, -- e.g., 'gateway.signal.received', 'ai.investigation.started'
+    event_date DATE NOT NULL, -- For partitioning (generated from event_timestamp)
 
     -- Primary key must include partition key for partitioned tables
     PRIMARY KEY (event_id, event_date),
 
     -- ========================================
-    -- SERVICE CONTEXT (6 columns) - Updated to include parent_event_date
+    -- EVENT CLASSIFICATION (ADR-034)
     -- ========================================
-    service VARCHAR(100) NOT NULL, -- Service that generated the event
-    service_version VARCHAR(50), -- Service version (e.g., '1.0.0')
-    correlation_id VARCHAR(255) NOT NULL, -- Links events across services (e.g., 'rr-2025-001')
-    causation_id VARCHAR(255), -- Causation ID for event sourcing patterns
-    parent_event_id UUID, -- Parent event for causality tracking (FK constraint below)
-    parent_event_date DATE, -- Parent event date (required for FK constraint on partitioned table)
+    event_type VARCHAR(100) NOT NULL,        -- 'gateway.signal.received'
+    event_category VARCHAR(50) NOT NULL,     -- 'signal', 'remediation', 'workflow'
+    event_action VARCHAR(50) NOT NULL,       -- 'received', 'processed', 'executed'
+    event_outcome VARCHAR(20) NOT NULL,      -- 'success', 'failure', 'pending'
 
     -- ========================================
-    -- RESOURCE TRACKING (4 columns)
+    -- ACTOR INFORMATION (Who)
     -- ========================================
-    resource_type VARCHAR(100), -- e.g., 'pod', 'node', 'deployment', 'alert'
-    resource_id VARCHAR(255), -- ID of the resource
-    resource_namespace VARCHAR(253), -- Kubernetes namespace (RFC 1123 DNS label)
-    cluster_id VARCHAR(255), -- Cluster identifier
+    actor_type VARCHAR(50) NOT NULL,         -- 'service', 'external', 'user'
+    actor_id VARCHAR(255) NOT NULL,          -- 'gateway-service', 'aws-cloudwatch'
+    actor_ip INET,                           -- IP address of actor (optional)
 
     -- ========================================
-    -- OPERATIONAL CONTEXT (6 columns)
+    -- RESOURCE INFORMATION (What)
     -- ========================================
-    operation VARCHAR(255), -- Specific action performed (e.g., 'receive_signal', 'analyze')
-    outcome VARCHAR(50) NOT NULL, -- e.g., 'success', 'failure', 'pending', 'skipped'
-    duration_ms INTEGER, -- Operation duration in milliseconds
-    retry_count INTEGER, -- Number of retry attempts
-    error_code VARCHAR(100), -- Specific error code if outcome is failure
-    error_message TEXT, -- Detailed error message
+    resource_type VARCHAR(100) NOT NULL,     -- 'Signal', 'RemediationRequest'
+    resource_id VARCHAR(255) NOT NULL,       -- 'fp-abc123', 'rr-2025-001'
+    resource_name VARCHAR(255),              -- Human-readable resource name (optional)
 
     -- ========================================
-    -- ACTOR & METADATA (5 columns)
+    -- CONTEXT INFORMATION (Where/Why)
     -- ========================================
-    actor_id VARCHAR(255), -- User, service account, or system that initiated the event
-    actor_type VARCHAR(100), -- e.g., 'user', 'service_account', 'system'
-    severity VARCHAR(50), -- e.g., 'critical', 'warning', 'info'
-    tags TEXT[], -- Array of tags for categorization
-    is_sensitive BOOLEAN NOT NULL DEFAULT FALSE, -- Flag for sensitive data (GDPR, PII)
+    correlation_id VARCHAR(255) NOT NULL,    -- remediation_id (groups related events)
+    parent_event_id UUID,                    -- Links to parent event (optional)
+    parent_event_date DATE,                  -- Parent event date (required for FK on partitioned table)
+    trace_id VARCHAR(255),                   -- OpenTelemetry trace ID (optional)
+    span_id VARCHAR(255),                    -- OpenTelemetry span ID (optional)
 
     -- ========================================
-    -- FLEXIBLE EVENT DATA (1 column)
+    -- KUBERNETES CONTEXT
     -- ========================================
-    event_data JSONB NOT NULL DEFAULT '{}'::jsonb, -- Service-specific payload (common envelope + service data)
+    namespace VARCHAR(253),                  -- Kubernetes namespace (optional)
+    cluster_name VARCHAR(255),               -- Cluster identifier (optional)
 
     -- ========================================
-    -- AUDIT METADATA (1 column)
+    -- EVENT PAYLOAD (JSONB - flexible, queryable)
     -- ========================================
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    event_data JSONB NOT NULL,               -- Service-specific payload (common envelope format)
+    event_metadata JSONB,                    -- Additional metadata (optional)
+
+    -- ========================================
+    -- AUDIT METADATA
+    -- ========================================
+    severity VARCHAR(20),                    -- 'info', 'warning', 'error', 'critical'
+    duration_ms INTEGER,                     -- Operation duration in milliseconds
+    error_code VARCHAR(50),                  -- Error code if outcome is failure
+    error_message TEXT,                      -- Detailed error message
+
+    -- ========================================
+    -- COMPLIANCE
+    -- ========================================
+    retention_days INTEGER DEFAULT 2555,     -- 7 years (SOC 2 / ISO 27001)
+    is_sensitive BOOLEAN DEFAULT FALSE       -- Flag for sensitive data (GDPR, PII)
 
 ) PARTITION BY RANGE (event_date);
 
 -- ========================================
--- INDEXES (7 B-tree + 1 GIN for JSONB)
+-- INDEXES (ADR-034 Standard Indexes)
 -- ========================================
 
 -- Index 1: Event timestamp (for time-range queries)
@@ -97,23 +111,23 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_event_timestamp
 
 -- Index 2: Correlation ID (for cross-service correlation - most common query)
 CREATE INDEX IF NOT EXISTS idx_audit_events_correlation_id
-    ON audit_events (correlation_id);
+    ON audit_events (correlation_id, event_timestamp DESC);
 
 -- Index 3: Event type (for filtering by event type)
 CREATE INDEX IF NOT EXISTS idx_audit_events_event_type
-    ON audit_events (event_type);
+    ON audit_events (event_type, event_timestamp DESC);
 
 -- Index 4: Resource composite index (for resource-specific queries)
 CREATE INDEX IF NOT EXISTS idx_audit_events_resource
-    ON audit_events (resource_type, resource_id);
+    ON audit_events (resource_type, resource_id, event_timestamp DESC);
 
--- Index 5: Actor ID (for actor-specific audit trails)
+-- Index 5: Actor composite index (for actor-specific audit trails)
 CREATE INDEX IF NOT EXISTS idx_audit_events_actor
-    ON audit_events (actor_id);
+    ON audit_events (actor_type, actor_id, event_timestamp DESC);
 
 -- Index 6: Outcome (for success/failure analytics)
 CREATE INDEX IF NOT EXISTS idx_audit_events_outcome
-    ON audit_events (outcome);
+    ON audit_events (event_outcome, event_timestamp DESC);
 
 -- Index 7: Event date (for partition pruning optimization)
 CREATE INDEX IF NOT EXISTS idx_audit_events_event_date

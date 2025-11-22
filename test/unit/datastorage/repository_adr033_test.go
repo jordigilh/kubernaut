@@ -133,10 +133,10 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				Expect(result.Confidence).To(Equal("high")) // >100 samples
 
 				// CORRECTNESS: Playbook breakdown data is accurate
-				Expect(result.BreakdownByPlaybook).To(HaveLen(2))
-				Expect(result.BreakdownByPlaybook[0].PlaybookID).To(Equal("pod-oom-recovery"))
-				Expect(result.BreakdownByPlaybook[0].Executions).To(Equal(60))
-				Expect(result.BreakdownByPlaybook[0].SuccessRate).To(BeNumerically("~", 0.90, 0.01))
+				Expect(result.BreakdownByWorkflow).To(HaveLen(2))
+				Expect(result.BreakdownByWorkflow[0].PlaybookID).To(Equal("pod-oom-recovery"))
+				Expect(result.BreakdownByWorkflow[0].Executions).To(Equal(60))
+				Expect(result.BreakdownByWorkflow[0].SuccessRate).To(BeNumerically("~", 0.90, 0.01))
 
 				// CORRECTNESS: AI execution mode stats are accurate
 				Expect(result.AIExecutionMode).ToNot(BeNil())
@@ -382,7 +382,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 	// BR-STORAGE-031-02: Playbook Success Rate
 	// ========================================
 
-	Describe("GetSuccessRateByPlaybook", func() {
+	Describe("GetSuccessRateByWorkflow", func() {
 		Context("when playbook has sufficient execution data", func() {
 			It("should calculate success rate correctly for disk-cleanup playbook", func() {
 				// BEHAVIOR: Method returns playbook success rate response
@@ -428,7 +428,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 					WithArgs(playbookID, playbookVersion, sqlmock.AnyArg()).
 					WillReturnRows(aiRows)
 
-				result, err := repo.GetSuccessRateByPlaybook(ctx, playbookID, playbookVersion, duration, minSamples)
+				result, err := repo.GetSuccessRateByWorkflow(ctx, playbookID, playbookVersion, duration, minSamples)
 
 				// BEHAVIOR: No errors, response structure correct
 				Expect(err).ToNot(HaveOccurred())
@@ -483,7 +483,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_playbook`).
 					WillReturnRows(sqlmock.NewRows([]string{"catalog_selected", "chained", "manual_escalation"}).AddRow(0, 0, 0))
 
-				result, err := repo.GetSuccessRateByPlaybook(ctx, playbookID, playbookVersion, duration, minSamples)
+				result, err := repo.GetSuccessRateByWorkflow(ctx, playbookID, playbookVersion, duration, minSamples)
 
 				Expect(err).ToNot(HaveOccurred())
 

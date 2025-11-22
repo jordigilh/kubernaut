@@ -77,7 +77,9 @@ Data Storage Service acts as the **REST API Gateway for Database Access** in Pha
 
 ### **1. HolmesGPT API Service (Active Integration)**
 
-**Purpose**: Query playbook catalog for semantic search during incident investigation
+**Purpose**: Query workflow catalog for semantic search during incident investigation
+
+**Terminology**: Per DD-NAMING-001, using "Remediation Workflow" (not "Remediation Playbook")
 
 **Integration Pattern**: HTTP GET
 **Endpoint**: `GET /api/v1/incidents?alert_name=HighMemoryUsage&limit=10`
