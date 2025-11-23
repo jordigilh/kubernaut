@@ -94,11 +94,12 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Describe("BR-GATEWAY-016: Buffered First-Alert Aggregation", func() {
-		Context("when alerts arrive below threshold", func() {
-			It("should delay aggregation until threshold is reached", func() {
-				// BUSINESS SCENARIO: 4 pods crash in prod-api namespace
-				namespace := "prod-api"
-				alertName := "PodCrashLooping"
+	Context("when alerts arrive below threshold", func() {
+		It("should delay aggregation until threshold is reached", func() {
+			// BUSINESS SCENARIO: 4 pods crash in prod-api namespace
+			processID := GinkgoParallelProcess()
+			namespace := fmt.Sprintf("prod-api-p%d-%d", processID, time.Now().Unix())
+			alertName := fmt.Sprintf("PodCrashLooping-p%d", processID)
 
 				// BEHAVIOR: System buffers alerts without triggering aggregation
 				// (Delaying CRD creation saves AI analysis costs)
@@ -130,11 +131,12 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 			})
 		})
 
-		Context("when 5th alert arrives (threshold reached)", func() {
-			It("should trigger aggregation of all buffered alerts", func() {
-				// BUSINESS SCENARIO: 5 pods crash in prod-api (storm threshold reached)
-				namespace := "prod-api"
-				alertName := "PodCrashLooping"
+	Context("when 5th alert arrives (threshold reached)", func() {
+		It("should trigger aggregation of all buffered alerts", func() {
+			// BUSINESS SCENARIO: 5 pods crash in prod-api (storm threshold reached)
+			processID := GinkgoParallelProcess()
+			namespace := fmt.Sprintf("prod-api-p%d-%d", processID, time.Now().Unix())
+			alertName := fmt.Sprintf("PodCrashLooping-p%d", processID)
 				stormMetadata := &processing.StormMetadata{
 					StormType:  "rate",
 					Window:     "1m",
@@ -189,10 +191,11 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Describe("BR-GATEWAY-008: Sliding Window Behavior", func() {
-		Context("when alerts keep arriving within timeout", func() {
-			It("should extend window timer on each alert", func() {
-				namespace := "prod-api"
-				alertName := "PodCrashLooping"
+	Context("when alerts keep arriving within timeout", func() {
+		It("should extend window timer on each alert", func() {
+			processID := GinkgoParallelProcess()
+			namespace := fmt.Sprintf("prod-api-p%d-%d", processID, time.Now().Unix())
+			alertName := fmt.Sprintf("PodCrashLooping-p%d", processID)
 				stormMetadata := &processing.StormMetadata{
 					StormType:  "rate",
 					Window:     "1m",
@@ -255,10 +258,11 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 			})
 		})
 
-		Context("when no alerts arrive within timeout", func() {
-			It("should let window expire naturally", func() {
-				namespace := "prod-api"
-				alertName := "PodCrashLooping"
+	Context("when no alerts arrive within timeout", func() {
+		It("should let window expire naturally", func() {
+			processID := GinkgoParallelProcess()
+			namespace := fmt.Sprintf("prod-api-p%d-%d", processID, time.Now().Unix())
+			alertName := fmt.Sprintf("PodCrashLooping-p%d", processID)
 				stormMetadata := &processing.StormMetadata{
 					StormType:  "rate",
 					Window:     "1m",
@@ -311,7 +315,10 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 	Describe("BR-GATEWAY-011: Multi-Tenant Isolation", func() {
 		Context("when namespace has custom limit", func() {
 			It("should enforce per-namespace buffer limits", func() {
-				// Create aggregator with per-namespace limits
+				processID := GinkgoParallelProcess()
+				namespace := fmt.Sprintf("prod-api-p%d-%d", processID, time.Now().Unix())
+
+				// Create aggregator with per-namespace limits (use dynamic namespace)
 				aggregatorWithLimits := processing.NewStormAggregatorWithConfig(
 					redisClient,
 					5,
@@ -320,14 +327,12 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 					1000,
 					5000,
 					map[string]int{
-						"prod-api": 10, // Low limit for testing
+						namespace: 10, // Low limit for testing (use dynamic namespace)
 					},
 					0.95,
-					0.5,
-				)
-
-				namespace := "prod-api"
-				alertName := "PodCrashLooping"
+			0.5,
+		)
+		alertName := fmt.Sprintf("PodCrashLooping-p%d", processID)
 
 				// Fill buffer to capacity (10 alerts)
 				for i := 1; i <= 10; i++ {
@@ -364,11 +369,12 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 			})
 		})
 
-		Context("when multiple namespaces have storms", func() {
-			It("should isolate buffers per namespace", func() {
-				namespace1 := "prod-api"
-				namespace2 := "dev-test"
-				alertName := "PodCrashLooping"
+	Context("when multiple namespaces have storms", func() {
+		It("should isolate buffers per namespace", func() {
+			processID := GinkgoParallelProcess()
+			namespace1 := fmt.Sprintf("prod-api-p%d-%d", processID, time.Now().Unix())
+			namespace2 := fmt.Sprintf("dev-test-p%d-%d", processID, time.Now().Unix()+1)
+			alertName := fmt.Sprintf("PodCrashLooping-p%d", processID)
 
 				// Buffer 3 alerts in prod-api
 				for i := 1; i <= 3; i++ {

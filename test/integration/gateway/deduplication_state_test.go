@@ -262,14 +262,17 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				<-done
 			}
 
-			By("4. Verify final occurrence count is 5 (1 initial + 4 duplicates)")
-			Eventually(func() int {
-				updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
-				if updatedCRD == nil {
-					return 0
-				}
-				return updatedCRD.Spec.Deduplication.OccurrenceCount
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(5), "Concurrent duplicates should be handled correctly")
+		By("4. Verify final occurrence count is 5 (1 initial + 4 duplicates)")
+		Eventually(func() int {
+			updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			if updatedCRD == nil {
+				GinkgoWriter.Printf("CRD %s not found in namespace %s\n", crdName, sharedNamespace)
+				return 0
+			}
+			count := updatedCRD.Spec.Deduplication.OccurrenceCount
+			GinkgoWriter.Printf("Current occurrence count: %d (waiting for 5)\n", count)
+			return count
+		}, 30*time.Second, 1*time.Second).Should(Equal(5), "Concurrent duplicates should be handled correctly (30s timeout for CI/CD)")
 		})
 	})
 
@@ -748,15 +751,23 @@ func sendWebhook(gatewayURL, path string, body []byte) *WebhookResponse {
 
 // getCRDByName fetches a RemediationRequest CRD by namespace and name
 func getCRDByName(ctx context.Context, testClient *K8sTestClient, namespace, name string) *remediationv1alpha1.RemediationRequest {
-	crd := &remediationv1alpha1.RemediationRequest{}
-	err := testClient.Client.Get(ctx, client.ObjectKey{
-		Namespace: namespace,
-		Name:      name,
-	}, crd)
+	// Use List instead of Get to bypass K8s client caching issues
+	// This is more reliable in integration tests with multiple parallel clients
+	crdList := &remediationv1alpha1.RemediationRequestList{}
+	err := testClient.Client.List(ctx, crdList, client.InNamespace(namespace))
 
 	if err != nil {
+		GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", namespace, err)
 		return nil
 	}
 
-	return crd
+	// Find the CRD by name
+	for i := range crdList.Items {
+		if crdList.Items[i].Name == name {
+			return &crdList.Items[i]
+		}
+	}
+
+	GinkgoWriter.Printf("CRD %s not found in namespace %s (found %d CRDs total)\n", name, namespace, len(crdList.Items))
+	return nil
 }

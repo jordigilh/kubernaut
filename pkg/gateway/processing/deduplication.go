@@ -179,8 +179,21 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		return false, nil, fmt.Errorf("invalid fingerprint: empty fingerprint not allowed")
 	}
 
+	// BR-GATEWAY-003: MANDATORY Redis connection check for deduplication
+	// Redis is required for both K8s-based and Redis-only deduplication modes.
+	// If Redis is unavailable, deduplication cannot proceed reliably.
+	// This ensures the Gateway returns HTTP 503 when Redis is down, allowing
+	// operators to fix Redis before processing alerts.
+	if err := s.ensureConnection(ctx); err != nil {
+		s.logger.Error("Redis unavailable, deduplication cannot proceed",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint))
+		s.metrics.DeduplicationCacheMissesTotal.Inc()
+		return false, nil, fmt.Errorf("redis unavailable for deduplication: %w", err)
+	}
+
 	// DD-GATEWAY-009: If K8s client is nil (e.g., unit tests), fall back to Redis-based check
-	// Redis-only mode requires Redis connectivity
+	// Redis-only mode requires Redis connectivity (already validated above)
 	if s.k8sClient == nil {
 		s.logger.Debug("K8s client is nil, falling back to Redis-based deduplication",
 			zap.String("fingerprint", signal.Fingerprint),
@@ -193,6 +206,24 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	s.logger.Debug("Using K8s API for state-based deduplication",
 		zap.String("fingerprint", signal.Fingerprint),
 		zap.String("namespace", signal.Namespace))
+
+	// CONCURRENCY FIX: Try to acquire creation lock using Redis SETNX
+	// This prevents race conditions where multiple concurrent requests
+	// all query K8s, find no CRD, and all try to create one.
+	// The lock key expires after 5 seconds to prevent deadlocks.
+	lockKey := fmt.Sprintf("gateway:dedup:lock:%s", signal.Fingerprint)
+	locked, err := s.redisClient.SetNX(ctx, lockKey, "1", 5*time.Second).Result()
+	if err != nil {
+		s.logger.Warn("Failed to acquire creation lock, proceeding without lock",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint))
+		// Continue without lock (graceful degradation)
+	} else if !locked {
+		// Another request is creating the CRD, wait briefly and recheck
+		s.logger.Debug("Another request is creating CRD, waiting...",
+			zap.String("fingerprint", signal.Fingerprint))
+		time.Sleep(100 * time.Millisecond) // Brief wait for CRD creation
+	}
 
 	// DD-GATEWAY-009 + DD-015: Find CRDs by fingerprint using label selector
 	// With DD-015, CRD names include timestamps, so we can't predict exact names.
@@ -299,6 +330,20 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		zap.Int("occurrence_count", metadata.Count),
 		zap.Int("total_crds_for_fingerprint", len(crdList.Items)),
 		zap.Int("final_state_crds", finalStateCount))
+
+	// BR-GATEWAY-003: Update Redis with duplicate metadata and refresh TTL
+	// This ensures:
+	// 1. Duplicate count is tracked in Redis
+	// 2. lastSeen timestamp is updated
+	// 3. TTL is refreshed (prevents premature expiration during storms)
+	if err := s.updateDuplicateInRedis(ctx, signal, metadata); err != nil {
+		// Graceful degradation: log error but don't fail the duplicate detection
+		// The CRD-based deduplication already succeeded
+		s.logger.Warn("Failed to update duplicate metadata in Redis",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("crd_ref", metadata.RemediationRequestRef))
+	}
 
 	return true, metadata, nil
 }
@@ -490,6 +535,51 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 		zap.String("key", key),
 		zap.String("fingerprint", signal.Fingerprint),
 		zap.Duration("ttl", s.ttl))
+
+	return nil
+}
+
+// updateDuplicateInRedis updates Redis metadata when a duplicate is detected
+//
+// This method is called by Check() when a duplicate is detected via K8s state-based deduplication.
+// It ensures Redis stays in sync with the actual duplicate count and timestamps.
+//
+// Updates:
+// - count: Incremented to match CRD occurrence count
+// - lastSeen: Updated to current timestamp
+// - TTL: Refreshed to prevent expiration during alert storms
+//
+// Business Requirements:
+// - BR-GATEWAY-003: TTL refresh on duplicate detection
+// - BR-003: Duplicate count persistence
+//
+// Graceful Degradation:
+// - If Redis is unavailable, logs warning but doesn't fail
+// - CRD-based deduplication has already succeeded
+func (s *DeduplicationService) updateDuplicateInRedis(ctx context.Context, signal *types.NormalizedSignal, metadata *DeduplicationMetadata) error {
+	// Check Redis connection
+	if err := s.ensureConnection(ctx); err != nil {
+		return fmt.Errorf("redis unavailable: %w", err)
+	}
+
+	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", signal.Fingerprint)
+	now := time.Now().Format(time.RFC3339)
+
+	// Update duplicate metadata with pipeline for atomicity
+	pipe := s.redisClient.Pipeline()
+	pipe.HIncrBy(ctx, key, "count", 1) // Increment count atomically
+	pipe.HSet(ctx, key, "lastSeen", now)
+	pipe.Expire(ctx, key, s.ttl) // BR-GATEWAY-003: Refresh TTL
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		s.connected.Store(false)
+		return fmt.Errorf("failed to update duplicate metadata: %w", err)
+	}
+
+	s.logger.Debug("Updated duplicate metadata in Redis",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.Int("count", metadata.Count),
+		zap.Duration("ttl_refreshed", s.ttl))
 
 	return nil
 }

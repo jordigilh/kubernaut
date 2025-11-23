@@ -13,7 +13,6 @@ import (
 	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -72,14 +71,16 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			testServer.Close()
 		}
 
-		// Cleanup namespace (use defer to ensure cleanup even on test failure)
-		if k8sClient != nil && testNamespace != "" {
-			defer func() {
-				ns := &corev1.Namespace{}
-				ns.Name = testNamespace
-				_ = k8sClient.Client.Delete(ctx, ns)
-			}()
-		}
+		// CRITICAL FIX: Don't delete namespaces during parallel test execution
+		// Let Kind cluster deletion handle cleanup at the end of the test suite
+		// Previous code (REMOVED):
+		// if k8sClient != nil && testNamespace != "" {
+		//     defer func() {
+		//         ns := &corev1.Namespace{}
+		//         ns.Name = testNamespace
+		//         _ = k8sClient.Client.Delete(ctx, ns)
+		//     }()
+		// }
 
 		// Cleanup Redis
 		if redisClient != nil && redisClient.Client != nil {
@@ -214,8 +215,8 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			// Second request: Should attempt to create duplicate CRD
-			// Gateway should handle "already exists" gracefully (fetch existing CRD)
+			// Second request: Should be detected as duplicate by K8s state-based dedup
+			// Even though Redis was flushed, K8s API still has the CRD
 			resp2, err := http.Post(
 				fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL),
 				"application/json",
@@ -224,18 +225,26 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer resp2.Body.Close()
 
-			// Verify business outcome: Gateway handles "already exists" gracefully
-			// Per crd_creator.go lines 209-230, Gateway fetches existing CRD
-			Expect(resp2.StatusCode).To(Equal(http.StatusCreated),
-				"Gateway should handle 'already exists' by fetching existing CRD")
+			// Verify business outcome: K8s state-based dedup detects duplicate
+			// DD-GATEWAY-009: K8s API is authoritative source of truth for CRD state
+			// Even with Redis flushed, Gateway queries K8s and finds existing CRD
+			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
+				"Gateway should detect duplicate via K8s state-based dedup (202 Accepted)")
 
 			var response map[string]interface{}
 			err = json.NewDecoder(resp2.Body).Decode(&response)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(response).To(HaveKey("remediationRequestName"), "Response should include remediationRequestName")
-			Expect(response).To(HaveKey("remediationRequestNamespace"), "Response should include remediationRequestNamespace")
-			Expect(response["status"]).To(Equal("created"), "Status should be 'created'")
+			// Duplicate response includes metadata, not top-level CRD fields
+			Expect(response).To(HaveKey("metadata"), "Response should include deduplication metadata")
+			Expect(response).To(HaveKey("duplicate"), "Response should indicate duplicate")
+			Expect(response["status"]).To(Equal("duplicate"), "Status should be 'duplicate'")
+			Expect(response["duplicate"]).To(BeTrue(), "Duplicate flag should be true")
+
+			// Verify metadata contains CRD reference
+			metadata, ok := response["metadata"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "Metadata should be a map")
+			Expect(metadata).To(HaveKey("RemediationRequestRef"), "Metadata should include CRD reference")
 		})
 	})
 

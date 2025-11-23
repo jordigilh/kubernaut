@@ -95,13 +95,15 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			testServer.Close()
 		}
 
-		// Cleanup namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-			},
-		}
-		_ = k8sClient.Client.Delete(ctx, ns)
+		// CRITICAL FIX: Don't delete namespaces during parallel test execution
+		// Let Kind cluster deletion handle cleanup at the end of the test suite
+		// Previous code (REMOVED):
+		// ns := &corev1.Namespace{
+		//     ObjectMeta: metav1.ObjectMeta{
+		//         Name: testNamespace,
+		//     },
+		// }
+		// _ = k8sClient.Client.Delete(ctx, ns)
 	})
 
 	It("handles malformed JSON gracefully with clear error message", func() {
@@ -321,8 +323,10 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			}
 
 			// Fall back to kubernaut-system namespace
+			// Filter for CRDs with the correct origin-namespace label to avoid picking up old CRDs
 			err2 := k8sClient.Client.List(context.Background(), rrList,
-				client.InNamespace("kubernaut-system"))
+				client.InNamespace("kubernaut-system"),
+				client.MatchingLabels{"kubernaut.io/origin-namespace": nonExistentNamespace})
 			if err2 == nil && len(rrList.Items) > 0 {
 				createdCRD = &rrList.Items[0]
 				return true

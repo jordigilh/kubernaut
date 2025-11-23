@@ -138,7 +138,9 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 
 			// BUSINESS VALIDATION 2: CRD has correct metadata from adapter
 			Expect(crd.Spec.SignalType).To(Equal("prometheus-alert"), "Signal type from adapter")
-			Expect(crd.Spec.SignalSource).To(Equal("prometheus-adapter"), "Signal source from adapter")
+			// BR-GATEWAY-027: SignalSource is the monitoring system ("prometheus"), not adapter name
+			// This enables LLM to select appropriate investigation tools (Prometheus queries)
+			Expect(crd.Spec.SignalSource).To(Equal("prometheus"), "Signal source is monitoring system")
 			Expect(crd.Namespace).To(Equal(testNamespace), "CRD in correct namespace")
 
 			// BUSINESS VALIDATION 3: CRD has correct business data
@@ -152,9 +154,13 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 			// WHY: Validates adapter integrates with deduplication service
 			// EXPECTED: First alert → CRD, Second alert → HTTP 202 Accepted (duplicate)
 
+			// Use unique alert name per parallel process to prevent fingerprint collisions
+			processID := GinkgoParallelProcess()
+			uniqueAlertName := fmt.Sprintf("PodCrashLoop-p%d-%d", processID, time.Now().UnixNano())
+
 			// STEP 1: Send first alert
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "PodCrashLoop",
+				AlertName: uniqueAlertName,
 				Namespace: testNamespace,
 				Severity:  "warning",
 				Resource: ResourceIdentifier{
@@ -193,16 +199,17 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 			// BUSINESS OUTCOME: Kubernetes Events flow through entire pipeline
 			// WHY: Validates K8s Event adapter integrates with priority assignment
 			// EXPECTED: Event → Priority assignment → CRD with correct priority
+			processID := GinkgoParallelProcess()
 
 			// STEP 1: Send Kubernetes Event (using simple JSON payload)
 			eventPayload := fmt.Sprintf(`{
 				"metadata": {
-					"name": "backoff-event",
+					"name": "backoff-event-p%d",
 					"namespace": "%s"
 				},
 				"involvedObject": {
 					"kind": "Pod",
-					"name": "failing-pod",
+					"name": "failing-pod-p%d",
 					"namespace": "%s"
 				},
 				"reason": "BackOff",
@@ -210,7 +217,7 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 				"type": "Warning",
 				"firstTimestamp": "%s",
 				"lastTimestamp": "%s"
-			}`, testNamespace, testNamespace, time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339))
+			}`, processID, testNamespace, processID, testNamespace, time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339))
 
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/kubernetes-event", []byte(eventPayload))
 
@@ -232,9 +239,9 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 				return nil
 			}, "30s", "500ms").Should(Succeed(), "CRD should be created")
 
-			// BUSINESS VALIDATION 2: CRD has correct metadata from K8s Event adapter
-			Expect(crd.Spec.SignalType).To(Equal("kubernetes-event"), "Signal type from adapter")
-			Expect(crd.Spec.SignalSource).To(Equal("kubernetes-event"), "Signal source from adapter")
+		// BUSINESS VALIDATION 2: CRD has correct metadata from K8s Event adapter
+		Expect(crd.Spec.SignalType).To(Equal("kubernetes-event"), "Signal type from adapter")
+		Expect(crd.Spec.SignalSource).To(Equal("kubernetes-events"), "Signal source from adapter (monitoring system)")
 
 			// BUSINESS VALIDATION 3: CRD has priority assigned by processing pipeline
 			Expect(crd.Spec.Priority).ToNot(BeEmpty(), "Priority should be assigned")

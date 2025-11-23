@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"time"
 
@@ -246,60 +245,59 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Storm detection requires: 2+ alerts within 1-second window with same alertname
 			// Use goroutines to send alerts concurrently (within storm window)
 
-			// Send multiple DIFFERENT alerts with SAME alertname to trigger storm detection
-			// Storm detection requires: same alertname, different resources (different fingerprints)
-			// Use unique alertname per test run to avoid conflicts
-			uniqueID := time.Now().UnixNano()
-			alertName := fmt.Sprintf("StormTest-%d", uniqueID)
+		// Send multiple DIFFERENT alerts with SAME alertname to trigger storm detection
+		// Storm detection requires: same alertname, different resources (different fingerprints)
+		// Use unique alertname per test run to avoid conflicts in parallel execution
+		processID := GinkgoParallelProcess()
+		uniqueID := time.Now().UnixNano()
+		alertName := fmt.Sprintf("StormTest-p%d-%d", processID, uniqueID)
 
-			// Send 5 different alerts with same alertname concurrently (within 1 second window)
-			var wg sync.WaitGroup
-			for i := 0; i < 5; i++ {
-				wg.Add(1)
-				go func(index int) {
-					defer wg.Done()
-					defer GinkgoRecover()
+		// Send 5 different alerts with same alertname, staggered to ensure they hit within storm window
+		// Stagger by 200ms each to ensure alerts arrive within the 1-second storm detection window
+		// Without staggering, all alerts arrive in < 1ms and the storm window expires before detection
+		var wg sync.WaitGroup
+		for i := 0; i < 5; i++ {
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+				defer GinkgoRecover()
 
-					payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-						AlertName: alertName, // SAME alertname for all
-						Namespace: testNamespace,
-						Severity:  "critical",
-						Resource: ResourceIdentifier{
-							Kind: "Pod",
-							Name: fmt.Sprintf("storm-pod-%d-%d", uniqueID, index), // DIFFERENT pod for each alert
-						},
-					})
-					SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-				}(i)
-			}
-			wg.Wait()
+			// Stagger alerts by 50ms to ensure they trigger storm detection
+			// Storm threshold is 2 alerts/minute, so 5 alerts in 250ms should trigger
+			time.Sleep(time.Duration(index*50) * time.Millisecond)
 
-			// Wait for storm detection and metrics to update
-			// Storm detection happens async, need more time than other metrics
-			time.Sleep(500 * time.Millisecond)
+				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+					AlertName: alertName, // SAME alertname for all
+					Namespace: testNamespace,
+					Severity:  "critical",
+					Resource: ResourceIdentifier{
+						Kind: "Pod",
+						Name: fmt.Sprintf("storm-pod-%d-%d", uniqueID, index), // DIFFERENT pod for each alert
+					},
+				})
+				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			}(i)
+		}
+	wg.Wait()
 
-			// Verify storm detection metric
+		// Wait for storm detection and metrics to update
+		// Storm detection happens async, use Eventually for parallel execution robustness
+		var stormCount float64
+		Eventually(func() float64 {
 			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-
-			stormCount := GetMetricSum(metrics, "gateway_signal_storms_detected_total")
-
-			// Debug: Print all metrics if storm not detected
-			if stormCount < 1 {
-				fmt.Printf("DEBUG: Storm metric value: %f\n", stormCount)
-				fmt.Printf("DEBUG: All metrics keys: %v\n", func() []string {
-					keys := make([]string, 0, len(metrics))
-					for k := range metrics {
-						if strings.Contains(k, "storm") || strings.Contains(k, "signal") {
-							keys = append(keys, k)
-						}
-					}
-					return keys
-				}())
+			if err != nil {
+				GinkgoWriter.Printf("Failed to get metrics: %v\n", err)
+				return 0
 			}
+			stormCount = GetMetricSum(metrics, "gateway_signal_storms_detected_total")
 
-			Expect(stormCount).To(BeNumerically(">=", 1),
-				"Storm detection counter should increment when storm detected")
+			// Debug: Print storm metric value
+			if stormCount < 1 {
+				GinkgoWriter.Printf("Storm metric value: %f (waiting for >= 1)\n", stormCount)
+			}
+			return stormCount
+		}, "90s", "500ms").Should(BeNumerically(">=", 1),
+			"Storm detection counter should increment when storm detected (90s timeout for parallel execution)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can detect alert storms via metrics

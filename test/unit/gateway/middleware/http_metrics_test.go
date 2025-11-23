@@ -19,7 +19,6 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	"github.com/go-chi/chi/v5"
 	. "github.com/onsi/ginkgo/v2"
@@ -28,13 +27,8 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	gatewayMetrics "github.com/jordigilh/kubernaut/pkg/gateway/metrics"
-	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
+	gatewayMiddleware "github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 )
-
-func TestHTTPMetrics(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "HTTP Metrics Middleware Suite")
-}
 
 var _ = Describe("HTTPMetrics Middleware", func() {
 	var (
@@ -51,7 +45,7 @@ var _ = Describe("HTTPMetrics Middleware", func() {
 
 		// Create router with middleware
 		router = chi.NewRouter()
-		router.Use(middleware.HTTPMetrics(metrics))
+		router.Use(gatewayMiddleware.HTTPMetrics(metrics))
 	})
 
 	Describe("Request Duration Tracking", func() {
@@ -199,7 +193,7 @@ var _ = Describe("HTTPMetrics Middleware", func() {
 		It("should handle nil metrics gracefully", func() {
 			// Arrange: Router with nil metrics
 			router := chi.NewRouter()
-			router.Use(middleware.HTTPMetrics(nil))
+			router.Use(gatewayMiddleware.HTTPMetrics(nil))
 			router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
@@ -233,7 +227,7 @@ var _ = Describe("InFlightRequests Middleware", func() {
 
 		// Create router with middleware
 		router = chi.NewRouter()
-		router.Use(middleware.InFlightRequests(metrics))
+		router.Use(gatewayMiddleware.InFlightRequests(metrics))
 	})
 
 	Describe("In-Flight Request Tracking", func() {
@@ -310,7 +304,7 @@ var _ = Describe("InFlightRequests Middleware", func() {
 		It("should handle nil metrics gracefully", func() {
 			// Arrange: Router with nil metrics
 			router := chi.NewRouter()
-			router.Use(middleware.InFlightRequests(nil))
+			router.Use(gatewayMiddleware.InFlightRequests(nil))
 			router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})

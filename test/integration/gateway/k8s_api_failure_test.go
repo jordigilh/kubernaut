@@ -284,9 +284,20 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 
-				dedupService := processing.NewDeduplicationService(redisClient.Client, 5*time.Second, logger)
-				stormDetector := processing.NewStormDetector(redisClient.Client, logger)
-				stormAggregator := processing.NewStormAggregator(redisClient.Client)
+			dedupService := processing.NewDeduplicationService(redisClient.Client, 5*time.Second, logger)
+			stormDetector := processing.NewStormDetector(redisClient.Client, logger)
+			// Use bufferThreshold=1 for immediate window creation in tests
+			stormAggregator := processing.NewStormAggregatorWithConfig(
+				redisClient.Client,
+				1,                    // bufferThreshold: 1 alert triggers window creation
+				60*time.Second,       // inactivityTimeout: 1 minute
+				5*time.Minute,        // maxWindowDuration: 5 minutes
+				1000,                 // defaultMaxSize: 1000 alerts per namespace
+				5000,                 // globalMaxSize: 5000 alerts total
+				nil,                  // perNamespaceLimits: none
+				0.95,                 // samplingThreshold: 95% utilization
+				0.5,                  // samplingRate: 50% when sampling enabled
+			)
 
 				// DD-GATEWAY-004: K8s clientset no longer needed - authentication removed
 				// Phase 2 Fix: Create custom Prometheus registry per test to prevent

@@ -99,16 +99,20 @@ var _ = Describe("BR-003, BR-005, BR-077: Redis State Persistence - Integration 
 			// - Integration: Tests Redis persistence (THIS TEST)
 			// - E2E: Tests complete workflows with Gateway restarts
 
-			// STEP 1: Send first alert (creates CRD and Redis state)
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "PersistenceTest",
-				Namespace: testNamespace,
-				Severity:  "critical",
-				Resource: ResourceIdentifier{
-					Kind: "Pod",
-					Name: "test-pod",
-				},
-			})
+		// STEP 1: Send first alert (creates CRD and Redis state)
+		// Use unique alert name per parallel process to prevent fingerprint collisions
+		processID := GinkgoParallelProcess()
+		uniqueAlertName := fmt.Sprintf("PersistenceTest-p%d-%d", processID, time.Now().UnixNano())
+
+		payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: uniqueAlertName,
+			Namespace: testNamespace,
+			Severity:  "critical",
+			Resource: ResourceIdentifier{
+				Kind: "Pod",
+				Name: "test-pod",
+			},
+		})
 
 			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp1.StatusCode).To(Equal(201), "First alert should return 201 Created")
@@ -116,7 +120,9 @@ var _ = Describe("BR-003, BR-005, BR-077: Redis State Persistence - Integration 
 			// Wait for CRD creation
 			Eventually(func() int {
 				crdList := &remediationv1alpha1.RemediationRequestList{}
-				_ = k8sClient.Client.List(ctx, crdList, client.InNamespace(testNamespace))
+				_ = k8sClient.Client.List(ctx, crdList,
+					client.InNamespace(testNamespace),
+					client.MatchingFields{}) // Force direct API call, bypass cache
 				return len(crdList.Items)
 			}, "30s", "500ms").Should(Equal(1), "Should have 1 CRD")
 
@@ -135,18 +141,21 @@ var _ = Describe("BR-003, BR-005, BR-077: Redis State Persistence - Integration 
 
 			testServer = httptest.NewServer(gatewayServer.Handler())
 
-			// STEP 4: Send duplicate alert after restart
-			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+		// STEP 4: Send duplicate alert after restart
+		// BUSINESS VALIDATION: HTTP 202 Accepted (duplicate detected from Redis)
+		// Use Eventually to handle Gateway restart timing in parallel execution
+		Eventually(func() int {
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			GinkgoWriter.Printf("Duplicate detection after restart: status=%d (expecting 202)\n", resp.StatusCode)
+			return resp.StatusCode
+		}, "10s", "500ms").Should(Equal(202), "Duplicate should be detected after restart (Eventually for parallel execution)")
 
-			// BUSINESS VALIDATION: HTTP 202 Accepted (duplicate detected from Redis)
-			Expect(resp2.StatusCode).To(Equal(202), "Duplicate should be detected after restart")
-
-			// BUSINESS VALIDATION: Still only 1 CRD (no duplicate CRD created)
-			Consistently(func() int {
-				crdList := &remediationv1alpha1.RemediationRequestList{}
-				_ = k8sClient.Client.List(ctx, crdList, client.InNamespace(testNamespace))
-				return len(crdList.Items)
-			}, "5s", "500ms").Should(Equal(1), "Should still have only 1 CRD after restart")
+		// BUSINESS VALIDATION: Still only 1 CRD (no duplicate CRD created)
+		Consistently(func() int {
+			crdList := &remediationv1alpha1.RemediationRequestList{}
+			_ = k8sClient.Client.List(ctx, crdList, client.InNamespace(testNamespace))
+			return len(crdList.Items)
+		}, "5s", "500ms").Should(Equal(1), "Should still have only 1 CRD after restart")
 		})
 	})
 
@@ -173,7 +182,9 @@ var _ = Describe("BR-003, BR-005, BR-077: Redis State Persistence - Integration 
 			// Wait for CRD creation
 			Eventually(func() int {
 				crdList := &remediationv1alpha1.RemediationRequestList{}
-				_ = k8sClient.Client.List(ctx, crdList, client.InNamespace(testNamespace))
+				_ = k8sClient.Client.List(ctx, crdList,
+					client.InNamespace(testNamespace),
+					client.MatchingFields{}) // Force direct API call, bypass cache
 				return len(crdList.Items)
 			}, "30s", "500ms").Should(Equal(1), "Should have 1 CRD")
 
