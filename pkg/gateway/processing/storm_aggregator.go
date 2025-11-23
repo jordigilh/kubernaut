@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -272,8 +274,9 @@ func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.No
 	windowID := fmt.Sprintf("%s-%d", signal.AlertName, currentTime.Unix())
 	windowKey := fmt.Sprintf("alert:storm:aggregate:%s", signal.AlertName)
 
-	// Store window ID with TTL (sliding window: inactivity timeout)
-	if err := a.redisClient.Set(ctx, windowKey, windowID, a.windowDuration).Err(); err != nil {
+	// Store window ID with TTL (BR-GATEWAY-008: maximum window duration safety limit)
+	// Use maxWindowDuration to ensure windows don't persist longer than intended
+	if err := a.redisClient.Set(ctx, windowKey, windowID, a.maxWindowDuration).Err(); err != nil {
 		return "", fmt.Errorf("failed to start aggregation window: %w", err)
 	}
 
@@ -343,14 +346,27 @@ func (a *StormAggregator) AddResource(ctx context.Context, windowID string, sign
 	// DD-GATEWAY-008: Check if window has exceeded max duration
 	// Extract window start time from windowID (format: "AlertName-UnixTimestamp")
 	// Example: "PodCrashLooping-1696800000" → start time = 1696800000
-	var startUnix int64
-	if _, err := fmt.Sscanf(windowID, "%*[^-]-%d", &startUnix); err == nil {
-		windowStartTime := time.Unix(startUnix, 0)
-		currentTime := time.Now()
-		if a.IsWindowExpired(windowStartTime, currentTime, a.maxWindowDuration) {
-			// Max duration exceeded: reject new alert, force window closure
-			return fmt.Errorf("window exceeded max duration (%v), rejecting new alert", a.maxWindowDuration)
-		}
+
+	// Find the last hyphen to split alertname from timestamp
+	// This handles alert names with hyphens (e.g., "Pod-Crash-Looping-1696800000")
+	lastHyphen := strings.LastIndex(windowID, "-")
+	if lastHyphen == -1 {
+		// No hyphen found - invalid windowID format
+		return fmt.Errorf("invalid windowID format '%s': expected 'AlertName-UnixTimestamp'", windowID)
+	}
+
+	timestampStr := windowID[lastHyphen+1:]
+	startUnix, err := strconv.ParseInt(timestampStr, 10, 64)
+	if err != nil {
+		// Failed to parse timestamp
+		return fmt.Errorf("failed to parse timestamp from windowID '%s': %w", windowID, err)
+	}
+
+	windowStartTime := time.Unix(startUnix, 0)
+	currentTime := time.Now()
+	if a.IsWindowExpired(windowStartTime, currentTime, a.maxWindowDuration) {
+		// Max duration exceeded: reject new alert, force window closure
+		return fmt.Errorf("window exceeded max duration (%v), rejecting new alert", a.maxWindowDuration)
 	}
 
 	// Add to sorted set (score = timestamp)
@@ -363,9 +379,9 @@ func (a *StormAggregator) AddResource(ctx context.Context, windowID string, sign
 
 	// DD-GATEWAY-008: Extend window timer (sliding window behavior)
 	// Reset TTL to full window duration on EVERY alert
-	currentTime := time.Now()
-	_, err := a.ExtendWindow(ctx, windowID, currentTime)
-	if err != nil {
+	now := time.Now()
+	_, extendErr := a.ExtendWindow(ctx, windowID, now)
+	if extendErr != nil {
 		// Non-fatal: log warning but don't fail the operation
 		// Window will still expire based on original TTL
 		// TODO: Add logging when logger is available

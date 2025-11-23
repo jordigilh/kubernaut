@@ -18,7 +18,7 @@ package gateway
 
 import (
 	"context"
-	"os"
+	"fmt"
 	"time"
 
 	goredis "github.com/go-redis/redis/v8"
@@ -48,41 +48,20 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 		ctx = context.Background()
 		logger = zap.NewNop()
 
-		// Check if running in CI/Kind environment
-		if os.Getenv("SKIP_REDIS_INTEGRATION") == "true" {
-			Skip("Redis integration tests skipped (SKIP_REDIS_INTEGRATION=true)")
-		}
-
-		// Connect to REAL Redis in OCP cluster (kubernaut-system namespace)
-		// Requires port-forward: kubectl port-forward -n kubernaut-system svc/redis 6379:6379
-		// OR uses local Redis from docker-compose.integration.yml (port 6380)
-		redisAddr := "localhost:6379"
-		redisPassword := "" // OCP Redis has no password configured
-		redisDB := 1        // Use DB 1 to avoid conflicts
+		// Use suite's Redis client for test isolation in parallel execution
+		// This ensures tests use the same Redis instance as the Gateway server
+		redisAddr := fmt.Sprintf("localhost:%d", suiteRedisPort)
+		redisDB := GinkgoParallelProcess() // Use process ID as DB number for isolation
 
 		redisClient = goredis.NewClient(&goredis.Options{
 			Addr:     redisAddr,
-			Password: redisPassword,
+			Password: "",
 			DB:       redisDB,
 		})
 
 		// Verify Redis is available
 		_, err := redisClient.Ping(ctx).Result()
-		if err != nil {
-			// Try fallback to local Docker Redis (port 6380)
-			_ = redisClient.Close()
-
-			redisClient = goredis.NewClient(&goredis.Options{
-				Addr:     "localhost:6380",
-				Password: "integration_redis_password",
-				DB:       redisDB,
-			})
-
-			_, err = redisClient.Ping(ctx).Result()
-			if err != nil {
-				Skip("Redis not available - run 'kubectl port-forward -n kubernaut-system svc/redis 6379:6379' or 'make bootstrap-dev'")
-			}
-		}
+		Expect(err).ToNot(HaveOccurred(), "Suite Redis should be available")
 
 		// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
 		err = redisClient.FlushDB(ctx).Err()

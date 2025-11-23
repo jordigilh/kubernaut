@@ -26,10 +26,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	goredis "github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
@@ -89,7 +91,7 @@ import (
 type Server struct {
 	// HTTP server
 	httpServer *http.Server
-	mux        *http.ServeMux // BR-109: Store mux reference for adapter registration
+	router     chi.Router // Chi router for adapter registration and route grouping
 
 	// Core processing components
 	adapterRegistry *adapters.AdapterRegistry
@@ -128,6 +130,12 @@ type Server struct {
 	//
 	// Industry best practice: Google SRE, Netflix, Kubernetes community
 	isShuttingDown atomic.Bool
+
+	// Storm aggregation concurrency control using singleflight pattern
+	// Prevents race condition where multiple goroutines attempt to create
+	// the same aggregated CRD simultaneously when window expires
+	// Uses golang.org/x/sync/singleflight - industry standard for deduplicating work
+	aggregationGroup singleflight.Group
 }
 
 // Configuration types have been moved to pkg/gateway/config/config.go
@@ -323,18 +331,19 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 		// rateLimiter:     rateLimiter,    // REMOVED
 		metricsInstance: metricsInstance,
 		logger:          logger,
+		// aggregationGroup is zero-initialized (ready to use)
 	}
 
 	// 6. Setup HTTP server with routes
-	mux := server.setupRoutes()
+	router := server.setupRoutes()
 
-	// 7. Store mux reference for adapter registration (BR-109)
-	server.mux = mux
+	// 7. Store router reference for adapter registration
+	server.router = router
 
-	// 8. Wrap with request ID middleware (BR-109)
+	// 8. Wrap with additional middleware
 	// BUSINESS OUTCOME: Enable operators to trace requests across Gateway components
 	// TDD GREEN: Minimal implementation to make BR-109 tests pass
-	handler := server.wrapWithMiddleware(mux)
+	handler := server.wrapWithMiddleware(router)
 
 	server.httpServer = &http.Server{
 		Addr:         cfg.Server.ListenAddr,
@@ -347,23 +356,29 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 	return server, nil
 }
 
-// setupRoutes configures all HTTP routes
+// setupRoutes configures all HTTP routes using chi router
 //
 // Routes:
 // - /api/v1/signals/* : Dynamic routes for registered adapters (e.g. /api/v1/signals/prometheus)
 // - /health           : Liveness probe (always returns 200)
 // - /ready            : Readiness probe (checks Redis + K8s connectivity)
 // - /metrics          : Prometheus metrics endpoint
-func (s *Server) setupRoutes() *http.ServeMux {
-	mux := http.NewServeMux()
+//
+// Chi router provides:
+// - Route grouping for /api/v1/signals/*
+// - HTTP method enforcement (POST only for webhooks)
+// - Middleware per route group
+func (s *Server) setupRoutes() chi.Router {
+	r := chi.NewRouter()
 
-	// Note: Adapter routes will be registered dynamically when adapters are registered
-	// via RegisterAdapter(). Each adapter exposes its own route (e.g. /api/v1/signals/prometheus)
+	// Global middleware
+	r.Use(chimiddleware.RequestID) // Chi's built-in request ID
+	r.Use(chimiddleware.RealIP)    // Extract real IP from X-Forwarded-For
 
-	// Health and readiness probes
-	mux.HandleFunc("/health", s.healthHandler)
-	mux.HandleFunc("/healthz", s.healthHandler) // Kubernetes-style alias
-	mux.HandleFunc("/ready", s.readinessHandler)
+	// Health endpoints
+	r.Get("/health", s.healthHandler)
+	r.Get("/healthz", s.healthHandler) // Kubernetes-style alias
+	r.Get("/ready", s.readinessHandler)
 
 	// Prometheus metrics
 	// Expose metrics from custom registry (for test isolation)
@@ -374,9 +389,12 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	} else {
 		metricsHandler = promhttp.Handler() // Default registry
 	}
-	mux.Handle("/metrics", metricsHandler)
+	r.Handle("/metrics", metricsHandler)
 
-	return mux
+	// Note: Adapter routes will be registered dynamically when adapters are registered
+	// via RegisterAdapter(). Each adapter exposes its own route (e.g. /api/v1/signals/prometheus)
+
+	return r
 }
 
 // wrapWithMiddleware wraps the HTTP handler with middleware stack
@@ -385,18 +403,15 @@ func (s *Server) setupRoutes() *http.ServeMux {
 // TDD GREEN: Minimal middleware stack for request tracing
 //
 // Middleware Stack:
-// 1. Request ID Middleware: Adds request_id, source_ip, endpoint to logs
+// 1. Request ID: Now handled by chi middleware in setupRoutes()
 // 2. Performance Logging: Adds duration_ms to logs
 //
-// Future middleware can be added here (rate limiting, authentication, etc.)
+// Note: Chi router handles RequestID and RealIP middleware in setupRoutes()
+// This method only wraps with performance logging
 func (s *Server) wrapWithMiddleware(handler http.Handler) http.Handler {
-	// Wrap with performance logging middleware first (BR-109)
-	// This runs LAST (after request ID is set)
+	// Wrap with performance logging middleware (BR-109)
+	// Chi's RequestID middleware is already applied in setupRoutes()
 	handler = s.performanceLoggingMiddleware(handler)
-
-	// Wrap with request ID middleware (BR-109)
-	// This runs FIRST (sets request ID for all subsequent middleware/handlers)
-	handler = middleware.RequestIDMiddleware(s.logger)(handler)
 
 	return handler
 }
@@ -451,25 +466,24 @@ func (s *Server) Handler() http.Handler {
 	return s.httpServer.Handler
 }
 
-// RegisterAdapter registers a RoutableAdapter and its HTTP route
+// RegisterAdapter registers a RoutableAdapter using chi router
 //
 // This method:
 // 1. Validates adapter (checks for duplicate names/routes)
 // 2. Registers adapter in registry
 // 3. Creates HTTP handler that calls adapter.Parse()
-// 4. Configures HTTP route with full middleware stack
+// 4. Applies middleware and registers route with chi router
 //
-// Middleware stack (applied to all adapter routes):
-// - Rate limiting (per-IP, 100 req/min)
-// - Authentication (TokenReview bearer token validation)
-// - Request logging
-// - Metrics recording
+// Middleware applied:
+// - Content-Type validation (BR-042)
+// - Request ID (chi middleware - global)
+// - Real IP extraction (chi middleware - global)
 //
 // Example:
 //
 //	prometheusAdapter := adapters.NewPrometheusAdapter(logger)
 //	server.RegisterAdapter(prometheusAdapter)
-//	// Now /api/v1/signals/prometheus is active
+//	// Now POST /api/v1/signals/prometheus is active
 func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	// Register in registry
 	if err := s.adapterRegistry.Register(adapter); err != nil {
@@ -479,17 +493,14 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	// Create adapter HTTP handler
 	handler := s.createAdapterHandler(adapter)
 
-	// DD-GATEWAY-004: Middleware removed (network-level security)
-	// No rate limiting or authentication middleware
-	// Security now handled at network layer (Network Policies + TLS)
-
 	// BR-042: Apply Content-Type validation middleware
 	// Rejects non-JSON payloads early, before processing
 	wrappedHandler := middleware.ValidateContentType(handler)
 
-	// Register route with Content-Type validation
-	// BR-109: Use stored mux reference instead of casting httpServer.Handler
-	s.mux.Handle(adapter.GetRoute(), wrappedHandler)
+	// Register route using chi with full path
+	// Chi automatically enforces POST method (returns 405 for other methods)
+	// Note: chi.Router.Post() accepts http.HandlerFunc, so we use HandlerFunc wrapper
+	s.router.Post(adapter.GetRoute(), wrappedHandler.ServeHTTP)
 
 	s.logger.Info("Registered adapter route",
 		zap.String("adapter", adapter.Name()),
@@ -1276,10 +1287,34 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	windowDuration := s.stormAggregator.GetWindowDuration()
 	time.Sleep(windowDuration)
 
-	s.logger.Info("Storm aggregation window expired, creating aggregated CRD",
-		zap.String("windowID", windowID),
-		zap.String("alertName", firstSignal.AlertName),
-		zap.Duration("duration", windowDuration))
+	// Use singleflight to ensure only ONE goroutine creates the CRD for this windowID
+	// All other goroutines will wait and get the same result
+	// This is the idiomatic Go pattern for preventing duplicate work
+	_, err, _ := s.aggregationGroup.Do(windowID, func() (interface{}, error) {
+		s.logger.Info("Storm aggregation window expired, creating aggregated CRD",
+			zap.String("windowID", windowID),
+			zap.String("alertName", firstSignal.AlertName),
+			zap.Duration("duration", windowDuration))
+
+		return nil, s.doCreateAggregatedCRD(ctx, windowID, firstSignal, stormMetadata, windowDuration)
+	})
+
+	if err != nil {
+		s.logger.Error("Failed to create aggregated CRD via singleflight",
+			zap.String("windowID", windowID),
+			zap.Error(err))
+	}
+}
+
+// doCreateAggregatedCRD performs the actual CRD creation
+// Separated from createAggregatedCRDAfterWindow to work with singleflight pattern
+func (s *Server) doCreateAggregatedCRD(
+	ctx context.Context,
+	windowID string,
+	firstSignal *types.NormalizedSignal,
+	stormMetadata *processing.StormMetadata,
+	windowDuration time.Duration,
+) error {
 
 	// Retrieve all aggregated resources
 	resources, err := s.stormAggregator.GetAggregatedResources(ctx, windowID)
@@ -1287,7 +1322,7 @@ func (s *Server) createAggregatedCRDAfterWindow(
 		s.logger.Error("Failed to retrieve aggregated resources",
 			zap.String("windowID", windowID),
 			zap.Error(err))
-		return
+		return fmt.Errorf("failed to retrieve aggregated resources: %w", err)
 	}
 
 	// Retrieve signal metadata
@@ -1338,7 +1373,7 @@ func (s *Server) createAggregatedCRDAfterWindow(
 
 		// Record metric for failed aggregation
 		s.metricsInstance.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
-		return
+		return fmt.Errorf("failed to create aggregated CRD: %w", err)
 	}
 
 	// Store deduplication metadata in Redis for storm aggregation (BR-GATEWAY-016)
@@ -1393,6 +1428,8 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	if utilization, err := s.stormAggregator.GetNamespaceUtilization(ctx, aggregatedSignal.Namespace); err == nil {
 		s.metricsInstance.NamespaceBufferUtilization.WithLabelValues(aggregatedSignal.Namespace).Set(utilization)
 	}
+
+	return nil // Success
 }
 
 // TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication

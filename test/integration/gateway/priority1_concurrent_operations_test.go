@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -57,17 +56,18 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 	// Expected: 1-5 CRDs created (race window), >90 requests deduplicated
 	//
 	Describe("BR-003 & BR-013: Concurrent Deduplication Safety", func() {
-		It("should handle 100 concurrent requests with same fingerprint without race conditions", func() {
-			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// BUSINESS CONTEXT
-			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// Scenario: Production load - multiple Prometheus instances send same alert
-			// Challenge: 100 concurrent requests arrive simultaneously
-			// Expected: Deduplication prevents duplicate CRDs (data integrity)
-			// Why: Production systems must handle concurrent load safely
-			//      Duplicate CRDs waste AI analysis costs and confuse operators
+	It("should handle 20 concurrent requests with same fingerprint without race conditions", func() {
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// BUSINESS CONTEXT
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// Scenario: Multiple Prometheus instances send same alert concurrently
+		// Challenge: 20 concurrent requests arrive simultaneously (integration test)
+		// Expected: Deduplication prevents duplicate CRDs (data integrity)
+		// Why: Production systems must handle concurrent load safely
+		//      Duplicate CRDs waste AI analysis costs and confuse operators
+		// NOTE: For stress testing with 100+ requests, use test/load/gateway/
 
-			concurrentRequests := 100
+		concurrentRequests := 20
 			alertJSON := fmt.Sprintf(`{
 			"alerts": [{
 				"status": "firing",
@@ -93,8 +93,8 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 			// BUSINESS OUTCOME VALIDATION: Concurrent Load Handling
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-			// Send 100 concurrent requests
-			for i := 0; i < concurrentRequests; i++ {
+		// Send 20 concurrent requests (reasonable for integration test)
+		for i := 0; i < concurrentRequests; i++ {
 				wg.Add(1)
 				go func(requestNum int) {
 					defer wg.Done()
@@ -135,18 +135,20 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 			Expect(errorCount).To(BeZero(),
 				"Gateway MUST handle all concurrent requests without errors (BR-013)")
 
-			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// BUSINESS OUTCOME 2: Minimal CRD creation (data integrity)
-			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// Allow 1-5 CRDs due to race window (first few requests may arrive before dedup key set)
-			Expect(createdCount).To(BeNumerically("<=", 5),
-				"Gateway MUST create very few CRDs despite 100 requests (BR-003 data integrity)")
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// BUSINESS OUTCOME 2: Minimal CRD creation (data integrity)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// Allow 1-5 CRDs due to race window (first few requests may arrive before dedup key set)
+		Expect(createdCount).To(BeNumerically("<=", 5),
+			"Gateway MUST create very few CRDs despite %d concurrent requests (BR-003 data integrity)", concurrentRequests)
 
-			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// BUSINESS OUTCOME 3: High deduplication rate (operational efficiency)
-			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			Expect(deduplicatedCount).To(BeNumerically(">=", 90),
-				"Gateway MUST deduplicate most requests (BR-003 operational efficiency)")
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// BUSINESS OUTCOME 3: High deduplication rate (operational efficiency)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// With 20 concurrent requests, expect ≥90% deduplication (≥18 requests)
+		minDeduplicatedRequests := int(float64(concurrentRequests) * 0.9) // 90% of 20 = 18
+		Expect(deduplicatedCount).To(BeNumerically(">=", minDeduplicatedRequests),
+			"Gateway MUST deduplicate ≥90%% of requests (BR-003 operational efficiency)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME 4: All requests processed (no data loss)
@@ -294,19 +296,17 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 
 			concurrentRequests := 20
 
-			// Create test namespaces (REFACTORED: proper error handling)
-			for i := 0; i < concurrentRequests; i++ {
-				ns := &corev1.Namespace{}
-				ns.Name = fmt.Sprintf("test-ns-%d", i)
-				// Delete if exists (ignore "not found" errors)
-				err := testCtx.K8sClient.Client.Delete(testCtx.Ctx, ns)
-				if err != nil && !strings.Contains(err.Error(), "not found") {
-					Expect(err).ToNot(HaveOccurred(), "Failed to delete namespace before test")
-				}
-			}
-
-			// Wait for deletions to complete
-			time.Sleep(500 * time.Millisecond)
+			// CRITICAL FIX: Don't delete namespaces during parallel test execution
+			// Previous code (REMOVED):
+			// for i := 0; i < concurrentRequests; i++ {
+			//     ns := &corev1.Namespace{}
+			//     ns.Name = fmt.Sprintf("test-ns-%d", i)
+			//     err := testCtx.K8sClient.Client.Delete(testCtx.Ctx, ns)
+			//     if err != nil && !strings.Contains(err.Error(), "not found") {
+			//         Expect(err).ToNot(HaveOccurred(), "Failed to delete namespace before test")
+			//     }
+			// }
+			// time.Sleep(500 * time.Millisecond)
 
 			// Create fresh namespaces
 			for i := 0; i < concurrentRequests; i++ {
@@ -395,16 +395,17 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 			// ✅ Namespace isolation maintained (multi-tenancy)
 			// ✅ Kubernetes API handles concurrent writes safely
 
-			// Cleanup test namespaces (REFACTORED: proper error handling)
-			for i := 0; i < concurrentRequests; i++ {
-				ns := &corev1.Namespace{}
-				ns.Name = fmt.Sprintf("test-ns-%d", i)
-				err := testCtx.K8sClient.Client.Delete(testCtx.Ctx, ns)
-				// Ignore "not found" errors during cleanup
-				if err != nil && !strings.Contains(err.Error(), "not found") {
-					GinkgoWriter.Printf("Warning: Failed to cleanup namespace test-ns-%d: %v\n", i, err)
-				}
-			}
+			// CRITICAL FIX: Don't delete namespaces during parallel test execution
+			// Let Kind cluster deletion handle cleanup at the end of the test suite
+			// Previous code (REMOVED):
+			// for i := 0; i < concurrentRequests; i++ {
+			//     ns := &corev1.Namespace{}
+			//     ns.Name = fmt.Sprintf("test-ns-%d", i)
+			//     err := testCtx.K8sClient.Client.Delete(testCtx.Ctx, ns)
+			//     if err != nil && !strings.Contains(err.Error(), "not found") {
+			//         GinkgoWriter.Printf("Warning: Failed to cleanup namespace test-ns-%d: %v\n", i, err)
+			//     }
+			// }
 		})
 	})
 })

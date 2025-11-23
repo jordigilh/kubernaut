@@ -79,10 +79,13 @@ var _ = Describe("Redis Connection Debug", func() {
 		Expect(redisClient.Client).ToNot(BeNil())
 
 		// Get Redis client options to verify DB number
+		// Each parallel process uses a different DB: DB 2 + processID
+		processID := GinkgoParallelProcess()
+		expectedDB := 2 + processID
 		opts := redisClient.Client.Options()
-		Expect(opts.DB).To(Equal(2), "Redis should be using DB 2 for tests")
+		Expect(opts.DB).To(Equal(expectedDB), fmt.Sprintf("Redis should be using DB %d for process %d", expectedDB, processID))
 
-		GinkgoWriter.Printf("✅ Redis DB number confirmed: %d\n", opts.DB)
+		GinkgoWriter.Printf("✅ Redis DB number confirmed: %d (process %d)\n", opts.DB, processID)
 	})
 
 	It("should verify Redis address", func() {
@@ -91,7 +94,8 @@ var _ = Describe("Redis Connection Debug", func() {
 
 		// Get Redis client options to verify address
 		opts := redisClient.Client.Options()
-		Expect(opts.Addr).To(Equal("localhost:6379"), "Redis should be at localhost:6379")
+		expectedAddr := fmt.Sprintf("localhost:%d", suiteRedisPort)
+		Expect(opts.Addr).To(Equal(expectedAddr), fmt.Sprintf("Redis should be at %s", expectedAddr))
 
 		GinkgoWriter.Printf("✅ Redis address confirmed: %s\n", opts.Addr)
 	})

@@ -24,14 +24,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/jordigilh/kubernaut/pkg/gateway/config"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -51,8 +48,15 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 		logger = zap.NewNop() // No-op logger for tests (no output)
 		ctx = context.Background()
 
-		// Create fake K8s client for unit testing
-		fakeClient := NewFakeControllerRuntimeClient()
+		// Create fake K8s client per ADR-004: Fake Kubernetes Client for Unit Testing
+		// Uses controller-runtime fake client for compile-time safety and maintained interface
+		scheme := runtime.NewScheme()
+		_ = remediationv1alpha1.AddToScheme(scheme)
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
 		fakeK8sClient = k8s.NewClient(fakeClient)
 		retryConfig := config.DefaultRetrySettings()
 		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, nil, "default", &retryConfig)
@@ -440,62 +444,3 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 		})
 	})
 })
-
-// FakeControllerRuntimeClient for unit testing (no real Kubernetes API calls)
-type FakeControllerRuntimeClient struct {
-	createdCRDs []*remediationv1alpha1.RemediationRequest
-}
-
-func NewFakeControllerRuntimeClient() *FakeControllerRuntimeClient {
-	return &FakeControllerRuntimeClient{
-		createdCRDs: make([]*remediationv1alpha1.RemediationRequest, 0),
-	}
-}
-
-// Implement controller-runtime client.Client interface (minimal subset)
-func (f *FakeControllerRuntimeClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	if rr, ok := obj.(*remediationv1alpha1.RemediationRequest); ok {
-		f.createdCRDs = append(f.createdCRDs, rr)
-	}
-	return nil
-}
-
-// Stubs for other client.Client methods (not used in unit tests)
-func (f *FakeControllerRuntimeClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) DeleteAllOf(ctx context.Context, obj client.Object, opts ...client.DeleteAllOfOption) error {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) Status() client.SubResourceWriter {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) SubResource(subResource string) client.SubResourceClient {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) Scheme() *runtime.Scheme {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) RESTMapper() meta.RESTMapper {
-	return nil
-}
-func (f *FakeControllerRuntimeClient) GroupVersionKindFor(obj runtime.Object) (schema.GroupVersionKind, error) {
-	return schema.GroupVersionKind{}, nil
-}
-func (f *FakeControllerRuntimeClient) IsObjectNamespaced(obj runtime.Object) (bool, error) {
-	return false, nil
-}
-
-// No wrapper needed - k8s.NewClient() directly accepts controller-runtime client
