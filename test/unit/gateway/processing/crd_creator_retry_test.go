@@ -19,7 +19,7 @@ package processing
 import (
 	"context"
 	"errors"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,10 +27,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -40,139 +41,28 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
-// mockK8sClient is a mock implementation that satisfies the controller-runtime client.Client interface
-// for testing retry logic
-type mockK8sClient struct {
-	createFunc    func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error
-	callCount     int
-	callCountLock sync.Mutex
-}
-
-func newMockK8sClient() *mockK8sClient {
-	return &mockK8sClient{}
-}
-
-// Create implements the controller-runtime client.Client interface
-func (m *mockK8sClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	m.callCountLock.Lock()
-	m.callCount++
-	m.callCountLock.Unlock()
-
-	if m.createFunc != nil {
-		if rr, ok := obj.(*remediationv1alpha1.RemediationRequest); ok {
-			return m.createFunc(ctx, rr)
-		}
-	}
-	return nil
-}
-
-// Stub implementations for other controller-runtime client.Client methods
-func (m *mockK8sClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
-	return nil
-}
-
-func (m *mockK8sClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
-	return nil
-}
-
-func (m *mockK8sClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-	return nil
-}
-
-func (m *mockK8sClient) DeleteAllOf(ctx context.Context, obj client.Object, opts ...client.DeleteAllOfOption) error {
-	return nil
-}
-
-func (m *mockK8sClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	return nil
-}
-
-func (m *mockK8sClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	return nil
-}
-
-func (m *mockK8sClient) Status() client.SubResourceWriter {
-	return &mockSubResourceWriter{}
-}
-
-func (m *mockK8sClient) Scheme() *runtime.Scheme {
-	return runtime.NewScheme()
-}
-
-func (m *mockK8sClient) RESTMapper() meta.RESTMapper {
-	return nil
-}
-
-func (m *mockK8sClient) SubResource(subResource string) client.SubResourceClient {
-	return &mockSubResourceClient{}
-}
-
-func (m *mockK8sClient) GroupVersionKindFor(obj runtime.Object) (schema.GroupVersionKind, error) {
-	return schema.GroupVersionKind{}, nil
-}
-
-func (m *mockK8sClient) IsObjectNamespaced(obj runtime.Object) (bool, error) {
-	return true, nil
-}
-
-// mockSubResourceWriter implements client.SubResourceWriter
-type mockSubResourceWriter struct{}
-
-func (m *mockSubResourceWriter) Create(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
-	return nil
-}
-
-func (m *mockSubResourceWriter) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-	return nil
-}
-
-func (m *mockSubResourceWriter) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
-	return nil
-}
-
-// mockSubResourceClient implements client.SubResourceClient
-type mockSubResourceClient struct{}
-
-func (m *mockSubResourceClient) Get(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceGetOption) error {
-	return nil
-}
-
-func (m *mockSubResourceClient) Create(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
-	return nil
-}
-
-func (m *mockSubResourceClient) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-	return nil
-}
-
-func (m *mockSubResourceClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
-	return nil
-}
-
-func (m *mockK8sClient) GetCallCount() int {
-	m.callCountLock.Lock()
-	defer m.callCountLock.Unlock()
-	return m.callCount
-}
-
-func (m *mockK8sClient) ResetCallCount() {
-	m.callCountLock.Lock()
-	defer m.callCountLock.Unlock()
-	m.callCount = 0
-}
-
-// Test suite is defined in suite_test.go
+// ADR-004: Fake Kubernetes Client for Unit Testing
+// This test file uses controller-runtime's fake client with interceptors for error simulation.
+// See: docs/architecture/decisions/ADR-004-fake-kubernetes-client.md
+//
+// Benefits:
+// - Maintained by controller-runtime (no breakage on interface updates like Apply())
+// - Compile-time type safety
+// - Real K8s semantics with in-memory storage
+// - Error simulation via interceptor.Funcs
 
 var _ = Describe("CRDCreator Retry Logic", func() {
 	var (
 		creator     *processing.CRDCreator
-		mockClient  *mockK8sClient
+		fakeClient  client.Client
+		scheme      *runtime.Scheme
 		metricsReg  *prometheus.Registry
 		metricsInst *metrics.Metrics
 		logger      *zap.Logger
 		retryConfig *config.RetrySettings
 		ctx         context.Context
 		cancel      context.CancelFunc
+		callCount   *atomic.Int32 // Thread-safe call counter for interceptors
 	)
 
 	// GAP 5: Test cleanup pattern
@@ -187,8 +77,12 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 		// Create logger
 		logger = zap.NewNop()
 
-		// Create mock K8s client
-		mockClient = newMockK8sClient()
+		// Setup scheme for fake client (ADR-004)
+		scheme = runtime.NewScheme()
+		_ = remediationv1alpha1.AddToScheme(scheme)
+
+		// Initialize call counter
+		callCount = &atomic.Int32{}
 
 		// Configure retry settings (fast for tests)
 		retryConfig = &config.RetrySettings{
@@ -197,14 +91,14 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			MaxBackoff:     50 * time.Millisecond,
 		}
 
-		// Note: We'll need to create a wrapper to inject the mock client
+		// Note: Fake client will be created per-test with specific interceptors
 		// For now, this will fail compilation - we need to implement retry logic first
 	})
 
 	// GAP 5: Resource cleanup
 	AfterEach(func() {
 		cancel() // Prevent context leaks
-		mockClient.ResetCallCount()
+		// Note: Fake client is recreated per-test, no cleanup needed (ADR-004)
 	})
 
 	// ========================================
@@ -216,20 +110,25 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-113: Exponential Backoff
 			// BR-GATEWAY-114: Retry Metrics
 
-			// Setup: First attempt fails with 429, second succeeds
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount == 1 {
-					// First attempt: rate limited
-					return apierrors.NewTooManyRequests("rate limited", 1)
-				}
-				// Second attempt: success
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count == 1 {
+							// First attempt: rate limited
+							return apierrors.NewTooManyRequests("rate limited", 1)
+						}
+						// Second attempt: success - let fake client handle it
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -252,8 +151,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
 			Expect(rr.Name).To(ContainSubstring("rr-"))
-			Expect(attemptCount).To(Equal(2), "Should have made exactly 2 attempts")
-			Expect(mockClient.GetCallCount()).To(Equal(2), "Mock client should have been called twice")
+			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 
 			// Verify: Metrics incremented
 			// Note: Metrics verification will be implemented after metrics are added
@@ -263,20 +161,25 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-112: Error Classification (503 is retryable)
 			// BR-GATEWAY-113: Exponential Backoff (100ms → 200ms → success)
 
-			// Setup: First two attempts fail with 503, third succeeds
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount <= 2 {
-					// First and second attempts: service unavailable
-					return apierrors.NewServiceUnavailable("API server overloaded")
-				}
-				// Third attempt: success
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count <= 2 {
+							// First and second attempts: service unavailable
+							return apierrors.NewServiceUnavailable("API server overloaded")
+						}
+						// Third attempt: success - let fake client handle it
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -298,7 +201,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
-			Expect(attemptCount).To(Equal(3), "Should have made exactly 3 attempts")
+			Expect(callCount.Load()).To(Equal(int32(3)), "Should have made exactly 3 attempts")
 
 			// Note: Timing verification removed - backoff logic is tested in integration tests
 		})
@@ -307,15 +210,20 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-112: Error Classification (503 is retryable but exhausted)
 			// BR-GATEWAY-113: Max Attempts (3 attempts configured)
 
-			// Setup: All attempts fail with 503
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				return apierrors.NewServiceUnavailable("API server overloaded")
-			}
+			// Setup: Fake client with interceptor that always fails (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						callCount.Add(1)
+						return apierrors.NewServiceUnavailable("API server overloaded")
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -337,7 +245,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Failure after max retries
 			Expect(err).To(HaveOccurred())
 			Expect(rr).To(BeNil())
-			Expect(attemptCount).To(Equal(3), "Should have made exactly 3 attempts (max)")
+			Expect(callCount.Load()).To(Equal(int32(3)), "Should have made exactly 3 attempts (max)")
 
 			// Verify: Error is wrapped with retry context (GAP 10)
 			var retryErr *processing.RetryError
@@ -353,20 +261,25 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-112: Error Classification (504 is retryable)
 			// BR-GATEWAY-113: Exponential Backoff
 
-			// Setup: First attempt fails with 504, second succeeds
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount == 1 {
-					// First attempt: gateway timeout
-					return apierrors.NewTimeoutError("gateway timeout", 10)
-				}
-				// Second attempt: success
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count == 1 {
+							// First attempt: gateway timeout
+							return apierrors.NewTimeoutError("gateway timeout", 10)
+						}
+						// Second attempt: success
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -388,27 +301,32 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
-			Expect(attemptCount).To(Equal(2), "Should have made exactly 2 attempts")
+			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 
 		It("should retry on context deadline exceeded", func() {
 			// BR-GATEWAY-112: Error Classification (timeout errors are retryable)
 			// BR-GATEWAY-113: Exponential Backoff
 
-			// Setup: First attempt fails with context deadline, second succeeds
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount == 1 {
-					// First attempt: context deadline exceeded (simulated as timeout error)
-					return apierrors.NewTimeoutError("context deadline exceeded", 5)
-				}
-				// Second attempt: success
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count == 1 {
+							// First attempt: context deadline exceeded (simulated as timeout error)
+							return apierrors.NewTimeoutError("context deadline exceeded", 5)
+						}
+						// Second attempt: success
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -430,7 +348,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
-			Expect(attemptCount).To(Equal(2), "Should have made exactly 2 attempts")
+			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 	})
 
@@ -439,15 +357,20 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-112: Error Classification (400 is non-retryable)
 			// Validation errors should fail fast
 
-			// Setup: All attempts fail with 400 (but should only try once)
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				return apierrors.NewBadRequest("invalid CRD spec")
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						callCount.Add(1)
+						return apierrors.NewBadRequest("invalid CRD spec")
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -469,7 +392,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
 			Expect(rr).To(BeNil())
-			Expect(attemptCount).To(Equal(1), "Should have made exactly 1 attempt (no retry)")
+			Expect(callCount.Load()).To(Equal(int32(1)), "Should have made exactly 1 attempt (no retry)")
 			Expect(err.Error()).To(ContainSubstring("invalid CRD spec"))
 		})
 
@@ -477,19 +400,24 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-112: Error Classification (403 is non-retryable)
 			// RBAC errors should fail fast
 
-			// Setup: All attempts fail with 403 (but should only try once)
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				return apierrors.NewForbidden(
-					schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
-					"test-rr",
-					errors.New("insufficient permissions"),
-				)
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						callCount.Add(1)
+						return apierrors.NewForbidden(
+							schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+							"test-rr",
+							errors.New("insufficient permissions"),
+						)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -511,7 +439,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
 			Expect(rr).To(BeNil())
-			Expect(attemptCount).To(Equal(1), "Should have made exactly 1 attempt (no retry)")
+			Expect(callCount.Load()).To(Equal(int32(1)), "Should have made exactly 1 attempt (no retry)")
 			Expect(err.Error()).To(ContainSubstring("forbidden"))
 		})
 
@@ -519,19 +447,24 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-112: Error Classification (422 is non-retryable)
 			// Schema validation errors should fail fast
 
-			// Setup: All attempts fail with 422 (but should only try once)
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				return apierrors.NewInvalid(
-					remediationv1alpha1.GroupVersion.WithKind("RemediationRequest").GroupKind(),
-					"test-rr",
-					nil,
-				)
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						callCount.Add(1)
+						return apierrors.NewInvalid(
+							remediationv1alpha1.GroupVersion.WithKind("RemediationRequest").GroupKind(),
+							"test-rr",
+							nil,
+						)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -553,7 +486,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
 			Expect(rr).To(BeNil())
-			Expect(attemptCount).To(Equal(1), "Should have made exactly 1 attempt (no retry)")
+			Expect(callCount.Load()).To(Equal(int32(1)), "Should have made exactly 1 attempt (no retry)")
 			Expect(err.Error()).To(ContainSubstring("invalid"))
 		})
 	})
@@ -563,18 +496,23 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-112: Error Classification (409 is non-retryable, idempotent)
 			// Already exists is not an error condition
 
-			// Setup: All attempts fail with 409 (but should only try once)
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				return apierrors.NewAlreadyExists(
-					schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
-					"test-rr",
-				)
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						callCount.Add(1)
+						return apierrors.NewAlreadyExists(
+							schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+							"test-rr",
+						)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -596,7 +534,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Immediate failure (no retry), but CRD is fetched
 			// Note: The actual implementation fetches the existing CRD, so this test
 			// verifies the retry logic doesn't kick in for 409
-			Expect(attemptCount).To(Equal(1), "Should have made exactly 1 attempt (no retry)")
+			Expect(callCount.Load()).To(Equal(int32(1)), "Should have made exactly 1 attempt (no retry)")
 		})
 	})
 
@@ -605,20 +543,25 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-112: Error Classification (network errors are retryable)
 			// Connection refused is a transient network error
 
-			// Setup: First attempt fails with connection refused, second succeeds
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount == 1 {
-					// First attempt: connection refused
-					return errors.New("connection refused")
-				}
-				// Second attempt: success
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count == 1 {
+							// First attempt: connection refused
+							return errors.New("connection refused")
+						}
+						// Second attempt: success
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -640,27 +583,32 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
-			Expect(attemptCount).To(Equal(2), "Should have made exactly 2 attempts")
+			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 
 		It("should retry on connection reset", func() {
 			// BR-GATEWAY-112: Error Classification (network errors are retryable)
 			// Connection reset is a transient network error
 
-			// Setup: First attempt fails with connection reset, second succeeds
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount == 1 {
-					// First attempt: connection reset
-					return errors.New("connection reset by peer")
-				}
-				// Second attempt: success
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count == 1 {
+							// First attempt: connection reset
+							return errors.New("connection reset by peer")
+						}
+						// Second attempt: success
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -682,7 +630,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
-			Expect(attemptCount).To(Equal(2), "Should have made exactly 2 attempts")
+			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 	})
 
@@ -698,18 +646,23 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 				MaxBackoff:     100 * time.Millisecond, // Cap at 100ms
 			}
 
-			// Setup: First 3 attempts fail, 4th succeeds
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount <= 3 {
-					return apierrors.NewTooManyRequests("rate limited", 1)
-				}
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count <= 3 {
+							return apierrors.NewTooManyRequests("rate limited", 1)
+						}
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with custom retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", customRetryConfig)
@@ -731,7 +684,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
-			Expect(attemptCount).To(Equal(4), "Should have made exactly 4 attempts")
+			Expect(callCount.Load()).To(Equal(int32(4)), "Should have made exactly 4 attempts")
 			// Note: Backoff timing verification is in integration tests
 		})
 
@@ -746,18 +699,23 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 				MaxBackoff:     1 * time.Second,
 			}
 
-			// Setup: First attempt fails, second succeeds
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount == 1 {
-					return apierrors.NewTooManyRequests("rate limited", 1)
-				}
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count == 1 {
+							return apierrors.NewTooManyRequests("rate limited", 1)
+						}
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with custom retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", customRetryConfig)
@@ -779,7 +737,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
-			Expect(attemptCount).To(Equal(2), "Should have made exactly 2 attempts")
+			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 	})
 
@@ -791,21 +749,26 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Setup: Create cancellable context
 			cancelCtx, cancel := context.WithCancel(context.Background())
 
-			// Setup: First attempt fails, cancel context before retry
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount == 1 {
-					// Cancel context after first attempt
-					cancel()
-					return apierrors.NewTooManyRequests("rate limited", 1)
-				}
-				// Should never reach here
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count == 1 {
+							// Cancel context after first attempt
+							cancel()
+							return apierrors.NewTooManyRequests("rate limited", 1)
+						}
+						// Should never reach here
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -827,7 +790,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Failure due to context cancellation (no retry)
 			Expect(err).To(HaveOccurred())
 			Expect(rr).To(BeNil())
-			Expect(attemptCount).To(Equal(1), "Should have made exactly 1 attempt before context cancellation")
+			Expect(callCount.Load()).To(Equal(int32(1)), "Should have made exactly 1 attempt before context cancellation")
 			Expect(err.Error()).To(ContainSubstring("context canceled"))
 		})
 
@@ -839,15 +802,20 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			deadlineCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 			defer cancel()
 
-			// Setup: All attempts fail with retryable error
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				return apierrors.NewTooManyRequests("rate limited", 1)
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						callCount.Add(1)
+						return apierrors.NewTooManyRequests("rate limited", 1)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
@@ -870,7 +838,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(rr).To(BeNil())
 			// Should have made 1-2 attempts before context deadline
-			Expect(attemptCount).To(BeNumerically("<=", 2), "Should stop retrying after context deadline")
+			Expect(callCount.Load()).To(BeNumerically("<=", int32(2)), "Should stop retrying after context deadline")
 			Expect(err.Error()).To(ContainSubstring("context deadline exceeded"))
 		})
 	})
@@ -880,18 +848,23 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// BR-GATEWAY-111: Default retry configuration (GAP 7: Config Validation)
 			// Nil config should use sensible defaults
 
-			// Setup: Pass nil retry config
-			attemptCount := 0
-			mockClient.createFunc = func(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-				attemptCount++
-				if attemptCount == 1 {
-					return apierrors.NewTooManyRequests("rate limited", 1)
-				}
-				return nil
-			}
+			// Setup: Fake client with interceptor (ADR-004)
+			callCount.Store(0)
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						count := callCount.Add(1)
+						if count == 1 {
+							return apierrors.NewTooManyRequests("rate limited", 1)
+						}
+						return c.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
 
-			// Wrap mock client in k8s.Client
-			k8sClient := k8s.NewClient(mockClient)
+			// Wrap fake client in k8s.Client
+			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with nil retry config (should use defaults)
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", nil)
@@ -913,7 +886,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Verify: Success after retry (default config allows retries)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr).ToNot(BeNil())
-			Expect(attemptCount).To(Equal(2), "Should have made 2 attempts with default config")
+			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made 2 attempts with default config")
 		})
 
 		It("should validate MaxAttempts >= 1", func() {

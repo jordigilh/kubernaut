@@ -18,8 +18,10 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -28,21 +30,27 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-// Suite-level resources for cleanup
+// Suite-level resources (envtest migration)
 var (
-	suiteK8sClient *K8sTestClient  // Shared K8s client for cleanup
-	suiteCtx       context.Context // Suite context
-	suiteLogger    *zap.Logger     // Suite logger
-	clusterName    string          // Cluster name
-	kubeconfigPath string          // Kubeconfig path
+	suiteK8sClient   *K8sTestClient         // Shared K8s client for cleanup
+	suiteCtx         context.Context        // Suite context
+	suiteLogger      *zap.Logger            // Suite logger
+	testEnv          *envtest.Environment   // envtest environment (in-memory K8s)
+	suitePgClient    *PostgresTestClient    // PostgreSQL container
+	suiteDataStorage *DataStorageTestServer // Data Storage service
+	// suiteRedisPort and k8sConfig are declared in helpers.go to be accessible by both test and non-test files
 )
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
-// This ensures Kind cluster and Redis are created only once, not by each parallel process
+// envtest Migration: Replaces Kind cluster with in-memory K8s API server
 var _ = SynchronizedBeforeSuite(func() []byte {
 	// This runs ONCE on process 1 only - creates shared infrastructure
 	var err error
@@ -50,41 +58,117 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred())
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Setup (Parallel)")
+	suiteLogger.Info("Gateway Integration Test Suite - envtest Setup (Parallel)")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	suiteLogger.Info("Creating Kind cluster + Redis for integration tests...")
-	suiteLogger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
+	suiteLogger.Info("Creating test infrastructure...")
+	suiteLogger.Info("  • envtest (in-memory K8s API server)")
 	suiteLogger.Info("  • RemediationRequest CRD (cluster-wide)")
-	suiteLogger.Info("  • Redis container (localhost:6379)")
-	suiteLogger.Info("  • Kubeconfig: ~/.kube/gateway-kubeconfig")
+	suiteLogger.Info("  • Redis container (Podman)")
+	suiteLogger.Info("  • PostgreSQL container (Podman)")
+	suiteLogger.Info("  • Data Storage service (httptest.Server)")
 	suiteLogger.Info("  • Parallel Execution: 4 concurrent processors")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Set cluster configuration
-	clusterName = "gateway-integration"
-	homeDir, err := os.UserHomeDir()
-	Expect(err).ToNot(HaveOccurred())
-	kubeconfigPath = fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+	ctx := context.Background()
 
-	// Create Kind cluster (same as E2E tests)
-	err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred())
+	// 1. Start envtest (in-memory K8s API server)
+	suiteLogger.Info("📦 Starting envtest (in-memory K8s API)...")
 
-	// Start Redis container for integration tests (with cleanup first)
-	suiteLogger.Info("Cleaning up existing Redis container...")
+	// Set KUBEBUILDER_ASSETS if not already set
+	// This tells envtest where to find the K8s binaries (etcd, kube-apiserver)
+	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
+		// Use setup-envtest to get the path
+		cmd := exec.Command("go", "run", "sigs.k8s.io/controller-runtime/tools/setup-envtest@latest", "use", "-p", "path")
+		output, err := cmd.Output()
+		if err != nil {
+			suiteLogger.Error("Failed to get KUBEBUILDER_ASSETS path", zap.Error(err))
+			Expect(err).ToNot(HaveOccurred(), "Should get KUBEBUILDER_ASSETS path from setup-envtest")
+		}
+		assetsPath := strings.TrimSpace(string(output))
+		os.Setenv("KUBEBUILDER_ASSETS", assetsPath)
+		suiteLogger.Info(fmt.Sprintf("   📍 Set KUBEBUILDER_ASSETS: %s", assetsPath))
+	}
+
+	testEnv = &envtest.Environment{
+		CRDDirectoryPaths: []string{
+			"../../../config/crd/bases", // Relative path from test/integration/gateway/
+		},
+		ErrorIfCRDPathMissing: true,
+	}
+
+	k8sConfig, err = testEnv.Start()
+	Expect(err).ToNot(HaveOccurred(), "envtest should start successfully")
+	Expect(k8sConfig).ToNot(BeNil(), "K8s config should not be nil")
+
+	// envtest uses self-signed certificates, so we need to skip TLS verification
+	k8sConfig.TLSClientConfig.Insecure = true
+	k8sConfig.TLSClientConfig.CAData = nil
+	k8sConfig.TLSClientConfig.CAFile = ""
+
+	// Disable client-side rate limiting for integration tests
+	// envtest is an in-memory K8s API server - no reason to throttle
+	// Per client-go source: setting RateLimiter to nil disables rate limiting entirely
+	k8sConfig.RateLimiter = nil // Disable rate limiter completely
+	k8sConfig.QPS = 1000        // High QPS (used if RateLimiter is not nil)
+	k8sConfig.Burst = 2000      // High burst (used if RateLimiter is not nil)
+
+	// Wait for API server to be fully ready by testing connectivity
+	// envtest starts the API server asynchronously, so we need to wait for it to be responsive
+	suiteLogger.Info("   ⏳ Waiting for API server to be ready...")
+
+	// Create a temporary client to test API server readiness
+	scheme := k8sruntime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	testClient, err := client.New(k8sConfig, client.Options{Scheme: scheme})
+	Expect(err).ToNot(HaveOccurred(), "Should create test client")
+
+	// Wait for API server to respond
+	Eventually(func() error {
+		nsList := &corev1.NamespaceList{}
+		return testClient.List(ctx, nsList)
+	}, 10*time.Second, 500*time.Millisecond).Should(Succeed(), "API server should be ready")
+
+	suiteLogger.Info(fmt.Sprintf("   ✅ envtest started (K8s API: %s)", k8sConfig.Host))
+
+	// 2. Start Redis container
+	suiteLogger.Info("📦 Starting Redis container...")
 	_ = infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
+	time.Sleep(2 * time.Second) // Wait for port to be released
 
-	suiteLogger.Info("Starting Redis container...")
-	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 6379, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests (port 6379 must be available)")
-	suiteLogger.Info(fmt.Sprintf("✅ Redis running on port: %d", redisPort))
+	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 0, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests")
+	suiteRedisPort = redisPort
+	suiteLogger.Info(fmt.Sprintf("   ✅ Redis started (port: %d)", redisPort))
+
+	// 3. Start PostgreSQL container
+	suiteLogger.Info("📦 Starting PostgreSQL container...")
+	suitePgClient = SetupPostgresTestClient(ctx)
+	Expect(suitePgClient).ToNot(BeNil(), "PostgreSQL container must start")
+	suiteLogger.Info(fmt.Sprintf("   ✅ PostgreSQL started (port: %d)", suitePgClient.Port))
+
+	// 4. Start Data Storage service
+	suiteLogger.Info("📦 Starting Data Storage service...")
+	suiteDataStorage = SetupDataStorageTestServer(ctx, suitePgClient)
+	Expect(suiteDataStorage).ToNot(BeNil(), "Data Storage service must start")
+	suiteLogger.Info(fmt.Sprintf("   ✅ Data Storage started (URL: %s)", suiteDataStorage.Server.URL))
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Infrastructure Setup Complete - Ready for Parallel Tests")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Return kubeconfig path to all parallel processes
-	return []byte(kubeconfigPath)
+	// Return both kubeconfig and Redis port for other processes
+	// Format: kubeconfig_length(4 bytes) + kubeconfig + redis_port(string)
+	type SharedConfig struct {
+		KubeConfig []byte
+		RedisPort  int
+	}
+	configData, err := json.Marshal(SharedConfig{
+		KubeConfig: testEnv.KubeConfig,
+		RedisPort:  redisPort,
+	})
+	Expect(err).ToNot(HaveOccurred(), "Should serialize shared config")
+	return configData
+
 }, func(data []byte) {
 	// This runs on ALL processes (including process 1) - initializes per-process state
 	suiteCtx = context.Background()
@@ -94,15 +178,27 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	suiteLogger, err = zap.NewDevelopment()
 	Expect(err).ToNot(HaveOccurred())
 
-	// Get kubeconfig path from process 1
-	kubeconfigPath = string(data)
-	clusterName = "gateway-integration"
+	// Deserialize shared config (kubeconfig + Redis port)
+	type SharedConfig struct {
+		KubeConfig []byte
+		RedisPort  int
+	}
+	var sharedConfig SharedConfig
+	err = json.Unmarshal(data, &sharedConfig)
+	Expect(err).ToNot(HaveOccurred(), "Should deserialize shared config")
 
-	// Set KUBECONFIG environment variable for this process
-	err = os.Setenv("KUBECONFIG", kubeconfigPath)
-	Expect(err).ToNot(HaveOccurred())
+	// Create rest.Config from kubeconfig bytes
+	k8sConfig, err = clientcmd.RESTConfigFromKubeConfig(sharedConfig.KubeConfig)
+	Expect(err).ToNot(HaveOccurred(), "Should create rest.Config from kubeconfig")
 
-	// Initialize K8s client for this process
+	// Set Redis port for this process
+	suiteRedisPort = sharedConfig.RedisPort
+
+	suiteLogger.Info(fmt.Sprintf("Process %d initialized with K8s API: %s, Redis port: %d",
+		GinkgoParallelProcess(), k8sConfig.Host, suiteRedisPort))
+
+	// Initialize K8s client for this process (uses reconstructed k8sConfig)
+	// Each process creates its own client.Client - clients are thread-safe and stateless
 	suiteK8sClient = SetupK8sTestClient(suiteCtx)
 	Expect(suiteK8sClient).ToNot(BeNil(), "Failed to setup K8s client for suite")
 
@@ -112,57 +208,43 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 // SynchronizedAfterSuite runs cleanup in two phases for parallel execution
 var _ = SynchronizedAfterSuite(func() {
-	// This runs on ALL processes - ONLY cleanup per-process K8s client
-	// DO NOT delete namespaces here - causes race condition with other processes
+	// This runs on ALL processes - cleanup per-process K8s client
 	if suiteK8sClient != nil {
 		suiteK8sClient.Cleanup(suiteCtx)
 	}
 }, func() {
-	// This runs ONCE on process 1 only - cleanup ALL resources AFTER all processes finish
+	// This runs ONCE on process 1 only - tears down shared infrastructure
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Teardown")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Wait for all processes to finish their cleanup
+	// Wait for all parallel processes to finish
 	suiteLogger.Info("Waiting for all parallel processes to finish cleanup...")
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
-	// Collect ALL test namespaces from ALL processes
+	// Collect namespace statistics
 	testNamespacesMutex.Lock()
 	namespaceCount := len(testNamespaces)
-	namespaceList := make([]string, 0, namespaceCount)
-	for ns := range testNamespaces {
-		namespaceList = append(namespaceList, ns)
-	}
 	testNamespacesMutex.Unlock()
 
 	if namespaceCount > 0 {
-		fmt.Printf("\n🧹 Cleaning up %d test namespaces from ALL processes...\n", namespaceCount)
-
-		// Wait for storm aggregation windows to complete
-		testAggregationWindow := 1 * time.Second
-		bufferTime := 3 * time.Second
-		totalWait := testAggregationWindow + bufferTime
-
-		fmt.Printf("⏳ Waiting %v for storm aggregation windows to complete...\n", totalWait)
-		time.Sleep(totalWait)
-
-		// Delete all namespaces from ALL processes
-		deletedCount := 0
-		for _, nsName := range namespaceList {
-			ns := &corev1.Namespace{}
-			ns.Name = nsName
-			err := suiteK8sClient.Client.Delete(suiteCtx, ns)
-			if err != nil && !strings.Contains(err.Error(), "not found") {
-				fmt.Printf("⚠️  Warning: Failed to delete namespace %s: %v\n", nsName, err)
-			} else {
-				deletedCount++
-			}
-		}
-
-		fmt.Printf("✅ Deleted %d/%d test namespaces\n", deletedCount, len(namespaceList))
+		fmt.Printf("\n📝 %d test namespaces created (will be cleaned up with envtest)\n", namespaceCount)
 	} else {
-		fmt.Println("\n✅ No test namespaces to clean up")
+		fmt.Println("\n✅ No test namespaces created")
+	}
+
+	ctx := context.Background()
+
+	// Stop Data Storage service
+	if suiteDataStorage != nil {
+		suiteLogger.Info("Stopping Data Storage service...")
+		suiteDataStorage.Cleanup()
+	}
+
+	// Stop PostgreSQL container
+	if suitePgClient != nil {
+		suiteLogger.Info("Stopping PostgreSQL container...")
+		suitePgClient.Cleanup(ctx)
 	}
 
 	// Stop Redis container
@@ -172,11 +254,13 @@ var _ = SynchronizedAfterSuite(func() {
 		suiteLogger.Warn("Failed to stop Redis container", zap.Error(err))
 	}
 
-	// Delete Kind cluster
-	suiteLogger.Info("Deleting Kind cluster...")
-	err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
-	if err != nil {
-		suiteLogger.Warn("Failed to delete cluster", zap.Error(err))
+	// Stop envtest
+	if testEnv != nil {
+		suiteLogger.Info("Stopping envtest...")
+		err := testEnv.Stop()
+		if err != nil {
+			suiteLogger.Warn("Failed to stop envtest", zap.Error(err))
+		}
 	}
 
 	// Sync logger
@@ -184,6 +268,7 @@ var _ = SynchronizedAfterSuite(func() {
 		_ = suiteLogger.Sync()
 	}
 
+	suiteLogger.Info("   ✅ All services stopped")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Infrastructure Teardown Complete")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -191,5 +276,5 @@ var _ = SynchronizedAfterSuite(func() {
 
 func TestGatewayIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Gateway Integration Suite")
+	RunSpecs(t, "Gateway Integration Suite (envtest)")
 }

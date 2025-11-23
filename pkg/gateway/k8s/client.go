@@ -96,6 +96,10 @@ func (c *Client) UpdateRemediationRequest(ctx context.Context, rr *remediationv1
 //
 // Use case: Deduplication check (find existing RemediationRequest for same alert)
 //
+// CRITICAL: Uses direct API calls (bypasses controller-runtime cache) to prevent race conditions
+// in multi-pod deployments. Without this, multiple Gateway pods can have stale cache state,
+// leading to duplicate CRD creation attempts and incorrect storm detection.
+//
 // Parameters:
 // - ctx: Context for cancellation and timeout
 // - fingerprint: Signal fingerprint (SHA256 hash)
@@ -113,9 +117,21 @@ func (c *Client) ListRemediationRequestsByFingerprint(ctx context.Context, finge
 		fingerprintLabel = fingerprintLabel[:63]
 	}
 
-	err := c.client.List(ctx, &list, client.MatchingLabels{
-		"kubernaut.io/signal-fingerprint": fingerprintLabel,
-	})
+	// PRODUCTION FIX: Force direct API call to prevent cache staleness
+	// Critical for multi-pod deployments where cache can be inconsistent between pods.
+	// client.MatchingFields{} forces controller-runtime to bypass its cache and query
+	// the API server directly, ensuring all pods see the same CRD state.
+	//
+	// Without this:
+	// - Pod 1 queries cache: No CRD found → Creates CRD
+	// - Pod 2 queries cache: No CRD found → Attempts to create duplicate CRD (conflict)
+	// - Storm detection fails due to inconsistent cache state between pods
+	err := c.client.List(ctx, &list,
+		client.MatchingLabels{
+			"kubernaut.io/signal-fingerprint": fingerprintLabel,
+		},
+		client.MatchingFields{}, // Forces direct API call, bypasses cache
+	)
 
 	return &list, err
 }

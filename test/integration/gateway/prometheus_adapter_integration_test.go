@@ -21,13 +21,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -57,6 +60,9 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		logger        *zap.Logger
+		productionNS  string // Dynamic namespace names for parallel execution
+		stagingNS     string
+		developmentNS string
 	)
 
 	BeforeEach(func() {
@@ -85,36 +91,42 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		Expect(testServer).ToNot(BeNil(), "Test server should be created")
 
 		// Create test namespaces with environment labels for classification
+		// Flush Redis to ensure clean state for each test
+		if redisClient != nil && redisClient.Client != nil {
+			err := redisClient.Client.FlushDB(ctx).Err()
+			Expect(err).ToNot(HaveOccurred(), "Redis flush should succeed")
+		}
+
 		// This is required for environment-based priority assignment
+		// Use unique names per parallel process + timestamp to avoid collisions
+		processID := GinkgoParallelProcess()
+		timestamp := time.Now().UnixNano()
+		productionNS = fmt.Sprintf("production-p%d-%d", processID, timestamp)
+		stagingNS = fmt.Sprintf("staging-p%d-%d", processID, timestamp)
+		developmentNS = fmt.Sprintf("development-p%d-%d", processID, timestamp)
+
 		testNamespaces := []struct {
 			name  string
 			label string
 		}{
-			{"production", "production"},
-			{"staging", "staging"},
-			{"development", "development"},
+			{productionNS, "production"},
+			{stagingNS, "staging"},
+			{developmentNS, "development"},
 		}
 
 		for _, ns := range testNamespaces {
-			// Delete first to ensure clean state (ignore error if doesn't exist)
+			// Create namespace (use EnsureTestNamespace helper for idempotency)
 			namespace := &corev1.Namespace{}
-			namespace.Name = ns.name
-			_ = k8sClient.Client.Delete(ctx, namespace)
-
-			// Wait for deletion to complete (namespace deletion is asynchronous)
-			Eventually(func() error {
-				checkNs := &corev1.Namespace{}
-				return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
-			}, "10s", "100ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
-
-			// Recreate with correct label
-			namespace = &corev1.Namespace{}
 			namespace.Name = ns.name
 			namespace.Labels = map[string]string{
 				"environment": ns.label, // Required for EnvironmentClassifier
 			}
+
+			// Try to create, ignore AlreadyExists error
 			err = k8sClient.Client.Create(ctx, namespace)
-			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
+			if err != nil && !errors.IsAlreadyExists(err) {
+				Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
+			}
 		}
 
 		logger.Info("Test setup complete",
@@ -130,13 +142,18 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
 		}
 
-		// Cleanup all test namespaces
-		testNamespaces := []string{"production", "staging", "development"}
-		for _, nsName := range testNamespaces {
-			ns := &corev1.Namespace{}
-			ns.Name = nsName
-			_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
-		}
+		// CRITICAL FIX: Don't delete namespaces in AfterEach during parallel execution
+		// Deleting namespaces causes "namespace is being terminated" errors when other
+		// parallel tests are still trying to create CRDs in them.
+		// Instead, let Kind cluster deletion handle cleanup at the end of the test suite.
+		//
+		// Previous code (REMOVED):
+		// testNamespaces := []string{productionNS, stagingNS, developmentNS}
+		// for _, nsName := range testNamespaces {
+		//     ns := &corev1.Namespace{}
+		//     ns.Name = nsName
+		//     _ = k8sClient.Client.Delete(ctx, ns)
+		// }
 
 		// Cleanup test server and Redis
 		if testServer != nil {
@@ -157,22 +174,22 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// BUSINESS SCENARIO: Production pod memory alert → AI analysis triggered
 			// Expected: CRD created with priority, environment, severity for AI decision-making
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "HighMemoryUsage",
 						"severity": "critical",
-						"namespace": "production",
+						"namespace": "%s",
 						"pod": "payment-api-123"
 					},
 					"annotations": {
-						"summary": "Pod payment-api-123 using 95% memory",
+						"summary": "Pod payment-api-123 using 95%% memory",
 						"description": "Memory threshold exceeded, may cause OOM"
 					},
 					"startsAt": "2025-10-22T10:00:00Z"
 				}]
-			}`)
+			}`, productionNS))
 
 			// Send webhook to Gateway
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
@@ -201,7 +218,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes with correct business metadata
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(productionNS))
 			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in production namespace")
 			Expect(crdList.Items).To(HaveLen(1), "Exactly one CRD should be created")
 
@@ -216,7 +233,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				"Environment classification drives priority assignment")
 			Expect(crd.Spec.Severity).To(Equal("critical"),
 				"Severity helps AI choose remediation strategy")
-			Expect(crd.Namespace).To(Equal("production"),
+			Expect(crd.Namespace).To(Equal(productionNS),
 				"Namespace enables kubectl targeting: 'kubectl -n production'")
 
 			// Verify fingerprint label matches response fingerprint (truncated to K8s 63-char limit)
@@ -240,23 +257,23 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// BUSINESS SCENARIO: Alert includes pod/node info → AI can target specific resources
 			// Expected: CRD includes resource details for kubectl commands
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "DiskSpaceWarning",
 						"severity": "warning",
-						"namespace": "staging",
+						"namespace": "%s",
 						"pod": "database-replica-2",
 						"node": "worker-node-05"
 					},
 					"annotations": {
-						"summary": "Disk usage at 85%",
+						"summary": "Disk usage at 85%%",
 						"runbook_url": "https://runbooks.example.com/disk-space"
 					},
 					"startsAt": "2025-10-22T11:30:00Z"
 				}]
-			}`)
+			}`, stagingNS))
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -267,7 +284,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("staging"))
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(stagingNS))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList.Items).To(HaveLen(1))
 
@@ -296,13 +313,13 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// BUSINESS SCENARIO: Same alert fires twice in 5 seconds → Only 1 CRD created
 			// Expected: First alert creates CRD, second alert returns 202 Accepted, NO new CRD
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "CPUThrottling",
 						"severity": "warning",
-						"namespace": "production",
+						"namespace": "%s",
 						"pod": "api-gateway-7"
 					},
 					"annotations": {
@@ -310,7 +327,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 					},
 					"startsAt": "2025-10-22T12:00:00Z"
 				}]
-			}`)
+			}`, productionNS))
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
@@ -331,7 +348,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			// BUSINESS OUTCOME 1: First CRD created in K8s
 			var crdList1 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace(productionNS))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList1.Items).To(HaveLen(1), "First alert creates exactly one CRD")
 
@@ -352,7 +369,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			// BUSINESS OUTCOME 2: NO new CRD created (deduplication works)
 			var crdList2 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList2, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList2, client.InNamespace(productionNS))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList2.Items).To(HaveLen(1),
 				"Duplicate alert must NOT create new CRD (still only 1 CRD)")
@@ -382,6 +399,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// BR-GATEWAY-011, BR-GATEWAY-020-021: Environment classification → Priority assignment
 			// BUSINESS SCENARIO: Namespace determines environment → Affects priority → Affects AI resource allocation
 			// Expected: production critical = P0, staging critical = P1, dev critical = P2
+			processID := GinkgoParallelProcess()
 
 			testCases := []struct {
 				namespace   string
@@ -391,21 +409,21 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				rationale   string
 			}{
 				{
-					namespace:   "production",
+					namespace:   productionNS,
 					severity:    "critical",
 					expectedEnv: "production",
 					expectedPri: "P0",
 					rationale:   "Revenue-impacting, immediate AI analysis required",
 				},
 				{
-					namespace:   "staging",
+					namespace:   stagingNS,
 					severity:    "critical",
 					expectedEnv: "staging",
 					expectedPri: "P1",
 					rationale:   "Pre-production issue, high priority to prevent prod impact",
 				},
 				{
-					namespace:   "development",
+					namespace:   developmentNS,
 					severity:    "critical",
 					expectedEnv: "development",
 					expectedPri: "P2",
@@ -418,37 +436,54 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				k8sClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
 					client.InNamespace(tc.namespace))
 
-				payload := []byte(fmt.Sprintf(`{
-					"alerts": [{
-						"status": "firing",
-						"labels": {
-							"alertname": "TestAlert",
-							"severity": "%s",
-							"namespace": "%s",
-							"pod": "test-pod"
-						},
-						"startsAt": "2025-10-22T14:00:00Z"
-					}]
-				}`, tc.severity, tc.namespace))
+		payload := []byte(fmt.Sprintf(`{
+			"alerts": [{
+				"status": "firing",
+				"labels": {
+					"alertname": "TestAlert-%s-p%d",
+					"severity": "%s",
+						"namespace": "%s",
+						"pod": "test-pod"
+					},
+					"startsAt": "2025-10-22T14:00:00Z"
+				}]
+			}`, tc.expectedEnv, processID, tc.severity, tc.namespace))
 
-				url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
-				resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
-				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred())
 
-				// BUSINESS OUTCOME: CRD has correct environment and priority based on namespace
-				// Use Eventually to handle async CRD creation
-				var crd remediationv1alpha1.RemediationRequest
-				Eventually(func() bool {
-					var crdList remediationv1alpha1.RemediationRequestList
-					err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(tc.namespace))
-					if err != nil || len(crdList.Items) == 0 {
-						return false
-					}
-					crd = crdList.Items[0]
-					return true
-				}, "10s", "200ms").Should(BeTrue(),
-					"Alert in %s namespace should create CRD", tc.namespace)
+			// Read response body for debugging
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			// Log all responses for debugging
+			GinkgoWriter.Printf("📤 HTTP POST to %s: status=%d, body=%s\n",
+				tc.namespace, resp.StatusCode, string(bodyBytes))
+
+			// Check HTTP status code to detect silent failures
+			Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusCreated, http.StatusAccepted}),
+				"HTTP request for namespace %s should succeed (got %d)", tc.namespace, resp.StatusCode)
+
+			// BUSINESS OUTCOME: CRD has correct environment and priority based on namespace
+			// Use Eventually to handle async CRD creation
+			var crd remediationv1alpha1.RemediationRequest
+			Eventually(func() bool {
+				var crdList remediationv1alpha1.RemediationRequestList
+				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(tc.namespace))
+				if err != nil {
+					GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", tc.namespace, err)
+					return false
+				}
+				if len(crdList.Items) == 0 {
+					GinkgoWriter.Printf("No CRDs found in namespace %s (waiting...)\n", tc.namespace)
+					return false
+				}
+				crd = crdList.Items[0]
+				GinkgoWriter.Printf("Found CRD in namespace %s: %s\n", tc.namespace, crd.Name)
+				return true
+			}, "120s", "1s").Should(BeTrue(),
+				"Alert in %s namespace should create CRD (120s timeout for 4-processor parallel execution)", tc.namespace)
 				Expect(crd.Spec.Environment).To(Equal(tc.expectedEnv),
 					"Namespace '%s' → Environment '%s'", tc.namespace, tc.expectedEnv)
 				Expect(crd.Spec.Priority).To(Equal(tc.expectedPri),

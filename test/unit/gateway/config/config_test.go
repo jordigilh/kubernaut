@@ -7,6 +7,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	config "github.com/jordigilh/kubernaut/pkg/gateway/config"
 )
 
 func TestGatewayConfig(t *testing.T) {
@@ -15,9 +17,9 @@ func TestGatewayConfig(t *testing.T) {
 }
 
 var _ = Describe("Gateway Configuration Loading", func() {
-	Context("LoadFromFile", func() {
+	Context("config.LoadFromFile", func() {
 		It("should load valid configuration from YAML file", func() {
-			cfg, err := LoadFromFile("testdata/valid-config.yaml")
+			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg).ToNot(BeNil())
@@ -44,7 +46,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		})
 
 		It("should return error for non-existent file", func() {
-			cfg, err := LoadFromFile("testdata/nonexistent.yaml")
+			cfg, err := config.LoadFromFile("testdata/nonexistent.yaml")
 
 			Expect(err).To(HaveOccurred())
 			Expect(cfg).To(BeNil())
@@ -52,7 +54,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		})
 
 		It("should return error for malformed YAML", func() {
-			cfg, err := LoadFromFile("testdata/malformed-config.yaml")
+			cfg, err := config.LoadFromFile("testdata/malformed-config.yaml")
 
 			Expect(err).To(HaveOccurred())
 			Expect(cfg).To(BeNil())
@@ -61,11 +63,11 @@ var _ = Describe("Gateway Configuration Loading", func() {
 	})
 
 	Context("LoadFromEnv", func() {
-		var cfg *ServerConfig
+		var cfg *config.ServerConfig
 
 		BeforeEach(func() {
 			var err error
-			cfg, err = LoadFromFile("testdata/valid-config.yaml")
+			cfg, err = config.LoadFromFile("testdata/valid-config.yaml")
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -148,7 +150,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 
 	Context("Validate", func() {
 		It("should validate valid configuration", func() {
-			cfg, err := LoadFromFile("testdata/valid-config.yaml")
+			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.Validate()
@@ -156,8 +158,8 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		})
 
 		It("should reject empty listen address", func() {
-			cfg := &ServerConfig{
-				Server: ServerSettings{
+			cfg := &config.ServerConfig{
+				Server: config.ServerSettings{
 					ListenAddr: "",
 				},
 			}
@@ -168,12 +170,12 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		})
 
 		It("should reject empty Redis address", func() {
-			cfg := &ServerConfig{
-				Server: ServerSettings{
+			cfg := &config.ServerConfig{
+				Server: config.ServerSettings{
 					ListenAddr: ":8080",
 				},
-				Infrastructure: InfrastructureSettings{
-					Redis: &RedisOptions{
+				Infrastructure: config.InfrastructureSettings{
+					Redis: &config.RedisOptions{
 						Addr: "",
 					},
 				},
@@ -185,17 +187,17 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		})
 
 		It("should reject negative rate limit", func() {
-			cfg := &ServerConfig{
-				Server: ServerSettings{
+			cfg := &config.ServerConfig{
+				Server: config.ServerSettings{
 					ListenAddr: ":8080",
 				},
-				Infrastructure: InfrastructureSettings{
-					Redis: &RedisOptions{
+				Infrastructure: config.InfrastructureSettings{
+					Redis: &config.RedisOptions{
 						Addr: "redis:6379",
 					},
 				},
-				Middleware: MiddlewareSettings{
-					RateLimit: RateLimitSettings{
+				Middleware: config.MiddlewareSettings{
+					RateLimit: config.RateLimitSettings{
 						RequestsPerMinute: -1,
 					},
 				},
@@ -207,17 +209,17 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		})
 
 		It("should reject negative burst", func() {
-			cfg := &ServerConfig{
-				Server: ServerSettings{
+			cfg := &config.ServerConfig{
+				Server: config.ServerSettings{
 					ListenAddr: ":8080",
 				},
-				Infrastructure: InfrastructureSettings{
-					Redis: &RedisOptions{
+				Infrastructure: config.InfrastructureSettings{
+					Redis: &config.RedisOptions{
 						Addr: "redis:6379",
 					},
 				},
-				Middleware: MiddlewareSettings{
-					RateLimit: RateLimitSettings{
+				Middleware: config.MiddlewareSettings{
+					RateLimit: config.RateLimitSettings{
 						RequestsPerMinute: 100,
 						Burst:             -1,
 					},
@@ -230,23 +232,23 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		})
 
 		It("should reject negative storm threshold", func() {
-			cfg := &ServerConfig{
-				Server: ServerSettings{
+			cfg := &config.ServerConfig{
+				Server: config.ServerSettings{
 					ListenAddr: ":8080",
 				},
-				Infrastructure: InfrastructureSettings{
-					Redis: &RedisOptions{
+				Infrastructure: config.InfrastructureSettings{
+					Redis: &config.RedisOptions{
 						Addr: "redis:6379",
 					},
 				},
-				Middleware: MiddlewareSettings{
-					RateLimit: RateLimitSettings{
+				Middleware: config.MiddlewareSettings{
+					RateLimit: config.RateLimitSettings{
 						RequestsPerMinute: 100,
 						Burst:             10,
 					},
 				},
-				Processing: ProcessingSettings{
-					Storm: StormSettings{
+				Processing: config.ProcessingSettings{
+					Storm: config.StormSettings{
 						RateThreshold: -1,
 					},
 				},

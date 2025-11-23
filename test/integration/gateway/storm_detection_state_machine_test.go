@@ -101,11 +101,12 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 			// Test configuration from helpers.go: RateThreshold = 2 alerts
 			// This means: 3rd alert within window triggers storm
 
-			// STEP 1: Send first alert (below threshold)
-			payload1 := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "RateStormTest",
-				Namespace: testNamespace,
-				Severity:  "critical",
+		// STEP 1: Send first alert (below threshold)
+		processID := GinkgoParallelProcess()
+		payload1 := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("RateStormTest-p%d", processID),
+			Namespace: testNamespace,
+			Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
 					Name: "storm-pod-1",
@@ -116,11 +117,11 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 			Expect(resp1.StatusCode).To(Equal(201), "First alert should be accepted")
 
 			// STEP 2: Send second alert (at threshold)
-			// Note: Must have different fingerprint from first alert
-			payload2 := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "RateStormTest2", // Different alert name = different fingerprint
-				Namespace: testNamespace,
-				Severity:  "critical",
+		// Note: Must have different fingerprint from first alert
+		payload2 := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("RateStormTest2-p%d", processID), // Different alert name = different fingerprint
+			Namespace: testNamespace,
+			Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
 					Name: "storm-pod-2",
@@ -130,11 +131,11 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload2)
 			Expect(resp2.StatusCode).To(Or(Equal(201), Equal(202)), "Second alert should be accepted")
 
-			// STEP 3: Send third alert (exceeds threshold, triggers storm)
-			payload3 := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "RateStormTest3", // Different alert name = different fingerprint
-				Namespace: testNamespace,
-				Severity:  "critical",
+		// STEP 3: Send third alert (exceeds threshold, triggers storm)
+		payload3 := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("RateStormTest3-p%d", processID), // Different alert name = different fingerprint
+			Namespace: testNamespace,
+			Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
 					Name: "storm-pod-3",
@@ -183,11 +184,12 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 			// This means: 3rd similar alert triggers pattern storm
 
 			// STEP 1: Send similar alerts (same alert name, different resources)
-			for i := 1; i <= 3; i++ {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-					AlertName: "PatternStormTest", // Same alert name = similar pattern
-					Namespace: testNamespace,
-					Severity:  "warning",
+		processID := GinkgoParallelProcess()
+		for i := 1; i <= 3; i++ {
+			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+				AlertName: fmt.Sprintf("PatternStormTest-p%d", processID), // Same alert name = similar pattern
+				Namespace: testNamespace,
+				Severity:  "warning",
 					Resource: ResourceIdentifier{
 						Kind: "Pod",
 						Name: fmt.Sprintf("pattern-pod-%d", i),
@@ -241,11 +243,12 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 
 			// STEP 1: Send burst of alerts within aggregation window
 			alertCount := 5
-			for i := 1; i <= alertCount; i++ {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-					AlertName: "AggregationTest",
-					Namespace: testNamespace,
-					Severity:  "critical",
+		processID := GinkgoParallelProcess()
+		for i := 1; i <= alertCount; i++ {
+			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+				AlertName: fmt.Sprintf("AggregationTest-p%d", processID),
+				Namespace: testNamespace,
+				Severity:  "critical",
 					Resource: ResourceIdentifier{
 						Kind: "Pod",
 						Name: fmt.Sprintf("agg-pod-%d", i),
@@ -299,11 +302,12 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 
 			// Test configuration: AggregationWindow = 1 second
 
-			// STEP 1: Send first alert
-			payload1 := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "WindowTest",
-				Namespace: testNamespace,
-				Severity:  "warning",
+		// STEP 1: Send first alert
+		processID := GinkgoParallelProcess()
+		payload1 := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("WindowTest-p%d", processID),
+			Namespace: testNamespace,
+			Severity:  "warning",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
 					Name: "window-pod-1",
@@ -317,11 +321,11 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 			time.Sleep(3 * time.Second) // Wait 3x aggregation window
 
 			// STEP 3: Send second alert (outside window)
-			// Note: Different alert name to avoid deduplication
-			payload2 := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "WindowTest2", // Different alert name = different fingerprint
-				Namespace: testNamespace,
-				Severity:  "warning",
+		// Note: Different alert name to avoid deduplication
+		payload2 := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("WindowTest2-p%d", processID), // Different alert name = different fingerprint
+			Namespace: testNamespace,
+			Severity:  "warning",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
 					Name: "window-pod-2",
@@ -331,17 +335,17 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload2)
 			Expect(resp2.StatusCode).To(Equal(201), "Second alert should be accepted")
 
-			// STEP 4: Wait for processing
-			time.Sleep(2 * time.Second)
-
-			// BUSINESS VALIDATION: Alerts processed separately (not aggregated)
+		// STEP 4: Wait for both CRDs to be created
+		// Use Eventually to handle async CRD creation timing
+		Eventually(func() int {
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := k8sClient.Client.List(ctx, crdList, client.InNamespace(testNamespace))
-			Expect(err).ToNot(HaveOccurred(), "Should query CRDs")
-
-			// Should have 2 separate CRDs (not aggregated due to time gap)
-			Expect(len(crdList.Items)).To(Equal(2),
-				"Alerts outside window should create separate CRDs")
+			if err != nil {
+				return 0
+			}
+			return len(crdList.Items)
+		}, "10s", "200ms").Should(Equal(2),
+			"Alerts outside window should create 2 separate CRDs")
 		})
 	})
 })

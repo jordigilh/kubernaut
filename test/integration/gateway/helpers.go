@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"sync"
@@ -25,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -39,6 +38,8 @@ import (
 var (
 	testNamespaces      = make(map[string]bool) // Track all test namespaces
 	testNamespacesMutex sync.Mutex              // Thread-safe access
+	suiteRedisPort      int                     // Redis port (random to avoid conflicts with Data Storage tests)
+	k8sConfig           *rest.Config            // K8s REST config from envtest (set in suite_test.go)
 )
 
 // RegisterTestNamespace adds a namespace to the suite-level cleanup list
@@ -60,6 +61,22 @@ type RedisTestClient struct {
 // K8sTestClient wraps Kubernetes client for integration tests
 type K8sTestClient struct {
 	Client client.Client
+}
+
+// PostgresTestClient wraps PostgreSQL container for integration tests
+// Uses direct Podman commands (no testcontainers)
+type PostgresTestClient struct {
+	Host     string
+	Port     int
+	Database string
+	User     string
+	Password string
+}
+
+// DataStorageTestServer wraps Data Storage service for integration tests
+type DataStorageTestServer struct {
+	Server   *httptest.Server
+	PgClient *PostgresTestClient
 }
 
 // WebhookResponse represents HTTP response from Gateway webhook
@@ -89,21 +106,32 @@ type ResourceIdentifier struct {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // SetupRedisTestClient creates a Redis client for integration tests
-// ONLY connects to local Podman Redis (localhost:6379)
-// Integration tests use Kind cluster + local Podman Redis (no OCP fallback)
-// Start Redis with: ./test/integration/gateway/start-redis.sh
+// ONLY connects to local Podman Redis (dynamic port)
+// Integration tests use envtest + local Podman Redis (no OCP fallback)
+// Redis is started automatically in suite_test.go SynchronizedBeforeSuite
+// This is a convenience wrapper that uses the global suiteRedisPort
 func SetupRedisTestClient(ctx context.Context) *RedisTestClient {
+	return SetupRedisTestClientWithPort(ctx, suiteRedisPort)
+}
+
+// SetupRedisTestClientWithPort creates a Redis test client with a specific port
+func SetupRedisTestClientWithPort(ctx context.Context, port int) *RedisTestClient {
 	// Check if running in CI without Redis
 	if os.Getenv("SKIP_INTEGRATION_TESTS") == "true" {
 		return &RedisTestClient{Client: nil}
 	}
 
 	// Priority 1: Local Podman Redis (fastest, recommended for development)
-	// Start with: ./test/integration/gateway/start-redis.sh
+	// Uses dynamic port from suite setup to avoid conflicts with Data Storage tests
+	// Use different Redis DB per parallel process to prevent state leakage
+	processID := GinkgoParallelProcess()
+	redisDB := 2 + processID // DB 2 for process 1, DB 3 for process 2, etc.
+
+	redisAddr := fmt.Sprintf("localhost:%d", port)
 	client := goredis.NewClient(&goredis.Options{
-		Addr:         "localhost:6379",
+		Addr:         redisAddr,
 		Password:     "",
-		DB:           2,
+		DB:           redisDB,
 		PoolSize:     20,
 		MinIdleConns: 5,
 		MaxRetries:   3,
@@ -120,7 +148,7 @@ func SetupRedisTestClient(ctx context.Context) *RedisTestClient {
 		return &RedisTestClient{Client: client}
 	}
 
-	// NO OCP FALLBACK - Integration tests use Kind + local Podman Redis only
+	// NO OCP FALLBACK - Integration tests use envtest + local Podman Redis only
 	// If Redis is not available, fail fast with clear error
 	_ = client.Close()
 	return &RedisTestClient{Client: nil}
@@ -155,19 +183,14 @@ func (r *RedisTestClient) Cleanup(ctx context.Context) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // SetupK8sTestClient creates a Kubernetes client for integration tests
-// Uses Kind cluster for integration testing (supports auth, real API behavior)
-// BR-GATEWAY-001: Real K8s cluster required for authentication/authorization testing
+// Uses envtest (in-memory K8s API) for integration testing (supports auth, real API behavior)
+// BR-GATEWAY-001: Real K8s API required for authentication/authorization testing
 func SetupK8sTestClient(ctx context.Context) *K8sTestClient {
-	// Use isolated kubeconfig for Kind cluster to avoid impacting other tests
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "gateway-kubeconfig")
-	}
-
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		// Integration tests require real K8s cluster
-		panic(fmt.Sprintf("Failed to load kubeconfig for integration tests from %s: %v", kubeconfigPath, err))
+	// envtest Migration: Use global k8sConfig from envtest
+	// k8sConfig is initialized in suite_test.go SynchronizedBeforeSuite
+	// All parallel processes share the same envtest instance and config
+	if k8sConfig == nil {
+		panic("k8sConfig is nil - envtest not initialized in suite_test.go")
 	}
 
 	// Create scheme with RemediationRequest CRD + core K8s types
@@ -175,8 +198,9 @@ func SetupK8sTestClient(ctx context.Context) *K8sTestClient {
 	_ = remediationv1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
 
-	// Create real Kubernetes client
-	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
+	// Create Kubernetes client using envtest config
+	// All tests share the same envtest API server, no isolation needed
+	k8sClient, err := client.New(k8sConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create K8s client for integration tests: %v", err))
 	}
@@ -425,9 +449,24 @@ func GeneratePrometheusAlert(opts PrometheusAlertOptions) []byte {
 	}
 
 	// Add resource labels if provided
-	if opts.Resource.Kind != "" {
-		labels["resource_kind"] = opts.Resource.Kind
-		labels["resource_name"] = opts.Resource.Name
+	// Use Prometheus-style labels (pod, deployment, node, etc.) for adapter compatibility
+	if opts.Resource.Kind != "" && opts.Resource.Name != "" {
+		switch opts.Resource.Kind {
+		case "Pod":
+			labels["pod"] = opts.Resource.Name
+		case "Deployment":
+			labels["deployment"] = opts.Resource.Name
+		case "StatefulSet":
+			labels["statefulset"] = opts.Resource.Name
+		case "DaemonSet":
+			labels["daemonset"] = opts.Resource.Name
+		case "Node":
+			labels["node"] = opts.Resource.Name
+		default:
+			// Fallback for unknown resource types
+			labels["resource_kind"] = opts.Resource.Kind
+			labels["resource_name"] = opts.Resource.Name
+		}
 	}
 
 	// Merge custom labels
@@ -530,8 +569,9 @@ func (r *RedisTestClient) SimulateFailover(ctx context.Context) {
 	_ = r.Client.Close()
 
 	// Recreate client (simulates failover to new master)
+	redisAddr := fmt.Sprintf("localhost:%d", suiteRedisPort)
 	r.Client = goredis.NewClient(&goredis.Options{
-		Addr: "localhost:6379",
+		Addr: redisAddr,
 		DB:   2,
 	})
 }
