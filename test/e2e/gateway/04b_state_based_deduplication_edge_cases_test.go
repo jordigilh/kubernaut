@@ -56,7 +56,7 @@ import (
 // - 4 It blocks, each with unique namespace and alert names
 // - Uses shared Gateway instance
 // - Cleanup in BeforeAll (shared setup) and per-test defer blocks
-var _ = Describe("E2E: State-Based Deduplication Edge Cases", Label("e2e", "deduplication", "edge-cases", "p1"), func() {
+var _ = Describe("E2E: State-Based Deduplication Edge Cases", Label("e2e", "deduplication", "edge-cases", "p1"), Ordered, func() {
 	// Shared Gateway deployment for all edge case tests
 	// Each test creates its own namespace for CRD isolation
 
