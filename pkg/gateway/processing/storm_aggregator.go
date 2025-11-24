@@ -274,9 +274,10 @@ func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.No
 	windowID := fmt.Sprintf("%s-%d", signal.AlertName, currentTime.Unix())
 	windowKey := fmt.Sprintf("alert:storm:aggregate:%s", signal.AlertName)
 
-	// Store window ID with TTL (BR-GATEWAY-008: maximum window duration safety limit)
-	// Use maxWindowDuration to ensure windows don't persist longer than intended
-	if err := a.redisClient.Set(ctx, windowKey, windowID, a.maxWindowDuration).Err(); err != nil {
+	// Store window ID with TTL (BR-GATEWAY-008: sliding window with inactivity timeout)
+	// Use windowDuration (inactivityTimeout) for consistent sliding window behavior
+	// Safety: AddResource checks maxWindowDuration via IsWindowExpired (defense-in-depth)
+	if err := a.redisClient.Set(ctx, windowKey, windowID, a.windowDuration).Err(); err != nil {
 		return "", fmt.Errorf("failed to start aggregation window: %w", err)
 	}
 
