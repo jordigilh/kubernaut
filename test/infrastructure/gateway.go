@@ -78,17 +78,50 @@ func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 	return nil
 }
 
-// DeployTestServices deploys Redis, AlertManager, and Gateway in a test namespace
+// CreateIntegrationCluster creates a Kind cluster for Gateway integration testing
+// This is similar to CreateGatewayCluster but SKIPS the Gateway image build
+// since integration tests use the test server directly, not deployed Gateway pods.
+//
+// Steps:
+// 1. Create Kind cluster with production-like configuration
+// 2. Export kubeconfig to ~/.kube/gateway-kubeconfig
+// 3. Install RemediationRequest CRD (cluster-wide resource)
+//
+// Time: ~15 seconds (faster than E2E since no image build)
+func CreateIntegrationCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "Gateway Integration Cluster Setup (ONCE)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// 1. Create Kind cluster
+	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	if err := createKindClusterOnly(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// 2. Install RemediationRequest CRD (cluster-wide)
+	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	if err := installCRD(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install CRD: %w", err)
+	}
+
+	fmt.Fprintln(writer, "✅ Cluster ready for integration tests (no Gateway image needed)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// DeployTestServices deploys Redis and Gateway in a test namespace
 // This is called in BeforeAll for each test
+//
+// NOTE: AlertManager is NOT deployed - E2E tests send payloads directly to Gateway endpoint
 //
 // Steps:
 // 1. Create namespace
 // 2. Deploy Redis Master-Replica (2 pods)
-// 3. Deploy Prometheus AlertManager (1 pod)
-// 4. Deploy Gateway (1 pod)
-// 5. Wait for all services ready
+// 3. Deploy Gateway (1 pod)
+// 4. Wait for all services ready
 //
-// Time: ~20 seconds
+// Time: ~15 seconds (faster without AlertManager)
 func DeployTestServices(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	fmt.Fprintf(writer, "Deploying Test Services in Namespace: %s\n", namespace)
@@ -116,13 +149,8 @@ func DeployTestServices(ctx context.Context, namespace, kubeconfigPath string, w
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
-	// 3. Deploy AlertManager
-	fmt.Fprintf(writer, "🚀 Deploying AlertManager...\n")
-	if err := deployAlertManagerInNamespace(namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy AlertManager: %w", err)
-	}
-
 	// 4. Deploy Gateway
+	// NOTE: AlertManager is NOT deployed - E2E tests send payloads directly to Gateway endpoint
 	fmt.Fprintf(writer, "🚀 Deploying Gateway...\n")
 	if err := deployGatewayInNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Gateway: %w", err)
@@ -198,14 +226,48 @@ func createKindClusterOnly(clusterName, kubeconfigPath string, writer io.Writer)
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
+	// Check if cluster already exists (quick check before cleanup)
+	checkCmd := exec.Command("kind", "get", "clusters")
+	output, err := checkCmd.Output()
+	if err == nil {
+		clusters := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, cluster := range clusters {
+			if cluster == clusterName {
+				fmt.Fprintf(writer, "   ⚠️  Cluster '%s' already exists - deleting it first...\n", clusterName)
+				deleteCmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
+				deleteCmd.Stdout = writer
+				deleteCmd.Stderr = writer
+				if err := deleteCmd.Run(); err != nil {
+					fmt.Fprintf(writer, "   ⚠️  Warning: failed to delete existing cluster: %v\n", err)
+				} else {
+					fmt.Fprintf(writer, "   ✅ Existing cluster deleted\n")
+				}
+				// Also clean up any leftover containers
+				cleanupCmd := exec.Command("podman", "rm", "-f", clusterName+"-control-plane")
+				_ = cleanupCmd.Run() // Ignore errors - container may not exist
+				break
+			}
+		}
+	}
+
 	// Ensure kubeconfig directory exists
 	kubeconfigDir := filepath.Dir(kubeconfigPath)
 	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
 		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
 	}
 
-	// Create Kind cluster
-	kindConfigPath := filepath.Join(workspaceRoot, "test", "e2e", "gateway", "kind-cluster-config.yaml")
+	// Remove any leftover kubeconfig lock file
+	lockFile := kubeconfigPath + ".lock"
+	_ = os.Remove(lockFile) // Ignore errors - file may not exist
+
+	// Create Kind cluster with API tuning for parallel integration tests
+	// Use kind-gateway-config.yaml which increases API server rate limits:
+	// - max-requests-inflight: 800 (default: 400)
+	// - max-mutating-requests-inflight: 400 (default: 200)
+	// - kube-api-qps: 100 (default: 20)
+	// - kube-api-burst: 200 (default: 30)
+	// This prevents K8s API throttling during 4 parallel test processes
+	kindConfigPath := filepath.Join(workspaceRoot, "test", "infrastructure", "kind-gateway-config.yaml")
 	createCmd := exec.Command("kind", "create", "cluster",
 		"--name", clusterName,
 		"--config", kindConfigPath,
