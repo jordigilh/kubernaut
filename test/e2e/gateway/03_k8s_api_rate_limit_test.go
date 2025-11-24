@@ -45,7 +45,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger    *zap.Logger
 		testNamespace string
 		httpClient    *http.Client
-		gatewayURL    string
+		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
 		k8sClient     client.Client
 	)
 

@@ -42,7 +42,7 @@ var _ = Describe("Test 8: Metrics Validation (P2)", Label("e2e", "metrics", "p2"
 		testLogger    *zap.Logger
 		httpClient    *http.Client
 		testNamespace string
-		gatewayURL    string
+		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
 		k8sClient     client.Client
 	)
 
