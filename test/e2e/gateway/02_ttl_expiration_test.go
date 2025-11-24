@@ -40,7 +40,7 @@ var _ = Describe("Test 2: TTL-Based Deduplication (P0)", Label("e2e", "deduplica
 		testLogger    *zap.Logger
 		httpClient    *http.Client
 		testNamespace string
-		gatewayURL    string
+		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
 		alertName     string
 		k8sClient     client.Client
 	)

@@ -41,7 +41,7 @@ var _ = Describe("Test 7: Concurrent Alert Aggregation (P1)", Label("e2e", "stor
 		testLogger    *zap.Logger
 		httpClient    *http.Client
 		testNamespace string
-		gatewayURL    string
+		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
 		alertName     string
 		k8sClient     client.Client
 	)

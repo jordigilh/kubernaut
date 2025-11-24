@@ -57,7 +57,7 @@ import (
 var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering", "dd-gateway-008", "p1"), func() {
 	// Shared test infrastructure (reused across all tests)
 	var (
-		gatewayURL string
+		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
 		k8sClient  client.Client
 	)
 

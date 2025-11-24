@@ -56,7 +56,7 @@ var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "dedup
 		testCtx         context.Context
 		testCancel      context.CancelFunc
 		testNamespace   string
-		gatewayURL      string
+		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
 		k8sClient       client.Client
 		prometheusAlert []byte
 	)
