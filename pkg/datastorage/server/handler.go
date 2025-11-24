@@ -26,6 +26,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
@@ -58,6 +59,8 @@ type Handler struct {
 	db                    DBInterface
 	logger                *zap.Logger
 	actionTraceRepository *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
+	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog
+	embeddingService      embedding.Service                 // BR-STORAGE-013: Embedding generation
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -78,6 +81,22 @@ func WithLogger(logger *zap.Logger) HandlerOption {
 func WithActionTraceRepository(repo *repository.ActionTraceRepository) HandlerOption {
 	return func(h *Handler) {
 		h.actionTraceRepository = repo
+	}
+}
+
+// WithWorkflowRepository sets the workflow repository for catalog operations
+// BR-STORAGE-013: Workflow catalog semantic search
+func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
+	return func(h *Handler) {
+		h.workflowRepo = repo
+	}
+}
+
+// WithEmbeddingService sets the embedding service for semantic search
+// BR-STORAGE-013: Embedding generation for semantic search
+func WithEmbeddingService(service embedding.Service) HandlerOption {
+	return func(h *Handler) {
+		h.embeddingService = service
 	}
 }
 

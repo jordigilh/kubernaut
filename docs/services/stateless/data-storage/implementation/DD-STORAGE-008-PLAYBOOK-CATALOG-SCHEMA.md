@@ -12,7 +12,23 @@
 
 ## 📋 **Changelog**
 
-### Version 2.0 (2025-11-20)
+### Version 2.0 (2025-11-22)
+- **ADDED**: V1.0 scope includes workflow CRUD endpoints (3 hours)
+  - POST /api/v1/workflows (create, no validation)
+  - PUT /api/v1/workflows/{id} (update, no validation)
+  - DELETE /api/v1/workflows/{id} (delete)
+- **ADDED**: V1.0 scope includes label schema versioning (1 hour)
+  - `schema_version` field in workflow model
+  - Additive-only evolution strategy documented
+- **ADDED**: V1.0 scope includes hybrid weighted label scoring (4-6 hours)
+  - Per DD-WORKFLOW-004
+  - Strict filtering for mandatory labels (signal-type, severity)
+  - Weighted scoring for optional labels
+- **UPDATED**: V1.1 scope reduced to validation/lifecycle only (7 hours, ↓ from 10 hours)
+- **RATIONALE**: Workflow CRUD unblocks testing and demo; label versioning prevents technical debt
+- **CROSS-REFERENCE**: DD-WORKFLOW-004 (Hybrid Weighted Label Scoring)
+
+### Version 1.2 (2025-11-20)
 - **BREAKING CHANGE**: Renamed "playbook" to "workflow" per DD-NAMING-001 (Authoritative)
 - Updated table name: `playbook_catalog` → `remediation_workflow_catalog`
 - Updated all field names: `workflow_id` → `workflow_id`, etc.
@@ -990,9 +1006,11 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 | **Semantic Search API** | ✅ `GET /search` | ✅ Same |
 | **Version Listing API** | ✅ `GET /versions` | ✅ Same |
 | **Embedding Generation** | ✅ Real-time (no cache) | ✅ Cached (24h TTL) |
-| **RemediationWorkflow Management** | ❌ SQL-only | ✅ REST API (`POST /workflows`) |
-| **Version Validation** | ❌ Manual SQL | ✅ Automated (semver) |
-| **Lifecycle Management** | ❌ SQL-only | ✅ REST API (`PATCH /disable`, `/enable`) |
+| **Workflow CRUD** | ✅ REST API (`POST/PUT/DELETE`) | ✅ Same + validation |
+| **Label Schema Versioning** | ✅ `schema_version` field | ✅ Same |
+| **Hybrid Weighted Scoring** | ✅ Implemented (DD-WORKFLOW-004) | ✅ Same |
+| **Version Validation** | ❌ No validation | ✅ Automated (semver) |
+| **Lifecycle Management** | ❌ Not available | ✅ REST API (`PATCH /disable`, `/enable`) |
 | **Version Diff API** | ❌ Not available | ✅ `GET /diff/{v1}/{v2}` |
 | **CRD Controller** | ❌ Not available | ✅ RemediationWorkflow CRD |
 | **Cache Invalidation** | ❌ N/A (no cache) | ✅ CRD-triggered |
@@ -1002,33 +1020,44 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 ## 🎯 **V1.0 MVP Success Criteria**
 
 **Must Have** (Blocking):
-1. ✅ `playbook_catalog` table exists with full schema
+1. ✅ `remediation_workflow_catalog` table exists with full schema
 2. ✅ `GET /api/v1/workflows/search` returns semantically similar workflows
 3. ✅ `GET /api/v1/workflows/{id}/versions` lists all versions
 4. ✅ Embedding generation works (real-time, no cache)
 5. ✅ Integration tests pass for search and version listing
 6. ✅ Latency acceptable: 2.5s for 50 workflows (per DD-STORAGE-006)
+7. ✅ **NEW**: `POST /api/v1/workflows` creates workflows (no validation)
+8. ✅ **NEW**: `PUT /api/v1/workflows/{id}` updates workflows (no validation)
+9. ✅ **NEW**: `DELETE /api/v1/workflows/{id}` deletes workflows
+10. ✅ **NEW**: `schema_version` field in workflow model (default: "v1.0")
+11. ✅ **NEW**: Hybrid weighted label scoring implemented (per DD-WORKFLOW-004)
 
 **Nice to Have** (Non-Blocking):
-- ⚠️ RemediationWorkflow management via SQL (manual process, documented)
-- ⚠️ Version validation via manual review (no automation)
+- ⚠️ Semantic version validation (deferred to V1.1)
+- ⚠️ Version immutability enforcement (deferred to V1.1)
 
 ---
 
 ## 🚀 **V1.1 Enhancement Success Criteria**
 
 **Must Have** (Blocking):
-1. ✅ `POST /api/v1/workflows` validates version format and increment
-2. ✅ Version immutability enforced (duplicate version rejected with 409)
-3. ✅ `PATCH /disable` and `/enable` work with audit trail
-4. ✅ Embedding cache reduces latency from 2.5s to ~50ms (50× improvement)
-5. ✅ CRD controller triggers cache invalidation on workflow changes
-6. ✅ Integration tests pass for all V1.1 features
+1. ✅ Semantic version validation (semver format enforcement)
+2. ✅ Version increment validation (must be > current latest)
+3. ✅ Version immutability enforced (duplicate version rejected with 409)
+4. ✅ `PATCH /api/v1/workflows/{id}/{version}/disable` with audit trail
+5. ✅ `PATCH /api/v1/workflows/{id}/{version}/enable` with audit trail
+6. ✅ `GET /api/v1/workflows/{id}/versions/{version}` - Get specific version
+7. ✅ `GET /api/v1/workflows/{id}/versions/{v1}/diff/{v2}` - Compare versions
+8. ✅ Embedding cache reduces latency from 2.5s to ~50ms (50× improvement)
+9. ✅ CRD controller triggers cache invalidation on workflow changes
+10. ✅ Integration tests pass for all V1.1 features
+
+**Note**: V1.0 provides basic CRUD (POST/PUT/DELETE) without validation; V1.1 adds validation and lifecycle management on top.
 
 ---
 
-**Document Version**: 1.2 (updated with V1.0/V1.1 scope separation)
-**Last Updated**: November 13, 2025
+**Document Version**: 2.0 (updated with V1.0 enhancements: CRUD + Label Versioning + Hybrid Scoring)
+**Last Updated**: November 22, 2025
 **Status**: ✅ **APPROVED** (98% confidence with clear V1.0/V1.1 separation)
 **Next Review**: After V1.0 MVP implementation
 

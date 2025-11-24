@@ -18,7 +18,14 @@ limitations under the License.
 Workflow Catalog Toolset for HolmesGPT SDK
 
 Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
-Design Decision: DD-WORKFLOW-002 - MCP Workflow Catalog Architecture
+Design Decisions:
+  - DD-WORKFLOW-002 v2.0 - MCP Workflow Catalog Architecture
+  - DD-LLM-001 - MCP Workflow Search Parameter Taxonomy
+
+Query Format (per DD-LLM-001):
+  - Structured format: '<signal_type> <severity> [optional_keywords]'
+  - Example: "OOMKilled critical", "CrashLoopBackOff high configuration"
+  - Uses canonical Kubernetes event reasons from LLM's RCA findings
 
 ⚠️ MVP IMPLEMENTATION - MOCK DATA ONLY ⚠️
 
@@ -27,11 +34,11 @@ Simple keyword-based search validates LLM integration.
 
 TODO: Replace with PostgreSQL + pgvector when Data Storage Service is ready
   - Replace MOCK_WORKFLOWS with database queries
-  - Implement semantic search using pgvector
-  - Add advanced filtering (business_category, risk_tolerance, environment)
+  - Implement two-phase semantic search (exact labels + pgvector similarity)
+  - Add label.* parameters for exact matching (Phase 1 filtering)
   - Add workflow parameter validation
   - Add workflow execution tracking
-  See: Data Storage Service implementation plan
+  See: DD-WORKFLOW-002 v2.0, DD-LLM-001
 """
 
 import logging
@@ -90,18 +97,28 @@ class SearchWorkflowCatalogTool(Tool):
     Tool for searching the workflow catalog based on incident characteristics.
 
     Business Requirement: BR-HAPI-250
-    Design Decision: DD-WORKFLOW-002
+    Design Decisions:
+      - DD-WORKFLOW-002 v2.0 - MCP Workflow Catalog Architecture
+      - DD-LLM-001 - MCP Workflow Search Parameter Taxonomy
 
-    Input (per DD-WORKFLOW-002):
-    - query: Natural language query describing the incident
-    - filters: Optional filters (signal_types, business_category, risk_tolerance, environment)
+    Query Format (per DD-LLM-001):
+    - Structured format: '<signal_type> <severity> [optional_keywords]'
+    - signal_type: Canonical Kubernetes event reason from LLM's RCA findings
+    - severity: LLM's RCA severity assessment (critical/high/medium/low)
+    - Example: "OOMKilled critical", "NodeNotReady critical infrastructure"
+
+    Input (per DD-WORKFLOW-002 v2.0):
+    - query: Structured query string (required)
+    - label.*: Optional exact match filters (signal-type, severity, environment, etc.)
     - top_k: Number of top results to return (default: 3)
 
-    Output (per DD-WORKFLOW-002):
-    - workflows: List of ranked workflows with metadata
+    Output (per DD-WORKFLOW-002 v2.0):
+    - workflows: List of ranked workflows with confidence scores (90-95% for exact matches)
 
     ⚠️ MVP: Uses MOCK_WORKFLOWS with simple keyword matching
-    TODO: Implement PostgreSQL + pgvector semantic search
+    TODO: Implement two-phase semantic search per DD-WORKFLOW-002 v2.0
+      - Phase 1: Exact label matching (SQL WHERE clause)
+      - Phase 2: Semantic ranking (pgvector similarity)
     """
 
     def __init__(self):
@@ -116,8 +133,9 @@ class SearchWorkflowCatalogTool(Tool):
                 "query": ToolParameter(
                     type="string",
                     description=(
-                        "Natural language query describing the incident and desired remediation "
-                        "(e.g., 'OOMKilled critical pod recovery', 'CrashLoopBackOff due to configuration error')"
+                        "Structured query in format '<signal_type> <severity> [optional_keywords]' per DD-LLM-001. "
+                        "Use canonical Kubernetes event reason from your RCA findings (not initial signal). "
+                        "Examples: 'OOMKilled critical', 'CrashLoopBackOff high', 'NodeNotReady critical infrastructure'"
                     ),
                     required=True
                 ),
@@ -133,7 +151,9 @@ class SearchWorkflowCatalogTool(Tool):
                 ),
             },
             additional_instructions=(
-                "The similarity_score indicates how well the workflow matches your query. "
+                "IMPORTANT: Use structured query format '<signal_type> <severity>' per DD-LLM-001. "
+                "The signal_type must be a canonical Kubernetes event reason from your RCA findings. "
+                "The similarity_score (90-95% for exact matches) indicates how well the workflow matches your query. "
                 "The success_rate indicates historical effectiveness. "
                 "Consider both metrics when selecting a workflow."
             )
@@ -144,7 +164,9 @@ class SearchWorkflowCatalogTool(Tool):
         Execute workflow catalog search
 
         Business Requirement: BR-HAPI-250
-        Design Decision: DD-WORKFLOW-002
+        Design Decisions:
+          - DD-WORKFLOW-002 v2.0 - MCP Workflow Catalog Architecture
+          - DD-LLM-001 - MCP Workflow Search Parameter Taxonomy
 
         Args:
             params: Tool parameters (query, filters, top_k)
@@ -158,13 +180,16 @@ class SearchWorkflowCatalogTool(Tool):
             - Simple keyword-based search
             - Basic signal_types filtering
 
-        TODO: Production Migration (when Data Storage Service is ready)
+        TODO: Production Migration (per DD-WORKFLOW-002 v2.0)
             - Replace with PostgreSQL queries
-            - Add pgvector semantic search
-            - Add advanced filtering (business_category, risk_tolerance, environment)
+            - Implement two-phase semantic search:
+              * Phase 1: Exact label matching (label.signal-type, label.severity, etc.)
+              * Phase 2: Semantic ranking (pgvector similarity)
+            - Accept label.* parameters for exact matching
+            - Return confidence scores 90-95% for exact matches
             - Add workflow parameter validation
             - Add workflow execution tracking
-            See: Data Storage Service implementation plan
+            See: DD-WORKFLOW-002 v2.0, DD-LLM-001
         """
         try:
             # Extract and validate parameters
@@ -211,9 +236,12 @@ class SearchWorkflowCatalogTool(Tool):
         Mock workflow search for MVP
 
         Business Requirement: BR-HAPI-250
+        Design Decisions:
+          - DD-WORKFLOW-002 v2.0 - Two-phase semantic search
+          - DD-LLM-001 - Structured query format
 
         Args:
-            query: Natural language query string
+            query: Structured query string '<signal_type> <severity> [keywords]' (per DD-LLM-001)
             filters: Optional filter criteria (signal_types, etc.)
             top_k: Maximum number of results to return
 
@@ -221,12 +249,16 @@ class SearchWorkflowCatalogTool(Tool):
             List of workflow dictionaries sorted by similarity_score
 
         ⚠️ MVP: Simple keyword matching with MOCK_WORKFLOWS
-        TODO: Replace with PostgreSQL + pgvector semantic search
-          - Embed query using text-embedding-ada-002 or similar
-          - Perform vector similarity search in pgvector
-          - Apply filters using SQL WHERE clauses
-          - Return top_k results ordered by similarity
-          See: Data Storage Service implementation plan
+        TODO: Replace with two-phase semantic search (per DD-WORKFLOW-002 v2.0)
+          Phase 1: Exact label matching
+            - Filter by label.signal-type, label.severity, label.environment, etc.
+            - SQL WHERE clause: labels->>'signal-type' = 'OOMKilled'
+          Phase 2: Semantic ranking
+            - Generate embedding from structured query
+            - Perform pgvector similarity search on filtered results
+            - ORDER BY embedding <=> $query_embedding
+          Expected confidence: 90-95% for exact matches
+          See: DD-WORKFLOW-002 v2.0, DD-LLM-001
         """
         results = []
 
@@ -302,7 +334,15 @@ class WorkflowCatalogToolset(Toolset):
     Toolset for workflow catalog operations.
 
     Business Requirement: BR-HAPI-250 - Workflow Catalog Search
-    Design Decision: DD-WORKFLOW-002 - MCP Workflow Catalog Architecture
+    Design Decisions:
+      - DD-WORKFLOW-002 v2.0 - MCP Workflow Catalog Architecture
+      - DD-LLM-001 - MCP Workflow Search Parameter Taxonomy
+
+    Query Format (per DD-LLM-001):
+    - Structured format: '<signal_type> <severity> [optional_keywords]'
+    - signal_type: Canonical Kubernetes event reason from LLM's RCA findings
+    - severity: LLM's RCA severity assessment (critical/high/medium/low)
+    - Example: "OOMKilled critical", "NodeNotReady critical infrastructure"
 
     Architecture:
     - v1.x: Embedded toolset in holmesgpt-api (not external MCP server)
@@ -313,9 +353,12 @@ class WorkflowCatalogToolset(Toolset):
     - Simple keyword-based search
     - No semantic search (pgvector)
 
-    Production Migration Path:
+    Production Migration Path (per DD-WORKFLOW-002 v2.0):
     - Replace MOCK_WORKFLOWS with PostgreSQL queries
-    - Add pgvector semantic search
+    - Implement two-phase semantic search:
+      * Phase 1: Exact label matching (label.signal-type, label.severity, etc.)
+      * Phase 2: Semantic ranking (pgvector similarity)
+    - Expected confidence: 90-95% for exact matches
     - Add workflow parameter validation
     - Add workflow execution tracking
 
@@ -337,9 +380,10 @@ class WorkflowCatalogToolset(Toolset):
             llm_instructions=(
                 "Use this toolset to find appropriate remediation workflows for incidents. "
                 "IMPORTANT: Only search for workflows AFTER you have completed your investigation "
-                "and identified the root cause. Provide a natural language query describing the "
-                "incident and any relevant filters. The tool returns ranked workflows with "
-                "similarity scores and success rates to help you select the most appropriate workflow."
+                "and identified the root cause. Provide a structured query in format '<signal_type> <severity>' "
+                "per DD-LLM-001, where signal_type is the canonical Kubernetes event reason from your RCA findings "
+                "(not the initial signal). The tool returns ranked workflows with similarity scores (90-95% for exact matches) "
+                "and success rates to help you select the most appropriate workflow."
             ),
             experimental=False,
             is_default=True,  # Enable by default for all investigations

@@ -22,6 +22,9 @@ import (
 
 var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 	BeforeEach(func() {
+		// Serial tests must use public schema (schema validation tests check public schema)
+		usePublicSchema()
+
 		// Clean up test data before each test
 		// Note: Schema is created by BeforeSuite migration application
 		_, err := db.Exec("TRUNCATE TABLE audit_events CASCADE")
