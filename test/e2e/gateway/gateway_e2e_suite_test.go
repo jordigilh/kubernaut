@@ -19,8 +19,10 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -51,6 +53,10 @@ var (
 	clusterName    string
 	kubeconfigPath string
 
+	// Shared Gateway configuration (deployed ONCE for all tests)
+	gatewayNamespace string = "gateway-e2e"
+	gatewayURL       string = "http://localhost:30080"
+
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 )
@@ -70,13 +76,15 @@ var _ = BeforeSuite(func() {
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	logger.Info("Gateway E2E Test Suite - Cluster Setup (ONCE)")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Creating Kind cluster for all E2E tests...")
+	logger.Info("Creating Kind cluster and deploying shared Gateway...")
 	logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 	logger.Info("  • RemediationRequest CRD (cluster-wide)")
 	logger.Info("  • Gateway Docker image (build + load)")
+	logger.Info("  • Shared Gateway + Redis (gateway-e2e namespace)")
 	logger.Info("  • Kubeconfig: ~/.kube/gateway-kubeconfig")
 	logger.Info("")
-	logger.Info("Note: Each test will deploy its own services in a unique namespace")
+	logger.Info("Note: All tests share the same Gateway instance")
+	logger.Info("      Each test creates unique namespace for CRDs only")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Set cluster configuration
@@ -100,11 +108,34 @@ var _ = BeforeSuite(func() {
 	err = os.Setenv("KUBECONFIG", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred())
 
+	// Deploy shared Gateway + Redis (ONCE for all tests)
+	logger.Info("Deploying shared Gateway + Redis...")
+	err = infrastructure.DeployTestServices(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Wait for Gateway HTTP endpoint to be responsive
+	logger.Info("⏳ Waiting for shared Gateway to be ready...")
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	Eventually(func() error {
+		resp, err := httpClient.Get(gatewayURL + "/health")
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("health check returned status %d", resp.StatusCode)
+		}
+		return nil
+	}, 120*time.Second, 2*time.Second).Should(Succeed(), "Shared Gateway did not become responsive")
+	logger.Info("✅ Shared Gateway is ready")
+
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Cluster Setup Complete - Tests can now deploy services per-namespace")
+	logger.Info("Cluster Setup Complete - Shared Gateway Ready")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
 	logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
+	logger.Info(fmt.Sprintf("  • Gateway Namespace: %s", gatewayNamespace))
+	logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 
@@ -157,3 +188,23 @@ var _ = AfterSuite(func() {
 })
 
 // Helper functions for tests
+
+// CleanupRedisForTest flushes Redis to ensure test isolation
+// This should be called in each test's AfterAll to prevent cross-test interference
+func CleanupRedisForTest(namespace string) error {
+	// Use kubectl to exec into Redis pod and flush DB
+	// This ensures each test starts with clean Redis state
+	return infrastructure.FlushRedis(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
+}
+
+// GenerateUniqueAlertName creates a unique alert name for test isolation
+// Format: <baseName>-<timestamp>-<process>
+func GenerateUniqueAlertName(baseName string) string {
+	return fmt.Sprintf("%s-%d-p%d", baseName, GinkgoRandomSeed(), GinkgoParallelProcess())
+}
+
+// GenerateUniqueNamespace creates a unique namespace name for test isolation
+// Format: <prefix>-<timestamp>
+func GenerateUniqueNamespace(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, GinkgoRandomSeed())
+}
