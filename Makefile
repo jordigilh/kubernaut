@@ -47,9 +47,9 @@ help: ## Display this help.
 ##@ Gateway Integration Tests
 
 .PHONY: test-gateway
-test-gateway: ## Run Gateway integration tests (Kind bootstrapped via Go)
-	@echo "🧪 Running Gateway integration tests with 4 parallel processors..."
-	@cd test/integration/gateway && ginkgo -v --procs=4
+test-gateway: ## Run Gateway integration tests (envtest + Podman)
+	@echo "🧪 Running Gateway integration tests with 2 parallel processors (envtest + Podman)..."
+	@cd test/integration/gateway && ginkgo -v --procs=2
 
 ##@ Notification Service Integration Tests
 
@@ -659,6 +659,59 @@ test-e2e-toolset: ## Run Dynamic Toolset E2E tests (Kind cluster, ~10-15 min)
 	@echo "🏗️  Infrastructure: Kind cluster + Dynamic Toolset Service"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@cd test/e2e/toolset && ginkgo -v --timeout=15m
+
+.PHONY: test-e2e-notification
+test-e2e-notification: ## Run Notification Service E2E tests (~5-10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Notification Service - E2E Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Test Scenarios:"
+	@echo "   1. Audit Lifecycle - Message sent/failed/acknowledged events"
+	@echo "   2. Audit Correlation - Remediation request tracing"
+	@echo ""
+	@echo "🏗️  Infrastructure: envtest + Audit integration"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@cd test/e2e/notification && ginkgo -v --timeout=10m
+
+.PHONY: test-e2e-notification-files
+test-e2e-notification-files: ## Run Notification File Delivery E2E tests (DD-NOT-002)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Notification Service - File-Based E2E Test Suite (DD-NOT-002 V3.0)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Test Scenarios:"
+	@echo "   1. Complete Message Content Validation (BR-NOT-053)"
+	@echo "   2. Data Sanitization Validation (BR-NOT-054)"
+	@echo "   3. Priority Field Validation (BR-NOT-056)"
+	@echo "   4. Concurrent Delivery Validation"
+	@echo "   5. FileService Error Handling (CRITICAL)"
+	@echo ""
+	@echo "🏗️  Infrastructure: envtest + FileDeliveryService"
+	@echo "📁 Output Directory: /tmp/kubernaut-e2e-notifications"
+	@echo "🎯 Purpose: E2E Testing Infrastructure (validates message correctness)"
+	@echo ""
+	@echo "⚠️  Safety Note: FileService is E2E testing only, NOT used in production"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@cd test/e2e/notification && ginkgo -v --timeout=10m --focus="File-Based"
+
+.PHONY: test-e2e-notification-metrics
+test-e2e-notification-metrics: ## Run Notification Service Metrics E2E tests (BR-NOT-054)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Notification Service - Metrics E2E Test Suite (BR-NOT-054)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Test Scenarios:"
+	@echo "   1. Metrics Endpoint Availability"
+	@echo "   2. Notification Delivery Metrics (requests_total, attempts, duration)"
+	@echo "   3. Controller Metrics (reconciliation duration, active notifications)"
+	@echo "   4. Sanitization Metrics (redactions tracking)"
+	@echo "   5. All 10 Key Metrics Validation"
+	@echo ""
+	@echo "🏗️  Infrastructure: envtest + Metrics Server"
+	@echo "📊 Metrics Endpoint: http://localhost:8080/metrics"
+	@echo "🎯 Purpose: Validate Prometheus metrics are exposed and accurate"
+	@echo ""
+	@echo "⚠️  Note: Tests validate metrics format and presence, not exact values"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@cd test/e2e/notification && ginkgo -v --timeout=10m --focus="Metrics E2E"
 
 .PHONY: test-e2e-datastorage-parallel
 test-e2e-datastorage-parallel: ## Run Data Storage E2E tests in parallel (3 processes, ~3-5 min)

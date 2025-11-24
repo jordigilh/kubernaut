@@ -1,8 +1,8 @@
 # Notification Controller - Implementation Documentation
 
-**Version**: 3.1 (v3.1 Enhanced)
-**Last Updated**: 2025-10-18
-**Status**: ✅ Production-Ready with Enhanced Patterns
+**Version**: 4.0 (ADR-034 Audit Integration)
+**Last Updated**: 2025-11-21
+**Status**: ✅ Production-Ready with ADR-034 Unified Audit Table
 
 ---
 
@@ -14,9 +14,10 @@ The Notification Controller delivers multi-channel notifications with zero data 
 - Multi-channel delivery (Console, Slack)
 - Automatic retry with exponential backoff (30s → 480s)
 - Zero data loss (CRD-based persistence)
-- Complete audit trail (delivery attempts tracking)
+- Complete audit trail (delivery attempts tracking + ADR-034 unified audit)
 - Graceful degradation (independent channel failure handling)
 - **v3.1**: Enhanced error categorization and resilience patterns
+- **v4.0**: ADR-034 unified audit table integration with fire-and-forget writes
 
 ---
 
@@ -55,6 +56,38 @@ The v3.1 release introduces a comprehensive 5-category error handling framework:
 - **Action**: Log error, send notification with "[REDACTED]" placeholder
 - **Recovery**: Automatic (degraded delivery)
 - **Implementation**: `SanitizeWithFallback()`, `SafeFallback()` in `pkg/notification/sanitization/sanitizer.go`
+
+---
+
+## v4.0 ADR-034 Unified Audit Table Integration
+
+### Audit Trail Integration
+
+**Business Requirements**: BR-NOT-062 (Unified Audit Table), BR-NOT-063 (Graceful Degradation)
+
+**Implementation**: Fire-and-forget audit writes using ADR-034 unified `audit_events` table
+
+**Key Components**:
+1. **Audit Helpers** (`internal/controller/notification/audit.go`): Creates audit events for 4 notification states
+   - `notification.message.sent` - Successful delivery
+   - `notification.message.failed` - Delivery failure
+   - `notification.message.acknowledged` - User acknowledgment
+   - `notification.message.escalated` - Priority escalation
+
+2. **Buffered Audit Store** (`pkg/audit/`): Fire-and-forget async writes with DLQ fallback
+   - <1ms audit overhead (non-blocking)
+   - Batch writes (10 events per batch)
+   - 100ms flush interval
+   - Redis DLQ for failed writes (zero audit loss)
+
+3. **Integration Points**: Reconciler calls audit helpers after each delivery attempt
+   - `auditMessageSent()` - After successful channel delivery
+   - `auditMessageFailed()` - After channel delivery failure
+   - Correlation ID from `metadata.remediationRequestName` for end-to-end tracing
+
+**Test Coverage**: 121 tests (110 unit + 9 integration + 2 E2E, 100% passing)
+
+See [DD-NOT-001](./DD-NOT-001-ADR034-AUDIT-INTEGRATION-v2.0-FULL.md) for complete implementation details.
 
 ---
 

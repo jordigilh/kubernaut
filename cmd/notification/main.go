@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Kubernaut.
+Copyright 2025 Jordi Gil.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,8 +18,11 @@ package main
 
 import (
 	"flag"
+	"net/http"
 	"os"
+	"time"
 
+	zaplog "go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -30,6 +33,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
 	//+kubebuilder:scaffold:imports
@@ -90,16 +94,90 @@ func main() {
 	}
 	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
 
+	// ========================================
+	// DD-NOT-002 V3.0: E2E File Delivery Service (Testing Infrastructure)
+	// Feature Flag: E2E_FILE_OUTPUT
+	// ========================================
+	// FileService writes notifications to JSON files for E2E test validation.
+	// This is E2E testing infrastructure only and should NOT be used in production.
+	//
+	// SAFETY GUARANTEE (V3.0 Error Handling Philosophy):
+	// - FileService failures do NOT block production notifications
+	// - Controller checks `if r.FileService != nil` before delivery
+	// - Production deployments have FileService = nil (feature flag disabled)
+	//
+	// Usage:
+	//   export E2E_FILE_OUTPUT=/tmp/kubernaut-e2e-notifications
+	//   make test-e2e-notification-files
+	var fileService *delivery.FileDeliveryService
+	e2eFileOutput := os.Getenv("E2E_FILE_OUTPUT")
+	if e2eFileOutput != "" {
+		setupLog.Info("E2E file delivery enabled (testing infrastructure only)",
+			"outputDir", e2eFileOutput,
+			"feature", "DD-NOT-002")
+		fileService = delivery.NewFileDeliveryService(e2eFileOutput)
+	}
+
 	// Initialize data sanitization
 	sanitizer := sanitization.NewSanitizer()
 
-	// Setup controller with delivery services + sanitization
+	// ========================================
+	// v1.1: Initialize Audit Store for ADR-034 Integration
+	// BR-NOT-062: Unified Audit Table Integration
+	// BR-NOT-063: Graceful Audit Degradation
+	// See: DD-NOT-001-ADR034-AUDIT-INTEGRATION-v2.0-FULL.md
+	// ========================================
+
+	// Get Data Storage Service URL from environment
+	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
+	if dataStorageURL == "" {
+		dataStorageURL = "http://datastorage-service.kubernaut.svc.cluster.local:8080"
+		setupLog.Info("DATA_STORAGE_URL not set, using default", "url", dataStorageURL)
+	}
+
+	// Create HTTP client for Data Storage Service
+	httpClient := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+	dataStorageClient := audit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
+
+	// Create buffered audit store (fire-and-forget pattern, ADR-038)
+	auditConfig := audit.Config{
+		BufferSize:    10000,           // In-memory buffer size
+		BatchSize:     100,             // Batch size for Data Storage writes
+		FlushInterval: 5 * time.Second, // Flush interval
+		MaxRetries:    3,               // Max retry attempts for failed writes
+	}
+
+	// Create zap logger for audit store (requires *zap.Logger, not logr.Logger)
+	zapLogger, err := zaplog.NewProduction()
+	if err != nil {
+		setupLog.Error(err, "Failed to create zap logger for audit store")
+		os.Exit(1)
+	}
+	auditLogger := zapLogger.Named("audit")
+
+	auditStore, err := audit.NewBufferedStore(dataStorageClient, auditConfig, "notification-controller", auditLogger)
+	if err != nil {
+		setupLog.Error(err, "Failed to create audit store")
+		os.Exit(1)
+	}
+
+	// Create audit helpers
+	auditHelpers := notification.NewAuditHelpers("notification-controller")
+
+	setupLog.Info("Audit store initialized", "bufferSize", auditConfig.BufferSize, "batchSize", auditConfig.BatchSize)
+
+	// Setup controller with delivery services + sanitization + audit + E2E file service
 	if err = (&notification.NotificationRequestReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		ConsoleService: consoleService,
 		SlackService:   slackService,
+		FileService:    fileService,  // NEW - E2E file delivery (DD-NOT-002)
 		Sanitizer:      sanitizer,
+		AuditStore:     auditStore,   // Audit store
+		AuditHelpers:   auditHelpers, // Audit helpers
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NotificationRequest")
 		os.Exit(1)
@@ -116,8 +194,23 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+
+	// Setup signal handler for graceful shutdown
+	ctx := ctrl.SetupSignalHandler()
+
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+
+	// ========================================
+	// Graceful Shutdown: Flush Audit Events (DD-007)
+	// BR-NOT-063: Graceful Audit Degradation
+	// ========================================
+	setupLog.Info("Shutting down notification controller, flushing remaining audit events")
+	if err := auditStore.Close(); err != nil {
+		setupLog.Error(err, "Failed to close audit store gracefully")
+		os.Exit(1)
+	}
+	setupLog.Info("Audit store closed successfully, all events flushed")
 }

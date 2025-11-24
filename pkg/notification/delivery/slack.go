@@ -3,13 +3,17 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // SlackDeliveryService delivers notifications to Slack
@@ -26,6 +30,12 @@ func NewSlackDeliveryService(webhookURL string) *SlackDeliveryService {
 			Timeout: 10 * time.Second,
 		},
 	}
+}
+
+// SetHTTPClient sets a custom HTTP client for the delivery service
+// This is useful for testing with custom TLS configurations or timeouts
+func (s *SlackDeliveryService) SetHTTPClient(client *http.Client) {
+	s.httpClient = client
 }
 
 // Deliver delivers a notification to Slack via webhook
@@ -50,10 +60,22 @@ func (s *SlackDeliveryService) Deliver(ctx context.Context, notification *notifi
 	// Send request
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		// Network errors are retryable
+		// Check if this is a TLS error (BR-NOT-058: Security Error Handling)
+		// TLS errors indicate security issues and should NOT be retried
+		if isTLSError(err) {
+			return fmt.Errorf("TLS certificate validation failed (permanent failure - BR-NOT-058): %w", err)
+		}
+
+		// Other network errors are retryable
 		return NewRetryableError(fmt.Errorf("slack webhook request failed: %w", err))
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// Log error but don't fail the request
+			logger := log.FromContext(ctx)
+			logger.Error(closeErr, "Failed to close Slack response body")
+		}
+	}()
 
 	// Read response body for error messages
 	body, _ := io.ReadAll(resp.Body)
@@ -160,6 +182,31 @@ func (e *RetryableError) Unwrap() error {
 func IsRetryableError(err error) bool {
 	_, ok := err.(*RetryableError)
 	return ok
+}
+
+// isTLSError checks if an error is a TLS-related error
+// TLS errors indicate security issues and should NOT be retried (BR-NOT-058)
+func isTLSError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for x509 certificate errors
+	var certInvalidErr *x509.CertificateInvalidError
+	var unknownAuthorityErr *x509.UnknownAuthorityError
+	var hostnameErr *x509.HostnameError
+
+	if errors.As(err, &certInvalidErr) ||
+		errors.As(err, &unknownAuthorityErr) ||
+		errors.As(err, &hostnameErr) {
+		return true
+	}
+
+	// Check for TLS handshake errors in error message
+	errStr := err.Error()
+	return strings.Contains(errStr, "tls:") ||
+		strings.Contains(errStr, "x509:") ||
+		strings.Contains(errStr, "certificate")
 }
 
 // ==============================================

@@ -1,15 +1,23 @@
 # Notification Service - Integration Points
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
-**Service Type**: Stateless HTTP API Service
-**Status**: ⚠️ NEEDS IMPLEMENTATION
+**Version**: 2.0
+**Last Updated**: November 21, 2025
+**Service Type**: CRD Controller (NotificationRequest CRD)
+**Status**: ✅ PRODUCTION-READY with ADR-034 Audit Integration
 
 ---
 
 ## 📋 Overview
 
 Integration points for the Notification Service, documenting all upstream clients, downstream dependencies, and data flows.
+
+### **Key Integrations (v2.0)**
+
+1. **Upstream**: Other CRD controllers create `NotificationRequest` CRDs
+2. **Downstream**: Slack/Console/Email delivery services
+3. **Audit**: ADR-034 unified `audit_events` table via fire-and-forget writes
+4. **DLQ**: Redis Streams for audit write error recovery
+5. **Observability**: Prometheus metrics + structured logging
 
 ---
 
@@ -142,9 +150,45 @@ func (r *KubernetesExecutorReconciler) NotifySafetyViolation(ctx context.Context
 
 ## 🔽 **Downstream Dependencies** (External Services)
 
-**Business Requirements**: BR-NOT-001 to BR-NOT-005 (Multi-channel delivery), BR-NOT-036 (Channel-specific formatting)
+**Business Requirements**: BR-NOT-001 to BR-NOT-005 (Multi-channel delivery), BR-NOT-036 (Channel-specific formatting), BR-NOT-062 (Unified Audit), BR-NOT-063 (Graceful Degradation)
 
-### **1. Email (SMTP)**
+### **1. Data Storage Service** (Audit Integration) - NEW v2.0
+
+**Business Requirements**: BR-NOT-062 (Unified Audit Table), BR-NOT-063 (Graceful Degradation)
+**Service**: Data Storage Service (ADR-034 unified audit table)
+**Endpoint**: `http://datastorage-service.kubernaut-system.svc.cluster.local:8080/api/v1/audit/events`
+**Authentication**: Service account token
+**Integration Pattern**: Fire-and-forget async writes via buffered audit store
+**Performance**: <1ms overhead (non-blocking)
+**Reliability**: DLQ fallback with Redis Streams (zero audit loss)
+
+**Audit Events Generated**:
+- `notification.message.sent` - Successful delivery
+- `notification.message.failed` - Delivery failure
+- `notification.message.acknowledged` - User acknowledgment
+- `notification.message.escalated` - Priority escalation
+
+**Configuration**:
+```go
+// cmd/notification/main.go
+auditStore := audit.NewBufferedStore(
+    audit.NewHTTPDataStorageClient(dataStorageURL, httpClient),
+    audit.Config{
+        BufferSize:    1000,
+        BatchSize:     10,
+        FlushInterval: 100 * time.Millisecond,
+        MaxRetries:    3,
+    },
+    "notification",
+    logger,
+)
+```
+
+**Integration Details**: See [DD-NOT-001](./DD-NOT-001-ADR034-AUDIT-INTEGRATION-v2.0-FULL.md)
+
+---
+
+### **2. Email (SMTP)**
 
 **Business Requirements**: BR-NOT-001 (Email notifications with rich formatting), BR-NOT-036 (1MB limit)
 **Service**: Company SMTP server
