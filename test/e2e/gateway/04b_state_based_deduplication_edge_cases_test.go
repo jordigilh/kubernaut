@@ -64,7 +64,7 @@ var _ = Describe("E2E: State-Based Deduplication Edge Cases", Label("e2e", "dedu
 		testCtx    context.Context
 		testCancel context.CancelFunc
 		sharedNS   string
-		gatewayURL string
+		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
 		k8sClient  client.Client
 	)
 

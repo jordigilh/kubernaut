@@ -76,7 +76,7 @@ var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm
 		httpClient    *http.Client
 		alertPayloads []map[string]interface{}
 		testNamespace string
-		gatewayURL    string
+		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
 		k8sClient     client.Client
 	)
 
