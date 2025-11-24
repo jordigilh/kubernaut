@@ -17,6 +17,8 @@ limitations under the License.
 package gateway
 
 import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
+
 )
 
 // DD-GATEWAY-009: State-Based Deduplication - E2E Test
@@ -51,52 +53,34 @@ import (
 // - Cleanup in AfterAll
 var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "deduplication", "state-based", "p1"), Ordered, func() {
 	var (
-		testCtx       context.Context
-		testCancel    context.CancelFunc
-		testNamespace string
-		gatewayURL    string
-		httpClient    *http.Client
-		k8sClient     client.Client
+		testCtx         context.Context
+		testCancel      context.CancelFunc
+		testNamespace   string
+		gatewayURL      string
+		k8sClient       client.Client
 		prometheusAlert []byte
 	)
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
-		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("E2E Test: State-Based Deduplication Lifecycle - Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace for this test
-		testNamespace = fmt.Sprintf("dedup-state-%d", time.Now().UnixNano())
-		logger.Info("Deploying test services...", zap.String("namespace", testNamespace))
+		// ✅ Generate UNIQUE namespace for test isolation
+		testNamespace = GenerateUniqueNamespace("dedup-state")
+		logger.Info("Creating test namespace...", zap.String("namespace", testNamespace))
 
-		// Deploy Redis + Gateway in test namespace
-		err := infrastructure.DeployTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Gateway URL (NodePort exposed by Kind cluster)
-		gatewayURL = "http://localhost:30080"
-		logger.Info("Gateway URL configured", zap.String("url", gatewayURL))
-
-		// Wait for Gateway HTTP endpoint
-		logger.Info("⏳ Waiting for Gateway HTTP endpoint to be responsive...")
-		Eventually(func() error {
-			resp, err := httpClient.Get(gatewayURL + "/health")
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("health check returned status %d", resp.StatusCode)
-			}
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway HTTP endpoint did not become responsive")
-		logger.Info("✅ Gateway HTTP endpoint is responsive")
-
-		// Setup K8s client for CRD verification
+		// ✅ Create ONLY namespace (use shared Gateway)
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+		}
 		k8sClient = getKubernetesClient()
+		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
+
+		logger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		logger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
 
 		// Create Prometheus alert payload
 		prometheusAlert = createPrometheusWebhookPayload(PrometheusAlertPayload{
@@ -123,10 +107,30 @@ var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "dedup
 	})
 
 	AfterAll(func() {
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("E2E Test: State-Based Deduplication Lifecycle - Cleanup")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		// ✅ Flush Redis for test isolation
+		logger.Info("Flushing Redis for test isolation...")
+		err := CleanupRedisForTest(testNamespace)
+		if err != nil {
+			logger.Warn("Failed to flush Redis", zap.Error(err))
+		}
+
+		// ✅ Cleanup test namespace (CRDs only)
+		logger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+		}
+		_ = k8sClient.Delete(testCtx, ns)
+
 		if testCancel != nil {
 			testCancel()
 		}
-		// Cleanup is handled by AfterSuite (preserves namespace on failure for debugging)
+
+		logger.Info("✅ Test cleanup complete")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
 	Context("Complete Deduplication Lifecycle", func() {

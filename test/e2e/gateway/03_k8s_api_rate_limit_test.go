@@ -17,6 +17,8 @@ limitations under the License.
 package gateway
 
 import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -27,8 +29,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/test/infrastructure"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 // Parallel Execution: ✅ ENABLED
@@ -43,6 +46,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testNamespace string
 		httpClient    *http.Client
 		gatewayURL    string
+		k8sClient     client.Client
 	)
 
 	BeforeAll(func() {
@@ -59,29 +63,16 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
 
 		// Deploy Redis and Gateway in test namespace
-		// NOTE: AlertManager is NOT deployed - test sends payloads directly to Gateway endpoint
-		err := infrastructure.DeployTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
 
-		// Set Gateway URL (using NodePort exposed by Kind cluster)
-		gatewayURL = "http://localhost:30080"
-		testLogger.Info("Gateway URL configured", zap.String("url", gatewayURL))
+		// ✅ Create ONLY namespace (use shared Gateway)
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+		}
+		k8sClient = getKubernetesClient()
+		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		// Wait for Gateway HTTP endpoint to be responsive
-		testLogger.Info("⏳ Waiting for Gateway HTTP endpoint to be responsive...")
-		Eventually(func() error {
-			resp, err := httpClient.Get(gatewayURL + "/health")
-			if err != nil {
-				testLogger.Debug("Health check failed, retrying...", zap.Error(err))
-				return err
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("health check returned status %d", resp.StatusCode)
-			}
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway HTTP endpoint did not become responsive")
-		testLogger.Info("✅ Gateway HTTP endpoint is responsive")
+		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
 
 		testLogger.Info("✅ Test services ready", zap.String("namespace", testNamespace))
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -111,18 +102,25 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			return
 		}
 
-		// Test passed - cleanup namespace
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
-		err := infrastructure.CleanupTestNamespace(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
+		// ✅ Flush Redis for test isolation
+		testLogger.Info("Flushing Redis for test isolation...")
+		err := CleanupRedisForTest(testNamespace)
 		if err != nil {
-			testLogger.Warn("Failed to cleanup namespace", zap.Error(err))
+			testLogger.Warn("Failed to flush Redis", zap.Error(err))
 		}
+
+		// ✅ Cleanup test namespace (CRDs only)
+		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+		}
+		_ = k8sClient.Delete(testCtx, ns)
 
 		if testCancel != nil {
 			testCancel()
 		}
 
-		testLogger.Info("✅ Test cleanup complete")
+				testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -228,14 +226,12 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		// Wait a moment for any pending CRD creations to complete
 		time.Sleep(5 * time.Second)
 
-		// Use kubectl to count CRDs
-		cmd := fmt.Sprintf("kubectl get remediationrequests -n %s --no-headers 2>/dev/null | wc -l", testNamespace)
-		output, err := infrastructure.RunCommand(cmd, kubeconfigPath)
+		// Use k8s client to count CRDs
+		crdList := &remediationv1alpha1.RemediationRequestList{}
+		err = k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace))
 		Expect(err).ToNot(HaveOccurred())
-
-		var crdCount int
-		_, err = fmt.Sscanf(output, "%d", &crdCount)
-		Expect(err).ToNot(HaveOccurred(), "Failed to parse CRD count")
+		
+		crdCount := len(crdList.Items)
 		testLogger.Info(fmt.Sprintf("  Found %d CRDs", crdCount))
 
 		// We expect at least some CRDs to be created (exact count depends on storm detection)
