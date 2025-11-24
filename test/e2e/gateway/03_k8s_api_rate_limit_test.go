@@ -148,7 +148,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 				"labels": map[string]interface{}{
 					"alertname": "HighMemoryUsage",
 					"severity":  "critical",
-					"namespace": "production",
+					"namespace": testNamespace, // Use test namespace for CRD isolation
 					"pod":       fmt.Sprintf("app-pod-%d", i), // Different pod for each alert
 				},
 				"annotations": map[string]interface{}{
