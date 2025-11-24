@@ -98,3 +98,15 @@ func scalePod(namespace, deploymentName, kubeconfigPath string, replicas int) er
 	GinkgoWriter.Printf("✅ Scaled deployment %s/%s to %d replicas\n", namespace, deploymentName, replicas)
 	return nil
 }
+
+// deleteNamespace deletes a namespace
+func deleteNamespace(ctx context.Context, namespace, kubeconfigPath string) error {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "delete", "namespace", namespace, "--wait=false")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to delete namespace %s: %w, output: %s", namespace, err, output)
+	}
+
+	GinkgoWriter.Printf("✅ Namespace deletion initiated: %s\n", namespace)
+	return nil
+}

@@ -3,7 +3,24 @@
 **Date**: November 14, 2025
 **Status**: ✅ APPROVED
 **Deciders**: Architecture Team
-**Version**: 1.0
+**Version**: 2.0
+
+---
+
+## Changelog
+
+### Version 2.0 (2025-11-22)
+- **BREAKING**: Updated all query examples to use structured format per DD-LLM-001
+- Changed query format from free-text to `<signal_type> <severity> [keywords]`
+- Added `label.*` parameters for exact label matching (Phase 1 filtering)
+- Updated Data Flow Example to show structured query + label filters
+- Added cross-references to DD-LLM-001 for query format specification
+- Clarified that semantic search uses two-phase filtering (exact labels + embedding similarity)
+
+### Version 1.0 (2025-11-14)
+- Initial version defining MCP architecture and service responsibilities
+- Defined `search_workflow_catalog` and `get_playbook_details` tools
+- Established semantic search flow
 
 ---
 
@@ -59,51 +76,62 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
 
 ### Tool 1: search_workflow_catalog
 
-**Purpose**: Search for playbooks using natural language query and optional filters
+**Purpose**: Search for workflows using structured query and label filters
+
+**Query Format**: Per DD-LLM-001, queries must use structured format: `<signal_type> <severity> [optional_keywords]`
 
 ```json
 {
   "name": "search_workflow_catalog",
-  "description": "Search the workflow catalog using natural language. Provide a description of the problem and desired remediation approach.",
+  "description": "Search the workflow catalog using structured query format '<signal_type> <severity>' with optional label filters for exact matching.",
 
   "parameters": {
     "query": {
       "type": "string",
       "required": true,
-      "description": "Natural language description of the problem, root cause, and desired remediation",
-      "example": "Memory leak from unclosed database connections causing OOMKilled"
+      "description": "Structured query: '<signal_type> <severity> [optional_keywords]' (e.g., 'OOMKilled critical', 'CrashLoopBackOff high configuration')",
+      "example": "OOMKilled critical"
     },
 
-    "filters": {
-      "type": "object",
+    "label.signal-type": {
+      "type": "string",
       "required": false,
-      "description": "Optional filters to narrow search results",
-      "properties": {
-        "signal_types": {
-          "type": "array",
-          "items": {"type": "string"},
-          "description": "Filter by signal types (e.g., ['MemoryLeak', 'OOMKilled'])"
-        },
-        "business_category": {
-          "type": "string",
-          "description": "Filter by business category (e.g., 'payments', 'auth')"
-        },
-        "risk_tolerance": {
-          "type": "string",
-          "enum": ["low", "medium", "high"],
-          "description": "Filter by risk tolerance level"
-        },
-        "environment": {
-          "type": "string",
-          "enum": ["production", "staging", "development"],
-          "description": "Filter by environment"
-        },
-        "exclude_keywords": {
-          "type": "array",
-          "items": {"type": "string"},
-          "description": "Keywords to exclude from results"
-        }
-      }
+      "description": "Exact match filter for signal type (canonical Kubernetes event reason)",
+      "example": "OOMKilled"
+    },
+    "label.severity": {
+      "type": "string",
+      "required": false,
+      "enum": ["critical", "high", "medium", "low"],
+      "description": "Exact match filter for RCA severity assessment",
+      "example": "critical"
+    },
+    "label.environment": {
+      "type": "string",
+      "required": false,
+      "enum": ["production", "staging", "development", "test"],
+      "description": "Exact match filter for environment (pass-through from input)",
+      "example": "production"
+    },
+    "label.priority": {
+      "type": "string",
+      "required": false,
+      "enum": ["P0", "P1", "P2", "P3"],
+      "description": "Exact match filter for business priority (pass-through from input)",
+      "example": "P0"
+    },
+    "label.risk-tolerance": {
+      "type": "string",
+      "required": false,
+      "enum": ["low", "medium", "high"],
+      "description": "Exact match filter for risk tolerance (pass-through from input)",
+      "example": "low"
+    },
+    "label.business-category": {
+      "type": "string",
+      "required": false,
+      "description": "Exact match filter for business category (pass-through from input)",
+      "example": "revenue-critical"
     },
 
     "top_k": {
@@ -237,39 +265,57 @@ LLM determines root cause
 
 ### Step 2: MCP Tool Call
 ```
-LLM decides to search playbooks
+LLM decides to search workflows
   ↓
-Calls search_workflow_catalog MCP tool
-  query: "Memory leak from unclosed connections..."
-  filters: {business_category: "payments", risk_tolerance: "low"}
+Calls search_workflow_catalog MCP tool (per DD-LLM-001 format)
+  query: "OOMKilled critical"
+  label.signal-type: "OOMKilled"
+  label.severity: "critical"
+  label.environment: "production"
+  label.business-category: "payments"
+  label.risk-tolerance: "low"
 ```
 
 ### Step 3: Embedding Generation
 ```
 Embedding Service receives MCP call
   ↓
-Generates 384-dim embedding from query text
+Generates 384-dim embedding from structured query "OOMKilled critical"
   ↓
-Applies optional filters
+Prepares label filters for Phase 1 exact matching
 ```
 
-### Step 4: Semantic Search
+### Step 4: Two-Phase Semantic Search (per DD-LLM-001)
 ```
 Embedding Service calls Data Storage REST API
-  POST /api/v1/playbooks/search
+  POST /api/v1/workflows/search
   {
+    "query": "OOMKilled critical",
     "embedding": [0.123, -0.456, ...],
-    "filters": {business_category: "payments", ...},
+    "label.signal-type": "OOMKilled",
+    "label.severity": "critical",
+    "label.environment": "production",
+    "label.business-category": "payments",
+    "label.risk-tolerance": "low",
     "top_k": 10
   }
   ↓
-Data Storage executes pgvector similarity search
-  SELECT * FROM workflow_catalog
-  ORDER BY embedding <=> $1::vector
-  WHERE business_category = 'payments'
+Data Storage executes two-phase search:
+  Phase 1: Exact label matching (SQL WHERE clause)
+  Phase 2: Semantic ranking (pgvector similarity)
+
+  SELECT *, 1 - (embedding <=> $1) AS confidence
+  FROM workflow_catalog
+  WHERE status = 'active'
+    AND labels->>'signal-type' = 'OOMKilled'
+    AND labels->>'severity' = 'critical'
+    AND labels->>'environment' = 'production'
+    AND labels->>'business-category' = 'payments'
+    AND labels->>'risk-tolerance' = 'low'
+  ORDER BY embedding <=> $1
   LIMIT 10
   ↓
-Returns ranked playbooks
+Returns ranked workflows with 90-95% confidence scores
 ```
 
 ### Step 5: Workflow Selection
@@ -286,68 +332,82 @@ LLM selects best workflow with reasoning
 ## Data Flow Example
 
 ```json
-// Step 1: LLM calls MCP tool
+// Step 1: LLM calls MCP tool (per DD-LLM-001 structured format)
 {
   "tool": "search_workflow_catalog",
   "parameters": {
-    "query": "Memory leak from unclosed database connections causing OOMKilled. Need restart and connection pool timeout configuration.",
-    "filters": {
-      "signal_types": ["MemoryLeak", "DatabaseConnectionLeak", "OOMKilled"],
-      "business_category": "payments",
-      "risk_tolerance": "low"
-    },
+    "query": "OOMKilled critical",
+    "label.signal-type": "OOMKilled",
+    "label.severity": "critical",
+    "label.environment": "production",
+    "label.business-category": "payments",
+    "label.risk-tolerance": "low",
     "top_k": 5
   }
 }
 
-// Step 2: Embedding Service generates embedding
-embedding = generate_embedding(query)  // [0.123, -0.456, ..., 0.789]
+// Step 2: Embedding Service generates embedding from structured query
+embedding = generate_embedding("OOMKilled critical")  // [0.123, -0.456, ..., 0.789]
 
-// Step 3: Embedding Service calls Data Storage
-POST http://data-storage:8085/api/v1/playbooks/search
+// Step 3: Embedding Service calls Data Storage with structured query + label filters
+POST http://data-storage:8085/api/v1/workflows/search
 {
+  "query": "OOMKilled critical",
   "embedding": [0.123, -0.456, ..., 0.789],
-  "filters": {
-    "signal_types": ["MemoryLeak", "DatabaseConnectionLeak", "OOMKilled"],
-    "business_category": "payments",
-    "risk_tolerance": "low"
-  },
+  "label.signal-type": "OOMKilled",
+  "label.severity": "critical",
+  "label.environment": "production",
+  "label.business-category": "payments",
+  "label.risk-tolerance": "low",
   "top_k": 5
 }
 
-// Step 4: Data Storage returns playbooks
+// Step 4: Data Storage returns workflows with high confidence (90-95%)
 {
-  "playbooks": [
+  "workflows": [
     {
-      "workflow_id": "database-connection-leak-001",
-      "version": "1.2.0",
-      "title": "Database Connection Leak Remediation",
-      "description": "Addresses memory leaks caused by unclosed database connections...",
-      "signal_types": ["MemoryLeak", "DatabaseConnectionLeak", "OOMKilled"],
-      "similarity_score": 0.94,
-      "estimated_duration": "15 minutes",
+      "workflow_id": "increase-memory-conservative-oom",
+      "version": "v1.2",
+      "title": "OOMKilled Remediation - Conservative Memory Increase",
+      "description": "OOMKilled critical: Increases memory limits conservatively without restart",
+      "labels": {
+        "signal-type": "OOMKilled",
+        "severity": "critical",
+        "environment": "production",
+        "business-category": "payments",
+        "risk-tolerance": "low"
+      },
+      "confidence": 0.95,
+      "estimated_duration": "10 minutes",
       "success_rate": 0.92
     },
     {
-      "workflow_id": "memory-leak-generic-001",
-      "version": "1.0.0",
-      "title": "Generic Memory Leak Investigation",
-      "description": "General memory leak troubleshooting...",
-      "signal_types": ["MemoryLeak"],
-      "similarity_score": 0.78,
-      "estimated_duration": "20 minutes",
+      "workflow_id": "scale-horizontal-oom-recovery",
+      "version": "v2.0",
+      "title": "OOMKilled Remediation - Horizontal Scaling",
+      "description": "OOMKilled critical: Add replicas to distribute load before increasing memory",
+      "labels": {
+        "signal-type": "OOMKilled",
+        "severity": "critical",
+        "environment": "production",
+        "business-category": "payments",
+        "risk-tolerance": "medium"
+      },
+      "confidence": 0.88,
+      "estimated_duration": "15 minutes",
       "success_rate": 0.85
     }
-  ]
+  ],
+  "total_results": 2
 }
 
-// Step 5: LLM selects playbook
+// Step 5: LLM selects workflow based on confidence and risk tolerance match
 {
-  "selected_playbook": {
-    "workflow_id": "database-connection-leak-001",
-    "version": "1.2.0"
+  "selected_workflow": {
+    "workflow_id": "increase-memory-conservative-oom",
+    "version": "v1.2"
   },
-  "reasoning": "This workflow directly addresses the root cause (unclosed connections) with a proven 92% success rate..."
+  "reasoning": "MCP search with structured query 'OOMKilled critical' and exact label matching returned this workflow with 95% confidence. Workflow respects low risk tolerance by avoiding service restart."
 }
 ```
 
@@ -455,15 +515,18 @@ POST http://data-storage:8085/api/v1/playbooks/search
 
 ## Related Documents
 
-- [DD-WORKFLOW-001](./DD-WORKFLOW-001-mandatory-label-schema.md) - Mandatory label schema
+- **[DD-LLM-001](./adr-041-llm-contract/DD-LLM-001-mcp-search-taxonomy.md)** - ⭐ **REQUIRED**: MCP query format specification and parameter taxonomy
+- [DD-WORKFLOW-001](./DD-WORKFLOW-001-mandatory-label-schema.md) - Mandatory label schema for workflows
 - [DD-EMBEDDING-001](./DD-EMBEDDING-001-embedding-service-implementation.md) - Embedding Service design
-- [DD-STORAGE-008](../services/stateless/data-storage/implementation/DD-STORAGE-008-PLAYBOOK-CATALOG-SCHEMA.md) - Workflow catalog schema
+- [DD-STORAGE-008](../services/stateless/data-storage/implementation/DD-STORAGE-008-WORKFLOW-CATALOG-SCHEMA.md) - Workflow catalog schema
 - [AUDIT_TRACE_SEMANTIC_SEARCH_IMPLEMENTATION_PLAN_V1.4](../services/stateless/data-storage/implementation/AUDIT_TRACE_SEMANTIC_SEARCH_IMPLEMENTATION_PLAN_V1.4.md) - Data Storage implementation
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: November 14, 2025
-**Status**: ✅ APPROVED (MCP Architecture)
+**Document Version**: 2.0
+**Last Updated**: November 22, 2025
+**Status**: ✅ APPROVED (MCP Architecture + DD-LLM-001 Query Format)
 **Next Review**: After Embedding Service V1.0 deployment
+
+**Breaking Changes in v2.0**: Query format changed from free-text to structured format per DD-LLM-001. All implementations must use `<signal_type> <severity>` query format with `label.*` parameters for exact matching.
 

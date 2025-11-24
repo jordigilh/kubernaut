@@ -50,6 +50,9 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 	)
 
 	BeforeAll(func() {
+		// Serial tests must use public schema
+		usePublicSchema()
+
 		// Use 30-second timeout for HTTP requests
 		client = &http.Client{Timeout: 30 * time.Second}
 

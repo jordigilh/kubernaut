@@ -1,11 +1,29 @@
 # DD-STORAGE-011: Data Storage Service V1.1 Implementation Plan
 
-**Date**: November 14, 2025
-**Status**: 📋 **DRAFT** - High-level plan for V1.1 features
+**Date**: November 14, 2025 (Updated: November 22, 2025)
+**Status**: 📋 **UPDATED** - V1.0 now includes basic CRUD, V1.1 adds validation/lifecycle
 **Decision Maker**: Kubernaut Data Storage Team
-**Authority**: DD-STORAGE-008 (Playbook Catalog Schema), DD-STORAGE-006 (Caching Decision)
+**Authority**: DD-STORAGE-008 (Workflow Catalog Schema), DD-STORAGE-006 (Caching Decision), DD-WORKFLOW-004 (Hybrid Weighted Scoring)
 **Affects**: Data Storage Service V1.1
-**Version**: 1.0
+**Version**: 2.0
+
+---
+
+## 📋 **Changelog**
+
+### Version 2.0 (November 22, 2025)
+- **UPDATED**: V1.0 now includes basic workflow CRUD (POST/PUT/DELETE) - 3 hours
+- **UPDATED**: V1.0 now includes label schema versioning - 1 hour
+- **UPDATED**: V1.0 now includes hybrid weighted label scoring (DD-WORKFLOW-004) - 4-6 hours
+- **UPDATED**: V1.1 scope reduced to validation/lifecycle only - 7 hours (↓ from 10 hours)
+- **RATIONALE**: Basic CRUD unblocks testing; validation adds quality controls in V1.1
+- **CROSS-REFERENCE**: DD-WORKFLOW-004 (Hybrid Weighted Label Scoring)
+
+### Version 1.0 (November 14, 2025)
+- Initial V1.1 implementation plan
+- Defined playbook CRUD REST API with validation
+- Defined embedding caching strategy
+- Defined version history and diff APIs
 
 ---
 
@@ -75,27 +93,32 @@ Enable playbook lifecycle management via REST API with caching for improved perf
 
 ### **What V1.0 Provides**
 - ✅ Unified audit table (`audit_events`)
-- ✅ Playbook catalog table (`playbook_catalog`)
-- ✅ Semantic search endpoint (`GET /api/v1/playbooks/search`)
+- ✅ Workflow catalog table (`remediation_workflow_catalog`)
+- ✅ Semantic search endpoint (`GET /api/v1/workflows/search`)
 - ✅ Real-time embedding generation (no caching)
 - ✅ PostgreSQL with pgvector
 - ✅ Redis DLQ for audit integrity
+- ✅ **NEW**: Workflow CRUD endpoints (`POST/PUT/DELETE /api/v1/workflows`)
+- ✅ **NEW**: Label schema versioning (`schema_version` field)
+- ✅ **NEW**: Hybrid weighted label scoring (DD-WORKFLOW-004)
 
 ### **V1.0 Limitations**
-- ❌ No playbook write API (SQL-only management)
-- ❌ No version validation (manual SQL management)
+- ❌ No semantic version validation (accepts any version string)
+- ❌ No version immutability enforcement (can overwrite versions)
 - ❌ No lifecycle management API (disable/enable via SQL)
 - ❌ No embedding caching (2.5s latency per query)
 - ❌ No cache invalidation mechanism
+- ❌ No version diff API
 
 ---
 
 ## 🎯 **Target State (V1.1)**
 
-### **What V1.1 Adds**
-- ✅ Playbook CRUD REST API with version validation
+### **What V1.1 Adds** (On Top of V1.0 Basic CRUD)
 - ✅ Semantic version validation (golang.org/x/mod/semver)
-- ✅ Lifecycle management API (disable/enable)
+- ✅ Version increment validation (must be > current latest)
+- ✅ Version immutability enforcement (409 on duplicate)
+- ✅ Lifecycle management API (disable/enable with audit trail)
 - ✅ Version history API (list versions, get specific version)
 - ✅ Version diff API (compare two versions)
 - ✅ Embedding caching with Redis (24h TTL)

@@ -36,7 +36,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("Data Storage Self-Auditing Integration", func() {
+var _ = Describe("Data Storage Self-Auditing Integration", Serial, func() {
 	var (
 		testCtx           context.Context
 		testCancel        context.CancelFunc
@@ -44,6 +44,19 @@ var _ = Describe("Data Storage Self-Auditing Integration", func() {
 	)
 
 	BeforeEach(func() {
+		// Serial tests MUST use public schema (HTTP API writes to public schema)
+		usePublicSchema()
+
+		// Ensure service is ready before each test
+		Eventually(func() int {
+			resp, err := http.Get(datastorageURL + "/health")
+			if err != nil || resp == nil {
+				return 0
+			}
+			defer resp.Body.Close()
+			return resp.StatusCode
+		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
+
 		testCtx, testCancel = context.WithTimeout(ctx, 30*time.Second)
 		testCorrelationID = generateTestID()
 	})

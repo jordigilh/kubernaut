@@ -27,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -34,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -193,13 +195,24 @@ func NewServer(
 		zap.String("namespace", "datastorage"),
 	)
 
+	// BR-STORAGE-013, BR-STORAGE-014: Create workflow catalog dependencies
+	logger.Debug("Creating workflow catalog dependencies...")
+	sqlxDB := sqlx.NewDb(db, "pgx") // Wrap *sql.DB with sqlx for workflow repository
+	workflowRepo := repository.NewWorkflowRepository(sqlxDB, logger)
+	embeddingService := embedding.NewPlaceholderService(logger)
+	logger.Debug("Workflow catalog dependencies created",
+		zap.Bool("workflow_repo_nil", workflowRepo == nil),
+		zap.Bool("embedding_service_nil", embeddingService == nil))
+
 	// Create database adapter for READ API handlers
 	dbAdapter := adapter.NewDBAdapter(db, logger)
 
-	// Create READ API handler with logger and ADR-033 repository
+	// Create READ API handler with logger, ADR-033 repository, and workflow catalog
 	handler := NewHandler(dbAdapter,
 		WithLogger(logger),
-		WithActionTraceRepository(actionTraceRepo))
+		WithActionTraceRepository(actionTraceRepo),
+		WithWorkflowRepository(workflowRepo),
+		WithEmbeddingService(embeddingService))
 
 	return &Server{
 		handler: handler,
@@ -283,6 +296,13 @@ func (s *Server) Handler() http.Handler {
 		s.logger.Debug("Registering /api/v1/audit/events handlers (ADR-034, DD-STORAGE-010)")
 		r.Post("/audit/events", s.handleCreateAuditEvent)
 		r.Get("/audit/events", s.handleQueryAuditEvents)
+
+		// BR-STORAGE-013: Semantic search for remediation workflows
+		// BR-STORAGE-014: Workflow catalog management
+		// DD-STORAGE-008: Workflow catalog schema
+		s.logger.Debug("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
+		r.Post("/workflows/search", s.handler.HandleWorkflowSearch)
+		r.Get("/workflows", s.handler.HandleListWorkflows)
 	})
 
 	s.logger.Debug("API v1 routes configured successfully")

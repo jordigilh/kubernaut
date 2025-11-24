@@ -38,10 +38,23 @@ import (
 //
 // ========================================
 
-var _ = Describe("Audit Events Write API Integration Tests", func() {
+var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 	var testCorrelationID string
 
 	BeforeEach(func() {
+		// Serial tests MUST use public schema (HTTP API writes to public schema)
+		usePublicSchema()
+
+		// Ensure service is ready before each test
+		Eventually(func() int {
+			resp, err := http.Get(datastorageURL + "/health")
+			if err != nil || resp == nil {
+				return 0
+			}
+			defer resp.Body.Close()
+			return resp.StatusCode
+		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
+
 		// Generate unique correlation ID for test isolation
 		testCorrelationID = generateTestID()
 

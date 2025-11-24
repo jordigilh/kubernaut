@@ -89,10 +89,13 @@ func createTestAuditEvent(baseURL, service, eventType, correlationID string) err
 	return nil
 }
 
-var _ = Describe("Audit Events Query API", func() {
+var _ = Describe("Audit Events Query API", Serial, func() {
 	var baseURL string
 
 	BeforeEach(func() {
+		// Serial tests must use public schema (HTTP API writes to public schema)
+		usePublicSchema()
+
 		baseURL = datastorageURL + "/api/v1/audit/events"
 	})
 
