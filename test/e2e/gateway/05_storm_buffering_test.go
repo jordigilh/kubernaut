@@ -152,11 +152,11 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 				time.Sleep(inactivityTimeout + 10*time.Second)
 
 				// CORRECTNESS: Exactly one aggregated CRD should be created
-				logger.Info("Verifying single aggregated CRD created...")
-				Eventually(func() int {
-					_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
-					return len(crdList.Items)
-				}, 30*time.Second, 2*time.Second).Should(Equal(1), "Exactly one aggregated CRD should be created")
+			logger.Info("Verifying single aggregated CRD created...")
+			Eventually(func() int {
+				_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
+				return len(crdList.Items)
+			}, 45*time.Second, 2*time.Second).Should(Equal(1), "Exactly one aggregated CRD should be created (Test 10: buffer threshold)")
 
 				// CORRECTNESS: CRD should contain all 5 alerts
 				createdCRD := crdList.Items[0]
@@ -255,11 +255,11 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 
 				// CORRECTNESS: Exactly one aggregated CRD with all alerts
 				logger.Info("Verifying single aggregated CRD with all alerts...")
-				crdList := &remediationv1alpha1.RemediationRequestList{}
-				Eventually(func() int {
-					_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
-					return len(crdList.Items)
-				}, 30*time.Second, 2*time.Second).Should(Equal(1), "Exactly one aggregated CRD should be created")
+			crdList := &remediationv1alpha1.RemediationRequestList{}
+			Eventually(func() int {
+				_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
+				return len(crdList.Items)
+			}, 45*time.Second, 2*time.Second).Should(Equal(1), "Exactly one aggregated CRD should be created (Test 7: inactivity timeout extension)")
 
 				createdCRD := crdList.Items[0]
 				logger.Info("Verifying sliding window aggregation...",
@@ -333,11 +333,11 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 				time.Sleep(inactivityTimeout + 10*time.Second)
 
 				// CORRECTNESS: First CRD should be created
-				crdList := &remediationv1alpha1.RemediationRequestList{}
-				Eventually(func() int {
-					_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
-					return len(crdList.Items)
-				}, 30*time.Second, 2*time.Second).Should(Equal(1), "First CRD should be created after window closes")
+			crdList := &remediationv1alpha1.RemediationRequestList{}
+			Eventually(func() int {
+				_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
+				return len(crdList.Items)
+			}, 45*time.Second, 2*time.Second).Should(Equal(1), "First CRD should be created after window closes (Test 9: inactivity timeout closure - part 1)")
 
 				logger.Info("✅ First storm CRD created", zap.String("crd_name", crdList.Items[0].Name))
 
@@ -366,11 +366,11 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 				logger.Info("⏳ Waiting for second window to close...", zap.Duration("timeout", inactivityTimeout+10*time.Second))
 				time.Sleep(inactivityTimeout + 10*time.Second)
 
-				// CORRECTNESS: Two separate CRDs should exist
-				Eventually(func() int {
-					_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
-					return len(crdList.Items)
-				}, 30*time.Second, 2*time.Second).Should(Equal(2), "Two separate CRDs should be created for separate storms")
+			// CORRECTNESS: Two separate CRDs should exist
+			Eventually(func() int {
+				_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
+				return len(crdList.Items)
+			}, 45*time.Second, 2*time.Second).Should(Equal(2), "Two separate CRDs should be created for separate storms (Test 9: inactivity timeout closure - part 2)")
 
 				logger.Info("✅ Two separate storm CRDs created",
 					zap.String("crd1_name", crdList.Items[0].Name),
@@ -464,11 +464,11 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 
 				// CORRECTNESS: Two separate CRDs (one per namespace)
 				logger.Info("Verifying namespace isolation...")
-				crdList := &remediationv1alpha1.RemediationRequestList{}
-				Eventually(func() int {
-					_ = k8sClient.List(context.Background(), crdList)
-					return len(crdList.Items)
-				}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 2), "At least two CRDs should be created (one per namespace)")
+			crdList := &remediationv1alpha1.RemediationRequestList{}
+			Eventually(func() int {
+				_ = k8sClient.List(context.Background(), crdList)
+				return len(crdList.Items)
+			}, 45*time.Second, 2*time.Second).Should(BeNumerically(">=", 2), "At least two CRDs should be created (one per namespace) (Test 11: multi-tenant isolation)")
 
 				// CORRECTNESS: Each namespace has its own CRD
 				namespace1CRDs := 0

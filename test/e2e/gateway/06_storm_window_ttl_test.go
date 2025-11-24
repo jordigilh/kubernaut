@@ -172,16 +172,17 @@ var _ = Describe("Test 6: Storm Window TTL Expiration (P1)", Label("e2e", "storm
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "New alert after window expiration should create new CRD (201)")
 		testLogger.Info("New window created successfully", zap.Int("statusCode", resp.StatusCode))
 
-		// Step 4: Verify CRD was created
-		Eventually(func() int {
-			crdList := &remediationv1alpha1.RemediationRequestList{}
-			err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace))
-			if err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
-				return -1
-			}
-			return len(crdList.Items)
-		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1), "Should have at least 1 CRD")
+	// Step 4: Verify CRD was created (after 90s TTL wait)
+	// Note: TTL wait is done via time.Sleep above, this just checks CRD exists
+	Eventually(func() int {
+		crdList := &remediationv1alpha1.RemediationRequestList{}
+		err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace))
+		if err != nil {
+			testLogger.Debug("Failed to list CRDs", zap.Error(err))
+			return -1
+		}
+		return len(crdList.Items)
+	}, 15*time.Second, 2*time.Second).Should(BeNumerically(">=", 1), "Should have at least 1 CRD (Test 8: after TTL expiration)")
 
 		testLogger.Info("✅ Storm window TTL expiration test completed successfully")
 	})
