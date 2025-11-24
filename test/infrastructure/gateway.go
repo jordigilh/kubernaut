@@ -117,11 +117,11 @@ func CreateIntegrationCluster(clusterName, kubeconfigPath string, writer io.Writ
 //
 // Steps:
 // 1. Create namespace
-// 2. Deploy Redis Master-Replica (2 pods)
+// 2. Deploy Redis (1 pod - simple deployment)
 // 3. Deploy Gateway (1 pod)
 // 4. Wait for all services ready
 //
-// Time: ~15 seconds (faster without AlertManager)
+// Time: ~10 seconds (simple Redis deployment)
 func DeployTestServices(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	fmt.Fprintf(writer, "Deploying Test Services in Namespace: %s\n", namespace)
@@ -143,8 +143,8 @@ func DeployTestServices(ctx context.Context, namespace, kubeconfigPath string, w
 		fmt.Fprintf(writer, "   kubernaut-system namespace already exists\n")
 	}
 
-	// 3. Deploy Redis Master-Replica
-	fmt.Fprintf(writer, "🚀 Deploying Redis Master-Replica...\n")
+	// 3. Deploy Redis (simple deployment)
+	fmt.Fprintf(writer, "🚀 Deploying Redis...\n")
 	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
@@ -433,13 +433,14 @@ func deployGatewayInNamespace(namespace, kubeconfigPath string, writer io.Writer
 	}
 
 	// Replace namespace placeholder and Redis address (in both ConfigMap and args)
+	// NOTE: Redis service is named "redis" (simple deployment), not "redis-master"
 	manifestContent := strings.ReplaceAll(string(templateContent), "namespace: kubernaut-system", fmt.Sprintf("namespace: %s", namespace))
 	manifestContent = strings.ReplaceAll(manifestContent,
-		"redis_addr: \"redis-master.kubernaut-system.svc.cluster.local:6379\"",
-		fmt.Sprintf("redis_addr: \"redis-master.%s.svc.cluster.local:6379\"", namespace))
+		"addr: \"redis-master.kubernaut-system.svc.cluster.local:6379\"",
+		fmt.Sprintf("addr: \"redis.%s.svc.cluster.local:6379\"", namespace))
 	manifestContent = strings.ReplaceAll(manifestContent,
 		"--redis=redis-master.kubernaut-system.svc.cluster.local:6379",
-		fmt.Sprintf("--redis=redis-master.%s.svc.cluster.local:6379", namespace))
+		fmt.Sprintf("--redis=redis.%s.svc.cluster.local:6379", namespace))
 
 	// Apply manifest
 	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
@@ -461,22 +462,10 @@ func waitForServicesReady(namespace, kubeconfigPath string, writer io.Writer) er
 	maxAttempts := 60
 	delay := 2 * time.Second
 
-	// Wait for Redis master
-	fmt.Fprintf(writer, "   Waiting for Redis master...\n")
-	if err := waitForPods(namespace, "app=redis,role=master", 1, maxAttempts, delay, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("Redis master not ready: %w", err)
-	}
-
-	// Wait for Redis replica
-	fmt.Fprintf(writer, "   Waiting for Redis replica...\n")
-	if err := waitForPods(namespace, "app=redis,role=replica", 1, maxAttempts, delay, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("Redis replica not ready: %w", err)
-	}
-
-	// Wait for AlertManager
-	fmt.Fprintf(writer, "   Waiting for AlertManager...\n")
-	if err := waitForPods(namespace, "app=alertmanager", 1, maxAttempts, delay, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("AlertManager not ready: %w", err)
+	// Wait for Redis (simple deployment, not master-replica)
+	fmt.Fprintf(writer, "   Waiting for Redis...\n")
+	if err := waitForPods(namespace, "app=redis", 1, maxAttempts, delay, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("Redis not ready: %w", err)
 	}
 
 	// Wait for Gateway
