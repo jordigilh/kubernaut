@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
+
 )
 
 // DD-GATEWAY-009: State-Based Deduplication - E2E Edge Cases (Parallel Execution)
@@ -65,56 +65,57 @@ var _ = Describe("E2E: State-Based Deduplication Edge Cases", Label("e2e", "dedu
 		testCancel context.CancelFunc
 		sharedNS   string
 		gatewayURL string
-		httpClient *http.Client
 		k8sClient  client.Client
 	)
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
-		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("E2E Test: State-Based Deduplication Edge Cases - Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace for Gateway deployment
-		sharedNS = fmt.Sprintf("edge-cases-%d", time.Now().UnixNano())
-		logger.Info("Deploying test services...", zap.String("namespace", sharedNS))
+		// ✅ Generate UNIQUE namespace for test isolation
+		sharedNS = GenerateUniqueNamespace("edge-cases")
+		logger.Info("Creating test namespace...", zap.String("namespace", sharedNS))
 
-		// Deploy Redis + Gateway in shared namespace
-		err := infrastructure.DeployTestServices(testCtx, sharedNS, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Gateway URL (NodePort exposed by Kind cluster)
-		gatewayURL = "http://localhost:30080"
-		logger.Info("Gateway URL configured", zap.String("url", gatewayURL))
-
-		// Wait for Gateway HTTP endpoint
-		logger.Info("⏳ Waiting for Gateway HTTP endpoint to be responsive...")
-		Eventually(func() error {
-			resp, err := httpClient.Get(gatewayURL + "/health")
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("health check returned status %d", resp.StatusCode)
-			}
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway HTTP endpoint did not become responsive")
-		logger.Info("✅ Gateway HTTP endpoint is responsive")
-
-		// Setup K8s client for CRD verification
+		// ✅ Create ONLY namespace (use shared Gateway)
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: sharedNS},
+		}
 		k8sClient = getKubernetesClient()
+		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		logger.Info("✅ Test services ready", zap.String("namespace", sharedNS))
+		logger.Info("✅ Test namespace ready", zap.String("namespace", sharedNS))
+		logger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
 	AfterAll(func() {
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("E2E Test: State-Based Deduplication Edge Cases - Cleanup")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		// ✅ Flush Redis for test isolation
+		logger.Info("Flushing Redis for test isolation...")
+		err := CleanupRedisForTest(sharedNS)
+		if err != nil {
+			logger.Warn("Failed to flush Redis", zap.Error(err))
+		}
+
+		// ✅ Cleanup test namespace (CRDs only)
+		logger.Info("Cleaning up test namespace...", zap.String("namespace", sharedNS))
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: sharedNS},
+		}
+		_ = k8sClient.Delete(testCtx, ns)
+
 		if testCancel != nil {
 			testCancel()
 		}
+
+		logger.Info("✅ Test cleanup complete")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
