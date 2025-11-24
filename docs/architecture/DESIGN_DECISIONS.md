@@ -25,6 +25,8 @@
 | DD-013 | Kubernetes Client Initialization Standard | ✅ Approved | 2025-11-08 | [DD-013-kubernetes-client-initialization-standard.md](decisions/DD-013-kubernetes-client-initialization-standard.md) |
 | DD-014 | Binary Version Logging Standard | ✅ Approved | 2025-11-17 | [DD-014-binary-version-logging-standard.md](decisions/DD-014-binary-version-logging-standard.md) |
 | DD-015 | Timestamp-Based CRD Naming for Unique Occurrences | ✅ Approved | 2025-11-17 | [DD-015-timestamp-based-crd-naming.md](decisions/DD-015-timestamp-based-crd-naming.md) |
+| DD-016 | Dynamic Toolset Service V2.0 Deferral | ⏸️ Deferred to V2.0 | 2025-11-21 | [DD-016-dynamic-toolset-v2-deferral.md](decisions/DD-016-dynamic-toolset-v2-deferral.md) |
+| DD-HTTP-001 | HTTP Router Strategy (chi for REST APIs, stdlib for simple services) | ✅ Approved | 2025-11-22 | [DD-HTTP-001-http-router-strategy.md](decisions/DD-HTTP-001-http-router-strategy.md) |
 | ADR-001 | CRD-Based Microservices Architecture | ✅ Approved | TBD | [ADR-001-crd-microservices-architecture.md](decisions/ADR-001-crd-microservices-architecture.md) |
 | ADR-002 | Native Kubernetes Jobs for Remediation Execution | ✅ Approved | TBD | [ADR-002-native-kubernetes-jobs.md](decisions/ADR-002-native-kubernetes-jobs.md) |
 | ADR-003 | Kind Cluster as Primary Integration Environment | ✅ Approved | TBD | [ADR-003-KIND-INTEGRATION-ENVIRONMENT.md](decisions/ADR-003-KIND-INTEGRATION-ENVIRONMENT.md) |
@@ -77,6 +79,7 @@
 | DD-GATEWAY-007 | Fallback Namespace Strategy | ✅ Approved | 2025-10-31 | [DD-GATEWAY-007-fallback-namespace-strategy.md](decisions/DD-GATEWAY-007-fallback-namespace-strategy.md) |
 | DD-GATEWAY-008 | Storm Aggregation First-Alert Handling (Alternative 2: Buffered Aggregation) | ✅ Approved | 2025-11-17 | [DD-GATEWAY-008-storm-aggregation-first-alert-handling.md](decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) |
 | DD-GATEWAY-009 | State-Based Deduplication Strategy (Alternative 3: Hybrid Redis Cache + CRD State) | ⏸️ Parked | 2025-11-17 | [DD-GATEWAY-009-state-based-deduplication.md](decisions/DD-GATEWAY-009-state-based-deduplication.md) |
+| DD-GATEWAY-010 | Adapter Naming Convention (SignalSource vs SignalType) | ✅ Approved | 2025-11-21 | [DD-GATEWAY-010-adapter-naming-convention.md](decisions/DD-GATEWAY-010-adapter-naming-convention.md) |
 | DD-HOLMESGPT-005 | Test Strategy Validation | ✅ Validated | [Date] | [DD-HOLMESGPT-005-Test-Strategy-Validation.md](decisions/DD-HOLMESGPT-005-Test-Strategy-Validation.md) |
 | DD-HOLMESGPT-006 | Implementation Plan Quality Gate | ✅ Approved | [Date] | [DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md](decisions/DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md) |
 | DD-HOLMESGPT-007 | Service Boundaries Clarification | ✅ Approved | [Date] | [DD-HOLMESGPT-007-Service-Boundaries-Clarification.md](decisions/DD-HOLMESGPT-007-Service-Boundaries-Clarification.md) |

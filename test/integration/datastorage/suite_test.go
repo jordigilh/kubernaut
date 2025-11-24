@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
+	"github.com/jmoiron/sqlx"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
@@ -50,7 +51,7 @@ func TestDataStorageIntegration(t *testing.T) {
 }
 
 var (
-	db                *sql.DB
+	db                *sqlx.DB // Changed from *sql.DB to support workflow repository
 	redisClient       *redis.Client
 	repo              *repository.NotificationAuditRepository
 	dlqClient         *dlq.Client
@@ -62,6 +63,7 @@ var (
 	serviceContainer  = "datastorage-service-test"
 	datastorageURL    string
 	configDir         string // ADR-030: Directory for config and secret files
+	schemaName        string // Schema name for this parallel process (for isolation)
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -75,6 +77,122 @@ func generateTestID() string {
 // Used for audit events and other UUID-based records
 func generateTestUUID() uuid.UUID {
 	return uuid.New()
+}
+
+// createProcessSchema creates a process-specific PostgreSQL schema for test isolation
+// This enables parallel test execution without data interference between processes
+// Each parallel process gets its own schema (e.g., test_process_1, test_process_2)
+//
+// Strategy:
+// 1. Create empty schema
+// 2. Copy table structure from public schema (without data)
+// 3. Set search_path to use this schema
+//
+// Note: Extensions (pgvector, uuid-ossp) are database-wide and already created in public schema
+func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
+	schemaName := fmt.Sprintf("test_process_%d", processNum)
+
+	GinkgoWriter.Printf("🏗️  [Process %d] Creating schema: %s\n", processNum, schemaName)
+
+	// Drop schema if it exists (cleanup from previous failed runs)
+	_, err := db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+	if err != nil {
+		return "", fmt.Errorf("failed to drop existing schema: %w", err)
+	}
+
+	// Create new schema
+	_, err = db.Exec(fmt.Sprintf("CREATE SCHEMA %s", schemaName))
+	if err != nil {
+		return "", fmt.Errorf("failed to create schema: %w", err)
+	}
+
+	// Copy all table structures from public schema to this schema (without data)
+	// This includes: audit_events, remediation_workflow_catalog, action_trace, etc.
+	GinkgoWriter.Printf("📋 [Process %d] Copying table structures from public schema...\n", processNum)
+
+	// Get list of all tables in public schema
+	rows, err := db.Query(`
+		SELECT tablename
+		FROM pg_tables
+		WHERE schemaname = 'public'
+		AND tablename NOT LIKE 'pg_%'
+		AND tablename NOT LIKE 'sql_%'
+		ORDER BY tablename
+	`)
+	if err != nil {
+		return "", fmt.Errorf("failed to list tables: %w", err)
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return "", fmt.Errorf("failed to scan table name: %w", err)
+		}
+		tables = append(tables, tableName)
+	}
+
+	// Copy each table structure (CREATE TABLE LIKE)
+	for _, tableName := range tables {
+		// Use CREATE TABLE ... (LIKE ...) to copy structure including indexes
+		query := fmt.Sprintf(
+			"CREATE TABLE %s.%s (LIKE public.%s INCLUDING ALL)",
+			schemaName, tableName, tableName,
+		)
+		_, err = db.Exec(query)
+		if err != nil {
+			return "", fmt.Errorf("failed to copy table %s: %w", tableName, err)
+		}
+		GinkgoWriter.Printf("  ✅ [Process %d] Copied table: %s\n", processNum, tableName)
+	}
+
+	// Set search_path to use this schema
+	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", schemaName))
+	if err != nil {
+		return "", fmt.Errorf("failed to set search_path: %w", err)
+	}
+
+	GinkgoWriter.Printf("✅ [Process %d] Schema created with %d tables, search_path set: %s\n", processNum, len(tables), schemaName)
+	return schemaName, nil
+}
+
+// dropProcessSchema drops the process-specific schema (cleanup)
+func dropProcessSchema(db *sqlx.DB, schemaName string) error {
+	if schemaName == "" || schemaName == "public" {
+		// Safety check: never drop public schema
+		return nil
+	}
+
+	GinkgoWriter.Printf("🗑️  Dropping schema: %s\n", schemaName)
+	_, err := db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
+	if err != nil {
+		return fmt.Errorf("failed to drop schema: %w", err)
+	}
+
+	GinkgoWriter.Printf("✅ Schema dropped: %s\n", schemaName)
+	return nil
+}
+
+// usePublicSchema sets the search_path to public schema
+// This is used by Serial tests that need to access data in the public schema
+// (e.g., schema validation tests, tests that check partitions, etc.)
+func usePublicSchema() {
+	if db != nil {
+		// Close all idle connections to force them to reconnect with new search_path
+		db.SetMaxIdleConns(0)
+
+		// Set search_path for all future connections
+		_, err := db.Exec("SET search_path TO public")
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to set search_path to public: %v\n", err)
+		}
+
+		// Restore idle connection pool
+		db.SetMaxIdleConns(10)
+
+		GinkgoWriter.Printf("🔄 Set search_path to public schema\n")
+	}
 }
 
 // preflightCheck validates the test environment before running tests
@@ -230,9 +348,13 @@ var _ = SynchronizedBeforeSuite(
 		GinkgoWriter.Println("🔌 Connecting to PostgreSQL...")
 		tempDB := mustConnectPostgreSQL()
 
-		// 5. Apply schema with propagation handling
-		GinkgoWriter.Println("📋 Applying schema migrations...")
-		applyMigrationsWithPropagationTo(tempDB)
+		// 5. Apply schema with propagation handling to PUBLIC schema
+		// This creates extensions (database-wide) and base schema
+		GinkgoWriter.Println("📋 Applying schema migrations to public schema...")
+		applyMigrationsWithPropagationTo(tempDB.DB) // Use tempDB.DB to get *sql.DB from sqlx
+
+		// Note: We keep the connection open for parallel processes to use
+		// Each parallel process will create its own schema and copy the table structure
 		tempDB.Close()
 
 		// 6. Setup Data Storage Service
@@ -280,7 +402,8 @@ var _ = SynchronizedBeforeSuite(
 	},
 	// All processes: Connect to shared infrastructure
 	func(data []byte) {
-		GinkgoWriter.Printf("🔌 [Process %d] Connecting to shared infrastructure\n", GinkgoParallelProcess())
+		processNum := GinkgoParallelProcess()
+		GinkgoWriter.Printf("🔌 [Process %d] Connecting to shared infrastructure\n", processNum)
 
 		ctx, cancel = context.WithCancel(context.Background())
 
@@ -293,28 +416,48 @@ var _ = SynchronizedBeforeSuite(
 		datastorageURL = string(data)
 
 		// Connect to PostgreSQL
-		GinkgoWriter.Printf("🔌 [Process %d] Connecting to PostgreSQL...\n", GinkgoParallelProcess())
+		GinkgoWriter.Printf("🔌 [Process %d] Connecting to PostgreSQL...\n", processNum)
 		connectPostgreSQL()
 
+		// ========================================
+		// SCHEMA-LEVEL ISOLATION FOR PARALLEL EXECUTION
+		// ========================================
+		// Create process-specific schema for complete test isolation
+		// This prevents search query collisions between parallel processes
+		// Each process gets its own schema: test_process_1, test_process_2, etc.
+		// The schema is a copy of the public schema structure (tables, indexes, etc.)
+		GinkgoWriter.Printf("🏗️  [Process %d] Setting up schema-level isolation...\n", processNum)
+		schemaName, err = createProcessSchema(db, processNum)
+		Expect(err).ToNot(HaveOccurred(), "Schema creation should succeed")
+
 		// Connect to Redis
-		GinkgoWriter.Printf("🔌 [Process %d] Connecting to Redis...\n", GinkgoParallelProcess())
+		GinkgoWriter.Printf("🔌 [Process %d] Connecting to Redis...\n", processNum)
 		connectRedis()
 
 		// Create repository and DLQ client instances
-		GinkgoWriter.Printf("🏗️  [Process %d] Creating repository and DLQ client...\n", GinkgoParallelProcess())
-		repo = repository.NewNotificationAuditRepository(db, logger)
+		GinkgoWriter.Printf("🏗️  [Process %d] Creating repository and DLQ client...\n", processNum)
+		repo = repository.NewNotificationAuditRepository(db.DB, logger) // Use db.DB to get *sql.DB from sqlx
 		dlqClient, err = dlq.NewClient(redisClient, logger)
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
-		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests!\n", GinkgoParallelProcess())
+		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests in schema: %s\n", processNum, schemaName)
 	},
 )
 
 var _ = AfterSuite(func() {
-	GinkgoWriter.Println("🧹 Cleaning up Podman containers...")
+	processNum := GinkgoParallelProcess()
+	GinkgoWriter.Printf("🧹 [Process %d] Cleaning up...\n", processNum)
 
-	// Capture service logs before cleanup for debugging
-	if serviceContainer != "" {
+	// Clean up process-specific schema
+	if db != nil && schemaName != "" {
+		GinkgoWriter.Printf("🗑️  [Process %d] Dropping schema: %s\n", processNum, schemaName)
+		if err := dropProcessSchema(db, schemaName); err != nil {
+			GinkgoWriter.Printf("⚠️  [Process %d] Failed to drop schema: %v\n", processNum, err)
+		}
+	}
+
+	// Capture service logs before cleanup for debugging (only process 1)
+	if processNum == 1 && serviceContainer != "" {
 		logs, err := exec.Command("podman", "logs", "--tail", "200", serviceContainer).CombinedOutput()
 		if err == nil && len(logs) > 0 {
 			GinkgoWriter.Printf("\n📋 Final Data Storage Service logs (last 200 lines):\n%s\n", string(logs))
@@ -341,8 +484,10 @@ var _ = AfterSuite(func() {
 		redisClient.Close()
 	}
 
-	// Use centralized cleanup function
-	cleanupContainers()
+	// Use centralized cleanup function (only process 1)
+	if processNum == 1 {
+		cleanupContainers()
+	}
 
 	// Post-cleanup verification
 	if os.Getenv("POSTGRES_HOST") == "" {
@@ -520,7 +665,7 @@ func startRedis() {
 // connectPostgreSQL establishes PostgreSQL connection
 // mustConnectPostgreSQL creates a new database connection (for process 1 setup)
 // Returns the connection so it can be closed after migrations
-func mustConnectPostgreSQL() *sql.DB {
+func mustConnectPostgreSQL() *sqlx.DB {
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
 		host = "localhost"
@@ -531,7 +676,7 @@ func mustConnectPostgreSQL() *sql.DB {
 	}
 
 	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
-	tempDB, err := sql.Open("pgx", connStr)
+	tempDB, err := sqlx.Connect("pgx", connStr)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Configure connection pool for parallel execution
@@ -560,7 +705,7 @@ func connectPostgreSQL() {
 
 	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
 	var err error
-	db, err = sql.Open("pgx", connStr) // DD-010: Using pgx driver
+	db, err = sqlx.Connect("pgx", connStr) // DD-010: Using pgx driver with sqlx
 	Expect(err).ToNot(HaveOccurred())
 
 	// Configure connection pool for parallel execution
@@ -573,7 +718,7 @@ func connectPostgreSQL() {
 	err = db.Ping()
 	Expect(err).ToNot(HaveOccurred())
 
-	GinkgoWriter.Printf("✅ PostgreSQL connection established (pool: max_open=50, max_idle=10)\n")
+	GinkgoWriter.Printf("✅ PostgreSQL connection established with sqlx (pool: max_open=50, max_idle=10)\n")
 }
 
 // connectRedis establishes Redis connection
@@ -630,6 +775,7 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 		"011_rename_alert_to_signal.sql",
 		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
 		"013_create_audit_events_table.sql",        // ADR-034: Unified audit events table
+		"015_create_workflow_catalog_table.sql",    // BR-STORAGE-012/013/014: Workflow catalog with semantic search
 		"999_add_nov_2025_partition.sql",           // Legacy partition for resource_action_traces
 		"1000_create_audit_events_partitions.sql",  // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
@@ -927,15 +1073,16 @@ func startDataStorageService() {
 func waitForServiceReady() {
 	datastorageURL = "http://localhost:8080"
 
-	// Wait up to 30 seconds for service to be ready
+	// Wait up to 60 seconds for service to be ready (increased for parallel execution)
 	Eventually(func() int {
 		resp, err := http.Get(datastorageURL + "/health")
 		if err != nil || resp == nil {
+			GinkgoWriter.Printf("  ⏳ Waiting for service... (error: %v)\n", err)
 			return 0
 		}
 		defer resp.Body.Close()
 		return resp.StatusCode
-	}, "30s", "1s").Should(Equal(200), "Data Storage Service should be healthy")
+	}, "60s", "2s").Should(Equal(200), "Data Storage Service should be healthy")
 
 	// Print container logs for debugging (first 100 lines)
 	logs, logErr := exec.Command("podman", "logs", "--tail", "100", serviceContainer).CombinedOutput()

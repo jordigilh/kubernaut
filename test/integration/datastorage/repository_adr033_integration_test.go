@@ -46,7 +46,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 	BeforeEach(func() {
 		testCtx = context.Background()
 		testID = generateTestID() // Unique ID for parallel execution isolation
-		actionTraceRepo = repository.NewActionTraceRepository(db, logger)
+		actionTraceRepo = repository.NewActionTraceRepository(db.DB, logger) // Use db.DB to get *sql.DB from sqlx
 
 		// Clean up test data (cascade delete will handle resource_action_traces)
 		_, err := db.ExecContext(testCtx, "DELETE FROM action_histories WHERE resource_id IN (SELECT id FROM resource_references WHERE name LIKE 'test-pod-%')")

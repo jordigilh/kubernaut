@@ -654,6 +654,7 @@ Example: "OOMKilled critical: Increases memory limits and restarts pod on OOM"
 ## References
 
 - **ADR-041**: LLM Prompt and Response Contract (parent document)
+- **[DD-WORKFLOW-002](../DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md)**: MCP Workflow Catalog Architecture (updated to v2.0 to align with this DD)
 - **DD-WORKFLOW-001**: Signal Type Classification and Mandatory Label Schema
 - **DD-STORAGE-008**: Workflow Catalog Schema (semantic search implementation)
 - **BR-WORKFLOW-001**: Workflow catalog semantic search requirements
