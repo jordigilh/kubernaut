@@ -1,20 +1,28 @@
 # Notification Service - API Specification
 
-**Version**: 1.0
-**Last Updated**: 2025-10-06
-**Service Type**: Stateless HTTP API Service
-**HTTP Port**: 8080
-**Metrics Port**: 9090
+**Version**: 2.0
+**Last Updated**: 2025-11-21
+**Service Type**: CRD Controller (NotificationRequest CRD)
+**Architecture**: Declarative Kubernetes-native notification delivery
+**Audit Integration**: ADR-034 Unified Audit Table (v2.0)
 
 ---
 
 ## 📋 API Overview
 
-**Base URL**: `http://notification-service.kubernaut-system.svc.cluster.local:8080`
+**Primary API**: Kubernetes CRD (`NotificationRequest`)
+**Metrics Port**: 9090 (Prometheus metrics)
 
-**Authentication**:
-- **API endpoints** (`/api/v1/*`): Kubernetes TokenReviewer (Bearer token required)
-- **Health/metrics**: No auth for health endpoints, auth for metrics
+**Interaction Model**:
+- **Create Notifications**: Apply `NotificationRequest` CRD to Kubernetes
+- **Track Status**: Watch CRD `.status` field for delivery state
+- **Audit Trail**: All events written to ADR-034 unified `audit_events` table
+
+**Audit Events Generated**:
+- `notification.message.sent` - Successful delivery to channel
+- `notification.message.failed` - Delivery failure
+- `notification.message.acknowledged` - User acknowledgment
+- `notification.message.escalated` - Priority escalation
 
 ---
 
