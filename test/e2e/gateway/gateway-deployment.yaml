@@ -35,15 +35,15 @@ data:
         ttl: 5s  # Fast TTL for E2E tests (production: 5m)
 
       storm:
-        # CRITICAL: threshold=0 defaults to production values (10/5)
-        # Use threshold=-1 to bypass default and trigger storm on first alert
-        # Threshold semantics: count > threshold (exclusive), so -1 means storm at count=0+ (always)
-        rate_threshold: -1         # Bypass default, trigger storm on first alert (count > -1 = true)
-        pattern_threshold: -1      # Bypass default, trigger storm on first alert (count > -1 = true)
+        # Threshold semantics: count > threshold (exclusive)
+        # threshold: 0 means storm triggers when count > 0 (i.e., at count=1, first alert)
+        # Production should use explicit values (e.g., rate: 10, pattern: 5)
+        rate_threshold: 0          # Trigger storm on first alert (count > 0 = true at count=1)
+        pattern_threshold: 0       # Trigger storm on first alert (count > 0 = true at count=1)
         aggregation_window: 5s     # Fast window for E2E tests (production: 1m)
 
         # DD-GATEWAY-008: Buffered first-alert aggregation with sliding window
-        # NOTE: Storm detection must trigger FIRST (rate/pattern_threshold: -1 = storm on first alert)
+        # NOTE: Storm detection must trigger FIRST (rate/pattern_threshold: 0 = storm on first alert)
         # THEN buffering begins (buffer_threshold: 2)
         buffer_threshold: 2        # Buffer 2 alerts before creating window (production: 5)
         inactivity_timeout: 5s     # Sliding window timeout - fast for E2E (production: 60s)
