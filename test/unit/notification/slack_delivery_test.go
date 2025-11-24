@@ -517,65 +517,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 		})
 
 		// 🆕 OPTION A - PHASE 5: TLS Certificate Validation (BR-NOT-058: Error Handling)
-		Context("TLS Certificate Validation Failure Handling", func() {
-			It("should classify TLS certificate errors as permanent failures (BR-NOT-058: Security Error)", func() {
-				// TDD RED: Test that TLS cert errors are non-retryable
-				// TLS certificate validation failures indicate a security issue:
-				// - Expired certificate
-				// - Invalid certificate
-				// - Self-signed certificate (in production)
-				// - Certificate doesn't match domain
-				// These should NOT be retried automatically (security policy)
-
-				// Note: In Go's http.Client, TLS errors are tricky to simulate in unit tests
-				// This test documents the expected behavior
-				// Integration tests with real TLS endpoints can validate this better
-
-				// For unit testing, we can't easily create invalid TLS scenarios
-				// but we can document the expectation:
-				// - x509.CertificateInvalidError → non-retryable
-				// - x509.UnknownAuthorityError → non-retryable
-				// - tls.RecordHeaderError → non-retryable
-
-				// This test serves as documentation that TLS errors should be permanent
-				// Real implementation validation would require integration test with:
-				// 1. Expired certificate server
-				// 2. Self-signed certificate server
-				// 3. Wrong hostname certificate server
-
-				Skip("TLS certificate validation requires integration test with real TLS endpoints")
-
-				// Expected behavior (documented for future integration test):
-				// err := service.Deliver(ctx, notification)
-				// Expect(err).To(HaveOccurred())
-				// Expect(delivery.IsRetryableError(err)).To(BeFalse(),
-				//     "TLS certificate errors should NOT be retryable (security policy)")
-			})
-
-			It("should document that production webhooks must use valid TLS certificates (BR-NOT-058: Security Policy)", func() {
-				// TDD RED: Document security policy for TLS
-
-				// This test documents that:
-				// 1. Production Slack webhooks use valid TLS certificates
-				// 2. TLS errors indicate misconfiguration or security issues
-				// 3. Automatic retry of TLS errors would bypass security validation
-				// 4. TLS errors should alert operations team immediately
-
-				// Expected behavior in production:
-				// - Valid TLS cert: Delivery succeeds
-				// - Invalid TLS cert: Immediate permanent failure, no retry
-				// - Alert operations team for TLS certificate issues
-
-				// For local development/testing:
-				// - Can disable TLS validation with explicit configuration flag
-				// - Production deployments MUST enforce TLS validation
-
-				Skip("TLS policy documentation test - no runtime validation needed")
-
-				// This test serves as executable documentation of security policy
-				// Actual TLS validation is handled by Go's http.Client by default
-				// No custom code needed - stdlib provides secure defaults
-			})
-		})
+		// MOVED TO: test/integration/notification/slack_tls_integration_test.go
+		// See also: docs/services/crd-controllers/06-notification/security-tls-policy.md
 	})
 })
