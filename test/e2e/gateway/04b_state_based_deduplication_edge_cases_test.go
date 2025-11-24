@@ -84,6 +84,7 @@ var _ = Describe("E2E: State-Based Deduplication Edge Cases", Label("e2e", "dedu
 			ObjectMeta: metav1.ObjectMeta{Name: sharedNS},
 		}
 		k8sClient = getKubernetesClient()
+		gatewayURL = "http://localhost:8080"
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
 		logger.Info("✅ Test namespace ready", zap.String("namespace", sharedNS))

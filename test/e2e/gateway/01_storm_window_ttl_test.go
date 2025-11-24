@@ -100,6 +100,7 @@ var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
 		k8sClient = getKubernetesClient()
+		gatewayURL = "http://localhost:8080"
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))

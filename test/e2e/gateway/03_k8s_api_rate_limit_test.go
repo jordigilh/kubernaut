@@ -69,6 +69,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
 		k8sClient = getKubernetesClient()
+		gatewayURL = "http://localhost:8080"
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
@@ -230,7 +231,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		crdList := &remediationv1alpha1.RemediationRequestList{}
 		err = k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace))
 		Expect(err).ToNot(HaveOccurred())
-		
+
 		crdCount := len(crdList.Items)
 		testLogger.Info(fmt.Sprintf("  Found %d CRDs", crdCount))
 
