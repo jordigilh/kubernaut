@@ -304,26 +304,28 @@ var _ = Describe("E2E: State-Based Deduplication Edge Cases", Label("e2e", "dedu
 				},
 			}
 
-			// Send alerts with delay to avoid storm detection
-			// Storm threshold: 3 alerts/minute triggers aggregation
-			// Solution: Send with 2-second delay between each alert for safety
-			for i, alert := range alerts {
-				payload := createPrometheusWebhookPayload(alert)
-				resp := sendWebhookRequest(gatewayURL, "/api/v1/signals/prometheus", payload)
+		// Send alerts with delay to avoid storm detection
+		// DD-GATEWAY-008: With buffer_threshold: 2, alerts may be buffered (HTTP 202)
+		// Solution: Send with 2-second delay between each alert for safety
+		for i, alert := range alerts {
+			payload := createPrometheusWebhookPayload(alert)
+			resp := sendWebhookRequest(gatewayURL, "/api/v1/signals/prometheus", payload)
 
-				// Log response for debugging
-				logger.Info("Alert sent",
-					zap.Int("alert_number", i+1),
-					zap.String("alert_name", alert.AlertName),
-					zap.Int("status_code", resp.StatusCode))
+			// Log response for debugging
+			logger.Info("Alert sent",
+				zap.Int("alert_number", i+1),
+				zap.String("alert_name", alert.AlertName),
+				zap.Int("status_code", resp.StatusCode))
 
-				Expect(resp.StatusCode).To(Equal(http.StatusCreated), fmt.Sprintf("Alert %d (%s) should create CRD", i+1, alert.AlertName))
+			// DD-GATEWAY-008: Accept both 201 (created) and 202 (buffered)
+			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+				fmt.Sprintf("Alert %d (%s) should be accepted (HTTP 201 or 202)", i+1, alert.AlertName))
 
-				// Wait 2 seconds between alerts to avoid storm detection and allow processing
-				if i < len(alerts)-1 {
-					time.Sleep(2 * time.Second)
-				}
+			// Wait 2 seconds between alerts to avoid storm detection and allow processing
+			if i < len(alerts)-1 {
+				time.Sleep(2 * time.Second)
 			}
+		}
 
 			By("2. Verifying 5 different CRDs were created")
 			var crdList remediationv1alpha1.RemediationRequestList

@@ -116,16 +116,36 @@ var _ = Describe("Test 2: TTL-Based Deduplication (P0)", Label("e2e", "deduplica
 			}]
 		}`, alertName, testNamespace)
 
-		req1, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer([]byte(payload1)))
-		Expect(err).ToNot(HaveOccurred())
-		req1.Header.Set("Content-Type", "application/json")
+	req1, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer([]byte(payload1)))
+	Expect(err).ToNot(HaveOccurred())
+	req1.Header.Set("Content-Type", "application/json")
 
-		resp1, err := httpClient.Do(req1)
-		Expect(err).ToNot(HaveOccurred())
-		defer resp1.Body.Close()
+	resp1, err := httpClient.Do(req1)
+	Expect(err).ToNot(HaveOccurred())
+	defer resp1.Body.Close()
 
-		Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD (201)")
-		testLogger.Info("First alert sent successfully", zap.Int("statusCode", resp1.StatusCode))
+	// DD-GATEWAY-008: With buffer_threshold: 2, first alert may return HTTP 202 (buffered)
+	Expect(resp1.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+		"First alert should be accepted (HTTP 201 or 202)")
+	testLogger.Info("First alert sent successfully", zap.Int("statusCode", resp1.StatusCode))
+
+	// If buffered, send second alert to trigger CRD creation
+	if resp1.StatusCode == http.StatusAccepted {
+		testLogger.Info("Alert buffered (HTTP 202) - sending second alert to reach buffer threshold")
+		req2, _ := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer([]byte(payload1)))
+		req2.Header.Set("Content-Type", "application/json")
+		resp2, _ := httpClient.Do(req2)
+		resp2.Body.Close()
+		testLogger.Info("Second alert sent", zap.Int("statusCode", resp2.StatusCode))
+
+		// Wait for CRD to be created
+		Eventually(func() int {
+			crdList := &remediationv1alpha1.RemediationRequestList{}
+			_ = k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
+			return len(crdList.Items)
+		}, 15*time.Second, 1*time.Second).Should(BeNumerically(">=", 1), "CRD should be created")
+		testLogger.Info("CRD created successfully")
+	}
 
 		// Step 2: Wait for Redis TTL to expire (5s production TTL + 5s buffer)
 		// Production uses 5 minutes, but E2E tests use 5 seconds for faster execution
