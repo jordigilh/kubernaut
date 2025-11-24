@@ -308,10 +308,10 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 
 	Describe("Window TTL Management", func() {
 		Context("when window is created", func() {
-			It("should set Redis TTL matching maxWindowDuration", func() {
-				// BR-GATEWAY-008: Window TTL management
-				// BUSINESS BEHAVIOR: Redis keys should expire automatically
-				// OUTCOME: Prevents orphaned window data in Redis
+			It("should set Redis TTL matching inactivityTimeout (windowDuration)", func() {
+				// BR-GATEWAY-008: Window TTL management (sliding window with inactivity timeout)
+				// BUSINESS BEHAVIOR: Redis keys should expire after inactivityTimeout
+				// OUTCOME: Windows close after inactivity, maxWindowDuration enforced via IsWindowExpired
 
 				processID := GinkgoParallelProcess()
 				namespace := fmt.Sprintf("test-ttl-p%d-%d", processID, time.Now().UnixNano())
@@ -350,12 +350,13 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 				ttl, err := redisClient.TTL(ctx, windowKey).Result()
 				Expect(err).ToNot(HaveOccurred(), "Should get TTL")
 
-				// BUSINESS VALIDATION: TTL matches maxWindowDuration (10 seconds in test)
+				// BUSINESS VALIDATION: TTL matches inactivityTimeout/windowDuration (60 seconds in test)
 				// ✅ TTL is set (not -1 which means no expiration)
-				// ✅ TTL is approximately maxWindowDuration (within 2 seconds tolerance)
+				// ✅ TTL is approximately windowDuration (within 5 seconds tolerance)
+				// Note: maxWindowDuration (10s) is enforced via IsWindowExpired check in AddResource
 				Expect(ttl).To(BeNumerically(">", 0), "TTL should be set")
-				Expect(ttl).To(BeNumerically("<=", 10*time.Second), "TTL should not exceed maxWindowDuration")
-				Expect(ttl).To(BeNumerically(">=", 8*time.Second), "TTL should be close to maxWindowDuration")
+				Expect(ttl).To(BeNumerically("<=", 60*time.Second), "TTL should not exceed windowDuration")
+				Expect(ttl).To(BeNumerically(">=", 55*time.Second), "TTL should be close to windowDuration")
 
 				GinkgoWriter.Printf("✅ Window TTL validated: %v (windowID: %s)\n", ttl, windowID)
 			})
