@@ -100,6 +100,13 @@ spec:
         component: webhook
     spec:
       serviceAccountName: gateway
+      # Run on control-plane node to access NodePort mappings
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: gateway
           image: localhost/kubernaut-gateway:e2e-test
