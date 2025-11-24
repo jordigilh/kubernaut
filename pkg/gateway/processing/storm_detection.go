@@ -70,14 +70,10 @@ type StormDetector struct {
 // - Typical remediation time: 3-10 minutes
 // - Balance between early detection and false positives
 func NewStormDetector(redisClient *redis.Client, rateThreshold, patternThreshold int, metricsInstance *metrics.Metrics) *StormDetector {
-	// Apply defaults if zero values provided
-	if rateThreshold == 0 {
-		rateThreshold = 10 // >10 alerts/minute (production default)
-	}
-	if patternThreshold == 0 {
-		patternThreshold = 5 // >5 similar alerts (production default)
-	}
-
+	// No default values applied - caller must provide explicit thresholds
+	// Rationale: "Explicit is better than implicit" - allows threshold: 0 for E2E testing
+	// Production configs should specify explicit values (e.g., rate: 10, pattern: 5)
+	
 	return &StormDetector{
 		redisClient:      redisClient,
 		rateThreshold:    rateThreshold,
