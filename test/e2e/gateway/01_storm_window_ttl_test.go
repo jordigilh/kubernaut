@@ -66,7 +66,7 @@ import (
 // - Single It block with unique namespace (storm-ttl-{timestamp})
 // - Uses shared Gateway instance
 // - Cleanup in AfterAll
-var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm", "ttl", "p0"), func() {
+var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm", "ttl", "p0"), Ordered, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
