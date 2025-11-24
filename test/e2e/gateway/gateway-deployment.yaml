@@ -38,6 +38,11 @@ data:
         rate_threshold: 3          # Low threshold for E2E tests (production: 10)
         pattern_threshold: 3       # Low threshold for E2E tests (production: 5)
         aggregation_window: 5s     # Fast window for E2E tests (production: 1m)
+        
+        # DD-GATEWAY-008: Buffered first-alert aggregation with sliding window
+        buffer_threshold: 2        # Buffer 2 alerts before creating window (production: 5)
+        inactivity_timeout: 5s     # Sliding window timeout - fast for E2E (production: 60s)
+        max_window_duration: 30s   # Maximum window duration - short for E2E (production: 5m)
 
       environment:
         cache_ttl: 5s              # Fast cache for E2E tests (production: 30s)

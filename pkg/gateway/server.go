@@ -274,9 +274,25 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 		)
 	}
 
-	stormAggregator := processing.NewStormAggregatorWithWindow(redisClient, cfg.Processing.Storm.AggregationWindow)
-	if cfg.Processing.Storm.AggregationWindow > 0 {
-		logger.Info("Using custom storm aggregation window", zap.Duration("window", cfg.Processing.Storm.AggregationWindow))
+	// DD-GATEWAY-008: Use NewStormAggregatorWithConfig for full feature support
+	// This enables buffered first-alert aggregation, sliding windows, and multi-tenant isolation
+	stormAggregator := processing.NewStormAggregatorWithConfig(
+		redisClient,
+		cfg.Processing.Storm.BufferThreshold,      // BR-GATEWAY-016: Buffer N alerts before creating window
+		cfg.Processing.Storm.InactivityTimeout,    // BR-GATEWAY-008: Sliding window timeout
+		cfg.Processing.Storm.MaxWindowDuration,    // BR-GATEWAY-008: Maximum window duration
+		1000,                                       // defaultMaxSize: Default namespace buffer size
+		5000,                                       // globalMaxSize: Global buffer limit
+		nil,                                        // perNamespaceLimits: Per-namespace overrides (future)
+		0.95,                                       // samplingThreshold: Utilization to trigger sampling
+		0.5,                                        // samplingRate: Sample rate when threshold reached
+	)
+	if cfg.Processing.Storm.BufferThreshold > 0 || cfg.Processing.Storm.InactivityTimeout > 0 {
+		logger.Info("Using custom storm buffering configuration",
+			zap.Int("buffer_threshold", cfg.Processing.Storm.BufferThreshold),
+			zap.Duration("inactivity_timeout", cfg.Processing.Storm.InactivityTimeout),
+			zap.Duration("max_window_duration", cfg.Processing.Storm.MaxWindowDuration),
+			zap.Duration("aggregation_window", cfg.Processing.Storm.AggregationWindow))
 	}
 
 	// Create environment classifier with configurable cache TTL
