@@ -31,10 +31,11 @@ import (
 
 // Test suite for Gateway E2E tests
 // This suite sets up a complete production-like environment:
-// - Kind cluster (4 nodes: 1 control-plane + 3 workers)
-// - Redis Sentinel HA (1 master + 2 replicas + 3 Sentinels)
-// - Prometheus AlertManager (for webhook testing)
+// - Kind cluster (2 nodes: 1 control-plane + 1 worker)
+// - Redis Master-Replica (1 master + 1 replica)
 // - Gateway service (deployed to Kind cluster)
+//
+// NOTE: AlertManager is NOT deployed - tests send payloads directly to Gateway endpoint
 
 func TestGatewayE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -83,6 +84,13 @@ var _ = BeforeSuite(func() {
 	homeDir, err := os.UserHomeDir()
 	Expect(err).ToNot(HaveOccurred())
 	kubeconfigPath = fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+
+	// Delete any existing cluster first to ensure clean state
+	logger.Info("Checking for existing cluster...")
+	err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+	if err != nil {
+		logger.Warn("Failed to delete existing cluster (may not exist)", zap.Error(err))
+	}
 
 	// Create Kind cluster (ONCE for all tests)
 	err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)

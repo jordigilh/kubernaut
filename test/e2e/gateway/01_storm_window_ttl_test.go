@@ -90,7 +90,8 @@ var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm
 		testNamespace = fmt.Sprintf("storm-ttl-%d", time.Now().UnixNano())
 		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
 
-		// Deploy Redis, AlertManager, Gateway in test namespace
+		// Deploy Redis and Gateway in test namespace
+		// NOTE: AlertManager is NOT deployed - test sends payloads directly to Gateway endpoint
 		err := infrastructure.DeployTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 

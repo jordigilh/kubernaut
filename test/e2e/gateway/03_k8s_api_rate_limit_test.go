@@ -58,7 +58,8 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testNamespace = fmt.Sprintf("rate-limit-%d", time.Now().UnixNano())
 		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
 
-		// Deploy Redis, AlertManager, Gateway in test namespace
+		// Deploy Redis and Gateway in test namespace
+		// NOTE: AlertManager is NOT deployed - test sends payloads directly to Gateway endpoint
 		err := infrastructure.DeployTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
