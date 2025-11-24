@@ -223,11 +223,14 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 					}
 				}
 
-				// Get window key and initial TTL
-				windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
-				initialTTL, err := redisClient.TTL(ctx, windowKey).Result()
-				Expect(err).ToNot(HaveOccurred())
-				Expect(initialTTL).To(BeNumerically("<=", 5*time.Second), "Initial TTL should be ~5s")
+			// Get window key and initial TTL
+			windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+			initialTTL, err := redisClient.TTL(ctx, windowKey).Result()
+			Expect(err).ToNot(HaveOccurred())
+			// CORRECTNESS: Initial TTL is set to windowDuration (5s) for consistent sliding window behavior
+			// The maxWindowDuration (30s) is enforced via IsWindowExpired check in AddResource (defense-in-depth)
+			Expect(initialTTL).To(BeNumerically("<=", 5*time.Second), "Initial TTL should be ~5s (windowDuration/inactivityTimeout)")
+			Expect(initialTTL).To(BeNumerically(">", 4*time.Second), "Initial TTL should be close to 5s")
 
 				// Wait 3 seconds (more than half the window)
 				time.Sleep(3 * time.Second)
@@ -245,16 +248,19 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 					},
 				}
 
-				// BEHAVIOR: AddResource should extend window timer
-				err = aggregator.AddResource(ctx, windowID, signal6)
-				Expect(err).ToNot(HaveOccurred())
+			// BEHAVIOR: AddResource should extend window timer (sliding window)
+			err = aggregator.AddResource(ctx, windowID, signal6)
+			Expect(err).ToNot(HaveOccurred())
 
-				// CORRECTNESS: TTL should be reset to full duration
-				newTTL, err := redisClient.TTL(ctx, windowKey).Result()
-				Expect(err).ToNot(HaveOccurred())
-				Expect(newTTL).To(BeNumerically(">", 4*time.Second), "TTL should be reset to ~5s (sliding window)")
+			// CORRECTNESS: TTL should be reset to windowDuration (5s) by ExtendWindow
+			// This is the sliding window behavior: each alert resets the inactivity timeout
+			// The maxWindowDuration (30s) is a safety limit checked in code, not the Redis TTL
+			newTTL, err := redisClient.TTL(ctx, windowKey).Result()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(newTTL).To(BeNumerically(">", 4*time.Second), "TTL should be reset to ~5s (windowDuration/inactivityTimeout)")
+			Expect(newTTL).To(BeNumerically("<=", 5*time.Second), "TTL should not exceed windowDuration")
 
-				// BUSINESS OUTCOME: Window stays open as long as alerts keep coming (BR-GATEWAY-008)
+			// BUSINESS OUTCOME: Window stays open as long as alerts keep coming (BR-GATEWAY-008)
 			})
 		})
 
@@ -289,21 +295,22 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 					}
 				}
 
-				// Verify window exists
-				windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
-				_, err := redisClient.Get(ctx, windowKey).Result()
-				Expect(err).ToNot(HaveOccurred(), "Window should exist initially")
+			// Verify window exists
+			windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+			_, err := redisClient.Get(ctx, windowKey).Result()
+			Expect(err).ToNot(HaveOccurred(), "Window should exist initially")
 
-				// Wait for window to expire (6 seconds > 5 second timeout)
-				time.Sleep(6 * time.Second)
+			// Wait for window to expire (6 seconds > 5 second inactivityTimeout)
+			// Redis TTL is set to windowDuration (5s) for consistent sliding window behavior
+			time.Sleep(6 * time.Second)
 
-				// BEHAVIOR: Window should have expired
-				_, err = redisClient.Get(ctx, windowKey).Result()
+			// BEHAVIOR: Window should have expired after inactivity timeout
+			_, err = redisClient.Get(ctx, windowKey).Result()
 
-				// CORRECTNESS: Window should be gone
-				Expect(err).To(Equal(goredis.Nil), "Window should expire after inactivity timeout")
+			// CORRECTNESS: Window should be gone after inactivityTimeout (5s)
+			Expect(err).To(Equal(goredis.Nil), "Window should expire after inactivityTimeout (5s)")
 
-				// BUSINESS OUTCOME: Window closes after 5s inactivity, ready for CRD creation (BR-GATEWAY-008)
+			// BUSINESS OUTCOME: Window closes after 5s inactivity, ready for CRD creation (BR-GATEWAY-008)
 			})
 		})
 	})
