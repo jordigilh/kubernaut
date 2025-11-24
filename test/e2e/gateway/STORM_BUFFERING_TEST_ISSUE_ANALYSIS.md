@@ -1,7 +1,7 @@
 # Storm Buffering E2E Test Issue - Root Cause Analysis
 
-**Date**: 2025-11-24  
-**Status**: 🔴 **TEST DESIGN ISSUE IDENTIFIED**  
+**Date**: 2025-11-24
+**Status**: 🔴 **TEST DESIGN ISSUE IDENTIFIED**
 **Confidence**: 98%
 
 ---
@@ -28,8 +28,8 @@ Gateway startup logs confirm configuration was loaded:
  "aggregation_window":5}
 ```
 
-✅ `buffer_threshold: 2` - LOADED  
-✅ `inactivity_timeout: 5s` - LOADED  
+✅ `buffer_threshold: 2` - LOADED
+✅ `inactivity_timeout: 5s` - LOADED
 ✅ `max_window_duration: 30s` - LOADED
 
 ---
@@ -58,7 +58,7 @@ for i := 1; i < bufferThreshold; i++ {
         PodName:   fmt.Sprintf("payment-api-%d", i),  // ❌ DIFFERENT PODS
         Severity:  "critical",
     })
-    
+
     webhookResp := sendWebhookRequest(gatewayURL, "/api/v1/signals/prometheus", alert)
     Expect(webhookResp.StatusCode).To(Equal(http.StatusAccepted))  // ❌ EXPECTS 202
 }
@@ -331,10 +331,10 @@ It("should aggregate multiple alerts into single CRD after storm detected", func
     for i := 1; i <= 3; i++ {
         sendAlert(...)
     }
-    
+
     // Wait for aggregation window to close
     time.Sleep(6 * time.Second)
-    
+
     // Verify: 1 aggregated CRD created (not 3 individual CRDs)
     crdList := listCRDs()
     Expect(crdList.Items).To(HaveLen(1))  // Aggregation worked
@@ -410,7 +410,7 @@ It("should aggregate multiple alerts into single CRD after storm detected", func
 
 ## 📝 **Conclusion**
 
-**Status**: ✅ **GATEWAY CODE IS CORRECT**  
+**Status**: ✅ **GATEWAY CODE IS CORRECT**
 **Issue**: ❌ **TEST DESIGN IS INCORRECT**
 
 **Root Cause**: Tests expect buffering to happen **without storm detection**, but Gateway architecture requires **storm detection FIRST, then buffering**.
@@ -429,7 +429,7 @@ It("should aggregate multiple alerts into single CRD after storm detected", func
 
 ---
 
-**Session End**: 2025-11-24 ~10:00 UTC  
-**Analysis Time**: ~1 hour  
+**Session End**: 2025-11-24 ~10:00 UTC
+**Analysis Time**: ~1 hour
 **Confidence**: 98%
 

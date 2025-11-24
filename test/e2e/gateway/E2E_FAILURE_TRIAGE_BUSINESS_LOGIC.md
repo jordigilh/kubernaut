@@ -1,7 +1,7 @@
 # Gateway E2E Failures - Business Logic Triage
 
-**Date**: 2025-11-24  
-**Analyst**: AI Assistant  
+**Date**: 2025-11-24
+**Analyst**: AI Assistant
 **Scope**: Remaining 6 E2E test failures after infrastructure fixes
 
 ---
@@ -24,7 +24,7 @@ All remaining failures have the **same root cause**: Gateway is returning **HTTP
 Expected <int>: 201 to equal <int>: 202
 ```
 
-**Translation**: 
+**Translation**:
 - Gateway is **creating individual CRDs** (HTTP 201)
 - Tests expect **buffering/aggregation** (HTTP 202)
 - This indicates **storm buffering is not activating**
@@ -189,7 +189,7 @@ if windowID == "" {
 - No buffering occurs
 - No window management
 
-**Business Impact**: 
+**Business Impact**:
 - ❌ No cost reduction from aggregation
 - ❌ CRD explosion under load
 - ❌ K8s API overload risk
@@ -415,7 +415,7 @@ processing:
     rate_threshold: 3          # Low threshold for E2E tests (production: 10)
     pattern_threshold: 3       # Low threshold for E2E tests (production: 5)
     aggregation_window: 5s     # Fast window for E2E tests (production: 1m)
-    
+
     # DD-GATEWAY-008: Buffered first-alert aggregation
     buffer_threshold: 2        # Buffer 2 alerts before creating window (production: 5)
     inactivity_timeout: 5s     # Sliding window timeout (production: 60s)
@@ -613,7 +613,7 @@ alert:storm:buffer:{namespace}:{alertname}
 - No aggregation benefit
 - BR-GATEWAY-008, BR-GATEWAY-016, BR-GATEWAY-011 not working
 
-**Recommendation**: 
+**Recommendation**:
 1. **Fix Gateway initialization** to use `NewStormAggregatorWithConfig`
 2. **Add missing config fields** to E2E Gateway deployment
 3. **Re-run E2E tests** to validate fixes
