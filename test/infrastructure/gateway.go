@@ -664,3 +664,42 @@ func StopRedisContainer(containerName string, writer io.Writer) error {
 	fmt.Fprintf(writer, "✅ Redis container '%s' stopped and removed\n", containerName)
 	return nil
 }
+
+// FlushRedis flushes all Redis data in the specified namespace
+// This is used for test isolation to ensure each E2E test starts with clean Redis state
+func FlushRedis(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintf(writer, "🧹 Flushing Redis in namespace %s for test isolation...\n", namespace)
+
+	// Find Redis pod
+	getPodCmd := exec.CommandContext(ctx, "kubectl",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"get", "pods",
+		"-l", "app=redis",
+		"-o", "jsonpath={.items[0].metadata.name}")
+
+	podNameBytes, err := getPodCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to find Redis pod: %w (output: %s)", err, string(podNameBytes))
+	}
+
+	podName := strings.TrimSpace(string(podNameBytes))
+	if podName == "" {
+		return fmt.Errorf("no Redis pod found in namespace %s", namespace)
+	}
+
+	// Exec into Redis pod and run FLUSHDB
+	flushCmd := exec.CommandContext(ctx, "kubectl",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"exec", podName,
+		"--", "redis-cli", "FLUSHDB")
+
+	output, err := flushCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to flush Redis: %w (output: %s)", err, string(output))
+	}
+
+	fmt.Fprintf(writer, "✅ Redis flushed successfully in namespace %s\n", namespace)
+	return nil
+}

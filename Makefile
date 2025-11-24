@@ -643,8 +643,9 @@ test-e2e-gateway: ## Run Gateway Service E2E tests (Kind cluster, ~10-15 min)
 	@echo "   4. Storm Buffering - Burst handling"
 	@echo ""
 	@echo "🏗️  Infrastructure: Kind cluster + Redis + Gateway Service"
+	@echo "⚠️  Note: E2E tests run serially (--procs=1) to avoid NodePort conflicts"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@cd test/e2e/gateway && ginkgo -v --timeout=15m
+	@cd test/e2e/gateway && ginkgo -v --timeout=15m --procs=1
 
 .PHONY: test-e2e-toolset
 test-e2e-toolset: ## Run Dynamic Toolset E2E tests (Kind cluster, ~10-15 min)
