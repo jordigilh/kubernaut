@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -55,7 +56,7 @@ var (
 
 	// Shared Gateway configuration (deployed ONCE for all tests)
 	gatewayNamespace string = "gateway-e2e"
-	gatewayURL       string = "http://localhost:30080"
+	gatewayURL       string = "http://localhost:8080" // Port-forwarded from gateway-service
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -112,6 +113,20 @@ var _ = BeforeSuite(func() {
 	logger.Info("Deploying shared Gateway + Redis...")
 	err = infrastructure.DeployTestServices(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Start kubectl port-forward for Gateway service
+	logger.Info("🔌 Starting port-forward to Gateway service...")
+	portForwardCmd := exec.CommandContext(ctx, "kubectl", "port-forward",
+		"-n", gatewayNamespace,
+		"service/gateway-service",
+		"8080:8080",
+		"--kubeconfig", kubeconfigPath)
+	portForwardCmd.Stdout = GinkgoWriter
+	portForwardCmd.Stderr = GinkgoWriter
+	
+	err = portForwardCmd.Start()
+	Expect(err).ToNot(HaveOccurred(), "Failed to start port-forward")
+	logger.Info("✅ Port-forward started (localhost:8080 -> gateway-service:8080)")
 
 	// Wait for Gateway HTTP endpoint to be responsive
 	logger.Info("⏳ Waiting for shared Gateway to be ready...")
