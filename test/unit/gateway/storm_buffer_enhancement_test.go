@@ -59,8 +59,18 @@ var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 			AggregationWindow: 60 * time.Second,
 		}
 
-		// For now, use existing constructor
-		aggregator = processing.NewStormAggregatorWithWindow(redisClient, testSettings.AggregationWindow)
+		// Use NewStormAggregatorWithConfig for full feature support
+		aggregator = processing.NewStormAggregatorWithConfig(
+			redisClient,
+			5,                            // bufferThreshold
+			testSettings.AggregationWindow, // inactivityTimeout
+			5*time.Minute,                // maxWindowDuration
+			1000,                         // defaultMaxSize
+			5000,                         // globalMaxSize
+			nil,                          // perNamespaceLimits
+			0.95,                         // samplingThreshold
+			0.5,                          // samplingRate
+		)
 	})
 
 	AfterEach(func() {
