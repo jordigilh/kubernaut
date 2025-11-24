@@ -65,6 +65,7 @@ var _ = Describe("Test 7: Concurrent Alert Aggregation (P1)", Label("e2e", "stor
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
 		k8sClient = getKubernetesClient()
+		gatewayURL = "http://localhost:8080"
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))

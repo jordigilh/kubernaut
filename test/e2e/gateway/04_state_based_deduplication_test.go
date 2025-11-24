@@ -77,6 +77,7 @@ var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "dedup
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
 		k8sClient = getKubernetesClient()
+		gatewayURL = "http://localhost:8080"
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
 		logger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
