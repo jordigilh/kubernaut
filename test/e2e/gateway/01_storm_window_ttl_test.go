@@ -28,8 +28,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Test 1: Storm Window TTL Expiration (P0)
@@ -75,6 +77,7 @@ var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm
 		alertPayloads []map[string]interface{}
 		testNamespace string
 		gatewayURL    string
+		k8sClient     client.Client
 	)
 
 	BeforeAll(func() {
@@ -91,30 +94,16 @@ var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm
 		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
 
 		// Deploy Redis and Gateway in test namespace
-		// NOTE: AlertManager is NOT deployed - test sends payloads directly to Gateway endpoint
-		err := infrastructure.DeployTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
 
-		// Set Gateway URL (using NodePort exposed by Kind cluster)
-		// NodePort 30080 is mapped to host port 30080 in kind-cluster-config.yaml
-		gatewayURL = "http://localhost:30080"
-		testLogger.Info("Gateway URL configured", zap.String("url", gatewayURL))
+		// ✅ Create ONLY namespace (use shared Gateway)
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+		}
+		k8sClient = getKubernetesClient()
+		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		// Wait for Gateway HTTP endpoint to be responsive
-		testLogger.Info("⏳ Waiting for Gateway HTTP endpoint to be responsive...")
-		Eventually(func() error {
-			resp, err := httpClient.Get(gatewayURL + "/health")
-			if err != nil {
-				testLogger.Debug("Health check failed, retrying...", zap.Error(err))
-				return err
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("health check returned status %d", resp.StatusCode)
-			}
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway HTTP endpoint did not become responsive")
-		testLogger.Info("✅ Gateway HTTP endpoint is responsive")
+		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
 
 		testLogger.Info("✅ Test services ready", zap.String("namespace", testNamespace))
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -208,18 +197,25 @@ var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm
 			return
 		}
 
-		// Test passed - cleanup namespace
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
-		err := infrastructure.CleanupTestNamespace(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
+		// ✅ Flush Redis for test isolation
+		testLogger.Info("Flushing Redis for test isolation...")
+		err := CleanupRedisForTest(testNamespace)
 		if err != nil {
-			testLogger.Warn("Failed to cleanup namespace", zap.Error(err))
+			testLogger.Warn("Failed to flush Redis", zap.Error(err))
 		}
+
+		// ✅ Cleanup test namespace (CRDs only)
+		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+		}
+		_ = k8sClient.Delete(testCtx, ns)
 
 		if testCancel != nil {
 			testCancel()
 		}
 
-		testLogger.Info("✅ Test cleanup complete")
+				testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
