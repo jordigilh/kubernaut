@@ -256,21 +256,27 @@ var _ = Describe("Test 8: Metrics Validation (P2)", Label("e2e", "metrics", "p2"
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-			// Assert: Should get 400 Bad Request
-			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
+		// Assert: Should get 400 Bad Request
+		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
 
-			// Assert: Metrics should track 400 status
+		// Assert: Metrics should track 400 status (with Eventually for async collection)
+		Eventually(func() bool {
 			metricsResp, err := httpClient.Get(gatewayURL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				return false
+			}
 			defer metricsResp.Body.Close()
 
 			body, err := io.ReadAll(metricsResp.Body)
-			Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				return false
+			}
 			metricsOutput := string(body)
 
-			// Verify status_code label includes 400
-			Expect(metricsOutput).To(ContainSubstring("status_code=\"400\""),
-				"Metrics should track 400 status code")
+			// Check if metrics contain status_code="400"
+			return strings.Contains(metricsOutput, "status_code=\"400\"")
+		}, 15*time.Second, 1*time.Second).Should(BeTrue(),
+			"Metrics should track 400 status code within 15 seconds")
 
 			testLogger.Info("Status code tracking validated")
 		})

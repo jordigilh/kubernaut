@@ -139,7 +139,7 @@ var _ = SynchronizedBeforeSuite(
 		// Return kubeconfig path to all processes
 		return []byte(kubeconfigPath)
 	},
-	// This runs on ALL processes (including process 1) - sets up per-process port-forward
+	// This runs on ALL processes (including process 1) - verifies NodePort access
 	func(data []byte) {
 		// Initialize context for this process
 		ctx, cancel = context.WithCancel(context.Background())
@@ -157,34 +157,17 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Calculate unique port per parallel process for port-forward
+		// All processes use the same NodePort URL (exposed via Kind extraPortMappings)
+		// No per-process port-forwards needed - eliminates kubectl port-forward instability
 		processID := GinkgoParallelProcess()
-		gatewayPort := 8080 + processID // Process 1: 8081, Process 2: 8082, etc.
-		gatewayURL = fmt.Sprintf("http://localhost:%d", gatewayPort)
+		gatewayURL = "http://localhost:8080" // NodePort 30080 mapped to localhost:8080
 
-		// Start kubectl port-forward for Gateway service with unique port
-		logger.Info("🔌 Starting port-forward to Gateway service...",
+		logger.Info("🔌 Using Gateway NodePort (no port-forward needed)",
 			zap.Int("process", processID),
-			zap.Int("local_port", gatewayPort))
-		portForwardCmd := exec.CommandContext(ctx, "kubectl", "port-forward",
-			"-n", gatewayNamespace,
-			"service/gateway-service",
-			fmt.Sprintf("%d:8080", gatewayPort), // Local:Remote
-			"--kubeconfig", kubeconfigPath)
-		portForwardCmd.Stdout = GinkgoWriter
-		portForwardCmd.Stderr = GinkgoWriter
+			zap.String("url", gatewayURL))
 
-		err = portForwardCmd.Start()
-		Expect(err).ToNot(HaveOccurred(), "Failed to start port-forward")
-		logger.Info("✅ Port-forward started",
-			zap.String("url", gatewayURL),
-			zap.Int("process", processID))
-
-		// Give port-forward a moment to establish connection
-		time.Sleep(2 * time.Second)
-
-		// Wait for Gateway HTTP endpoint to be responsive
-		logger.Info("⏳ Waiting for Gateway HTTP endpoint to be responsive...")
+		// Wait for Gateway HTTP endpoint to be responsive via NodePort
+		logger.Info("⏳ Waiting for Gateway NodePort to be responsive...")
 		httpClient := &http.Client{Timeout: 10 * time.Second}
 		Eventually(func() error {
 			resp, err := httpClient.Get(gatewayURL + "/health")
@@ -196,8 +179,8 @@ var _ = SynchronizedBeforeSuite(
 				return fmt.Errorf("health check returned status %d", resp.StatusCode)
 			}
 			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway HTTP endpoint did not become responsive")
-		logger.Info("✅ Gateway is ready", zap.Int("process", processID))
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway NodePort did not become responsive")
+		logger.Info("✅ Gateway is ready via NodePort", zap.Int("process", processID))
 	},
 )
 

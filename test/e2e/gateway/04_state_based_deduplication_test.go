@@ -131,21 +131,47 @@ var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "dedup
 
 	Context("Complete Deduplication Lifecycle", func() {
 		It("should handle duplicate alerts based on CRD state throughout remediation lifecycle", func() {
-			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// PHASE 1: Initial Alert → CRD Creation
-			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			By("PHASE 1: Sending initial alert (should create new RemediationRequest CRD)")
-			resp1 := sendWebhookRequest(gatewayURL, "/api/v1/signals/prometheus", prometheusAlert)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create new CRD (HTTP 201)")
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// PHASE 1: Initial Alert → Buffered for Storm Aggregation (DD-GATEWAY-008)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		By("PHASE 1: Sending initial alert (buffered for storm aggregation)")
+		resp1 := sendWebhookRequest(gatewayURL, "/api/v1/signals/prometheus", prometheusAlert)
+		
+		// DD-GATEWAY-008: With buffer_threshold: 2, first alert returns HTTP 202 (buffered)
+		Expect(resp1.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+			"First alert should be accepted (HTTP 201 or 202)")
 
-			var response1 GatewayResponse
-			err := json.Unmarshal(resp1.Body, &response1)
-			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
+		var response1 GatewayResponse
+		err := json.Unmarshal(resp1.Body, &response1)
+		Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
+
+		// Wait for CRD to be created asynchronously
+		var crdName string
+		if resp1.StatusCode == http.StatusAccepted {
+			logger.Info("✅ Alert buffered (HTTP 202) - waiting for async CRD creation")
+			// CRD will be created when buffer threshold reached or timeout expires
+			// For this test, we'll send a second alert to trigger creation
+			By("Sending second alert to reach buffer threshold")
+			resp2 := sendWebhookRequest(gatewayURL, "/api/v1/signals/prometheus", prometheusAlert)
+			logger.Info(fmt.Sprintf("Second alert response: HTTP %d", resp2.StatusCode))
+			
+			// Now wait for CRD to appear
+			Eventually(func() bool {
+				crdList := &remediationv1alpha1.RemediationRequestList{}
+				err := k8sClient.List(context.Background(), crdList, client.InNamespace(testNamespace))
+				if err != nil || len(crdList.Items) == 0 {
+					return false
+				}
+				crdName = crdList.Items[0].Name
+				return true
+			}, 15*time.Second, 1*time.Second).Should(BeTrue(), "CRD should be created after buffer threshold")
+		} else {
 			Expect(response1.Status).To(Equal("created"), "Response status should be 'created'")
 			Expect(response1.RemediationRequestName).ToNot(BeEmpty(), "CRD name should be returned")
+			crdName = response1.RemediationRequestName
+		}
 
-			crdName := response1.RemediationRequestName
-			logger.Info(fmt.Sprintf("✅ Created RemediationRequest CRD: %s/%s", testNamespace, crdName))
+		logger.Info(fmt.Sprintf("✅ RemediationRequest CRD ready: %s/%s", testNamespace, crdName))
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// PHASE 2: Verify CRD Was Created in Kubernetes

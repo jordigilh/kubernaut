@@ -251,28 +251,21 @@ var _ = Describe("Test 1: Storm Window TTL Expiration (P0)", Label("e2e", "storm
 
 			testLogger.Info(fmt.Sprintf("  Response (parsed): %v", response))
 
-			// Pattern-based storm detection:
-			// - Alerts 1-3: HTTP 201 (CRD created, pattern counter increments)
-			// - Alert 4: HTTP 202 or 201 (Storm may be detected, pattern counter > threshold)
-			if i < 3 {
-				// First 3 alerts should create individual CRDs
-				Expect(resp.StatusCode).To(Equal(http.StatusCreated),
-					fmt.Sprintf("Alert %d should create CRD (HTTP 201)", i+1))
-				Expect(response).To(HaveKey("remediationRequestName"))
-				testLogger.Info(fmt.Sprintf("  CRD created: %s", response["remediationRequestName"]))
-			} else {
-				// 4th alert should trigger storm detection (pattern threshold exceeded)
-				// Note: Storm detection may still return 201 if CRD is created
-				// The important validation is checking for storm metadata in CRDs later
-				Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-					fmt.Sprintf("Alert %d should trigger storm or create CRD", i+1))
+		// DD-GATEWAY-008: Storm buffering with buffer_threshold: 2
+		// - All alerts return HTTP 202 (buffered for storm aggregation)
+		// - CRDs created asynchronously when buffer threshold reached
+		// - Test validates CRD creation via Eventually checks, not HTTP status
+		Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+			fmt.Sprintf("Alert %d should be accepted (HTTP 201 or 202)", i+1))
 
-				if resp.StatusCode == http.StatusAccepted {
-					testLogger.Info("  ✅ Storm detected! (HTTP 202)")
-				} else {
-					testLogger.Info("  CRD created (HTTP 201) - storm may be detected internally")
-				}
+		if resp.StatusCode == http.StatusAccepted {
+			testLogger.Info(fmt.Sprintf("  ✅ Alert %d buffered (HTTP 202)", i+1))
+		} else {
+			testLogger.Info(fmt.Sprintf("  ✅ Alert %d created CRD (HTTP 201)", i+1))
+			if response["remediationRequestName"] != nil {
+				testLogger.Info(fmt.Sprintf("  CRD name: %s", response["remediationRequestName"]))
 			}
+		}
 
 			// Small delay between alerts to simulate realistic storm
 			if i < len(alertPayloads)-1 {

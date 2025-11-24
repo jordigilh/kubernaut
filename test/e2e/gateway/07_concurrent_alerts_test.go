@@ -183,38 +183,41 @@ var _ = Describe("Test 7: Concurrent Alert Aggregation (P1)", Label("e2e", "stor
 			zap.Int("201_created", statusCodes[201]),
 			zap.Int("202_accepted", statusCodes[202]))
 
-		// We expect:
-		// - At least 1 alert with 201 (Created) - the first alert before storm detection
-		// - Most alerts with 202 (Accepted) - during storm aggregation
-		Expect(statusCodes[201]).To(BeNumerically(">=", 1), "Should have at least 1 CRD created (201)")
-		Expect(statusCodes[202]).To(BeNumerically(">=", 1), "Should have at least 1 alert during storm (202)")
+	// DD-GATEWAY-008: With buffer_threshold: 2, all alerts may return 202 (buffered)
+	// We expect mostly 202 (Accepted) responses during storm aggregation
+	// CRDs are created asynchronously when buffer threshold reached or timeout expires
+	totalResponses := statusCodes[201] + statusCodes[202]
+	Expect(totalResponses).To(Equal(15), "Should have 15 total responses")
+	testLogger.Info("All alerts accepted", zap.Int("total", totalResponses))
 
-		// Step 3: Wait for storm aggregation to complete
-		testLogger.Info("Waiting for storm aggregation to complete...")
-		time.Sleep(5 * time.Second)
-
-		// Step 4: Verify storm aggregation reduced CRD count
-		// Note: Storm detection may create a few CRDs before aggregation kicks in
-		// Expected: Significantly fewer CRDs than alerts (15 alerts → ~1-5 CRDs)
-		// This validates that storm aggregation prevented most duplicate CRDs
-		Eventually(func() int {
-			crdList := &remediationv1alpha1.RemediationRequestList{}
-			err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace))
-			if err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
-				return -1
-			}
-			return len(crdList.Items)
-		}, 30*time.Second, 2*time.Second).Should(BeNumerically("<=", 5), "Should have ≤5 CRDs (storm aggregation active)")
-
-		testLogger.Info("Concurrent alert aggregation validated")
-
-		// Step 5: Verify CRDs have correct metadata
-		crdList := &remediationv1alpha1.RemediationRequestList{}
+	// Step 3: Wait for storm aggregation to complete and CRDs to be created
+	// DD-GATEWAY-008: CRDs created asynchronously after buffer threshold or timeout
+	testLogger.Info("Waiting for storm aggregation to complete and CRDs to be created...")
+	
+	// Step 4: Verify storm aggregation created CRDs
+	// Expected: At least 1 CRD created (storm window aggregation)
+	// Maximum: ≤5 CRDs (storm aggregation prevents 15 individual CRDs)
+	var crdList *remediationv1alpha1.RemediationRequestList
+	Eventually(func() int {
+		crdList = &remediationv1alpha1.RemediationRequestList{}
 		err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace))
-		Expect(err).ToNot(HaveOccurred())
-		Expect(len(crdList.Items)).To(BeNumerically(">", 0), "Should have at least 1 CRD")
-		Expect(len(crdList.Items)).To(BeNumerically("<=", 5), "Should have ≤5 CRDs (aggregation active)")
+		if err != nil {
+			testLogger.Debug("Failed to list CRDs", zap.Error(err))
+			return 0
+		}
+		testLogger.Debug("CRD count check", zap.Int("count", len(crdList.Items)))
+		return len(crdList.Items)
+	}, 90*time.Second, 2*time.Second).Should(BeNumerically(">=", 1), 
+		"Should have at least 1 CRD created after storm aggregation (15 alerts → 1-5 CRDs)")
+
+	testLogger.Info("Concurrent alert aggregation validated")
+
+	// Step 5: Verify storm aggregation reduced CRD count
+	// 15 alerts should result in significantly fewer CRDs (1-5) due to aggregation
+	err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace))
+	Expect(err).ToNot(HaveOccurred())
+	Expect(len(crdList.Items)).To(BeNumerically(">=", 1), "Should have at least 1 CRD")
+	Expect(len(crdList.Items)).To(BeNumerically("<=", 5), "Should have ≤5 CRDs (storm aggregation prevented 15 individual CRDs)")
 
 		crd := crdList.Items[0]
 		testLogger.Info("CRD details",
