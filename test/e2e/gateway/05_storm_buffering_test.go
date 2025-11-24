@@ -63,9 +63,8 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 
 	BeforeEach(func() {
 		// Shared Gateway instance (already deployed in suite setup)
-		gatewayURL = "http://localhost:30080"
 		k8sClient = getKubernetesClient()
-		gatewayURL = "http://localhost:8080"
+		// gatewayURL is set per-process in SynchronizedBeforeSuite (8081-8084)
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

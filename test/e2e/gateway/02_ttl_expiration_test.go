@@ -64,7 +64,7 @@ var _ = Describe("Test 2: TTL-Based Deduplication (P0)", Label("e2e", "deduplica
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
 		k8sClient = getKubernetesClient()
-		gatewayURL = "http://localhost:8080"
+		// gatewayURL is set per-process in SynchronizedBeforeSuite (8081-8084)
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
@@ -77,14 +77,9 @@ var _ = Describe("Test 2: TTL-Based Deduplication (P0)", Label("e2e", "deduplica
 		testLogger.Info("Test 2: TTL-Based Deduplication - Cleanup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// ✅ Flush Redis for test isolation
-		testLogger.Info("Flushing Redis for test isolation...")
-		err := CleanupRedisForTest(testNamespace)
-		if err != nil {
-			testLogger.Warn("Failed to flush Redis", zap.Error(err))
-		}
-
 		// ✅ Cleanup test namespace (CRDs only)
+		// Note: Redis flush removed for parallel execution safety
+		// Redis keys are namespaced by fingerprint, TTL handles cleanup
 		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
