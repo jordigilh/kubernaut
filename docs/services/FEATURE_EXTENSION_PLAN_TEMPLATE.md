@@ -1,11 +1,30 @@
 # [DD-XXX-YYY]: [Feature Name] - Implementation Plan
 
-**Version**: 1.0
+**Version**: 1.3
+**Filename**: `[CONTEXT_PREFIX_]IMPLEMENTATION_PLAN[_FEATURE_SUFFIX]_V1.3.md`
 **Status**: 📋 DRAFT
 **Design Decision**: [Link to DD-XXX-YYY]
 **Service**: [Service Name]
 **Confidence**: [60-100]% ([Evidence-Based/Estimated])
 **Estimated Effort**: [3-12] days (APDC cycle: [X] days implementation + [Y] days testing + [Z] days documentation)
+
+⚠️ **CRITICAL**: Filename version MUST match document version at all times.
+- Document v1.0 → Filename `V1.0.md`
+- Document v1.3 → Filename `V1.3.md` (rename file when bumping version)
+
+---
+
+## 🚨 **CRITICAL: Read This First**
+
+**Before starting implementation, you MUST review these 5 critical pitfalls** (see line 954 for full details):
+
+1. **Insufficient TDD Discipline** → Write ONE test at a time (not batched)
+2. **Missing Integration Tests** → Integration tests BEFORE E2E tests
+3. **Critical Infrastructure Without Unit Tests** → ≥70% coverage for critical components
+4. **Late E2E Discovery** → Follow test pyramid (Unit → Integration → E2E)
+5. **No Test Coverage Gates** → Automated CI/CD coverage gates
+
+⚠️ **These pitfalls caused production issues in Audit Implementation (DD-STORAGE-012).**
 
 ---
 
@@ -13,7 +32,10 @@
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **v1.0** | YYYY-MM-DD | Initial implementation plan created | ✅ **CURRENT** |
+| **v1.0** | YYYY-MM-DD | Initial template created | ⏸️ Superseded |
+| **v1.1** | 2025-11-21 | **CRITICAL**: Added explicit test file location requirements (`test/unit/`, `test/integration/`, `test/e2e/`). Added warnings against co-locating tests with source files. Clarified package naming conventions. | ⏸️ Superseded |
+| **v1.2** | 2025-11-22 | **CRITICAL**: Added 5 mandatory pitfalls from Audit Implementation lessons learned (DD-STORAGE-012). Includes: (1) Insufficient TDD Discipline, (2) Missing Integration Tests for New Endpoints, (3) Critical Infrastructure Without Unit Tests, (4) Late E2E Discovery (Testing Tier Inversion), (5) No Test Coverage Gates. Added enforcement checklists, automated coverage gates, and evidence from DD-IMPLEMENTATION-AUDIT-V1.0.md. | ⏸️ Superseded |
+| **v1.3** | 2025-11-23 | **ENHANCEMENTS**: Added filename version consistency rule, critical pitfalls summary at top, success metrics justification format, confidence calculation methodology, integration test environment decision section, operational sections checklist, and version bump checklist. | ✅ **CURRENT** |
 
 ---
 
@@ -28,9 +50,17 @@
 
 ### **Success Metrics**
 
-- **[Metric 1]**: [Target value with justification]
-- **[Metric 2]**: [Target value with justification]
-- **[Metric 3]**: [Target value with justification]
+**Format**: `[Metric]: [Target] - *Justification: [Why this target?]*`
+
+**Examples**:
+- **Embedding Accuracy**: 92% top-1 accuracy - *Justification: 7% improvement over Model A prevents 46% fewer wrong workflow selections*
+- **Cache Hit Rate**: >80% after 1 hour - *Justification: Same workflows queried frequently in semantic search*
+- **P95 Latency**: <200ms - *Justification: User experience requires sub-second response times*
+
+**Your Metrics**:
+- **[Metric 1]**: [Target value] - *Justification: [Why this target?]*
+- **[Metric 2]**: [Target value] - *Justification: [Why this target?]*
+- **[Metric 3]**: [Target value] - *Justification: [Why this target?]*
 
 ---
 
@@ -125,6 +155,23 @@ Day [N] (Integration) → Days [N+1]-[N+M] (Testing) → Days [N+M+1]-[N+M+P] (P
 3. **Create integration test** `test/integration/[service]/[feature]_integration_test.go` (400-500 LOC)
    - Set up test infrastructure (Redis, K8s client, etc.)
    - Define integration test helpers for NEW features
+
+**⚠️ CRITICAL: TEST FILE LOCATIONS - MANDATORY**
+
+**AUTHORITY**: [03-testing-strategy.mdc](../../.cursor/rules/03-testing-strategy.mdc)
+
+**ALL tests MUST be in the following locations**:
+- ✅ **Unit Tests**: `test/unit/[service]/[feature]_test.go`
+- ✅ **Integration Tests**: `test/integration/[service]/[feature]_integration_test.go`
+- ✅ **E2E Tests**: `test/e2e/[service]/[feature]_e2e_test.go`
+
+**❌ NEVER place tests**:
+- ❌ Co-located with source files (e.g., `internal/controller/[service]/[feature]_test.go`)
+- ❌ In `pkg/[package]/[feature]_test.go` (unless testing a shared library in pkg/)
+
+**Package Naming**: Tests use white-box testing (same package as code under test).
+
+---
 
 **Afternoon (4 hours): Interface Enhancement + Failing Tests**
 
@@ -515,6 +562,24 @@ These are created as you code (not at the end):
 
 ---
 
+#### **Operational Sections Checklist**
+
+**Required Sections** (add to plan):
+- [ ] Prometheus Metrics (metrics + alert rules)
+- [ ] Grafana Dashboard (panels + queries)
+- [ ] Troubleshooting Guide (common issues + debug commands)
+- [ ] Error Handling Philosophy (graceful degradation)
+- [ ] Security Considerations (threat model + mitigations)
+- [ ] Known Limitations (V1.0 limitations)
+- [ ] Future Work (V1.1/V1.2/V2.0 roadmap)
+
+**Optional Sections** (add if applicable):
+- [ ] Performance Benchmarking (scenarios + baseline)
+- [ ] Migration Strategy (if replacing existing functionality)
+- [ ] Deployment Checklist (production readiness)
+
+---
+
 ### **Day [N+M+P]: Production Readiness (PRODUCTION Phase)**
 
 **Phase**: PRODUCTION
@@ -628,6 +693,38 @@ These are created as you code (not at the end):
 ---
 
 ## 📊 **Test Examples**
+
+### **📁 Test File Locations - MANDATORY (READ THIS FIRST)**
+
+**AUTHORITY**: [03-testing-strategy.mdc](../../.cursor/rules/03-testing-strategy.mdc)
+
+**🚨 CRITICAL**: Test files MUST be in specific directories, NOT co-located with source code!
+
+| Test Type | File Location | Example | ❌ WRONG Location |
+|-----------|---------------|---------|-------------------|
+| **Unit Tests** | `test/unit/[service]/` | `test/unit/notification/audit_test.go` | ❌ `internal/controller/notification/audit_test.go` |
+| **Integration Tests** | `test/integration/[service]/` | `test/integration/notification/audit_integration_test.go` | ❌ `pkg/notification/audit_integration_test.go` |
+| **E2E Tests** | `test/e2e/[service]/` | `test/e2e/notification/audit_e2e_test.go` | ❌ `cmd/notification/audit_e2e_test.go` |
+
+**⚠️ Common Mistake**: Placing unit tests next to source files. This violates project structure.
+
+**✅ Correct Pattern**:
+```
+internal/controller/notification/
+    └── notificationrequest_controller.go   (source code)
+
+test/unit/notification/
+    └── audit_test.go                        (unit tests)
+```
+
+**❌ Wrong Pattern** (DO NOT DO THIS):
+```
+internal/controller/notification/
+    ├── notificationrequest_controller.go   (source code)
+    └── audit_test.go                        ❌ WRONG LOCATION
+```
+
+---
 
 ### **📦 Package Naming Conventions - MANDATORY**
 
@@ -785,6 +882,29 @@ var _ = Describe("[Feature] E2E Tests", func() {
 
 ---
 
+## 🏗️ **Integration Test Environment Decision**
+
+### **Environment Strategy**
+
+**Decision**: [Podman/KIND/envtest/Mocks]
+
+**Environment Comparison**:
+
+| Environment | Pros | Cons | Decision |
+|-------------|------|------|----------|
+| **Podman** | Fast, isolated, already available | Requires Podman installed | [✅ Selected / ❌ Not Selected] |
+| **KIND** | Full K8s, realistic | Slow startup (30s+), overkill for integration | [✅ Selected / ❌ Not Selected] |
+| **envtest** | Fast, lightweight | No real containers, limited realism | [✅ Selected / ❌ Not Selected] |
+| **Mocks** | Fastest | Not integration tests, low confidence | [✅ Selected / ❌ Not Selected] |
+
+**Rationale**: [Why this environment? Consider speed, realism, maintenance, CI/CD compatibility]
+
+**Example** (Podman for Data Storage):
+- **Decision**: Podman (PostgreSQL + Redis containers)
+- **Rationale**: Fast startup (<5s), isolated per test process, reuses existing integration test infrastructure, realistic database interactions without K8s overhead
+
+---
+
 ## 🎯 **BR Coverage Matrix**
 
 | BR ID | Description | Unit Tests | Integration Tests | E2E Tests | Status |
@@ -802,14 +922,159 @@ var _ = Describe("[Feature] E2E Tests", func() {
 
 ## 🚨 **Critical Pitfalls to Avoid**
 
-### **1. [Pitfall Name]**
-- ❌ **Problem**: [Description]
-- ✅ **Solution**: [Mitigation strategy]
-- **Impact**: [Business/technical impact]
+### **⚠️ LESSONS LEARNED FROM AUDIT IMPLEMENTATION (November 2025)**
 
-### **2. [Pitfall Name]**
-- ❌ **Problem**: [Description]
-- ✅ **Solution**: [Mitigation strategy]
+**Context**: During the Audit Trail implementation (DD-STORAGE-012), we discovered critical mistakes that led to missing functionality (DLQ fallback) being caught only by E2E tests after the handler was considered "complete". These lessons are now mandatory to prevent in all future implementations.
+
+**Evidence**: `docs/services/stateless/data-storage/DD-IMPLEMENTATION-AUDIT-V1.0.md`
+
+---
+
+### **1. Insufficient TDD Discipline** 🔴 **CRITICAL**
+
+- ❌ **Problem**: New handler (`handleCreateAuditEvent`) was implemented **WITHOUT writing tests first**. DLQ fallback was added to code **WITHOUT corresponding test coverage**. Tests were written **AFTER** implementation, not before.
+- ✅ **Solution**:
+  - Write **ONE test at a time** (not in batches)
+  - Follow strict **RED-GREEN-REFACTOR** sequence for every feature
+  - **NEVER** write implementation code before writing a failing test
+  - Each test must map to a specific **BR-[SERVICE]-XXX** requirement
+- **Impact**: **CRITICAL** - DLQ functionality was **MISSING** in production code until E2E test caught it. High risk of data loss in production. Required emergency fix and comprehensive test backfill.
+- **Evidence**: Unit Tests: 0/1 DLQ tests (0% coverage), Integration Tests: 1/3 DLQ tests (33% coverage), E2E Tests: 1/1 DLQ tests (100% coverage) - but **TOO LATE**
+
+**Enforcement Checklist** (BLOCKING):
+```
+Before writing ANY implementation code:
+- [ ] Unit test written and FAILING (RED phase)
+- [ ] Test validates business behavior, not implementation
+- [ ] Test uses specific assertions, not weak checks (no `ToNot(BeNil())`)
+- [ ] Test maps to specific BR-[SERVICE]-XXX requirement
+- [ ] Test run confirms FAIL with "not implemented yet" error
+```
+
+---
+
+### **2. Missing Integration Tests for New Endpoints** 🔴 **CRITICAL**
+
+- ❌ **Problem**: New unified audit events endpoint (`/api/v1/audit/events`) was implemented with **NO integration tests**. DLQ fallback functionality was missing because integration tests would have caught it early in the development cycle.
+- ✅ **Solution**:
+  - **Integration tests MUST exist BEFORE E2E tests** (MANDATORY)
+  - Every new HTTP endpoint **MUST have integration tests** covering:
+    - Success path
+    - Failure paths
+    - Edge cases (empty results, invalid filters, timeouts)
+  - Integration tests must validate component interactions (e.g., handler → repository → database)
+- **Impact**: **CRITICAL** - Critical functionality (DLQ fallback) was missing. E2E test was the first to catch the issue (too late in development cycle). Required backfilling integration tests after implementation.
+- **Evidence**: Missing `EnqueueAuditEvent()` integration test, missing DLQ fallback integration test for `/api/v1/audit/events` endpoint, missing DLQ recovery worker integration test
+
+**Integration Test Mandate** (BLOCKING):
+```
+For EVERY new HTTP endpoint:
+- [ ] Integration test MUST exist before E2E test
+- [ ] Integration test MUST cover success path
+- [ ] Integration test MUST cover failure paths
+- [ ] Integration test MUST cover edge cases
+- [ ] Integration test validates component interactions (not just HTTP status codes)
+```
+
+---
+
+### **3. Critical Infrastructure Without Unit Tests** 🔴 **CRITICAL**
+
+- ❌ **Problem**: DLQ client (`pkg/datastorage/dlq/client.go`) was implemented with **ZERO unit tests**. DLQ client is **CRITICAL** infrastructure (prevents audit data loss), yet had no unit-level validation.
+- ✅ **Solution**:
+  - Identify critical infrastructure components **BEFORE implementation**
+  - Critical infrastructure **MUST have ≥70% unit test coverage BEFORE integration tests**
+  - Examples of critical infrastructure:
+    - Fault tolerance mechanisms (DLQ, retry logic, circuit breakers)
+    - Data persistence layers (repositories, database clients)
+    - External service integrations (API clients, message queues)
+    - Security components (authentication, authorization, encryption)
+- **Impact**: **CRITICAL** - DLQ functionality was untested at unit level. Integration tests would have been easier to write with unit tests as foundation. High risk of bugs in critical fault tolerance mechanism.
+- **Evidence**: Unit Tests: 0/1 DLQ tests (0% coverage). No unit tests for DLQ client prevented early detection of missing functionality.
+
+**Critical Infrastructure Checklist** (BLOCKING):
+```
+Before implementing critical infrastructure:
+- [ ] Component identified as critical (fault tolerance, data persistence, security)
+- [ ] Unit test plan created (≥70% coverage target)
+- [ ] Unit tests written FIRST (RED phase)
+- [ ] Unit tests validate business behavior (not implementation details)
+- [ ] Unit test coverage verified (≥70%) BEFORE integration tests
+```
+
+---
+
+### **4. Late E2E Discovery (Testing Tier Inversion)** 🟡 **MEDIUM**
+
+- ❌ **Problem**: E2E test was the **FIRST** to catch DLQ fallback missing. Unit tests and integration tests were **MISSING** or **INSUFFICIENT**. Testing pyramid was inverted (E2E before Unit/Integration).
+- ✅ **Solution**:
+  - Follow **Testing Pyramid Enforcement** (MANDATORY):
+    - Day 1 (DO-RED): Unit tests (70%+ coverage)
+    - Day 1 (DO-GREEN): Integration tests (>50% coverage)
+    - Day 2 (CHECK): E2E tests (<10% coverage, critical paths only)
+  - **NEVER** write E2E tests before unit/integration tests
+  - E2E tests should validate **end-to-end workflows**, not unit-level logic
+- **Impact**: **MEDIUM** - Critical functionality was missing until E2E test. E2E tests are slow and expensive (should catch integration issues, not unit issues). Required emergency fix and backfilling of unit/integration tests.
+- **Evidence**: Timeline: Nov 19, 2025 (handler implemented) → Nov 20, 2025 (E2E Scenario 2 revealed DLQ was NOT implemented) → Nov 20, 2025 (emergency fix)
+
+**Test Tier Sequence Checklist** (BLOCKING):
+```
+Before writing E2E tests:
+- [ ] Unit tests exist for all critical components (≥70% coverage)
+- [ ] Integration tests exist for all HTTP endpoints (≥50% coverage)
+- [ ] All unit tests passing
+- [ ] All integration tests passing
+- [ ] E2E tests focus on end-to-end workflows (not unit logic)
+```
+
+---
+
+### **5. No Test Coverage Gates (Process Gap)** 🟡 **MEDIUM**
+
+- ❌ **Problem**: No automated enforcement of test coverage requirements. No blocking PR merge if critical components lack 2/3 tier coverage. Manual review was insufficient to catch DLQ test gap.
+- ✅ **Solution**:
+  - Add **automated test coverage gates** in CI/CD pipeline:
+    - Unit test coverage gate: ≥70% (BLOCKING)
+    - Integration test coverage gate: ≥50% (BLOCKING)
+  - Add **manual review checklist** for PR approval:
+    - All unit tests passing (≥70% coverage)
+    - All integration tests passing (≥50% coverage)
+    - Critical infrastructure has unit tests
+    - All HTTP endpoints have integration tests
+    - TDD RED-GREEN-REFACTOR sequence followed (evidence in commit history)
+- **Impact**: **MEDIUM** - Critical functionality (DLQ) had insufficient test coverage. Issue was not caught until E2E test. Required process improvement recommendation.
+- **Evidence**: Process Improvements recommendation: "Block PR merge if critical components (DLQ, graceful shutdown) lack 2/3 tier coverage"
+
+**Test Coverage Gates** (AUTOMATED):
+```bash
+# In CI/CD pipeline (GitHub Actions)
+
+# Step 1: Unit test coverage gate
+- name: Check unit test coverage
+  run: |
+    go test ./pkg/[service]/... -coverprofile=coverage.out
+    COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+    if (( $(echo "$COVERAGE < 70" | bc -l) )); then
+      echo "❌ Unit test coverage ($COVERAGE%) below 70% threshold"
+      exit 1
+    fi
+
+# Step 2: Integration test coverage gate
+- name: Check integration test coverage
+  run: |
+    go test ./test/integration/[service]/... -coverprofile=coverage.out
+    COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+    if (( $(echo "$COVERAGE < 50" | bc -l) )); then
+      echo "❌ Integration test coverage ($COVERAGE%) below 50% threshold"
+      exit 1
+    fi
+```
+
+---
+
+### **6. [Feature-Specific Pitfall]**
+- ❌ **Problem**: [Description specific to your feature]
+- ✅ **Solution**: [Mitigation strategy specific to your feature]
 - **Impact**: [Business/technical impact]
 
 ---
@@ -830,6 +1095,38 @@ var _ = Describe("[Feature] E2E Tests", func() {
 ### **Confidence Assessment**
 - **Target**: ≥60% confidence
 - **Calculation**: Evidence-based (test coverage + BR validation + integration status)
+
+---
+
+## 📊 **Confidence Calculation Methodology**
+
+**Overall Confidence**: [X]% (Evidence-Based)
+
+**Component Breakdown**:
+
+| Component | Confidence | Evidence |
+|-----------|-----------|----------|
+| **[Component 1]** | [X]% | [Evidence: proven patterns, industry standards, battle-tested in production, etc.] |
+| **[Component 2]** | [X]% | [Evidence: reference implementations, existing codebase patterns, etc.] |
+| **[Component 3]** | [X]% | [Evidence: unit test coverage, integration test validation, etc.] |
+
+**Example** (Embedding Service):
+| Component | Confidence | Evidence |
+|-----------|-----------|----------|
+| **Model Selection** | 95% | Industry-standard `all-mpnet-base-v2`, proven accuracy in semantic search |
+| **Sidecar Architecture** | 90% | Proven pattern in Gateway service, low-latency localhost communication |
+| **Redis Cache** | 95% | Reusing Gateway's battle-tested Redis implementation |
+| **Overall** | **93%** | Weighted average: (95% + 90% + 95%) / 3 |
+
+**Risk Assessment**:
+- **[Y]% Risk**: [Risk description with mitigation strategy]
+- **Assumptions**: [Key assumptions that affect confidence]
+- **Validation Approach**: [How will you validate these assumptions?]
+
+**Calculation Formula**:
+```
+Overall Confidence = Σ(Component Confidence × Component Weight) / Σ(Component Weight)
+```
 
 ---
 
@@ -865,9 +1162,9 @@ var _ = Describe("[Feature] E2E Tests", func() {
 
 ---
 
-**Document Status**: 📋 **DRAFT**
-**Last Updated**: YYYY-MM-DD
-**Version**: 1.0
+**Document Status**: 📋 **TEMPLATE**
+**Last Updated**: 2025-11-23
+**Version**: 1.3
 **Maintained By**: Development Team
 
 ---
@@ -905,6 +1202,40 @@ var _ = Describe("[Feature] E2E Tests", func() {
    - Analysis → Plan → Do (RED → GREEN → REFACTOR) → Check
 
 6. **Update version history** as you progress
+
+---
+
+## 📋 **Version Bump Checklist**
+
+### **When to Bump Version**
+
+- **Patch (1.0.X)**: Bug fixes, clarifications, typo corrections
+- **Minor (1.X.0)**: New sections added, scope expansion, template compliance fixes
+- **Major (X.0.0)**: Significant architectural changes, complete rewrites
+
+### **Version Bump Steps**
+
+1. [ ] Update `**Version**` field in header (line 3)
+2. [ ] Update `**Filename**` field in header (line 4)
+3. [ ] Rename file to match new version (e.g., `V1.0.md` → `V1.3.md`)
+4. [ ] Add entry to Version History table with detailed changes
+5. [ ] Update all cross-references in related documents
+6. [ ] Mark previous version as "⏸️ Superseded"
+7. [ ] Mark current version as "✅ CURRENT"
+
+**Example Version Bump** (1.2 → 1.3):
+```bash
+# Step 1: Rename file
+mv docs/services/data-storage/IMPLEMENTATION_PLAN_V1.2.md \
+   docs/services/data-storage/IMPLEMENTATION_PLAN_V1.3.md
+
+# Step 2: Update cross-references
+grep -r "IMPLEMENTATION_PLAN_V1.2.md" docs/ | # Find all references
+# Update each reference to V1.3.md
+
+# Step 3: Update version history in document
+# Add v1.3 entry, mark v1.2 as Superseded
+```
 
 ---
 
