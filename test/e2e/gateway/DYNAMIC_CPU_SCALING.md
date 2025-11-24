@@ -1,6 +1,6 @@
 # Dynamic CPU Scaling for E2E Tests
 
-**Date**: November 24, 2025  
+**Date**: November 24, 2025
 **Status**: ✅ Implemented and tested
 
 ## Overview
