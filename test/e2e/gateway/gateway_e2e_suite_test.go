@@ -114,6 +114,21 @@ var _ = BeforeSuite(func() {
 	err = infrastructure.DeployTestServices(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred())
 
+	// Wait for Gateway pod to be ready before starting port-forward
+	logger.Info("⏳ Waiting for Gateway pod to be ready...")
+	waitCmd := exec.Command("kubectl", "wait",
+		"-n", gatewayNamespace,
+		"--for=condition=ready",
+		"pod",
+		"-l", "app=gateway",
+		"--timeout=120s",
+		"--kubeconfig", kubeconfigPath)
+	waitCmd.Stdout = GinkgoWriter
+	waitCmd.Stderr = GinkgoWriter
+	err = waitCmd.Run()
+	Expect(err).ToNot(HaveOccurred(), "Gateway pod did not become ready")
+	logger.Info("✅ Gateway pod is ready")
+
 	// Start kubectl port-forward for Gateway service
 	logger.Info("🔌 Starting port-forward to Gateway service...")
 	portForwardCmd := exec.CommandContext(ctx, "kubectl", "port-forward",
@@ -128,8 +143,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred(), "Failed to start port-forward")
 	logger.Info("✅ Port-forward started (localhost:8080 -> gateway-service:8080)")
 
+	// Give port-forward a moment to establish connection
+	time.Sleep(2 * time.Second)
+
 	// Wait for Gateway HTTP endpoint to be responsive
-	logger.Info("⏳ Waiting for shared Gateway to be ready...")
+	logger.Info("⏳ Waiting for shared Gateway HTTP endpoint to be responsive...")
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	Eventually(func() error {
 		resp, err := httpClient.Get(gatewayURL + "/health")
@@ -141,7 +159,7 @@ var _ = BeforeSuite(func() {
 			return fmt.Errorf("health check returned status %d", resp.StatusCode)
 		}
 		return nil
-	}, 120*time.Second, 2*time.Second).Should(Succeed(), "Shared Gateway did not become responsive")
+	}, 60*time.Second, 2*time.Second).Should(Succeed(), "Shared Gateway HTTP endpoint did not become responsive")
 	logger.Info("✅ Shared Gateway is ready")
 
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
