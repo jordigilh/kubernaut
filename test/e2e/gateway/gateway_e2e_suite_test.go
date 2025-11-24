@@ -138,7 +138,7 @@ var _ = BeforeSuite(func() {
 		"--kubeconfig", kubeconfigPath)
 	portForwardCmd.Stdout = GinkgoWriter
 	portForwardCmd.Stderr = GinkgoWriter
-	
+
 	err = portForwardCmd.Start()
 	Expect(err).ToNot(HaveOccurred(), "Failed to start port-forward")
 	logger.Info("✅ Port-forward started (localhost:8080 -> gateway-service:8080)")
