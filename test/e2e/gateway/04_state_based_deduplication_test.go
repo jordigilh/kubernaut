@@ -49,7 +49,7 @@ import (
 // - Single It block with unique namespace (dedup-state-{timestamp})
 // - Uses shared Gateway instance
 // - Cleanup in AfterAll
-var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "deduplication", "state-based", "p1"), func() {
+var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "deduplication", "state-based", "p1"), Ordered, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
