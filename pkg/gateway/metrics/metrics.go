@@ -95,11 +95,7 @@ type Metrics struct {
 	RedisPoolMissesTotal       prometheus.Counter
 	RedisPoolTimeoutsTotal     prometheus.Counter
 
-	// Authentication and Rate Limiting Metrics
-	// DD-GATEWAY-004: Authentication metrics removed (network-level security)
-	// Kept for backward compatibility but not actively used
-	AuthenticationFailuresTotal     *prometheus.CounterVec
-	AuthenticationDurationSeconds   prometheus.Histogram
+	// Rate Limiting Metrics
 	RateLimitExceededTotal          *prometheus.CounterVec
 	RateLimitingDroppedSignalsTotal *prometheus.CounterVec // Alias for consistency
 
@@ -395,22 +391,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 		),
 
-		// Authentication and Rate Limiting Metrics
-		// DD-GATEWAY-004: Authentication metrics kept for backward compatibility
-		AuthenticationFailuresTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_authentication_failures_total",
-				Help: "Total authentication failures by reason (DD-GATEWAY-004: deprecated, kept for compatibility)",
-			},
-			[]string{"reason"},
-		),
-		AuthenticationDurationSeconds: factory.NewHistogram(
-			prometheus.HistogramOpts{
-				Name:    "gateway_authentication_duration_seconds",
-				Help:    "TokenReview API call duration in seconds (DD-GATEWAY-004: deprecated, kept for compatibility)",
-				Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s
-			},
-		),
+		// Rate Limiting Metrics
 		RateLimitExceededTotal:          rateLimitExceeded,
 		RateLimitingDroppedSignalsTotal: rateLimitExceeded, // Alias for consistency
 

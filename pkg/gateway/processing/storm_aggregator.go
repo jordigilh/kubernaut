@@ -70,52 +70,6 @@ type StormAggregator struct {
 	samplingRate       float64        // Sample rate when threshold reached (default: 0.5)
 }
 
-// NewStormAggregator creates a new storm aggregator with default window duration
-//
-// Default window: 1 minute
-// Rationale: Balances early detection (don't wait too long) with aggregation
-// efficiency (collect enough alerts to make aggregation worthwhile)
-//
-// DEPRECATED: Use NewStormAggregatorWithConfig for DD-GATEWAY-008 features
-func NewStormAggregator(redisClient *redis.Client) *StormAggregator {
-	return NewStormAggregatorWithWindow(redisClient, 0) // Use default
-}
-
-// NewStormAggregatorWithWindow creates a storm aggregator with custom window duration
-//
-// Parameters:
-// - redisClient: Redis client for aggregation tracking
-// - windowDuration: Aggregation window duration (0 = use default 1 minute)
-//
-// Use cases:
-// - Production: Use default (0) for 1-minute windows
-// - Testing: Use 5*time.Second for fast integration tests
-//
-// Example:
-//
-//	// Production
-//	aggregator := NewStormAggregator(redisClient)
-//
-//	// Testing (5-second window)
-//	aggregator := NewStormAggregatorWithWindow(redisClient, 5*time.Second)
-//
-// DEPRECATED: Use NewStormAggregatorWithConfig for DD-GATEWAY-008 features
-func NewStormAggregatorWithWindow(redisClient *redis.Client, windowDuration time.Duration) *StormAggregator {
-	if windowDuration == 0 {
-		windowDuration = 1 * time.Minute // Production default
-	}
-	return &StormAggregator{
-		redisClient:       redisClient,
-		windowDuration:    windowDuration,
-		bufferThreshold:   5, // Default: 5 alerts before window creation
-		maxWindowDuration: 5 * time.Minute,
-		defaultMaxSize:    1000,
-		globalMaxSize:     5000,
-		samplingThreshold: 0.95,
-		samplingRate:      0.5,
-	}
-}
-
 // NewStormAggregatorWithConfig creates a storm aggregator with full DD-GATEWAY-008 configuration
 //
 // Parameters:
