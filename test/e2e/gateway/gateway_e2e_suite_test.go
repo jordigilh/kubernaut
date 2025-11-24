@@ -56,121 +56,150 @@ var (
 
 	// Shared Gateway configuration (deployed ONCE for all tests)
 	gatewayNamespace string = "gateway-e2e"
-	gatewayURL       string = "http://localhost:8080" // Port-forwarded from gateway-service
+	gatewayURL       string // Port-forwarded from gateway-service (unique per process)
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 )
 
-var _ = BeforeSuite(func() {
-	// Initialize context
-	ctx, cancel = context.WithCancel(context.Background())
+// SynchronizedBeforeSuite runs cluster setup ONCE on process 1, then each process sets up port-forward
+var _ = SynchronizedBeforeSuite(
+	// This runs ONCE on process 1 only - sets up shared cluster
+	func() []byte {
+		// Initialize context
+		ctx, cancel = context.WithCancel(context.Background())
 
-	// Initialize logger
-	var err error
-	logger, err = zap.NewDevelopment()
-	Expect(err).ToNot(HaveOccurred())
+		// Initialize logger
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
 
-	// Initialize failure tracking
-	anyTestFailed = false
+		// Initialize failure tracking
+		anyTestFailed = false
 
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Gateway E2E Test Suite - Cluster Setup (ONCE)")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Creating Kind cluster and deploying shared Gateway...")
-	logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
-	logger.Info("  • RemediationRequest CRD (cluster-wide)")
-	logger.Info("  • Gateway Docker image (build + load)")
-	logger.Info("  • Shared Gateway + Redis (gateway-e2e namespace)")
-	logger.Info("  • Kubeconfig: ~/.kube/gateway-kubeconfig")
-	logger.Info("")
-	logger.Info("Note: All tests share the same Gateway instance")
-	logger.Info("      Each test creates unique namespace for CRDs only")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Gateway E2E Test Suite - Cluster Setup (ONCE - Process 1)")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Creating Kind cluster and deploying shared Gateway...")
+		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
+		logger.Info("  • RemediationRequest CRD (cluster-wide)")
+		logger.Info("  • Gateway Docker image (build + load)")
+		logger.Info("  • Shared Gateway + Redis (gateway-e2e namespace)")
+		logger.Info("  • Kubeconfig: ~/.kube/gateway-kubeconfig")
+		logger.Info("")
+		logger.Info("Note: All tests share the same Gateway instance")
+		logger.Info("      Each process creates unique port-forward")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Set cluster configuration
-	clusterName = "gateway-e2e"
-	homeDir, err := os.UserHomeDir()
-	Expect(err).ToNot(HaveOccurred())
-	kubeconfigPath = fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+		// Set cluster configuration
+		clusterName = "gateway-e2e"
+		homeDir, err := os.UserHomeDir()
+		Expect(err).ToNot(HaveOccurred())
+		kubeconfigPath = fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
 
-	// Delete any existing cluster first to ensure clean state
-	logger.Info("Checking for existing cluster...")
-	err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
-	if err != nil {
-		logger.Warn("Failed to delete existing cluster (may not exist)", zap.Error(err))
-	}
-
-	// Create Kind cluster (ONCE for all tests)
-	err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Set KUBECONFIG environment variable
-	err = os.Setenv("KUBECONFIG", kubeconfigPath)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Deploy shared Gateway + Redis (ONCE for all tests)
-	logger.Info("Deploying shared Gateway + Redis...")
-	err = infrastructure.DeployTestServices(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Wait for Gateway pod to be ready before starting port-forward
-	logger.Info("⏳ Waiting for Gateway pod to be ready...")
-	waitCmd := exec.Command("kubectl", "wait",
-		"-n", gatewayNamespace,
-		"--for=condition=ready",
-		"pod",
-		"-l", "app=gateway",
-		"--timeout=120s",
-		"--kubeconfig", kubeconfigPath)
-	waitCmd.Stdout = GinkgoWriter
-	waitCmd.Stderr = GinkgoWriter
-	err = waitCmd.Run()
-	Expect(err).ToNot(HaveOccurred(), "Gateway pod did not become ready")
-	logger.Info("✅ Gateway pod is ready")
-
-	// Start kubectl port-forward for Gateway service
-	logger.Info("🔌 Starting port-forward to Gateway service...")
-	portForwardCmd := exec.CommandContext(ctx, "kubectl", "port-forward",
-		"-n", gatewayNamespace,
-		"service/gateway-service",
-		"8080:8080",
-		"--kubeconfig", kubeconfigPath)
-	portForwardCmd.Stdout = GinkgoWriter
-	portForwardCmd.Stderr = GinkgoWriter
-
-	err = portForwardCmd.Start()
-	Expect(err).ToNot(HaveOccurred(), "Failed to start port-forward")
-	logger.Info("✅ Port-forward started (localhost:8080 -> gateway-service:8080)")
-
-	// Give port-forward a moment to establish connection
-	time.Sleep(2 * time.Second)
-
-	// Wait for Gateway HTTP endpoint to be responsive
-	logger.Info("⏳ Waiting for shared Gateway HTTP endpoint to be responsive...")
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-	Eventually(func() error {
-		resp, err := httpClient.Get(gatewayURL + "/health")
+		// Delete any existing cluster first to ensure clean state
+		logger.Info("Checking for existing cluster...")
+		err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
 		if err != nil {
-			return err
+			logger.Warn("Failed to delete existing cluster (may not exist)", zap.Error(err))
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("health check returned status %d", resp.StatusCode)
-		}
-		return nil
-	}, 60*time.Second, 2*time.Second).Should(Succeed(), "Shared Gateway HTTP endpoint did not become responsive")
-	logger.Info("✅ Shared Gateway is ready")
 
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Cluster Setup Complete - Shared Gateway Ready")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
-	logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
-	logger.Info(fmt.Sprintf("  • Gateway Namespace: %s", gatewayNamespace))
-	logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-})
+		// Create Kind cluster (ONCE for all tests)
+		err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Set KUBECONFIG environment variable
+		err = os.Setenv("KUBECONFIG", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Deploy shared Gateway + Redis (ONCE for all tests)
+		logger.Info("Deploying shared Gateway + Redis...")
+		err = infrastructure.DeployTestServices(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Wait for Gateway pod to be ready
+		logger.Info("⏳ Waiting for Gateway pod to be ready...")
+		waitCmd := exec.Command("kubectl", "wait",
+			"-n", gatewayNamespace,
+			"--for=condition=ready",
+			"pod",
+			"-l", "app=gateway",
+			"--timeout=120s",
+			"--kubeconfig", kubeconfigPath)
+		waitCmd.Stdout = GinkgoWriter
+		waitCmd.Stderr = GinkgoWriter
+		err = waitCmd.Run()
+		Expect(err).ToNot(HaveOccurred(), "Gateway pod did not become ready")
+		logger.Info("✅ Gateway pod is ready")
+
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Cluster Setup Complete - Ready for parallel processes")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		// Return kubeconfig path to all processes
+		return []byte(kubeconfigPath)
+	},
+	// This runs on ALL processes (including process 1) - sets up per-process port-forward
+	func(data []byte) {
+		// Initialize context for this process
+		ctx, cancel = context.WithCancel(context.Background())
+
+		// Initialize logger for this process
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Get kubeconfig from process 1
+		kubeconfigPath = string(data)
+		clusterName = "gateway-e2e"
+
+		// Set KUBECONFIG environment variable
+		err = os.Setenv("KUBECONFIG", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Calculate unique port per parallel process for port-forward
+		processID := GinkgoParallelProcess()
+		gatewayPort := 8080 + processID // Process 1: 8081, Process 2: 8082, etc.
+		gatewayURL = fmt.Sprintf("http://localhost:%d", gatewayPort)
+
+		// Start kubectl port-forward for Gateway service with unique port
+		logger.Info("🔌 Starting port-forward to Gateway service...",
+			zap.Int("process", processID),
+			zap.Int("local_port", gatewayPort))
+		portForwardCmd := exec.CommandContext(ctx, "kubectl", "port-forward",
+			"-n", gatewayNamespace,
+			"service/gateway-service",
+			fmt.Sprintf("%d:8080", gatewayPort), // Local:Remote
+			"--kubeconfig", kubeconfigPath)
+		portForwardCmd.Stdout = GinkgoWriter
+		portForwardCmd.Stderr = GinkgoWriter
+
+		err = portForwardCmd.Start()
+		Expect(err).ToNot(HaveOccurred(), "Failed to start port-forward")
+		logger.Info("✅ Port-forward started",
+			zap.String("url", gatewayURL),
+			zap.Int("process", processID))
+
+		// Give port-forward a moment to establish connection
+		time.Sleep(2 * time.Second)
+
+		// Wait for Gateway HTTP endpoint to be responsive
+		logger.Info("⏳ Waiting for Gateway HTTP endpoint to be responsive...")
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		Eventually(func() error {
+			resp, err := httpClient.Get(gatewayURL + "/health")
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check returned status %d", resp.StatusCode)
+			}
+			return nil
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway HTTP endpoint did not become responsive")
+		logger.Info("✅ Gateway is ready", zap.Int("process", processID))
+	},
+)
 
 // Track test failures for cluster cleanup decision
 var _ = ReportAfterEach(func(report SpecReport) {
