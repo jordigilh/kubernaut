@@ -1,7 +1,7 @@
 # Parallel E2E Test Execution - SUCCESS ✅
 
-**Date**: November 24, 2025  
-**Status**: ✅ **WORKING** - Parallel execution successfully implemented  
+**Date**: November 24, 2025
+**Status**: ✅ **WORKING** - Parallel execution successfully implemented
 **Time Reduction**: **13m → 7m 12s** (1.8x speedup, 45% faster)
 
 ## Results Summary
@@ -26,18 +26,18 @@
 ## Implementation Issues Resolved
 
 ### Issue 1: BeforeSuite Running Per-Process ❌→✅
-**Problem**: `BeforeSuite` ran on all 4 processes, causing cluster creation conflicts  
+**Problem**: `BeforeSuite` ran on all 4 processes, causing cluster creation conflicts
 **Solution**: Converted to `SynchronizedBeforeSuite`
 - Process 1 creates cluster once
 - All processes set up unique port-forwards
 
 ### Issue 2: Hardcoded Gateway URL ❌→✅
-**Problem**: Tests had `gatewayURL = "http://localhost:8080"` in `BeforeAll`  
-**Error**: `Post "/api/v1/signals/prometheus": unsupported protocol scheme ""`  
+**Problem**: Tests had `gatewayURL = "http://localhost:8080"` in `BeforeAll`
+**Error**: `Post "/api/v1/signals/prometheus": unsupported protocol scheme ""`
 **Solution**: Removed hardcoded assignments, tests now use suite-level variable
 
 ### Issue 3: Local Variable Shadowing ❌→✅
-**Problem**: Tests declared local `gatewayURL` variables that shadowed suite-level variable  
+**Problem**: Tests declared local `gatewayURL` variables that shadowed suite-level variable
 **Solution**: Removed local `gatewayURL` declarations from all 9 test files
 
 ## Architecture
@@ -65,8 +65,8 @@
 
 ### Why Not 4x Speedup?
 
-**Expected**: 13m ÷ 4 = 3.25 minutes  
-**Actual**: 7.2 minutes  
+**Expected**: 13m ÷ 4 = 3.25 minutes
+**Actual**: 7.2 minutes
 **Speedup**: 1.8x instead of 4x
 
 **Reasons**:
@@ -132,17 +132,34 @@ All failures are **timing-related**, not caused by parallel execution:
 ## Recommendations
 
 ### Immediate (Completed ✅)
-1. ✅ Enable `--procs=4` in Makefile
+1. ✅ Enable dynamic `--procs` based on available CPUs in Makefile
 2. ✅ Use `SynchronizedBeforeSuite` for cluster setup
-3. ✅ Per-process port-forwards (8081-8084)
+3. ✅ Per-process port-forwards (auto-scaled based on CPU count)
 4. ✅ Remove Redis flush from cleanup
 5. ✅ Remove local `gatewayURL` variable declarations
 
+### Dynamic CPU Detection (Completed ✅)
+
+The Makefile now automatically detects available CPUs:
+```bash
+PROCS=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+```
+
+- **macOS**: Uses `sysctl -n hw.ncpu`
+- **Linux**: Uses `nproc`
+- **Fallback**: Defaults to 4 if detection fails
+
+**Benefits**:
+- Automatically scales to available hardware
+- No manual configuration needed
+- Optimal performance on any machine
+
 ### Future Improvements (Optional)
 
-1. **Increase to --procs=8** for further speedup
+1. **Monitor Performance at Higher CPU Counts**
+   - Test with 8, 12, or 16 processes
    - May achieve closer to 4-5 minute target
-   - Monitor resource contention
+   - Watch for resource contention
 
 2. **Optimize Cluster Setup** (~75s overhead)
    - Pre-build Gateway image

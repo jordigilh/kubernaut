@@ -7,10 +7,13 @@
 ## Completed ✅
 
 ### 1. Infrastructure Changes
-- ✅ Updated Makefile to `--procs=4`
+- ✅ Updated Makefile to use dynamic `--procs` based on available CPUs
+  - Auto-detects CPUs: `sysctl -n hw.ncpu` (macOS) or `nproc` (Linux)
+  - Fallback to 4 if detection fails
+  - Scales automatically to available hardware
 - ✅ Converted `BeforeSuite` to `SynchronizedBeforeSuite`
   - Process 1 creates cluster once
-  - All processes set up unique port-forwards (8081-8084)
+  - All processes set up unique port-forwards (8081-8080+N)
 - ✅ Removed Redis flush from test cleanup (prevents cross-test interference)
 - ✅ Added per-process port-forward logic
 
