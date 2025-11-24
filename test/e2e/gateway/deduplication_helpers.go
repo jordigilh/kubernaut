@@ -63,13 +63,26 @@ type WebhookResponse struct {
 
 // createPrometheusWebhookPayload creates a realistic Prometheus webhook payload
 func createPrometheusWebhookPayload(payload PrometheusAlertPayload) []byte {
+	// Merge required labels with custom labels
+	labels := make(map[string]interface{})
+	labels["alertname"] = payload.AlertName
+	labels["namespace"] = payload.Namespace
+	labels["severity"] = payload.Severity
+	if payload.PodName != "" {
+		labels["pod"] = payload.PodName
+	}
+	// Add custom labels
+	for k, v := range payload.Labels {
+		labels[k] = v
+	}
+
 	alert := map[string]interface{}{
 		"receiver": "kubernaut",
 		"status":   "firing",
 		"alerts": []map[string]interface{}{
 			{
 				"status":      "firing",
-				"labels":      payload.Labels,
+				"labels":      labels,
 				"annotations": payload.Annotations,
 				"startsAt":    time.Now().Format(time.RFC3339),
 				"endsAt":      "0001-01-01T00:00:00Z",
@@ -78,7 +91,7 @@ func createPrometheusWebhookPayload(payload PrometheusAlertPayload) []byte {
 		"groupLabels": map[string]string{
 			"alertname": payload.AlertName,
 		},
-		"commonLabels":      payload.Labels,
+		"commonLabels":      labels,
 		"commonAnnotations": payload.Annotations,
 	}
 
