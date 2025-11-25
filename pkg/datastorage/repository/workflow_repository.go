@@ -23,8 +23,10 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/pgvector/pgvector-go"
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -38,15 +40,18 @@ import (
 
 // WorkflowRepository handles workflow catalog operations
 type WorkflowRepository struct {
-	db     *sqlx.DB
-	logger *zap.Logger
+	db              *sqlx.DB
+	logger          *zap.Logger
+	embeddingClient *embedding.Client
 }
 
 // NewWorkflowRepository creates a new workflow repository
-func NewWorkflowRepository(db *sqlx.DB, logger *zap.Logger) *WorkflowRepository {
+// BR-STORAGE-014: Embedding client is optional (nil = no automatic embedding generation)
+func NewWorkflowRepository(db *sqlx.DB, logger *zap.Logger, embeddingClient *embedding.Client) *WorkflowRepository {
 	return &WorkflowRepository{
-		db:     db,
-		logger: logger,
+		db:              db,
+		logger:          logger,
+		embeddingClient: embeddingClient,
 	}
 }
 
@@ -56,7 +61,32 @@ func NewWorkflowRepository(db *sqlx.DB, logger *zap.Logger) *WorkflowRepository 
 
 // Create inserts a new workflow into the catalog
 // BR-STORAGE-012: Workflow catalog persistence
+// BR-STORAGE-014: Automatic embedding generation for semantic search
 func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.RemediationWorkflow) error {
+	// Generate embedding if not provided and embedding client is available
+	if workflow.Embedding == nil && r.embeddingClient != nil {
+		// Construct searchable text from workflow metadata
+		searchText := r.buildSearchText(workflow)
+
+		// Generate embedding vector
+		embeddingVec, err := r.embeddingClient.Embed(ctx, searchText)
+		if err != nil {
+			r.logger.Warn("failed to generate embedding, proceeding without it",
+				zap.String("workflow_id", workflow.WorkflowID),
+				zap.String("version", workflow.Version),
+				zap.Error(err))
+			// Continue without embedding (graceful degradation)
+		} else {
+			// Convert []float32 to *pgvector.Vector
+			vec := pgvector.NewVector(embeddingVec)
+			workflow.Embedding = &vec
+			r.logger.Debug("generated embedding for workflow",
+				zap.String("workflow_id", workflow.WorkflowID),
+				zap.String("version", workflow.Version),
+				zap.Int("dimensions", len(embeddingVec)))
+		}
+	}
+
 	query := `
 		INSERT INTO remediation_workflow_catalog (
 			workflow_id, version, name, description, owner, maintainer,
@@ -84,7 +114,8 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Remedi
 
 	r.logger.Info("workflow created",
 		zap.String("workflow_id", workflow.WorkflowID),
-		zap.String("version", workflow.Version))
+		zap.String("version", workflow.Version),
+		zap.Bool("has_embedding", workflow.Embedding != nil))
 
 	return nil
 }
@@ -648,6 +679,36 @@ func (r *WorkflowRepository) UpdateStatus(ctx context.Context, workflowID, versi
 // ========================================
 // HELPER FUNCTIONS
 // ========================================
+
+// buildSearchText constructs searchable text from workflow metadata for embedding generation
+// BR-STORAGE-014: Semantic search text construction
+//
+// Strategy: Combine name, description, and content for comprehensive semantic representation
+// Weight: Name (high), Description (medium), Content preview (low)
+func (r *WorkflowRepository) buildSearchText(workflow *models.RemediationWorkflow) string {
+	var parts []string
+
+	// Name (highest weight - include 3 times for emphasis)
+	if workflow.Name != "" {
+		parts = append(parts, workflow.Name, workflow.Name, workflow.Name)
+	}
+
+	// Description (medium weight - include 2 times)
+	if workflow.Description != "" {
+		parts = append(parts, workflow.Description, workflow.Description)
+	}
+
+	// Content preview (low weight - first 500 chars only)
+	if workflow.Content != "" {
+		contentPreview := workflow.Content
+		if len(contentPreview) > 500 {
+			contentPreview = contentPreview[:500]
+		}
+		parts = append(parts, contentPreview)
+	}
+
+	return strings.Join(parts, " ")
+}
 
 // toJSONArray converts a string slice to a JSON array string
 func toJSONArray(items []string) string {
