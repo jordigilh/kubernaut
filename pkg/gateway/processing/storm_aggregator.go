@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
@@ -254,7 +254,7 @@ func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.No
 	// Add all buffered resources to window
 	for _, resourceID := range bufferedAlerts {
 		key := fmt.Sprintf("alert:storm:resources:%s", windowID)
-		if err := a.redisClient.ZAdd(ctx, key, &redis.Z{
+		if err := a.redisClient.ZAdd(ctx, key, redis.Z{
 			Score:  float64(time.Now().Unix()),
 			Member: resourceID,
 		}).Err(); err != nil {
@@ -325,7 +325,7 @@ func (a *StormAggregator) AddResource(ctx context.Context, windowID string, sign
 	}
 
 	// Add to sorted set (score = timestamp)
-	if err := a.redisClient.ZAdd(ctx, key, &redis.Z{
+	if err := a.redisClient.ZAdd(ctx, key, redis.Z{
 		Score:  float64(time.Now().Unix()),
 		Member: resourceID,
 	}).Err(); err != nil {

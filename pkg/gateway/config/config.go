@@ -71,6 +71,10 @@ type InfrastructureSettings struct {
 
 // RedisOptions contains Redis connection configuration
 // (simplified from go-redis/redis.Options for YAML unmarshaling)
+//
+// Deprecated: Use pkg/cache/redis.Options instead (DD-CACHE-001: Shared Redis Library).
+// This type is kept for backward compatibility with existing Gateway configurations.
+// Will be removed in v1.1.0.
 type RedisOptions struct {
 	Addr         string        `yaml:"addr"`
 	DB           int           `yaml:"db"`

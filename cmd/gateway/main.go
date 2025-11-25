@@ -25,9 +25,10 @@ import (
 	"syscall"
 	"time"
 
-	goredis "github.com/go-redis/redis/v8"
+	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -74,8 +75,9 @@ func main() {
 		zap.String("listen_addr", *listenAddr),
 		zap.String("redis_addr", *redisAddr))
 
-	// Initialize Redis client
-	redisClient := goredis.NewClient(&goredis.Options{
+	// Initialize Redis client (DD-CACHE-001: Shared Redis Library)
+	// Uses pkg/cache/redis for connection management with graceful degradation
+	redisClient := rediscache.NewClient(&goredis.Options{
 		Addr:         *redisAddr,
 		DB:           *redisDB,
 		DialTimeout:  5 * time.Second,
@@ -83,17 +85,18 @@ func main() {
 		WriteTimeout: 3 * time.Second,
 		PoolSize:     10,
 		MinIdleConns: 2,
-	})
+	}, logger)
 
-	// Test Redis connection
+	// Test Redis connection (optional - Gateway can start without Redis)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		logger.Fatal("Failed to connect to Redis",
+	if err := redisClient.EnsureConnection(ctx); err != nil {
+		logger.Warn("Redis unavailable at startup, will retry on first operation",
 			zap.Error(err),
 			zap.String("redis_addr", *redisAddr))
+	} else {
+		logger.Info("Connected to Redis", zap.String("redis_addr", *redisAddr))
 	}
-	logger.Info("Connected to Redis", zap.String("redis_addr", *redisAddr))
 
 	// Load configuration from YAML file
 	serverCfg, err := config.LoadFromFile(*configPath)

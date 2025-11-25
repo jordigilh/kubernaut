@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -73,7 +73,7 @@ func NewStormDetector(redisClient *redis.Client, rateThreshold, patternThreshold
 	// No default values applied - caller must provide explicit thresholds
 	// Rationale: "Explicit is better than implicit" - allows threshold: 0 for E2E testing
 	// Production configs should specify explicit values (e.g., rate: 10, pattern: 5)
-	
+
 	return &StormDetector{
 		redisClient:      redisClient,
 		rateThreshold:    rateThreshold,
@@ -228,7 +228,7 @@ func (d *StormDetector) checkPatternStorm(ctx context.Context, signal *types.Nor
 	now := float64(time.Now().Unix())
 
 	// Add resource to sorted set (score = timestamp)
-	if err := d.redisClient.ZAdd(ctx, key, &redis.Z{
+	if err := d.redisClient.ZAdd(ctx, key, redis.Z{
 		Score:  now,
 		Member: resourceID,
 	}).Err(); err != nil {
