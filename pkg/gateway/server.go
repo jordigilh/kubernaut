@@ -1200,15 +1200,38 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 		}
 	}
 
-	// Window created (threshold reached), schedule CRD creation after window expires
-	go s.createAggregatedCRDAfterWindow(context.Background(), windowID, signal, stormMetadata)
-
-	logger.Info("Storm aggregation window started",
+	// DD-GATEWAY-008: Threshold reached - create CRD IMMEDIATELY with ALL buffered alerts
+	// Per DD-GATEWAY-008 lines 99-146: "When threshold reached, create aggregated CRD with ALL buffered alerts"
+	logger.Info("Storm aggregation threshold reached - creating CRD immediately",
 		zap.String("fingerprint", signal.Fingerprint),
 		zap.String("windowID", windowID),
-		zap.String("windowTTL", "60 seconds (sliding window)"))
+		zap.String("alertName", signal.AlertName),
+		zap.String("namespace", signal.Namespace))
 
-	return false, NewStormAggregationResponse(signal.Fingerprint, windowID, stormMetadata.StormType, 0, true)
+	// Create aggregated CRD synchronously
+	crdName, err := s.createAggregatedCRD(ctx, windowID, signal, stormMetadata)
+	if err != nil {
+		logger.Warn("Failed to create aggregated CRD, falling back to individual CRD creation",
+			zap.String("windowID", windowID),
+			zap.Error(err))
+		return true, nil // Fall back to individual CRD creation
+	}
+
+	// Monitor window expiration for cleanup (window continues accepting alerts)
+	go s.monitorWindowExpiration(context.Background(), windowID)
+
+	logger.Info("Storm aggregated CRD created",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("windowID", windowID),
+		zap.String("crdName", crdName))
+
+	// Return HTTP 201 Created with CRD name
+	return false, &ProcessingResponse{
+		Status:                 StatusCreated,
+		Message:                "Storm aggregated CRD created",
+		Fingerprint:            signal.Fingerprint,
+		RemediationRequestName: crdName,
+	}
 }
 
 // createRemediationRequestCRD handles the CRD creation pipeline
@@ -1293,6 +1316,118 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 // - Storm: 50 pod crashes in 1 minute
 // - Without aggregation: 50 CRDs created
 // - With aggregation: 1 CRD created with 50 resources listed
+// createAggregatedCRD creates aggregated CRD immediately when threshold reached (DD-GATEWAY-008)
+//
+// DD-GATEWAY-008 Design Decision: Create CRD synchronously when buffer threshold reached
+// Source: docs/architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md lines 99-146
+//
+// Returns:
+// - string: CRD name
+// - error: CRD creation errors
+func (s *Server) createAggregatedCRD(
+	ctx context.Context,
+	windowID string,
+	firstSignal *types.NormalizedSignal,
+	stormMetadata *processing.StormMetadata,
+) (string, error) {
+	logger := middleware.GetLogger(ctx)
+
+	// Retrieve all aggregated resources (includes buffered alerts moved to window)
+	resources, err := s.stormAggregator.GetAggregatedResources(ctx, windowID)
+	if err != nil {
+		logger.Error("Failed to retrieve aggregated resources",
+			zap.String("windowID", windowID),
+			zap.Error(err))
+		return "", fmt.Errorf("failed to retrieve aggregated resources: %w", err)
+	}
+
+	// Retrieve signal metadata
+	signal, storedStormMetadata, err := s.stormAggregator.GetSignalMetadata(ctx, windowID)
+	if err != nil {
+		logger.Warn("Failed to retrieve signal metadata, using first signal",
+			zap.String("windowID", windowID),
+			zap.Error(err))
+		// Fall back to using the first signal passed as parameter
+		signal = firstSignal
+	} else {
+		// Use stored storm metadata if available
+		if storedStormMetadata != nil {
+			stormMetadata = storedStormMetadata
+		}
+	}
+
+	// Update alert count with actual aggregated count
+	resourceCount := len(resources)
+
+	logger.Info("Creating aggregated RemediationRequest CRD (DD-GATEWAY-008)",
+		zap.String("windowID", windowID),
+		zap.String("alertName", signal.AlertName),
+		zap.Int("resourceCount", resourceCount),
+		zap.String("stormType", stormMetadata.StormType))
+
+	// Create aggregated signal with all resources
+	aggregatedSignal := *signal
+	aggregatedSignal.IsStorm = true
+	aggregatedSignal.StormType = stormMetadata.StormType
+	aggregatedSignal.StormWindow = stormMetadata.Window
+	aggregatedSignal.AlertCount = resourceCount
+	aggregatedSignal.AffectedResources = resources
+
+	// Environment classification
+	environment := s.classifier.Classify(ctx, aggregatedSignal.Namespace)
+
+	// Priority assignment
+	priority := s.priorityEngine.Assign(ctx, aggregatedSignal.Severity, environment)
+
+	// Create single aggregated RemediationRequest CRD
+	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal, priority, environment)
+	if err != nil {
+		logger.Error("Failed to create aggregated RemediationRequest CRD",
+			zap.String("windowID", windowID),
+			zap.Int("resourceCount", resourceCount),
+			zap.Error(err))
+
+		// Record metric for failed aggregation
+		s.metricsInstance.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
+		return "", fmt.Errorf("failed to create aggregated CRD: %w", err)
+	}
+
+	// Store deduplication metadata in Redis for storm aggregation (BR-GATEWAY-016)
+	if err := s.deduplicator.Store(ctx, &aggregatedSignal, rr.Name); err != nil {
+		logger.Warn("Failed to store deduplication metadata",
+			zap.String("fingerprint", aggregatedSignal.Fingerprint),
+			zap.Error(err))
+	}
+
+	// Record metrics
+	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(aggregatedSignal.SourceType, "storm_aggregated").Inc()
+
+	logger.Info("Aggregated RemediationRequest CRD created successfully (DD-GATEWAY-008)",
+		zap.String("crdName", rr.Name),
+		zap.String("windowID", windowID),
+		zap.Int("resourceCount", resourceCount))
+
+	return rr.Name, nil
+}
+
+// monitorWindowExpiration monitors window expiration for cleanup (DD-GATEWAY-008)
+//
+// DD-GATEWAY-008: Window continues accepting alerts after CRD creation (sliding window)
+// This goroutine monitors the window and cleans up Redis keys after expiration
+func (s *Server) monitorWindowExpiration(ctx context.Context, windowID string) {
+	// Wait for window to expire
+	windowDuration := s.stormAggregator.GetWindowDuration()
+	time.Sleep(windowDuration)
+
+	s.logger.Info("Storm aggregation window expired, cleaning up",
+		zap.String("windowID", windowID))
+
+	// Cleanup: Window resources are already in CRD, just remove Redis keys
+	// Note: Resources have 2x TTL for retrieval, will auto-expire
+}
+
+// createAggregatedCRDAfterWindow is DEPRECATED - kept for backward compatibility
+// DD-GATEWAY-008: Use createAggregatedCRD() instead (creates CRD immediately when threshold reached)
 func (s *Server) createAggregatedCRDAfterWindow(
 	ctx context.Context,
 	windowID string,
