@@ -1,0 +1,13 @@
+# Kubernaut Embedding Service - Development Dependencies
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.25.2  # For FastAPI TestClient
+
+# Code Quality
+black==23.12.1
+flake8==6.1.0
+mypy==1.7.1
+
