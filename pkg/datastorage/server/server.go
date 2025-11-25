@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
@@ -198,10 +200,48 @@ func NewServer(
 	// BR-STORAGE-013, BR-STORAGE-014: Create workflow catalog dependencies
 	logger.Debug("Creating workflow catalog dependencies...")
 	sqlxDB := sqlx.NewDb(db, "pgx") // Wrap *sql.DB with sqlx for workflow repository
-	workflowRepo := repository.NewWorkflowRepository(sqlxDB, logger)
+
+	// BR-STORAGE-014: Create embedding client with Redis caching
+	// Sidecar pattern: Python embedding service on localhost:8086
+	embeddingBaseURL := "http://localhost:8086"
+	if envURL := os.Getenv("EMBEDDING_SERVICE_URL"); envURL != "" {
+		embeddingBaseURL = envURL
+	}
+
+	// Create Redis cache for embeddings (24-hour TTL)
+	redisOpts := &redis.Options{
+		Addr:     redisAddr,
+		Password: redisPassword,
+	}
+	redisSharedClient := rediscache.NewClient(redisOpts, logger)
+	embeddingCache := rediscache.NewCache[[]float32](redisSharedClient, "embeddings", 24*time.Hour)
+
+	// Create embedding client
+	embeddingClient := embedding.NewClient(embeddingBaseURL, embeddingCache, logger)
+
+	// Health check embedding service (non-blocking)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := embeddingClient.Health(ctx); err != nil {
+			logger.Warn("Embedding service health check failed (will retry on first use)",
+				zap.Error(err),
+				zap.String("url", embeddingBaseURL))
+		} else {
+			logger.Info("Embedding service healthy",
+				zap.String("url", embeddingBaseURL))
+		}
+	}()
+
+	// Create workflow repository with embedding client
+	workflowRepo := repository.NewWorkflowRepository(sqlxDB, logger, embeddingClient)
+
+	// Keep placeholder service for backward compatibility (if needed elsewhere)
 	embeddingService := embedding.NewPlaceholderService(logger)
+
 	logger.Debug("Workflow catalog dependencies created",
 		zap.Bool("workflow_repo_nil", workflowRepo == nil),
+		zap.Bool("embedding_client_nil", embeddingClient == nil),
 		zap.Bool("embedding_service_nil", embeddingService == nil))
 
 	// Create database adapter for READ API handlers

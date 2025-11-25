@@ -3,8 +3,10 @@ package datastorage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,7 +22,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
@@ -64,6 +68,10 @@ var (
 	datastorageURL    string
 	configDir         string // ADR-030: Directory for config and secret files
 	schemaName        string // Schema name for this parallel process (for isolation)
+
+	// BR-STORAGE-014: Embedding service integration
+	embeddingServer *httptest.Server // Mock embedding service
+	embeddingClient *embedding.Client
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -440,6 +448,37 @@ var _ = SynchronizedBeforeSuite(
 		dlqClient, err = dlq.NewClient(redisClient, logger)
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
+		// BR-STORAGE-014: Create mock embedding service for integration tests
+		GinkgoWriter.Printf("🏗️  [Process %d] Creating mock embedding service...\n", processNum)
+		embeddingServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Mock 768-dimensional embedding response
+			mockEmbedding := make([]float32, 768)
+			for i := range mockEmbedding {
+				mockEmbedding[i] = float32(i) * 0.001 // Generate deterministic values
+			}
+
+			resp := map[string]interface{}{
+				"embedding":  mockEmbedding,
+				"dimensions": 768,
+				"model":      "all-mpnet-base-v2",
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(resp)
+		}))
+
+		// Create Redis cache for embeddings
+		redisOpts := &redis.Options{
+			Addr: fmt.Sprintf("%s:%s", os.Getenv("REDIS_HOST"), os.Getenv("REDIS_PORT")),
+		}
+		redisSharedClient := rediscache.NewClient(redisOpts, logger)
+		embeddingCache := rediscache.NewCache[[]float32](redisSharedClient, "embeddings", 24*time.Hour)
+
+		// Create embedding client
+		embeddingClient = embedding.NewClient(embeddingServer.URL, embeddingCache, logger)
+		GinkgoWriter.Printf("✅ [Process %d] Mock embedding service ready at %s\n", processNum, embeddingServer.URL)
+
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests in schema: %s\n", processNum, schemaName)
 	},
 )
@@ -482,6 +521,12 @@ var _ = AfterSuite(func() {
 
 	if redisClient != nil {
 		redisClient.Close()
+	}
+
+	// Clean up mock embedding server
+	if embeddingServer != nil {
+		embeddingServer.Close()
+		GinkgoWriter.Printf("🧹 [Process %d] Closed mock embedding server\n", processNum)
 	}
 
 	// Use centralized cleanup function (only process 1)
@@ -776,6 +821,7 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
 		"013_create_audit_events_table.sql",        // ADR-034: Unified audit events table
 		"015_create_workflow_catalog_table.sql",    // BR-STORAGE-012/013/014: Workflow catalog with semantic search
+		"016_update_embedding_dimensions.sql",      // BR-STORAGE-014: Update to 768 dimensions (all-mpnet-base-v2)
 		"999_add_nov_2025_partition.sql",           // Legacy partition for resource_action_traces
 		"1000_create_audit_events_partitions.sql",  // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
