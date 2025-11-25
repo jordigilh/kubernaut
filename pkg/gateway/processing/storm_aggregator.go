@@ -823,3 +823,48 @@ func (a *StormAggregator) IsOverCapacity(ctx context.Context, namespace string) 
 
 	return isOver, int(totalBuffered), namespaceLimit, nil
 }
+
+// GetBufferedAlerts retrieves all buffered alerts for a given namespace and alert name
+//
+// DD-GATEWAY-008: Required for creating aggregated CRD with ALL buffered alerts when threshold reached
+//
+// Business Requirement: BR-GATEWAY-016 - Storm aggregation must reduce AI analysis costs by 90%+
+//
+// Returns:
+// - []*types.NormalizedSignal: All buffered alerts
+// - error: Redis errors
+func (a *StormAggregator) GetBufferedAlerts(ctx context.Context, namespace, alertName string) ([]*types.NormalizedSignal, error) {
+	bufferKey := fmt.Sprintf("alert:buffer:%s:%s", namespace, alertName)
+
+	// Get all resource IDs from buffer
+	resourceIDs, err := a.redisClient.LRange(ctx, bufferKey, 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buffered alerts: %w", err)
+	}
+
+	// TDD GREEN: Parse resource IDs and create signals
+	signals := make([]*types.NormalizedSignal, 0, len(resourceIDs))
+	for _, resourceID := range resourceIDs {
+		// Parse resource ID format: "namespace:Kind:name"
+		// Example: "production:Pod:app-pod-1"
+		parts := strings.Split(resourceID, ":")
+		if len(parts) != 3 {
+			// Invalid format, skip
+			continue
+		}
+
+		signal := &types.NormalizedSignal{
+			AlertName: alertName,
+			Namespace: namespace,
+			Resource: types.ResourceIdentifier{
+				Namespace: parts[0],
+				Kind:      parts[1],
+				Name:      parts[2],
+			},
+			Fingerprint: fmt.Sprintf("%s-%s", alertName, resourceID),
+		}
+		signals = append(signals, signal)
+	}
+
+	return signals, nil
+}
