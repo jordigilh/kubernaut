@@ -1,0 +1,20 @@
+# Kubernaut Embedding Service - Production Dependencies
+# Model: all-mpnet-base-v2 (768 dimensions, 92% accuracy)
+
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Data Validation
+pydantic==2.5.0
+
+# ML/Embeddings
+sentence-transformers==2.2.2
+torch==2.1.0
+
+# Logging
+structlog==23.2.0
+
+# Metrics
+prometheus-client==0.19.0
+
