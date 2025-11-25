@@ -28,7 +28,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	goredis "github.com/go-redis/redis/v8"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
@@ -42,7 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	// "github.com/jordigilh/kubernaut/internal/gateway/redis" // DELETED: internal/gateway/ removed
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis" // DD-CACHE-001: Shared Redis Library
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
@@ -105,7 +105,7 @@ type Server struct {
 	crdCreator      *processing.CRDCreator
 
 	// Infrastructure clients
-	redisClient *goredis.Client
+	redisClient *rediscache.Client // DD-CACHE-001: Shared Redis Library
 	k8sClient   *k8s.Client
 	ctrlClient  client.Client
 
@@ -177,8 +177,8 @@ func NewServer(cfg *config.ServerConfig, logger *zap.Logger) (*Server, error) {
 // NewServerWithK8sClient creates a Gateway server with an existing K8s client (for testing)
 // This ensures the Gateway uses the same K8s client as the test, avoiding cache synchronization issues
 func NewServerWithK8sClient(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
-	// 1. Initialize Redis client
-	redisClient := goredis.NewClient(&goredis.Options{
+	// 1. Initialize Redis client (DD-CACHE-001: Shared Redis Library)
+	redisClient := rediscache.NewClient(&goredis.Options{
 		Addr:         cfg.Infrastructure.Redis.Addr,
 		DB:           cfg.Infrastructure.Redis.DB,
 		Password:     cfg.Infrastructure.Redis.Password,
@@ -187,7 +187,7 @@ func NewServerWithK8sClient(cfg *config.ServerConfig, logger *zap.Logger, metric
 		WriteTimeout: cfg.Infrastructure.Redis.WriteTimeout,
 		PoolSize:     cfg.Infrastructure.Redis.PoolSize,
 		MinIdleConns: cfg.Infrastructure.Redis.MinIdleConns,
-	})
+	}, logger)
 
 	// 2. Use provided Kubernetes client (shared with test)
 	k8sClient := k8s.NewClient(ctrlClient)
@@ -197,8 +197,8 @@ func NewServerWithK8sClient(cfg *config.ServerConfig, logger *zap.Logger, metric
 }
 
 func NewServerWithMetrics(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
-	// 1. Initialize Redis client
-	redisClient := goredis.NewClient(&goredis.Options{
+	// 1. Initialize Redis client (DD-CACHE-001: Shared Redis Library)
+	redisClient := rediscache.NewClient(&goredis.Options{
 		Addr:         cfg.Infrastructure.Redis.Addr,
 		DB:           cfg.Infrastructure.Redis.DB,
 		Password:     cfg.Infrastructure.Redis.Password,
@@ -207,7 +207,7 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger *zap.Logger, metricsI
 		WriteTimeout: cfg.Infrastructure.Redis.WriteTimeout,
 		PoolSize:     cfg.Infrastructure.Redis.PoolSize,
 		MinIdleConns: cfg.Infrastructure.Redis.MinIdleConns,
-	})
+	}, logger)
 
 	// 2. Initialize Kubernetes clients
 	// Get kubeconfig with standard Kubernetes precedence:
@@ -239,7 +239,7 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger *zap.Logger, metricsI
 }
 
 // createServerWithClients is the common server creation logic
-func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, redisClient *goredis.Client, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
+func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, redisClient *rediscache.Client, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
 	// DD-GATEWAY-004: kubernetes clientset removed (no longer needed for authentication)
 	// clientset, err := kubernetes.NewForConfig(kubeConfig) // REMOVED
 	// if err != nil {
@@ -266,7 +266,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 	// DD-GATEWAY-009: Initialize CRD updater for duplicate alert handling
 	crdUpdater := processing.NewCRDUpdater(k8sClient, logger)
 
-	stormDetector := processing.NewStormDetector(redisClient, cfg.Processing.Storm.RateThreshold, cfg.Processing.Storm.PatternThreshold, metricsInstance)
+	stormDetector := processing.NewStormDetector(redisClient.GetClient(), cfg.Processing.Storm.RateThreshold, cfg.Processing.Storm.PatternThreshold, metricsInstance)
 	if cfg.Processing.Storm.RateThreshold > 0 || cfg.Processing.Storm.PatternThreshold > 0 {
 		logger.Info("Using custom storm detection thresholds",
 			zap.Int("rate_threshold", cfg.Processing.Storm.RateThreshold),
@@ -277,7 +277,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 	// DD-GATEWAY-008: Use NewStormAggregatorWithConfig for full feature support
 	// This enables buffered first-alert aggregation, sliding windows, and multi-tenant isolation
 	stormAggregator := processing.NewStormAggregatorWithConfig(
-		redisClient,
+		redisClient.GetClient(),
 		cfg.Processing.Storm.BufferThreshold,      // BR-GATEWAY-016: Buffer N alerts before creating window
 		cfg.Processing.Storm.InactivityTimeout,    // BR-GATEWAY-008: Sliding window timeout
 		cfg.Processing.Storm.MaxWindowDuration,    // BR-GATEWAY-008: Maximum window duration
@@ -685,7 +685,7 @@ func (s *Server) monitorRedisHealth(ctx context.Context) {
 			return
 		case <-ticker.C:
 			// Check Redis availability
-			err := s.redisClient.Ping(ctx).Err()
+			err := s.redisClient.EnsureConnection(ctx)
 			isAvailable := (err == nil)
 
 			// Update availability gauge
@@ -943,7 +943,7 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// Check Redis connectivity
-	if err := s.redisClient.Ping(ctx).Err(); err != nil {
+	if err := s.redisClient.EnsureConnection(ctx); err != nil {
 		s.logger.Warn("Readiness check failed: Redis not reachable", zap.Error(err))
 
 		// Use RFC 7807 Problem Details format for structured error response

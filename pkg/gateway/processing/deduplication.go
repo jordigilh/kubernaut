@@ -19,15 +19,13 @@ package processing
 import (
 	"context"
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -49,13 +47,14 @@ import (
 // - Check: p95 ~1ms, p99 ~3ms
 // - Store: p95 ~3ms, p99 ~8ms
 // - Target deduplication rate: 40-60% (typical production)
+//
+// Design Decision: DD-CACHE-001 (Shared Redis Library)
+// Uses pkg/cache/redis for connection management and graceful degradation.
 type DeduplicationService struct {
-	redisClient *redis.Client
-	k8sClient   *k8s.Client // DD-GATEWAY-009: K8s client for state-based deduplication
+	redisClient *rediscache.Client // Shared Redis client with graceful degradation
+	k8sClient   *k8s.Client         // DD-GATEWAY-009: K8s client for state-based deduplication
 	ttl         time.Duration
 	logger      *zap.Logger
-	connected   atomic.Bool      // Track Redis connection state (for lazy connection)
-	connCheckMu sync.Mutex       // Protects connection check (prevent thundering herd)
 	metrics     *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
 }
 
@@ -67,7 +66,10 @@ type DeduplicationService struct {
 // The 5-minute window balances:
 // - Too short: Duplicate alerts create multiple CRDs (wasted resources)
 // - Too long: Stale alerts prevent new remediation attempts (delayed resolution)
-func NewDeduplicationService(redisClient *redis.Client, k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+//
+// Design Decision: DD-CACHE-001 (Shared Redis Library)
+// Uses pkg/cache/redis.Client for connection management with graceful degradation.
+func NewDeduplicationService(redisClient *rediscache.Client, k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
 		// Use custom registry to avoid "duplicate metrics collector registration" in tests
@@ -90,7 +92,10 @@ func NewDeduplicationService(redisClient *redis.Client, k8sClient *k8s.Client, l
 //
 // Production usage: Use NewDeduplicationService() with default 5-minute TTL
 // Test usage: Use NewDeduplicationServiceWithTTL(client, 5*time.Second, logger) for fast tests
-func NewDeduplicationServiceWithTTL(redisClient *redis.Client, k8sClient *k8s.Client, ttl time.Duration, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+//
+// Design Decision: DD-CACHE-001 (Shared Redis Library)
+// Uses pkg/cache/redis.Client for connection management with graceful degradation.
+func NewDeduplicationServiceWithTTL(redisClient *rediscache.Client, k8sClient *k8s.Client, ttl time.Duration, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
 		// Use custom registry to avoid "duplicate metrics collector registration" in tests
@@ -106,46 +111,6 @@ func NewDeduplicationServiceWithTTL(redisClient *redis.Client, k8sClient *k8s.Cl
 	}
 }
 
-// ensureConnection verifies Redis is available using lazy connection pattern
-//
-// This method implements graceful degradation for Redis failures:
-// 1. Fast path: If already connected, return immediately (no Redis call)
-// 2. Slow path: If not connected, try to ping Redis
-// 3. On success: Mark as connected (subsequent calls use fast path)
-// 4. On failure: Return error (caller implements graceful degradation)
-//
-// Concurrency: Uses double-checked locking to prevent thundering herd
-// Performance: Fast path is ~0.1μs (atomic load), slow path is ~1-3ms (Redis ping)
-//
-// This pattern allows Gateway to:
-// - Start even when Redis is temporarily unavailable (BR-GATEWAY-013)
-// - Recover automatically when Redis becomes available
-// - Handle Redis failures gracefully without crashing
-func (d *DeduplicationService) ensureConnection(ctx context.Context) error {
-	// Fast path: already connected
-	if d.connected.Load() {
-		return nil
-	}
-
-	// Slow path: need to check connection
-	d.connCheckMu.Lock()
-	defer d.connCheckMu.Unlock()
-
-	// Double-check after acquiring lock (another goroutine might have connected)
-	if d.connected.Load() {
-		return nil
-	}
-
-	// Try to connect
-	if err := d.redisClient.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("redis unavailable: %w", err)
-	}
-
-	// Mark as connected (enables fast path for future calls)
-	d.connected.Store(true)
-	d.logger.Info("Redis connection established for deduplication service")
-	return nil
-}
 
 // Check verifies if an alert is a duplicate using state-based deduplication
 //
@@ -184,7 +149,7 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	// If Redis is unavailable, deduplication cannot proceed reliably.
 	// This ensures the Gateway returns HTTP 503 when Redis is down, allowing
 	// operators to fix Redis before processing alerts.
-	if err := s.ensureConnection(ctx); err != nil {
+	if err := s.redisClient.EnsureConnection(ctx); err != nil {
 		s.logger.Error("Redis unavailable, deduplication cannot proceed",
 			zap.Error(err),
 			zap.String("fingerprint", signal.Fingerprint))
@@ -212,7 +177,8 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	// all query K8s, find no CRD, and all try to create one.
 	// The lock key expires after 5 seconds to prevent deadlocks.
 	lockKey := fmt.Sprintf("gateway:dedup:lock:%s", signal.Fingerprint)
-	locked, err := s.redisClient.SetNX(ctx, lockKey, "1", 5*time.Second).Result()
+	redisClient := s.redisClient.GetClient()
+	locked, err := redisClient.SetNX(ctx, lockKey, "1", 5*time.Second).Result()
 	if err != nil {
 		s.logger.Warn("Failed to acquire creation lock, proceeding without lock",
 			zap.Error(err),
@@ -383,7 +349,7 @@ func (s *DeduplicationService) GetCRDNameFromFingerprint(fingerprint string) str
 // - error: Redis errors or validation errors
 func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, signal *types.NormalizedSignal) (bool, *DeduplicationMetadata, error) {
 	// Check Redis connection
-	if err := s.ensureConnection(ctx); err != nil {
+	if err := s.redisClient.EnsureConnection(ctx); err != nil {
 		s.logger.Warn("Redis unavailable, cannot guarantee deduplication",
 			zap.Error(err),
 			zap.String("fingerprint", signal.Fingerprint))
@@ -394,15 +360,17 @@ func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, sign
 
 	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", signal.Fingerprint)
 
+	// Get underlying Redis client for operations
+	redisClient := s.redisClient.GetClient()
+
 	// Check if key exists in Redis
-	exists, err := s.redisClient.Exists(ctx, key).Result()
+	exists, err := redisClient.Exists(ctx, key).Result()
 	if err != nil {
 		// Redis operation failed
 		s.logger.Warn("Redis operation failed, skipping deduplication",
 			zap.Error(err),
 			zap.String("fingerprint", signal.Fingerprint))
 
-		s.connected.Store(false)
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, nil // Treat as new alert
 	}
@@ -417,19 +385,19 @@ func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, sign
 	s.metrics.DeduplicationCacheHitsTotal.Inc()
 
 	// Atomically increment count
-	count, err := s.redisClient.HIncrBy(ctx, key, "count", 1).Result()
+	count, err := redisClient.HIncrBy(ctx, key, "count", 1).Result()
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to increment count: %w", err)
 	}
 
 	// Update lastSeen timestamp
 	now := time.Now().Format(time.RFC3339Nano)
-	if err := s.redisClient.HSet(ctx, key, "lastSeen", now).Err(); err != nil {
+	if err := redisClient.HSet(ctx, key, "lastSeen", now).Err(); err != nil {
 		return false, nil, fmt.Errorf("failed to update lastSeen: %w", err)
 	}
 
 	// Refresh TTL on duplicate detection
-	if err := s.redisClient.Expire(ctx, key, s.ttl).Err(); err != nil {
+	if err := redisClient.Expire(ctx, key, s.ttl).Err(); err != nil {
 		return false, nil, fmt.Errorf("failed to refresh TTL: %w", err)
 	}
 
@@ -437,8 +405,8 @@ func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, sign
 	metadata := &DeduplicationMetadata{
 		Fingerprint:           signal.Fingerprint,
 		Count:                 int(count),
-		RemediationRequestRef: s.redisClient.HGet(ctx, key, "remediationRequestRef").Val(),
-		FirstSeen:             s.redisClient.HGet(ctx, key, "firstSeen").Val(),
+		RemediationRequestRef: redisClient.HGet(ctx, key, "remediationRequestRef").Val(),
+		FirstSeen:             redisClient.HGet(ctx, key, "firstSeen").Val(),
 		LastSeen:              now,
 	}
 
@@ -483,7 +451,7 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 
 	// BR-GATEWAY-013: Graceful degradation when Redis unavailable
 	// Check Redis connection before attempting operations
-	if err := s.ensureConnection(ctx); err != nil {
+	if err := s.redisClient.EnsureConnection(ctx); err != nil {
 		// Redis unavailable - graceful degradation
 		// Log error but don't fail (CRD already created, alert is being processed)
 		s.logger.Warn("Redis unavailable, failed to store deduplication metadata (future duplicates won't be detected)",
@@ -504,8 +472,11 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 		zap.String("fingerprint", signal.Fingerprint),
 		zap.String("crd_ref", remediationRequestRef))
 
+	// Get underlying Redis client for pipeline operations
+	redisClient := s.redisClient.GetClient()
+
 	// Store as Redis hash with pipeline for atomicity
-	pipe := s.redisClient.Pipeline()
+	pipe := redisClient.Pipeline()
 	pipe.HSet(ctx, key, "fingerprint", signal.Fingerprint)
 	pipe.HSet(ctx, key, "alertName", signal.AlertName)
 	pipe.HSet(ctx, key, "namespace", signal.Namespace)
@@ -517,7 +488,7 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	pipe.Expire(ctx, key, s.ttl) // Auto-expire after 5 minutes
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		// Redis operation failed (e.g., connection lost after ensureConnection)
+		// Redis operation failed (e.g., connection lost after EnsureConnection)
 		// Graceful degradation: log error but don't fail
 		s.logger.Warn("Redis operation failed, failed to store deduplication metadata (future duplicates won't be detected)",
 			zap.Error(err),
@@ -526,8 +497,6 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 			zap.String("operation", "deduplication_store"),
 		)
 
-		// Mark as disconnected so next call will retry connection
-		s.connected.Store(false)
 		return nil // Don't fail the request, CRD is already created
 	}
 
@@ -558,21 +527,23 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 // - CRD-based deduplication has already succeeded
 func (s *DeduplicationService) updateDuplicateInRedis(ctx context.Context, signal *types.NormalizedSignal, metadata *DeduplicationMetadata) error {
 	// Check Redis connection
-	if err := s.ensureConnection(ctx); err != nil {
+	if err := s.redisClient.EnsureConnection(ctx); err != nil {
 		return fmt.Errorf("redis unavailable: %w", err)
 	}
 
 	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", signal.Fingerprint)
 	now := time.Now().Format(time.RFC3339)
 
+	// Get underlying Redis client for pipeline operations
+	redisClient := s.redisClient.GetClient()
+
 	// Update duplicate metadata with pipeline for atomicity
-	pipe := s.redisClient.Pipeline()
+	pipe := redisClient.Pipeline()
 	pipe.HIncrBy(ctx, key, "count", 1) // Increment count atomically
 	pipe.HSet(ctx, key, "lastSeen", now)
 	pipe.Expire(ctx, key, s.ttl) // BR-GATEWAY-003: Refresh TTL
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		s.connected.Store(false)
 		return fmt.Errorf("failed to update duplicate metadata: %w", err)
 	}
 
@@ -626,8 +597,11 @@ func (s *DeduplicationService) Record(ctx context.Context, fingerprint string, c
 	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", fingerprint)
 	now := time.Now().Format(time.RFC3339Nano) // Use RFC3339Nano for sub-second precision
 
+	// Get underlying Redis client for pipeline operations
+	redisClient := s.redisClient.GetClient()
+
 	// Store as Redis hash with pipeline for atomicity (same as Store() method)
-	pipe := s.redisClient.Pipeline()
+	pipe := redisClient.Pipeline()
 	pipe.HSet(ctx, key, "fingerprint", fingerprint)
 	pipe.HSet(ctx, key, "firstSeen", now)
 	pipe.HSet(ctx, key, "lastSeen", now)
