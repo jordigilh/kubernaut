@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/redis/go-redis/v9"
 )
 
 // StormDetector identifies alert storms using hybrid detection (rate + pattern)

@@ -28,8 +28,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	goredis "github.com/redis/go-redis/v9"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 
@@ -278,14 +278,14 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 	// This enables buffered first-alert aggregation, sliding windows, and multi-tenant isolation
 	stormAggregator := processing.NewStormAggregatorWithConfig(
 		redisClient.GetClient(),
-		cfg.Processing.Storm.BufferThreshold,      // BR-GATEWAY-016: Buffer N alerts before creating window
-		cfg.Processing.Storm.InactivityTimeout,    // BR-GATEWAY-008: Sliding window timeout
-		cfg.Processing.Storm.MaxWindowDuration,    // BR-GATEWAY-008: Maximum window duration
-		1000,                                       // defaultMaxSize: Default namespace buffer size
-		5000,                                       // globalMaxSize: Global buffer limit
-		nil,                                        // perNamespaceLimits: Per-namespace overrides (future)
-		0.95,                                       // samplingThreshold: Utilization to trigger sampling
-		0.5,                                        // samplingRate: Sample rate when threshold reached
+		cfg.Processing.Storm.BufferThreshold,   // BR-GATEWAY-016: Buffer N alerts before creating window
+		cfg.Processing.Storm.InactivityTimeout, // BR-GATEWAY-008: Sliding window timeout
+		cfg.Processing.Storm.MaxWindowDuration, // BR-GATEWAY-008: Maximum window duration
+		1000,                                   // defaultMaxSize: Default namespace buffer size
+		5000,                                   // globalMaxSize: Global buffer limit
+		nil,                                    // perNamespaceLimits: Per-namespace overrides (future)
+		0.95,                                   // samplingThreshold: Utilization to trigger sampling
+		0.5,                                    // samplingRate: Sample rate when threshold reached
 	)
 	if cfg.Processing.Storm.BufferThreshold > 0 || cfg.Processing.Storm.InactivityTimeout > 0 {
 		logger.Info("Using custom storm buffering configuration",
