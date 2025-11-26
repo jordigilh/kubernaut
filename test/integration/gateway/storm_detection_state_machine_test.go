@@ -146,8 +146,8 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 			Expect(resp3.StatusCode).To(Or(Equal(201), Equal(202)), "Third alert should trigger storm")
 
 			// STEP 4: Wait for storm aggregation window to complete
-			// Test configuration: AggregationWindow = 1 second
-			time.Sleep(2 * time.Second)
+			// Test configuration: AggregationWindow = 1 second (1s window + 500ms buffer)
+			time.Sleep(1500 * time.Millisecond)
 
 			// BUSINESS VALIDATION: CRDs created (storm detection is optimization, not requirement)
 			var crdList *remediationv1alpha1.RemediationRequestList
@@ -204,8 +204,8 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 				time.Sleep(100 * time.Millisecond)
 			}
 
-			// STEP 2: Wait for storm aggregation
-			time.Sleep(2 * time.Second)
+			// STEP 2: Wait for storm aggregation (1s window + 500ms buffer)
+			time.Sleep(1500 * time.Millisecond)
 
 			// BUSINESS VALIDATION: Pattern storm detected
 			crdList := &remediationv1alpha1.RemediationRequestList{}
@@ -263,8 +263,8 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 				time.Sleep(50 * time.Millisecond)
 			}
 
-			// STEP 2: Wait for aggregation window to complete
-			time.Sleep(2 * time.Second)
+			// STEP 2: Wait for aggregation window to complete (1s window + 500ms buffer)
+			time.Sleep(1500 * time.Millisecond)
 
 			// BUSINESS VALIDATION: Controlled number of CRDs (not 1:1 with alerts)
 			crdList := &remediationv1alpha1.RemediationRequestList{}
@@ -318,7 +318,7 @@ var _ = Describe("BR-013, BR-016: Storm Detection State Machine - Integration Te
 			Expect(resp1.StatusCode).To(Equal(201), "First alert should be accepted")
 
 			// STEP 2: Wait for aggregation window to expire
-			time.Sleep(3 * time.Second) // Wait 3x aggregation window
+			time.Sleep(1500 * time.Millisecond) // Wait 1.5x aggregation window (1s)
 
 			// STEP 3: Send second alert (outside window)
 		// Note: Different alert name to avoid deduplication

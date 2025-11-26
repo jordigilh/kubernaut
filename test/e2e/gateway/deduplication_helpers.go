@@ -120,6 +120,7 @@ func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse {
 }
 
 // getKubernetesClient creates a Kubernetes client for CRD verification
+// This function may panic on error - use getKubernetesClientSafe for Eventually calls
 func getKubernetesClient() client.Client {
 	// Load kubeconfig from standard Kind location
 	homeDir, err := os.UserHomeDir()
@@ -139,4 +140,52 @@ func getKubernetesClient() client.Client {
 	Expect(err).ToNot(HaveOccurred(), "Failed to create K8s client")
 
 	return k8sClient
+}
+
+// lastK8sClientError holds the last error from getKubernetesClientSafe for debugging
+var lastK8sClientError error
+
+// getKubernetesClientSafe creates a Kubernetes client without panicking on error
+// Returns nil if client creation fails - suitable for use inside Eventually
+// Check lastK8sClientError for the actual error if nil is returned
+func getKubernetesClientSafe() client.Client {
+	// Load kubeconfig from standard Kind location
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		lastK8sClientError = fmt.Errorf("failed to get home directory: %w", err)
+		return nil
+	}
+	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+
+	// Check if kubeconfig file exists
+	if _, err := os.Stat(kubeconfigPath); err != nil {
+		lastK8sClientError = fmt.Errorf("kubeconfig file check failed: %w", err)
+		return nil
+	}
+
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		lastK8sClientError = fmt.Errorf("failed to build config from kubeconfig: %w", err)
+		return nil
+	}
+
+	// Create scheme with RemediationRequest CRD
+	scheme := k8sruntime.NewScheme()
+	_ = remediationv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	// Create K8s client
+	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
+	if err != nil {
+		lastK8sClientError = fmt.Errorf("failed to create K8s client: %w", err)
+		return nil
+	}
+
+	lastK8sClientError = nil
+	return k8sClient
+}
+
+// GetLastK8sClientError returns the last error from getKubernetesClientSafe
+func GetLastK8sClientError() error {
+	return lastK8sClientError
 }

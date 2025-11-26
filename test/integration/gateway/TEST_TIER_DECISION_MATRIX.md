@@ -1,7 +1,7 @@
 # Test Tier Decision Matrix
 
-**Purpose**: Guide developers in choosing the correct test tier (Unit, Integration, E2E) for Gateway tests  
-**Authority**: Based on [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)  
+**Purpose**: Guide developers in choosing the correct test tier (Unit, Integration, E2E) for Gateway tests
+**Authority**: Based on [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
 **Last Updated**: 2025-11-23
 
 ---
@@ -52,10 +52,10 @@ Does the test require external infrastructure (Redis, K8s, HTTP)?
 // Test: Storm detection threshold calculation
 It("should detect storm when rate exceeds threshold", func() {
     detector := processing.NewStormDetector(10) // threshold = 10
-    
+
     // Business logic: 15 alerts/minute > 10 threshold
     isStorm := detector.IsStorm(15, time.Minute)
-    
+
     Expect(isStorm).To(BeTrue())
 })
 ```
@@ -70,15 +70,15 @@ It("should detect storm when rate exceeds threshold", func() {
 It("should generate consistent fingerprint for same alert", func() {
     mr := miniredis.NewMiniRedis() // In-memory Redis
     defer mr.Close()
-    
+
     signal := &types.NormalizedSignal{
         AlertName: "HighCPU",
         Namespace: "prod",
     }
-    
+
     fp1 := processing.GenerateFingerprint(signal)
     fp2 := processing.GenerateFingerprint(signal)
-    
+
     Expect(fp1).To(Equal(fp2))
 })
 ```
@@ -125,17 +125,17 @@ It("should prevent duplicate CRD creation", func() {
         logger,
         metrics,
     )
-    
+
     signal := &types.NormalizedSignal{
         Fingerprint: "test-fp-123",
         AlertName:   "HighCPU",
     }
-    
+
     // First call: Should create CRD
     isDupe, _, err := dedupService.CheckDuplication(ctx, signal)
     Expect(err).ToNot(HaveOccurred())
     Expect(isDupe).To(BeFalse())
-    
+
     // Second call: Should detect duplication
     isDupe, _, err = dedupService.CheckDuplication(ctx, signal)
     Expect(err).ToNot(HaveOccurred())
@@ -154,26 +154,26 @@ It("should handle concurrent deduplication from multiple pods", func() {
     // Simulate 2 Gateway pods with separate K8s clients
     dedupService1 := processing.NewDeduplicationService(redisClient, k8sClient1, ...)
     dedupService2 := processing.NewDeduplicationService(redisClient, k8sClient2, ...)
-    
+
     signal := &types.NormalizedSignal{Fingerprint: "concurrent-test"}
-    
+
     // Both pods check simultaneously
     var isDupe1, isDupe2 bool
     done := make(chan bool, 2)
-    
+
     go func() {
         isDupe1, _, _ = dedupService1.CheckDuplication(ctx, signal)
         done <- true
     }()
-    
+
     go func() {
         isDupe2, _, _ = dedupService2.CheckDuplication(ctx, signal)
         done <- true
     }()
-    
+
     <-done
     <-done
-    
+
     // Exactly ONE should create CRD, ONE should detect duplication
     Expect(isDupe1 != isDupe2).To(BeTrue())
 })
@@ -229,15 +229,15 @@ It("should create new storm window after TTL expiration", func() {
     // Send 5 alerts to trigger storm
     for i := 1; i <= 5; i++ {
         payload := createAlertPayload(fmt.Sprintf("pod-%d", i))
-        resp, err := httpClient.Post(gatewayURL+"/api/v1/signals/prometheus", 
+        resp, err := httpClient.Post(gatewayURL+"/api/v1/signals/prometheus",
             "application/json", bytes.NewBuffer(payload))
         Expect(err).ToNot(HaveOccurred())
         Expect(resp.StatusCode).To(Equal(http.StatusAccepted)) // 202 during storm
     }
-    
+
     // Wait for window to expire (90 seconds)
     time.Sleep(90 * time.Second)
-    
+
     // Send new alert - should create NEW window
     payload := createAlertPayload("pod-6")
     resp, err := httpClient.Post(gatewayURL+"/api/v1/signals/prometheus",
@@ -247,7 +247,7 @@ It("should create new storm window after TTL expiration", func() {
 })
 ```
 
-**Why E2E**: 
+**Why E2E**:
 - ✅ Tests complete HTTP workflow
 - ✅ Validates HTTP status codes (external interface behavior)
 - ✅ Requires 90s wait (too slow for integration)
@@ -262,7 +262,7 @@ It("should aggregate 15 concurrent alerts into single storm CRD", func() {
     // Send 15 concurrent HTTP requests
     var wg sync.WaitGroup
     responses := make([]int, 15)
-    
+
     for i := 0; i < 15; i++ {
         wg.Add(1)
         go func(idx int) {
@@ -273,9 +273,9 @@ It("should aggregate 15 concurrent alerts into single storm CRD", func() {
             responses[idx] = resp.StatusCode
         }(i)
     }
-    
+
     wg.Wait()
-    
+
     // Validate HTTP status codes
     // First alert: 201 Created
     // Subsequent alerts: 202 Accepted (during storm)
@@ -288,10 +288,10 @@ It("should aggregate 15 concurrent alerts into single storm CRD", func() {
             acceptedCount++
         }
     }
-    
+
     Expect(createdCount).To(Equal(1))
     Expect(acceptedCount).To(Equal(14))
-    
+
     // Verify single CRD created
     crds := listRemediationRequests(ctx, k8sClient, "production")
     Expect(len(crds)).To(Equal(1))
@@ -441,13 +441,13 @@ It("should aggregate 15 concurrent alerts into single storm CRD", func() {
 It("should store alert in Redis", func() {
     redisClient := redis.NewClient(...) // Real Redis!
     service := processing.NewService(redisClient)
-    
+
     err := service.StoreAlert(ctx, alert)
     Expect(err).ToNot(HaveOccurred())
 })
 ```
 
-**Why Wrong**: Unit tests should not require real infrastructure  
+**Why Wrong**: Unit tests should not require real infrastructure
 **Fix**: Use miniredis or move to integration tier
 
 ---
@@ -458,15 +458,15 @@ It("should store alert in Redis", func() {
 // ❌ BAD: Integration test with 90s wait
 It("should expire window after 90 seconds", func() {
     aggregator.StartWindow(ctx, signal)
-    
+
     time.Sleep(90 * time.Second) // Too slow!
-    
+
     isExpired := aggregator.IsWindowExpired(ctx, windowID)
     Expect(isExpired).To(BeTrue())
 })
 ```
 
-**Why Wrong**: Integration tests should be <5s  
+**Why Wrong**: Integration tests should be <5s
 **Fix**: Move to E2E tier or use shorter TTL for testing
 
 ---
@@ -478,16 +478,16 @@ It("should expire window after 90 seconds", func() {
 It("should generate fingerprint", func() {
     // Start complete E2E environment
     gatewayURL := startGatewayE2E()
-    
+
     // Send HTTP request just to test fingerprint
     resp, _ := httpClient.Post(gatewayURL+"/api/v1/signals/prometheus", ...)
-    
+
     // Check fingerprint in response
     Expect(resp.Fingerprint).To(MatchRegexp("[a-f0-9]{64}"))
 })
 ```
 
-**Why Wrong**: E2E is overkill for simple logic  
+**Why Wrong**: E2E is overkill for simple logic
 **Fix**: Move to unit test with direct function call
 
 ---

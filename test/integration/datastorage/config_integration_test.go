@@ -46,13 +46,13 @@ var _ = Describe("Config Integration Tests (ADR-030)", func() {
 		It("should load config and secrets from CONFIG_PATH and start successfully", func() {
 			validYAML := `
 server:
-  port: 18080
+  port: 18090 # DD-TEST-001
   host: "127.0.0.1"
   read_timeout: 30s
   write_timeout: 30s
 database:
   host: localhost
-  port: 5432
+  port: 15433 # DD-TEST-001
   name: testdb
   user: testuser
   ssl_mode: disable
@@ -63,7 +63,7 @@ database:
   secretsFile: "` + dbSecretsPath + `"
   passwordKey: "password"
 redis:
-  addr: localhost:6379
+  addr: localhost:16379 # DD-TEST-001
   db: 0
   secretsFile: "` + redisSecretsPath + `"
   passwordKey: "password"
@@ -123,13 +123,13 @@ logging:
 		It("should fail to start if database secret file is missing", func() {
 			validYAML := `
 server:
-  port: 18080
+  port: 18090 # DD-TEST-001
   host: "127.0.0.1"
   read_timeout: 30s
   write_timeout: 30s
 database:
   host: localhost
-  port: 5432
+  port: 15433 # DD-TEST-001
   name: testdb
   user: testuser
   ssl_mode: disable
@@ -140,7 +140,7 @@ database:
   secretsFile: "/nonexistent/db-secrets.yaml"
   passwordKey: "password"
 redis:
-  addr: localhost:6379
+  addr: localhost:16379 # DD-TEST-001
   db: 0
   secretsFile: "` + redisSecretsPath + `"
   passwordKey: "password"
@@ -170,7 +170,7 @@ server:
   port: 100
 database:
   host: ""
-  port: 5432
+  port: 15433 # DD-TEST-001
   name: testdb
   user: testuser
   ssl_mode: disable

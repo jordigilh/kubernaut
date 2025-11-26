@@ -22,9 +22,9 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -41,7 +41,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation", func() {
 	var (
 		aggregator  *processing.StormAggregator
 		redisServer *miniredis.Miniredis
-		redisClient *goredis.Client
+		redisClient *redis.Client
 		ctx         context.Context
 		signal      *types.NormalizedSignal
 	)
@@ -55,7 +55,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation", func() {
 		Expect(err).NotTo(HaveOccurred(), "miniredis should start successfully")
 
 		// Create real Redis client pointing to miniredis
-		redisClient = goredis.NewClient(&goredis.Options{
+		redisClient = redis.NewClient(&redis.Options{
 			Addr: redisServer.Addr(),
 		})
 
@@ -504,7 +504,8 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation", func() {
 
 				Expect(err).ToNot(HaveOccurred(), "System successfully enters aggregation mode")
 				Expect(windowID).NotTo(BeEmpty(), "Aggregation window created for collecting alerts")
-				Expect(windowID).To(MatchRegexp(`^PodCrashLooping-\d+$`), "Window identified by alert type")
+				// DD-GATEWAY-008 + BR-GATEWAY-011: Window ID includes namespace for multi-tenant isolation
+				Expect(windowID).To(MatchRegexp(`^prod-api:PodCrashLooping-\d+$`), "Window identified by namespace:alert type")
 			})
 
 			It("should consolidate all observed alerts into aggregation window", func() {

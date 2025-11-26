@@ -47,7 +47,7 @@ var _ = Describe("Embedding Client", func() {
 		redisClient *rediscache.Client
 		cache      *rediscache.Cache[[]float32]
 		server     *httptest.Server
-		client     *embedding.Client
+		client     embedding.Client
 	)
 
 	BeforeEach(func() {
@@ -413,6 +413,79 @@ var _ = Describe("Embedding Client", func() {
 
 			// Verify TTL (should be close to 24 hours)
 			// Note: miniredis doesn't support TTL inspection, so we trust the implementation
+		})
+	})
+
+	// ========================================
+	// TEST: Cache Expiration (Edge Case)
+	// ========================================
+	// BR-STORAGE-014: Cache TTL and expiration behavior
+	// Edge Case: Cache entries should expire after TTL
+	// Confidence Impact: +0.5% (validates cache lifecycle)
+	Context("when cache entries expire", func() {
+		It("should regenerate embeddings after cache TTL expires", func() {
+			// ARRANGE: Create cache with very short TTL (1 second for testing)
+			mr := miniredis.NewMiniRedis()
+			err := mr.Start()
+			Expect(err).ToNot(HaveOccurred())
+			defer mr.Close()
+
+			redisOpts := &redis.Options{
+				Addr: mr.Addr(),
+				DB:   0,
+			}
+			cacheClient := rediscache.NewClient(redisOpts, logger)
+			defer cacheClient.Close()
+
+			// Create cache with 1 second TTL
+			shortTTLCache := rediscache.NewCache[[]float32](cacheClient, "embeddings-ttl-test", 1*time.Second)
+
+			callCount := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				callCount++
+				resp := embedding.EmbedResponse{
+					Embedding:  make([]float32, 768),
+					Dimensions: 768,
+					Model:      "test-model",
+				}
+				json.NewEncoder(w).Encode(resp)
+			}))
+			defer server.Close()
+
+			client := embedding.NewClient(server.URL, shortTTLCache, logger)
+
+			text := "test cache expiration"
+
+			// ACT: Generate embedding (first call)
+			emb1, err := client.Embed(ctx, text)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(callCount).To(Equal(1), "Should call service once")
+
+			// Wait for async cache write
+			time.Sleep(100 * time.Millisecond)
+
+			// ACT: Generate embedding again immediately (should hit cache)
+			emb2, err := client.Embed(ctx, text)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(emb2).To(Equal(emb1))
+			Expect(callCount).To(Equal(1), "Should NOT call service again (cache hit)")
+
+			// ACT: Simulate cache expiration using miniredis FastForward
+			mr.FastForward(2 * time.Second) // Fast forward past the 1 second TTL
+
+			// ACT: Generate embedding after expiration (should regenerate)
+			emb3, err := client.Embed(ctx, text)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(callCount).To(Equal(2), "Should call service again after cache expiration")
+
+			// ASSERT: New embedding should be generated and cached again
+			time.Sleep(100 * time.Millisecond)
+
+			// Verify new embedding is cached
+			emb4, err := client.Embed(ctx, text)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(emb4).To(Equal(emb3))
+			Expect(callCount).To(Equal(2), "Should use newly cached embedding")
 		})
 	})
 })

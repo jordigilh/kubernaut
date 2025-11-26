@@ -258,8 +258,8 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// BUSINESS OUTCOME: Request may fail initially but retries succeed
 			// Either succeeds immediately (201) or fails and retries (500 → 201)
 			if resp.StatusCode == 500 {
-				// Wait for retry
-				time.Sleep(5 * time.Second)
+				// Wait for retry (2s is sufficient for test retry logic)
+				time.Sleep(2 * time.Second)
 			}
 
 			// Eventually, CRD should be created

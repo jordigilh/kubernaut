@@ -226,8 +226,8 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			return false
 		}, "10s", "500ms").Should(BeTrue(), "Initial CRD should be created")
 
-		// Wait for TTL to expire (5 seconds + 1 second buffer)
-		time.Sleep(6 * time.Second)
+		// Wait for TTL to expire (2 seconds + 1 second buffer)
+		time.Sleep(3 * time.Second)
 
 		// Verify CRD still exists (should not be deleted)
 		stillExists := false

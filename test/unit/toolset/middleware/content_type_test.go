@@ -25,6 +25,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	middleware "github.com/jordigilh/kubernaut/pkg/toolset/server/middleware"
 )
 
 func TestContentTypeMiddleware(t *testing.T) {
@@ -66,7 +68,7 @@ var _ = Describe("Content-Type Validation Middleware", func() {
 			w := httptest.NewRecorder()
 
 			// Wrap handler with Content-Type validation middleware
-			handler := ValidateContentType(mux)
+			handler := middleware.ValidateContentType(mux)
 			handler.ServeHTTP(w, req)
 
 			// Validate Behavior: Request should be processed successfully
@@ -89,7 +91,7 @@ var _ = Describe("Content-Type Validation Middleware", func() {
 			w := httptest.NewRecorder()
 
 			// Wrap handler with Content-Type validation middleware
-			handler := ValidateContentType(mux)
+			handler := middleware.ValidateContentType(mux)
 			handler.ServeHTTP(w, req)
 
 			// Validate Behavior: Request should be processed successfully
@@ -114,7 +116,7 @@ var _ = Describe("Content-Type Validation Middleware", func() {
 			w := httptest.NewRecorder()
 
 			// Wrap handler with Content-Type validation middleware
-			handler := ValidateContentType(mux)
+			handler := middleware.ValidateContentType(mux)
 			handler.ServeHTTP(w, req)
 
 			// Validate Behavior: Request should be rejected with 415
@@ -147,7 +149,7 @@ var _ = Describe("Content-Type Validation Middleware", func() {
 			w := httptest.NewRecorder()
 
 			// Wrap handler with Content-Type validation middleware
-			handler := ValidateContentType(mux)
+			handler := middleware.ValidateContentType(mux)
 			handler.ServeHTTP(w, req)
 
 			// Validate Behavior: Request should be rejected with 415
@@ -173,7 +175,7 @@ var _ = Describe("Content-Type Validation Middleware", func() {
 			w := httptest.NewRecorder()
 
 			// Wrap handler with Content-Type validation middleware
-			handler := ValidateContentType(mux)
+			handler := middleware.ValidateContentType(mux)
 			handler.ServeHTTP(w, req)
 
 			// Validate Behavior: Request should be rejected with 415
@@ -199,7 +201,7 @@ var _ = Describe("Content-Type Validation Middleware", func() {
 			w := httptest.NewRecorder()
 
 			// Wrap handler with Content-Type validation middleware
-			handler := ValidateContentType(mux)
+			handler := middleware.ValidateContentType(mux)
 			handler.ServeHTTP(w, req)
 
 			// Validate Behavior: Request should be rejected with 415
@@ -225,7 +227,7 @@ var _ = Describe("Content-Type Validation Middleware", func() {
 			w := httptest.NewRecorder()
 
 			// Wrap handler with Content-Type validation middleware
-			handler := ValidateContentType(mux)
+			handler := middleware.ValidateContentType(mux)
 			handler.ServeHTTP(w, req)
 
 			// Validate Behavior: Request should be rejected with 415
@@ -253,7 +255,7 @@ var _ = Describe("Content-Type Validation Middleware", func() {
 			w := httptest.NewRecorder()
 
 			// Wrap handler with Content-Type validation middleware
-			handler := ValidateContentType(mux)
+			handler := middleware.ValidateContentType(mux)
 			handler.ServeHTTP(w, req)
 
 			// Validate Behavior: GET request should succeed without Content-Type

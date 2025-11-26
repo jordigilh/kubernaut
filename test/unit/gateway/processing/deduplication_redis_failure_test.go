@@ -23,11 +23,12 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -104,12 +105,12 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 				// OUTCOME: Operators know Redis is down and can fix it
 
 				// Create a Redis client pointing to invalid address (simulates Redis down)
-				failingRedisClient := goredis.NewClient(&goredis.Options{
+				failingRedisClient := rediscache.NewClient(&redis.Options{
 					Addr:         "localhost:9999", // Invalid port
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				})
+				}, zap.NewNop())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
@@ -141,12 +142,12 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 				// When Redis.Exists() fails, treat as new alert (lines 399-408 in deduplication.go)
 
 				// Create a Redis client pointing to invalid address (simulates Redis down)
-				failingRedisClient := goredis.NewClient(&goredis.Options{
+				failingRedisClient := rediscache.NewClient(&redis.Options{
 					Addr:         "localhost:9999", // Invalid port
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				})
+				}, zap.NewNop())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
@@ -176,12 +177,12 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 				// TRADE-OFF: Future duplicates won't be detected (acceptable)
 
 				// Create a Redis client pointing to invalid address (simulates Redis down)
-				failingRedisClient := goredis.NewClient(&goredis.Options{
+				failingRedisClient := rediscache.NewClient(&redis.Options{
 					Addr:         "localhost:9999", // Invalid port
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				})
+				}, zap.NewNop())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
@@ -210,12 +211,12 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 				// OUTCOME: No manual intervention needed
 
 				// Step 1: Create failing Redis client
-				failingRedisClient := goredis.NewClient(&goredis.Options{
+				failingRedisClient := rediscache.NewClient(&redis.Options{
 					Addr:         "localhost:9999", // Invalid port
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				})
+				}, zap.NewNop())
 
 				// Create deduplication service with failing Redis client
 				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, zap.NewNop(), nil)
@@ -228,9 +229,9 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 				failingRedisClient.Close()
 
 				// Step 4: Create new service with working Redis (simulate recovery)
-				workingRedisClient := goredis.NewClient(&goredis.Options{
+				workingRedisClient := rediscache.NewClient(&redis.Options{
 					Addr: redisServer.Addr(), // Working miniredis
-				})
+				}, zap.NewNop())
 				defer workingRedisClient.Close()
 
 				workingDedupService := processing.NewDeduplicationService(workingRedisClient, nil, zap.NewNop(), nil)
@@ -256,12 +257,12 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 				// OUTCOME: Service knows when Redis is up/down
 
 				// Create failing Redis client
-				failingRedisClient := goredis.NewClient(&goredis.Options{
+				failingRedisClient := rediscache.NewClient(&redis.Options{
 					Addr:         "localhost:9999", // Invalid port
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				})
+				}, zap.NewNop())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
@@ -296,12 +297,12 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 				// OUTCOME: Faster troubleshooting
 
 				// Create failing Redis client
-				failingRedisClient := goredis.NewClient(&goredis.Options{
+				failingRedisClient := rediscache.NewClient(&redis.Options{
 					Addr:         "localhost:9999", // Invalid port
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				})
+				}, zap.NewNop())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
@@ -322,4 +323,3 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 		})
 	})
 })
-

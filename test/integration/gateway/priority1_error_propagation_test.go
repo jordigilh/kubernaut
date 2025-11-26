@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	goredis "github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -110,7 +110,7 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 
 			// Create Gateway with invalid Redis config (pointing to non-existent Redis)
 			invalidRedisClient := &RedisTestClient{
-				Client: goredis.NewClient(&goredis.Options{
+				Client: redis.NewClient(&redis.Options{
 					Addr: "localhost:9999", // Non-existent Redis port
 					DB:   0,
 				}),

@@ -25,7 +25,7 @@ This document provides clear guidance on **when** and **how** to use each type o
 
 | Aspect | Business Requirement Tests | Unit Tests |
 |--------|----------------------------|------------|
-| **Purpose** | Validate business value delivery | Validate implementation correctness |
+| **Purpose** | Validate business value delivery | Validate business behavior + implementation correctness |
 | **Focus** | External behavior & outcomes | Internal code mechanics |
 | **Audience** | Business stakeholders + developers | Developers |
 | **Metrics** | Business KPIs (accuracy, cost, time) | Technical metrics (coverage, performance) |

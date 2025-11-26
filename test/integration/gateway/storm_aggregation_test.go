@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	goredis "github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,7 +58,7 @@ import (
 var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 	var (
 		ctx         context.Context
-		redisClient *goredis.Client
+		redisClient *redis.Client
 		aggregator  *processing.StormAggregator
 	)
 
@@ -72,9 +72,8 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 		Expect(redisTestClient.Client).ToNot(BeNil(), "Redis client required for storm aggregation tests")
 		redisClient = redisTestClient.Client
 
-		// Clean Redis state before each test
-		err := redisClient.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Failed to flush Redis before test")
+		// NOTE: Do NOT use FlushDB - it wipes data from other parallel processes
+		// Test isolation is achieved via unique namespace per test (using GinkgoParallelProcess)
 
 		// Create aggregator with bufferThreshold=1 for immediate window creation in tests
 		// Production default is 5, but tests expect windowID on first alert
@@ -286,13 +285,14 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Describe("Storm Grouping Logic", func() {
-		Context("when alerts have same alertname", func() {
-			It("should group into same storm window (regardless of namespace)", func() {
-				// BR-GATEWAY-016: Storm grouping by AlertName
-				// BUSINESS OUTCOME: Same AlertName → Same storm window
+		Context("when alerts have same alertname and namespace", func() {
+			It("should group into same storm window (BR-GATEWAY-011: multi-tenant isolation)", func() {
+				// BR-GATEWAY-016: Storm grouping by Namespace + AlertName
+				// BR-GATEWAY-011: Multi-tenant isolation - different namespaces have separate windows
+				// BUSINESS OUTCOME: Same Namespace + AlertName → Same storm window
 				processID := GinkgoParallelProcess()
 
-				// Create storm window for HighCPUUsage
+				// Create storm window for HighCPUUsage in prod-api
 				signal1 := &types.NormalizedSignal{
 					Namespace:   "prod-api",
 					AlertName:   fmt.Sprintf("HighCPUUsage-p%d", processID),
@@ -309,22 +309,70 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				windowID, err := aggregator.StartAggregation(ctx, signal1, stormMetadata)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Second alert with same AlertName (different namespace)
+				// Second alert with same AlertName AND same namespace
 				signal2 := &types.NormalizedSignal{
-					Namespace:   "staging-api",  // Different namespace
+					Namespace:   "prod-api",                                 // Same namespace
 					AlertName:   fmt.Sprintf("HighCPUUsage-p%d", processID), // Same AlertName
 					Severity:    "critical",
-					Fingerprint: "cpu-high-staging-api-pod1",
+					Fingerprint: "cpu-high-prod-api-pod2",
 					Labels:      map[string]string{"pod": "pod-2"},
 				}
 
 				aggregated, returnedWindowID, err := aggregator.AggregateOrCreate(ctx, signal2)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(aggregated).To(BeTrue(), "Same AlertName should aggregate")
-				Expect(returnedWindowID).To(Equal(windowID), "Same window ID for same AlertName")
+				Expect(aggregated).To(BeTrue(), "Same Namespace + AlertName should aggregate")
+				Expect(returnedWindowID).To(Equal(windowID), "Same window ID for same Namespace + AlertName")
 
 				// Business capability verified:
-				// Same AlertName → Same storm window (namespace-agnostic grouping)
+				// Same Namespace + AlertName → Same storm window (multi-tenant isolation)
+			})
+		})
+
+		Context("when alerts have same alertname but different namespace", func() {
+			It("should create separate storm windows (BR-GATEWAY-011: multi-tenant isolation)", func() {
+				// BR-GATEWAY-011: Multi-tenant isolation
+				// BUSINESS OUTCOME: Different Namespace → Different storm windows
+				processID := GinkgoParallelProcess()
+
+				// Create storm window for HighCPUUsage in prod-api
+				signal1 := &types.NormalizedSignal{
+					Namespace:   "prod-api",
+					AlertName:   fmt.Sprintf("HighCPUUsage-isolation-p%d", processID),
+					Severity:    "critical",
+					Fingerprint: "cpu-high-prod-api-pod1",
+					Labels:      map[string]string{"pod": "pod-1"},
+				}
+
+				stormMetadata := &processing.StormMetadata{
+					StormType:  "pattern",
+					AlertCount: 1,
+					Window:     "1m",
+				}
+				windowID1, err := aggregator.StartAggregation(ctx, signal1, stormMetadata)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Second alert with same AlertName but DIFFERENT namespace
+				signal2 := &types.NormalizedSignal{
+					Namespace:   "staging-api",                                        // Different namespace
+					AlertName:   fmt.Sprintf("HighCPUUsage-isolation-p%d", processID), // Same AlertName
+					Severity:    "critical",
+					Fingerprint: "cpu-high-staging-api-pod1",
+					Labels:      map[string]string{"pod": "pod-2"},
+				}
+
+				// This should NOT aggregate - different namespace means different window
+				aggregated, returnedWindowID, err := aggregator.AggregateOrCreate(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(aggregated).To(BeFalse(), "Different namespace should NOT aggregate into same window")
+				Expect(returnedWindowID).To(BeEmpty(), "No existing window for this namespace")
+
+				// Start a new window for staging-api
+				windowID2, err := aggregator.StartAggregation(ctx, signal2, stormMetadata)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(windowID2).ToNot(Equal(windowID1), "Different namespaces have different window IDs")
+
+				// Business capability verified:
+				// Different Namespace → Separate storm windows (multi-tenant isolation)
 			})
 		})
 
@@ -352,7 +400,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 
 				// Second alert with different AlertName
 				signal2 := &types.NormalizedSignal{
-					Namespace:   "prod-api",        // Same namespace
+					Namespace:   "prod-api",                                    // Same namespace
 					AlertName:   fmt.Sprintf("HighMemoryUsage-p%d", processID), // Different AlertName
 					Severity:    "critical",
 					Fingerprint: "mem-high-prod-api-pod1",
@@ -460,12 +508,12 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 		// Reason: Test takes 2+ minutes (too slow for integration tier)
 
 		Context("when storm window expires and new storm starts", func() {
-		XIt("should create new storm window after TTL expiration [E2E]", func() {
-			// MOVED TO: test/e2e/gateway/storm_ttl_expiration_test.go
-			// BR-GATEWAY-016: Storm window TTL expiration
-			// BUSINESS OUTCOME: Expired storm window → new window created
-			// REASON: This test takes 2+ minutes (90s wait) - run in nightly E2E suite
-			// See: test/integration/gateway/TRIAGE_E2E_MIGRATION.md
+			XIt("should create new storm window after TTL expiration [E2E]", func() {
+				// MOVED TO: test/e2e/gateway/storm_ttl_expiration_test.go
+				// BR-GATEWAY-016: Storm window TTL expiration
+				// BUSINESS OUTCOME: Expired storm window → new window created
+				// REASON: This test takes 2+ minutes (90s wait) - run in nightly E2E suite
+				// See: test/integration/gateway/TRIAGE_E2E_MIGRATION.md
 				processID := GinkgoParallelProcess()
 
 				signal := &types.NormalizedSignal{
@@ -569,23 +617,23 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 			}
 		})
 
-	XIt("should aggregate 15 concurrent Prometheus alerts into 1 storm CRD [E2E]", func() {
-		// BUSINESS OUTCOME: 15 rapid-fire alerts → 1 aggregated CRD (97% cost reduction)
-		// This validates HTTP status codes: 201 Created (before storm) → 202 Accepted (during storm)
-		// This validates the complete flow: Webhook → Storm Detection → Aggregation → CRD
-		// NOTE: Marked as E2E - 120s timeout, tests complete workflow (5+ components)
-		// See: test/integration/gateway/TRIAGE_E2E_MIGRATION.md
-		processID := GinkgoParallelProcess()
-		timestamp := time.Now().UnixNano()
+		XIt("should aggregate 15 concurrent Prometheus alerts into 1 storm CRD [E2E]", func() {
+			// BUSINESS OUTCOME: 15 rapid-fire alerts → 1 aggregated CRD (97% cost reduction)
+			// This validates HTTP status codes: 201 Created (before storm) → 202 Accepted (during storm)
+			// This validates the complete flow: Webhook → Storm Detection → Aggregation → CRD
+			// NOTE: Marked as E2E - 120s timeout, tests complete workflow (5+ components)
+			// See: test/integration/gateway/TRIAGE_E2E_MIGRATION.md
+			processID := GinkgoParallelProcess()
+			timestamp := time.Now().UnixNano()
 
-		namespace := fmt.Sprintf("prod-payments-p%d-%d", processID, timestamp)
-		alertName := fmt.Sprintf("HighMemoryUsage-p%d-%d", processID, timestamp)
+			namespace := fmt.Sprintf("prod-payments-p%d-%d", processID, timestamp)
+			alertName := fmt.Sprintf("HighMemoryUsage-p%d-%d", processID, timestamp)
 
-		// Create namespace for this test
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: namespace},
-		}
-		Expect(k8sClient.Client.Create(ctx, ns)).To(Succeed(), "Should create test namespace")
+			// Create namespace for this test
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: namespace},
+			}
+			Expect(k8sClient.Client.Create(ctx, ns)).To(Succeed(), "Should create test namespace")
 
 			// Send 15 concurrent alerts (simulating alert storm)
 			// All alerts have same namespace + alertname → should trigger storm detection
@@ -640,11 +688,11 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				responses = append(responses, <-results)
 			}
 
-		// Wait for CRD creation and storm aggregation window to complete
-		// The Gateway responds with 201/202 before the K8s API call completes
-		// Storm aggregation window is 1 second (test config), then aggregated CRD is created
-		// With envtest, CRD creation is faster, so reduce sleep to 5 seconds
-		time.Sleep(5 * time.Second)
+			// Wait for CRD creation and storm aggregation window to complete
+			// The Gateway responds with 201/202 before the K8s API call completes
+			// Storm aggregation window is 1 second (test config), then aggregated CRD is created
+			// With envtest, CRD creation is faster, so reduce sleep to 2 seconds
+			time.Sleep(2 * time.Second)
 
 			// VALIDATION 1: First alert creates storm CRD (201 Created)
 			// Subsequent alerts are aggregated (202 Accepted)
@@ -707,48 +755,48 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 			Expect(acceptedCount).To(BeNumerically(">=", 12),
 				"Should aggregate at least 12-13 alerts after storm detection kicks in")
 
-		// VALIDATION 2: Verify storm CRD exists in K8s
-		// Use Eventually to wait for CRDs to be visible (K8s API caching/propagation delay)
-		// Force direct API calls by using MatchingFields{} to bypass controller-runtime cache
-		var stormCRD *remediationv1alpha1.RemediationRequest
-		Eventually(func() bool {
-			var stormCRDs remediationv1alpha1.RemediationRequestList
-			// Use client.MatchingFields{} to force a fresh API call (bypass client cache)
-			// This is critical for parallel execution where cache may be stale
-			listOpts := []client.ListOption{
-				client.InNamespace(namespace),
-				client.MatchingFields{}, // Forces direct API call, bypassing cache
-			}
-			err := k8sClient.Client.List(ctx, &stormCRDs, listOpts...)
-			if err != nil {
-				GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", namespace, err)
-				return false
-			}
-
-			// DEBUG: Print all CRDs found (scattered fields per deployed CRD schema)
-			GinkgoWriter.Printf("📋 Found %d CRDs in namespace %s\n", len(stormCRDs.Items), namespace)
-			for i := range stormCRDs.Items {
-				hasStorm := stormCRDs.Items[i].Spec.IsStorm
-				alertCount := stormCRDs.Items[i].Spec.StormAlertCount
-				GinkgoWriter.Printf("  - %s (namespace=%s, isStorm=%v, alertCount=%d)\n",
-					stormCRDs.Items[i].Name,
-					stormCRDs.Items[i].Namespace,
-					hasStorm,
-					alertCount)
-			}
-
-			// Find storm CRD for this namespace (scattered fields per deployed CRD schema)
-			for i := range stormCRDs.Items {
-				if stormCRDs.Items[i].Spec.IsStorm &&
-					stormCRDs.Items[i].Spec.StormAlertCount > 0 {
-					stormCRD = &stormCRDs.Items[i]
-					return true
+			// VALIDATION 2: Verify storm CRD exists in K8s
+			// Use Eventually to wait for CRDs to be visible (K8s API caching/propagation delay)
+			// Force direct API calls by using MatchingFields{} to bypass controller-runtime cache
+			var stormCRD *remediationv1alpha1.RemediationRequest
+			Eventually(func() bool {
+				var stormCRDs remediationv1alpha1.RemediationRequestList
+				// Use client.MatchingFields{} to force a fresh API call (bypass client cache)
+				// This is critical for parallel execution where cache may be stale
+				listOpts := []client.ListOption{
+					client.InNamespace(namespace),
+					client.MatchingFields{}, // Forces direct API call, bypassing cache
 				}
-			}
-			return false
-		}, "120s", "1s").Should(BeTrue(), "Storm CRD should exist in K8s (120s timeout for parallel execution, polling every 1s)")
+				err := k8sClient.Client.List(ctx, &stormCRDs, listOpts...)
+				if err != nil {
+					GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", namespace, err)
+					return false
+				}
 
-		Expect(stormCRD).ToNot(BeNil(), "Storm CRD should exist in K8s")
+				// DEBUG: Print all CRDs found (scattered fields per deployed CRD schema)
+				GinkgoWriter.Printf("📋 Found %d CRDs in namespace %s\n", len(stormCRDs.Items), namespace)
+				for i := range stormCRDs.Items {
+					hasStorm := stormCRDs.Items[i].Spec.IsStorm
+					alertCount := stormCRDs.Items[i].Spec.StormAlertCount
+					GinkgoWriter.Printf("  - %s (namespace=%s, isStorm=%v, alertCount=%d)\n",
+						stormCRDs.Items[i].Name,
+						stormCRDs.Items[i].Namespace,
+						hasStorm,
+						alertCount)
+				}
+
+				// Find storm CRD for this namespace (scattered fields per deployed CRD schema)
+				for i := range stormCRDs.Items {
+					if stormCRDs.Items[i].Spec.IsStorm &&
+						stormCRDs.Items[i].Spec.StormAlertCount > 0 {
+						stormCRD = &stormCRDs.Items[i]
+						return true
+					}
+				}
+				return false
+			}, "120s", "1s").Should(BeTrue(), "Storm CRD should exist in K8s (120s timeout for parallel execution, polling every 1s)")
+
+			Expect(stormCRD).ToNot(BeNil(), "Storm CRD should exist in K8s")
 			Expect(stormCRD.Spec.IsStorm).To(BeTrue(), "Storm CRD should have IsStorm=true")
 
 			// VALIDATION 3: Storm CRD contains aggregated alert metadata (scattered fields)
@@ -799,17 +847,17 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 		})
 
 		It("should handle mixed storm and non-storm alerts correctly", func() {
-		// BUSINESS OUTCOME: Storm alerts aggregated, normal alerts processed individually
-		// This validates that storm detection only aggregates related alerts (same alertname)
+			// BUSINESS OUTCOME: Storm alerts aggregated, normal alerts processed individually
+			// This validates that storm detection only aggregates related alerts (same alertname)
 
-		processID := GinkgoParallelProcess()
-		namespace := fmt.Sprintf("prod-api-p%d-%d", processID, time.Now().Unix())
+			processID := GinkgoParallelProcess()
+			namespace := fmt.Sprintf("prod-api-p%d-%d", processID, time.Now().Unix())
 
-		// Create namespace for this test
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: namespace},
-		}
-		Expect(k8sClient.Client.Create(ctx, ns)).To(Succeed(), "Should create test namespace")
+			// Create namespace for this test
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: namespace},
+			}
+			Expect(k8sClient.Client.Create(ctx, ns)).To(Succeed(), "Should create test namespace")
 
 			// Send 15 alerts for same issue (storm) - threshold is 10, so 5 should be aggregated
 			// Send in batches of 5 to avoid overwhelming the Gateway server

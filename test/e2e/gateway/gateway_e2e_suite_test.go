@@ -191,46 +191,77 @@ var _ = ReportAfterEach(func(report SpecReport) {
 	}
 })
 
-var _ = AfterSuite(func() {
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Gateway E2E Test Suite - Cluster Teardown")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+// SynchronizedAfterSuite ensures cluster cleanup happens ONLY after ALL processes complete
+var _ = SynchronizedAfterSuite(
+	// This runs on ALL processes - cleanup per-process resources and report status
+	func() {
+		processID := GinkgoParallelProcess()
+		logger.Info("Process cleanup complete",
+			zap.Int("process", processID),
+			zap.Bool("hadFailures", anyTestFailed))
 
-	// Check if any test failed - preserve cluster for debugging
-	if anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true" {
-		logger.Warn("⚠️  Test FAILED - Keeping cluster alive for debugging")
-		logger.Info("To debug:")
-		logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
-		logger.Info("  kubectl get namespaces | grep -E 'storm|rate|concurrent|crd|restart'")
-		logger.Info("  kubectl get pods -n <namespace>")
-		logger.Info("  kubectl logs -n <namespace> deployment/gateway")
-		logger.Info("To cleanup manually:")
-		logger.Info(fmt.Sprintf("  kind delete cluster --name %s", clusterName))
+		// Cancel context for this process
+		if cancel != nil {
+			cancel()
+		}
+
+		// Sync logger for this process
+		if logger != nil {
+			_ = logger.Sync()
+		}
+
+		// Return failure status to process 1 via the suite report
+		// (Ginkgo handles aggregating failure status across processes)
+	},
+	// This runs ONLY on process 1 AFTER all other processes complete
+	func() {
+		// Re-initialize logger for final cleanup (may have been synced)
+		var err error
+		logger, err = zap.NewDevelopment()
+		if err != nil {
+			fmt.Println("Failed to create logger for cleanup")
+			return
+		}
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		return
-	}
+		logger.Info("Gateway E2E Test Suite - Cluster Teardown (Process 1 - Final)")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// All tests passed - cleanup cluster
-	logger.Info("✅ All tests passed - cleaning up cluster...")
-	err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
-	if err != nil {
-		logger.Warn("Failed to delete cluster", zap.Error(err))
-	}
+		// Check if the suite failed (Ginkgo aggregates this across all processes)
+		// We use CurrentSpecReport().Failed() to check suite-level failure
+		suiteReport := CurrentSpecReport()
+		suiteFailed := suiteReport.Failed() || anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true"
 
-	// Cancel context
-	if cancel != nil {
-		cancel()
-	}
+		if suiteFailed {
+			logger.Warn("⚠️  Test FAILED - Keeping cluster alive for debugging")
+			logger.Info("To debug:")
+			logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
+			logger.Info("  kubectl get namespaces | grep -E 'storm|rate|concurrent|crd|restart'")
+			logger.Info("  kubectl get pods -n <namespace>")
+			logger.Info("  kubectl logs -n <namespace> deployment/gateway")
+			logger.Info("To cleanup manually:")
+			logger.Info(fmt.Sprintf("  kind delete cluster --name %s", clusterName))
+			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			return
+		}
 
-	// Sync logger
-	if logger != nil {
-		_ = logger.Sync()
-	}
+		// All tests passed - cleanup cluster
+		logger.Info("✅ All tests passed - cleaning up cluster...")
+		err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		if err != nil {
+			logger.Warn("Failed to delete cluster", zap.Error(err))
+		}
 
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Cluster Teardown Complete")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-})
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Cluster Teardown Complete")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		// Final logger sync
+		if logger != nil {
+			_ = logger.Sync()
+		}
+	},
+)
 
 // Helper functions for tests
 

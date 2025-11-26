@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/redis/go-redis/v9"
 )
 
 // StormAggregator aggregates alerts during storm windows
@@ -55,7 +55,7 @@ import (
 //
 // Redis keys:
 // - alert:buffer:<namespace>:<alertname> (list of buffered signals before threshold)
-// - alert:storm:aggregate:<alertname> (stores aggregation window ID)
+// - alert:storm:aggregate:<namespace>:<alertname> (stores aggregation window ID, BR-GATEWAY-011)
 // - alert:storm:resources:<window-id> (sorted set of affected resources)
 // - alert:storm:metadata:<window-id> (first signal metadata for CRD creation)
 type StormAggregator struct {
@@ -173,7 +173,8 @@ func NewStormAggregatorWithConfig(
 //	    }
 //	}
 func (a *StormAggregator) ShouldAggregate(ctx context.Context, signal *types.NormalizedSignal) (bool, string, error) {
-	key := fmt.Sprintf("alert:storm:aggregate:%s", signal.AlertName)
+	// DD-GATEWAY-008 + BR-GATEWAY-011: Include namespace for multi-tenant isolation
+	key := fmt.Sprintf("alert:storm:aggregate:%s:%s", signal.Namespace, signal.AlertName)
 
 	windowID, err := a.redisClient.Get(ctx, key).Result()
 	if err == redis.Nil {
@@ -225,8 +226,9 @@ func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.No
 
 	// Threshold reached: Create aggregation window
 	currentTime := time.Now()
-	windowID := fmt.Sprintf("%s-%d", signal.AlertName, currentTime.Unix())
-	windowKey := fmt.Sprintf("alert:storm:aggregate:%s", signal.AlertName)
+	// DD-GATEWAY-008 + BR-GATEWAY-011: Include namespace for multi-tenant isolation
+	windowID := fmt.Sprintf("%s:%s-%d", signal.Namespace, signal.AlertName, currentTime.Unix())
+	windowKey := fmt.Sprintf("alert:storm:aggregate:%s:%s", signal.Namespace, signal.AlertName)
 
 	// Store window ID with TTL (BR-GATEWAY-008: sliding window with inactivity timeout)
 	// Use windowDuration (inactivityTimeout) for consistent sliding window behavior
@@ -612,12 +614,26 @@ func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, cur
 	// This optimizes for the common case (production windowIDs) while maintaining
 	// backward compatibility with test windowIDs
 
-	// Production windowID format: "AlertName-UnixTimestamp"
-	// Example: "PodCrashLooping-1696800000" → key: "alert:storm:aggregate:PodCrashLooping"
+	// Production windowID format: "Namespace:AlertName-UnixTimestamp" (DD-GATEWAY-008 + BR-GATEWAY-011)
+	// Example: "prod-api:PodCrashLooping-1696800000" → key: "alert:storm:aggregate:prod-api:PodCrashLooping"
 
-	// Extract potential alert name (everything before last hyphen)
-	alertName := windowID
-	if lastHyphen := len(windowID) - 1; lastHyphen > 0 {
+	// Extract namespace and alert name from windowID
+	// Format: "namespace:alertname-timestamp"
+	var namespace, alertName string
+	if colonIdx := strings.Index(windowID, ":"); colonIdx > 0 {
+		namespace = windowID[:colonIdx]
+		rest := windowID[colonIdx+1:]
+		// Extract alert name (everything before last hyphen in rest)
+		alertName = rest
+		for i := len(rest) - 1; i >= 0; i-- {
+			if rest[i] == '-' {
+				alertName = rest[:i]
+				break
+			}
+		}
+	} else {
+		// Legacy format (no namespace): "alertname-timestamp"
+		alertName = windowID
 		for i := len(windowID) - 1; i >= 0; i-- {
 			if windowID[i] == '-' {
 				alertName = windowID[:i]
@@ -627,7 +643,13 @@ func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, cur
 	}
 
 	// Try direct key lookup first (O(1) - fast path for production)
-	windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+	var windowKey string
+	if namespace != "" {
+		windowKey = fmt.Sprintf("alert:storm:aggregate:%s:%s", namespace, alertName)
+	} else {
+		// Legacy format fallback
+		windowKey = fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+	}
 	storedWindowID, err := a.redisClient.Get(ctx, windowKey).Result()
 
 	if err == nil && storedWindowID == windowID {
@@ -640,6 +662,7 @@ func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, cur
 
 	// Slow path: Fall back to SCAN for non-standard windowIDs (tests, edge cases)
 	// This maintains backward compatibility while optimizing the common case
+	// Pattern: alert:storm:aggregate:*:* (namespace:alertname format)
 	iter := a.redisClient.Scan(ctx, 0, "alert:storm:aggregate:*", 100).Iterator()
 	windowKey = ""
 

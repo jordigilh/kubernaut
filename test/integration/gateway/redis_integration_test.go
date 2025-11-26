@@ -163,9 +163,9 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
-		// Wait for TTL to expire (5 seconds + 5 second buffer for parallel execution)
-		// Production uses 5 minutes, but tests use 5 seconds for fast execution
-		time.Sleep(10 * time.Second)
+		// Wait for TTL to expire (2 seconds + 1 second buffer for parallel execution)
+		// Production uses 5 minutes, but tests use 2 seconds for fast execution
+		time.Sleep(3 * time.Second)
 
 		// BUSINESS OUTCOME: Send same alert again - should be deduplicated (202)
 		// Even though Redis TTL expired, the CRD still exists in Kubernetes

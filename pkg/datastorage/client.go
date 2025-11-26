@@ -250,13 +250,17 @@ func (c *ClientImpl) Ping(ctx context.Context) error {
 // mockEmbeddingAPI simulates AI embedding generation
 type mockEmbeddingAPI struct{}
 
-func (m *mockEmbeddingAPI) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
-	// Generate simple mock embedding (384 dimensions)
-	embedding := make([]float32, 384)
+func (m *mockEmbeddingAPI) Embed(ctx context.Context, text string) ([]float32, error) {
+	// Generate simple mock embedding (768 dimensions)
+	embedding := make([]float32, 768)
 	for i := range embedding {
-		embedding[i] = float32(i) / 384.0
+		embedding[i] = float32(i) / 768.0
 	}
 	return embedding, nil
+}
+
+func (m *mockEmbeddingAPI) Health(ctx context.Context) error {
+	return nil // Mock always healthy
 }
 
 // mockCache simulates Redis cache

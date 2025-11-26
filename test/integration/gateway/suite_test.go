@@ -133,7 +133,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// 2. Start Redis container
 	suiteLogger.Info("📦 Starting Redis container...")
 	_ = infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
-	time.Sleep(2 * time.Second) // Wait for port to be released
+	time.Sleep(500 * time.Millisecond) // Wait for port to be released
 
 	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 0, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests")
@@ -220,7 +220,7 @@ var _ = SynchronizedAfterSuite(func() {
 
 	// Wait for all parallel processes to finish
 	suiteLogger.Info("Waiting for all parallel processes to finish cleanup...")
-	time.Sleep(5 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	// Collect namespace statistics
 	testNamespacesMutex.Lock()

@@ -42,12 +42,12 @@ import (
 type WorkflowRepository struct {
 	db              *sqlx.DB
 	logger          *zap.Logger
-	embeddingClient *embedding.Client
+	embeddingClient embedding.Client
 }
 
 // NewWorkflowRepository creates a new workflow repository
 // BR-STORAGE-014: Embedding client is optional (nil = no automatic embedding generation)
-func NewWorkflowRepository(db *sqlx.DB, logger *zap.Logger, embeddingClient *embedding.Client) *WorkflowRepository {
+func NewWorkflowRepository(db *sqlx.DB, logger *zap.Logger, embeddingClient embedding.Client) *WorkflowRepository {
 	return &WorkflowRepository{
 		db:              db,
 		logger:          logger,
@@ -752,4 +752,3 @@ const (
 	// Maximum possible penalty (sum of penalty weights)
 	maxLabelPenalty = 0.20
 )
-

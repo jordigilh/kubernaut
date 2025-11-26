@@ -36,11 +36,15 @@ type MockEmbeddingAPIClient struct {
 	err       error
 }
 
-func (m *MockEmbeddingAPIClient) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+func (m *MockEmbeddingAPIClient) Embed(ctx context.Context, text string) ([]float32, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.embedding, nil
+}
+
+func (m *MockEmbeddingAPIClient) Health(ctx context.Context) error {
+	return nil
 }
 
 // MockCache for testing

@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Kubernaut.
+Copyright 2025 Jordi Gil.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ package k8sutil
 import (
 	"os"
 	"testing"
+
+	k8sutil "github.com/jordigilh/kubernaut/pkg/k8sutil"
 )
 
 func TestGetConfig(t *testing.T) {
@@ -35,7 +37,7 @@ func TestGetConfig(t *testing.T) {
 	t.Run("returns error when no config available", func(t *testing.T) {
 		os.Unsetenv("KUBECONFIG")
 		// In test environment, in-cluster config will fail
-		_, err := GetConfig()
+		_, err := k8sutil.GetConfig()
 		if err == nil {
 			t.Error("expected error when no config available")
 		}
@@ -49,7 +51,7 @@ func TestGetConfig(t *testing.T) {
 		}
 
 		os.Setenv("KUBECONFIG", originalKubeconfig)
-		config, err := GetConfig()
+		config, err := k8sutil.GetConfig()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -65,7 +67,7 @@ func TestNewClientset(t *testing.T) {
 		t.Skip("KUBECONFIG not set, skipping")
 	}
 
-	clientset, err := NewClientset()
+	clientset, err := k8sutil.NewClientset()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

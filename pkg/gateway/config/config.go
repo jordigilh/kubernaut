@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,24 +67,8 @@ type RateLimitSettings struct {
 // InfrastructureSettings contains external dependency configuration.
 // Single Responsibility: Infrastructure connections
 type InfrastructureSettings struct {
-	Redis *RedisOptions `yaml:"redis"`
-}
-
-// RedisOptions contains Redis connection configuration
-// (simplified from go-redis/redis.Options for YAML unmarshaling)
-//
-// Deprecated: Use pkg/cache/redis.Options instead (DD-CACHE-001: Shared Redis Library).
-// This type is kept for backward compatibility with existing Gateway configurations.
-// Will be removed in v1.1.0.
-type RedisOptions struct {
-	Addr         string        `yaml:"addr"`
-	DB           int           `yaml:"db"`
-	Password     string        `yaml:"password,omitempty"`
-	DialTimeout  time.Duration `yaml:"dial_timeout"`
-	ReadTimeout  time.Duration `yaml:"read_timeout"`
-	WriteTimeout time.Duration `yaml:"write_timeout"`
-	PoolSize     int           `yaml:"pool_size"`
-	MinIdleConns int           `yaml:"min_idle_conns"`
+	// Redis uses the shared Redis configuration from pkg/cache/redis (DD-CACHE-001)
+	Redis *rediscache.Options `yaml:"redis"`
 }
 
 // ProcessingSettings contains business logic configuration.
@@ -134,13 +119,13 @@ type StormSettings struct {
 	BufferThreshold int `yaml:"buffer_threshold"` // Alerts before creating window (default: 5)
 
 	// Sliding window configuration
-	InactivityTimeout time.Duration `yaml:"inactivity_timeout"` // Sliding window timeout (default: 60s)
+	InactivityTimeout time.Duration `yaml:"inactivity_timeout"`  // Sliding window timeout (default: 60s)
 	MaxWindowDuration time.Duration `yaml:"max_window_duration"` // Max window duration (default: 5m)
 
 	// Multi-tenant isolation configuration
-	DefaultMaxSize     int            `yaml:"default_max_size"`      // Default namespace buffer size (default: 1000)
-	GlobalMaxSize      int            `yaml:"global_max_size"`       // Global buffer limit (default: 5000)
-	PerNamespaceLimits map[string]int `yaml:"per_namespace_limits"`  // Per-namespace overrides
+	DefaultMaxSize     int            `yaml:"default_max_size"`     // Default namespace buffer size (default: 1000)
+	GlobalMaxSize      int            `yaml:"global_max_size"`      // Global buffer limit (default: 5000)
+	PerNamespaceLimits map[string]int `yaml:"per_namespace_limits"` // Per-namespace overrides
 
 	// Overflow handling configuration
 	SamplingThreshold float64 `yaml:"sampling_threshold"` // Utilization to trigger sampling (default: 0.95)

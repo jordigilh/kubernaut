@@ -21,11 +21,12 @@ import (
 	"fmt"
 	"time"
 
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -39,7 +40,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 	var (
 		ctx          context.Context
 		dedupService *processing.DeduplicationService
-		redisClient  *goredis.Client
+		redisClient  *redis.Client
 		logger       *zap.Logger
 		testSignal   *types.NormalizedSignal
 	)
@@ -53,7 +54,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 		redisAddr := fmt.Sprintf("localhost:%d", suiteRedisPort)
 		redisDB := GinkgoParallelProcess() // Use process ID as DB number for isolation
 
-		redisClient = goredis.NewClient(&goredis.Options{
+		redisClient = redis.NewClient(&redis.Options{
 			Addr:     redisAddr,
 			Password: "",
 			DB:       redisDB,
@@ -83,7 +84,12 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 			Fingerprint: "integration-test-ttl-" + time.Now().Format("20060102150405"),
 		}
 
-		dedupService = processing.NewDeduplicationServiceWithTTL(redisClient, nil, 5*time.Second, logger, nil)
+		rediscacheClient := rediscache.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Password: "",
+			DB:       redisDB,
+		}, logger)
+		dedupService = processing.NewDeduplicationServiceWithTTL(rediscacheClient, nil, 5*time.Second, logger, nil)
 	})
 
 	AfterEach(func() {

@@ -22,11 +22,12 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -41,7 +42,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Edge Cases", func() {
 		ctx          context.Context
 		dedupService *processing.DeduplicationService
 		redisServer  *miniredis.Miniredis
-		redisClient  *goredis.Client
+		redisClient  *redis.Client
 		logger       *zap.Logger
 	)
 
@@ -53,7 +54,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Edge Cases", func() {
 		redisServer, err = miniredis.Run()
 		Expect(err).NotTo(HaveOccurred())
 
-		redisClient = goredis.NewClient(&goredis.Options{
+		redisClient = redis.NewClient(&redis.Options{
 			Addr: redisServer.Addr(),
 		})
 
@@ -61,8 +62,13 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Edge Cases", func() {
 		registry := prometheus.NewRegistry()
 		metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
+		// Wrap Redis client in rediscache.Client for DeduplicationService
+		rediscacheClient := rediscache.NewClient(&redis.Options{
+			Addr: redisServer.Addr(),
+		}, logger)
+
 		// k8sClient=nil (unit tests don't need K8s client)
-		dedupService = processing.NewDeduplicationService(redisClient, nil, logger, metricsInstance)
+		dedupService = processing.NewDeduplicationService(rediscacheClient, nil, logger, metricsInstance)
 	})
 
 	AfterEach(func() {
@@ -130,8 +136,11 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Edge Cases", func() {
 			// Create service with very short TTL (1 second)
 			registry := prometheus.NewRegistry()
 			metricsInstance := metrics.NewMetricsWithRegistry(registry)
+			rediscacheClientShortTTL := rediscache.NewClient(&redis.Options{
+				Addr: redisServer.Addr(),
+			}, logger)
 			dedupServiceShortTTL := processing.NewDeduplicationServiceWithTTL(
-				redisClient,
+				rediscacheClientShortTTL,
 				nil,           // k8sClient=nil (unit tests don't need K8s)
 				1*time.Second, // 1 second TTL
 				logger,
