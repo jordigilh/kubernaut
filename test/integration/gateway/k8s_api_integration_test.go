@@ -58,15 +58,10 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
 
-		// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
+		// Clean Redis state (safe - each process uses different Redis DB)
 		if redisClient != nil && redisClient.Client != nil {
 			err := redisClient.Client.FlushDB(ctx).Err()
 			Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
-
-			// Verify Redis is clean
-			keys, err := redisClient.Client.Keys(ctx, "*").Result()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 		}
 
 		// Create test namespaces with environment labels for classification

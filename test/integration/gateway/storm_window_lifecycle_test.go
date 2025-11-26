@@ -68,8 +68,9 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 		redisClient = redisTestClient.Client
 
 		// Clean Redis state before each test
-		// NOTE: Do NOT use FlushDB - it wipes data from other parallel processes
-		// Test isolation is achieved via unique namespace per test (using GinkgoParallelProcess)
+		// Clean Redis state before each test (safe - each process uses different Redis DB)
+		err := redisClient.FlushDB(ctx).Err()
+		Expect(err).ToNot(HaveOccurred(), "Failed to flush Redis before test")
 
 		// Create aggregator with VERY SHORT maxWindowDuration for testing (3 seconds instead of 5 minutes)
 		// This allows tests to complete quickly while validating expiration logic

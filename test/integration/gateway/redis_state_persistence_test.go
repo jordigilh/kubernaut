@@ -60,7 +60,7 @@ var _ = Describe("BR-003, BR-005, BR-077: Redis State Persistence - Integration 
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required")
 
-		// Clean Redis state
+		// Clean Redis state (safe - each process uses different Redis DB)
 		err := redisClient.Client.FlushDB(ctx).Err()
 		Expect(err).ToNot(HaveOccurred(), "Should flush Redis")
 

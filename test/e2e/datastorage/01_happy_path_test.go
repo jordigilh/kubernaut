@@ -94,7 +94,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		// Set up port-forward to Data Storage Service
 		// For E2E tests, we'll use kubectl port-forward to access the service
-		localPort := 8080 + GinkgoParallelProcess() // Unique port per parallel process
+		localPort := 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
 		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
 
 		// Start port-forward in background
@@ -133,7 +133,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		// Connect to PostgreSQL for verification
 		testLogger.Info("🔌 Connecting to PostgreSQL for verification...")
 		// Port-forward to PostgreSQL
-		pgLocalPort := 5432 + GinkgoParallelProcess()
+		pgLocalPort := 25433 + GinkgoParallelProcess() // DD-TEST-001: E2E PostgreSQL port range (25433-25436)
 		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", kubeconfigPath, pgLocalPort, 5432)
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() {

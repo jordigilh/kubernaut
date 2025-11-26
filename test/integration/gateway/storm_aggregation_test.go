@@ -72,8 +72,9 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 		Expect(redisTestClient.Client).ToNot(BeNil(), "Redis client required for storm aggregation tests")
 		redisClient = redisTestClient.Client
 
-		// NOTE: Do NOT use FlushDB - it wipes data from other parallel processes
-		// Test isolation is achieved via unique namespace per test (using GinkgoParallelProcess)
+		// Clean Redis state before each test (safe - each process uses different Redis DB)
+		err := redisClient.FlushDB(ctx).Err()
+		Expect(err).ToNot(HaveOccurred(), "Failed to flush Redis before test")
 
 		// Create aggregator with bufferThreshold=1 for immediate window creation in tests
 		// Production default is 5, but tests expect windowID on first alert

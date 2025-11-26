@@ -92,7 +92,7 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 		Expect(err).ToNot(HaveOccurred())
 
 		// Set up port-forward to Data Storage Service
-		localPort = 8080 + GinkgoParallelProcess()
+		localPort = 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
 		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
 
 		portForwardCancel, err = portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)
@@ -126,7 +126,7 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 
 		// Connect to PostgreSQL for verification
 		testLogger.Info("🔌 Connecting to PostgreSQL for verification...")
-		pgLocalPort := 5432 + GinkgoParallelProcess()
+		pgLocalPort := 25433 + GinkgoParallelProcess() // DD-TEST-001: E2E PostgreSQL port range (25433-25436)
 		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", kubeconfigPath, pgLocalPort, 5432)
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() {

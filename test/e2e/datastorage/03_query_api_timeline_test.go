@@ -92,7 +92,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		Expect(err).ToNot(HaveOccurred())
 
 		// Set up port-forward to Data Storage Service
-		localPort := 8080 + GinkgoParallelProcess()
+		localPort := 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
 		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
 
 		portForwardCancel, err := portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)

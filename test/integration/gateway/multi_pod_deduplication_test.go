@@ -89,8 +89,9 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 		Expect(redisTestClient.Client).ToNot(BeNil(), "Redis client required for multi-pod deduplication tests")
 		redisClient = redisTestClient.Client
 
-		// NOTE: Do NOT use FlushDB here - it wipes data from other parallel processes
-		// Test isolation is achieved via unique namespace and fingerprint per test
+		// Clean Redis state before each test (safe - each process uses different Redis DB)
+		err := redisClient.FlushDB(ctx).Err()
+		Expect(err).ToNot(HaveOccurred(), "Failed to flush Redis before test")
 
 		// Create unique test namespace for isolation
 		processID := GinkgoParallelProcess()
