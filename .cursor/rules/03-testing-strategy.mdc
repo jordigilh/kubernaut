@@ -12,6 +12,23 @@ See [00-ai-assistant-methodology-enforcement.mdc](mdc:.cursor/rules/00-ai-assist
 
 **For '/fix-build' commands**: All testing must follow the enhanced validation approach with comprehensive TDD compliance.
 
+## 🔑 **CRITICAL: KUBERNETES CLIENT MANDATE FOR ALL SERVICES**
+
+**AUTHORITATIVE RULE**: All services that interact with Kubernetes MUST use the approved K8s client interface:
+
+| Test Tier | MANDATORY Interface | Package |
+|---|---|---|
+| **Unit Tests** | **Fake K8s Client** | `sigs.k8s.io/controller-runtime/pkg/client/fake` |
+| **Integration Tests** | Real K8s API (envtest/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
+| **E2E Tests** | Real K8s API (OCP/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
+
+**❌ FORBIDDEN**: Custom `MockK8sClient` implementations - use fake client instead
+**✅ APPROVED**: `fake.NewClientBuilder()` for all unit tests requiring K8s interaction
+
+**ARCHITECTURAL DECISION**: [ADR-004: Fake Kubernetes Client for Unit Testing](mdc:docs/architecture/decisions/ADR-004-fake-kubernetes-client.md) (✅ ACCEPTED, 97% confidence)
+
+**See**: [Kubernetes Client Usage - MANDATORY FOR ALL SERVICES](#kubernetes-client-usage---mandatory-for-all-services) for complete details.
+
 ## Defense-in-Depth Testing Approach
 Kubernaut implements a **defense-in-depth testing strategy** with **90% overall confidence** through extensive unit test coverage and strong integration testing for microservices coordination:
 
@@ -124,7 +141,7 @@ Kubernaut implements **defense-in-depth** testing with **EXPANDED unit test foun
 - **BDD Framework**: Ginkgo/Gomega for behavior-driven development (MANDATORY per [00-project-guidelines.mdc](mdc:.cursor/rules/00-project-guidelines.mdc))
 - **TDD Workflow**: Test-Driven Development is REQUIRED - write tests first, then implementation
 - **Business Requirements**: ALL tests must map to specific business requirements (BR-[CATEGORY]-[NUMBER] format)
-- **Test Organization**: Follow package structure with `_test.go` suffix
+- **Test Organization**: Test files use `_test.go` suffix with same package name as source (e.g., `package datastorage` for tests in `test/unit/datastorage/`)
 - **Mock Strategy**: Use [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go) for consistent mocks
 - **Test Data**: Use [pkg/testutil/test_data_factory.go](mdc:pkg/testutil/test_data_factory.go) for fixture generation
 - **Parallel Execution**: ALL tests MUST support parallel execution whenever possible (see Parallel Testing Requirements below)
@@ -918,7 +935,7 @@ Describe("BR-WORKFLOW-005: Workflow Safety Validation", func() {
 | Component Type | Unit Tests | Integration Tests | E2E Tests | Justification |
 |---------------|------------|-------------------|-----------|---------------|
 | **External AI APIs** (HolmesGPT, OpenAI) | MOCK | MOCK (CI) / REAL (dev) | REAL | External service dependency |
-| **Kubernetes API** | **FAKE K8S CLIENT** | REAL (KIND) | REAL (OCP/KIND) | Compile-time API safety, type-safe CRD handling |
+| **Kubernetes API** | **FAKE K8S CLIENT** ⚠️ MANDATORY | REAL (envtest/KIND) | REAL (OCP/KIND) | Compile-time API safety, maintained by controller-runtime, NO custom mocks |
 | **Database** | MOCK | REAL | REAL | External infrastructure dependency |
 | **Business Logic Components** | REAL | REAL | REAL | Core business value - test actual logic |
 | **Internal Services** | REAL | REAL | REAL | Business logic integration |
@@ -933,11 +950,30 @@ Describe("BR-WORKFLOW-005: Workflow Safety Validation", func() {
 - **AI Mocks**: Use [pkg/testutil/mocks/ai_mocks.go](mdc:pkg/testutil/mocks/ai_mocks.go) for AI services
 - **CI/CD**: Use `USE_MOCK_LLM=true` for CI reliability
 
-### **Kubernetes Client Usage - MANDATORY**
-- **Unit Tests**: Use `sigs.k8s.io/controller-runtime/pkg/client/fake` with minimal scheme
-- **Integration Tests**: Use real K8s API (KIND cluster) or fake client for CRD-only tests
-- **DO NOT USE**: Custom `MockK8sClient` from [pkg/testutil/mocks/platform_mocks.go](mdc:pkg/testutil/mocks/platform_mocks.go) (deprecated)
-- **Rationale**: Fake client provides compile-time API safety and deprecation detection
+### **Kubernetes Client Usage - MANDATORY FOR ALL SERVICES**
+
+**AUTHORITATIVE MANDATE**: All services that interact with Kubernetes MUST use the approved K8s client interface for each test tier.
+
+**ARCHITECTURAL DECISION**: See [ADR-004: Fake Kubernetes Client for Unit Testing](mdc:docs/architecture/decisions/ADR-004-fake-kubernetes-client.md) for complete rationale and decision analysis.
+
+| Test Tier | Approved K8s Interface | Package | Justification |
+|---|---|---|---|
+| **Unit Tests** | **Fake K8s Client** | `sigs.k8s.io/controller-runtime/pkg/client/fake` | Compile-time API safety, type-safe CRD handling, maintained by controller-runtime |
+| **Integration Tests** | Real K8s API (envtest/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` | Real K8s behavior, CRD watches, API server validation |
+| **E2E Tests** | Real K8s API (OCP/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` | Complete system validation with real infrastructure |
+
+**CRITICAL RULES**:
+- ✅ **Unit Tests**: MUST use `fake.NewClientBuilder()` - NO custom mocks
+- ✅ **Fake Client Benefits**: Compile-time API safety, automatic `Apply()` method support, deprecation detection
+- ❌ **FORBIDDEN**: Custom `MockK8sClient` implementations (breaks on controller-runtime updates)
+- ❌ **DEPRECATED**: [pkg/testutil/mocks/platform_mocks.go](mdc:pkg/testutil/mocks/platform_mocks.go) `MockK8sClient` - DO NOT USE
+
+**Why Fake Client is Mandatory**:
+1. **Maintained by controller-runtime**: Won't break on interface updates (e.g., `Apply()` method addition)
+2. **Real K8s semantics**: Get/List/Create/Update work correctly with in-memory storage
+3. **Type safety**: Compile-time validation of K8s API usage
+4. **Error simulation**: Supports `WithInterceptorFuncs()` for custom error injection
+5. **Already used**: Established pattern in notification service tests
 
 **Example - Fake K8s Client Setup**:
 ```go

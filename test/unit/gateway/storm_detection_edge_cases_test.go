@@ -21,10 +21,10 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
@@ -39,7 +39,7 @@ var _ = Describe("BR-GATEWAY-009: Storm Detection Edge Cases", func() {
 		ctx              context.Context
 		stormDetector    *processing.StormDetector
 		redisServer      *miniredis.Miniredis
-		redisClient      *goredis.Client
+		redisClient      *redis.Client
 		rateThreshold    int
 		patternThreshold int
 	)
@@ -51,7 +51,7 @@ var _ = Describe("BR-GATEWAY-009: Storm Detection Edge Cases", func() {
 		redisServer, err = miniredis.Run()
 		Expect(err).NotTo(HaveOccurred())
 
-		redisClient = goredis.NewClient(&goredis.Options{
+		redisClient = redis.NewClient(&redis.Options{
 			Addr: redisServer.Addr(),
 		})
 
@@ -185,7 +185,7 @@ var _ = Describe("BR-GATEWAY-009: Storm Detection Edge Cases", func() {
 			defer redisServer.Close()
 
 			// Create new client (simulating reconnection)
-			redisClient = goredis.NewClient(&goredis.Options{
+			redisClient = redis.NewClient(&redis.Options{
 				Addr: addr,
 			})
 			newRegistry := prometheus.NewRegistry()

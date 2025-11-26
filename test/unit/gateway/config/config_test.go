@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	config "github.com/jordigilh/kubernaut/pkg/gateway/config"
 )
 
@@ -175,7 +176,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 					ListenAddr: ":8080",
 				},
 				Infrastructure: config.InfrastructureSettings{
-					Redis: &config.RedisOptions{
+					Redis: &rediscache.Options{
 						Addr: "",
 					},
 				},
@@ -192,7 +193,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 					ListenAddr: ":8080",
 				},
 				Infrastructure: config.InfrastructureSettings{
-					Redis: &config.RedisOptions{
+					Redis: &rediscache.Options{
 						Addr: "redis:6379",
 					},
 				},
@@ -214,7 +215,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 					ListenAddr: ":8080",
 				},
 				Infrastructure: config.InfrastructureSettings{
-					Redis: &config.RedisOptions{
+					Redis: &rediscache.Options{
 						Addr: "redis:6379",
 					},
 				},
@@ -237,7 +238,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 					ListenAddr: ":8080",
 				},
 				Infrastructure: config.InfrastructureSettings{
-					Redis: &config.RedisOptions{
+					Redis: &rediscache.Options{
 						Addr: "redis:6379",
 					},
 				},

@@ -21,12 +21,20 @@ import (
 	"time"
 )
 
-// EmbeddingAPIClient defines the interface for embedding generation services.
+// Client defines the interface for embedding generation services.
 // Business Requirement: BR-STORAGE-012 (Vector embeddings for semantic search)
-type EmbeddingAPIClient interface {
-	// GenerateEmbedding generates a vector embedding from text.
-	// Returns a 384-dimensional float32 vector.
-	GenerateEmbedding(ctx context.Context, text string) ([]float32, error)
+// Business Requirement: BR-STORAGE-014 (Workflow embedding generation)
+//
+// This interface allows for easy mocking in unit tests and follows Go naming conventions
+// (no package name repetition - use embedding.Client, not embedding.EmbeddingClient).
+type Client interface {
+	// Embed generates a 768-dimensional embedding vector from text.
+	// Returns the embedding vector or an error if generation fails.
+	Embed(ctx context.Context, text string) ([]float32, error)
+
+	// Health checks if the embedding service is healthy and available.
+	// Returns an error if the service is unhealthy or unreachable.
+	Health(ctx context.Context) error
 }
 
 // Cache defines the interface for embedding cache storage.
@@ -49,4 +57,13 @@ type EmbeddingResult struct {
 
 	// CacheHit indicates if the result came from cache
 	CacheHit bool
+}
+
+// Embedder defines the interface for text-to-vector embedding generation.
+// This interface allows for easy mocking in unit tests.
+// Business Requirement: BR-STORAGE-014 (Workflow embedding generation)
+type Embedder interface {
+	// Embed generates a 768-dimensional embedding vector for the given text.
+	// Returns the embedding vector or an error if generation fails.
+	Embed(ctx context.Context, text string) ([]float32, error)
 }

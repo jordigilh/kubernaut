@@ -37,13 +37,13 @@ const (
 // Pipeline orchestrates embedding generation with caching.
 // Business Requirement: BR-STORAGE-012 (Vector embeddings for semantic search)
 type Pipeline struct {
-	apiClient EmbeddingAPIClient
+	apiClient Client
 	cache     Cache
 	logger    *zap.Logger
 }
 
 // NewPipeline creates a new embedding pipeline.
-func NewPipeline(apiClient EmbeddingAPIClient, cache Cache, logger *zap.Logger) *Pipeline {
+func NewPipeline(apiClient Client, cache Cache, logger *zap.Logger) *Pipeline {
 	return &Pipeline{
 		apiClient: apiClient,
 		cache:     cache,
@@ -82,7 +82,7 @@ func (p *Pipeline) Generate(ctx context.Context, audit *models.RemediationAudit)
 	p.logger.Debug("cache miss for embedding, calling API",
 		zap.String("cache_key", cacheKey))
 
-	embedding, err := p.apiClient.GenerateEmbedding(ctx, text)
+	embedding, err := p.apiClient.Embed(ctx, text)
 	if err != nil {
 		p.logger.Error("failed to generate embedding",
 			zap.Error(err),

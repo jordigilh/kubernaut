@@ -1,0 +1,93 @@
+# Adapter Naming Consistency - SignalSource vs SignalType
+
+**Date**: November 21, 2025
+**Status**: ✅ **CONSISTENT IMPLEMENTATION**
+**Confidence**: 100%
+
+> **📋 Design Decision**: [DD-GATEWAY-010](decisions/DD-GATEWAY-010-adapter-naming-convention.md) | ✅ **Approved Design** | Confidence: 100%
+>
+> This document provides a quick reference. For complete decision details, alternatives considered, and implementation guidance, see [DD-GATEWAY-010](decisions/DD-GATEWAY-010-adapter-naming-convention.md).
+
+---
+
+## 🎯 **TRIAGE SUMMARY**
+
+### **Current Implementation**
+
+| Adapter | SignalSource (Monitoring System) | SignalType (Event Type) | Consistent? |
+|---------|----------------------------------|-------------------------|-------------|
+| **Prometheus** | `"prometheus"` | `"prometheus-alert"` | ✅ YES |
+| **Kubernetes Event** | `"kubernetes-events"` | `"kubernetes-event"` | ✅ YES |
+
+### **Verdict**: ✅ **IMPLEMENTATION IS CORRECT AND CONSISTENT**
+
+---
+
+## 📋 **RATIONALE: Singular vs Plural**
+
+### **SignalSource (Monitoring System) - Use System Name As-Is**
+
+**Purpose**: Identifies the **monitoring system** that generated the signal
+**Used By**: LLM for selecting investigation tools
+**Naming Convention**: **Use the actual system name**
+
+| Adapter | SignalSource | Rationale |
+|---------|--------------|-----------|
+| Prometheus | `"prometheus"` | ✅ System name (Prometheus) |
+| Kubernetes Event | `"kubernetes-events"` | ✅ System name (Kubernetes Events API - plural) |
+
+**Why "kubernetes-events" (plural)?**
+- The monitoring system is called "Kubernetes **Events**" (plural)
+- The K8s API resource is `events.v1.core` (plural)
+- `kubectl get events` (plural command)
+- Matches K8s API naming convention
+
+**LLM Usage**:
+```yaml
+signal_source: "kubernetes-events"
+→ LLM knows to use: kubectl get events, kubectl describe event
+```
+
+---
+
+### **SignalType (Event Type) - SINGULAR**
+
+**Purpose**: Identifies the **type of signal** received
+**Used By**: Metrics, logging, signal classification
+**Naming Convention**: **SINGULAR** (one event)
+
+| Adapter | SignalType | Rationale |
+|---------|------------|-----------|
+| Prometheus | `"prometheus-alert"` | ✅ One alert (singular) |
+| Kubernetes Event | `"kubernetes-event"` | ✅ One event (singular) |
+
+**Why Singular?**
+- Each signal represents **one event/alert** (not multiple)
+- Consistent with event-driven architecture terminology
+- Matches CRD field naming: `SignalType` (singular)
+
+---
+
+## ✅ **TEST FIX VALIDATION**
+
+### **Original Test Expectation** (INCORRECT)
+
+```go
+// ❌ WRONG: Expected singular for SignalSource
+Expect(crd.Spec.SignalSource).To(Equal("kubernetes-event"))
+```
+
+### **Corrected Test Expectation** (CORRECT)
+
+```go
+// ✅ CORRECT: Expect plural for SignalSource (monitoring system)
+Expect(crd.Spec.SignalSource).To(Equal("kubernetes-events"))
+```
+
+**Verdict**: ✅ **Test was wrong, production code was correct**
+
+---
+
+**Status**: ✅ **RESOLVED**
+**Action**: Test expectation corrected
+

@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -52,7 +52,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Aggregation First-Alert Handling", func(
 		ctx             context.Context
 		stormAggregator *processing.StormAggregator
 		redisServer     *miniredis.Miniredis
-		redisClient     *goredis.Client
+		redisClient     *redis.Client
 		signal          *types.NormalizedSignal
 	)
 
@@ -65,7 +65,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Aggregation First-Alert Handling", func(
 		Expect(err).NotTo(HaveOccurred(), "miniredis should start successfully")
 
 		// Create real Redis client pointing to miniredis
-		redisClient = goredis.NewClient(&goredis.Options{
+		redisClient = redis.NewClient(&redis.Options{
 			Addr: redisServer.Addr(),
 		})
 
@@ -172,10 +172,10 @@ var _ = Describe("DD-GATEWAY-008: Storm Aggregation First-Alert Handling", func(
 			// Assertions per DD-GATEWAY-008
 			Expect(err).ToNot(HaveOccurred())
 			Expect(windowID2).ToNot(BeEmpty(), "Threshold reached - window should be created")
-			Expect(windowID2).To(MatchRegexp("^PodCrashLooping-\\d+$"), "WindowID should follow format: AlertName-Timestamp")
+			Expect(windowID2).To(MatchRegexp("^production:PodCrashLooping-\\d+$"), "WindowID should follow format: Namespace:AlertName-Timestamp")
 
-			// Verify window exists in Redis
-			windowKey := "alert:storm:aggregate:PodCrashLooping"
+			// Verify window exists in Redis (DD-GATEWAY-008 + BR-GATEWAY-011: includes namespace)
+			windowKey := "alert:storm:aggregate:production:PodCrashLooping"
 			windowExists, err := redisClient.Exists(ctx, windowKey).Result()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(windowExists).To(Equal(int64(1)), "Aggregation window should exist in Redis")
@@ -369,4 +369,3 @@ var _ = Describe("DD-GATEWAY-008: Storm Aggregation First-Alert Handling", func(
 		})
 	})
 })
-

@@ -71,7 +71,7 @@ var (
 
 	// BR-STORAGE-014: Embedding service integration
 	embeddingServer *httptest.Server // Mock embedding service
-	embeddingClient *embedding.Client
+	embeddingClient embedding.Client
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -230,11 +230,11 @@ func preflightCheck() error {
 		GinkgoWriter.Println("  🧹 Will clean up stale network...")
 	}
 
-	// 4. Check for port conflicts (5433 for PostgreSQL, 6379 for Redis)
-	cmd = exec.Command("sh", "-c", "lsof -i :5433 -i :6379 || true")
+	// 4. Check for port conflicts (15433 for PostgreSQL, 16379 for Redis) - DD-TEST-001
+	cmd = exec.Command("sh", "-c", "lsof -i :15433 -i :16379 || true")
 	output, _ = cmd.Output()
 	if len(output) > 0 {
-		GinkgoWriter.Printf("  ⚠️  Ports 5433 or 6379 may be in use:\n%s", string(output))
+		GinkgoWriter.Printf("  ⚠️  Ports 15433 or 16379 may be in use:\n%s", string(output))
 		GinkgoWriter.Println("  ⚠️  This may cause test failures if not cleaned up")
 	}
 
@@ -385,8 +385,8 @@ var _ = SynchronizedBeforeSuite(
 			GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
 			waitForServiceReady()
 
-			// Determine service URL based on environment
-			port := "8080"
+			// Determine service URL based on environment (DD-TEST-001)
+			port := "18090"
 			if p := os.Getenv("DATASTORAGE_PORT"); p != "" {
 				port = p
 			}
@@ -399,9 +399,9 @@ var _ = SynchronizedBeforeSuite(
 		// This ensures all tests use the correct ports (e.g., graceful shutdown tests)
 		if os.Getenv("POSTGRES_HOST") == "" {
 			os.Setenv("POSTGRES_HOST", "localhost")
-			os.Setenv("POSTGRES_PORT", "5433") // Mapped port from container
+			os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
 			os.Setenv("REDIS_HOST", "localhost")
-			os.Setenv("REDIS_PORT", "6379")
+			os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
 			GinkgoWriter.Println("📌 Exported environment variables for test infrastructure")
 		}
 
@@ -618,7 +618,7 @@ func startPostgreSQL() {
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", postgresContainer,
 		"--network", "datastorage-test",
-		"-p", "5433:5432",
+		"-p", "15433:5432", // DD-TEST-001
 		"-e", "POSTGRES_DB=action_history",
 		"-e", "POSTGRES_USER=slm_user",
 		"-e", "POSTGRES_PASSWORD=test_password",
@@ -653,7 +653,7 @@ func startRedis() {
 		host := os.Getenv("REDIS_HOST")
 		port := os.Getenv("REDIS_PORT")
 		if port == "" {
-			port = "6379"
+			port = "16379" // DD-TEST-001
 		}
 
 		GinkgoWriter.Printf("⏳ Waiting for Redis at %s:%s to be ready...\n", host, port)
@@ -682,7 +682,7 @@ func startRedis() {
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", redisContainer,
 		"--network", "datastorage-test",
-		"-p", "6379:6379",
+		"-p", "16379:6379", // DD-TEST-001
 		"quay.io/jordigilh/redis:7-alpine")
 
 	output, err := cmd.CombinedOutput()
@@ -717,7 +717,7 @@ func mustConnectPostgreSQL() *sqlx.DB {
 	}
 	port := os.Getenv("POSTGRES_PORT")
 	if port == "" {
-		port = "5433"
+		port = "15433" // DD-TEST-001
 	}
 
 	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
@@ -745,7 +745,7 @@ func connectPostgreSQL() {
 	}
 	port := os.Getenv("POSTGRES_PORT")
 	if port == "" {
-		port = "5433"
+		port = "15433" // DD-TEST-001
 	}
 
 	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
@@ -775,7 +775,7 @@ func connectRedis() {
 	}
 	port := os.Getenv("REDIS_PORT")
 	if port == "" {
-		port = "6379"
+		port = "16379" // DD-TEST-001
 	}
 
 	redisClient = redis.NewClient(&redis.Options{
@@ -1100,7 +1100,7 @@ func startDataStorageService() {
 	startCmd := exec.Command("podman", "run", "-d",
 		"--name", serviceContainer,
 		"--network", "datastorage-test",
-		"-p", "8080:8080",
+		"-p", "18090:8080", // DD-TEST-001
 		"-v", configMount,
 		"-v", secretsMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
@@ -1117,7 +1117,7 @@ func startDataStorageService() {
 
 // waitForServiceReady waits for the Data Storage Service health endpoint to respond
 func waitForServiceReady() {
-	datastorageURL = "http://localhost:8080"
+	datastorageURL = "http://localhost:18090" // DD-TEST-001
 
 	// Wait up to 60 seconds for service to be ready (increased for parallel execution)
 	Eventually(func() int {

@@ -48,8 +48,8 @@ help: ## Display this help.
 
 .PHONY: test-gateway
 test-gateway: ## Run Gateway integration tests (envtest + Podman)
-	@echo "🧪 Running Gateway integration tests with 2 parallel processors (envtest + Podman)..."
-	@cd test/integration/gateway && ginkgo -v --procs=2
+	@echo "🧪 Running Gateway integration tests with 4 parallel processors (envtest + Podman)..."
+	@cd test/integration/gateway && ginkgo -v --procs=4
 
 ##@ Notification Service Integration Tests
 
@@ -643,10 +643,11 @@ test-e2e-gateway: ## Run Gateway Service E2E tests (Kind cluster, ~10-15 min)
 	@echo "   4. Storm Buffering - Burst handling"
 	@echo ""
 	@echo "🏗️  Infrastructure: Kind cluster + Redis + Gateway Service"
-	@PROCS=$$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4); \
-	echo "⚡ Note: E2E tests run with $$PROCS parallel processes (auto-detected)"; \
-	echo "   Each process uses unique port-forward (8081-$$((8080+$$PROCS)))"; \
+	@PROCS=4; \
+	echo "⚡ Note: E2E tests run with $$PROCS parallel processes (limited to avoid K8s API overload)"; \
+	echo "   All processes share Gateway NodePort (localhost:8080 → NodePort 30080)"; \
 	echo "   Each test uses unique namespace for isolation"; \
+	echo "   NodePort eliminates kubectl port-forward instability"; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
 	cd test/e2e/gateway && ginkgo -v --timeout=15m --procs=$$PROCS
 

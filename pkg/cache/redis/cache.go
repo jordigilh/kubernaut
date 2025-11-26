@@ -224,3 +224,4 @@ func (c *Cache[T]) hashKey(key string) string {
 	return c.prefix + ":" + hexHash
 }
 
+

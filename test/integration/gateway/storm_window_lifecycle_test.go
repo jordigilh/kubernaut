@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	goredis "github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -53,7 +53,7 @@ import (
 var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() {
 	var (
 		ctx         context.Context
-		redisClient *goredis.Client
+		redisClient *redis.Client
 		aggregator  *processing.StormAggregator
 	)
 
@@ -68,16 +68,16 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 		redisClient = redisTestClient.Client
 
 		// Clean Redis state before each test
-		err := redisClient.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Failed to flush Redis before test")
+		// NOTE: Do NOT use FlushDB - it wipes data from other parallel processes
+		// Test isolation is achieved via unique namespace per test (using GinkgoParallelProcess)
 
-		// Create aggregator with SHORT maxWindowDuration for testing (10 seconds instead of 5 minutes)
+		// Create aggregator with VERY SHORT maxWindowDuration for testing (3 seconds instead of 5 minutes)
 		// This allows tests to complete quickly while validating expiration logic
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
 			1,             // bufferThreshold: 1 alert triggers window creation
-			60*time.Second, // inactivityTimeout: 1 minute (not tested here)
-			10*time.Second, // maxWindowDuration: 10 seconds (SHORT for testing)
+			3*time.Second, // inactivityTimeout: 3s for fast testing
+			3*time.Second, // maxWindowDuration: 3 seconds (VERY SHORT for testing)
 			1000,          // defaultMaxSize: 1000 alerts per namespace
 			5000,          // globalMaxSize: 5000 alerts total
 			nil,           // perNamespaceLimits: none
@@ -144,15 +144,15 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 				Expect(err).ToNot(HaveOccurred(), "Should start aggregation")
 				Expect(windowID).ToNot(BeEmpty(), "Should return windowID")
 
-				// Step 4: Verify window exists in Redis
-				windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+				// Step 4: Verify window exists in Redis (DD-GATEWAY-008 + BR-GATEWAY-011: includes namespace)
+				windowKey := fmt.Sprintf("alert:storm:aggregate:%s:%s", namespace, alertName)
 				windowData, err := redisClient.Get(ctx, windowKey).Result()
 				Expect(err).ToNot(HaveOccurred(), "Window should exist in Redis")
 				Expect(windowData).To(Equal(windowID), "Window data should match windowID")
 
-				// Step 6: Wait for window to exceed maxWindowDuration (10 seconds)
-				GinkgoWriter.Printf("⏳ Waiting 11 seconds for window to expire (maxWindowDuration: 10s)...\n")
-				time.Sleep(11 * time.Second)
+				// Step 6: Wait for window to exceed maxWindowDuration (3 seconds)
+				GinkgoWriter.Printf("⏳ Waiting 4 seconds for window to expire (maxWindowDuration: 3s)...\n")
+				time.Sleep(4 * time.Second)
 
 				// Step 7: Try to add resource to expired window
 				signal.Resource.Name = "api-server-2" // Different resource
@@ -214,9 +214,9 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 
 				GinkgoWriter.Printf("📦 Created initial window: %s\n", windowID1)
 
-				// Step 2: Wait for window to expire
-				GinkgoWriter.Printf("⏳ Waiting 11 seconds for window to expire...\n")
-				time.Sleep(11 * time.Second)
+				// Step 2: Wait for window to expire (3s inactivityTimeout + buffer)
+				GinkgoWriter.Printf("⏳ Waiting 4 seconds for window to expire...\n")
+				time.Sleep(4 * time.Second)
 
 				// Step 3: Create new window after expiration
 				signal.Resource.Name = "db-server-2" // Different resource
@@ -345,22 +345,21 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 				windowID, err := aggregator.StartAggregation(ctx, signal, stormMetadata)
 				Expect(err).ToNot(HaveOccurred(), "Should start aggregation")
 
-				// Step 2: Check Redis TTL on window key
-				windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+				// Step 2: Check Redis TTL on window key (DD-GATEWAY-008 + BR-GATEWAY-011: includes namespace)
+				windowKey := fmt.Sprintf("alert:storm:aggregate:%s:%s", namespace, alertName)
 				ttl, err := redisClient.TTL(ctx, windowKey).Result()
 				Expect(err).ToNot(HaveOccurred(), "Should get TTL")
 
-				// BUSINESS VALIDATION: TTL matches inactivityTimeout/windowDuration (60 seconds in test)
+				// BUSINESS VALIDATION: TTL matches inactivityTimeout/windowDuration (3 seconds in test)
 				// ✅ TTL is set (not -1 which means no expiration)
-				// ✅ TTL is approximately windowDuration (within 5 seconds tolerance)
-				// Note: maxWindowDuration (10s) is enforced via IsWindowExpired check in AddResource
+				// ✅ TTL is approximately windowDuration (within 1 second tolerance)
+				// Note: maxWindowDuration (3s) is enforced via IsWindowExpired check in AddResource
 				Expect(ttl).To(BeNumerically(">", 0), "TTL should be set")
-				Expect(ttl).To(BeNumerically("<=", 60*time.Second), "TTL should not exceed windowDuration")
-				Expect(ttl).To(BeNumerically(">=", 55*time.Second), "TTL should be close to windowDuration")
+				Expect(ttl).To(BeNumerically("<=", 3*time.Second), "TTL should not exceed windowDuration")
+				Expect(ttl).To(BeNumerically(">=", 2*time.Second), "TTL should be close to windowDuration")
 
 				GinkgoWriter.Printf("✅ Window TTL validated: %v (windowID: %s)\n", ttl, windowID)
 			})
 		})
 	})
 })
-

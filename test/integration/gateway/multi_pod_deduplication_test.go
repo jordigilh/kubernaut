@@ -25,12 +25,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	goredis "github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -71,7 +72,7 @@ func generateTestFingerprint(input string) string {
 var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func() {
 	var (
 		ctx         context.Context
-		redisClient *goredis.Client
+		redisClient *redis.Client
 		k8sClient1  *K8sTestClient // Simulates Gateway Pod 1
 		k8sClient2  *K8sTestClient // Simulates Gateway Pod 2
 		dedupSvc1   *processing.DeduplicationService
@@ -88,9 +89,8 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 		Expect(redisTestClient.Client).ToNot(BeNil(), "Redis client required for multi-pod deduplication tests")
 		redisClient = redisTestClient.Client
 
-		// Clean Redis state before each test
-		err := redisClient.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Failed to flush Redis before test")
+		// NOTE: Do NOT use FlushDB here - it wipes data from other parallel processes
+		// Test isolation is achieved via unique namespace and fingerprint per test
 
 		// Create unique test namespace for isolation
 		processID := GinkgoParallelProcess()
@@ -112,9 +112,14 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 		// Create noop logger for tests
 		noopLogger := zap.NewNop()
 
+		// Wrap Redis client in rediscache.Client for DeduplicationService
+		rediscacheClient := rediscache.NewClient(&redis.Options{
+			Addr: redisClient.Options().Addr,
+		}, noopLogger)
+
 		// Create deduplication services for each "pod"
 		dedupSvc1 = processing.NewDeduplicationServiceWithTTL(
-			redisClient,
+			rediscacheClient,
 			k8sWrapper1,
 			5*time.Minute, // ttl
 			noopLogger,    // logger
@@ -122,7 +127,7 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 		)
 
 		dedupSvc2 = processing.NewDeduplicationServiceWithTTL(
-			redisClient,
+			rediscacheClient,
 			k8sWrapper2,
 			5*time.Minute, // ttl
 			noopLogger,    // logger
@@ -565,4 +570,3 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 		})
 	})
 })
-

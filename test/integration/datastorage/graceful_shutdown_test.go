@@ -1364,7 +1364,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	// Create server config
 	cfg := &server.Config{
-		Port:         8080,
+		Port:         18090, // DD-TEST-001
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}

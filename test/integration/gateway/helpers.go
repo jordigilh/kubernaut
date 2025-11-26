@@ -16,10 +16,10 @@ import (
 	"sync"
 	"time"
 
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	gatewayconfig "github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -55,7 +56,7 @@ func RegisterTestNamespace(namespace string) {
 
 // RedisTestClient wraps Redis client for integration tests
 type RedisTestClient struct {
-	Client *goredis.Client
+	Client *redis.Client
 }
 
 // K8sTestClient wraps Kubernetes client for integration tests
@@ -128,7 +129,7 @@ func SetupRedisTestClientWithPort(ctx context.Context, port int) *RedisTestClien
 	redisDB := 2 + processID // DB 2 for process 1, DB 3 for process 2, etc.
 
 	redisAddr := fmt.Sprintf("localhost:%d", port)
-	client := goredis.NewClient(&goredis.Options{
+	client := redis.NewClient(&redis.Options{
 		Addr:         redisAddr,
 		Password:     "",
 		DB:           redisDB,
@@ -171,11 +172,41 @@ func (r *RedisTestClient) CountFingerprints(ctx context.Context, namespace strin
 }
 
 // Cleanup removes all test data from Redis
+// WARNING: FlushDB wipes ALL data, breaking parallel test execution
+// Use CleanupByPattern for parallel-safe cleanup
 func (r *RedisTestClient) Cleanup(ctx context.Context) {
 	if r.Client == nil {
 		return
 	}
 	r.Client.FlushDB(ctx)
+}
+
+// CleanupByPattern removes Redis keys matching the given pattern
+// This is parallel-safe - only removes keys for the current test's namespace/process
+func (r *RedisTestClient) CleanupByPattern(ctx context.Context, pattern string) error {
+	if r.Client == nil {
+		return nil
+	}
+
+	var cursor uint64
+	for {
+		keys, nextCursor, err := r.Client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return err
+		}
+
+		if len(keys) > 0 {
+			if err := r.Client.Del(ctx, keys...).Err(); err != nil {
+				return err
+			}
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -291,7 +322,7 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 		},
 
 		Infrastructure: gatewayconfig.InfrastructureSettings{
-			Redis: &gatewayconfig.RedisOptions{
+			Redis: &rediscache.Options{
 				Addr:         redisClient.Client.Options().Addr,
 				DB:           redisClient.Client.Options().DB,
 				Password:     redisClient.Client.Options().Password,
@@ -570,7 +601,7 @@ func (r *RedisTestClient) SimulateFailover(ctx context.Context) {
 
 	// Recreate client (simulates failover to new master)
 	redisAddr := fmt.Sprintf("localhost:%d", suiteRedisPort)
-	r.Client = goredis.NewClient(&goredis.Options{
+	r.Client = redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 		DB:   2,
 	})

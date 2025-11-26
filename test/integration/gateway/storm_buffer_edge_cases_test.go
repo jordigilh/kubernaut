@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	goredis "github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -51,7 +51,7 @@ import (
 var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", func() {
 	var (
 		ctx         context.Context
-		redisClient *goredis.Client
+		redisClient *redis.Client
 		aggregator  *processing.StormAggregator
 	)
 
@@ -64,16 +64,16 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 		Expect(redisTestClient.Client).ToNot(BeNil(), "Redis client required for DD-GATEWAY-008 tests")
 		redisClient = redisTestClient.Client
 
-		// Clean Redis state before each test
-		err := redisClient.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Failed to flush Redis before test")
+		// NOTE: Do NOT use FlushDB - it wipes data from other parallel processes
+		// Test isolation is achieved via unique namespace per test (using GinkgoParallelProcess)
 
 		// Create aggregator with DD-GATEWAY-008 configuration
+		// Using short timeouts for fast integration tests
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
 			5,                // bufferThreshold: 5 alerts
-			5*time.Second,    // inactivityTimeout: 5s
-			30*time.Second,   // maxWindowDuration: 30s
+			2*time.Second,    // inactivityTimeout: 2s for fast testing
+			5*time.Second,    // maxWindowDuration: 5s for fast testing
 			1000,             // defaultMaxSize: 1000 alerts
 			5000,             // globalMaxSize: 5000 alerts
 			map[string]int{}, // perNamespaceLimits: empty
@@ -366,11 +366,11 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 					}
 				}
 
-				// Wait 4.9 seconds (just before 5s timeout)
-				time.Sleep(4900 * time.Millisecond)
+				// Wait 1.8 seconds (just before 2s timeout)
+				time.Sleep(1800 * time.Millisecond)
 
-				// SCENARIO: Alert arrives 100ms before window expires
-				windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+				// SCENARIO: Alert arrives 200ms before window expires (DD-GATEWAY-008 + BR-GATEWAY-011: includes namespace)
+				windowKey := fmt.Sprintf("alert:storm:aggregate:%s:%s", namespace, alertName)
 				windowID, err := redisClient.Get(ctx, windowKey).Result()
 				Expect(err).ToNot(HaveOccurred())
 
@@ -389,7 +389,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 				// CORRECTNESS: Window should be extended
 				newTTL, err := redisClient.TTL(ctx, windowKey).Result()
 				Expect(err).ToNot(HaveOccurred())
-				Expect(newTTL).To(BeNumerically(">", 4*time.Second), "Window should be extended")
+				Expect(newTTL).To(BeNumerically(">", 1*time.Second), "Window should be extended")
 
 				// BUSINESS OUTCOME: Late alerts don't lose window (BR-GATEWAY-008)
 			})
@@ -429,17 +429,17 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 					}
 				}
 
-				// Verify window exists initially
-				windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+				// Verify window exists initially (DD-GATEWAY-008 + BR-GATEWAY-011: includes namespace)
+				windowKey := fmt.Sprintf("alert:storm:aggregate:%s:%s", namespace, alertName)
 				_, err := redisClient.Get(ctx, windowKey).Result()
 				Expect(err).ToNot(HaveOccurred(), "Window should exist initially")
 
-				// Wait for window to expire (6 seconds > 5s timeout)
-				time.Sleep(6 * time.Second)
+				// Wait for window to expire (3 seconds > 2s timeout)
+				time.Sleep(3 * time.Second)
 
 				// CORRECTNESS: Window should be gone after expiration
 				_, err = redisClient.Get(ctx, windowKey).Result()
-				Expect(err).To(Equal(goredis.Nil), "Window should be expired after 6s")
+				Expect(err).To(Equal(redis.Nil), "Window should be expired after 3s")
 
 				// SCENARIO: Alert arrives after window expired
 				signal6 := &types.NormalizedSignal{
@@ -550,4 +550,3 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 		})
 	})
 })
-

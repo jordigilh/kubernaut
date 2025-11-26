@@ -47,7 +47,8 @@ const (
 	DefaultCacheTTL = 24 * time.Hour
 )
 
-// Client provides text-to-vector embedding generation with caching and retry logic.
+// service provides text-to-vector embedding generation with caching and retry logic.
+// It implements the embedding.Client interface.
 //
 // Features:
 // - HTTP client for Python embedding service (localhost:8086)
@@ -67,7 +68,7 @@ const (
 // - Cache hit: ~1-3ms (Redis GET)
 // - Cache miss: ~50-100ms (Python service + Redis SET)
 // - Retry overhead: ~1-3s (exponential backoff)
-type Client struct {
+type service struct {
 	baseURL    string
 	httpClient *http.Client
 	cache      *rediscache.Cache[[]float32]
@@ -103,15 +104,15 @@ type HealthResponse struct {
 //   - logger: Structured logger
 //
 // Returns:
-//   - *Client: Embedding client ready for use
+//   - Client: Embedding client ready for use (implements embedding.Client interface)
 //
 // Example:
 //
 //	cache := rediscache.NewCache[[]float32](redisClient, "embeddings", 24*time.Hour)
 //	client := embedding.NewClient("http://localhost:8086", cache, logger)
 //	embedding, err := client.Embed(ctx, "OOMKilled pod in production")
-func NewClient(baseURL string, cache *rediscache.Cache[[]float32], logger *zap.Logger) *Client {
-	return &Client{
+func NewClient(baseURL string, cache *rediscache.Cache[[]float32], logger *zap.Logger) Client {
+	return &service{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
@@ -155,7 +156,7 @@ func NewClient(baseURL string, cache *rediscache.Cache[[]float32], logger *zap.L
 //	}
 //	// Use embedding for semantic search
 //	results, err := repository.SearchByEmbedding(ctx, embedding, filters)
-func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
+func (c *service) Embed(ctx context.Context, text string) ([]float32, error) {
 	// Validate input
 	if text == "" {
 		return nil, fmt.Errorf("text must be non-empty")
@@ -222,7 +223,7 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 // Non-Retryable Errors:
 // - HTTP 4xx errors (client errors - invalid input)
 // - Context cancellation
-func (c *Client) embedWithRetry(ctx context.Context, text string) ([]float32, error) {
+func (c *service) embedWithRetry(ctx context.Context, text string) ([]float32, error) {
 	var lastErr error
 
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
@@ -277,7 +278,7 @@ func (c *Client) embedWithRetry(ctx context.Context, text string) ([]float32, er
 }
 
 // callEmbeddingService makes a single HTTP request to the embedding service.
-func (c *Client) callEmbeddingService(ctx context.Context, text string) ([]float32, error) {
+func (c *service) callEmbeddingService(ctx context.Context, text string) ([]float32, error) {
 	// Prepare request payload
 	reqBody := EmbedRequest{Text: text}
 	jsonData, err := json.Marshal(reqBody)
@@ -337,7 +338,7 @@ func (c *Client) callEmbeddingService(ctx context.Context, text string) ([]float
 //	if err := client.Health(ctx); err != nil {
 //	    logger.Error("Embedding service unhealthy", zap.Error(err))
 //	}
-func (c *Client) Health(ctx context.Context) error {
+func (c *service) Health(ctx context.Context) error {
 	url := c.baseURL + "/health"
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -423,7 +424,7 @@ func min(a, b int) int {
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
 		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-		len(s) > len(substr)+1 && findSubstring(s, substr)))
+			len(s) > len(substr)+1 && findSubstring(s, substr)))
 }
 
 func findSubstring(s, substr string) bool {
@@ -434,4 +435,3 @@ func findSubstring(s, substr string) bool {
 	}
 	return false
 }
-

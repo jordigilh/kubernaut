@@ -3,6 +3,7 @@ package datastorage
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -62,7 +63,7 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 			labelsJSON, err := json.Marshal(labels)
 			Expect(err).ToNot(HaveOccurred())
 
-			embedding := pgvector.NewVector(make([]float32, 384))
+			embedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
 			for i := range embedding.Slice() {
 				embedding.Slice()[i] = 0.1 + float32(i)/1000.0 // Add some variation
 			}
@@ -244,7 +245,7 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 					"business-category": wf.category, // CRITICAL: Use hyphen, not underscore (per DD-LLM-001)
 				})
 
-				embedding := pgvector.NewVector(make([]float32, 384))
+				embedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
 				workflow := &models.RemediationWorkflow{
 					WorkflowID:           wf.id,
 					Version:              "v1.0.0",
@@ -291,17 +292,27 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 				Expect(wf.Status).To(Equal("active"), "All workflows should be active")
 			}
 
-			// ACT: List payments workflows only
-			category := "payments"
-			paymentsFilters := &models.WorkflowSearchFilters{
-				BusinessCategory: &category,
-			}
-			paymentsWorkflows, paymentsTotal, err := workflowRepo.List(testCtx, paymentsFilters, 10, 0)
+		// ACT: List active payments workflows only
+		category := "payments"
+		paymentsFilters := &models.WorkflowSearchFilters{
+			BusinessCategory: &category,
+			Status:           []string{"active"}, // Filter out disabled workflows
+		}
+		allPaymentsWorkflows, _, err := workflowRepo.List(testCtx, paymentsFilters, 100, 0)
 
-			// ASSERT: Should return only payments workflows
-			Expect(err).ToNot(HaveOccurred(), "List with category filter should succeed")
-			Expect(paymentsWorkflows).ToNot(BeEmpty(), "Should return at least one payments workflow")
-			Expect(paymentsTotal).To(Equal(1), "Should have exactly 1 active payments workflow (disabled-payments is filtered out by default)")
+		// ASSERT: Should return only active payments workflows
+		Expect(err).ToNot(HaveOccurred(), "List with category filter should succeed")
+
+		// Filter to only workflows from this test (for parallel execution isolation)
+		paymentsWorkflows := []models.RemediationWorkflow{}
+		for _, wf := range allPaymentsWorkflows {
+			if strings.Contains(wf.WorkflowID, testID) {
+				paymentsWorkflows = append(paymentsWorkflows, wf)
+			}
+		}
+
+		Expect(paymentsWorkflows).ToNot(BeEmpty(), "Should return at least one payments workflow from this test")
+		Expect(len(paymentsWorkflows)).To(Equal(1), "Should have exactly 1 active payments workflow from this test (disabled-payments is filtered out)")
 
 			// Verify the returned workflow is the active payments workflow
 			Expect(paymentsWorkflows[0].Status).To(Equal("active"), "Returned workflow should be active")
@@ -314,10 +325,10 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 // HELPER FUNCTIONS
 // ========================================
 
-// createEmbedding creates a 384-dimensional embedding with the given focus values
+// createEmbedding creates a 768-dimensional embedding with the given focus values
 // This simulates different types of workflows (memory, CPU, disk focused)
 func createEmbedding(memoryFocus, cpuFocus, diskFocus float32) []float32 {
-	embedding := make([]float32, 384)
+	embedding := make([]float32, 768) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
 	for i := range embedding {
 		// Distribute focus across dimensions
 		if i < 128 {
@@ -374,7 +385,7 @@ var _ = Describe("Workflow Search - Mandatory Label Validation", Serial, func() 
 			labelsJSON, err := json.Marshal(labels)
 			Expect(err).ToNot(HaveOccurred())
 
-			embedding := pgvector.NewVector(make([]float32, 384))
+			embedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
 			for i := range embedding.Slice() {
 				embedding.Slice()[i] = 0.5
 			}
@@ -397,11 +408,11 @@ var _ = Describe("Workflow Search - Mandatory Label Validation", Serial, func() 
 			err = workflowRepo.Create(testCtx, workflow)
 			Expect(err).ToNot(HaveOccurred())
 
-			// ACT: Search with mandatory labels (matching the workflow we created)
-			queryEmbedding := pgvector.NewVector(make([]float32, 384))
-			for i := range queryEmbedding.Slice() {
-				queryEmbedding.Slice()[i] = 0.5
-			}
+		// ACT: Search with mandatory labels (matching the workflow we created)
+		queryEmbedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
+		for i := range queryEmbedding.Slice() {
+			queryEmbedding.Slice()[i] = 0.5
+		}
 
 			request := &models.WorkflowSearchRequest{
 				Query:     "Memory leak recovery",
@@ -488,7 +499,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 				labelsJSON, err := json.Marshal(labels)
 				Expect(err).ToNot(HaveOccurred())
 
-				embedding := pgvector.NewVector(make([]float32, 384))
+				embedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
 				for i := range embedding.Slice() {
 					embedding.Slice()[i] = 0.9 // High base similarity
 				}
@@ -512,11 +523,11 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			// ACT: Search with gitops filter
-			queryEmbedding := pgvector.NewVector(make([]float32, 384))
-			for i := range queryEmbedding.Slice() {
-				queryEmbedding.Slice()[i] = 0.9
-			}
+		// ACT: Search with gitops filter
+		queryEmbedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
+		for i := range queryEmbedding.Slice() {
+			queryEmbedding.Slice()[i] = 0.9
+		}
 
 			resourceMgmt := "gitops"
 			request := &models.WorkflowSearchRequest{

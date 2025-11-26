@@ -23,11 +23,12 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -42,7 +43,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 		ctx             context.Context
 		dedupService    *processing.DeduplicationService
 		redisServer     *miniredis.Miniredis
-		redisClient     *goredis.Client
+		redisClient     *redis.Client
 		logger          *zap.Logger
 		testSignal      *types.NormalizedSignal
 		testFingerprint string
@@ -58,7 +59,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create Redis client pointing to miniredis
-		redisClient = goredis.NewClient(&goredis.Options{
+		redisClient = redis.NewClient(&redis.Options{
 			Addr: redisServer.Addr(),
 		})
 
@@ -75,9 +76,14 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 		}
 		testFingerprint = testSignal.Fingerprint
 
+		// Wrap Redis client in rediscache.Client for DeduplicationService
+		rediscacheClient := rediscache.NewClient(&redis.Options{
+			Addr: redisServer.Addr(),
+		}, logger)
+
 		// Create deduplication service
 		// Note: k8sClient=nil (unit tests don't need K8s), metrics=nil (tested separately)
-		dedupService = processing.NewDeduplicationService(redisClient, nil, logger, nil)
+		dedupService = processing.NewDeduplicationService(rediscacheClient, nil, logger, nil)
 	})
 
 	AfterEach(func() {
@@ -266,9 +272,9 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 			// BUSINESS SCENARIO: Redis cluster unavailable during alert spike
 			// Expected: Return error (Gateway returns HTTP 503 to client)
 
-			// Close Redis connection to simulate failure
-			if redisClient != nil {
-				_ = redisClient.Close()
+			// Close Redis server to simulate failure (this causes all connections to fail)
+			if redisServer != nil {
+				redisServer.Close()
 			}
 
 			isDup, metadata, err := dedupService.Check(ctx, testSignal)
@@ -680,9 +686,9 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 			testRedisAddr := testRedisServer.Addr()
 			testRedisServer.Close() // Close immediately to simulate unavailability
 
-			testRedisClient := goredis.NewClient(&goredis.Options{
+			testRedisClient := rediscache.NewClient(&redis.Options{
 				Addr: testRedisAddr,
-			})
+			}, logger)
 			defer testRedisClient.Close()
 
 			// Create deduplication service with nil K8s client and unavailable Redis
