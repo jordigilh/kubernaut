@@ -135,7 +135,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	_ = infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
 	time.Sleep(500 * time.Millisecond) // Wait for port to be released
 
-	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 0, GinkgoWriter)
+	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 16380, GinkgoWriter) // DD-TEST-001: Gateway integration Redis port
 	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests")
 	suiteRedisPort = redisPort
 	suiteLogger.Info(fmt.Sprintf("   ✅ Redis started (port: %d)", redisPort))

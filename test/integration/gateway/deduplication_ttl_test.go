@@ -52,7 +52,8 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 		// Use suite's Redis client for test isolation in parallel execution
 		// This ensures tests use the same Redis instance as the Gateway server
 		redisAddr := fmt.Sprintf("localhost:%d", suiteRedisPort)
-		redisDB := GinkgoParallelProcess() // Use process ID as DB number for isolation
+		// Use same DB offset as helpers.go: 2 + processID
+		redisDB := 2 + GinkgoParallelProcess()
 
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     redisAddr,

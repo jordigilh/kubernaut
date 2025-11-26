@@ -64,8 +64,9 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 		Expect(redisTestClient.Client).ToNot(BeNil(), "Redis client required for DD-GATEWAY-008 tests")
 		redisClient = redisTestClient.Client
 
-		// NOTE: Do NOT use FlushDB - it wipes data from other parallel processes
-		// Test isolation is achieved via unique namespace per test (using GinkgoParallelProcess)
+		// Clean Redis state before each test (safe - each process uses different Redis DB)
+		err := redisClient.FlushDB(ctx).Err()
+		Expect(err).ToNot(HaveOccurred(), "Failed to flush Redis before test")
 
 		// Create aggregator with DD-GATEWAY-008 configuration
 		// Using short timeouts for fast integration tests
