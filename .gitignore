@@ -141,3 +141,17 @@ PR_DESCRIPTION.md
 /junit*.xml
 /coverage-*.out
 /coverage-*.html
+
+# Session and triage files (ephemeral documentation)
+*_TRIAGE.md
+*_SUMMARY.md
+*_STATUS.md
+*_ANALYSIS.md
+*_PLAN.md
+*_PROGRESS.md
+*_HANDOFF.md
+*_COMPLETE.md
+SESSION_*.md
+SESSION_*.txt
+GOOD_*.md
+OVERNIGHT_*.md
