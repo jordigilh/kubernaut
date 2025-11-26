@@ -4,6 +4,11 @@
 
 **Coverage**: 10-15% (critical user journeys only)
 
+**Port Allocation**: Per [DD-TEST-001](../../../docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
+- PostgreSQL: 25433-25436 (base + parallel process)
+- Redis: 26379
+- Data Storage API: 28090-28093 (base + parallel process)
+
 ---
 
 ## 🎯 **Test Scenarios**
