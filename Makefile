@@ -48,8 +48,8 @@ help: ## Display this help.
 
 .PHONY: test-gateway
 test-gateway: ## Run Gateway integration tests (envtest + Podman)
-	@echo "🧪 Running Gateway integration tests with 4 parallel processors (envtest + Podman)..."
-	@cd test/integration/gateway && ginkgo -v --procs=4
+	@echo "🧪 Running Gateway integration tests with 2 parallel processors (envtest + Podman)..."
+	@cd test/integration/gateway && ginkgo -v --procs=2
 
 ##@ Notification Service Integration Tests
 

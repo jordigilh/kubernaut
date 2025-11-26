@@ -52,7 +52,7 @@ import (
 // Uses pkg/cache/redis for connection management and graceful degradation.
 type DeduplicationService struct {
 	redisClient *rediscache.Client // Shared Redis client with graceful degradation
-	k8sClient   *k8s.Client         // DD-GATEWAY-009: K8s client for state-based deduplication
+	k8sClient   *k8s.Client        // DD-GATEWAY-009: K8s client for state-based deduplication
 	ttl         time.Duration
 	logger      *zap.Logger
 	metrics     *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
@@ -110,7 +110,6 @@ func NewDeduplicationServiceWithTTL(redisClient *rediscache.Client, k8sClient *k
 		metrics:     metricsInstance,
 	}
 }
-
 
 // Check verifies if an alert is a duplicate using state-based deduplication
 //

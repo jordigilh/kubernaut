@@ -582,10 +582,13 @@ func StartRedisContainer(containerName string, port int, writer io.Writer) (int,
 	}
 
 	// Create new container with verified available port
+	// Use --memory to prevent OOM and set maxmemory policy to evict old keys
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", containerName,
 		"-p", fmt.Sprintf("%d:6379", port),
-		"quay.io/jordigilh/redis:7-alpine")
+		"--memory", "256m",
+		"quay.io/jordigilh/redis:7-alpine",
+		"redis-server", "--maxmemory", "200mb", "--maxmemory-policy", "allkeys-lru")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
