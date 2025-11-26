@@ -179,6 +179,25 @@ make test-e2e          # E2E tests with 4 procs
 - **CI/CD (GitHub Actions)**: 4 procs (standard runners)
 - **High-Performance CI**: Can scale to 8 procs on larger runners
 
+### **Port Allocation Strategy**
+
+**AUTHORITATIVE REFERENCE**: [DD-TEST-001: Port Allocation Strategy](mdc:docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
+
+All test suites follow a systematic port allocation strategy to prevent conflicts during parallel execution:
+
+| Service | Integration Tier | E2E Tier |
+|---------|-----------------|----------|
+| **Data Storage** | PostgreSQL: 15433, Redis: 16379, API: 18090 | PostgreSQL: 25433, Redis: 26379, API: 28090 |
+| **Gateway** | Redis: 16380, API: 18080 | Redis: 26380, API: 28080 |
+| **Effectiveness Monitor** | PostgreSQL: 15434, API: 18100 | PostgreSQL: 25434, API: 28100 |
+| **Workflow Engine** | API: 18110 | API: 28110 |
+
+**Port Ranges**:
+- **Integration Tests**: 15000-19999 (infrastructure: 15000-16999, services: 18000-18999)
+- **E2E Tests**: 25000-29999 (infrastructure: 25000-26999, services: 28000-28999)
+
+**Quick Reference**: [DD-TEST-001-QUICK-REFERENCE.md](mdc:docs/architecture/decisions/DD-TEST-001-QUICK-REFERENCE.md)
+
 ### **Default: Parallel Execution Enabled**
 
 ```go
