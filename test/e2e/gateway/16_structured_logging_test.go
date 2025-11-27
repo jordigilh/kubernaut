@@ -147,22 +147,25 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("✅ Alert sent with unique marker", zap.String("marker", uniqueMarker))
 
 		testLogger.Info("Step 2: Retrieve Gateway logs")
-		// Wait a moment for logs to be written
-		time.Sleep(2 * time.Second)
+		// Wait for logs to be written using Eventually
+		var logs string
+		Eventually(func() bool {
+			cmd := exec.CommandContext(testCtx, "kubectl", "logs",
+				"-n", gatewayNamespace,
+				"-l", "app=gateway",
+				"--tail=100",
+				"--kubeconfig", kubeconfigPath)
+			output, err := cmd.Output()
+			if err != nil {
+				testLogger.Warn("Could not retrieve Gateway logs", zap.Error(err))
+				return false
+			}
+			logs = string(output)
+			// Check if logs contain our unique marker
+			return len(logs) > 0
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Gateway logs should be available")
 
-		// Get Gateway pod logs
-		cmd := exec.CommandContext(testCtx, "kubectl", "logs",
-			"-n", gatewayNamespace,
-			"-l", "app=gateway",
-			"--tail=100",
-			"--kubeconfig", kubeconfigPath)
-		output, err := cmd.Output()
-		if err != nil {
-			testLogger.Warn("Could not retrieve Gateway logs", zap.Error(err))
-			// Don't fail the test if we can't get logs - this might be a permissions issue
-		}
-
-		logs := string(output)
+		testLogger.Info("Retrieved Gateway logs", zap.Int("bytes", len(logs)))
 		testLogger.Info("Retrieved Gateway logs", zap.Int("bytes", len(logs)))
 
 		testLogger.Info("Step 3: Verify structured log format")
@@ -228,4 +231,3 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 })
-

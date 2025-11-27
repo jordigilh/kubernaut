@@ -134,8 +134,16 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		testLogger.Info("")
 		testLogger.Info("Step 2: Send duplicate alert (same fingerprint)")
 
-		// Wait briefly to ensure first alerts are processed
-		time.Sleep(500 * time.Millisecond)
+		// Wait for first alerts to be processed using Eventually
+		// Check that Gateway is ready to receive more alerts
+		Eventually(func() bool {
+			resp, err := httpClient.Get(gatewayURL + "/health")
+			if err != nil {
+				return false
+			}
+			resp.Body.Close()
+			return resp.StatusCode == http.StatusOK
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "Gateway should be healthy after processing alerts")
 
 		// Same alertname and pod = same fingerprint
 		payload1 := createAlertPayload(alertName1, testNamespace, "dedup-pod-0", "critical")

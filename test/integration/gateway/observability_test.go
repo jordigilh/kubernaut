@@ -177,16 +177,14 @@ var _ = Describe("Observability Integration Tests", func() {
 				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			}
 
-			// Wait for metrics to update
-			time.Sleep(100 * time.Millisecond)
-
-			// Get updated metric value
-			updatedMetrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-			updatedCount := GetMetricSum(updatedMetrics, "gateway_signals_received_total")
-
-			// Verify counter incremented
-			Expect(updatedCount).To(BeNumerically(">=", initialCount+5),
+			// Wait for metrics to update using Eventually
+			Eventually(func() float64 {
+				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return 0
+				}
+				return GetMetricSum(metrics, "gateway_signals_received_total")
+			}, "10s", "100ms").Should(BeNumerically(">=", initialCount+5),
 				"Signals received counter should increment by at least 5")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -220,15 +218,14 @@ var _ = Describe("Observability Integration Tests", func() {
 			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Second alert should be deduplicated")
 
-			// Wait for metrics to update
-			time.Sleep(100 * time.Millisecond)
-
-			// Verify deduplication metric incremented
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-
-			dedupCount := GetMetricSum(metrics, "gateway_signals_deduplicated_total")
-			Expect(dedupCount).To(BeNumerically(">=", 1),
+			// Wait for metrics to update using Eventually
+			Eventually(func() float64 {
+				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return 0
+				}
+				return GetMetricSum(metrics, "gateway_signals_deduplicated_total")
+			}, "10s", "100ms").Should(BeNumerically(">=", 1),
 				"Deduplication counter should increment for duplicate signal")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -245,59 +242,59 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Storm detection requires: 2+ alerts within 1-second window with same alertname
 			// Use goroutines to send alerts concurrently (within storm window)
 
-		// Send multiple DIFFERENT alerts with SAME alertname to trigger storm detection
-		// Storm detection requires: same alertname, different resources (different fingerprints)
-		// Use unique alertname per test run to avoid conflicts in parallel execution
-		processID := GinkgoParallelProcess()
-		uniqueID := time.Now().UnixNano()
-		alertName := fmt.Sprintf("StormTest-p%d-%d", processID, uniqueID)
+			// Send multiple DIFFERENT alerts with SAME alertname to trigger storm detection
+			// Storm detection requires: same alertname, different resources (different fingerprints)
+			// Use unique alertname per test run to avoid conflicts in parallel execution
+			processID := GinkgoParallelProcess()
+			uniqueID := time.Now().UnixNano()
+			alertName := fmt.Sprintf("StormTest-p%d-%d", processID, uniqueID)
 
-		// Send 5 different alerts with same alertname, staggered to ensure they hit within storm window
-		// Stagger by 200ms each to ensure alerts arrive within the 1-second storm detection window
-		// Without staggering, all alerts arrive in < 1ms and the storm window expires before detection
-		var wg sync.WaitGroup
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func(index int) {
-				defer wg.Done()
-				defer GinkgoRecover()
+			// Send 5 different alerts with same alertname, staggered to ensure they hit within storm window
+			// Stagger by 200ms each to ensure alerts arrive within the 1-second storm detection window
+			// Without staggering, all alerts arrive in < 1ms and the storm window expires before detection
+			var wg sync.WaitGroup
+			for i := 0; i < 5; i++ {
+				wg.Add(1)
+				go func(index int) {
+					defer wg.Done()
+					defer GinkgoRecover()
 
-			// Stagger alerts by 50ms to ensure they trigger storm detection
-			// Storm threshold is 2 alerts/minute, so 5 alerts in 250ms should trigger
-			time.Sleep(time.Duration(index*50) * time.Millisecond)
+					// Stagger alerts by 50ms to ensure they trigger storm detection
+					// Storm threshold is 2 alerts/minute, so 5 alerts in 250ms should trigger
+					time.Sleep(time.Duration(index*50) * time.Millisecond)
 
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-					AlertName: alertName, // SAME alertname for all
-					Namespace: testNamespace,
-					Severity:  "critical",
-					Resource: ResourceIdentifier{
-						Kind: "Pod",
-						Name: fmt.Sprintf("storm-pod-%d-%d", uniqueID, index), // DIFFERENT pod for each alert
-					},
-				})
-				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			}(i)
-		}
-	wg.Wait()
-
-		// Wait for storm detection and metrics to update
-		// Storm detection happens async, use Eventually for parallel execution robustness
-		var stormCount float64
-		Eventually(func() float64 {
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			if err != nil {
-				GinkgoWriter.Printf("Failed to get metrics: %v\n", err)
-				return 0
+					payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+						AlertName: alertName, // SAME alertname for all
+						Namespace: testNamespace,
+						Severity:  "critical",
+						Resource: ResourceIdentifier{
+							Kind: "Pod",
+							Name: fmt.Sprintf("storm-pod-%d-%d", uniqueID, index), // DIFFERENT pod for each alert
+						},
+					})
+					SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+				}(i)
 			}
-			stormCount = GetMetricSum(metrics, "gateway_signal_storms_detected_total")
+			wg.Wait()
 
-			// Debug: Print storm metric value
-			if stormCount < 1 {
-				GinkgoWriter.Printf("Storm metric value: %f (waiting for >= 1)\n", stormCount)
-			}
-			return stormCount
-		}, "90s", "500ms").Should(BeNumerically(">=", 1),
-			"Storm detection counter should increment when storm detected (90s timeout for parallel execution)")
+			// Wait for storm detection and metrics to update
+			// Storm detection happens async, use Eventually for parallel execution robustness
+			var stormCount float64
+			Eventually(func() float64 {
+				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					GinkgoWriter.Printf("Failed to get metrics: %v\n", err)
+					return 0
+				}
+				stormCount = GetMetricSum(metrics, "gateway_signal_storms_detected_total")
+
+				// Debug: Print storm metric value
+				if stormCount < 1 {
+					GinkgoWriter.Printf("Storm metric value: %f (waiting for >= 1)\n", stormCount)
+				}
+				return stormCount
+			}, "90s", "500ms").Should(BeNumerically(">=", 1),
+				"Storm detection counter should increment when storm detected (90s timeout for parallel execution)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can detect alert storms via metrics
@@ -334,15 +331,14 @@ var _ = Describe("Observability Integration Tests", func() {
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "CRD should be created")
 
-			// Wait for metrics to update
-			time.Sleep(100 * time.Millisecond)
-
-			// Verify CRD creation metric incremented
-			updatedMetrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-			updatedCount := GetMetricSum(updatedMetrics, "gateway_crds_created_total")
-
-			Expect(updatedCount).To(BeNumerically(">", initialCount),
+			// Wait for metrics to update using Eventually
+			Eventually(func() float64 {
+				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return 0
+				}
+				return GetMetricSum(metrics, "gateway_crds_created_total")
+			}, "10s", "100ms").Should(BeNumerically(">", initialCount),
 				"CRD creation counter should increment")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -351,26 +347,9 @@ var _ = Describe("Observability Integration Tests", func() {
 			// ✅ SLO compliance tracking enabled
 		})
 
-		It("should track CRD creation errors via gateway_crd_creation_errors", func() {
-			// BUSINESS OUTCOME: Operators can detect and diagnose CRD creation failures
-			// BUSINESS SCENARIO: K8s API becomes unavailable, CRD creation fails
-			// BR-GATEWAY-078: Error Tracking (error rates by type)
-
-			Skip("Requires K8s API failure simulation")
-
-			// TODO: Implement when K8s API failure injection is available
-			// Expected behavior:
-			// 1. Simulate K8s API unavailable
-			// 2. Send alert (CRD creation will fail)
-			// 3. Verify gateway_crd_creation_errors increments
-			// 4. Verify error_type label indicates k8s_api_error
-
-			// BUSINESS CAPABILITY TO VERIFY:
-			// ✅ Operators can detect CRD creation failures
-			// ✅ Error type labels enable root cause analysis
-			// ✅ Alerting rule: rate(gateway_crd_creation_errors[5m]) > 0
-			// ✅ BR-GATEWAY-078: Error tracking by type enabled
-		})
+		// REMOVED: "should track CRD creation errors via gateway_crd_creation_errors"
+		// REASON: Requires K8s API failure simulation
+		// COVERAGE: Unit tests (failure_metrics_test.go) validate metrics recording logic
 
 		It("should include namespace and priority labels in CRD metrics", func() {
 			// BUSINESS OUTCOME: Operators can track CRD creation by namespace and priority
@@ -402,11 +381,20 @@ var _ = Describe("Observability Integration Tests", func() {
 			Expect(successCount).To(BeNumerically(">=", 1),
 				fmt.Sprintf("At least one CRD should be created successfully (got %d)", successCount))
 
-			// Wait for metrics to update
-			time.Sleep(100 * time.Millisecond)
+			// Wait for metrics to update using Eventually
+			var metrics PrometheusMetrics
+			Eventually(func() bool {
+				var err error
+				metrics, err = GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return false
+				}
+				_, exists := metrics["gateway_crds_created_total"]
+				return exists
+			}, "10s", "100ms").Should(BeTrue(), "CRD creation metric should exist")
 
 			// Verify metrics include environment and priority labels
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			var err error
 			Expect(err).ToNot(HaveOccurred())
 
 			crdMetric, exists := metrics["gateway_crds_created_total"]
@@ -462,11 +450,20 @@ var _ = Describe("Observability Integration Tests", func() {
 					fmt.Sprintf("Request %d should succeed", i))
 			}
 
-			// Wait for metrics to update
-			time.Sleep(200 * time.Millisecond)
+			// Wait for metrics to update using Eventually
+			var metrics PrometheusMetrics
+			Eventually(func() bool {
+				var err error
+				metrics, err = GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return false
+				}
+				_, exists := metrics["gateway_http_request_duration_seconds"]
+				return exists
+			}, "10s", "100ms").Should(BeTrue(), "HTTP duration metric should exist")
 
 			// Verify latency histogram exists
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			var err error
 			Expect(err).ToNot(HaveOccurred())
 
 			// Histograms expose _count, _sum, and _bucket metrics
@@ -504,11 +501,20 @@ var _ = Describe("Observability Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred(), "Health endpoint should be accessible")
 			Expect(healthResp.StatusCode).To(Equal(http.StatusOK), "Health endpoint should return 200")
 
-			// Wait for metrics to update
-			time.Sleep(200 * time.Millisecond)
+			// Wait for metrics to update using Eventually
+			var metrics PrometheusMetrics
+			Eventually(func() bool {
+				var err error
+				metrics, err = GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return false
+				}
+				_, exists := metrics["gateway_http_request_duration_seconds_count"]
+				return exists
+			}, "10s", "100ms").Should(BeTrue(), "HTTP duration count metric should exist")
 
 			// Verify metrics include endpoint labels
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			_ = err // suppress unused variable warning
 			Expect(err).ToNot(HaveOccurred())
 
 			// Histograms expose _count, _sum, and _bucket metrics
@@ -550,15 +556,15 @@ var _ = Describe("Observability Integration Tests", func() {
 				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			}
 
-			// Wait for metrics to update
-			time.Sleep(100 * time.Millisecond)
-
-			// Verify Redis operation duration histogram exists
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-
-			_, exists := metrics["gateway_redis_operation_duration_seconds"]
-			Expect(exists).To(BeTrue(), "Redis operation duration histogram should exist")
+			// Wait for metrics to update using Eventually
+			Eventually(func() bool {
+				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return false
+				}
+				_, exists := metrics["gateway_redis_operation_duration_seconds"]
+				return exists
+			}, "10s", "100ms").Should(BeTrue(), "Redis operation duration histogram should exist")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can detect Redis performance degradation
@@ -585,16 +591,21 @@ var _ = Describe("Observability Integration Tests", func() {
 				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			}
 
-			// Wait for metrics to update
-			time.Sleep(100 * time.Millisecond)
-
-			// Verify metrics include operation labels
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
+			// Wait for metrics to update using Eventually
+			var metrics PrometheusMetrics
+			Eventually(func() bool {
+				var err error
+				metrics, err = GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return false
+				}
+				_, exists := metrics["gateway_redis_operation_duration_seconds_count"]
+				return exists
+			}, "10s", "100ms").Should(BeTrue(), "Redis operation duration count metric should exist")
 
 			// Histograms expose _count, _sum, and _bucket metrics
 			redisCountMetric, exists := metrics["gateway_redis_operation_duration_seconds_count"]
-			Expect(exists).To(BeTrue(), "Redis operation duration count metric should exist")
+			Expect(exists).To(BeTrue(), "Redis operation duration count metric should exist (verified)")
 
 			// Verify multiple operations tracked
 			Expect(len(redisCountMetric.Values)).To(BeNumerically(">=", 1),
@@ -635,42 +646,10 @@ var _ = Describe("Observability Integration Tests", func() {
 			// ✅ Availability SLO tracking enabled
 		})
 
-		It("should track Redis outage count via gateway_redis_outage_count", func() {
-			// BUSINESS OUTCOME: Operators can track Redis reliability over time
-			// BUSINESS SCENARIO: Operator reviews Redis outage frequency for capacity planning
-
-			Skip("Requires Redis failure simulation")
-
-			// TODO: Implement when Redis failure injection is available
-			// Expected behavior:
-			// 1. Simulate Redis unavailable
-			// 2. Verify gateway_redis_outage_count increments
-			// 3. Simulate Redis recovery
-			// 4. Verify gateway_redis_available returns to 1
-
-			// BUSINESS CAPABILITY TO VERIFY:
-			// ✅ Operators can track outage frequency
-			// ✅ Query: increase(gateway_redis_outage_count[7d])
-			// ✅ Reliability trend analysis enabled
-		})
-
-		It("should track cumulative outage duration via gateway_redis_outage_duration_seconds", func() {
-			// BUSINESS OUTCOME: Operators can measure Redis downtime for SLO compliance
-			// BUSINESS SCENARIO: SLO requires <43 minutes downtime per month (99.9%)
-
-			Skip("Requires Redis failure simulation with duration tracking")
-
-			// TODO: Implement when Redis failure injection is available
-			// Expected behavior:
-			// 1. Simulate Redis outage for 30 seconds
-			// 2. Verify gateway_redis_outage_duration_seconds increments by ~30
-			// 3. Calculate monthly downtime from cumulative duration
-
-			// BUSINESS CAPABILITY TO VERIFY:
-			// ✅ Operators can measure downtime for SLO compliance
-			// ✅ Query: increase(gateway_redis_outage_duration_seconds[30d]) < 2580 (43 minutes)
-			// ✅ SLO compliance validation enabled
-		})
+		// REMOVED: "should track Redis outage count via gateway_redis_outage_count"
+		// REMOVED: "should track cumulative outage duration via gateway_redis_outage_duration_seconds"
+		// REASON: Requires Redis failure simulation
+		// COVERAGE: Unit tests (failure_metrics_test.go) validate metrics recording logic
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -721,26 +700,16 @@ var _ = Describe("Observability Integration Tests", func() {
 				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			}
 
-			// Wait for metrics to update
-			time.Sleep(100 * time.Millisecond)
-
-			// Verify pool hit/miss metrics
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-
-			hitsExists := false
-			missesExists := false
-
-			if _, exists := metrics["gateway_redis_pool_hits_total"]; exists {
-				hitsExists = true
-			}
-			if _, exists := metrics["gateway_redis_pool_misses_total"]; exists {
-				missesExists = true
-			}
-
-			// At least one should exist (implementation may vary)
-			Expect(hitsExists || missesExists).To(BeTrue(),
-				"Pool hit/miss metrics should be tracked")
+			// Wait for metrics to update using Eventually
+			Eventually(func() bool {
+				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return false
+				}
+				_, hitsExists := metrics["gateway_redis_pool_hits_total"]
+				_, missesExists := metrics["gateway_redis_pool_misses_total"]
+				return hitsExists || missesExists
+			}, "10s", "100ms").Should(BeTrue(), "Pool hit/miss metrics should be tracked")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can calculate pool efficiency

@@ -60,7 +60,7 @@ func NewCRDUpdater(k8sClient *k8s.Client, logger *zap.Logger) *CRDUpdater {
 	return &CRDUpdater{
 		k8sClient:  k8sClient,
 		logger:     logger,
-		maxRetries: 10, // Increased from 3 to handle high concurrency (20+ concurrent requests)
+		maxRetries: 10,                    // Increased from 3 to handle high concurrency (20+ concurrent requests)
 		retryDelay: 50 * time.Millisecond, // Reduced from 100ms for faster retries
 	}
 }

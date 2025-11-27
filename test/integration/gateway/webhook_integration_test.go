@@ -380,14 +380,14 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
-		// Simulate node failure: 15 pods on same node report issues
-		// Stagger alerts by 100ms each to ensure they arrive within the 1-second storm window
-		// Without staggering, all alerts arrive in < 1ms and storm detection doesn't trigger
-		for i := 1; i <= 15; i++ {
-			// Stagger alerts to ensure they hit within storm detection window
-			time.Sleep(100 * time.Millisecond)
+			// Simulate node failure: 15 pods on same node report issues
+			// Stagger alerts by 100ms each to ensure they arrive within the 1-second storm window
+			// Without staggering, all alerts arrive in < 1ms and storm detection doesn't trigger
+			for i := 1; i <= 15; i++ {
+				// Stagger alerts to ensure they hit within storm detection window
+				time.Sleep(100 * time.Millisecond)
 
-			payload := []byte(fmt.Sprintf(`{
+				payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
@@ -404,33 +404,33 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}]
 			}`, testNamespace, processID, i))
 
-			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
-			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
-		}
-
-	// Wait for all alerts to be processed (1.5s for 15 alerts @ 100ms each + 500ms buffer)
-	time.Sleep(2 * time.Second)
-
-		// BUSINESS OUTCOME: Storm aggregation prevents CRD flood (BR-GATEWAY-013)
-		// Expected: 3 CRDs total (2 before storm threshold + 1 aggregated storm CRD)
-		// - Alerts 1-2: Individual CRDs (before rate threshold of 2 is exceeded)
-		// - Alerts 3-15: Aggregated into 1 storm CRD (after storm detection kicks in)
-		var crdList remediationv1alpha1.RemediationRequestList
-
-		// Use Eventually to wait for CRDs to be created
-		// Force direct API calls to bypass controller-runtime cache
-		Eventually(func() int {
-			err := k8sClient.Client.List(ctx, &crdList,
-				client.InNamespace(testNamespace),
-				client.MatchingFields{}) // Force direct API call, bypass cache
-			if err != nil {
-				return 0
+				resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+				Expect(err).ToNot(HaveOccurred())
+				resp.Body.Close()
 			}
-			GinkgoWriter.Printf("Found %d CRDs in namespace %s (waiting for 3)\n", len(crdList.Items), testNamespace)
-			return len(crdList.Items)
-		}, 60*time.Second, 2*time.Second).Should(Equal(3),
-			"BR-GATEWAY-013: Storm detection should create 3 CRDs (2 before storm + 1 aggregated), not 15 (60s timeout for parallel execution)")
+
+			// NOTE: No explicit sleep needed - the Eventually below handles waiting for CRDs
+			// The 15 alerts are already staggered by 100ms each (1.5s total)
+
+			// BUSINESS OUTCOME: Storm aggregation prevents CRD flood (BR-GATEWAY-013)
+			// Expected: 3 CRDs total (2 before storm threshold + 1 aggregated storm CRD)
+			// - Alerts 1-2: Individual CRDs (before rate threshold of 2 is exceeded)
+			// - Alerts 3-15: Aggregated into 1 storm CRD (after storm detection kicks in)
+			var crdList remediationv1alpha1.RemediationRequestList
+
+			// Use Eventually to wait for CRDs to be created
+			// Force direct API calls to bypass controller-runtime cache
+			Eventually(func() int {
+				err := k8sClient.Client.List(ctx, &crdList,
+					client.InNamespace(testNamespace),
+					client.MatchingFields{}) // Force direct API call, bypass cache
+				if err != nil {
+					return 0
+				}
+				GinkgoWriter.Printf("Found %d CRDs in namespace %s (waiting for 3)\n", len(crdList.Items), testNamespace)
+				return len(crdList.Items)
+			}, 60*time.Second, 2*time.Second).Should(Equal(3),
+				"BR-GATEWAY-013: Storm detection should create 3 CRDs (2 before storm + 1 aggregated), not 15 (60s timeout for parallel execution)")
 
 			// Find the storm CRD (has kubernaut.io/storm label)
 			var stormCRD *remediationv1alpha1.RemediationRequest

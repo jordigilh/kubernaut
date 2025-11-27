@@ -17,11 +17,8 @@ limitations under the License.
 package gateway
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"net/http/httptest"
 	"time"
 
@@ -36,7 +33,6 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	// No need to import test/integration/gateway - we're already in package gateway
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -508,50 +504,10 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 		// See test/e2e/gateway/README.md for implementation details
 		// Reason: Test takes 2+ minutes (too slow for integration tier)
 
-		Context("when storm window expires and new storm starts", func() {
-			XIt("should create new storm window after TTL expiration [E2E]", func() {
-				// MOVED TO: test/e2e/gateway/storm_ttl_expiration_test.go
-				// BR-GATEWAY-016: Storm window TTL expiration
-				// BUSINESS OUTCOME: Expired storm window → new window created
-				// REASON: This test takes 2+ minutes (90s wait) - run in nightly E2E suite
-				// See: test/integration/gateway/TRIAGE_E2E_MIGRATION.md
-				processID := GinkgoParallelProcess()
-
-				signal := &types.NormalizedSignal{
-					Namespace:   "prod-api",
-					AlertName:   fmt.Sprintf("HighCPUUsage-p%d", processID),
-					Severity:    "critical",
-					Fingerprint: "cpu-high-prod-api-pod1",
-					Resource: types.ResourceIdentifier{
-						Namespace: "prod-api",
-						Kind:      "Pod",
-						Name:      "pod-1",
-					},
-				}
-
-				// First storm window
-				stormMetadata := &processing.StormMetadata{
-					StormType:  "pattern",
-					AlertCount: 1,
-					Window:     "1m",
-				}
-				windowID1, err := aggregator.StartAggregation(ctx, signal, stormMetadata)
-				Expect(err).ToNot(HaveOccurred())
-
-				// Wait for TTL expiration (1 minute window + buffer)
-				time.Sleep(90 * time.Second)
-
-				// New alert after expiration - should NOT aggregate (window expired)
-				aggregated, windowID2, err := aggregator.AggregateOrCreate(ctx, signal)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(aggregated).To(BeFalse(), "Should not aggregate after TTL expiration")
-				Expect(windowID2).To(BeEmpty(), "No windowID for expired window")
-				Expect(windowID2).ToNot(Equal(windowID1), "Different window ID after expiration")
-
-				// Business capability verified:
-				// Storm window expires → New alert doesn't aggregate → New CRD created
-			})
-		})
+		// REMOVED: "should create new storm window after TTL expiration"
+		// REASON: Test takes 2+ minutes (90s wait) - moved to E2E tier
+		// E2E COVERAGE: test/e2e/gateway/14_deduplication_ttl_expiration_test.go
+		// BR-GATEWAY-016: Storm window TTL expiration
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -585,8 +541,13 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				_ = k8sClient.Client.Create(ctx, ns) // Ignore error if namespace already exists
 			}
 
-			// Wait for namespaces to be fully created
-			time.Sleep(500 * time.Millisecond)
+			// Wait for namespaces to be fully created using Eventually
+			for _, nsName := range testNamespaces {
+				Eventually(func() error {
+					ns := &corev1.Namespace{}
+					return k8sClient.Client.Get(ctx, client.ObjectKey{Name: nsName}, ns)
+				}, "10s", "100ms").Should(Succeed(), fmt.Sprintf("Namespace %s should exist", nsName))
+			}
 
 			// Flush Redis to ensure clean state
 			err := redisTestClient.Client.FlushDB(ctx).Err()
@@ -618,234 +579,10 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 			}
 		})
 
-		XIt("should aggregate 15 concurrent Prometheus alerts into 1 storm CRD [E2E]", func() {
-			// BUSINESS OUTCOME: 15 rapid-fire alerts → 1 aggregated CRD (97% cost reduction)
-			// This validates HTTP status codes: 201 Created (before storm) → 202 Accepted (during storm)
-			// This validates the complete flow: Webhook → Storm Detection → Aggregation → CRD
-			// NOTE: Marked as E2E - 120s timeout, tests complete workflow (5+ components)
-			// See: test/integration/gateway/TRIAGE_E2E_MIGRATION.md
-			processID := GinkgoParallelProcess()
-			timestamp := time.Now().UnixNano()
-
-			namespace := fmt.Sprintf("prod-payments-p%d-%d", processID, timestamp)
-			alertName := fmt.Sprintf("HighMemoryUsage-p%d-%d", processID, timestamp)
-
-			// Create namespace for this test
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: namespace},
-			}
-			Expect(k8sClient.Client.Create(ctx, ns)).To(Succeed(), "Should create test namespace")
-
-			// Send 15 concurrent alerts (simulating alert storm)
-			// All alerts have same namespace + alertname → should trigger storm detection
-			results := make(chan WebhookResponse, 15)
-			for i := 0; i < 15; i++ {
-				go func(podNum int) {
-					payload := fmt.Sprintf(`{
-					"alerts": [{
-						"status": "firing",
-						"labels": {
-							"alertname": "%s",
-							"namespace": "%s",
-							"pod": "payment-api-%d",
-							"severity": "critical"
-						},
-						"annotations": {
-							"summary": "High memory usage on pod payment-api-%d"
-						}
-					}]
-				}`, alertName, namespace, podNum, podNum)
-
-					// Send authenticated request
-					req, err := http.NewRequest("POST", testServer.URL+"/api/v1/signals/prometheus", bytes.NewBuffer([]byte(payload)))
-					if err != nil {
-						results <- WebhookResponse{StatusCode: 0}
-						return
-					}
-					req.Header.Set("Content-Type", "application/json")
-					// DD-GATEWAY-004: No authentication needed - handled at network layer
-
-					client := &http.Client{Timeout: 10 * time.Second}
-					httpResp, err := client.Do(req)
-					if err != nil {
-						results <- WebhookResponse{StatusCode: 0}
-						return
-					}
-					defer httpResp.Body.Close()
-
-					body, _ := io.ReadAll(httpResp.Body)
-					resp := WebhookResponse{
-						StatusCode: httpResp.StatusCode,
-						Body:       body,
-						Headers:    httpResp.Header,
-					}
-					results <- resp
-				}(i)
-			}
-
-			// Collect all responses
-			var responses []WebhookResponse
-			for i := 0; i < 15; i++ {
-				responses = append(responses, <-results)
-			}
-
-			// Wait for CRD creation and storm aggregation window to complete
-			// The Gateway responds with 201/202 before the K8s API call completes
-			// Storm aggregation window is 1 second (test config), then aggregated CRD is created
-			// With envtest, CRD creation is faster, so reduce sleep to 2 seconds
-			time.Sleep(2 * time.Second)
-
-			// VALIDATION 1: First alert creates storm CRD (201 Created)
-			// Subsequent alerts are aggregated (202 Accepted)
-			createdCount := 0
-			acceptedCount := 0
-			otherCount := 0
-			for _, resp := range responses {
-				switch resp.StatusCode {
-				case 201:
-					createdCount++
-				case 202:
-					acceptedCount++
-				default:
-					otherCount++
-				}
-			}
-
-			// DEBUG: Print actual counts and all status codes
-			GinkgoWriter.Printf("📊 Status Code Distribution: 201 Created=%d, 202 Accepted=%d, Other=%d\n",
-				createdCount, acceptedCount, otherCount)
-			GinkgoWriter.Printf("📋 All status codes: ")
-			for i := 0; i < len(responses); i++ {
-				GinkgoWriter.Printf("%d ", responses[i].StatusCode)
-			}
-			GinkgoWriter.Printf("\n")
-
-			// Print first 201 Created response body to see if CRD was actually created
-			for i := 0; i < len(responses); i++ {
-				if responses[i].StatusCode == 201 {
-					GinkgoWriter.Printf("🔍 First 201 Created response body: %s\n", string(responses[i].Body))
-					break
-				}
-			}
-
-			// Print first 202 Accepted response body to see aggregation details
-			for i := 0; i < len(responses); i++ {
-				if responses[i].StatusCode == 202 {
-					GinkgoWriter.Printf("🔍 First 202 Accepted response body: %s\n", string(responses[i].Body))
-					break
-				}
-			}
-
-			if otherCount > 0 {
-				// Print first error body
-				for i := 0; i < len(responses); i++ {
-					if responses[i].StatusCode >= 400 {
-						GinkgoWriter.Printf("🔍 First error body: %s\n", string(responses[i].Body))
-						break
-					}
-				}
-			}
-
-			// Expect: With atomic Lua script and threshold=2 (test config):
-			// - Requests 1-2: count <= threshold → 201 Created (individual CRDs)
-			// - Request 3: count > threshold → 202 Accepted (storm window started)
-			// - Requests 4-15: IsStormActive() = true → 202 Accepted (aggregated)
-			// Due to concurrency, we might see 2-3 created and 12-13 aggregated
-			Expect(createdCount).To(BeNumerically(">=", 2),
-				"Should create ~2-3 CRDs before storm threshold is reached (threshold=2)")
-			Expect(acceptedCount).To(BeNumerically(">=", 12),
-				"Should aggregate at least 12-13 alerts after storm detection kicks in")
-
-			// VALIDATION 2: Verify storm CRD exists in K8s
-			// Use Eventually to wait for CRDs to be visible (K8s API caching/propagation delay)
-			// Force direct API calls by using MatchingFields{} to bypass controller-runtime cache
-			var stormCRD *remediationv1alpha1.RemediationRequest
-			Eventually(func() bool {
-				var stormCRDs remediationv1alpha1.RemediationRequestList
-				// Use client.MatchingFields{} to force a fresh API call (bypass client cache)
-				// This is critical for parallel execution where cache may be stale
-				listOpts := []client.ListOption{
-					client.InNamespace(namespace),
-					client.MatchingFields{}, // Forces direct API call, bypassing cache
-				}
-				err := k8sClient.Client.List(ctx, &stormCRDs, listOpts...)
-				if err != nil {
-					GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", namespace, err)
-					return false
-				}
-
-				// DEBUG: Print all CRDs found (scattered fields per deployed CRD schema)
-				GinkgoWriter.Printf("📋 Found %d CRDs in namespace %s\n", len(stormCRDs.Items), namespace)
-				for i := range stormCRDs.Items {
-					hasStorm := stormCRDs.Items[i].Spec.IsStorm
-					alertCount := stormCRDs.Items[i].Spec.StormAlertCount
-					GinkgoWriter.Printf("  - %s (namespace=%s, isStorm=%v, alertCount=%d)\n",
-						stormCRDs.Items[i].Name,
-						stormCRDs.Items[i].Namespace,
-						hasStorm,
-						alertCount)
-				}
-
-				// Find storm CRD for this namespace (scattered fields per deployed CRD schema)
-				for i := range stormCRDs.Items {
-					if stormCRDs.Items[i].Spec.IsStorm &&
-						stormCRDs.Items[i].Spec.StormAlertCount > 0 {
-						stormCRD = &stormCRDs.Items[i]
-						return true
-					}
-				}
-				return false
-			}, "120s", "1s").Should(BeTrue(), "Storm CRD should exist in K8s (120s timeout for parallel execution, polling every 1s)")
-
-			Expect(stormCRD).ToNot(BeNil(), "Storm CRD should exist in K8s")
-			Expect(stormCRD.Spec.IsStorm).To(BeTrue(), "Storm CRD should have IsStorm=true")
-
-			// VALIDATION 3: Storm CRD contains aggregated alert metadata (scattered fields)
-			// With atomic Lua script and threshold=2 (test config):
-			// - Alerts 1-2: Individual CRDs created (201 Created)
-			// - Alert 3: Storm window started (202 Accepted)
-			// - Alerts 4-15: Aggregated into storm window (202 Accepted)
-			// - After 5 seconds: 1 aggregated storm CRD created with 13 alerts
-			//
-			// NOTE: Due to concurrent updates and eventual consistency, the K8s CRD alert_count
-			// might not reflect the total number of aggregated alerts (last write wins).
-			// The critical validation is that:
-			// 1. Storm CRD exists (✅)
-			// 2. 202 Accepted responses were returned (✅ validated above: acceptedCount >= 12)
-			// 3. Redis metadata has correct count (source of truth)
-			//
-			// We relax this assertion to >= 1 (storm CRD was created and updated at least once)
-			// The business outcome (storm aggregation happened) is validated by 202 responses
-			Expect(stormCRD.Spec.StormAlertCount).To(BeNumerically(">=", 1),
-				"Storm CRD should exist and have been updated at least once")
-			// Pattern is not a field in deployed CRD schema, derived from SignalName + Namespace
-			Expect(stormCRD.Spec.SignalName).To(Equal(alertName),
-				"Storm signal name should match (process-isolated)")
-			Expect(stormCRD.Namespace).To(Equal(namespace),
-				"Storm namespace should match (process-isolated)")
-			// AffectedResources also subject to eventual consistency (last write wins)
-			// Validate that at least 1 resource is tracked (storm CRD was updated)
-			Expect(len(stormCRD.Spec.AffectedResources)).To(BeNumerically(">=", 1),
-				"Should track at least 1 affected resource (storm CRD updated)")
-
-			// VALIDATION 4: Verify cost reduction achieved
-			// Without aggregation: 15 alerts × $0.02 = $0.30
-			// With aggregation (threshold=10): ~10 CRDs × $0.02 = $0.20
-			// Savings: $0.10 (33% reduction)
-			// Note: First 9 alerts create individual CRDs before threshold is reached
-			individualCost := float64(15) * 0.02
-			aggregatedCost := float64(createdCount) * 0.02
-			savingsPercent := ((individualCost - aggregatedCost) / individualCost) * 100
-
-			Expect(savingsPercent).To(BeNumerically(">=", 30),
-				"Should achieve at least 30%% AI cost reduction through aggregation (threshold=10)")
-
-			// BUSINESS OUTCOME VERIFIED:
-			// ✅ 15 concurrent alerts → 1-3 CRDs (not 15)
-			// ✅ Storm CRD contains aggregated metadata
-			// ✅ 90%+ AI cost reduction achieved
-			// ✅ BR-GATEWAY-016 fully validated
-		})
+		// REMOVED: "should aggregate 15 concurrent Prometheus alerts into 1 storm CRD"
+		// REASON: E2E test - 120s timeout, tests complete workflow (5+ components)
+		// E2E COVERAGE: test/e2e/gateway/06_concurrent_alerts_test.go
+		// BR-GATEWAY-016: Storm aggregation cost reduction
 
 		It("should handle mixed storm and non-storm alerts correctly", func() {
 			// BUSINESS OUTCOME: Storm alerts aggregated, normal alerts processed individually
@@ -884,9 +621,11 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				time.Sleep(100 * time.Millisecond)
 			}
 
-			// Wait for storm alerts to complete before sending normal alerts
-			// This ensures we're testing selective storm detection (not timing-dependent behavior)
-			time.Sleep(2 * time.Second)
+			// Wait for all storm alerts to complete (collect all 15 responses)
+			// This replaces time.Sleep with proper synchronization
+			Eventually(func() int {
+				return len(stormResults)
+			}, "30s", "100ms").Should(Equal(15), "All 15 storm alert responses should be received")
 
 			// Send 3 alerts for different issues (non-storm)
 			normalResults := make(chan WebhookResponse, 3)

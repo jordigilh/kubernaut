@@ -245,30 +245,9 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		// ✅ Operator can quickly identify and fix issue
 	})
 
-	It("returns 500 when Kubernetes API is unavailable (for retry)", func() {
-		// BUSINESS SCENARIO: K8s API down, Gateway can't create CRD
-		// Expected: 500 Internal Server Error (AlertManager retries)
-		//
-		// WHY THIS MATTERS: Transient K8s failures should retry
-		// Example: K8s API server restart → Brief downtime
-		// 500 error triggers AlertManager retry logic
-
-		Skip("Requires Kubernetes API failure simulation (complex infrastructure)")
-
-		// This test would:
-		// 1. Simulate K8s API unavailability (stop API server or network partition)
-		// 2. Send alert to Gateway
-		// 3. Verify 500 Internal Server Error returned
-		// 4. Restore K8s API
-		// 5. Verify AlertManager retry succeeds
-		//
-		// Implementation note: Requires control over K8s API server
-		//
-		// BUSINESS OUTCOME:
-		// ✅ Transient failures trigger retry
-		// ✅ AlertManager retry logic handles temporary issues
-		// ✅ No alerts lost due to brief downtime
-	})
+	// REMOVED: "returns 500 when Kubernetes API is unavailable (for retry)"
+	// REASON: Requires K8s API failure simulation
+	// COVERAGE: Unit tests (crd_creator_retry_test.go) validate retry logic with mock K8s client
 
 	It("handles namespace not found by using kubernaut-system namespace fallback", func() {
 		// BUSINESS SCENARIO: Alert references non-existent namespace
