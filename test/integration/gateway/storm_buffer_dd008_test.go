@@ -71,6 +71,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 		// Using short window duration for faster tests
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
+			nil,              // logger (nil = use nop logger for tests)
 			5,                // bufferThreshold: 5 alerts before window
 			2*time.Second,    // inactivityTimeout: 2s for fast testing
 			5*time.Second,    // maxWindowDuration: 5s for fast testing
@@ -337,6 +338,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 				// Create aggregator with per-namespace limits (use dynamic namespace)
 				aggregatorWithLimits := processing.NewStormAggregatorWithConfig(
 					redisClient,
+					nil, // logger
 					5,
 					5*time.Second,
 					30*time.Second,

@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 // StormAggregator aggregates alerts during storm windows
@@ -60,6 +61,7 @@ import (
 // - alert:storm:metadata:<window-id> (first signal metadata for CRD creation)
 type StormAggregator struct {
 	redisClient        *redis.Client
+	logger             *zap.Logger    // Logger for operational visibility
 	windowDuration     time.Duration  // Default: 1 minute (inactivity timeout)
 	bufferThreshold    int            // Alerts before creating window (default: 5)
 	maxWindowDuration  time.Duration  // Max window duration (default: 5 minutes)
@@ -74,6 +76,7 @@ type StormAggregator struct {
 //
 // Parameters:
 // - redisClient: Redis client for aggregation tracking
+// - logger: Zap logger for operational visibility (nil = use nop logger)
 // - bufferThreshold: Number of alerts to buffer before creating window (0 = use default 5)
 // - inactivityTimeout: Sliding window timeout (0 = use default 60s)
 // - maxWindowDuration: Maximum window duration (0 = use default 5m)
@@ -92,6 +95,7 @@ type StormAggregator struct {
 //	// Production (from config)
 //	aggregator := NewStormAggregatorWithConfig(
 //	    redisClient,
+//	    logger,
 //	    cfg.Processing.Storm.BufferThreshold,
 //	    cfg.Processing.Storm.InactivityTimeout,
 //	    cfg.Processing.Storm.MaxWindowDuration,
@@ -103,9 +107,10 @@ type StormAggregator struct {
 //	)
 //
 //	// Testing (fast window, no namespace overrides)
-//	aggregator := NewStormAggregatorWithConfig(redisClient, 3, 5*time.Second, 30*time.Second, 100, 500, nil, 0.95, 0.5)
+//	aggregator := NewStormAggregatorWithConfig(redisClient, logger, 3, 5*time.Second, 30*time.Second, 100, 500, nil, 0.95, 0.5)
 func NewStormAggregatorWithConfig(
 	redisClient *redis.Client,
+	logger *zap.Logger,
 	bufferThreshold int,
 	inactivityTimeout time.Duration,
 	maxWindowDuration time.Duration,
@@ -141,8 +146,14 @@ func NewStormAggregatorWithConfig(
 		perNamespaceLimits = make(map[string]int)
 	}
 
+	// Use nop logger if none provided (for testing)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &StormAggregator{
 		redisClient:        redisClient,
+		logger:             logger,
 		windowDuration:     inactivityTimeout,
 		bufferThreshold:    bufferThreshold,
 		maxWindowDuration:  maxWindowDuration,
@@ -341,7 +352,9 @@ func (a *StormAggregator) AddResource(ctx context.Context, windowID string, sign
 	if extendErr != nil {
 		// Non-fatal: log warning but don't fail the operation
 		// Window will still expire based on original TTL
-		// TODO: Add logging when logger is available
+		a.logger.Warn("Failed to extend storm window timer",
+			zap.String("window_id", windowID),
+			zap.Error(extendErr))
 	}
 
 	// Set TTL on resources (2x window duration to allow retrieval after window closes)
@@ -556,10 +569,13 @@ func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.No
 	}
 
 	// DD-GATEWAY-008 Day 5: Check if sampling should be enabled (BR-GATEWAY-011)
-	shouldSample, _, err := a.ShouldEnableSampling(ctx, signal.Namespace)
+	shouldSample, utilization, err := a.ShouldEnableSampling(ctx, signal.Namespace)
 	if err != nil {
 		// Non-fatal: log warning but continue (don't block on sampling check)
-		// TODO: Add logging when logger is available (include utilization in log)
+		a.logger.Warn("Failed to check sampling status, continuing without sampling",
+			zap.String("namespace", signal.Namespace),
+			zap.Float64("utilization", utilization),
+			zap.Error(err))
 	}
 
 	if shouldSample {

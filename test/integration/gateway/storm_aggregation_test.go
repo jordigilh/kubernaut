@@ -76,6 +76,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 		// Production default is 5, but tests expect windowID on first alert
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
+			nil,            // logger (nil = use nop logger for tests)
 			1,              // bufferThreshold: 1 alert triggers window creation (test optimization)
 			60*time.Second, // inactivityTimeout: 1 minute
 			5*time.Minute,  // maxWindowDuration: 5 minutes
