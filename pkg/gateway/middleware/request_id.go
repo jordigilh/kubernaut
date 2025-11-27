@@ -72,25 +72,25 @@ func RequestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
 				zap.String("method", r.Method),
 			)
 
-		// Store request ID and logger in context
-		ctx := context.WithValue(r.Context(), RequestIDKey, requestID)
-		ctx = context.WithValue(ctx, LoggerKey, requestLogger)
+			// Store request ID and logger in context
+			ctx := context.WithValue(r.Context(), RequestIDKey, requestID)
+			ctx = context.WithValue(ctx, LoggerKey, requestLogger)
 
-		// Log incoming request (debug level for health/readiness checks to reduce noise)
-		if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/ready" {
-			requestLogger.Debug("Incoming request",
-				zap.String("user_agent", r.UserAgent()),
-				zap.String("content_type", r.Header.Get("Content-Type")),
-			)
-		} else {
-			requestLogger.Info("Incoming request",
-				zap.String("user_agent", r.UserAgent()),
-				zap.String("content_type", r.Header.Get("Content-Type")),
-			)
-		}
+			// Log incoming request (debug level for health/readiness checks to reduce noise)
+			if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/ready" {
+				requestLogger.Debug("Incoming request",
+					zap.String("user_agent", r.UserAgent()),
+					zap.String("content_type", r.Header.Get("Content-Type")),
+				)
+			} else {
+				requestLogger.Info("Incoming request",
+					zap.String("user_agent", r.UserAgent()),
+					zap.String("content_type", r.Header.Get("Content-Type")),
+				)
+			}
 
-		// Pass to next handler
-		next.ServeHTTP(w, r.WithContext(ctx))
+			// Pass to next handler
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

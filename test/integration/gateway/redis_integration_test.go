@@ -60,6 +60,13 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
 
+		// FIX: Reset Redis config BEFORE flushing to prevent OOM cascade failures
+		// This ensures tests that set maxmemory to low values don't affect other tests
+		if redisClient != nil && redisClient.Client != nil {
+			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")       // 2GB
+			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+		}
+
 		// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
 		if redisClient != nil && redisClient.Client != nil {
 			err := redisClient.Client.FlushDB(ctx).Err()
@@ -142,43 +149,11 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			Expect(fingerprintCount).To(Equal(1))
 		})
 
-		XIt("should expire deduplication entries after TTL", func() {
-			// MOVED TO E2E: This test belongs in E2E tier (test/e2e/gateway/)
-			// REASON: Timing-sensitive (10s wait), tests complete workflow, flaky in parallel execution
-			// SEE: test/integration/gateway/TRIAGE_TTL_TEST_FAILURE.md
-			// BR-GATEWAY-008: TTL-based expiration
-			// DD-GATEWAY-009: State-based deduplication
-			// BUSINESS OUTCOME: Deduplication works even after Redis TTL expires
-
-		// Use unique alert name with process ID and nanosecond timestamp to avoid collisions in parallel execution
-		processID := GinkgoParallelProcess()
-		uniqueAlertName := fmt.Sprintf("TTLTest-p%d-%d", processID, time.Now().UnixNano())
-
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: uniqueAlertName,
-				Namespace: testNamespace,
-			})
-
-			// Send alert
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp.StatusCode).To(Equal(201))
-
-		// Wait for TTL to expire (2 seconds + 1 second buffer for parallel execution)
-		// Production uses 5 minutes, but tests use 2 seconds for fast execution
-		time.Sleep(3 * time.Second)
-
-		// BUSINESS OUTCOME: Send same alert again - should be deduplicated (202)
-		// Even though Redis TTL expired, the CRD still exists in Kubernetes
-		// State-based deduplication (DD-GATEWAY-009) checks CRD state, not just Redis
-		// This is correct behavior: if CRD is still Pending/InProgress, increment occurrence count
-		// In production, CRDs would be processed and deleted by the workflow engine
-		resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-		Expect(resp2.StatusCode).To(Equal(202), "Should deduplicate based on CRD state (state-based deduplication)")
-
-		// Business capability verified:
-		// ✅ State-based deduplication works correctly (DD-GATEWAY-009)
-		// ✅ CRD occurrence count incremented even after Redis TTL expiration
-		})
+			// REMOVED: "should expire deduplication entries after TTL"
+		// REASON: Timing-sensitive (10s wait), tests complete workflow, flaky in parallel execution
+		// E2E COVERAGE: test/e2e/gateway/14_deduplication_ttl_expiration_test.go
+		// BR-GATEWAY-008: TTL-based expiration
+		// DD-GATEWAY-009: State-based deduplication
 
 		// REMOVED: "should handle Redis connection failure gracefully"
 		// Reason: Incomplete test (closes client, not server), requires chaos engineering

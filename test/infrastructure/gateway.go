@@ -595,6 +595,22 @@ func StartRedisContainer(containerName string, port int, writer io.Writer) (int,
 		return 0, fmt.Errorf("failed to start Redis container: %w, output: %s", err, string(output))
 	}
 
+	// Wait for Redis to be ready (container started but Redis may not be accepting connections yet)
+	fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
+	redisReady := false
+	for i := 0; i < 30; i++ { // 30 attempts, 100ms each = 3 seconds max
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			redisReady = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !redisReady {
+		return 0, fmt.Errorf("Redis container started but not accepting connections on port %d", port)
+	}
+
 	fmt.Fprintf(writer, "✅ Redis container '%s' created and started on port %d\n", containerName, port)
 	return port, nil
 }

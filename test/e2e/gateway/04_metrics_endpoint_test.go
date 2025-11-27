@@ -185,16 +185,21 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("")
 		testLogger.Info("Step 4: Verify metrics updated after alert")
 
-		// Wait briefly for metrics to update
-		time.Sleep(1 * time.Second)
-
-		resp2, err := httpClient.Get(gatewayURL + "/metrics")
-		Expect(err).ToNot(HaveOccurred())
-		metricsBody2, err := io.ReadAll(resp2.Body)
-		resp2.Body.Close()
-		Expect(err).ToNot(HaveOccurred())
-
-		metricsOutput2 := string(metricsBody2)
+		// Wait for metrics to update using Eventually
+		var metricsOutput2 string
+		Eventually(func() bool {
+			resp2, err := httpClient.Get(gatewayURL + "/metrics")
+			if err != nil {
+				return false
+			}
+			metricsBody2, err := io.ReadAll(resp2.Body)
+			resp2.Body.Close()
+			if err != nil {
+				return false
+			}
+			metricsOutput2 = string(metricsBody2)
+			return len(metricsOutput2) > 0
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "Metrics should be available")
 
 		// Check for request-related metrics (should have incremented)
 		// Look for HTTP request metrics or gateway-specific request metrics
@@ -259,4 +264,3 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 })
-

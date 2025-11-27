@@ -10,9 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -181,19 +184,20 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 
 			// Create a valid alert that will pass validation and deduplication
 			// but trigger a K8s API error (CRD already exists from previous test)
-			alertJSON := `{
+			// FIX: Use testNamespace instead of hardcoded "default"
+			alertJSON := fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "K8sAPIErrorTest",
 						"severity": "critical",
-						"namespace": "default"
+						"namespace": "%s"
 					},
 					"annotations": {
 						"summary": "Test alert for K8s API error handling"
 					}
 				}]
-			}`
+			}`, testNamespace)
 
 			// Send request twice - second request should fail with "already exists"
 			// First request: Create CRD successfully
@@ -206,8 +210,12 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			resp1.Body.Close()
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First request should succeed")
 
-			// Wait briefly for CRD creation to complete
-			time.Sleep(100 * time.Millisecond)
+			// Wait for CRD creation to complete using Eventually
+			Eventually(func() int {
+				crdList := &remediationv1alpha1.RemediationRequestList{}
+				_ = k8sClient.Client.List(ctx, crdList, client.InNamespace(testNamespace))
+				return len(crdList.Items)
+			}, "30s", "500ms").Should(BeNumerically(">=", 1), "CRD should be created")
 
 			// Clear Redis to force duplicate CRD creation attempt
 			if redisClient != nil && redisClient.Client != nil {

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -200,8 +201,19 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			testLogger.Warn("No Redis pods found - testing graceful degradation behavior only")
 		}
 
-		// Wait a moment for Redis to become unavailable
-		time.Sleep(5 * time.Second)
+		// Wait for Redis to become unavailable using Eventually
+		// This is more reliable than a fixed sleep as Redis shutdown time can vary
+		Eventually(func() bool {
+			// Try to ping Redis - if it fails, Redis is unavailable
+			cmd := exec.CommandContext(testCtx, "kubectl", "exec",
+				"-n", gatewayNamespace,
+				"deploy/gateway",
+				"--kubeconfig", kubeconfigPath,
+				"--",
+				"redis-cli", "-h", "redis", "ping")
+			err := cmd.Run()
+			return err != nil // Redis is unavailable when ping fails
+		}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Redis should become unavailable after pod deletion")
 
 		testLogger.Info("Step 4: Send alerts during Redis unavailability")
 		const alertsDuringFailure = 3
