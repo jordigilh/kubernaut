@@ -527,108 +527,140 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 // 3. Validates signal using adapter.Validate()
 // 4. Calls ProcessSignal() to run full pipeline
 // 5. Returns HTTP response (201/202/400/500)
+//
+// REFACTORED: Reduced cyclomatic complexity by extracting helper methods
 func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Only accept POST requests
 		if r.Method != http.MethodPost {
-			s.writeJSONError(w, r, "Method not allowed", http.StatusMethodNotAllowed) // TDD REFACTOR: Keep as-is (405 is not common enough for helper)
+			s.writeJSONError(w, r, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 		start := time.Now()
 		ctx := r.Context()
-
-		// BR-109: Get request-scoped logger from context (includes request_id, source_ip, endpoint)
 		logger := middleware.GetLogger(ctx)
 
-		// Read request body
-		body, err := io.ReadAll(r.Body)
+		// Read, parse, and validate signal
+		signal, err := s.readParseValidateSignal(ctx, w, r, adapter, logger)
 		if err != nil {
-			logger.Error("Failed to read request body", zap.Error(err))
-			s.writeValidationError(w, r, "Failed to read request body") // TDD REFACTOR: Use typed helper, BR-109: Added request
-			return
-		}
-
-		// Parse signal using adapter
-		signal, err := adapter.Parse(ctx, body)
-		if err != nil {
-			logger.Warn("Failed to parse signal",
-				zap.String("adapter", adapter.Name()),
-				zap.Error(err),
-			)
-
-			// TDD REFACTOR: Parse errors are validation errors (400 Bad Request)
-			// Note: Payload size errors (413) are handled by adapter-specific logic
-			s.writeValidationError(w, r, fmt.Sprintf("Failed to parse signal: %v", err)) // BR-109: Added request
-			return
-		}
-
-		// Validate signal
-		if err := adapter.Validate(signal); err != nil {
-			logger.Warn("Signal validation failed",
-				zap.String("adapter", adapter.Name()),
-				zap.Error(err))
-			s.writeValidationError(w, r, fmt.Sprintf("Signal validation failed: %v", err)) // TDD REFACTOR: Use typed helper, BR-109: Added request
-			return
+			return // Error response already sent
 		}
 
 		// Process signal through pipeline
 		response, err := s.ProcessSignal(ctx, signal)
 		if err != nil {
-			logger.Error("Signal processing failed",
-				zap.String("adapter", adapter.Name()),
-				zap.Error(err))
-
-			// BR-GATEWAY-008, BR-GATEWAY-009: Return 503 when Redis unavailable (per DD-GATEWAY-003)
-			// BR-002: Return 500 when Kubernetes API unavailable
-			// Check error type and return appropriate HTTP status
-			errMsg := err.Error()
-
-			// Redis unavailability → HTTP 503 Service Unavailable
-			if strings.Contains(errMsg, "redis unavailable") || strings.Contains(errMsg, "deduplication check failed") {
-				s.writeServiceUnavailableError(w, r, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30)
-				return
-			}
-
-			// Kubernetes API errors → HTTP 500 Internal Server Error with details
-			if strings.Contains(errMsg, "kubernetes") || strings.Contains(errMsg, "k8s") ||
-				strings.Contains(errMsg, "failed to create RemediationRequest CRD") ||
-				strings.Contains(errMsg, "namespaces") {
-				s.writeInternalError(w, r, fmt.Sprintf("Kubernetes API error: %v", err))
-				return
-			}
-
-			// Generic error → HTTP 500
-			s.writeInternalError(w, r, "Internal server error")
+			s.handleProcessingError(w, r, err, adapter.Name(), logger)
 			return
 		}
 
-		// Determine HTTP status code based on response status
-		// BR-GATEWAY-016: Storm aggregation returns 202 Accepted
-		// BR-GATEWAY-003: Deduplication returns 202 Accepted
-		statusCode := http.StatusCreated
-		if response.Status == StatusAccepted || response.Duplicate {
-			statusCode = http.StatusAccepted
-		}
+		// Send success response
+		s.sendSuccessResponse(w, r, response, adapter, start)
+	}
+}
 
-		// Record metrics
-		duration := time.Since(start)
-		route := "/unknown"
-		if routableAdapter, ok := adapter.(adapters.RoutableAdapter); ok {
-			route = routableAdapter.GetRoute()
-		}
-		s.metricsInstance.HTTPRequestDuration.WithLabelValues(
-			route,
-			r.Method,
-			fmt.Sprintf("%d", statusCode),
-		).Observe(duration.Seconds())
+// readParseValidateSignal reads, parses, and validates the signal from the request
+// Returns nil signal and writes error response if any step fails
+func (s *Server) readParseValidateSignal(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	adapter adapters.SignalAdapter,
+	logger *zap.Logger,
+) (*types.NormalizedSignal, error) {
+	// Read request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		logger.Error("Failed to read request body", zap.Error(err))
+		s.writeValidationError(w, r, "Failed to read request body")
+		return nil, err
+	}
 
-		// Send response
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(statusCode)
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			logger.Error("Failed to encode JSON response", zap.Error(err))
-		}
+	// Parse signal using adapter
+	signal, err := adapter.Parse(ctx, body)
+	if err != nil {
+		logger.Warn("Failed to parse signal",
+			zap.String("adapter", adapter.Name()),
+			zap.Error(err))
+		s.writeValidationError(w, r, fmt.Sprintf("Failed to parse signal: %v", err))
+		return nil, err
+	}
+
+	// Validate signal
+	if err := adapter.Validate(signal); err != nil {
+		logger.Warn("Signal validation failed",
+			zap.String("adapter", adapter.Name()),
+			zap.Error(err))
+		s.writeValidationError(w, r, fmt.Sprintf("Signal validation failed: %v", err))
+		return nil, err
+	}
+
+	return signal, nil
+}
+
+// handleProcessingError handles errors from signal processing and sends appropriate HTTP response
+func (s *Server) handleProcessingError(
+	w http.ResponseWriter,
+	r *http.Request,
+	err error,
+	adapterName string,
+	logger *zap.Logger,
+) {
+	logger.Error("Signal processing failed",
+		zap.String("adapter", adapterName),
+		zap.Error(err))
+
+	errMsg := err.Error()
+
+	// Redis unavailability → HTTP 503 Service Unavailable
+	if strings.Contains(errMsg, "redis unavailable") || strings.Contains(errMsg, "deduplication check failed") {
+		s.writeServiceUnavailableError(w, r, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30)
+		return
+	}
+
+	// Kubernetes API errors → HTTP 500 Internal Server Error with details
+	if strings.Contains(errMsg, "kubernetes") || strings.Contains(errMsg, "k8s") ||
+		strings.Contains(errMsg, "failed to create RemediationRequest CRD") ||
+		strings.Contains(errMsg, "namespaces") {
+		s.writeInternalError(w, r, fmt.Sprintf("Kubernetes API error: %v", err))
+		return
+	}
+
+	// Generic error → HTTP 500
+	s.writeInternalError(w, r, "Internal server error")
+}
+
+// sendSuccessResponse sends the success HTTP response with metrics recording
+func (s *Server) sendSuccessResponse(
+	w http.ResponseWriter,
+	r *http.Request,
+	response *ProcessingResponse,
+	adapter adapters.SignalAdapter,
+	start time.Time,
+) {
+	// Determine HTTP status code based on response status
+	statusCode := http.StatusCreated
+	if response.Status == StatusAccepted || response.Duplicate {
+		statusCode = http.StatusAccepted
+	}
+
+	// Record metrics
+	duration := time.Since(start)
+	route := "/unknown"
+	if routableAdapter, ok := adapter.(adapters.RoutableAdapter); ok {
+		route = routableAdapter.GetRoute()
+	}
+	s.metricsInstance.HTTPRequestDuration.WithLabelValues(
+		route,
+		r.Method,
+		fmt.Sprintf("%d", statusCode),
+	).Observe(duration.Seconds())
+
+	// Send response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error("Failed to encode JSON response", zap.Error(err))
 	}
 }
 
