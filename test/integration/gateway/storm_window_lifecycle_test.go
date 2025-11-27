@@ -76,6 +76,7 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 		// This allows tests to complete quickly while validating expiration logic
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
+			nil,           // logger (nil = use nop logger for tests)
 			1,             // bufferThreshold: 1 alert triggers window creation
 			3*time.Second, // inactivityTimeout: 3s for fast testing
 			3*time.Second, // maxWindowDuration: 3 seconds (VERY SHORT for testing)

@@ -72,6 +72,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Aggregation First-Alert Handling", func(
 		// DD-GATEWAY-008: Use buffer_threshold: 2 for testing
 		stormAggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
+			nil,            // logger (nil = use nop logger for tests)
 			2,              // bufferThreshold: 2 alerts
 			5*time.Second,  // inactivityTimeout: 5s
 			30*time.Second, // maxWindowDuration: 30s

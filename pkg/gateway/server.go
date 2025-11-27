@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
@@ -130,12 +129,6 @@ type Server struct {
 	//
 	// Industry best practice: Google SRE, Netflix, Kubernetes community
 	isShuttingDown atomic.Bool
-
-	// Storm aggregation concurrency control using singleflight pattern
-	// Prevents race condition where multiple goroutines attempt to create
-	// the same aggregated CRD simultaneously when window expires
-	// Uses golang.org/x/sync/singleflight - industry standard for deduplicating work
-	aggregationGroup singleflight.Group
 }
 
 // Configuration types have been moved to pkg/gateway/config/config.go
@@ -278,6 +271,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 	// This enables buffered first-alert aggregation, sliding windows, and multi-tenant isolation
 	stormAggregator := processing.NewStormAggregatorWithConfig(
 		redisClient.GetClient(),
+		logger,                                 // Logger for operational visibility
 		cfg.Processing.Storm.BufferThreshold,   // BR-GATEWAY-016: Buffer N alerts before creating window
 		cfg.Processing.Storm.InactivityTimeout, // BR-GATEWAY-008: Sliding window timeout
 		cfg.Processing.Storm.MaxWindowDuration, // BR-GATEWAY-008: Maximum window duration
@@ -1424,163 +1418,6 @@ func (s *Server) monitorWindowExpiration(ctx context.Context, windowID string) {
 
 	// Cleanup: Window resources are already in CRD, just remove Redis keys
 	// Note: Resources have 2x TTL for retrieval, will auto-expire
-}
-
-// createAggregatedCRDAfterWindow is DEPRECATED - kept for backward compatibility
-// DD-GATEWAY-008: Use createAggregatedCRD() instead (creates CRD immediately when threshold reached)
-func (s *Server) createAggregatedCRDAfterWindow(
-	ctx context.Context,
-	windowID string,
-	firstSignal *types.NormalizedSignal,
-	stormMetadata *processing.StormMetadata,
-) {
-	// Wait for aggregation window to expire (configurable: 5s for tests, 1m for production)
-	windowDuration := s.stormAggregator.GetWindowDuration()
-	time.Sleep(windowDuration)
-
-	// Use singleflight to ensure only ONE goroutine creates the CRD for this windowID
-	// All other goroutines will wait and get the same result
-	// This is the idiomatic Go pattern for preventing duplicate work
-	_, err, _ := s.aggregationGroup.Do(windowID, func() (interface{}, error) {
-		s.logger.Info("Storm aggregation window expired, creating aggregated CRD",
-			zap.String("windowID", windowID),
-			zap.String("alertName", firstSignal.AlertName),
-			zap.Duration("duration", windowDuration))
-
-		return nil, s.doCreateAggregatedCRD(ctx, windowID, firstSignal, stormMetadata, windowDuration)
-	})
-
-	if err != nil {
-		s.logger.Error("Failed to create aggregated CRD via singleflight",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-	}
-}
-
-// doCreateAggregatedCRD performs the actual CRD creation
-// Separated from createAggregatedCRDAfterWindow to work with singleflight pattern
-func (s *Server) doCreateAggregatedCRD(
-	ctx context.Context,
-	windowID string,
-	firstSignal *types.NormalizedSignal,
-	stormMetadata *processing.StormMetadata,
-	windowDuration time.Duration,
-) error {
-
-	// Retrieve all aggregated resources
-	resources, err := s.stormAggregator.GetAggregatedResources(ctx, windowID)
-	if err != nil {
-		s.logger.Error("Failed to retrieve aggregated resources",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-		return fmt.Errorf("failed to retrieve aggregated resources: %w", err)
-	}
-
-	// Retrieve signal metadata
-	signal, storedStormMetadata, err := s.stormAggregator.GetSignalMetadata(ctx, windowID)
-	if err != nil {
-		s.logger.Warn("Failed to retrieve signal metadata, using first signal",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-		// Fall back to using the first signal passed as parameter
-		signal = firstSignal
-	} else {
-		// Use stored storm metadata if available
-		if storedStormMetadata != nil {
-			stormMetadata = storedStormMetadata
-		}
-	}
-
-	// Update alert count with actual aggregated count
-	resourceCount := len(resources)
-
-	s.logger.Info("Creating aggregated RemediationRequest CRD",
-		zap.String("windowID", windowID),
-		zap.String("alertName", signal.AlertName),
-		zap.Int("resourceCount", resourceCount),
-		zap.String("stormType", stormMetadata.StormType))
-
-	// Create aggregated signal with all resources
-	aggregatedSignal := *signal
-	aggregatedSignal.IsStorm = true
-	aggregatedSignal.StormType = stormMetadata.StormType
-	aggregatedSignal.StormWindow = stormMetadata.Window
-	aggregatedSignal.AlertCount = resourceCount
-	aggregatedSignal.AffectedResources = resources
-
-	// Environment classification
-	environment := s.classifier.Classify(ctx, aggregatedSignal.Namespace)
-
-	// Priority assignment
-	priority := s.priorityEngine.Assign(ctx, aggregatedSignal.Severity, environment)
-
-	// Create single aggregated RemediationRequest CRD
-	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal, priority, environment)
-	if err != nil {
-		s.logger.Error("Failed to create aggregated RemediationRequest CRD",
-			zap.String("windowID", windowID),
-			zap.Int("resourceCount", resourceCount),
-			zap.Error(err))
-
-		// Record metric for failed aggregation
-		s.metricsInstance.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
-		return fmt.Errorf("failed to create aggregated CRD: %w", err)
-	}
-
-	// Store deduplication metadata in Redis for storm aggregation (BR-GATEWAY-016)
-	// This enables storm detection across Gateway restarts
-	crdRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
-	if err := s.deduplicator.Store(ctx, &aggregatedSignal, crdRef); err != nil {
-		// Graceful degradation: log error but don't fail
-		s.logger.Warn("Failed to store storm aggregation metadata in Redis",
-			zap.String("windowID", windowID),
-			zap.String("crd_ref", crdRef),
-			zap.Error(err))
-	}
-
-	s.logger.Info("Aggregated RemediationRequest CRD created successfully",
-		zap.String("windowID", windowID),
-		zap.String("crdName", rr.Name),
-		zap.String("crdNamespace", rr.Namespace),
-		zap.Int("resourceCount", resourceCount),
-		zap.String("environment", environment),
-		zap.String("priority", priority),
-		zap.String("stormType", stormMetadata.StormType))
-
-	// Record metrics for successful aggregation
-	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
-
-	// DD-GATEWAY-008: Record storm aggregation metrics (BR-GATEWAY-016, BR-GATEWAY-008, BR-GATEWAY-011)
-
-	// 1. Storm Window Duration (BR-GATEWAY-008)
-	windowDurationSeconds := windowDuration.Seconds()
-	s.metricsInstance.StormWindowDuration.WithLabelValues(
-		aggregatedSignal.Namespace,
-		aggregatedSignal.AlertName,
-	).Observe(windowDurationSeconds)
-
-	// 2. Storm Aggregation Ratio (BR-GATEWAY-008)
-	// Ratio = alerts aggregated / total alerts received (higher = better)
-	// Example: 50 alerts → 1 CRD = 50/50 = 1.0 (perfect aggregation)
-	if resourceCount > 0 {
-		aggregationRatio := float64(resourceCount) / float64(resourceCount) // All alerts in window were aggregated
-		s.metricsInstance.StormAggregationRatio.Set(aggregationRatio)
-	}
-
-	// 3. Storm Cost Savings Percent (BR-GATEWAY-016)
-	// Cost savings = (alerts - CRDs) / alerts * 100
-	// Example: 50 alerts → 1 CRD = (50-1)/50 * 100 = 98% savings
-	if resourceCount > 1 {
-		costSavingsPercent := float64(resourceCount-1) / float64(resourceCount) * 100
-		s.metricsInstance.StormCostSavingsPercent.Set(costSavingsPercent)
-	}
-
-	// 4. Namespace Buffer Utilization (BR-GATEWAY-011)
-	if utilization, err := s.stormAggregator.GetNamespaceUtilization(ctx, aggregatedSignal.Namespace); err == nil {
-		s.metricsInstance.NamespaceBufferUtilization.WithLabelValues(aggregatedSignal.Namespace).Set(utilization)
-	}
-
-	return nil // Success
 }
 
 // TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication

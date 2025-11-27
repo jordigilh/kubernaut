@@ -72,6 +72,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 		// Using short timeouts for fast integration tests
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
+			nil,              // logger (nil = use nop logger for tests)
 			5,                // bufferThreshold: 5 alerts
 			2*time.Second,    // inactivityTimeout: 2s for fast testing
 			5*time.Second,    // maxWindowDuration: 5s for fast testing
@@ -227,6 +228,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 				// Create aggregator with low namespace limit
 				limitedAggregator := processing.NewStormAggregatorWithConfig(
 					redisClient,
+					nil, // logger
 					5,
 					5*time.Second,
 					30*time.Second,

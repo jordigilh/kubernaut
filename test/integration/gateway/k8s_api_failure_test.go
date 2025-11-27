@@ -289,6 +289,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// Use bufferThreshold=1 for immediate window creation in tests
 			stormAggregator := processing.NewStormAggregatorWithConfig(
 				redisClient.Client,
+				nil,                  // logger (nil = use nop logger for tests)
 				1,                    // bufferThreshold: 1 alert triggers window creation
 				60*time.Second,       // inactivityTimeout: 1 minute
 				5*time.Minute,        // maxWindowDuration: 5 minutes

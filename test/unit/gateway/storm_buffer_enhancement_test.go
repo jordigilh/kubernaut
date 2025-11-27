@@ -62,6 +62,7 @@ var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 		// Use NewStormAggregatorWithConfig for full feature support
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
+			nil,                            // logger (nil = use nop logger for tests)
 			5,                              // bufferThreshold
 			testSettings.AggregationWindow, // inactivityTimeout
 			5*time.Minute,                  // maxWindowDuration
