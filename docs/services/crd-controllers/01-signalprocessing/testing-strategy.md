@@ -95,16 +95,16 @@ var _ = Describe("OwnerChain Builder", func() {
             rs := createTestReplicaSet("web-app-abc", "default",
                 withOwnerRef("Deployment", "web-app", true))
             deploy := createTestDeployment("web-app", "default")
-            
+
             client := fake.NewClientBuilder().
                 WithObjects(pod, rs, deploy).
                 Build()
-            
+
             builder := ownerchain.NewBuilder(client, logr.Discard())
-            
+
             // When
             chain, err := builder.Build(ctx, "default", "Pod", "web-app-xyz")
-            
+
             // Then
             Expect(err).ToNot(HaveOccurred())
             Expect(chain).To(HaveLen(3))
@@ -138,18 +138,18 @@ var _ = Describe("DetectedLabels", func() {
             // Given: Deployment with ArgoCD annotation
             deploy := createTestDeployment("web-app", "default",
                 withAnnotation("argocd.argoproj.io/instance", "my-app"))
-            
+
             k8sCtx := &signalprocessingv1.KubernetesContext{
                 DeploymentDetails: &signalprocessingv1.DeploymentDetails{
                     Annotations: deploy.Annotations,
                 },
             }
-            
+
             detector := detection.NewLabelDetector(fakeClient, logr.Discard())
-            
+
             // When
             labels := detector.DetectLabels(ctx, k8sCtx)
-            
+
             // Then
             Expect(labels.GitOpsManaged).To(BeTrue())
             Expect(labels.GitOpsTool).To(Equal("argocd"))
@@ -181,17 +181,17 @@ var _ = Describe("CustomLabels Rego", func() {
                 labels["kubernaut.io/signal-type"] = "hacked"
                 labels["kubernaut.io/team"] = "payments"
             `
-            
+
             engine := rego.NewEngine(fakeClient, logr.Discard())
             engine.SetTestPolicy(policy)
-            
+
             input := &rego.Input{
                 Namespace: rego.NamespaceContext{Name: "default"},
             }
-            
+
             // When
             customLabels, err := engine.EvaluatePolicy(ctx, input)
-            
+
             // Then
             Expect(err).ToNot(HaveOccurred())
             Expect(customLabels).ToNot(HaveKey("kubernaut.io/signal-type")) // Blocked
