@@ -437,7 +437,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				k8sClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
 					client.InNamespace(tc.namespace))
 
-		payload := []byte(fmt.Sprintf(`{
+				payload := []byte(fmt.Sprintf(`{
 			"alerts": [{
 				"status": "firing",
 				"labels": {
@@ -450,41 +450,41 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				}]
 			}`, tc.expectedEnv, processID, tc.severity, tc.namespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
-			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
-			Expect(err).ToNot(HaveOccurred())
+				url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+				resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+				Expect(err).ToNot(HaveOccurred())
 
-			// Read response body for debugging
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+				// Read response body for debugging
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
 
-			// Log all responses for debugging
-			GinkgoWriter.Printf("📤 HTTP POST to %s: status=%d, body=%s\n",
-				tc.namespace, resp.StatusCode, string(bodyBytes))
+				// Log all responses for debugging
+				GinkgoWriter.Printf("📤 HTTP POST to %s: status=%d, body=%s\n",
+					tc.namespace, resp.StatusCode, string(bodyBytes))
 
-			// Check HTTP status code to detect silent failures
-			Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusCreated, http.StatusAccepted}),
-				"HTTP request for namespace %s should succeed (got %d)", tc.namespace, resp.StatusCode)
+				// Check HTTP status code to detect silent failures
+				Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusCreated, http.StatusAccepted}),
+					"HTTP request for namespace %s should succeed (got %d)", tc.namespace, resp.StatusCode)
 
-			// BUSINESS OUTCOME: CRD has correct environment and priority based on namespace
-			// Use Eventually to handle async CRD creation
-			var crd remediationv1alpha1.RemediationRequest
-			Eventually(func() bool {
-				var crdList remediationv1alpha1.RemediationRequestList
-				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(tc.namespace))
-				if err != nil {
-					GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", tc.namespace, err)
-					return false
-				}
-				if len(crdList.Items) == 0 {
-					GinkgoWriter.Printf("No CRDs found in namespace %s (waiting...)\n", tc.namespace)
-					return false
-				}
-				crd = crdList.Items[0]
-				GinkgoWriter.Printf("Found CRD in namespace %s: %s\n", tc.namespace, crd.Name)
-				return true
-			}, "120s", "1s").Should(BeTrue(),
-				"Alert in %s namespace should create CRD (120s timeout for 4-processor parallel execution)", tc.namespace)
+				// BUSINESS OUTCOME: CRD has correct environment and priority based on namespace
+				// Use Eventually to handle async CRD creation
+				var crd remediationv1alpha1.RemediationRequest
+				Eventually(func() bool {
+					var crdList remediationv1alpha1.RemediationRequestList
+					err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(tc.namespace))
+					if err != nil {
+						GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", tc.namespace, err)
+						return false
+					}
+					if len(crdList.Items) == 0 {
+						GinkgoWriter.Printf("No CRDs found in namespace %s (waiting...)\n", tc.namespace)
+						return false
+					}
+					crd = crdList.Items[0]
+					GinkgoWriter.Printf("Found CRD in namespace %s: %s\n", tc.namespace, crd.Name)
+					return true
+				}, "120s", "1s").Should(BeTrue(),
+					"Alert in %s namespace should create CRD (120s timeout for 4-processor parallel execution)", tc.namespace)
 				Expect(crd.Spec.Environment).To(Equal(tc.expectedEnv),
 					"Namespace '%s' → Environment '%s'", tc.namespace, tc.expectedEnv)
 				Expect(crd.Spec.Priority).To(Equal(tc.expectedPri),
