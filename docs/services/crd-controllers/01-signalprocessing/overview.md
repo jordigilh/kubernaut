@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.1) for workflow filtering | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0, [DD-WORKFLOW-001 v1.3](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.2 | 2025-11-28 | Performance targets updated (<5s), graceful shutdown, parallel testing, retry strategy | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
 > | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Context API deprecated: Recovery context embedded by Remediation Orchestrator | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
@@ -25,23 +26,33 @@
 > **Gateway Behavior**: Sets placeholder values; Signal Processing performs final categorization
 > **See**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
 
+> **📋 Design Decision: Label Detection Architecture (v1.3)**
+> **Impact**: Signal Processing now populates DetectedLabels (V1.0) and CustomLabels (V1.1)
+> **Purpose**: Provide structured labels for workflow filtering via HolmesGPT-API
+> **Label Taxonomy**: 6 mandatory labels (DD-WORKFLOW-001 v1.3) + DetectedLabels + CustomLabels
+> **See**: [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0, [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)
+
 ---
 
-**Purpose**: Signal enrichment, environment classification, priority assignment, and context integration with Kubernetes context enrichment.
+**Purpose**: Signal enrichment, environment classification, priority assignment, label detection, and context integration with Kubernetes context enrichment.
 
 **Core Responsibilities**:
 1. Enrich signals with comprehensive Kubernetes context (pods, deployments, nodes)
 2. **Read recovery context from embedded failure data** (provided by Remediation Orchestrator in `spec.failureData`)
 3. Classify environment tier (production, staging, development) with business criticality
 4. **Assign priority based on enriched K8s context** ([DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md))
-5. Validate signal completeness and readiness for AI analysis
-6. Update status for RemediationRequest controller to trigger next phase
+5. **Detect cluster characteristics** (GitOps, PDB, HPA, etc.) → `DetectedLabels` (V1.0)
+6. **Extract custom labels via Rego policies** (team, region, etc.) → `CustomLabels` (V1.1)
+7. Validate signal completeness and readiness for AI analysis
+8. Update status for RemediationRequest controller to trigger next phase
 
-**V1 Scope - Enrichment, Classification & Categorization**:
+**V1 Scope - Enrichment, Classification, Categorization & Label Detection**:
 - **Kubernetes Context Enrichment**: Fetch monitoring & business context from K8s API
 - **Recovery Context**: Read embedded failure data from `spec.failureData` (provided by Remediation Orchestrator)
 - **Environment Classification**: Classify environment with fallback heuristics
 - **Priority Assignment**: Categorize priority after K8s context enrichment ([DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md))
+- **DetectedLabels (V1.0)**: Auto-detect cluster characteristics (GitOps, PDB, HPA, etc.)
+- **CustomLabels (V1.1)**: Extract user-defined labels via Rego policies (team, region, etc.)
 - Basic signal validation
 - **Targeting data ONLY** (namespace, resource kind/name, Kubernetes context ~8KB)
 - **NO log/metric storage in CRD** (HolmesGPT fetches via toolsets dynamically)

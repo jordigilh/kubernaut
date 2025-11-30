@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.1) to EnrichmentResults | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0, [DD-WORKFLOW-001 v1.3](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, file location updated | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
 > | v1.1 | 2025-11-27 | Type rename: RemediationProcessing* → SignalProcessing* | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Terminology: Alert → Signal | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
@@ -176,15 +177,81 @@ type SignalProcessingStatus struct {
 }
 
 // EnrichmentResults from context gathering
+// Updated v1.3: Added DetectedLabels (V1.0) and CustomLabels (V1.1)
 type EnrichmentResults struct {
+    // Kubernetes resource context (from cluster API queries)
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
+    
+    // Historical context (past signals, resource usage)
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
-    EnrichmentQuality float64            `json:"enrichmentQuality,omitempty"` // 0.0-1.0
+
+    // ========================================
+    // LABEL DETECTION (HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0)
+    // ========================================
+    
+    // Auto-detected cluster characteristics - NO CONFIG NEEDED (V1.0)
+    // SignalProcessing auto-detects these from K8s resources
+    // Flow: SignalProcessing → AIAnalysis → HolmesGPT-API → LLM prompt + MCP workflow filter
+    DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
+
+    // Custom labels from Rego policies - USER DEFINED (V1.1)
+    // For labels we can't auto-detect (business_category, team, region)
+    // Extracted via Rego policies during enrichment
+    CustomLabels map[string]string `json:"customLabels,omitempty"`
+
+    // Overall enrichment quality score (0.0-1.0)
+    // 1.0 = all enrichments successful, 0.0 = all failed
+    EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
 
     // RecoveryContext contains failure context for recovery attempts
     // Populated from spec.failureData when IsRecoveryAttempt = true
     // Note: Context API queries deprecated per DD-CONTEXT-006
     RecoveryContext *RecoveryContext `json:"recoveryContext,omitempty"`
+}
+
+// DetectedLabels contains auto-detected cluster characteristics (V1.0)
+// SignalProcessing populates these automatically from K8s resources
+// HolmesGPT-API uses for:
+//   - Natural language in LLM prompt (context)
+//   - LLM instructs model to include in MCP workflow search request (filtering)
+type DetectedLabels struct {
+    // ========================================
+    // GITOPS MANAGEMENT
+    // ========================================
+    // True if namespace/deployment is managed by GitOps controller
+    // Detection: ArgoCD annotations, Flux labels
+    GitOpsManaged bool `json:"gitOpsManaged"`
+    // GitOps tool managing this resource
+    // +kubebuilder:validation:Enum=argocd;flux;""
+    GitOpsTool string `json:"gitOpsTool,omitempty"`
+
+    // ========================================
+    // WORKLOAD PROTECTION
+    // ========================================
+    // True if PodDisruptionBudget exists for this workload
+    PDBProtected bool `json:"pdbProtected"`
+    // True if HorizontalPodAutoscaler targets this workload
+    HPAEnabled bool `json:"hpaEnabled"`
+
+    // ========================================
+    // WORKLOAD CHARACTERISTICS
+    // ========================================
+    // True if StatefulSet or has PVCs attached
+    Stateful bool `json:"stateful"`
+    // True if managed by Helm (has helm.sh/chart label)
+    HelmManaged bool `json:"helmManaged"`
+
+    // ========================================
+    // SECURITY POSTURE
+    // ========================================
+    // True if NetworkPolicy exists in namespace
+    NetworkIsolated bool `json:"networkIsolated"`
+    // Pod Security Standard level from namespace label
+    // +kubebuilder:validation:Enum=privileged;baseline;restricted;""
+    PodSecurityLevel string `json:"podSecurityLevel,omitempty"`
+    // Service mesh if detected (from sidecar or namespace labels)
+    // +kubebuilder:validation:Enum=istio;linkerd;""
+    ServiceMesh string `json:"serviceMesh,omitempty"`
 }
 
 // KubernetesContext contains Kubernetes resource context (~8KB typical size)
@@ -426,4 +493,38 @@ func init() {
 ### Data Access Layer (ADR-032)
 - Audit writes via Data Storage Service REST API
 - No direct PostgreSQL access from Signal Processing
+
+### Label Detection (HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0)
+- Added: `DetectedLabels` struct - auto-detected cluster characteristics (V1.0 priority)
+- Added: `CustomLabels` field - user-defined via Rego policies (V1.1)
+- Reference: DD-WORKFLOW-001 v1.3 (6 mandatory labels), DD-WORKFLOW-004 v2.1
+
+#### Label Taxonomy (DD-WORKFLOW-001 v1.3)
+
+| Category | Source | Config Required | Examples |
+|----------|--------|-----------------|----------|
+| **6 Mandatory Labels** | Signal Processing | No (auto/Rego) | `signal_type`, `severity`, `environment` |
+| **DetectedLabels** | Auto-detection from K8s | ❌ No config | `GitOpsManaged`, `PDBProtected`, `HPAEnabled` |
+| **CustomLabels** | Rego policies | ✅ User-defined | `business_category`, `team`, `region` |
+
+#### DetectedLabels (V1.0 - PRIORITY)
+
+| Field | Detection Method | Used For |
+|-------|------------------|----------|
+| `GitOpsManaged` | ArgoCD/Flux annotations | LLM context + workflow filtering |
+| `GitOpsTool` | Specific annotation patterns | Workflow selection preference |
+| `PDBProtected` | PDB exists for workload | Risk assessment |
+| `HPAEnabled` | HPA targets workload | Scaling context |
+| `Stateful` | StatefulSet or PVC | State handling |
+| `HelmManaged` | Helm labels present | Deployment method |
+| `NetworkIsolated` | NetworkPolicy exists | Security context |
+| `PodSecurityLevel` | Namespace PSS label | Security posture |
+| `ServiceMesh` | Istio/Linkerd sidecar | Traffic management |
+
+#### CustomLabels (V1.1)
+
+- **Keys**: Defined by customer in Rego policies (e.g., `business_category`, `team`, `region`)
+- **Values**: Derived from K8s labels/annotations via Rego policies
+- **Matching**: Customer's Rego labels matched against workflow labels
+- **Reference**: `signal-processing-policies` ConfigMap in `kubernaut-system` namespace
 

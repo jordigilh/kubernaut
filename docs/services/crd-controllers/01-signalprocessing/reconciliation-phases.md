@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added label detection (DetectedLabels V1.0, CustomLabels V1.1) to enriching phase | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0, [DD-WORKFLOW-001 v1.3](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.2 | 2025-11-28 | Performance target <5s, graceful shutdown, retry strategy | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
 > | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Context API deprecated: Recovery context from spec.failureData | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
@@ -65,7 +66,7 @@ if signalDataValid {
 
 #### 2. **enriching** Phase (BR-SP-060)
 
-**Purpose**: Enrich signal with Kubernetes context and (if recovery) read embedded failure context
+**Purpose**: Enrich signal with Kubernetes context, detect labels, and (if recovery) read embedded failure context
 
 **Actions**:
 
@@ -78,13 +79,26 @@ if signalDataValid {
   - Contact information
 - Update `status.enrichmentResults`
 
-**B. IF RECOVERY ATTEMPT**:
+**B. LABEL DETECTION (V1.3)**:
+- **DetectedLabels (V1.0)**: Auto-detect cluster characteristics from K8s resources
+  - GitOps management (ArgoCD/Flux annotations)
+  - Workload protection (PDB, HPA queries)
+  - Workload characteristics (StatefulSet, Helm)
+  - Security posture (NetworkPolicy, PSS, ServiceMesh)
+- **CustomLabels (V1.1)**: Extract user-defined labels via Rego policies
+  - Query ConfigMap `signal-processing-policies` in `kubernaut-system`
+  - Evaluate Rego policy with K8s context as input
+  - Output: user-defined labels (e.g., `business_category`, `team`, `region`)
+
+**C. IF RECOVERY ATTEMPT**:
 - Detect `spec.isRecoveryAttempt = true`
 - Read embedded failure data from `spec.failureData` (provided by Remediation Orchestrator)
 - Build `status.enrichmentResults.recoveryContext` from embedded data
 - Set `contextQuality = "complete"` or `"degraded"` based on data availability
 
 **Note**: Context API is DEPRECATED per [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md). Recovery context is now embedded by Remediation Orchestrator.
+
+**Note**: Label detection follows [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0. DetectedLabels are V1.0 priority (no config), CustomLabels are V1.1 (requires Rego ConfigMap).
 
 **Timeout**: 5 seconds
 
@@ -109,7 +123,7 @@ if kubernetesContextRetrieved && businessContextRetrieved {
 }
 ```
 
-**Example CRD Update (Normal Enrichment)**:
+**Example CRD Update (Normal Enrichment with Label Detection)**:
 ```yaml
 status:
   phase: enriching
@@ -127,6 +141,22 @@ status:
     historicalContext:
       previousSignals: 5
       signalFrequency: 2.5
+    # DetectedLabels (V1.0) - Auto-detected from K8s
+    detectedLabels:
+      gitOpsManaged: true
+      gitOpsTool: "argocd"
+      pdbProtected: true
+      hpaEnabled: true
+      stateful: false
+      helmManaged: true
+      networkIsolated: true
+      podSecurityLevel: "restricted"
+      serviceMesh: "istio"
+    # CustomLabels (V1.1) - Extracted via Rego policies
+    customLabels:
+      team: "platform"
+      region: "us-east-1"
+      business_category: "payment-service"
     enrichmentQuality: 0.95
     enrichedAt: "2025-01-15T10:00:00Z"
 ```

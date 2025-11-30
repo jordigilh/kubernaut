@@ -4,12 +4,27 @@
 **Status**: ✅ **APPROVED**
 **Confidence**: 95%
 **Purpose**: Define the hybrid weighted scoring strategy for workflow catalog semantic search that combines strict filtering for mandatory labels with semantic similarity ranking.
-**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 (Mandatory Label Schema)
-**Version**: 2.0
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.3 (Mandatory Label Schema)
+**Version**: 2.1
 
 ---
 
 ## 📝 **Changelog**
+
+### Version 2.1 (2025-11-30)
+**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.3 (6 mandatory labels).
+
+**Changes**:
+- ✅ **6 Mandatory Labels**: Reduced from 7 to 6 (removed `business_category` from mandatory)
+- ✅ **Label Taxonomy Clarified**: Group A (auto-populated) + Group B (Rego-configurable) + Custom
+- ✅ **DetectedLabels (V1.0)**: Auto-detected cluster characteristics (GitOps, PDB, HPA, etc.)
+- ✅ **CustomLabels (V1.1)**: User-defined via Rego policies (includes `business_category`)
+- ✅ **Cross-reference**: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0
+
+**Rationale**:
+- `business_category` is organization-specific, not universally needed
+- DetectedLabels provide auto-detected context without configuration
+- CustomLabels allow user flexibility via Rego policies
 
 ### Version 2.0 (2025-11-27)
 **CRITICAL REVISION**: Removed hardcoded boost/penalty logic for optional labels.
@@ -17,7 +32,7 @@
 **Changes**:
 - ✅ **V1.0 Simplified**: Base semantic similarity only (no boost/penalty)
 - ✅ **Removed hardcoded labels**: `resource-management`, `gitops-tool`, etc. are NOT Kubernaut-enforced
-- ✅ **Clarified label architecture**: Only 7 mandatory labels are Kubernaut-defined; custom labels are customer-defined
+- ✅ **Clarified label architecture**: Only mandatory labels are Kubernaut-defined; custom labels are customer-defined
 - ✅ **Future roadmap**: Configurable label weights deferred to V2.0+
 
 **Rationale**:
@@ -67,36 +82,66 @@
 ### V2.0+ (Future - Configurable Label Weights)
 3. **Configurable Boost/Penalty** for customer-defined labels - weights defined per customer environment
 
-**Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only 7 mandatory labels (DD-WORKFLOW-001). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
+**Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only **6 mandatory labels** (DD-WORKFLOW-001 v1.3). Additionally, **DetectedLabels** are auto-populated (V1.0) and **CustomLabels** are user-defined via Rego (V1.1). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
 
 ---
 
-## 🏗️ **Label Architecture**
+## 🏗️ **Label Architecture (DD-WORKFLOW-001 v1.3)**
 
-### Kubernaut-Enforced Labels (7 Mandatory)
+### Label Taxonomy Overview
 
-Per **DD-WORKFLOW-001**, these labels are Kubernaut-defined with fixed keys:
+| Category | Source | Config Required | Examples |
+|----------|--------|-----------------|----------|
+| **6 Mandatory Labels** | Signal Processing | No (auto/Rego) | `signal_type`, `severity`, `environment` |
+| **DetectedLabels** | Auto-detection from K8s | ❌ No config | `GitOpsManaged`, `PDBProtected`, `HPAEnabled` |
+| **CustomLabels** | Rego policies | ✅ User-defined | `business_category`, `team`, `region` |
+
+### Kubernaut-Enforced Labels (6 Mandatory)
+
+Per **DD-WORKFLOW-001 v1.3**, these labels are Kubernaut-defined with fixed keys:
+
+#### Group A: Auto-Populated (from K8s/Prometheus)
 
 | # | Label | Type | Wildcard | Description |
 |---|-------|------|----------|-------------|
 | 1 | `signal_type` | TEXT | ❌ NO | What happened (OOMKilled, CrashLoopBackOff) |
 | 2 | `severity` | ENUM | ❌ NO | How bad (critical, high, medium, low) |
 | 3 | `component` | TEXT | ❌ NO | What resource (pod, deployment, node) |
+
+#### Group B: Rego-Configurable (users can customize derivation)
+
+| # | Label | Type | Wildcard | Description |
+|---|-------|------|----------|-------------|
 | 4 | `environment` | ENUM | ✅ YES | Where (production, staging, development, test, '*') |
 | 5 | `priority` | ENUM | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
 | 6 | `risk_tolerance` | ENUM | ❌ NO | Remediation policy (low, medium, high) |
-| 7 | `business_category` | TEXT | ✅ YES | Business domain (payment-service, analytics, '*') |
 
-### Customer-Defined Labels (Custom)
+### DetectedLabels (V1.0 - Auto-Detected)
 
-- **Keys**: Defined by customer in Rego policies (e.g., `gitops-tool`, `region`, `team`)
-- **Values**: Defined by customer in Rego policies (e.g., `argocd`, `us-east-1`, `platform`)
+SignalProcessing auto-detects these from K8s resources (NO config required):
+
+| Field | Detection Method | Used For |
+|-------|------------------|----------|
+| `GitOpsManaged` | ArgoCD/Flux annotations | LLM context + workflow filtering |
+| `GitOpsTool` | Specific annotation patterns | Workflow selection preference |
+| `PDBProtected` | PDB exists for workload | Risk assessment |
+| `HPAEnabled` | HPA targets workload | Scaling context |
+| `Stateful` | StatefulSet or PVC | State handling |
+| `HelmManaged` | Helm labels present | Deployment method |
+| `NetworkIsolated` | NetworkPolicy exists | Security context |
+| `PodSecurityLevel` | Namespace PSS label | Security posture |
+| `ServiceMesh` | Istio/Linkerd sidecar | Traffic management |
+
+### CustomLabels (V1.1 - User-Defined)
+
+- **Keys**: Defined by customer in Rego policies (e.g., `business_category`, `team`, `region`)
+- **Values**: Defined by customer in Rego policies (e.g., `payment-service`, `platform`, `us-east-1`)
 - **Matching**: Customer's Rego labels matched against customer's workflow labels
 - **Kubernaut Role**: Match labels; do NOT define label names or weights
 
 ### Why No Hardcoded Boost/Penalty in V1.0
 
-| Aspect | V1.0 (DD-WORKFLOW-004 v1.x) | V2.0 (DD-WORKFLOW-004 v2.0) |
+| Aspect | V1.0 (DD-WORKFLOW-004 v1.x) | V2.0+ (Future) |
 |--------|------------------------------|------------------------------|
 | **Label Keys** | Hardcoded (`resource-management`, `gitops-tool`) | Customer-defined via Rego |
 | **Weights** | Fixed (0.10, 0.05) | Customer-configurable |
@@ -107,27 +152,32 @@ Per **DD-WORKFLOW-001**, these labels are Kubernaut-defined with fixed keys:
 
 ## Problem Statement
 
-### The Challenge: Customer-Defined Labels
+### The Challenge: Multi-Tier Label Architecture
 
 **Scenario**: A signal is detected for a payment service in production that is managed by GitOps (ArgoCD).
 
-**Labels Detected** (via customer's Rego policies):
-- `signal-type`: "OOMKilled" (from LLM RCA) - **Mandatory**
-- `severity`: "critical" (from LLM RCA) - **Mandatory**
-- `environment`: "production" (from namespace label) - **Mandatory**
-- `business-category`: "revenue-critical" (from namespace label) - **Mandatory**
-- `priority`: "P0" (derived from business-category + severity) - **Mandatory**
-- `risk-tolerance`: "low" (derived from environment) - **Mandatory**
-- `gitops-tool`: "argocd" (from deployment annotation) - **Custom (customer-defined)**
-- `region`: "us-east-1" (from namespace label) - **Custom (customer-defined)**
+**Labels Detected** (multi-tier):
+- `signal-type`: "OOMKilled" (from LLM RCA) - **Mandatory (Group A)**
+- `severity`: "critical" (from LLM RCA) - **Mandatory (Group A)**
+- `component`: "pod" (from K8s) - **Mandatory (Group A)**
+- `environment`: "production" (from Rego) - **Mandatory (Group B)**
+- `priority`: "P0" (from Rego) - **Mandatory (Group B)**
+- `risk-tolerance`: "low" (from Rego) - **Mandatory (Group B)**
+- `GitOpsManaged`: true (auto-detected) - **DetectedLabels**
+- `GitOpsTool`: "argocd" (auto-detected) - **DetectedLabels**
+- `PDBProtected`: true (auto-detected) - **DetectedLabels**
+- `business-category`: "payment-service" (from Rego) - **CustomLabels**
+- `region`: "us-east-1" (from Rego) - **CustomLabels**
+- `team`: "platform" (from Rego) - **CustomLabels**
 
 **Key Insight**:
-- The 7 mandatory labels are Kubernaut-enforced (DD-WORKFLOW-001)
-- Custom labels like `gitops-tool`, `region`, `team` are **customer-defined** via Rego policies
-- Both label **keys** and **values** are customer-controlled
+- The **6 mandatory labels** are Kubernaut-enforced (DD-WORKFLOW-001 v1.3)
+- **DetectedLabels** are auto-detected from K8s without configuration (V1.0 priority)
+- **CustomLabels** like `business-category`, `region`, `team` are **user-defined** via Rego (V1.1)
+- Both label **keys** and **values** for CustomLabels are customer-controlled
 - Kubernaut cannot hardcode boost/penalty weights for labels that vary per customer
 
-**V1.0 Solution**: Use base semantic similarity with mandatory label filtering only.
+**V1.0 Solution**: Use base semantic similarity with mandatory label filtering + DetectedLabels context.
 
 **V2.0+ Solution**: Allow customers to configure label weights via configuration.
 
