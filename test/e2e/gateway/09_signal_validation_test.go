@@ -27,7 +27,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // Test 09: Signal Validation & Rejection (BR-GATEWAY-003, BR-GATEWAY-043)
@@ -37,13 +37,13 @@ import (
 var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Ordered, func() {
 	var (
 		testCancel context.CancelFunc
-		testLogger *zap.Logger
+		testLogger logr.Logger
 		httpClient *http.Client
 	)
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 3*time.Minute)
-		testLogger = logger.With(zap.String("test", "signal-validation"))
+		testLogger = logger.WithValues("test", "signal-validation"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

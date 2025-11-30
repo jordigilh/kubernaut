@@ -26,7 +26,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,14 +38,14 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 	)
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "fingerprint-stability"))
+		testLogger = logger.WithValues("test", "fingerprint-stability"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -53,7 +53,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		testNamespace = GenerateUniqueNamespace("fingerprint")
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
+		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
@@ -61,8 +61,8 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 		k8sClient := getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -73,7 +73,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 
 		if CurrentSpecReport().Failed() {
 			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
@@ -85,7 +85,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 			return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
@@ -160,7 +160,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				return nil
 			}, 10*time.Second, 1*time.Second).Should(Succeed(), "First alert should be accepted")
 
-			testLogger.Info("✅ First alert sent", zap.String("fingerprint", firstFingerprint))
+			testLogger.Info("✅ First alert sent", "fingerprint", firstFingerprint)
 
 			// Wait a moment before sending second alert
 			time.Sleep(500 * time.Millisecond)
@@ -195,7 +195,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				return nil
 			}, 10*time.Second, 1*time.Second).Should(Succeed(), "Second alert should be accepted")
 
-			testLogger.Info("✅ Second alert sent", zap.String("fingerprint", secondFingerprint))
+			testLogger.Info("✅ Second alert sent", "fingerprint", secondFingerprint)
 
 			testLogger.Info("Step 3: Verify fingerprints are identical")
 			Expect(firstFingerprint).ToNot(BeEmpty(), "First fingerprint should not be empty")
@@ -316,8 +316,8 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				"Different alerts should generate different fingerprints (BR-GATEWAY-029)")
 
 			testLogger.Info("✅ Fingerprints are different - proper differentiation confirmed",
-				zap.String("fingerprint1", fingerprint1),
-				zap.String("fingerprint2", fingerprint2))
+				"fingerprint1", fingerprint1,
+				"fingerprint2", fingerprint2)
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			testLogger.Info("✅ Test 11b PASSED: Fingerprint Differentiation")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -386,14 +386,14 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				k8sClient := getKubernetesClientSafe()
 				if k8sClient == nil {
 					if err := GetLastK8sClientError(); err != nil {
-						testLogger.Debug("Failed to get K8s client", zap.Error(err))
+						testLogger.Debug("Failed to get K8s client", "error", err)
 					} else {
 						testLogger.Debug("Failed to get K8s client (unknown error)")
 					}
 					return -1
 				}
 				if err := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace)); err != nil {
-					testLogger.Debug("Failed to list CRDs", zap.Error(err))
+					testLogger.Debug("Failed to list CRDs", "error", err)
 					return -1
 				}
 
@@ -420,8 +420,8 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 
 			Expect(targetCRD).ToNot(BeNil(), "Should find CRD for alert")
 			testLogger.Info("✅ CRD found",
-				zap.String("name", targetCRD.Name),
-				zap.Int("occurrenceCount", targetCRD.Spec.Deduplication.OccurrenceCount))
+				"name", targetCRD.Name,
+				"occurrenceCount", targetCRD.Spec.Deduplication.OccurrenceCount)
 
 			// With storm aggregation, the occurrence count should reflect multiple alerts
 			Expect(targetCRD.Spec.Deduplication.OccurrenceCount).To(BeNumerically(">=", 1),

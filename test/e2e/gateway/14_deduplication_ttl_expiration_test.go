@@ -26,7 +26,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,14 +38,14 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 	)
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
-		testLogger = logger.With(zap.String("test", "dedup-ttl"))
+		testLogger = logger.WithValues("test", "dedup-ttl"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -53,7 +53,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		testNamespace = GenerateUniqueNamespace("dedup-ttl")
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
+		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
@@ -61,8 +61,8 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 		k8sClient := getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -73,7 +73,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 
 		if CurrentSpecReport().Failed() {
 			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
@@ -85,7 +85,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 			return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
@@ -161,13 +161,13 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 			k8sClient := getKubernetesClientSafe()
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to get K8s client", zap.Error(err))
+					testLogger.Debug("Failed to get K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.Debug("Failed to list CRDs", "error", err)
 				return -1
 			}
 			count := 0
@@ -181,7 +181,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
 			"At least one CRD should be created from initial alerts")
 
-		testLogger.Info("✅ Initial CRD created", zap.Int("count", initialCRDCount))
+		testLogger.Info("✅ Initial CRD created", "count", initialCRDCount)
 
 		// Note: In E2E environment, the TTL is typically configured to be short (e.g., 5 seconds)
 		// for testing purposes. In production, this would be 5 minutes.
@@ -241,13 +241,13 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 			k8sClient := getKubernetesClientSafe()
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to get K8s client", zap.Error(err))
+					testLogger.Debug("Failed to get K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.Debug("Failed to list CRDs", "error", err)
 				return -1
 			}
 			count := 0

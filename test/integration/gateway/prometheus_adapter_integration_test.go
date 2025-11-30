@@ -26,9 +26,9 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -59,15 +59,16 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		testServer    *httptest.Server
 		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
-		logger        *zap.Logger
-		productionNS  string // Dynamic namespace names for parallel execution
+		logger        logr.Logger // DD-005: Use logr.Logger
+		productionNS  string      // Dynamic namespace names for parallel execution
 		stagingNS     string
 		developmentNS string
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
+		_ = logger              // Suppress unused variable warning
 
 		// Setup test infrastructure using helpers
 		redisClient = SetupRedisTestClient(ctx)
@@ -130,8 +131,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		}
 
 		logger.Info("Test setup complete",
-			zap.String("test_server_url", testServer.URL),
-			zap.String("redis_addr", redisClient.Client.Options().Addr),
+			"test_server_url", testServer.URL,
+			"redis_addr", redisClient.Client.Options().Addr,
 		)
 	})
 

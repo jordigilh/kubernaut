@@ -26,7 +26,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,14 +38,14 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 	)
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute) // Longer timeout for restart test
-		testLogger = logger.With(zap.String("test", "gateway-restart"))
+		testLogger = logger.WithValues("test", "gateway-restart"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -54,7 +54,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		testNamespace = GenerateUniqueNamespace("restart")
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
+		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
@@ -62,8 +62,8 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 		k8sClient := getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -74,7 +74,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 
 		if CurrentSpecReport().Failed() {
 			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
@@ -86,7 +86,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 			return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
@@ -165,7 +165,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 
 		if len(podList.Items) > 0 {
 			pod := &podList.Items[0]
-			testLogger.Info("Deleting Gateway pod to trigger restart", zap.String("pod", pod.Name))
+			testLogger.Info("Deleting Gateway pod to trigger restart", "pod", pod.Name)
 			err = k8sClient.Delete(testCtx, pod)
 			Expect(err).ToNot(HaveOccurred(), "Should delete Gateway pod")
 		} else {
@@ -240,14 +240,14 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 			k8sClient := getKubernetesClientSafe()
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to get K8s client", zap.Error(err))
+					testLogger.Debug("Failed to get K8s client", "error", err)
 				} else {
 					testLogger.Debug("Failed to get K8s client (unknown error)")
 				}
 				return -1
 			}
 			if err := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.Debug("Failed to list CRDs", "error", err)
 				return -1
 			}
 			return len(crdList.Items)
@@ -255,7 +255,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 			"At least one CRD should be created after Gateway restart (BR-GATEWAY-010)")
 
 		testLogger.Info("✅ CRDs created after restart",
-			zap.Int("count", len(crdList.Items)))
+			"count", len(crdList.Items))
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("✅ Test 12 PASSED: Gateway Restart Recovery")

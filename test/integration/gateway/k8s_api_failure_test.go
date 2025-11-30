@@ -21,10 +21,9 @@ import (
 	"errors"
 	"os"
 
-	"github.com/go-logr/zapr"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	// DD-GATEWAY-004: kubernetes import removed - no longer needed
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -64,14 +63,14 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 	var (
 		ctx              context.Context
 		crdCreator       *processing.CRDCreator
-		logger           *zap.Logger
+		logger           logr.Logger // DD-005: Use logr.Logger
 		failingK8sClient *ErrorInjectableK8sClient
 		testSignal       *types.NormalizedSignal
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
 
 		// Check if running in CI without K8s
 		if os.Getenv("SKIP_K8S_INTEGRATION") == "true" {
@@ -88,9 +87,8 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 		wrappedK8sClient := k8s.NewClient(failingK8sClient)
 
 		// Create CRD creator with failing client (DD-005: logr.Logger)
-		logrLogger := zapr.NewLogger(logger)
 		retryConfig := config.DefaultRetrySettings()
-		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logrLogger, nil, "default", &retryConfig)
+		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, nil, "default", &retryConfig)
 
 		// Test signal
 		testSignal = &types.NormalizedSignal{

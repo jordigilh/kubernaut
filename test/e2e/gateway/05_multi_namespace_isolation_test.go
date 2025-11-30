@@ -29,7 +29,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -47,7 +47,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 	var (
 		testCtx        context.Context
 		testCancel     context.CancelFunc
-		testLogger     *zap.Logger
+		testLogger     logr.Logger
 		testNamespace1 string
 		testNamespace2 string
 		httpClient     *http.Client
@@ -56,7 +56,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "multi-namespace"))
+		testLogger = logger.WithValues("test", "multi-namespace"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -70,8 +70,8 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 		testNamespace2 = fmt.Sprintf("tenant-b-%d-%d", processID, timestamp)
 
 		testLogger.Info("Creating test namespaces...",
-			zap.String("namespace1", testNamespace1),
-			zap.String("namespace2", testNamespace2))
+			"namespace1", testNamespace1,
+			"namespace2", testNamespace2)
 
 		k8sClient = getKubernetesClient()
 
@@ -97,8 +97,8 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 
 		if CurrentSpecReport().Failed() {
 			testLogger.Warn("⚠️  Test FAILED - Preserving namespaces for debugging",
-				zap.String("namespace1", testNamespace1),
-				zap.String("namespace2", testNamespace2))
+				"namespace1", testNamespace1,
+				"namespace2", testNamespace2)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -172,7 +172,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.Debug("Failed to create K8s client", "error", err)
 				} else {
 					testLogger.Debug("Failed to create K8s client (unknown error)")
 				}
@@ -181,7 +181,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace1))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs in NS1", zap.Error(err))
+				testLogger.Debug("Failed to list CRDs in NS1", "error", err)
 				return -1
 			}
 			crdCountNS1 = len(crdList.Items)
@@ -201,7 +201,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.Debug("Failed to create K8s client", "error", err)
 				} else {
 					testLogger.Debug("Failed to create K8s client (unknown error)")
 				}
@@ -210,7 +210,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace2))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs in NS2", zap.Error(err))
+				testLogger.Debug("Failed to list CRDs in NS2", "error", err)
 				return -1
 			}
 			crdCountNS2 = len(crdList.Items)

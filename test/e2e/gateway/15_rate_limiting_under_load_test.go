@@ -28,7 +28,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -37,14 +37,14 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 	)
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "rate-limiting"))
+		testLogger = logger.WithValues("test", "rate-limiting"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -52,7 +52,7 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		testNamespace = GenerateUniqueNamespace("rate-limit")
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
+		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
@@ -60,8 +60,8 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 		k8sClient := getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -72,7 +72,7 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 
 		if CurrentSpecReport().Failed() {
 			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
@@ -84,7 +84,7 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 			return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
@@ -242,7 +242,7 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 			}
 
 			testLogger.Info("Step 2: Check for Retry-After headers",
-				zap.Int("rateLimitedCount", len(rateLimitedResponses)))
+				"rateLimitedCount", len(rateLimitedResponses))
 
 			if len(rateLimitedResponses) > 0 {
 				// Check if any rate-limited response has Retry-After header
@@ -251,7 +251,7 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 					if resp.Header.Get("Retry-After") != "" {
 						hasRetryAfter = true
 						testLogger.Info("Found Retry-After header",
-							zap.String("value", resp.Header.Get("Retry-After")))
+							"value", resp.Header.Get("Retry-After"))
 					}
 					resp.Body.Close()
 				}

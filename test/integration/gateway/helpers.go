@@ -408,20 +408,20 @@ type TestServerOptions struct {
 	IdleTimeout  time.Duration // Time to keep idle connections open
 
 	// Processing settings
-	DeduplicationTTL  time.Duration // TTL for deduplication fingerprints
-	StormRateThreshold int          // Threshold for storm detection
-	RateLimitRPM      int          // Rate limit requests per minute
+	DeduplicationTTL   time.Duration // TTL for deduplication fingerprints
+	StormRateThreshold int           // Threshold for storm detection
+	RateLimitRPM       int           // Rate limit requests per minute
 }
 
 // DefaultTestServerOptions returns default options for integration tests
 func DefaultTestServerOptions() TestServerOptions {
 	return TestServerOptions{
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		DeduplicationTTL:  5 * time.Second,
+		ReadTimeout:        5 * time.Second,
+		WriteTimeout:       10 * time.Second,
+		IdleTimeout:        120 * time.Second,
+		DeduplicationTTL:   5 * time.Second,
 		StormRateThreshold: 2,
-		RateLimitRPM:      20,
+		RateLimitRPM:       20,
 	}
 }
 
