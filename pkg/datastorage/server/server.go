@@ -31,7 +31,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
@@ -53,7 +53,7 @@ import (
 type Server struct {
 	handler    *Handler
 	db         *sql.DB
-	logger     *zap.Logger
+	logger     logr.Logger
 	httpServer *http.Server
 
 	// DD-007: Graceful shutdown coordination flag
@@ -100,7 +100,7 @@ func NewServer(
 	dbConnStr string,
 	redisAddr string,
 	redisPassword string,
-	logger *zap.Logger,
+	logger logr.Logger,
 	cfg *Config,
 ) (*Server, error) {
 	// Connect to PostgreSQL using pgx driver (DD-010)
@@ -122,8 +122,8 @@ func NewServer(
 	db.SetConnMaxIdleTime(10 * time.Minute) // Idle connection timeout
 
 	logger.Info("PostgreSQL connection established",
-		zap.Int("max_open_conns", 25),
-		zap.Int("max_idle_conns", 5),
+		"max_open_conns", 25,
+		"max_idle_conns", 5,
 	)
 
 	// Connect to Redis for DLQ (DD-009)
@@ -137,11 +137,11 @@ func NewServer(
 	}
 
 	logger.Info("Redis connection established",
-		zap.String("addr", redisAddr),
+		"addr", redisAddr,
 	)
 
 	// Create audit write dependencies (BR-STORAGE-001 to BR-STORAGE-020)
-	logger.Debug("Creating audit write dependencies...")
+	logger.V(1).Info("Creating audit write dependencies...")
 	repo := repository.NewNotificationAuditRepository(db, logger)
 	dlqClient, err := dlq.NewClient(redisClient, logger)
 	if err != nil {
@@ -149,34 +149,36 @@ func NewServer(
 	}
 	validator := validation.NewNotificationAuditValidator()
 
-	logger.Debug("Audit write dependencies created",
-		zap.Bool("repo_nil", repo == nil),
-		zap.Bool("dlq_client_nil", dlqClient == nil),
-		zap.Bool("validator_nil", validator == nil))
+	logger.V(1).Info("Audit write dependencies created",
+		"repo_nil", repo == nil,
+		"dlq_client_nil", dlqClient == nil,
+		"validator_nil", validator == nil)
 
 	// Create ADR-033 action trace repository (BR-STORAGE-031-01, BR-STORAGE-031-02)
-	logger.Debug("Creating ADR-033 action trace repository...")
+	logger.V(1).Info("Creating ADR-033 action trace repository...")
 	actionTraceRepo := repository.NewActionTraceRepository(db, logger)
-	logger.Debug("ADR-033 action trace repository created",
-		zap.Bool("action_trace_repo_nil", actionTraceRepo == nil))
+	logger.V(1).Info("ADR-033 action trace repository created",
+		"action_trace_repo_nil", actionTraceRepo == nil)
 
 	// Create BR-STORAGE-033: Unified audit events repository (ADR-034)
-	logger.Debug("Creating ADR-034 unified audit events repository...")
+	logger.V(1).Info("Creating ADR-034 unified audit events repository...")
 	auditEventsRepo := repository.NewAuditEventsRepository(db, logger)
-	logger.Debug("ADR-034 audit events repository created",
-		zap.Bool("audit_events_repo_nil", auditEventsRepo == nil))
+	logger.V(1).Info("ADR-034 audit events repository created",
+		"audit_events_repo_nil", auditEventsRepo == nil)
 
 	// Create BR-STORAGE-012: Self-auditing audit store (DD-STORAGE-012)
 	// Uses InternalAuditClient to avoid circular dependency (cannot call own REST API)
-	logger.Debug("Creating self-auditing audit store (DD-STORAGE-012)...")
+	logger.V(1).Info("Creating self-auditing audit store (DD-STORAGE-012)...")
 	internalClient := audit.NewInternalAuditClient(db)
 
-	// Create audit store with zap logger (DD-005: All services use zap)
+	// Create audit store with logr logger (DD-005 v2.0: Unified logging interface)
+	// Use zapr adapter to convert zap.Logger to logr.Logger for shared libraries
+	logrLogger := zapr.NewLogger(logger)
 	auditStore, err := audit.NewBufferedStore(
 		internalClient,
 		audit.DefaultConfig(),
 		"datastorage", // service name
-		logger,        // Use server's zap logger
+		logrLogger,    // Use logr.Logger via zapr adapter
 	)
 	if err != nil {
 		_ = db.Close() // Clean up DB connection
@@ -184,21 +186,21 @@ func NewServer(
 	}
 
 	logger.Info("Self-auditing audit store initialized (DD-STORAGE-012)",
-		zap.Int("buffer_size", audit.DefaultConfig().BufferSize),
-		zap.Int("batch_size", audit.DefaultConfig().BatchSize),
-		zap.Duration("flush_interval", audit.DefaultConfig().FlushInterval),
-		zap.Int("max_retries", audit.DefaultConfig().MaxRetries),
+		"buffer_size", audit.DefaultConfig(.BufferSize),
+		"batch_size", audit.DefaultConfig(.BatchSize),
+		"flush_interval", audit.DefaultConfig(.FlushInterval),
+		"max_retries", audit.DefaultConfig(.MaxRetries),
 	)
 
 	// Create Prometheus metrics (BR-STORAGE-019, GAP-10)
 	metrics := dsmetrics.NewMetrics("datastorage", "")
 
 	logger.Info("Prometheus metrics initialized",
-		zap.String("namespace", "datastorage"),
+		"namespace", "datastorage",
 	)
 
 	// BR-STORAGE-013, BR-STORAGE-014: Create workflow catalog dependencies
-	logger.Debug("Creating workflow catalog dependencies...")
+	logger.V(1).Info("Creating workflow catalog dependencies...")
 	sqlxDB := sqlx.NewDb(db, "pgx") // Wrap *sql.DB with sqlx for workflow repository
 
 	// BR-STORAGE-014: Create embedding client with Redis caching
@@ -209,11 +211,12 @@ func NewServer(
 	}
 
 	// Create Redis cache for embeddings (24-hour TTL)
+	// DD-005 v2.0: Use zapr adapter to convert zap.Logger to logr.Logger for shared libraries
 	redisOpts := &redis.Options{
 		Addr:     redisAddr,
 		Password: redisPassword,
 	}
-	redisSharedClient := rediscache.NewClient(redisOpts, logger)
+	redisSharedClient := rediscache.NewClient(redisOpts, logrLogger) // Use logr.Logger via zapr adapter
 	embeddingCache := rediscache.NewCache[[]float32](redisSharedClient, "embeddings", 24*time.Hour)
 
 	// Create embedding client
@@ -224,12 +227,12 @@ func NewServer(
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := embeddingClient.Health(ctx); err != nil {
-			logger.Warn("Embedding service health check failed (will retry on first use)",
-				zap.Error(err),
-				zap.String("url", embeddingBaseURL))
+			logger.Info("Embedding service health check failed (will retry on first use)",
+				"error", err,
+				"url", embeddingBaseURL)
 		} else {
 			logger.Info("Embedding service healthy",
-				zap.String("url", embeddingBaseURL))
+				"url", embeddingBaseURL)
 		}
 	}()
 
@@ -239,10 +242,10 @@ func NewServer(
 	// Keep placeholder service for backward compatibility (if needed elsewhere)
 	embeddingService := embedding.NewPlaceholderService(logger)
 
-	logger.Debug("Workflow catalog dependencies created",
-		zap.Bool("workflow_repo_nil", workflowRepo == nil),
-		zap.Bool("embedding_client_nil", embeddingClient == nil),
-		zap.Bool("embedding_service_nil", embeddingService == nil))
+	logger.V(1).Info("Workflow catalog dependencies created",
+		"workflow_repo_nil", workflowRepo == nil,
+		"embedding_client_nil", embeddingClient == nil,
+		"embedding_service_nil", embeddingService == nil)
 
 	// Create database adapter for READ API handlers
 	dbAdapter := adapter.NewDBAdapter(db, logger)
@@ -305,11 +308,11 @@ func (s *Server) Handler() http.Handler {
 	r.Handle("/metrics", promhttp.Handler())
 
 	// API v1 routes
-	s.logger.Debug("Setting up API v1 routes",
-		zap.Bool("handler_nil", s.handler == nil),
-		zap.Bool("repository_nil", s.repository == nil),
-		zap.Bool("validator_nil", s.validator == nil),
-		zap.Bool("dlq_client_nil", s.dlqClient == nil))
+	s.logger.V(1).Info("Setting up API v1 routes",
+		"handler_nil", s.handler == nil,
+		"repository_nil", s.repository == nil,
+		"validator_nil", s.validator == nil,
+		"dlq_client_nil", s.dlqClient == nil)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// BR-STORAGE-021: Incident query endpoints (READ API)
@@ -328,24 +331,24 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)
 
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
-		s.logger.Debug("Registering POST /api/v1/audit/notifications handler")
+		s.logger.V(1).Info("Registering POST /api/v1/audit/notifications handler")
 		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
 
 		// BR-STORAGE-033: Unified audit events API (ADR-034)
 		// DD-STORAGE-010: Query API with offset-based pagination
-		s.logger.Debug("Registering /api/v1/audit/events handlers (ADR-034, DD-STORAGE-010)")
+		s.logger.V(1).Info("Registering /api/v1/audit/events handlers (ADR-034, DD-STORAGE-010)")
 		r.Post("/audit/events", s.handleCreateAuditEvent)
 		r.Get("/audit/events", s.handleQueryAuditEvents)
 
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
 		// DD-STORAGE-008: Workflow catalog schema
-		s.logger.Debug("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
+		s.logger.V(1).Info("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
 		r.Post("/workflows/search", s.handler.HandleWorkflowSearch)
 		r.Get("/workflows", s.handler.HandleListWorkflows)
 	})
 
-	s.logger.Debug("API v1 routes configured successfully")
+	s.logger.V(1).Info("API v1 routes configured successfully")
 
 	return r
 }
@@ -357,7 +360,7 @@ func (s *Server) Start() error {
 	s.httpServer.Handler = r
 
 	s.logger.Info("Starting Data Storage Service server",
-		zap.String("addr", s.httpServer.Addr),
+		"addr", s.httpServer.Addr,
 	)
 
 	return s.httpServer.ListenAndServe()
@@ -388,7 +391,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	s.logger.Info("DD-007 Kubernetes-aware graceful shutdown complete - all resources closed",
-		zap.String("dd", "DD-007-complete-success"))
+		"dd", "DD-007-complete-success")
 	return nil
 }
 
@@ -397,27 +400,27 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) shutdownStep1SetFlag() {
 	s.isShuttingDown.Store(true)
 	s.logger.Info("Shutdown flag set - readiness probe now returns 503",
-		zap.String("effect", "kubernetes_will_remove_from_endpoints"),
-		zap.String("dd", "DD-007-step-1"))
+		"effect", "kubernetes_will_remove_from_endpoints",
+		"dd", "DD-007-step-1")
 }
 
 // shutdownStep2WaitForPropagation waits for Kubernetes endpoint removal to propagate
 // DD-007 STEP 2: Industry best practice is 5 seconds (Kubernetes typically takes 1-3s)
 func (s *Server) shutdownStep2WaitForPropagation() {
 	s.logger.Info("Waiting for Kubernetes endpoint removal to propagate",
-		zap.Duration("delay", endpointRemovalPropagationDelay),
-		zap.String("dd", "DD-007-step-2"))
+		"delay", endpointRemovalPropagationDelay,
+		"dd", "DD-007-step-2")
 	time.Sleep(endpointRemovalPropagationDelay)
 	s.logger.Info("Endpoint propagation complete - now draining connections",
-		zap.String("dd", "DD-007-step-2-complete"))
+		"dd", "DD-007-step-2-complete")
 }
 
 // shutdownStep3DrainConnections drains in-flight HTTP connections
 // DD-007 STEP 3: Gracefully close HTTP connections with timeout
 func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 	s.logger.Info("Draining in-flight HTTP connections",
-		zap.Duration("drain_timeout", drainTimeout),
-		zap.String("dd", "DD-007-step-3"))
+		"drain_timeout", drainTimeout,
+		"dd", "DD-007-step-3")
 
 	// Create timeout context for draining
 	drainCtx, cancel := context.WithTimeout(context.Background(), drainTimeout)
@@ -432,13 +435,13 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 
 	if err := s.httpServer.Shutdown(drainCtx); err != nil {
 		s.logger.Error("Error during HTTP connection drain",
-			zap.Error(err),
-			zap.String("dd", "DD-007-step-3-error"))
+			"error", err,
+			"dd", "DD-007-step-3-error")
 		return fmt.Errorf("HTTP connection drain failed: %w", err)
 	}
 
 	s.logger.Info("HTTP connections drained successfully",
-		zap.String("dd", "DD-007-step-3-complete"))
+		"dd", "DD-007-step-3-complete")
 	return nil
 }
 
@@ -446,34 +449,34 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 // DD-007 STEP 4: Clean up database connections and flush audit events
 func (s *Server) shutdownStep4CloseResources() error {
 	s.logger.Info("Closing external resources (PostgreSQL, audit store)",
-		zap.String("dd", "DD-007-step-4"))
+		"dd", "DD-007-step-4")
 
 	// BR-STORAGE-014: Flush remaining audit events before closing database
 	// This ensures no audit traces are lost during graceful shutdown
 	if s.auditStore != nil {
 		s.logger.Info("Flushing remaining audit events (DD-STORAGE-012)",
-			zap.String("dd", "DD-007-step-4-audit-flush"))
+			"dd", "DD-007-step-4-audit-flush")
 		if err := s.auditStore.Close(); err != nil {
 			s.logger.Error("Failed to flush audit events",
-				zap.Error(err),
-				zap.String("dd", "DD-007-step-4-audit-error"))
+				"error", err,
+				"dd", "DD-007-step-4-audit-error")
 			// Continue with shutdown even if audit flush fails
 			// (audit failures should not block graceful shutdown)
 		} else {
 			s.logger.Info("Audit events flushed successfully",
-				zap.String("dd", "DD-007-step-4-audit-complete"))
+				"dd", "DD-007-step-4-audit-complete")
 		}
 	}
 
 	// Close PostgreSQL connection
 	if err := s.db.Close(); err != nil {
 		s.logger.Error("Failed to close PostgreSQL connection",
-			zap.Error(err),
-			zap.String("dd", "DD-007-step-4-error"))
+			"error", err,
+			"dd", "DD-007-step-4-error")
 		return fmt.Errorf("failed to close PostgreSQL: %w", err)
 	}
 
 	s.logger.Info("All external resources closed",
-		zap.String("dd", "DD-007-step-4-complete"))
+		"dd", "DD-007-step-4-complete")
 	return nil
 }
