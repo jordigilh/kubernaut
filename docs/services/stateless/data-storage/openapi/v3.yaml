@@ -1224,8 +1224,8 @@ components:
         signal_type:
           type: string
           description: |
-            DD-WORKFLOW-002 v3.0: Single signal type this workflow handles.
-            Extracted from labels["signal-type"].
+            DD-WORKFLOW-002 v3.3: Single signal type this workflow handles.
+            Stored as structured column (snake_case per DD-WORKFLOW-001 v1.6).
           example: "OOMKilled"
         container_image:
           type: string

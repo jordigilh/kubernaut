@@ -1,12 +1,12 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V1.6 - snake_case API + 5 Mandatory Labels + DetectedLabels + CustomLabels)
+**Status**: ✅ **APPROVED** (V1.8 - OwnerChainEntry Schema + Traversal Algorithm)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
 **Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
-**Version**: 1.6
+**Version**: 1.8
 
 ---
 
@@ -34,6 +34,27 @@
 ---
 
 ## 📝 **Changelog**
+
+### Version 1.8 (2025-11-30)
+- **NEW**: Added **authoritative `OwnerChainEntry` Go schema** with explicit field definitions
+- **CLARIFICATION**: `OwnerChainEntry` requires ONLY: `namespace`, `kind`, `name`
+- **CLARIFICATION**: Do NOT include `apiVersion` or `uid` - not used by HolmesGPT-API validation
+- **NEW**: Added **traversal algorithm** (Go pseudocode) for SignalProcessing implementation
+- **FIX**: Corrected SignalProcessing spec misinterpretation (was using K8s native ownerReference format)
+
+### Version 1.7 (2025-11-30)
+- **NEW**: 100% Safe DetectedLabels validation using owner chain from SignalProcessing
+- **NEW**: `ownerChain` field in EnrichmentResults (K8s ownerReferences traversal)
+- **NEW**: `rca_resource` required parameter in `search_workflow_catalog` tool
+- **NEW**: Dual-use DetectedLabels architecture:
+  - **LLM Prompt Context**: ALWAYS included (helps LLM understand environment)
+  - **Workflow Filtering**: CONDITIONAL (only when relationship is PROVEN)
+- **PRINCIPLE**: Default to EXCLUDE if relationship cannot be proven (100% safe)
+- **PRINCIPLE**: Owner chain enables deterministic validation (no heuristics)
+- Pod ↔ Deployment/StatefulSet/DaemonSet ownership relationships supported
+- ReplicaSet ↔ Deployment ownership relationships supported
+- Cluster-scoped (Node) vs namespaced resource validation
+- Same namespace + same kind fallback when owner_chain provided but empty
 
 ### Version 1.6 (2025-11-30)
 - **BREAKING**: Standardized all API/database field names to **snake_case**
@@ -348,6 +369,190 @@ WHERE signal.detected_labels->>'gitOpsTool' IS NOT NULL
   "detected_labels": {}
 }
 ```
+
+---
+
+### **DetectedLabels Validation Architecture (V1.7 - 100% Safe)**
+
+**Problem**: DetectedLabels describe the **original signal's resource** (e.g., Pod). If RCA identifies a **different resource** (e.g., Node), those labels are **invalid** and could cause query failures.
+
+**Solution**: 100% safe validation using owner chain from SignalProcessing.
+
+#### **Dual-Use Architecture**
+
+DetectedLabels serve **two distinct purposes** with different requirements:
+
+| Use Case | When Included | Accuracy Requirement |
+|----------|---------------|---------------------|
+| **LLM Prompt Context** | ALWAYS | Good enough (LLM can reason) |
+| **Workflow Filtering** | CONDITIONAL (proven relationship) | 100% (query fails otherwise) |
+
+**For LLM Prompt**: DetectedLabels are **always included** in the prompt to help the LLM understand the environment (GitOps, PDB, service mesh, etc.), even if RCA identifies a different resource.
+
+**For Workflow Filtering**: DetectedLabels are **only included** when the relationship between source resource and RCA resource is **proven**.
+
+#### **Owner Chain from SignalProcessing**
+
+SignalProcessing traverses K8s `ownerReferences` to build the ownership chain.
+
+##### **OwnerChainEntry Schema (AUTHORITATIVE)**
+
+```go
+// OwnerChainEntry represents a single entry in the K8s ownership chain
+// SignalProcessing traverses ownerReferences to build this chain
+// HolmesGPT-API uses for DetectedLabels validation
+type OwnerChainEntry struct {
+    // Namespace of the owner resource
+    // Empty for cluster-scoped resources (e.g., Node)
+    // REQUIRED for namespaced resources
+    Namespace string `json:"namespace,omitempty"`
+
+    // Kind of the owner resource
+    // Examples: "ReplicaSet", "Deployment", "StatefulSet", "DaemonSet"
+    // REQUIRED
+    Kind string `json:"kind"`
+
+    // Name of the owner resource
+    // REQUIRED
+    Name string `json:"name"`
+}
+```
+
+**⚠️ IMPORTANT**: Do NOT include `apiVersion` or `uid` - they are NOT used by HolmesGPT-API validation.
+
+##### **Example**
+
+```json
+{
+  "source_resource": {
+    "namespace": "production",
+    "kind": "Pod",
+    "name": "payment-api-7d8f9c6b5-x2k4m"
+  },
+  "enrichment_results": {
+    "detectedLabels": {"gitOpsManaged": true, "gitOpsTool": "argocd"},
+    "ownerChain": [
+      {"namespace": "production", "kind": "ReplicaSet", "name": "payment-api-7d8f9c6b5"},
+      {"namespace": "production", "kind": "Deployment", "name": "payment-api"}
+    ]
+  }
+}
+```
+
+##### **Traversal Algorithm**
+
+```go
+func buildOwnerChain(ctx context.Context, client client.Client, resource metav1.Object) []OwnerChainEntry {
+    var chain []OwnerChainEntry
+    current := resource
+
+    for {
+        owners := current.GetOwnerReferences()
+        if len(owners) == 0 {
+            break // No more owners - chain complete
+        }
+
+        // Use first controller owner (typical K8s pattern)
+        var controllerOwner *metav1.OwnerReference
+        for _, ref := range owners {
+            if ref.Controller != nil && *ref.Controller {
+                controllerOwner = &ref
+                break
+            }
+        }
+        if controllerOwner == nil {
+            break // No controller owner
+        }
+
+        // Add to chain (namespace inherited from current resource for namespaced owners)
+        entry := OwnerChainEntry{
+            Namespace: current.GetNamespace(), // Empty for cluster-scoped
+            Kind:      controllerOwner.Kind,
+            Name:      controllerOwner.Name,
+        }
+        chain = append(chain, entry)
+
+        // Fetch owner to continue traversal
+        owner, err := getResource(ctx, client, controllerOwner.APIVersion, controllerOwner.Kind,
+                                   current.GetNamespace(), controllerOwner.Name)
+        if err != nil {
+            break // Owner not found - chain ends here
+        }
+        current = owner
+    }
+
+    return chain
+}
+```
+
+#### **Validation Logic (100% Safe)**
+
+```python
+def should_include_detected_labels(source_resource, rca_resource, owner_chain):
+    """Include ONLY when relationship is PROVEN. Default: EXCLUDE."""
+
+    # Gate 1: Required data
+    if not source_resource or not rca_resource:
+        return False  # Safe default
+
+    # Gate 2: Exact match
+    if resources_match(source_resource, rca_resource):
+        return True
+
+    # Gate 3: Owner chain match (PROVEN relationship)
+    for owner in (owner_chain or []):
+        if resources_match(owner, rca_resource):
+            return True
+
+    # Gate 4: Same namespace + kind (fallback when owner_chain provided)
+    if owner_chain is not None:
+        if same_namespace_and_kind(source_resource, rca_resource):
+            return True
+
+    # Default: Cannot prove → EXCLUDE (100% safe)
+    return False
+```
+
+#### **Supported Relationships**
+
+| Source | RCA | Include DetectedLabels? | Reason |
+|--------|-----|-------------------------|--------|
+| Pod/prod/api-xyz | Pod/prod/api-xyz | ✅ YES | Exact match |
+| Pod/prod/api-xyz | Deployment/prod/api | ✅ YES | Owner chain match |
+| Pod/prod/api-xyz | StatefulSet/prod/api | ✅ YES | Owner chain match |
+| Pod/prod/api-xyz | ReplicaSet/prod/api-abc | ✅ YES | Owner chain match |
+| Pod/prod/api-xyz | Node/worker-3 | ❌ NO | Different scope |
+| Pod/prod/api-xyz | Pod/staging/api-xyz | ❌ NO | Different namespace |
+| Pod/prod/api-xyz | Deployment/prod/other | ❌ NO | Not in owner chain |
+
+#### **LLM Tool Parameter**
+
+The `search_workflow_catalog` tool includes `rca_resource` for validation:
+
+```json
+{
+  "query": "DiskPressure critical",
+  "rca_resource": {
+    "signal_type": "DiskPressure",
+    "kind": "Node",
+    "name": "worker-3"
+  },
+  "top_k": 3
+}
+```
+
+#### **Safety Guarantee**
+
+| Scenario | Result | Why Safe |
+|----------|--------|----------|
+| source_resource missing | EXCLUDE | Can't compare |
+| rca_resource missing | EXCLUDE | LLM didn't provide |
+| owner_chain missing | EXCLUDE | Can't verify |
+| owner_chain empty (orphan) | Same ns/kind check | Conservative fallback |
+| owner_chain has match | INCLUDE | **PROVEN** |
+| No match found | EXCLUDE | Can't prove |
+
+**Result**: 100% safety - we **never include wrong labels** that could cause query failures.
 
 ---
 

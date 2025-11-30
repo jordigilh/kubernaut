@@ -322,14 +322,14 @@ func seedWorkflows(ctx context.Context, count int, testID string) {
 
 		// Marshal labels to JSON
 		labelsMap := map[string]interface{}{
-			"signal-type":         signalType,
+			"signal_type":         signalType,
 			"severity":            severity,
-			"resource-management": resourceMgmtVal,
-			"gitops-tool":         gitopsTool,
+			"resource_management": resourceMgmtVal,
+			"gitops_tool":         gitopsTool,
 			"environment":         environment,
-			"business-category":   businessCat,
+			"business_category":   businessCat,
 			"priority":            priority,
-			"risk-tolerance":      riskTol,
+			"risk_tolerance":      riskTol,
 		}
 		labelsJSON, err := json.Marshal(labelsMap)
 		Expect(err).ToNot(HaveOccurred())
