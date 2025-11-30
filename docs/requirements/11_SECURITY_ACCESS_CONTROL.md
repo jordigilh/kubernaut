@@ -135,6 +135,23 @@ The Security & Access Control layer provides comprehensive authentication, autho
 - **BR-AUDIT-019**: MUST support security incident containment and remediation
 - **BR-AUDIT-020**: MUST provide post-incident analysis and improvement recommendations
 
+#### 4.1.5 Workflow Selection Audit Trail (Extended)
+
+> **See**: [BR-AUDIT-021-030-WORKFLOW-SELECTION-AUDIT-TRAIL.md](./BR-AUDIT-021-030-WORKFLOW-SELECTION-AUDIT-TRAIL.md)
+
+The following audit requirements extend the base audit capabilities for workflow catalog operations:
+
+- **BR-AUDIT-021**: MUST propagate `remediation_id` from HolmesGPT API to Data Storage Service
+- **BR-AUDIT-022**: HolmesGPT API MUST NOT generate audit events (Data Storage responsibility)
+- **BR-AUDIT-023**: Data Storage Service MUST generate audit event for every workflow search
+- **BR-AUDIT-024**: Audit MUST be asynchronous and non-blocking (ADR-038 pattern)
+- **BR-AUDIT-025**: MUST capture complete query metadata in audit events
+- **BR-AUDIT-026**: MUST capture complete scoring breakdown (confidence, boost, penalty)
+- **BR-AUDIT-027**: MUST capture full workflow metadata for each returned workflow
+- **BR-AUDIT-028**: MUST capture search execution metadata (timing, index usage)
+- **BR-AUDIT-029**: MUST retain audit events per compliance requirements (90-365 days)
+- **BR-AUDIT-030**: MUST provide API endpoints for querying workflow selection audit events
+
 ---
 
 ## 5. Enterprise Security Features

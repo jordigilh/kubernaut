@@ -18,7 +18,7 @@ This directory contains comprehensive documentation for all **6 CRD controller s
 
 | Service | Directory | Status | Description |
 |---------|-----------|--------|-------------|
-| **Remediation Processor** | [01-signalprocessing/](./01-signalprocessing/) | ✅ Active | Alert ingestion and initial processing |
+| **Signal Processing** | [01-signalprocessing/](./01-signalprocessing/) | ✅ Active | Signal ingestion and initial processing |
 | **AI Analysis** | [02-aianalysis/](./02-aianalysis/) | ✅ Active | Root cause analysis and recommendations |
 | **Workflow Execution** | [03-workflowexecution/](./03-workflowexecution/) | ✅ Active | Workflow planning and orchestration |
 | **Kubernetes Executor** | [04-kubernetesexecutor/](./04-kubernetesexecutor/) | ✅ Active | Safe Kubernetes action execution |
@@ -74,7 +74,7 @@ cat testing-strategy.md
 - **[Phase 3 Final Summary](./CATEGORY1_FINAL_SUMMARY.md)** - Complete achievement summary (97% avg confidence)
 - **[Implementation Quick Reference](./QUICK_REFERENCE_NEXT_STEPS.md)** - Next steps, make targets, timelines
 
-**Status**: ✅ All 3 Phase 3 services ready for implementation (Remediation Processor, Workflow Execution, Kubernetes Executor)
+**Status**: ✅ All 3 Phase 3 services ready for implementation (Signal Processing, Workflow Execution, Kubernetes Executor)
 
 ---
 
