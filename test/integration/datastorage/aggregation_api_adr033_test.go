@@ -32,7 +32,7 @@ import (
 //
 // Business Requirements:
 // - BR-STORAGE-031-01: Incident-Type Success Rate API
-// - BR-STORAGE-031-02: Playbook Success Rate API
+// - BR-STORAGE-031-02: Workflow Success Rate API
 // - BR-STORAGE-031-04: AI Execution Mode Tracking
 // - BR-STORAGE-031-05: Multi-Dimensional Success Rate API
 //
@@ -93,7 +93,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 	// ========================================
 	// BR-STORAGE-031-01: Incident-Type Success Rate API
-	// PRIMARY DIMENSION: Track which playbooks work for specific problems
+	// PRIMARY DIMENSION: Track which workflows work for specific problems
 	// ========================================
 	Describe("GET /api/v1/success-rate/incident-type", func() {
 		Context("TC-ADR033-01: Basic incident-type success rate calculation", func() {
@@ -182,7 +182,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: Only 3 samples (below min_samples=5)
 				for i := 0; i < 3; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -208,7 +208,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 10 samples (5-19 range = low confidence)
 				for i := 0; i < 10; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -230,7 +230,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 50 samples (20-99 range = medium confidence)
 				for i := 0; i < 50; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -252,7 +252,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 150 samples (100+ = high confidence)
 				for i := 0; i < 150; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -277,7 +277,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Setup: Insert data at different times
 				// Recent data (within 7 days)
 				for i := 0; i < 5; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
 				// Old data (8 days ago) - should be excluded
@@ -288,15 +288,15 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 						signal_name, signal_severity,
 						model_used, model_confidence,
 						incident_type, alert_name, incident_severity,
-						playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
-						ai_selected_playbook
+						workflow_id, workflow_version, workflow_step_number, workflow_execution_id,
+						ai_selected_workflow
 					) VALUES (
 						$1,
 						gen_random_uuid()::text, 'increase_memory', NOW() - INTERVAL '8 days', 'completed',
 						'TestSignal', 'warning',
 						'gpt-4', 0.95,
 						$2, 'TestAlert', 'warning',
-						'test-playbook', 'v1.0', 1, gen_random_uuid()::text,
+						'test-workflow', 'v1.0', 1, gen_random_uuid()::text,
 						true
 					)
 				`, adr033HistoryID, incidentType)
@@ -344,7 +344,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: All successes
 				for i := 0; i < 10; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-workflow", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -367,7 +367,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: All failures
 				for i := 0; i < 10; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "test-workflow", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -412,35 +412,35 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 	})
 
 	// ========================================
-	// BR-STORAGE-031-02: Playbook Success Rate API
-	// SECONDARY DIMENSION: Track which playbooks are most effective
+	// BR-STORAGE-031-02: Workflow Success Rate API
+	// SECONDARY DIMENSION: Track which workflows are most effective
 	// ========================================
 	Describe("GET /api/v1/success-rate/workflow", func() {
-		Context("TC-ADR033-06: Basic playbook success rate calculation", func() {
-			It("should calculate playbook success rate correctly with exact counts", func() {
-				playbookID := "integration-test-pod-restart"
-				playbookVersion := "v1.2.3"
+		Context("TC-ADR033-06: Basic workflow success rate calculation", func() {
+			It("should calculate workflow success rate correctly with exact counts", func() {
+				workflowID := "integration-test-pod-restart"
+				workflowVersion := "v1.2.3"
 
-				// BEHAVIOR: API calculates playbook success rate from real database
-				GinkgoWriter.Printf("  📝 Testing playbook: %s@%s\n", playbookID, playbookVersion)
+				// BEHAVIOR: API calculates workflow success rate from real database
+				GinkgoWriter.Printf("  📝 Testing workflow: %s@%s\n", workflowID, workflowVersion)
 
 				// Setup: 7 successes, 3 failures = 70% success rate
 				for i := 0; i < 7; i++ {
-					insertADR033ActionTrace(adr033HistoryID, "pod-crash", "completed", playbookID, playbookVersion, true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "pod-crash", "completed", workflowID, workflowVersion, true, false, false)
 				}
 				for i := 0; i < 3; i++ {
-					insertADR033ActionTrace(adr033HistoryID, "pod-crash", "failed", playbookID, playbookVersion, true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "pod-crash", "failed", workflowID, workflowVersion, true, false, false)
 				}
 
 				// Execute HTTP request
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?playbook_id=%s&playbook_version=%s&time_range=7d&min_samples=5",
-					datastorageURL, playbookID, playbookVersion))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?workflow_id=%s&workflow_version=%s&time_range=7d&min_samples=5",
+					datastorageURL, workflowID, workflowVersion))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
 				// BEHAVIOR: HTTP 200 OK
 				Expect(resp.StatusCode).To(Equal(http.StatusOK),
-					"API should return 200 OK for valid playbook request")
+					"API should return 200 OK for valid workflow request")
 
 				// BEHAVIOR: Response is valid JSON
 				var result models.WorkflowSuccessRateResponse
@@ -449,10 +449,10 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					"Response should be valid JSON")
 
 				// CORRECTNESS: Response structure
-				Expect(result.PlaybookID).To(Equal(playbookID),
-					"Response should contain requested playbook ID")
-				Expect(result.PlaybookVersion).To(Equal(playbookVersion),
-					"Response should contain requested playbook version")
+				Expect(result.WorkflowID).To(Equal(workflowID),
+					"Response should contain requested workflow ID")
+				Expect(result.WorkflowVersion).To(Equal(workflowVersion),
+					"Response should contain requested workflow version")
 				Expect(result.TimeRange).To(Equal("7d"),
 					"Response should contain requested time range")
 
@@ -476,23 +476,23 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 			})
 		})
 
-		Context("TC-ADR033-07: Playbook version filtering", func() {
-			It("should filter by specific playbook version", func() {
-				playbookID := "integration-test-version-filter"
+		Context("TC-ADR033-07: Workflow version filtering", func() {
+			It("should filter by specific workflow version", func() {
+				workflowID := "integration-test-version-filter"
 
 				// Setup: Different versions with different success rates
 				// v1.0: 5 successes
 				for i := 0; i < 5; i++ {
-					insertADR033ActionTrace(adr033HistoryID, "test-incident", "completed", playbookID, "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "test-incident", "completed", workflowID, "v1.0", true, false, false)
 				}
 				// v2.0: 3 successes
 				for i := 0; i < 3; i++ {
-					insertADR033ActionTrace(adr033HistoryID, "test-incident", "completed", playbookID, "v2.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "test-incident", "completed", workflowID, "v2.0", true, false, false)
 				}
 
 				// Query for v1.0 only
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?playbook_id=%s&playbook_version=v1.0&time_range=7d&min_samples=1",
-					datastorageURL, playbookID))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?workflow_id=%s&workflow_version=v1.0&time_range=7d&min_samples=1",
+					datastorageURL, workflowID))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -502,12 +502,12 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// CORRECTNESS: Should only count v1.0 (5 records, not 8)
 				Expect(result.TotalExecutions).To(Equal(5),
 					"Should only count v1.0 executions (not v2.0)")
-				Expect(result.PlaybookVersion).To(Equal("v1.0"))
+				Expect(result.WorkflowVersion).To(Equal("v1.0"))
 			})
 		})
 
 		Context("TC-ADR033-08: Error handling", func() {
-			It("should return 400 Bad Request for missing playbook_id", func() {
+			It("should return 400 Bad Request for missing workflow_id", func() {
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?time_range=7d",
 					datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
@@ -515,7 +515,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// BEHAVIOR: Should return 400 Bad Request
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
-					"Should return 400 Bad Request for missing playbook_id")
+					"Should return 400 Bad Request for missing workflow_id")
 			})
 		})
 	})
@@ -532,11 +532,11 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Setup: ADR-033 Hybrid Model distribution
 				// 90% catalog selections
 				for i := 0; i < 90; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-workflow", "v1.0", true, false, false)
 				}
-				// 9% chained playbooks
+				// 9% chained workflows
 				for i := 0; i < 9; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "chained-playbook", "v1.0", false, true, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "chained-workflow", "v1.0", false, true, false)
 				}
 				// 1% manual escalation
 				insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "manual-escalation", "v1.0", false, false, true)
@@ -564,7 +564,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				Expect(result.AIExecutionMode.CatalogSelected).To(Equal(90),
 					"Catalog selection should be 90% (90 out of 100)")
 				Expect(result.AIExecutionMode.Chained).To(Equal(9),
-					"Chained playbooks should be 9% (9 out of 100)")
+					"Chained workflows should be 9% (9 out of 100)")
 				Expect(result.AIExecutionMode.ManualEscalation).To(Equal(1),
 					"Manual escalation should be 1% (1 out of 100)")
 
@@ -582,7 +582,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 100% catalog selections
 				for i := 0; i < 50; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-workflow", "v1.0", true, false, false)
 				}
 
 				// ACT: Query incident-type success rate
@@ -599,7 +599,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				Expect(result.AIExecutionMode.CatalogSelected).To(Equal(50),
 					"All executions should be catalog selections")
 				Expect(result.AIExecutionMode.Chained).To(Equal(0),
-					"No chained playbooks")
+					"No chained workflows")
 				Expect(result.AIExecutionMode.ManualEscalation).To(Equal(0),
 					"No manual escalations")
 			})
@@ -610,14 +610,14 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Setup: Mixed modes with some failures
 				// 10 catalog selections (8 success, 2 failure)
 				for i := 0; i < 8; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-workflow", "v1.0", true, false, false)
 				}
 				for i := 0; i < 2; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "catalog-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "catalog-workflow", "v1.0", true, false, false)
 				}
-				// 5 chained playbooks (all success)
+				// 5 chained workflows (all success)
 				for i := 0; i < 5; i++ {
-					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "chained-playbook", "v1.0", false, true, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "chained-workflow", "v1.0", false, true, false)
 				}
 				// 2 manual escalations (both failure)
 				for i := 0; i < 2; i++ {
@@ -638,7 +638,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				Expect(result.AIExecutionMode.CatalogSelected).To(Equal(10),
 					"10 catalog selections (8 success + 2 failure)")
 				Expect(result.AIExecutionMode.Chained).To(Equal(5),
-					"5 chained playbooks (all success)")
+					"5 chained workflows (all success)")
 				Expect(result.AIExecutionMode.ManualEscalation).To(Equal(2),
 					"2 manual escalations (both failure)")
 
@@ -670,9 +670,9 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 			cleanupADR033TestData()
 		})
 
-		Context("with all three dimensions (incident_type + playbook + action_type)", func() {
+		Context("with all three dimensions (incident_type + workflow + action_type)", func() {
 			It("should return aggregated data filtered by all dimensions", func() {
-				// ARRANGE: Insert test data with specific incident_type, playbook, and action_type
+				// ARRANGE: Insert test data with specific incident_type, workflow, and action_type
 				// Insert 10 completed actions for specific combination
 				for i := 0; i < 10; i++ {
 					insertADR033ActionTrace(
@@ -696,10 +696,10 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					)
 				}
 				// Insert noise data with different combination (should be filtered out)
-				insertADR033ActionTrace(adr033HistoryID, "integration-test-other", "completed", "other-playbook", "v2.0", true, false, false)
+				insertADR033ActionTrace(adr033HistoryID, "integration-test-other", "completed", "other-workflow", "v2.0", true, false, false)
 
 				// ACT: Query multi-dimensional endpoint with all 3 dimensions
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=1h", datastorageURL))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&workflow_id=pod-oom-recovery&workflow_version=v1.2&action_type=increase_memory&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -715,8 +715,8 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// CORRECTNESS: Validate dimensions echo back
 				Expect(result.Dimensions.IncidentType).To(Equal("integration-test-pod-oom"))
-				Expect(result.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
-				Expect(result.Dimensions.PlaybookVersion).To(Equal("v1.2"))
+				Expect(result.Dimensions.WorkflowID).To(Equal("pod-oom-recovery"))
+				Expect(result.Dimensions.WorkflowVersion).To(Equal("v1.2"))
 				Expect(result.Dimensions.ActionType).To(Equal("increase_memory"))
 
 				// CORRECTNESS: Validate counts (10 completed + 2 failed = 12 total)
@@ -733,18 +733,18 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 			})
 		})
 
-		Context("with partial dimensions (incident_type + playbook only)", func() {
-			It("should aggregate across all action_types for given incident and playbook", func() {
-				// ARRANGE: Insert data for incident_type + playbook with MULTIPLE action_types
-				// Pod OOM recovery playbook - increase_memory action
+		Context("with partial dimensions (incident_type + workflow only)", func() {
+			It("should aggregate across all action_types for given incident and workflow", func() {
+				// ARRANGE: Insert data for incident_type + workflow with MULTIPLE action_types
+				// Pod OOM recovery workflow - increase_memory action
 				for i := 0; i < 8; i++ {
 					query := `
 						INSERT INTO resource_action_traces (
 							action_history_id, action_id, action_type, action_timestamp, execution_status,
 							signal_name, signal_severity, model_used, model_confidence,
 							incident_type, alert_name, incident_severity,
-							playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
-							ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
+							workflow_id, workflow_version, workflow_step_number, workflow_execution_id,
+							ai_selected_workflow, ai_chained_workflows, ai_manual_escalation
 						) VALUES (
 							$1, gen_random_uuid()::text, 'increase_memory', NOW(), 'completed',
 							'TestSignal', 'warning', 'gpt-4', 0.95,
@@ -756,15 +756,15 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					_, err := db.Exec(query, adr033HistoryID)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				// Pod OOM recovery playbook - restart_pod action
+				// Pod OOM recovery workflow - restart_pod action
 				for i := 0; i < 5; i++ {
 					query := `
 						INSERT INTO resource_action_traces (
 							action_history_id, action_id, action_type, action_timestamp, execution_status,
 							signal_name, signal_severity, model_used, model_confidence,
 							incident_type, alert_name, incident_severity,
-							playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
-							ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
+							workflow_id, workflow_version, workflow_step_number, workflow_execution_id,
+							ai_selected_workflow, ai_chained_workflows, ai_manual_escalation
 						) VALUES (
 							$1, gen_random_uuid()::text, 'restart_pod', NOW(), 'completed',
 							'TestSignal', 'warning', 'gpt-4', 0.95,
@@ -778,7 +778,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// ACT: Query without action_type (should aggregate both actions)
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=1h", datastorageURL))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&workflow_id=pod-oom-recovery&workflow_version=v1.2&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -802,13 +802,13 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 		})
 
 		Context("with single dimension (incident_type only)", func() {
-			It("should aggregate across all playbooks and action_types", func() {
-				// ARRANGE: Insert data for single incident_type with MULTIPLE playbooks
-				// Playbook A
+			It("should aggregate across all workflows and action_types", func() {
+				// ARRANGE: Insert data for single incident_type with MULTIPLE workflows
+				// Workflow A
 				for i := 0; i < 6; i++ {
 					insertADR033ActionTrace(adr033HistoryID, "integration-test-disk-full", "completed", "disk-cleanup", "v1.0", true, false, false)
 				}
-				// Playbook B
+				// Workflow B
 				for i := 0; i < 4; i++ {
 					insertADR033ActionTrace(adr033HistoryID, "integration-test-disk-full", "completed", "expand-volume", "v2.1", true, false, false)
 				}
@@ -826,33 +826,33 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				err = json.NewDecoder(resp.Body).Decode(&result)
 				Expect(err).ToNot(HaveOccurred())
 
-				// CORRECTNESS: Total should be 6 + 4 = 10 across all playbooks
+				// CORRECTNESS: Total should be 6 + 4 = 10 across all workflows
 				Expect(result.TotalExecutions).To(Equal(10),
-					"Should aggregate across all playbooks when not specified")
+					"Should aggregate across all workflows when not specified")
 
-				// CORRECTNESS: playbook dimensions should be empty
-				Expect(result.Dimensions.PlaybookID).To(BeEmpty())
-				Expect(result.Dimensions.PlaybookVersion).To(BeEmpty())
+				// CORRECTNESS: workflow dimensions should be empty
+				Expect(result.Dimensions.WorkflowID).To(BeEmpty())
+				Expect(result.Dimensions.WorkflowVersion).To(BeEmpty())
 			})
 		})
 
 		Context("validation errors", func() {
-			It("should return 400 Bad Request when playbook_version without playbook_id", func() {
+			It("should return 400 Bad Request when workflow_version without workflow_id", func() {
 				// ACT: Query with invalid parameters
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&playbook_version=v1.0&time_range=7d", datastorageURL))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&workflow_version=v1.0&time_range=7d", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
 				// ASSERT: HTTP 400 Bad Request
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
-					"Should return 400 for playbook_version without playbook_id")
+					"Should return 400 for workflow_version without workflow_id")
 
 				// ASSERT: RFC 7807 Problem Details
 				var problem map[string]interface{}
 				err = json.NewDecoder(resp.Body).Decode(&problem)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(problem["type"]).To(ContainSubstring("validation-error"))
-				Expect(problem["detail"]).To(ContainSubstring("playbook_version requires playbook_id"))
+				Expect(problem["detail"]).To(ContainSubstring("workflow_version requires workflow_id"))
 			})
 
 			It("should return 400 Bad Request when no dimensions are specified", func() {
@@ -892,7 +892,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 		Context("defaults", func() {
 			It("should default to 7d time_range when not specified", func() {
 				// ARRANGE: Insert test data
-				insertADR033ActionTrace(adr033HistoryID, "integration-test-defaults", "completed", "test-playbook", "v1.0", true, false, false)
+				insertADR033ActionTrace(adr033HistoryID, "integration-test-defaults", "completed", "test-workflow", "v1.0", true, false, false)
 
 				// ACT: Query without time_range
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-defaults", datastorageURL))
@@ -919,10 +919,10 @@ func insertADR033ActionTrace(
 	actionHistoryID int64,
 	incidentType string,
 	executionStatus string,
-	playbookID string,
-	playbookVersion string,
-	aiSelectedPlaybook bool,
-	aiChainedPlaybooks bool,
+	workflowID string,
+	workflowVersion string,
+	aiSelectedWorkflow bool,
+	aiChainedWorkflows bool,
 	aiManualEscalation bool,
 ) {
 	query := `
@@ -932,8 +932,8 @@ func insertADR033ActionTrace(
 			signal_name, signal_severity,
 			model_used, model_confidence,
 			incident_type, alert_name, incident_severity,
-			playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
-		ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
+			workflow_id, workflow_version, workflow_step_number, workflow_execution_id,
+		ai_selected_workflow, ai_chained_workflows, ai_manual_escalation
 	) VALUES (
 		$1,
 		gen_random_uuid()::text, 'increase_memory', NOW(), $2,
@@ -946,8 +946,8 @@ func insertADR033ActionTrace(
 	`
 	_, err := db.Exec(query,
 		actionHistoryID, executionStatus, incidentType,
-		playbookID, playbookVersion,
-		aiSelectedPlaybook, aiChainedPlaybooks, aiManualEscalation,
+		workflowID, workflowVersion,
+		aiSelectedWorkflow, aiChainedWorkflows, aiManualEscalation,
 	)
 	Expect(err).ToNot(HaveOccurred())
 }
