@@ -101,7 +101,7 @@ Users can define additional labels via Rego policies. These are **NOT mandatory*
 6. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
 
 **For Workflow Registration**:
-1. **6 Mandatory Labels Required**: Every workflow must have all 6 mandatory labels
+1. **5 Mandatory Labels Required**: Every workflow must have all 5 mandatory labels (v1.4)
 2. **Custom Labels Optional**: Workflows can include custom labels for more specific matching
 3. **Description Format**: Must follow `"<signal_type> <severity>: <description>"` for optimal semantic matching
 4. **Validation**: Labels are validated against authoritative values in this document
@@ -283,7 +283,7 @@ CREATE TABLE workflow_catalog (
     title             TEXT NOT NULL,
     description       TEXT,
 
-    -- 6 Mandatory structured labels (V1.3) - 1:1 matching with wildcard support
+    -- 5 Mandatory structured labels (V1.4) - 1:1 matching with wildcard support
     -- Group A: Auto-populated from K8s/Prometheus
     signal_type       TEXT NOT NULL,              -- OOMKilled, CrashLoopBackOff, NodeNotReady
     severity          severity_enum NOT NULL,     -- critical, high, medium, low
@@ -307,7 +307,7 @@ CREATE TABLE workflow_catalog (
     PRIMARY KEY (workflow_id, version)
 );
 
--- Composite index for efficient label filtering (6 mandatory labels)
+-- Composite index for efficient label filtering (5 mandatory labels per v1.4)
 CREATE INDEX idx_workflow_labels ON workflow_catalog (
     signal_type, severity, component, environment, priority, risk_tolerance
 );
@@ -316,8 +316,8 @@ CREATE INDEX idx_workflow_labels ON workflow_catalog (
 CREATE INDEX idx_workflow_custom_labels ON workflow_catalog USING GIN (custom_labels);
 ```
 
-**Rationale for 6 Mandatory Fields (V1.3)**:
-- ✅ **1:1 Label Matching**: ALL 6 mandatory fields must match between signal and workflow
+**Rationale for 5 Mandatory Fields (V1.4)**:
+- ✅ **1:1 Label Matching**: ALL 5 mandatory fields must match between signal and workflow
 - ✅ **Wildcard Support**: Workflows can use `'*'` for `environment`, `priority` to match any value
 - ✅ **Auto-Populated Labels**: Group A labels require no user configuration
 - ✅ **Rego-Configurable Labels**: Group B labels can be customized via Rego policies
