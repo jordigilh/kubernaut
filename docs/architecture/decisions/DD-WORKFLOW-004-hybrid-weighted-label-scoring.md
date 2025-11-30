@@ -18,8 +18,8 @@
 - ✅ **6 Mandatory Labels**: Reduced from 7 to 6 (removed `business_category` from mandatory)
 - ✅ **Label Taxonomy Clarified**: Group A (auto-populated) + Group B (Rego-configurable) + Custom
 - ✅ **DetectedLabels (V1.0)**: Auto-detected cluster characteristics (GitOps, PDB, HPA, etc.)
-- ✅ **CustomLabels (V1.1)**: User-defined via Rego policies (includes `business_category`)
-- ✅ **Cross-reference**: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0
+- ✅ **CustomLabels (V1.0)**: User-defined via Rego policies (includes `risk_tolerance`, `business_category`)
+- ✅ **Cross-reference**: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0
 
 **Rationale**:
 - `business_category` is organization-specific, not universally needed
@@ -132,7 +132,7 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 | `PodSecurityLevel` | Namespace PSS label | Security posture |
 | `ServiceMesh` | Istio/Linkerd sidecar | Traffic management |
 
-### CustomLabels (V1.1 - User-Defined)
+### CustomLabels (V1.0 - User-Defined)
 
 - **Keys**: Defined by customer in Rego policies (e.g., `business_category`, `team`, `region`)
 - **Values**: Defined by customer in Rego policies (e.g., `payment-service`, `platform`, `us-east-1`)
@@ -173,8 +173,9 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 **Key Insight**:
 - The **5 mandatory labels** are Kubernaut-enforced (DD-WORKFLOW-001 v1.4)
 - **DetectedLabels** are auto-detected from K8s without configuration (V1.0 priority)
-- **CustomLabels** like `business-category`, `region`, `team` are **user-defined** via Rego (V1.1)
+- **CustomLabels** like `risk-tolerance`, `business-category`, `region`, `team` are **user-defined** via Rego (V1.0)
 - Both label **keys** and **values** for CustomLabels are customer-controlled
+- **Naming convention**: `kubernaut.io/*`, `constraint.kubernaut.io/*`, `custom.kubernaut.io/*`
 - Kubernaut cannot hardcode boost/penalty weights for labels that vary per customer
 
 **V1.0 Solution**: Use base semantic similarity with mandatory label filtering + DetectedLabels context.
