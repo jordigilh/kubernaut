@@ -411,11 +411,11 @@ labels["constraint.kubernaut.io/high-availability"] = "true" {
 
 ---
 
-## 📋 **Label Taxonomy Clarification (DD-WORKFLOW-001 v1.4)**
+## 📋 **Label Taxonomy Clarification (DD-WORKFLOW-001 v1.6)**
 
 | Label Category | Source | Examples | Purpose |
 |----------------|--------|----------|---------|
-| **5 Mandatory Labels** (DD-WORKFLOW-001 v1.4) | Signal Processing core | `signal_type`, `severity`, `component`, `environment`, `priority` | Required for workflow matching |
+| **5 Mandatory Labels** (DD-WORKFLOW-001 v1.6) | Signal Processing core | `signal_type`, `severity`, `component`, `environment`, `priority` | Required for workflow matching |
 | **Customer-Derived Labels** (Rego) | Rego policies | `risk_tolerance`, `business_category`, `team`, `region` | Customer-defined via Rego |
 | **DetectedLabels** (this handoff) | Auto-detection from K8s | `GitOpsManaged`, `PDBProtected`, `HPAEnabled`, `Stateful` | Additional context for LLM |
 
@@ -701,7 +701,7 @@ Without extracted labels, HolmesGPT-API cannot filter workflows by customer-spec
 type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
 
-    // Custom labels for workflow catalog filtering (DD-WORKFLOW-001 v1.4)
+    // Custom labels for workflow catalog filtering (DD-WORKFLOW-001 v1.6)
     // These are user-defined labels extracted via Rego policies
     CustomLabels map[string]string `json:"customLabels,omitempty"`
 
@@ -1579,8 +1579,7 @@ system_labels := {
 
 | Label | Status | Who sets it? |
 |-------|--------|--------------|
-| `kubernaut.io/risk_tolerance` (underscore) | BLOCKED | System (mandatory) |
-| `kubernaut.io/risk-tolerance` (hyphen) | ALLOWED | Customer Rego |
+| `kubernaut.io/risk-tolerance` (hyphen) | ALLOWED | Customer Rego (DD-WORKFLOW-001 v1.6) |
 
 **Question**: Is this intentional dual-naming? The customer's Rego-derived `risk-tolerance` (hyphen) is supplementary to the system's `risk_tolerance` (underscore)?
 

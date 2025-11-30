@@ -48,7 +48,7 @@ We're looking for documentation that explains:
 
 | Document | Purpose |
 |----------|---------|
-| [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | 5 mandatory labels + customer-derived labels |
+| [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | 5 mandatory labels + customer-derived labels (snake_case) |
 | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0](../../crd-controllers/01-signalprocessing/HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) | **PRIMARY**: Rego-based label extraction architecture |
 | [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md) | Scoring strategy (custom labels = hard filter only) |
 
@@ -61,11 +61,11 @@ We're looking for documentation that explains:
 
 ### Q2: What is the exact format of custom labels passed to Data Storage?
 
-**Example A**: Flat key-value in labels
+**Example A**: Flat key-value in labels (❌ DEPRECATED)
 ```json
 {
   "labels": {
-    "signal-type": "OOMKilled",
+    "signal_type": "OOMKilled",
     "severity": "critical",
     "cost-constrained": "true",
     "team": "payments"
@@ -73,16 +73,17 @@ We're looking for documentation that explains:
 }
 ```
 
-**Example B**: Separate custom_labels field
+**Example B**: Structured columns + separate custom_labels field (✅ CURRENT - DD-WORKFLOW-001 v1.6)
 ```json
 {
-  "labels": {
-    "signal-type": "OOMKilled",
-    "severity": "critical"
-  },
+  "signal_type": "OOMKilled",
+  "severity": "critical",
+  "component": "pod",
+  "environment": "production",
+  "priority": "P0",
   "custom_labels": {
-    "cost-constrained": "true",
-    "team": "payments"
+    "constraint": ["cost-constrained"],
+    "team": ["name=payments"]
   }
 }
 ```
@@ -104,23 +105,23 @@ type EnrichmentResults struct {
 }
 ```
 
-**Data Flow to HolmesGPT-API → Data Storage**:
+**Data Flow to HolmesGPT-API → Data Storage** (per DD-WORKFLOW-001 v1.6):
 
-The 5 mandatory labels (`signal_type`, `severity`, `component`, `environment`, `priority`) are passed as structured filter fields. Custom labels are passed separately in `custom_labels` map.
+The 5 mandatory labels (`signal_type`, `severity`, `component`, `environment`, `priority`) are passed as structured filter fields (snake_case). Custom labels are passed separately in `custom_labels` map using subdomain format.
 
 ```json
 {
   "filters": {
-    "signal-type": "OOMKilled",
+    "signal_type": "OOMKilled",
     "severity": "critical",
-    "environment": "production",
-    "priority": "P0",
     "component": "pod",
-    "custom_labels": {
-      "kubernaut.io/risk-tolerance": "high",
-      "kubernaut.io/team": "payments",
-      "constraint.kubernaut.io/cost-constrained": "true"
-    }
+    "environment": "production",
+    "priority": "P0"
+  },
+  "custom_labels": {
+    "risk_tolerance": ["high"],
+    "team": ["name=payments"],
+    "constraint": ["cost-constrained"]
   }
 }
 ```
@@ -136,26 +137,32 @@ The 5 mandatory labels (`signal_type`, `severity`, `component`, `environment`, `
 
 We need the complete list of label keys that are **reserved** and cannot be used as custom labels:
 
-**Our current understanding** (from DD-WORKFLOW-001 v1.3):
+**Our current understanding** (from DD-WORKFLOW-001 v1.6):
 
-| Reserved Label | Type | Notes |
-|----------------|------|-------|
-| `signal-type` | Mandatory | System-determined |
-| `severity` | Mandatory | System-determined |
-| `resource-management` | Optional | Boost scoring |
-| `gitops-tool` | Optional | Boost scoring |
-| `environment` | Optional | Boost scoring |
-| `business-category` | Optional | Boost scoring |
-| `priority` | Optional | Boost scoring |
-| `risk-tolerance` | Optional | Boost scoring |
+| Reserved Label | Type | Storage | Notes |
+|----------------|------|---------|-------|
+| `signal_type` | Mandatory | Structured column | System-determined |
+| `severity` | Mandatory | Structured column | System-determined |
+| `component` | Mandatory | Structured column | System-determined |
+| `environment` | Mandatory | Structured column | Rego-configurable |
+| `priority` | Mandatory | Structured column | Rego-configurable |
+
+**Custom Labels** (stored in `custom_labels` JSONB):
+
+| Custom Label | Example | Notes |
+|--------------|---------|-------|
+| `risk_tolerance` | `["low"]` | Customer-derived via Rego |
+| `business_category` | `["payment-service"]` | Customer-derived via Rego |
+| `constraint` | `["cost-constrained"]` | Customer-defined |
+| `team` | `["name=payments"]` | Customer-defined |
 
 **Question**: Is this list complete? Are there other reserved keys?
 
 #### ✅ ANSWER (SignalProcessing Team)
 
-**⚠️ CORRECTION**: DD-WORKFLOW-001 is now **v1.4** (not v1.3).
+**⚠️ UPDATE**: DD-WORKFLOW-001 is now **v1.6** (snake_case API standardization).
 
-**Complete Reserved Label List (DD-WORKFLOW-001 v1.4)**:
+**Complete Reserved Label List (DD-WORKFLOW-001 v1.6)**:
 
 | Reserved Label | Type | Who Sets | Notes |
 |----------------|------|----------|-------|
@@ -444,7 +451,7 @@ Once we have answers:
 |----------|-----------|
 | [HANDOFF_REQUEST_DATA_STORAGE_CONSTRAINT_FILTERING.md](../../crd-controllers/01-signalprocessing/HANDOFF_REQUEST_DATA_STORAGE_CONSTRAINT_FILTERING.md) | Original handoff |
 | [RESPONSE_CONSTRAINT_FILTERING.md](RESPONSE_CONSTRAINT_FILTERING.md) | Our initial response |
-| [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | **Mandatory label schema (5 labels)** |
+| [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | **Mandatory label schema (5 labels, snake_case)** |
 | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0](../../crd-controllers/01-signalprocessing/HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) | **PRIMARY: Custom labels architecture** |
 | [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md) | Scoring strategy |
 

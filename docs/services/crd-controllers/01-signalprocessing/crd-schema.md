@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.5 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case API fields, DetectedLabels wildcard support) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.1, [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.4 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.0) to EnrichmentResults | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0 |
 > | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, file location updated | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
@@ -498,9 +499,9 @@ func init() {
 ### Label Detection (HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0)
 - Added: `DetectedLabels` struct - auto-detected cluster characteristics (V1.0 priority)
 - Added: `CustomLabels` field - user-defined via Rego policies (V1.0)
-- Reference: DD-WORKFLOW-001 v1.4 (5 mandatory labels), DD-WORKFLOW-004 v2.1
+- Reference: DD-WORKFLOW-001 v1.6 (5 mandatory labels, snake_case), DD-WORKFLOW-004 v2.2
 
-#### Label Taxonomy (DD-WORKFLOW-001 v1.4)
+#### Label Taxonomy (DD-WORKFLOW-001 v1.6)
 
 | Category | Source | Config Required | Examples |
 |----------|--------|-----------------|----------|

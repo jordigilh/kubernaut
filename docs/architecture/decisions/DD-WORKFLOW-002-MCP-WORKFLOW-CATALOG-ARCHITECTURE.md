@@ -3,7 +3,7 @@
 **Date**: November 14, 2025
 **Status**: ✅ APPROVED
 **Deciders**: Architecture Team
-**Version**: 3.0
+**Version**: 3.3
 **Related**: DD-WORKFLOW-012 (Workflow Immutability), ADR-034 (Unified Audit Table), DD-WORKFLOW-014 (Workflow Selection Audit Trail), DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)
 
 ---
@@ -24,6 +24,33 @@
 ---
 
 ## Changelog
+
+### Version 3.3 (2025-11-30)
+- **BREAKING**: Standardized all filter field names to **snake_case** for consistency
+- Changed `signal-type` → `signal_type` in all filter parameters and examples
+- Changed `label.signal-type` → `filters.signal_type` parameter naming convention
+- All filter fields now use snake_case: `signal_type`, `severity`, `environment`, `priority`, `custom_labels`
+- **Rationale**: snake_case is the standard JSON API convention, aligns with Python (HolmesGPT-API), and matches Kubernetes JSON field naming
+- **Impact**: Data Storage must update Go struct JSON tags from `json:"signal-type"` to `json:"signal_type"`
+- **Notification**: See `HANDOFF_FILTER_NAMING_STANDARDIZATION.md` for Data Storage team
+
+### Version 3.2 (2025-11-30)
+- **BREAKING**: Changed `custom_labels` type from `map[string]string` to `map[string][]string`
+- Custom labels now use **subdomain-based structure**: key = subdomain, value = array of label values
+- Label values can be **boolean** (`"cost-constrained"`) or **key-value** (`"name=payments"`)
+- Query logic: Multiple values within same subdomain are **ORed**, different subdomains are **ANDed**
+- SignalProcessing strips `*.kubernaut.io/` prefix - Data Storage receives clean subdomain keys
+- Cross-reference: DD-WORKFLOW-001 v1.6, DD-WORKFLOW-004 v2.2, HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md v1.1
+- **Impact**: HolmesGPT-API and Data Storage must use new structure
+
+### Version 3.1 (2025-11-30)
+- **NEW**: Added `custom_labels` parameter for customer-defined label filtering
+- Custom labels are customer-defined via Rego policies (per HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0)
+- Custom labels use hard WHERE filter (not boost/penalty scoring) per DD-WORKFLOW-004 v2.1
+- Label prefixes: `kubernaut.io/*`, `constraint.kubernaut.io/*`, `custom.kubernaut.io/*`
+- Cross-reference: DD-WORKFLOW-001 v1.6 (5 mandatory labels + customer-derived, snake_case)
+- **Impact**: Enables filtering by arbitrary customer-defined labels in workflow search
+- **SUPERSEDED BY v3.2**: Structure changed to `map[string][]string`
 
 ### Version 3.0 (2025-11-29)
 - **BREAKING**: `workflow_id` is now a UUID (auto-generated primary key)
@@ -157,45 +184,71 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
       "example": "OOMKilled critical"
     },
 
-    "label.signal-type": {
+    "signal_type": {
       "type": "string",
       "required": false,
       "description": "Exact match filter for signal type (canonical Kubernetes event reason)",
       "example": "OOMKilled"
     },
-    "label.severity": {
+    "severity": {
       "type": "string",
       "required": false,
       "enum": ["critical", "high", "medium", "low"],
       "description": "Exact match filter for RCA severity assessment",
       "example": "critical"
     },
-    "label.environment": {
+    "environment": {
       "type": "string",
       "required": false,
       "enum": ["production", "staging", "development", "test"],
       "description": "Exact match filter for environment (pass-through from input)",
       "example": "production"
     },
-    "label.priority": {
+    "priority": {
       "type": "string",
       "required": false,
       "enum": ["P0", "P1", "P2", "P3"],
       "description": "Exact match filter for business priority (pass-through from input)",
       "example": "P0"
     },
-    "label.risk-tolerance": {
+    "risk_tolerance": {
       "type": "string",
       "required": false,
       "enum": ["low", "medium", "high"],
       "description": "Exact match filter for risk tolerance (pass-through from input)",
       "example": "low"
     },
-    "label.business-category": {
+    "business_category": {
       "type": "string",
       "required": false,
       "description": "Exact match filter for business category (pass-through from input)",
       "example": "revenue-critical"
+    },
+
+    "custom_labels": {
+      "type": "object",
+      "required": false,
+      "description": "Customer-defined labels for exact match filtering (v3.2: subdomain-based structure). Keys are subdomains (e.g., 'constraint', 'team'), values are arrays of label strings. Labels are defined via Rego policies in Signal Processing. Uses hard WHERE filter (not scoring). Multiple values in same subdomain are ORed; different subdomains are ANDed. See DD-WORKFLOW-001 v1.6 and HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md.",
+      "structure": "map[string][]string (subdomain → values)",
+      "example": {
+        "constraint": ["cost-constrained", "stateful-safe"],
+        "team": ["name=payments"],
+        "region": ["zone=us-east-1"]
+      },
+      "label_types": {
+        "boolean": "key only (e.g., 'cost-constrained') - presence = true",
+        "key_value": "key=value (e.g., 'name=payments') - explicit value"
+      },
+      "query_logic": {
+        "within_subdomain": "OR (any value matches)",
+        "between_subdomains": "AND (all subdomains must match)"
+      },
+      "notes": [
+        "Subdomains are customer-defined (no validation by Data Storage)",
+        "SignalProcessing strips *.kubernaut.io/ prefix before passing to downstream",
+        "Empty arrays are ignored (no filter for that subdomain)",
+        "False booleans are omitted by SignalProcessing (not passed)"
+      ]
     },
 
     "top_k": {
@@ -333,11 +386,14 @@ LLM decides to search workflows
   ↓
 Calls search_workflow_catalog MCP tool (per DD-LLM-001 format)
   query: "OOMKilled critical"
-  label.signal-type: "OOMKilled"
-  label.severity: "critical"
-  label.environment: "production"
-  label.business-category: "payments"
-  label.risk-tolerance: "low"
+  filters:
+    signal_type: "OOMKilled"
+    severity: "critical"
+    environment: "production"
+    priority: "P0"
+    custom_labels:
+      constraint: ["cost-constrained"]
+      team: ["name=payments"]
 ```
 
 ### Step 3: Embedding Generation
@@ -356,11 +412,16 @@ Embedding Service calls Data Storage REST API
   {
     "query": "OOMKilled critical",
     "embedding": [0.123, -0.456, ...],
-    "label.signal-type": "OOMKilled",
-    "label.severity": "critical",
-    "label.environment": "production",
-    "label.business-category": "payments",
-    "label.risk-tolerance": "low",
+    "filters": {
+      "signal_type": "OOMKilled",
+      "severity": "critical",
+      "environment": "production",
+      "priority": "P0",
+      "custom_labels": {
+        "constraint": ["cost-constrained"],
+        "team": ["name=payments"]
+      }
+    },
     "top_k": 10
   }
   ↓
@@ -371,11 +432,13 @@ Data Storage executes two-phase search:
   SELECT *, 1 - (embedding <=> $1) AS confidence
   FROM workflow_catalog
   WHERE status = 'active'
-    AND labels->>'signal-type' = 'OOMKilled'
+    AND labels->>'signal_type' = 'OOMKilled'
     AND labels->>'severity' = 'critical'
     AND labels->>'environment' = 'production'
-    AND labels->>'business-category' = 'payments'
-    AND labels->>'risk-tolerance' = 'low'
+    AND labels->>'priority' = 'P0'
+    -- Custom labels filtering (DD-HAPI-001: auto-appended by HolmesGPT-API)
+    AND custom_labels->'constraint' ? 'cost-constrained'
+    AND custom_labels->'team' ? 'name=payments'
   ORDER BY embedding <=> $1
   LIMIT 10
   ↓
@@ -574,10 +637,15 @@ POST http://data-storage:8085/api/v1/workflows/search
 
 ---
 
-**Document Version**: 3.0
-**Last Updated**: November 29, 2025
-**Status**: ✅ APPROVED (MCP Architecture + UUID Primary Key + Flat Response)
-**Next Review**: After Data Storage Service UUID migration
+**Document Version**: 3.2
+**Last Updated**: November 30, 2025
+**Status**: ✅ APPROVED (MCP Architecture + UUID Primary Key + Flat Response + Subdomain Custom Labels)
+**Next Review**: After custom labels implementation in Data Storage
+
+**Breaking Changes in v3.2**:
+- `custom_labels` type changed from `map[string]string` to `map[string][]string`
+- Keys are now subdomains (e.g., `constraint`) not full labels (e.g., `constraint.kubernaut.io/cost-constrained`)
+- Values are arrays of strings (boolean or key=value format)
 
 **Breaking Changes in v3.0**:
 - `workflow_id` is now UUID (auto-generated)

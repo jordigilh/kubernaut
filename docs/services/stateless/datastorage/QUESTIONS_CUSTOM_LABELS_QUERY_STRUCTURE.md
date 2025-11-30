@@ -117,7 +117,7 @@ custom_labels JSONB  -- {"constraint": ["cost-constrained"], "team": ["name=paym
 
 **Matching logic**: A workflow matches if the signal's custom labels are present in the workflow's custom labels (per subdomain). Multiple values in workflow = OR match.
 
-**Example**: 
+**Example**:
 - Signal: `{"team": ["name=payments"]}`
 - Workflow A: `{"team": ["name=payments", "name=platform"]}` → ✅ MATCH
 - Workflow B: `{"team": ["name=sre"]}` → ❌ NO MATCH
@@ -166,11 +166,11 @@ for subdomain, values := range customLabels {
 **Can you confirm the document versions referenced?**
 
 The handoff references:
-- DD-WORKFLOW-001 v1.5
+- DD-WORKFLOW-001 v1.6
 - DD-WORKFLOW-004 v2.2
 
 Our current versions:
-- DD-WORKFLOW-001 v1.4
+- DD-WORKFLOW-001 v1.6 (current)
 - DD-WORKFLOW-004 v2.1
 
 **Question**: Are v1.5 and v2.2 upcoming versions, or should we use the current versions?
@@ -213,8 +213,9 @@ Please respond inline below each question or create a response document at:
 
 - [HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md](./HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md)
 - [FOLLOWUP_CUSTOM_LABELS_CLARIFICATION.md](./FOLLOWUP_CUSTOM_LABELS_CLARIFICATION.md)
-- [DD-WORKFLOW-001 v1.5](../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md)
-- [DD-WORKFLOW-004 v2.2](../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)
+- [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md)
+- [DD-WORKFLOW-002 v3.2](../../../architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md) - **UPDATED** with subdomain structure
+- [DD-WORKFLOW-004 v2.2](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)
 - [HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md](../../crd-controllers/01-signalprocessing/HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md)
 
 ---
