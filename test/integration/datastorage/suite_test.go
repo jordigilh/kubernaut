@@ -828,7 +828,7 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 		"017_add_workflow_schema_fields.sql",                 // ADR-043: Add parameters, execution_engine, execution_bundle
 		"018_rename_execution_bundle_to_container_image.sql", // DD-WORKFLOW-002 v2.4: Rename to container_image, add container_digest
 		"019_uuid_primary_key.sql",                           // DD-WORKFLOW-002 v3.0: UUID primary key, workflow_name field
-		"999_add_nov_2025_partition.sql",                     // Legacy partition for resource_action_traces
+		"020_add_workflow_label_columns.sql",                 // DD-WORKFLOW-001 v1.6: Add custom_labels, detected_labels columns
 		"1000_create_audit_events_partitions.sql",            // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 
@@ -903,7 +903,7 @@ func applyMigrationsWithPropagation() {
 		"017_add_workflow_schema_fields.sql",                 // ADR-043: Add parameters, execution_engine, execution_bundle
 		"018_rename_execution_bundle_to_container_image.sql", // DD-WORKFLOW-002 v2.4: Rename to container_image, add container_digest
 		"019_uuid_primary_key.sql",                           // DD-WORKFLOW-002 v3.0: UUID primary key, workflow_name field
-		"999_add_nov_2025_partition.sql",                     // Legacy partition for resource_action_traces
+		"020_add_workflow_label_columns.sql",                 // DD-WORKFLOW-001 v1.6: Add custom_labels, detected_labels columns
 		"1000_create_audit_events_partitions.sql",            // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 
