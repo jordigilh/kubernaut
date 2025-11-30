@@ -45,7 +45,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
-		testLogger = logger.WithValues("test", "dedup-ttl"))
+		testLogger = logger.WithValues("test", "dedup-ttl")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -72,7 +72,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
@@ -161,13 +161,13 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 			k8sClient := getKubernetesClientSafe()
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to get K8s client", "error", err)
+					testLogger.V(1).Info("Failed to get K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			count := 0
@@ -241,13 +241,13 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 			k8sClient := getKubernetesClientSafe()
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to get K8s client", "error", err)
+					testLogger.V(1).Info("Failed to get K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			count := 0

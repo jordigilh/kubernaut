@@ -47,7 +47,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 3*time.Minute)
-		testLogger = logger.WithValues("test", "health-readiness"))
+		testLogger = logger.WithValues("test", "health-readiness")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

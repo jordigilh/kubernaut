@@ -43,7 +43,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 3*time.Minute)
-		testLogger = logger.WithValues("test", "signal-validation"))
+		testLogger = logger.WithValues("test", "signal-validation")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -81,7 +81,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(resp1.StatusCode).To(Equal(http.StatusBadRequest),
 			"Invalid JSON syntax should return HTTP 400 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Invalid JSON rejected: HTTP %d", resp1.StatusCode))
-		testLogger.Debug(fmt.Sprintf("  Response body: %s", string(body1)))
+		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body1)))
 
 		// BEHAVIOR TEST: Gateway rejects empty payload
 		// CORRECTNESS: Returns HTTP 400 Bad Request
@@ -102,7 +102,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(resp2.StatusCode).To(Equal(http.StatusBadRequest),
 			"Empty payload should return HTTP 400 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Empty payload rejected: HTTP %d", resp2.StatusCode))
-		testLogger.Debug(fmt.Sprintf("  Response body: %s", string(body2)))
+		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body2)))
 
 		// BEHAVIOR TEST: Gateway rejects payload with empty alerts array
 		// CORRECTNESS: Returns HTTP 400 Bad Request
@@ -126,7 +126,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(resp3.StatusCode).To(Equal(http.StatusBadRequest),
 			"Empty alerts array should return HTTP 400 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Empty alerts array rejected: HTTP %d", resp3.StatusCode))
-		testLogger.Debug(fmt.Sprintf("  Response body: %s", string(body3)))
+		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body3)))
 
 		// BEHAVIOR TEST: Gateway accepts well-formed valid payload
 		// CORRECTNESS: Returns HTTP 201 (Created) or 202 (Accepted for buffering)
@@ -170,7 +170,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(resp4.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 			"Valid payload should return HTTP 201 or 202 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Valid payload accepted: HTTP %d", resp4.StatusCode))
-		testLogger.Debug(fmt.Sprintf("  Response body: %s", string(body4)))
+		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body4)))
 
 		// BEHAVIOR TEST: Gateway differentiates between client and server errors
 		// CORRECTNESS: Malformed request = 4xx, not 5xx

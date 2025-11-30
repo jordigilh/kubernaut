@@ -56,7 +56,7 @@ var _ = Describe("Test 01: Storm Buffering (DD-GATEWAY-008)", Ordered, func() {
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.WithValues("test", "storm-buffering"))
+		testLogger = logger.WithValues("test", "storm-buffering")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -85,7 +85,7 @@ var _ = Describe("Test 01: Storm Buffering (DD-GATEWAY-008)", Ordered, func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
@@ -154,7 +154,7 @@ var _ = Describe("Test 01: Storm Buffering (DD-GATEWAY-008)", Ordered, func() {
 			resp.Body.Close()
 
 			statusCodes[resp.StatusCode]++
-			testLogger.Debug(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 
 		testLogger.Info(fmt.Sprintf("  Status codes: 201=%d, 202=%d",
@@ -186,16 +186,16 @@ var _ = Describe("Test 01: Storm Buffering (DD-GATEWAY-008)", Ordered, func() {
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", "error", err)
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to create K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to create K8s client (unknown error)")
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			crdCount = len(crdList.Items)

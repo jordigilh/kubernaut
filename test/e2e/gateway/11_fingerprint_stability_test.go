@@ -45,7 +45,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.WithValues("test", "fingerprint-stability"))
+		testLogger = logger.WithValues("test", "fingerprint-stability")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -72,7 +72,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
@@ -386,14 +386,14 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				k8sClient := getKubernetesClientSafe()
 				if k8sClient == nil {
 					if err := GetLastK8sClientError(); err != nil {
-						testLogger.Debug("Failed to get K8s client", "error", err)
+						testLogger.V(1).Info("Failed to get K8s client", "error", err)
 					} else {
-						testLogger.Debug("Failed to get K8s client (unknown error)")
+						testLogger.V(1).Info("Failed to get K8s client (unknown error)")
 					}
 					return -1
 				}
 				if err := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace)); err != nil {
-					testLogger.Debug("Failed to list CRDs", "error", err)
+					testLogger.V(1).Info("Failed to list CRDs", "error", err)
 					return -1
 				}
 

@@ -52,7 +52,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
-		testLogger = logger.WithValues("test", "k8s-api-rate-limit"))
+		testLogger = logger.WithValues("test", "k8s-api-rate-limit")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -87,7 +87,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 		// Check if test failed - preserve namespace for debugging
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
@@ -181,7 +181,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			if err != nil {
 				// Connection error - count as error but don't fail test
 				errorCount++
-				testLogger.Warn(fmt.Sprintf("  ⚠️  Alert %d connection error: %v", i+1, err))
+				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d connection error: %v", i+1, err))
 				continue
 			}
 			resp.Body.Close()
@@ -196,10 +196,10 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 			case http.StatusInternalServerError: // 500 - Unexpected error
 				errorCount++
-				testLogger.Warn(fmt.Sprintf("  ⚠️  Alert %d returned HTTP 500 (unexpected)", i+1))
+				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d returned HTTP 500 (unexpected)", i+1))
 
 			default:
-				testLogger.Warn(fmt.Sprintf("  ⚠️  Alert %d returned unexpected status: %d", i+1, resp.StatusCode))
+				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d returned unexpected status: %d", i+1, resp.StatusCode))
 			}
 
 			// No delay - send as fast as possible to stress test
@@ -238,7 +238,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("  Retrying CRD list...", "error", err)
+				testLogger.V(1).Info("  Retrying CRD list...", "error", err)
 				return err
 			}
 			crdCount = len(crdList.Items)

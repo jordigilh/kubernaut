@@ -235,7 +235,7 @@ var _ = SynchronizedAfterSuite(
 		suiteFailed := suiteReport.Failed() || anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true"
 
 		if suiteFailed {
-			logger.Warn("⚠️  Test FAILED - Keeping cluster alive for debugging")
+			logger.Info("⚠️  Test FAILED - Keeping cluster alive for debugging")
 			logger.Info("To debug:")
 			logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			logger.Info("  kubectl get namespaces | grep -E 'storm|rate|concurrent|crd|restart'")

@@ -46,7 +46,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute) // Longer timeout for Redis failure test
-		testLogger = logger.WithValues("test", "redis-failure"))
+		testLogger = logger.WithValues("test", "redis-failure")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -81,7 +81,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testLogger.Info("Redis restoration check complete")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
@@ -163,7 +163,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 				bytes.NewBuffer(payloadBytes),
 			)
 			if err != nil {
-				testLogger.Debug(fmt.Sprintf("Alert %d failed", i+1), "error", err)
+				testLogger.V(1).Info(fmt.Sprintf("Alert %d failed", i+1), "error", err)
 				continue
 			}
 			resp.Body.Close()
@@ -186,19 +186,19 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		// Find and delete Redis pod
 		redisPodList := &corev1.PodList{}
 		if err := k8sClient.List(testCtx, redisPodList, client.InNamespace(gatewayNamespace), client.MatchingLabels{"app": "redis"}); err != nil {
-			testLogger.Warn("Could not list Redis pods - Redis may not be deployed as a pod", "error", err)
+			testLogger.Info("Could not list Redis pods - Redis may not be deployed as a pod", "error", err)
 		}
 
 		if len(redisPodList.Items) > 0 {
 			redisPod := &redisPodList.Items[0]
 			testLogger.Info("Deleting Redis pod to simulate failure", "pod", redisPod.Name)
 			if err := k8sClient.Delete(testCtx, redisPod); err != nil {
-				testLogger.Warn("Could not delete Redis pod", "error", err)
+				testLogger.Info("Could not delete Redis pod", "error", err)
 			} else {
 				testLogger.Info("✅ Redis pod deleted")
 			}
 		} else {
-			testLogger.Warn("No Redis pods found - testing graceful degradation behavior only")
+			testLogger.Info("No Redis pods found - testing graceful degradation behavior only")
 		}
 
 		// Wait for Redis to become unavailable using Eventually
@@ -246,7 +246,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 				bytes.NewBuffer(failurePayloadBytes),
 			)
 			if err != nil {
-				testLogger.Debug(fmt.Sprintf("Alert %d failed (expected during degradation)", i+1), "error", err)
+				testLogger.V(1).Info(fmt.Sprintf("Alert %d failed (expected during degradation)", i+1), "error", err)
 				continue
 			}
 			defer resp.Body.Close()
@@ -257,7 +257,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 				successCount++
 				testLogger.Info(fmt.Sprintf("  Alert %d accepted (status %d)", i+1, resp.StatusCode))
 			} else {
-				testLogger.Debug(fmt.Sprintf("  Alert %d returned status %d", i+1, resp.StatusCode))
+				testLogger.V(1).Info(fmt.Sprintf("  Alert %d returned status %d", i+1, resp.StatusCode))
 			}
 
 			time.Sleep(500 * time.Millisecond)
@@ -311,12 +311,12 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			k8sClient := getKubernetesClientSafe()
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to get K8s client", "error", err)
+					testLogger.V(1).Info("Failed to get K8s client", "error", err)
 				}
 				return -1
 			}
 			if err := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			return len(crdList.Items)
