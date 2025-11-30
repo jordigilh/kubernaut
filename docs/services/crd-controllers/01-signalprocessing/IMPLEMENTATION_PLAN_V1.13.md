@@ -1,13 +1,20 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.12.md`
-**Version**: v1.12
-**Last Updated**: 2025-11-28
+**Filename**: `IMPLEMENTATION_PLAN_V1.13.md`
+**Version**: v1.13
+**Last Updated**: 2025-11-30
 **Timeline**: 12-14 days (quality-focused, no time pressure)
 **Status**: 📋 DRAFT
 **Quality Level**: Production-Ready Standard (98% Confidence Target)
 
 **Change Log**:
+- **v1.13** (2025-11-30): DD-005 v2.0 code example compliance
+  - ✅ **Code Examples Fixed**: All `*zap.Logger` → `logr.Logger` in code examples
+  - ✅ **Logging Syntax Fixed**: All `zap.Error()`, `zap.String()` → key-value pairs
+  - ✅ **Constructor Patterns Fixed**: `.Named()` → `.WithName()` for logr
+  - ✅ **Reconciler Logger Fixed**: `*zap.Logger` → `logr.Logger` (native from ctrl.Log)
+  - ✅ **Audit Client Fixed**: Accept `logr.Logger` per DD-005 shared library standard
+  - 📏 **Impact**: 10 code blocks updated for DD-005 v2.0 compliance
 - **v1.12** (2025-11-28): Template v2.8 alignment - comprehensive new sections
   - ✅ **Logging Framework Decision Matrix**: DD-005 v2.0 compliance with `ctrl.Log` for CRD controllers
   - ✅ **Pre-Implementation Design Decisions**: DD format for ambiguous requirements
@@ -1367,19 +1374,21 @@ import (
 )
 
 // K8sEnricher fetches Kubernetes context for signal enrichment.
+// DD-005 v2.0: Uses logr.Logger (unified interface for all Kubernaut services)
 type K8sEnricher struct {
     client  client.Client
-    logger  *zap.Logger
-    cache   *cache.TTLCache // TTL-based cache for repeated lookups
+    logger  logr.Logger      // DD-005 v2.0: logr.Logger (not *zap.Logger)
+    cache   *cache.TTLCache  // TTL-based cache for repeated lookups
     metrics *metrics.Metrics
     timeout time.Duration
 }
 
 // NewK8sEnricher creates a new K8s context enricher.
-func NewK8sEnricher(c client.Client, logger *zap.Logger, m *metrics.Metrics, timeout time.Duration) *K8sEnricher {
+// DD-005 v2.0: Accept logr.Logger from caller (CRD controller passes ctrl.Log)
+func NewK8sEnricher(c client.Client, logger logr.Logger, m *metrics.Metrics, timeout time.Duration) *K8sEnricher {
     return &K8sEnricher{
         client:  c,
-        logger:  logger.Named("k8s-enricher"),
+        logger:  logger.WithName("k8s-enricher"), // DD-005: .WithName() not .Named()
         cache:   cache.NewTTLCache(5 * time.Minute),
         metrics: m,
         timeout: timeout,
@@ -1441,7 +1450,7 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
     // 2. Fetch pod
     pod, err := e.getPod(ctx, signal.Namespace, signal.Resource.Name)
     if err != nil {
-        e.logger.Warn("Pod not found, continuing with partial context", zap.Error(err))
+        e.logger.Info("Pod not found, continuing with partial context", "error", err) // DD-005: key-value pairs
     } else {
         result.Pod = pod
 
@@ -1477,7 +1486,7 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
     // 2. Fetch deployment
     deployment, err := e.getDeployment(ctx, signal.Namespace, signal.Resource.Name)
     if err != nil {
-        e.logger.Warn("Deployment not found, continuing with namespace only", zap.Error(err))
+        e.logger.Info("Deployment not found, continuing with namespace only", "error", err) // DD-005: key-value pairs
     } else {
         result.Deployment = deployment
     }
@@ -1538,7 +1547,7 @@ func (e *K8sEnricher) getNamespace(ctx context.Context, name string) (*signalpro
 ```go
 type EnvironmentClassifier struct {
     regoQuery *rego.PreparedEvalQuery
-    logger    *zap.Logger
+    logger    logr.Logger // DD-005 v2.0: logr.Logger (not *zap.Logger)
 }
 
 // Classify determines environment using Rego policy
@@ -1612,7 +1621,7 @@ type PriorityEngine struct {
     configMapName string
     configMapKey  string
     hotReloader   *HotReloader
-    logger        *zap.Logger
+    logger        logr.Logger // DD-005 v2.0: logr.Logger (not *zap.Logger)
 }
 
 // Assign determines priority using Rego policy with K8s + business context
@@ -1659,7 +1668,7 @@ func (p *PriorityEngine) StartHotReload(ctx context.Context, client client.Clien
             rego.Module("priority.rego", policy),
         ).PrepareForEval(ctx)
         if err != nil {
-            p.logger.Error("Failed to reload Rego policy", zap.Error(err))
+            p.logger.Error(err, "Failed to reload Rego policy") // DD-005: logr syntax (err first)
             return
         }
         p.regoQuery = &query
@@ -1679,7 +1688,7 @@ func (p *PriorityEngine) StartHotReload(ctx context.Context, client client.Clien
 ```go
 type BusinessClassifier struct {
     regoQuery *rego.PreparedEvalQuery
-    logger    *zap.Logger
+    logger    logr.Logger // DD-005 v2.0: logr.Logger (not *zap.Logger)
 }
 
 // Classify performs multi-dimensional business categorization
@@ -1961,6 +1970,7 @@ import (
 )
 
 // EnrichSignal wraps errors with context for debugging.
+// DD-005 v2.0: Uses logr.Logger with key-value pairs
 func (e *K8sEnricher) EnrichSignal(ctx context.Context, signal *Signal) (*KubernetesContext, error) {
     ns, err := e.getNamespace(ctx, signal.Namespace)
     if err != nil {
@@ -1970,10 +1980,11 @@ func (e *K8sEnricher) EnrichSignal(ctx context.Context, signal *Signal) (*Kubern
     deploy, err := e.getDeployment(ctx, signal.Namespace, signal.DeploymentName)
     if err != nil {
         // Graceful degradation: continue without deployment context
-        e.logger.Warn("deployment not found, continuing with partial context",
-            zap.String("namespace", signal.Namespace),
-            zap.String("deployment", signal.DeploymentName),
-            zap.Error(err))
+        // DD-005 v2.0: logr syntax (key-value pairs, no zap helpers)
+        e.logger.Info("deployment not found, continuing with partial context",
+            "namespace", signal.Namespace,
+            "deployment", signal.DeploymentName,
+            "error", err)
         deploy = &DeploymentContext{} // Empty context
     }
 
@@ -2037,10 +2048,11 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 ```go
 // SignalProcessingReconciler reconciles SignalProcessing CRDs
+// DD-005 v2.0: Uses logr.Logger (native from controller-runtime)
 type SignalProcessingReconciler struct {
     client.Client
     Scheme              *runtime.Scheme
-    Logger              *zap.Logger
+    Logger              logr.Logger // DD-005 v2.0: logr.Logger (native ctrl.Log)
     K8sEnricher         *enricher.K8sEnricher
     EnvironmentClassifier *classifier.EnvironmentClassifier
     PriorityEngine      *classifier.PriorityEngine
@@ -2065,7 +2077,7 @@ type SignalProcessingReconciler struct {
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    log := r.Logger.With(zap.String("signalprocessing", req.NamespacedName.String()))
+    log := r.Logger.WithValues("signalprocessing", req.NamespacedName.String()) // DD-005: .WithValues() not .With(zap.String())
 
     // 1. Fetch SignalProcessing CRD
     sp := &signalprocessingv1alpha1.SignalProcessing{}
@@ -2090,7 +2102,7 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
     case signalprocessingv1alpha1.PhaseCategorizing:
         return r.handleCategorizingPhase(ctx, sp)
     default:
-        log.Error("Unknown phase", zap.String("phase", string(sp.Status.Phase)))
+        log.Error(nil, "Unknown phase", "phase", string(sp.Status.Phase)) // DD-005: logr syntax
         return ctrl.Result{}, nil
     }
 }
@@ -2136,13 +2148,15 @@ import (
 
 // Client wraps the shared audit store for Signal Processing events.
 // ADR-038: Uses fire-and-forget pattern with buffered writes (<1ms overhead).
+// DD-005 v2.0: Accepts logr.Logger (unified interface for all Kubernaut services)
 type Client struct {
     store  audit.AuditStore // Shared library from pkg/audit/
-    logger *zap.Logger
+    logger logr.Logger      // DD-005 v2.0: logr.Logger (not *zap.Logger)
 }
 
 // NewClient creates an audit client using the shared buffered audit store.
-func NewClient(store audit.AuditStore, logger *zap.Logger) *Client {
+// DD-005 v2.0: Accept logr.Logger from caller
+func NewClient(store audit.AuditStore, logger logr.Logger) *Client {
     return &Client{
         store:  store,
         logger: logger,
@@ -2175,9 +2189,10 @@ func (c *Client) WriteCategorizationAudit(ctx context.Context, sp *signalprocess
     // Business logic NEVER waits for audit writes (ADR-038)
     if err := c.store.StoreAudit(ctx, event); err != nil {
         // Log and continue - audit failures don't block business operations
-        c.logger.Warn("audit event buffering failed",
-            zap.Error(err),
-            zap.String("correlation_id", sp.Spec.RemediationRequestRef.Name),
+        // DD-005 v2.0: logr syntax (key-value pairs, no zap helpers)
+        c.logger.Info("audit event buffering failed",
+            "error", err,
+            "correlation_id", sp.Spec.RemediationRequestRef.Name,
         )
     }
     // Returns immediately - no wait for actual write
@@ -2203,7 +2218,7 @@ func (c *Client) WriteEnrichmentAudit(ctx context.Context, sp *signalprocessingv
 
     // Fire-and-forget (ADR-038)
     if err := c.store.StoreAudit(ctx, event); err != nil {
-        c.logger.Warn("audit event buffering failed", zap.Error(err))
+        c.logger.Info("audit event buffering failed", "error", err) // DD-005: key-value pairs
     }
 }
 ```

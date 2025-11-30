@@ -1,13 +1,19 @@
 # [Service Name] - Implementation Plan Template
 
 **Filename Convention**: `IMPLEMENTATION_PLAN_V<semantic_version>.md` (e.g., `IMPLEMENTATION_PLAN_V1.3.md`)
-**Version**: v2.8 - UNIFIED LOGGING FRAMEWORK (logr)
-**Last Updated**: 2025-11-28
+**Version**: v2.9 - CODE EXAMPLE DD-005 COMPLIANCE
+**Last Updated**: 2025-11-30
 **Timeline**: [X] days (11-12 days typical)
 **Status**: ✅ Production-Ready Template (98% Confidence Standard)
 **Quality Level**: Matches Data Storage v4.1 and Notification V3.0 standards
 
 **Change Log**:
+- **v2.9** (2025-11-30): 🎯 **CODE EXAMPLE DD-005 COMPLIANCE**
+  - ✅ **Shared Library Extraction Examples**: Updated to use `logr.Logger` (per DD-005 v2.0)
+  - ✅ **Redis Cache Example**: Changed from `*zap.Logger` to `logr.Logger` in "After" section
+  - ✅ **Logging Syntax**: Updated to use key-value pairs (not zap helpers)
+  - ✅ **DD-005 Reference**: Added explicit reference to authoritative document
+  - 📏 **Template size**: ~7,400 lines (no growth, code example fixes only)
 - **v2.8** (2025-11-28): 🎯 **UNIFIED LOGGING FRAMEWORK (DD-005 v2.0)**
   - ✅ **Logging Framework Decision Matrix**: Added comprehensive section for `logr.Logger` usage
   - ✅ **Implementation Patterns**: Stateless services use `zapr.NewLogger()`, CRD controllers use native `ctrl.Log`
@@ -7411,9 +7417,10 @@ func (c *Client) GenerateEmbedding(ctx context.Context, text string) ([]float32,
 **Before** (duplicated in Gateway, Data Storage, Signal Processing):
 ```go
 // pkg/gateway/cache/redis.go (duplicated)
+// ❌ LEGACY: Uses *zap.Logger directly (violates DD-005 v2.0)
 type RedisCache struct {
     client    *redis.Client
-    logger    *zap.Logger
+    logger    *zap.Logger  // ❌ DD-005 violation
     connected atomic.Bool
     connCheckMu sync.Mutex
 }
@@ -7426,19 +7433,25 @@ func (c *RedisCache) ensureConnection(ctx context.Context) error {
 }
 ```
 
-**After** (shared library):
+**After** (shared library - DD-005 v2.0 compliant):
 ```go
 // pkg/cache/redis/client.go (shared)
+// DD-005 v2.0: Uses logr.Logger (unified interface for all Kubernaut services)
 package redis
+
+import "github.com/go-logr/logr"
 
 type Client struct {
     client      *redis.Client
-    logger      *zap.Logger
+    logger      logr.Logger  // ✅ DD-005 v2.0: logr.Logger (not *zap.Logger)
     connected   atomic.Bool
     connCheckMu sync.Mutex
 }
 
-func NewClient(opts *redis.Options, logger *zap.Logger) *Client {
+// NewClient creates a Redis client.
+// DD-005 v2.0: Accept logr.Logger from caller (stateless services pass zapr.NewLogger(),
+// CRD controllers pass ctrl.Log)
+func NewClient(opts *redis.Options, logger logr.Logger) *Client {
     return &Client{
         client: redis.NewClient(opts),
         logger: logger,
@@ -7465,7 +7478,7 @@ func (c *Client) EnsureConnection(ctx context.Context) error {
     }
 
     c.connected.Store(true)
-    c.logger.Info("Redis connection established")
+    c.logger.Info("Redis connection established") // ✅ DD-005: logr syntax
     return nil
 }
 ```
