@@ -48,8 +48,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware" // BR-109: Request ID middleware
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
-	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors" // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors" // BR-HTTP-015: Shared CORS library
 )
 
 // Server is the main Gateway HTTP server
