@@ -19,8 +19,87 @@
 | **Degraded Mode Rate** | `signalprocessing_degraded_total / signalprocessing_total` | <5% | Most signals fully enriched |
 | **Categorization Success Rate** | `signalprocessing_categorization_success_total / signalprocessing_categorization_total` | ≥99% | Accurate priority assignment |
 | **Audit Write Success Rate** | `signalprocessing_audit_success_total / signalprocessing_audit_total` | ≥99% | Audit trail completeness |
+| **Owner Chain Build Success** | `signalprocessing_owner_chain_success_total / signalprocessing_owner_chain_total` | ≥99% | DetectedLabels validation enabled |
+| **DetectedLabels Coverage** | `avg(signalprocessing_detected_labels_count)` | ≥3 | Minimum detection types per signal |
+| **Rego Evaluation Success** | `signalprocessing_rego_success_total / signalprocessing_rego_total` | ≥99% | CustomLabels extraction works |
+| **Rego Evaluation Latency (P95)** | `histogram_quantile(0.95, signalprocessing_rego_duration_seconds)` | <100ms | Fast policy evaluation |
 
 **Note**: Context Service metrics removed per [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md). Recovery context is now embedded by Remediation Orchestrator.
+
+### Label Detection Metrics (DD-WORKFLOW-001 v1.8) ⭐ NEW
+
+**OwnerChain Metrics**:
+```yaml
+# Owner chain build duration
+signalprocessing_owner_chain_duration_seconds:
+  type: histogram
+  labels: [namespace, status]
+  buckets: [0.05, 0.1, 0.25, 0.5, 1.0]
+  description: "Time to build K8s ownership chain"
+
+# Owner chain length
+signalprocessing_owner_chain_length:
+  type: histogram
+  labels: [namespace]
+  buckets: [1, 2, 3, 4, 5, 10]
+  description: "Number of entries in ownership chain"
+
+# Owner chain success/failure
+signalprocessing_owner_chain_total:
+  type: counter
+  labels: [namespace, status]  # status: success, error
+  description: "Total owner chain build attempts"
+```
+
+**DetectedLabels Metrics**:
+```yaml
+# Labels detected per signal
+signalprocessing_detected_labels_count:
+  type: gauge
+  labels: [namespace]
+  description: "Number of DetectedLabels populated (0-9 types)"
+
+# Detection duration
+signalprocessing_detected_labels_duration_seconds:
+  type: histogram
+  labels: [namespace]
+  buckets: [0.05, 0.1, 0.2, 0.5, 1.0]
+  description: "Time to detect all label types"
+
+# Detection by type
+signalprocessing_detected_label_type:
+  type: counter
+  labels: [label_type]  # gitops, pdb, hpa, stateful, helm, networkpolicy, pss, servicemesh
+  description: "Count of each detection type found"
+```
+
+**CustomLabels/Rego Metrics**:
+```yaml
+# Rego policy evaluation duration
+signalprocessing_rego_duration_seconds:
+  type: histogram
+  labels: [namespace, status]
+  buckets: [0.01, 0.025, 0.05, 0.1, 0.25]
+  description: "Rego policy evaluation time"
+
+# Rego evaluation results
+signalprocessing_rego_total:
+  type: counter
+  labels: [namespace, status]  # status: success, error, empty
+  description: "Total Rego evaluations"
+
+# CustomLabels count
+signalprocessing_custom_labels_count:
+  type: gauge
+  labels: [namespace]
+  description: "Number of CustomLabels extracted via Rego"
+
+# Security wrapper blocks
+signalprocessing_rego_security_blocks_total:
+  type: counter
+  labels: [blocked_label]  # The mandatory label that was blocked
+  description: "Count of customer attempts to override mandatory labels"
+```
 
 **Service Level Objectives (SLOs)**:
 
