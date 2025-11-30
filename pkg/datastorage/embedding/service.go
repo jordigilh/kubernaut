@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/pgvector/pgvector-go"
-	"go.uber.org/zap"
 )
 
 // ========================================
@@ -34,13 +34,13 @@ type Service interface {
 
 // PlaceholderService is a temporary implementation that returns placeholder embeddings
 type PlaceholderService struct {
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewPlaceholderService creates a new placeholder embedding service
-func NewPlaceholderService(logger *zap.Logger) Service {
+func NewPlaceholderService(logger logr.Logger) Service {
 	if logger == nil {
-		logger = zap.NewNop()
+		logger = logr.Discard()
 	}
 	return &PlaceholderService{
 		logger: logger,
@@ -50,8 +50,8 @@ func NewPlaceholderService(logger *zap.Logger) Service {
 // GenerateEmbedding generates a placeholder embedding
 // TODO: Replace with real embedding generation
 func (s *PlaceholderService) GenerateEmbedding(ctx context.Context, text string) (*pgvector.Vector, error) {
-	s.logger.Warn("Using placeholder embedding service - replace with real implementation",
-		zap.String("text_preview", truncateText(text, 50)),
+	s.logger.Info("Using placeholder embedding service - replace with real implementation",
+		"text_preview", truncateText(text, 50),
 	)
 
 	// Generate a simple placeholder embedding (384 dimensions, all zeros)
@@ -71,8 +71,8 @@ func (s *PlaceholderService) GenerateEmbedding(ctx context.Context, text string)
 // GenerateBatchEmbeddings generates placeholder embeddings for multiple texts
 // TODO: Replace with real batch embedding generation
 func (s *PlaceholderService) GenerateBatchEmbeddings(ctx context.Context, texts []string) ([]*pgvector.Vector, error) {
-	s.logger.Warn("Using placeholder batch embedding service - replace with real implementation",
-		zap.Int("batch_size", len(texts)),
+	s.logger.Info("Using placeholder batch embedding service - replace with real implementation",
+		"batch_size", len(texts),
 	)
 
 	embeddings := make([]*pgvector.Vector, len(texts))
@@ -94,4 +94,3 @@ func truncateText(text string, maxLen int) string {
 	}
 	return text[:maxLen] + "..."
 }
-
