@@ -111,6 +111,7 @@ class TestRecoveryAnalysisLogic:
 
         request = {
             "incident_id": "test-inc-002",
+            "remediation_id": "req-test-2025-11-27-002",  # DD-WORKFLOW-002 v2.2: mandatory
             "failed_action": {"type": "scale_deployment"},
             "failure_context": {"cluster_state": "high_load"}
         }

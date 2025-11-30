@@ -18,15 +18,36 @@ limitations under the License.
 Incident Analysis Models
 
 Business Requirement: BR-HAPI-002 (Incident analysis request schema)
+Business Requirement: BR-AUDIT-001 (Unified audit trail - remediation_id)
+Design Decision: DD-WORKFLOW-002 v2.2 (remediation_id mandatory)
 """
 
 from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class IncidentRequest(BaseModel):
-    """Request model for initial incident analysis endpoint"""
+    """
+    Request model for initial incident analysis endpoint
+
+    Business Requirements:
+    - BR-HAPI-002: Incident analysis request schema
+    - BR-AUDIT-001: Unified audit trail (remediation_id)
+
+    Design Decision: DD-WORKFLOW-002 v2.2
+    - remediation_id is MANDATORY for audit trail correlation
+    - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
+    """
     incident_id: str = Field(..., description="Unique incident identifier")
+    remediation_id: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Remediation request ID for audit correlation (e.g., 'req-2025-11-27-abc123'). "
+            "MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY - "
+            "do NOT use for RCA analysis or workflow matching."
+        )
+    )
     signal_type: str = Field(..., description="Canonical signal type")
     severity: str = Field(..., description="Signal severity")
     signal_source: str = Field(..., description="Monitoring system")

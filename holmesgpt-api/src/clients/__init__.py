@@ -16,11 +16,14 @@ limitations under the License.
 
 """
 External service clients for HolmesGPT API
+
+NOTE: mcp_client.py has been REMOVED per DD-WORKFLOW-002 v2.4.
+Workflow catalog search is now handled by WorkflowCatalogToolset
+which calls the Data Storage Service REST API directly.
 """
 
-from src.clients.mcp_client import MCPClient
+# Only DataStorage client is exported - MCPClient removed per DD-WORKFLOW-002 v2.4
+from src.clients.datastorage.client import DataStorageClient
 
-__all__ = ["MCPClient"]
-
-
+__all__ = ["DataStorageClient"]
 

@@ -161,12 +161,15 @@ def get_model_config_for_sdk(app_config: Optional[Dict[str, Any]] = None) -> tup
 
 def register_workflow_catalog_toolset(
     config: Config,
-    app_config: Optional[Dict[str, Any]] = None
+    app_config: Optional[Dict[str, Any]] = None,
+    remediation_id: Optional[str] = None
 ) -> Config:
     """
     Register the workflow catalog toolset with HolmesGPT SDK Config.
 
     Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
+    Business Requirement: BR-AUDIT-001 - Unified audit trail (remediation_id)
+    Design Decision: DD-WORKFLOW-002 v2.2 - remediation_id mandatory
 
     CRITICAL: After extensive investigation, the HolmesGPT SDK does NOT support:
     1. Direct assignment of Toolset instances (causes '.get()' AttributeError during SDK's toolset loading)
@@ -179,18 +182,37 @@ def register_workflow_catalog_toolset(
     Args:
         config: HolmesGPT SDK Config instance (already initialized)
         app_config: Optional application configuration (for logging context)
+        remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-002 v2.2)
+                       MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY -
+                       do NOT use for RCA analysis or workflow matching.
 
     Returns:
         The same Config instance with workflow catalog registered via monkey-patch
     """
     from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 
-    # Create the workflow catalog toolset instance
-    workflow_toolset = WorkflowCatalogToolset(enabled=True)
+    # Create the workflow catalog toolset instance with remediation_id for audit trail
+    # BR-AUDIT-001: Pass remediation_id for audit correlation
+    workflow_toolset = WorkflowCatalogToolset(enabled=True, remediation_id=remediation_id)
 
     # Initialize toolset manager if needed
     if not hasattr(config, 'toolset_manager') or config.toolset_manager is None:
         config.toolset_manager = ToolsetManager(toolsets=config.toolsets)
+
+    # BR-HAPI-250: DO NOT add toolset directly to toolsets dict!
+    # The SDK's _load_toolsets_from_config() iterates over toolsets dict
+    # and calls .get('type') on each value, expecting dicts not Toolset instances.
+    # Instead, we inject the toolset through monkey-patched methods below.
+    #
+    # WRONG (causes AttributeError: 'WorkflowCatalogToolset' has no attribute 'get'):
+    #   config.toolset_manager.toolsets["workflow/catalog"] = workflow_toolset
+    #
+    # CORRECT: Only inject through patched methods (see below)
+    logger.info(
+        f"BR-HAPI-250: WorkflowCatalogToolset created "
+        f"(enabled={workflow_toolset.enabled}, tools={len(workflow_toolset.tools)}). "
+        f"Will inject via monkey-patched methods."
+    )
 
     # BR-HAPI-250: Monkey-patch list_server_toolsets to inject workflow catalog
     # This is the only reliable way to add custom Python toolsets to the SDK

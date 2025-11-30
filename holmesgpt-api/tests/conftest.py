@@ -103,9 +103,12 @@ def expired_jwt_token() -> str:
 def sample_recovery_request() -> Dict[str, Any]:
     """
     Sample recovery request for testing
+
+    Updated: DD-WORKFLOW-002 v2.2 - remediation_id is now mandatory
     """
     return {
         "incident_id": "test-inc-001",
+        "remediation_id": "req-test-2025-11-27-001",  # DD-WORKFLOW-002 v2.2: mandatory
         "failed_action": {
             "type": "scale_deployment",
             "target": "nginx",
