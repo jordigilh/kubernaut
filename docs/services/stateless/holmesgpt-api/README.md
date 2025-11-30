@@ -45,6 +45,34 @@
 
 ---
 
+## 📬 **PENDING CROSS-TEAM REQUESTS**
+
+### **Request 1: Recovery Prompt Implementation** (From AIAnalysis Team)
+
+**Status**: 🟡 **PENDING** - Implementation required for AIAnalysis recovery flow
+
+**Handoff Document**: [HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md](../../crd-controllers/02-aianalysis/HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md)
+
+**Design Decisions**:
+- [DD-RECOVERY-002: Direct AIAnalysis Recovery Flow](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md)
+- [DD-RECOVERY-003: Recovery Prompt Design](../../../architecture/decisions/DD-RECOVERY-003-recovery-prompt-design.md)
+
+**Summary**:
+- Update `RecoveryRequest` model with structured `PreviousExecution` context
+- Implement `_create_recovery_investigation_prompt()` with failure context
+- Add Kubernetes reason code guidance map
+- Update response parsing for recovery-specific fields
+
+**Estimated Effort**: 2-3 days
+
+**Files to Modify**:
+- `src/models/recovery_models.py`
+- `src/extensions/recovery.py`
+- `tests/unit/test_recovery_*.py`
+- `tests/integration/test_recovery_endpoint.py`
+
+---
+
 ## 📋 Quick Navigation
 
 ### Implementation & Design
