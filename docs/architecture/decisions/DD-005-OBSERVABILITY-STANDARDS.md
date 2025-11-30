@@ -345,27 +345,129 @@ gateway_redis_outage_count_total
 
 ### **1. Structured Logging Library**
 
-**Mandatory**: Use `go.uber.org/zap` for all services
+**Mandatory Interface**: Use `github.com/go-logr/logr` as the **unified logging interface** across all services
+
+**Backend**: Use `go.uber.org/zap` as the **underlying implementation** (via `github.com/go-logr/zapr` adapter)
 
 **Rationale**:
-- High performance (zero-allocation)
-- Structured JSON output
-- Type-safe field API
-- Industry standard
+- ✅ **Unified interface**: Single `logr.Logger` type across stateless and CRD controller services
+- ✅ **controller-runtime native**: CRD controllers use `logr` natively
+- ✅ **zap performance**: High performance (zero-allocation) via `zapr` adapter
+- ✅ **Shared library consistency**: All `pkg/*` libraries accept `logr.Logger`
+- ✅ **Structured JSON output**: Consistent format across all services
+- ✅ **Industry standard**: `logr` is the Kubernetes ecosystem standard
+
+---
+
+### **1.1 Logging Framework Decision Matrix**
+
+| Service Type | Primary Logger | Shared Library Interface | How to Create |
+|--------------|----------------|--------------------------|---------------|
+| **Stateless HTTP Services** (Gateway, Data Storage, Context API) | `logr.Logger` | `logr.Logger` | `zapr.NewLogger(zapLogger)` |
+| **CRD Controllers** (Signal Processing, Notification, Workflow Execution) | `logr.Logger` | `logr.Logger` | `ctrl.Log.WithName("component")` |
+| **Shared Libraries** (`pkg/*`) | N/A (accepts) | `logr.Logger` | Passed by caller |
+
+---
+
+### **1.2 Implementation Patterns**
+
+#### **Stateless HTTP Services**
+
+```go
+import (
+    "github.com/go-logr/logr"
+    "github.com/go-logr/zapr"
+    "go.uber.org/zap"
+)
+
+func main() {
+    // Create zap logger (for performance)
+    zapLogger, _ := zap.NewProduction()
+    defer zapLogger.Sync()
+
+    // Convert to logr interface (for consistency)
+    logger := zapr.NewLogger(zapLogger)
+
+    // Pass to shared libraries
+    auditStore, _ := audit.NewBufferedStore(client, config, "gateway", logger.WithName("audit"))
+    server := gateway.NewServer(cfg, logger)
+}
+```
+
+#### **CRD Controllers**
+
+```go
+import (
+    "github.com/go-logr/logr"
+    ctrl "sigs.k8s.io/controller-runtime"
+)
+
+func main() {
+    // Use native logr from controller-runtime
+    logger := ctrl.Log.WithName("notification-controller")
+
+    // Pass to shared libraries (no adapter needed)
+    auditStore, _ := audit.NewBufferedStore(client, config, "notification", logger.WithName("audit"))
+}
+```
+
+#### **Shared Libraries**
+
+```go
+// pkg/audit/store.go
+import "github.com/go-logr/logr"
+
+type BufferedAuditStore struct {
+    logger logr.Logger  // Unified interface
+    // ...
+}
+
+func NewBufferedStore(client DataStorageClient, config Config, serviceName string, logger logr.Logger) (AuditStore, error) {
+    // Works with both stateless (via zapr) and CRD controllers (native logr)
+}
+```
+
+---
+
+### **1.3 Migration from `*zap.Logger` to `logr.Logger`**
+
+**Migration Priority**: V1.1 (Post-MVP)
+
+**Affected Files**: 34 files in `pkg/` with 76 `*zap.Logger` references
+
+| Package | Files | Priority | Effort |
+|---------|-------|----------|--------|
+| `pkg/audit` | 1 | P0 (shared library) | 1h |
+| `pkg/cache/redis` | 1 | P1 (shared library) | 1h |
+| `pkg/gateway` | 10 | P2 (stateless service) | 4h |
+| `pkg/datastorage` | 20 | P2 (stateless service) | 6h |
+| `pkg/toolset` | 1 | P3 (low usage) | 0.5h |
+| **Total** | **34** | | **~12.5h** |
+
+**Migration Steps**:
+1. Update shared libraries (`pkg/audit`, `pkg/cache/redis`) to accept `logr.Logger`
+2. Update stateless services to create `logr.Logger` via `zapr.NewLogger()`
+3. Update CRD controllers to pass native `logr.Logger` to shared libraries
+4. Remove duplicate logger creation in CRD controllers
 
 ---
 
 ### **2. Log Levels**
 
-| Level | Use Case | Example |
+| Level | Use Case | logr Example |
 |---|---|---|
-| **DEBUG** | Detailed debugging information | `logger.Debug("Parsing signal payload", zap.String("fingerprint", fp))` |
-| **INFO** | Normal operational events | `logger.Info("Signal received", zap.String("source", "prometheus"))` |
-| **WARN** | Warning conditions (recoverable) | `logger.Warn("Redis cache miss", zap.String("key", key))` |
-| **ERROR** | Error conditions (actionable) | `logger.Error("Failed to create CRD", zap.Error(err))` |
-| **FATAL** | Fatal errors (service exits) | `logger.Fatal("Cannot connect to database", zap.Error(err))` |
+| **DEBUG** (V=1) | Detailed debugging information | `logger.V(1).Info("Parsing signal payload", "fingerprint", fp)` |
+| **INFO** (V=0) | Normal operational events | `logger.Info("Signal received", "source", "prometheus")` |
+| **WARN** | Warning conditions (recoverable) | `logger.Info("Redis cache miss", "key", key, "warning", true)` |
+| **ERROR** | Error conditions (actionable) | `logger.Error(err, "Failed to create CRD")` |
+| **FATAL** | Fatal errors (service exits) | `logger.Error(err, "Cannot connect to database"); os.Exit(1)` |
 
-**Default Level**: `INFO` (production), `DEBUG` (development)
+**Note**: `logr` uses verbosity levels (`V(n)`) instead of named levels. Higher V = more verbose.
+- `V(0)` = INFO (default, always shown)
+- `V(1)` = DEBUG (shown when verbosity >= 1)
+- `V(2)` = TRACE (shown when verbosity >= 2)
+
+**Default Level**: `V(0)` (production), `V(1)` (development)
 
 ---
 
@@ -373,31 +475,43 @@ gateway_redis_outage_count_total
 
 **Mandatory Fields** (all log entries):
 ```go
+// logr uses key-value pairs (not zap.String, zap.Int, etc.)
 logger.Info("Message",
-    zap.String("request_id", requestID),      // Request tracing
-    zap.String("source_ip", sourceIP),        // Security auditing
-    zap.String("endpoint", r.URL.Path),       // HTTP endpoint
-    zap.String("method", r.Method),           // HTTP method
+    "request_id", requestID,      // Request tracing
+    "source_ip", sourceIP,        // Security auditing
+    "endpoint", r.URL.Path,       // HTTP endpoint
+    "method", r.Method,           // HTTP method
 )
 ```
 
 **Common Fields** (use consistently):
 ```go
-zap.String("service", "gateway")              // Service name
-zap.String("environment", "prod")             // Environment
-zap.String("namespace", "default")            // Kubernetes namespace
-zap.String("signal_name", "HighMemoryUsage")  // Signal name
-zap.String("fingerprint", fp)                 // Signal fingerprint
-zap.Float64("duration_ms", durationMs)        // Operation duration
-zap.Int("status_code", statusCode)            // HTTP status code
-zap.Error(err)                                // Error details
+// Key-value pairs for structured logging
+"service", "gateway"              // Service name
+"environment", "prod"             // Environment
+"namespace", "default"            // Kubernetes namespace
+"signal_name", "HighMemoryUsage"  // Signal name
+"fingerprint", fp                 // Signal fingerprint
+"duration_ms", durationMs         // Operation duration
+"status_code", statusCode         // HTTP status code
+```
+
+**Error Logging** (logr pattern):
+```go
+// logr.Error() takes error as first argument, message second
+logger.Error(err, "Failed to process request",
+    "request_id", requestID,
+    "operation", "create_signal",
+)
 ```
 
 **Performance Fields**:
 ```go
-zap.Float64("duration_ms", float64(duration.Milliseconds()))
-zap.Int64("bytes_processed", bytesProcessed)
-zap.Int("retry_count", retryCount)
+logger.Info("Request completed",
+    "duration_ms", float64(duration.Milliseconds()),
+    "bytes_processed", bytesProcessed,
+    "retry_count", retryCount,
+)
 ```
 
 ---
@@ -1109,11 +1223,11 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 
 **Breakdown**:
 - **Metrics Standards**: 95% ✅ (proven in Gateway, Prometheus best practices)
-- **Logging Standards**: 95% ✅ (proven in Gateway, zap is industry standard)
+- **Logging Standards**: 95% ✅ (unified `logr` interface, `zap` backend via `zapr`)
 - **Request Tracing**: 95% ✅ (proven in Gateway, W3C standard)
-- **Migration Effort**: 90% ✅ (straightforward, ~8 hours per service)
+- **Migration Effort**: 90% ✅ (~12.5 hours for `logr` migration across 34 files)
 
-**Why 95%**: Only minor risk is migration effort for existing services, but pattern is proven in Gateway.
+**Why 95%**: `logr` is the Kubernetes ecosystem standard, proven in controller-runtime. Migration is straightforward with `zapr` adapter for stateless services.
 
 ---
 
@@ -1123,17 +1237,35 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 
 **Evidence**:
 - ✅ Prometheus best practices followed
-- ✅ Industry-standard structured logging (zap)
+- ✅ Unified logging interface (`logr`) with high-performance backend (`zap` via `zapr`)
+- ✅ Consistent logging across stateless and CRD controller services
 - ✅ Proven in Gateway service (115 tests passing)
-- ✅ Clear migration path for other services
+- ✅ Native integration with controller-runtime for CRD controllers
+- ✅ Clear migration path (~12.5 hours for existing code)
 - ✅ Security compliance (log sanitization)
 
 **Recommendation**: ✅ **MANDATORY** for all services before production deployment
 
+**Migration Status**:
+- 🔄 **Pending**: 34 files in `pkg/` need migration from `*zap.Logger` to `logr.Logger`
+- ⏳ **Timeline**: V1.1 (Post-MVP)
+- 📋 **Tracking**: See Section 1.3 for detailed migration plan
+
 ---
 
-**Document Version**: 1.0
-**Last Updated**: October 31, 2025
+---
+
+## 📜 **Change Log**
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **2.0** | November 28, 2025 | **CRITICAL**: Unified logging interface - `logr.Logger` replaces `*zap.Logger` as the standard interface. `zap` remains the backend via `zapr` adapter. Added Logging Framework Decision Matrix, migration guide, and updated all examples to use `logr` syntax. |
+| **1.0** | October 31, 2025 | Initial release - Prometheus metrics, `zap` logging, request tracing standards |
+
+---
+
+**Document Version**: 2.0
+**Last Updated**: November 28, 2025
 **Status**: ✅ **APPROVED FOR PRODUCTION**
-**Next Review**: After all services implement observability standards
+**Next Review**: After logging migration to `logr` is complete (V1.1)
 
