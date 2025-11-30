@@ -143,14 +143,44 @@ type EnrichmentResults struct {
 	// Used by HolmesGPT-API for: workflow filtering + LLM context
 	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
 
+	// OwnerChain: K8s ownership traversal from signal source resource
+	// DD-WORKFLOW-001 v1.7: Used by HolmesGPT-API for 100% safe DetectedLabels validation
+	// SignalProcessing traverses metadata.ownerReferences to build this chain
+	// Example: Pod → ReplicaSet → Deployment
+	// Empty chain = orphan resource (no owners)
+	// HolmesGPT-API uses this to validate DetectedLabels applicability when RCA
+	// identifies a different resource than the original signal source
+	OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
+
 	// Custom labels from Rego policies - CUSTOMER DEFINED
-	// Only for labels we can't auto-detect (team, cost-center, region)
-	CustomLabels map[string]string `json:"customLabels,omitempty"`
+	// Key = subdomain/category (e.g., "constraint", "team", "region")
+	// Value = list of label values (boolean keys or "key=value" pairs)
+	// Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
+	// Passed through to HolmesGPT-API for workflow filtering + LLM context
+	CustomLabels map[string][]string `json:"customLabels,omitempty"`
 
 	// Overall enrichment quality score (0.0-1.0)
+	// 1.0 = all enrichments successful, 0.0 = all failed
+	// CONSUMER: Remediation Orchestrator (RO) - NOT for LLM/HolmesGPT
+	// PURPOSE: RO uses this to detect degraded mode (< 0.8) and notify operators
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0
 	EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
+}
+
+// OwnerChainEntry represents a single entry in the K8s ownership chain
+// DD-WORKFLOW-001 v1.7: SignalProcessing traverses ownerReferences to build this
+// Example chain for a Pod owned by Deployment:
+//
+//	[0]: {Namespace: "prod", Kind: "ReplicaSet", Name: "api-7d8f9c6b5"}
+//	[1]: {Namespace: "prod", Kind: "Deployment", Name: "api"}
+type OwnerChainEntry struct {
+	// Namespace of the owner resource (empty for cluster-scoped resources like Node)
+	Namespace string `json:"namespace,omitempty"`
+	// Kind of the owner resource (e.g., ReplicaSet, Deployment, StatefulSet, DaemonSet)
+	Kind string `json:"kind"`
+	// Name of the owner resource
+	Name string `json:"name"`
 }
 
 // DetectedLabels contains auto-detected cluster characteristics

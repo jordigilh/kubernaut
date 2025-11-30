@@ -6,7 +6,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| **3.0** | Nov 30, 2025 | HolmesGPT-API Team | **MAJOR**: Removed DEV_MODE anti-pattern, added mock LLM server, removed legacy backward compatibility |
+| **3.1** | Nov 30, 2025 | AIAnalysis Team | Fixed `customLabels` type: `Dict[str, str]` → `Dict[str, List[str]]` (subdomain-based) |
+| 3.0 | Nov 30, 2025 | HolmesGPT-API Team | **MAJOR**: Removed DEV_MODE anti-pattern, added mock LLM server, removed legacy backward compatibility |
 | 2.0 | Nov 30, 2025 | AIAnalysis Team | Added DetectedLabels for workflow filtering |
 | 1.0 | Nov 29, 2025 | AIAnalysis Team | Initial recovery prompt design |
 
@@ -228,8 +229,12 @@ class RecoveryRequest(BaseModel):
     resource_name: str = Field(..., description="Kubernetes resource name")
     environment: str = Field(default="unknown", description="Environment classification")
     priority: str = Field(default="P2", description="Priority level")
-    risk_tolerance: str = Field(default="medium", description="Risk tolerance")
-    business_category: str = Field(default="standard", description="Business category")
+
+    # Customer-derived labels (via Rego policies) - may be empty
+    # These are EXAMPLES - customers define their own keys/values
+    # Kubernaut passes these through without validation
+    risk_tolerance: Optional[str] = Field(None, description="Risk tolerance (customer-derived via Rego)")
+    business_category: Optional[str] = Field(None, description="Business category (customer-derived via Rego)")
 
     # Optional context
     error_message: Optional[str] = Field(None, description="Current error message")
@@ -837,7 +842,12 @@ class EnrichmentResults(BaseModel):
     """Enrichment results from SignalProcessing"""
     kubernetesContext: Optional[Dict[str, Any]] = None
     detectedLabels: Optional[DetectedLabels] = None
-    customLabels: Optional[Dict[str, str]] = None
+    # CustomLabels: Subdomain-based structure (v3.1)
+    # Key = subdomain (e.g., "constraint", "team", "region")
+    # Value = list of label values (boolean keys or "key=value" pairs)
+    # Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+    customLabels: Optional[Dict[str, List[str]]] = None
+    # EnrichmentQuality: For RO only - NOT for LLM/HolmesGPT
     enrichmentQuality: float = Field(default=0.0)
 
 

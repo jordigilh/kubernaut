@@ -1,12 +1,16 @@
-## CRD Schema
+## CRD Schema Specification
 
-**Version**: 2.0
-**Last Updated**: 2025-11-28
-**Status**: ✅ Aligned with DD-CONTRACT-001, ADR-041, ADR-043
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v2.0 | 2025-11-30 | **REGENERATED**: Complete schema from Go types; Added DetectedLabels, CustomLabels, OwnerChain; Removed businessContext, investigationScope, HistoricalContext; Updated PreviousExecutions to slice; V1.0 approval flow clarification | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) |
+> | v1.0 | 2025-11-28 | Initial CRD schema | - |
 
-**Full Schema**: See [docs/design/CRD/03_AI_ANALYSIS_CRD.md](../../design/CRD/03_AI_ANALYSIS_CRD.md)
+**Source of Truth**: `api/aianalysis/v1alpha1/aianalysis_types.go`
 
-**Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `03_AI_ANALYSIS_CRD.md`.
+**API Group**: `kubernaut.io/v1alpha1` (unified API group for all Kubernaut CRDs)
+
+**Location**: `api/aianalysis/v1alpha1/aianalysis_types.go`
 
 ---
 
@@ -14,14 +18,414 @@
 
 | Document | Impact on CRD |
 |----------|---------------|
-| **DD-CONTRACT-001** | AIAnalysis uses `selectedWorkflow` instead of `recommendations` |
-| **ADR-041** | LLM response contract defines `selected_workflow` format |
-| **ADR-043** | Workflow schema definition (catalog integration) |
+| **DD-CONTRACT-002** | Self-contained CRD pattern - all data in spec |
+| **DD-WORKFLOW-001 v1.8** | DetectedLabels, CustomLabels, OwnerChain in EnrichmentResults |
+| **DD-RECOVERY-002** | Recovery flow with `PreviousExecutions` slice |
+| **DD-RECOVERY-003** | Kubernetes reason codes for failure (not natural language) |
 | **ADR-040** | Approval orchestration handled by RO, not AIAnalysis |
+| **ADR-041** | LLM response contract defines `selected_workflow` format |
 
 ---
 
-### Spec Fields
+## V1.0 Scope Clarifications
+
+| Feature | V1.0 Status | Notes |
+|---------|-------------|-------|
+| **LLM Provider** | HolmesGPT-API only | No `LLMProvider`, `LLMModel`, `Temperature` fields |
+| **Approval Flow** | `approvalRequired=true` → RO notifies | No `AIApprovalRequest` CRD (V1.1) |
+| **Investigation Scope** | HolmesGPT decides | No `investigationScope` field |
+| **Business Context** | Via CustomLabels (Rego) | No hardcoded `businessContext` struct |
+| **Historical Context** | Operators only | Not for LLM input |
+
+---
+
+## ✅ TYPE SAFETY COMPLIANCE
+
+This CRD specification uses **fully structured types**:
+
+| Type | Structure | Benefit |
+|------|-----------|---------|
+| **EnrichmentResults** | Structured with DetectedLabels, CustomLabels, OwnerChain | Type safety, OpenAPI validation |
+| **PreviousExecutions** | `[]PreviousExecution` slice | Tracks ALL recovery attempts |
+| **ApprovalContext** | Rich structured context | Complete approval information |
+
+---
+
+## CRD Definition
+
+```go
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Confidence",type=number,JSONPath=`.status.selectedWorkflow.confidence`
+// +kubebuilder:printcolumn:name="ApprovalRequired",type=boolean,JSONPath=`.status.approvalRequired`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+
+// AIAnalysis is the Schema for the aianalyses API.
+type AIAnalysis struct {
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
+
+    Spec   AIAnalysisSpec   `json:"spec,omitempty"`
+    Status AIAnalysisStatus `json:"status,omitempty"`
+}
+```
+
+---
+
+## Spec Fields
+
+### AIAnalysisSpec
+
+```go
+// AIAnalysisSpec defines the desired state of AIAnalysis.
+// Design Decision: DD-CONTRACT-002 (self-contained CRD pattern)
+// V1.0: HolmesGPT-API only (no LLM config fields)
+// Recovery: DD-RECOVERY-002 (direct recovery flow)
+type AIAnalysisSpec struct {
+    // ========================================
+    // PARENT REFERENCE (Audit/Lineage)
+    // ========================================
+    // Reference to parent RemediationRequest CRD for audit trail
+    // +kubebuilder:validation:Required
+    RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+
+    // Remediation ID for audit correlation (DD-WORKFLOW-002 v2.2)
+    // +kubebuilder:validation:Required
+    // +kubebuilder:validation:MinLength=1
+    RemediationID string `json:"remediationId"`
+
+    // ========================================
+    // ANALYSIS REQUEST (DD-CONTRACT-002)
+    // ========================================
+    // Complete analysis request with structured context
+    // +kubebuilder:validation:Required
+    AnalysisRequest AnalysisRequest `json:"analysisRequest"`
+
+    // ========================================
+    // RECOVERY FIELDS (DD-RECOVERY-002)
+    // Populated by RO when this is a recovery attempt
+    // ========================================
+    // True if this AIAnalysis is for a recovery attempt (not initial incident)
+    IsRecoveryAttempt bool `json:"isRecoveryAttempt,omitempty"`
+
+    // Recovery attempt number (1, 2, 3...) - only set when IsRecoveryAttempt=true
+    // +kubebuilder:validation:Minimum=1
+    RecoveryAttemptNumber int `json:"recoveryAttemptNumber,omitempty"`
+
+    // Previous execution history (only set when IsRecoveryAttempt=true)
+    // Contains details about ALL previous attempts - allows LLM to:
+    // 1. Avoid repeating failed approaches
+    // 2. Learn from multiple failures
+    // 3. Consider re-trying earlier approaches after later failures
+    // Ordered chronologically: index 0 = first attempt, last index = most recent
+    PreviousExecutions []PreviousExecution `json:"previousExecutions,omitempty"`
+}
+```
+
+### AnalysisRequest
+
+```go
+// AnalysisRequest contains the structured analysis request
+// DD-CONTRACT-002: Self-contained context for AIAnalysis
+type AnalysisRequest struct {
+    // Signal context from SignalProcessing enrichment
+    // +kubebuilder:validation:Required
+    SignalContext SignalContextInput `json:"signalContext"`
+
+    // Analysis types to perform (e.g., "investigation", "root-cause", "workflow-selection")
+    // +kubebuilder:validation:MinItems=1
+    AnalysisTypes []string `json:"analysisTypes"`
+}
+```
+
+### SignalContextInput
+
+```go
+// SignalContextInput contains enriched signal context from SignalProcessing
+// DD-CONTRACT-002: Structured types replace map[string]string anti-pattern
+type SignalContextInput struct {
+    // Signal fingerprint for correlation
+    // +kubebuilder:validation:Required
+    // +kubebuilder:validation:MaxLength=64
+    Fingerprint string `json:"fingerprint"`
+
+    // Signal severity: critical, warning, info
+    // +kubebuilder:validation:Enum=critical;warning;info
+    Severity string `json:"severity"`
+
+    // Signal type (e.g., OOMKilled, CrashLoopBackOff)
+    // +kubebuilder:validation:Required
+    SignalType string `json:"signalType"`
+
+    // Environment classification
+    // +kubebuilder:validation:Enum=production;staging;development
+    Environment string `json:"environment"`
+
+    // Business priority
+    // +kubebuilder:validation:Enum=P0;P1;P2;P3
+    BusinessPriority string `json:"businessPriority"`
+
+    // Risk tolerance for this signal (customer-derived via Rego)
+    // +kubebuilder:validation:Enum=low;medium;high
+    RiskTolerance string `json:"riskTolerance,omitempty"`
+
+    // Business category (customer-derived via Rego)
+    BusinessCategory string `json:"businessCategory,omitempty"`
+
+    // Target resource identification
+    TargetResource TargetResource `json:"targetResource"`
+
+    // Complete enrichment results from SignalProcessing
+    // +kubebuilder:validation:Required
+    EnrichmentResults EnrichmentResults `json:"enrichmentResults"`
+}
+```
+
+---
+
+## EnrichmentResults (DD-WORKFLOW-001 v1.8)
+
+```go
+// EnrichmentResults contains all enrichment data from SignalProcessing
+// DD-CONTRACT-002: Matches SignalProcessing.Status.EnrichmentResults
+type EnrichmentResults struct {
+    // Kubernetes resource context (pod status, node conditions, etc.)
+    KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
+
+    // Auto-detected cluster characteristics - NO CONFIG NEEDED
+    // SignalProcessing detects these from K8s resources automatically
+    // Used by HolmesGPT-API for: workflow filtering + LLM context
+    DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
+
+    // OwnerChain: K8s ownership traversal from signal source resource
+    // DD-WORKFLOW-001 v1.8: Used by HolmesGPT-API for 100% safe DetectedLabels validation
+    // SignalProcessing traverses metadata.ownerReferences to build this chain
+    // Example: Pod → ReplicaSet → Deployment
+    // Empty chain = orphan resource (no owners)
+    OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
+
+    // Custom labels from Rego policies - CUSTOMER DEFINED
+    // Key = subdomain/category (e.g., "constraint", "team", "region")
+    // Value = list of label values (boolean keys or "key=value" pairs)
+    // Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+    CustomLabels map[string][]string `json:"customLabels,omitempty"`
+
+    // Overall enrichment quality score (0.0-1.0)
+    // CONSUMER: Remediation Orchestrator (RO) - NOT for LLM/HolmesGPT
+    // PURPOSE: RO uses this to detect degraded mode (< 0.8) and notify operators
+    // +kubebuilder:validation:Minimum=0.0
+    // +kubebuilder:validation:Maximum=1.0
+    EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
+}
+```
+
+### DetectedLabels (9 Fields)
+
+```go
+// DetectedLabels contains auto-detected cluster characteristics
+// SignalProcessing populates these automatically from K8s resources
+// HolmesGPT-API uses for:
+//   - Workflow filtering (deterministic SQL WHERE)
+//   - LLM context (natural language in prompt)
+// DD-WORKFLOW-001 v1.8: Dual-use architecture
+//   - LLM Prompt: ALWAYS included
+//   - Workflow Filtering: CONDITIONAL (only when OwnerChain validates)
+type DetectedLabels struct {
+    // ========================================
+    // GITOPS MANAGEMENT
+    // ========================================
+    GitOpsManaged bool   `json:"gitOpsManaged"`           // ArgoCD/Flux detected
+    GitOpsTool    string `json:"gitOpsTool,omitempty"`    // "argocd", "flux", ""
+
+    // ========================================
+    // WORKLOAD PROTECTION
+    // ========================================
+    PDBProtected bool `json:"pdbProtected"`  // PodDisruptionBudget exists
+    HPAEnabled   bool `json:"hpaEnabled"`    // HorizontalPodAutoscaler targets workload
+
+    // ========================================
+    // WORKLOAD CHARACTERISTICS
+    // ========================================
+    Stateful    bool `json:"stateful"`     // StatefulSet or PVCs attached
+    HelmManaged bool `json:"helmManaged"`  // helm.sh/chart label
+
+    // ========================================
+    // SECURITY POSTURE
+    // ========================================
+    NetworkIsolated  bool   `json:"networkIsolated"`            // NetworkPolicy exists
+    PodSecurityLevel string `json:"podSecurityLevel,omitempty"` // "privileged", "baseline", "restricted"
+    ServiceMesh      string `json:"serviceMesh,omitempty"`      // "istio", "linkerd"
+}
+```
+
+### OwnerChainEntry (DD-WORKFLOW-001 v1.8)
+
+```go
+// OwnerChainEntry represents a single entry in the K8s ownership chain
+// SignalProcessing traverses ownerReferences to build this chain
+// HolmesGPT-API uses for DetectedLabels validation
+type OwnerChainEntry struct {
+    // Namespace of the owner (empty for cluster-scoped like Node)
+    Namespace string `json:"namespace,omitempty"`
+    // Kind of the owner (ReplicaSet, Deployment, StatefulSet, DaemonSet)
+    Kind string `json:"kind"`
+    // Name of the owner
+    Name string `json:"name"`
+}
+```
+
+---
+
+## Recovery Types (DD-RECOVERY-002)
+
+### PreviousExecution
+
+```go
+// PreviousExecution contains context from a failed workflow execution
+// DD-RECOVERY-002: Used when IsRecoveryAttempt=true
+// NOTE: This is a SLICE - tracks ALL previous attempts, not just the last one
+type PreviousExecution struct {
+    // Reference to the failed WorkflowExecution CRD
+    WorkflowExecutionRef string `json:"workflowExecutionRef"`
+
+    // Original RCA from initial AIAnalysis
+    OriginalRCA OriginalRCA `json:"originalRCA"`
+
+    // Selected workflow that was executed and failed
+    SelectedWorkflow SelectedWorkflowSummary `json:"selectedWorkflow"`
+
+    // Structured failure information with Kubernetes reason codes
+    Failure ExecutionFailure `json:"failure"`
+}
+```
+
+### ExecutionFailure (Kubernetes Reason Codes)
+
+```go
+// ExecutionFailure contains structured failure information
+// Uses Kubernetes reason codes as API contract (DD-RECOVERY-003)
+// NOT natural language - structured enum-like value
+type ExecutionFailure struct {
+    FailedStepIndex int         `json:"failedStepIndex"` // 0-indexed
+    FailedStepName  string      `json:"failedStepName"`
+    Reason          string      `json:"reason"`          // K8s reason code (OOMKilled, DeadlineExceeded)
+    Message         string      `json:"message"`         // Human-readable (for logging)
+    ExitCode        *int32      `json:"exitCode,omitempty"`
+    FailedAt        metav1.Time `json:"failedAt"`
+    ExecutionTime   string      `json:"executionTime"`   // Duration before failure
+}
+```
+
+---
+
+## Status Fields
+
+### AIAnalysisStatus
+
+```go
+// AIAnalysisStatus defines the observed state of AIAnalysis.
+type AIAnalysisStatus struct {
+    // Phase tracking
+    // NOTE: No "Approving" phase - RO orchestrates approval (ADR-040)
+    // +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Recommending;Completed;Failed
+    Phase   string `json:"phase"`
+    Message string `json:"message,omitempty"`
+    Reason  string `json:"reason,omitempty"`
+
+    // Timestamps
+    StartedAt   *metav1.Time `json:"startedAt,omitempty"`
+    CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+
+    // Root cause analysis results
+    RootCause         string             `json:"rootCause,omitempty"`
+    RootCauseAnalysis *RootCauseAnalysis `json:"rootCauseAnalysis,omitempty"`
+
+    // Selected workflow (DD-CONTRACT-002)
+    SelectedWorkflow *SelectedWorkflow `json:"selectedWorkflow,omitempty"`
+
+    // ========================================
+    // APPROVAL SIGNALING (V1.0)
+    // ========================================
+    // ApprovalRequired=true → RO notifies operators and STOPS
+    // No AIApprovalRequest CRD in V1.0 (deferred to V1.1)
+    ApprovalRequired bool             `json:"approvalRequired"`
+    ApprovalReason   string           `json:"approvalReason,omitempty"`
+    ApprovalContext  *ApprovalContext `json:"approvalContext,omitempty"`
+
+    // Investigation details
+    InvestigationID   string `json:"investigationId,omitempty"`
+    TokensUsed        int    `json:"tokensUsed,omitempty"`
+    InvestigationTime int64  `json:"investigationTime,omitempty"`
+
+    // Recovery status (DD-RECOVERY-002)
+    RecoveryStatus *RecoveryStatus `json:"recoveryStatus,omitempty"`
+
+    // Conditions
+    Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+```
+
+### SelectedWorkflow (DD-CONTRACT-002)
+
+```go
+// SelectedWorkflow contains the AI-selected workflow for execution
+// DD-CONTRACT-002: Output format for RO to create WorkflowExecution
+type SelectedWorkflow struct {
+    // Workflow identifier (catalog lookup key)
+    WorkflowID string `json:"workflowId"`
+    // Workflow version
+    Version string `json:"version"`
+    // Container image (OCI bundle) - resolved by HolmesGPT-API
+    ContainerImage string `json:"containerImage"`
+    // Container digest for audit trail
+    ContainerDigest string `json:"containerDigest,omitempty"`
+    // Confidence score (0.0-1.0)
+    Confidence float64 `json:"confidence"`
+    // Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
+    Parameters map[string]string `json:"parameters,omitempty"`
+    // Rationale explaining why this workflow was selected
+    Rationale string `json:"rationale"`
+}
+```
+
+---
+
+## V1.0 Approval Flow
+
+```mermaid
+sequenceDiagram
+    participant AIA as AIAnalysis Controller
+    participant Rego as Rego Policy Engine
+    participant RO as Remediation Orchestrator
+    participant Notif as Notification Service
+
+    AIA->>AIA: Complete analysis
+    AIA->>Rego: Evaluate approval policy
+    Rego-->>AIA: {requireApproval: true/false, reason: "..."}
+
+    alt Approval Required
+        AIA->>AIA: Set approvalRequired=true, phase=Completed
+        AIA->>AIA: Populate approvalContext
+        RO->>AIA: Watch detects approvalRequired=true
+        RO->>Notif: Send approval notification
+        RO->>RO: STOP (no WorkflowExecution created)
+        Note over RO: V1.0: Operators handle manually
+    else Auto-Approved
+        AIA->>AIA: Set approvalRequired=false, phase=Completed
+        RO->>AIA: Watch detects phase=Completed
+        RO->>RO: Create WorkflowExecution CRD
+    end
+```
+
+**V1.0 Behavior**:
+- `approvalRequired=true` → RO notifies operators and **stops**
+- No `AIApprovalRequest` CRD (deferred to V1.1)
+- Operators approve/reject via external process
+
+---
+
+## Example: Initial Incident
 
 ```yaml
 apiVersion: kubernaut.io/v1alpha1
@@ -33,610 +437,148 @@ metadata:
   - apiVersion: kubernaut.io/v1alpha1
     kind: RemediationRequest
     name: remediation-abc12345
-    uid: xyz789
     controller: true
 spec:
-  # Parent RemediationRequest reference (for audit/lineage only)
   remediationRequestRef:
+    apiVersion: kubernaut.io/v1alpha1
+    kind: RemediationRequest
     name: remediation-abc12345
     namespace: kubernaut-system
+  remediationId: "abc12345"
 
-  # SELF-CONTAINED analysis request (complete data snapshot from SignalProcessing)
-  # No need to read SignalProcessing - all enriched data copied here at creation
   analysisRequest:
     signalContext:
-      # Basic signal identifiers
-      fingerprint: "abc123def456"
+      fingerprint: "sha256:abc123def456"
       severity: critical
+      signalType: OOMKilled
       environment: production
-      businessPriority: p0
-
-      # COMPLETE enriched payload (snapshot from SignalProcessing.status)
-      enrichedPayload:
-        originalSignal:
-          labels:
-            alertname: PodOOMKilled
-            namespace: production
-            pod: web-app-789
-          annotations:
-            summary: "Pod killed due to OOM"
-            description: "Memory limit exceeded"
-
-        kubernetesContext:
-          podDetails:
-            name: web-app-789
-            namespace: production
-            containers:
-            - name: app
-              memoryLimit: "512Mi"
-              memoryUsage: "498Mi"
-          deploymentDetails:
-            name: web-app
-            replicas: 3
-          nodeDetails:
-            name: node-1
-            capacity: {...}
-
-        businessContext:
-          serviceOwner: "platform-team"
-          criticality: "high"
-          sla: "99.9%"
-
-    analysisTypes:
-    - investigation
-    - root-cause
-    - workflow-selection  # NEW: Replaces "recommendation-generation"
-
-    investigationScope:
-      timeWindow: "24h"
-      resourceScope:
-      - kind: Pod
+      businessPriority: P0
+      riskTolerance: low  # Customer-derived via Rego
+      targetResource:
+        kind: Pod
+        name: payment-api-7d8f9c6b5-x2k4m
         namespace: production
-      correlationDepth: detailed
-      includeHistoricalPatterns: true
-```
-
----
-
-### Status Fields (DD-CONTRACT-001 Aligned)
-
-```yaml
-status:
-  # Phase tracks current analysis stage
-  # NOTE: AIAnalysis does NOT have "Approving" phase - it completes with approvalRequired=true
-  # RemediationOrchestrator handles approval orchestration (ADR-040)
-  phase: Completed  # Pending, Investigating, Analyzing, Completed, Failed
-
-  # Phase transition tracking
-  phaseTransitions:
-    investigating: "2025-01-15T10:00:00Z"
-    analyzing: "2025-01-15T10:15:00Z"
-    completed: "2025-01-15T10:30:00Z"
-
-  # Investigation results (Phase 1)
-  investigationResult:
-    rootCauseHypotheses:
-    - hypothesis: "Pod memory limit too low"
-      confidence: 0.85
-      evidence:
-      - "OOMKilled events in pod history"
-      - "Memory usage consistently near 95%"
-    correlatedSignals:
-    - fingerprint: "abc123def456"
-      timestamp: "2025-01-15T10:30:00Z"
-    investigationReport: "..."
-    contextualAnalysis: "..."
-
-  # ================================================================
-  # SELECTED WORKFLOW (DD-CONTRACT-001 v1.2, ADR-041)
-  # Replaces old "recommendations" format
-  # containerImage resolved by HolmesGPT-API during MCP search
-  # ================================================================
-  selectedWorkflow:
-    # WorkflowID is the catalog lookup key
-    workflowId: "oomkill-increase-memory"
-
-    # Version of the selected workflow
-    version: "1.0.0"
-
-    # ContainerImage - OCI bundle reference (resolved by HolmesGPT-API from catalog)
-    # RO passes this through to WorkflowExecution without additional lookup
-    containerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0"
-
-    # ContainerDigest for audit trail and reproducibility
-    containerDigest: "sha256:abc123def456..."
-
-    # Confidence score from MCP search (0.0-1.0)
-    confidence: 0.92
-
-    # Parameters populated by LLM based on RCA (per DD-WORKFLOW-003)
-    # Keys are UPPER_SNAKE_CASE per Tekton convention
-    parameters:
-      NAMESPACE: "production"
-      DEPLOYMENT_NAME: "web-app"
-      NEW_MEMORY_LIMIT: "1Gi"
-
-    # Rationale explains why this workflow was selected
-    rationale: "MCP search matched OOMKilled signal with high historical success rate. Memory increase has 88% success rate for similar incidents."
-
-  # Alternative workflows considered (backup options)
-  alternativeWorkflows:
-  - workflowId: "oomkill-restart-pods"
-    version: "1.0.0"
-    confidence: 0.65
-    rationale: "Lower confidence due to only addressing symptoms, not root cause"
-
-  # ================================================================
-  # APPROVAL CONTEXT (ADR-040, DD-CONTRACT-001)
-  # RO orchestrates approval based on these fields
-  # ================================================================
-
-  # ApprovalRequired indicates if manual approval is needed
-  # Triggers RemediationOrchestrator to create RemediationApprovalRequest (ADR-040)
-  approvalRequired: false  # true if confidence < 80%
-
-  # ApprovalReason explains why approval is required (when approvalRequired=true)
-  approvalReason: ""  # "Confidence 65% below 80% threshold"
-
-  # ApprovalContext provides rich context for operator decision
-  # Only populated when approvalRequired=true
-  approvalContext:
-    investigationSummary: "Memory leak detected in payment processing pods..."
-    evidenceCollected:
-    - "OOMKilled events in last 24h"
-    - "Linear memory growth 50MB/hour per pod"
-    - "No recent deployments to production namespace"
-    alternativesConsidered:
-    - workflowId: "oomkill-restart-pods"
-      rationale: "Would address symptoms but not root cause"
-      confidence: 0.45
-
-  # WorkflowExecutionRef references the created WorkflowExecution CRD
-  # Populated by RO after creating WorkflowExecution
-  workflowExecutionRef:
-    name: aianalysis-abc123-workflow-1
-    namespace: kubernaut-system
-
-  # Observability
-  conditions:
-  - type: InvestigationComplete
-    status: "True"
-    reason: RootCauseIdentified
-  - type: WorkflowSelected
-    status: "True"
-    reason: HighConfidenceMatch
-  - type: AnalysisComplete
-    status: "True"
-    reason: WorkflowSelectedSuccessfully
-```
-
----
-
-## Go Type Definitions (DD-CONTRACT-001)
-
-```go
-// pkg/api/aianalysis/v1alpha1/types.go
-package v1alpha1
-
-import (
-    corev1 "k8s.io/api/core/v1"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-// AIAnalysisSpec defines the desired state of AIAnalysis
-type AIAnalysisSpec struct {
-    // RemediationRequestRef references the parent RemediationRequest
-    RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-
-    // AnalysisRequest contains the self-contained analysis request
-    AnalysisRequest AnalysisRequest `json:"analysisRequest"`
-}
-
-// AnalysisRequest contains all data needed for AI analysis
-type AnalysisRequest struct {
-    // SignalContext contains the enriched signal data
-    SignalContext SignalContext `json:"signalContext"`
-
-    // AnalysisTypes specifies what analysis to perform
-    AnalysisTypes []string `json:"analysisTypes"`
-
-    // InvestigationScope defines analysis boundaries
-    InvestigationScope InvestigationScope `json:"investigationScope,omitempty"`
-}
-
-// AIAnalysisStatus defines the observed state of AIAnalysis
-type AIAnalysisStatus struct {
-    // Phase tracks current analysis stage
-    // NOTE: AIAnalysis does NOT have "Approving" phase - it completes with approvalRequired=true
-    // RemediationOrchestrator handles the approval orchestration (ADR-040)
-    // +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed
-    Phase string `json:"phase"`
-
-    // PhaseTransitions records timestamps for each phase
-    PhaseTransitions map[string]metav1.Time `json:"phaseTransitions,omitempty"`
-
-    // InvestigationResult contains HolmesGPT investigation findings
-    InvestigationResult *InvestigationResult `json:"investigationResult,omitempty"`
-
-    // SelectedWorkflow contains the LLM-selected workflow (per ADR-041)
-    // Populated after successful investigation and analysis
-    SelectedWorkflow *SelectedWorkflow `json:"selectedWorkflow,omitempty"`
-
-    // AlternativeWorkflows contains backup options (per ADR-041)
-    AlternativeWorkflows []AlternativeWorkflow `json:"alternativeWorkflows,omitempty"`
-
-    // ApprovalRequired indicates if manual approval is needed
-    // Triggers RemediationOrchestrator to create RemediationApprovalRequest (ADR-040)
-    ApprovalRequired bool `json:"approvalRequired,omitempty"`
-
-    // ApprovalReason explains why approval is required
-    ApprovalReason string `json:"approvalReason,omitempty"`
-
-    // ApprovalContext provides rich context for operator decision
-    ApprovalContext *ApprovalContext `json:"approvalContext,omitempty"`
-
-    // WorkflowExecutionRef references the created WorkflowExecution CRD
-    WorkflowExecutionRef *corev1.LocalObjectReference `json:"workflowExecutionRef,omitempty"`
-
-    // Conditions provide detailed status information
-    Conditions []metav1.Condition `json:"conditions,omitempty"`
-}
-
-// SelectedWorkflow represents the LLM's workflow selection (per ADR-041, DD-CONTRACT-001 v1.2)
-// NOTE: containerImage and containerDigest are resolved by HolmesGPT-API during MCP search
-// RO passes these through to WorkflowExecution (no separate catalog lookup needed)
-type SelectedWorkflow struct {
-    // WorkflowID is the catalog lookup key
-    // +kubebuilder:validation:Required
-    WorkflowID string `json:"workflowId"`
-
-    // Version of the selected workflow
-    Version string `json:"version,omitempty"`
-
-    // ContainerImage is the OCI bundle reference (resolved by HolmesGPT-API from catalog)
-    // +kubebuilder:validation:Required
-    ContainerImage string `json:"containerImage"`
-
-    // ContainerDigest for audit trail and reproducibility (resolved by HolmesGPT-API)
-    ContainerDigest string `json:"containerDigest,omitempty"`
-
-    // Confidence score from MCP search (0.0-1.0)
-    // +kubebuilder:validation:Minimum=0
-    // +kubebuilder:validation:Maximum=1
-    Confidence float64 `json:"confidence"`
-
-    // Parameters populated by LLM based on RCA (per DD-WORKFLOW-003)
-    // Keys are UPPER_SNAKE_CASE per Tekton convention
-    Parameters map[string]string `json:"parameters"`
-
-    // Rationale explains why this workflow was selected
-    Rationale string `json:"rationale"`
-}
-
-// AlternativeWorkflow represents backup workflow options
-type AlternativeWorkflow struct {
-    WorkflowID string  `json:"workflowId"`
-    Version    string  `json:"version,omitempty"`
-    Confidence float64 `json:"confidence"`
-    Rationale  string  `json:"rationale,omitempty"`
-}
-
-// ApprovalContext provides rich context for operator approval decisions
-type ApprovalContext struct {
-    // InvestigationSummary provides a brief summary of findings
-    InvestigationSummary string `json:"investigationSummary,omitempty"`
-
-    // EvidenceCollected lists key evidence points
-    EvidenceCollected []string `json:"evidenceCollected,omitempty"`
-
-    // AlternativesConsidered lists other workflow options
-    AlternativesConsidered []AlternativeWorkflow `json:"alternativesConsidered,omitempty"`
-}
-
-// InvestigationResult contains the HolmesGPT investigation findings
-type InvestigationResult struct {
-    // RootCauseHypotheses contains potential root causes
-    RootCauseHypotheses []RootCauseHypothesis `json:"rootCauseHypotheses,omitempty"`
-
-    // CorrelatedSignals contains related signals
-    CorrelatedSignals []CorrelatedSignal `json:"correlatedSignals,omitempty"`
-
-    // InvestigationReport contains the full investigation report
-    InvestigationReport string `json:"investigationReport,omitempty"`
-
-    // ContextualAnalysis contains contextual analysis
-    ContextualAnalysis string `json:"contextualAnalysis,omitempty"`
-}
-
-// RootCauseHypothesis represents a potential root cause
-type RootCauseHypothesis struct {
-    Hypothesis string   `json:"hypothesis"`
-    Confidence float64  `json:"confidence"`
-    Evidence   []string `json:"evidence,omitempty"`
-}
-
-// CorrelatedSignal represents a related signal
-type CorrelatedSignal struct {
-    Fingerprint string      `json:"fingerprint"`
-    Timestamp   metav1.Time `json:"timestamp"`
-}
-
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-//+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-//+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.status.selectedWorkflow.workflowId`
-//+kubebuilder:printcolumn:name="Confidence",type=number,JSONPath=`.status.selectedWorkflow.confidence`
-//+kubebuilder:printcolumn:name="ApprovalRequired",type=boolean,JSONPath=`.status.approvalRequired`
-//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-
-// AIAnalysis is the Schema for the aianalyses API
-type AIAnalysis struct {
-    metav1.TypeMeta   `json:",inline"`
-    metav1.ObjectMeta `json:"metadata,omitempty"`
-
-    Spec   AIAnalysisSpec   `json:"spec,omitempty"`
-    Status AIAnalysisStatus `json:"status,omitempty"`
-}
-
-//+kubebuilder:object:root=true
-
-// AIAnalysisList contains a list of AIAnalysis
-type AIAnalysisList struct {
-    metav1.TypeMeta `json:",inline"`
-    metav1.ListMeta `json:"metadata,omitempty"`
-    Items           []AIAnalysis `json:"items"`
-}
-
-func init() {
-    SchemeBuilder.Register(&AIAnalysis{}, &AIAnalysisList{})
-}
-```
-
----
-
-## Complete Example: AIAnalysis with High Confidence
-
-```yaml
-apiVersion: kubernaut.io/v1alpha1
-kind: AIAnalysis
-metadata:
-  name: aianalysis-payment-oom-001
-  namespace: kubernaut-system
-  ownerReferences:
-  - apiVersion: kubernaut.io/v1alpha1
-    kind: RemediationRequest
-    name: remediation-payment-oom
-    uid: abc-123-def-456
-    controller: true
-spec:
-  remediationRequestRef:
-    name: remediation-payment-oom
-    namespace: kubernaut-system
-  analysisRequest:
-    signalContext:
-      fingerprint: "sha256:payment-oom-fingerprint"
-      severity: critical
-      environment: production
-      businessPriority: p0
-      enrichedPayload:
-        originalSignal:
-          labels:
-            alertname: PodOOMKilled
-            namespace: payment
-            pod: payment-api-5d8f9b7c6-x9z2k
+      enrichmentResults:
         kubernetesContext:
+          namespace: production
+          namespaceLabels:
+            environment: production
           podDetails:
-            name: payment-api-5d8f9b7c6-x9z2k
-            namespace: payment
-            containers:
-            - name: api
-              memoryLimit: "512Mi"
-              memoryUsage: "510Mi"
-          deploymentDetails:
+            name: payment-api-7d8f9c6b5-x2k4m
+            phase: Failed
+            restartCount: 5
+        detectedLabels:
+          gitOpsManaged: true
+          gitOpsTool: argocd
+          pdbProtected: true
+          stateful: false
+        ownerChain:
+        - namespace: production
+          kind: ReplicaSet
+          name: payment-api-7d8f9c6b5
+        - namespace: production
+          kind: Deployment
             name: payment-api
-            replicas: 3
-            availableReplicas: 2
+        customLabels:
+          constraint:
+          - cost-constrained
+          team:
+          - name=payments
+        enrichmentQuality: 0.95
     analysisTypes:
     - investigation
     - root-cause
     - workflow-selection
+
+  isRecoveryAttempt: false
 status:
   phase: Completed
-  phaseTransitions:
-    investigating: "2025-11-28T10:00:00Z"
-    analyzing: "2025-11-28T10:05:00Z"
-    completed: "2025-11-28T10:10:00Z"
-
-  investigationResult:
-    rootCauseHypotheses:
-    - hypothesis: "Container memory limit insufficient for current workload"
-      confidence: 0.92
-      evidence:
-      - "Memory usage at 99.6% of limit before OOMKill"
-      - "3 OOMKill events in past 24 hours"
-      - "Memory usage growth correlates with traffic increase"
-    investigationReport: |
-      Investigation identified memory pressure as root cause.
-      Pod payment-api-5d8f9b7c6-x9z2k was terminated due to exceeding
-      its 512Mi memory limit. Analysis of memory metrics shows linear
-      growth correlating with increased traffic over the past 4 hours.
-
-  # HIGH CONFIDENCE - No approval required
+  rootCause: "Memory limit exceeded due to traffic spike"
   selectedWorkflow:
-    workflowId: "oomkill-increase-memory"
+    workflowId: oomkill-increase-memory
     version: "1.0.0"
-    containerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0"  # Resolved by HolmesGPT-API
-    containerDigest: "sha256:abc123def456789..."                  # For audit trail
+    containerImage: quay.io/kubernaut/workflow-oomkill:v1.0.0
+    containerDigest: "sha256:abc123..."
     confidence: 0.92
     parameters:
-      NAMESPACE: "payment"
-      DEPLOYMENT_NAME: "payment-api"
+      NAMESPACE: production
+      DEPLOYMENT_NAME: payment-api
       NEW_MEMORY_LIMIT: "1Gi"
-    rationale: |
-      Selected based on:
-      1. High confidence root cause (memory limit too low)
-      2. Historical success rate of 88% for similar incidents
-      3. Low risk - only increases resource allocation
-      4. No recent deployments that could explain memory growth
-
-  alternativeWorkflows:
-  - workflowId: "oomkill-restart-pods"
-    version: "1.0.0"
-    confidence: 0.45
-    rationale: "Would temporarily resolve but not address root cause"
-  - workflowId: "oomkill-scale-deployment"
-    version: "1.0.0"
-    confidence: 0.60
-    rationale: "Could distribute load but doesn't fix per-pod memory issue"
-
-  approvalRequired: false  # confidence >= 80%
-
-  conditions:
-  - type: InvestigationComplete
-    status: "True"
-    reason: RootCauseIdentified
-    message: "Root cause identified with 92% confidence"
-    lastTransitionTime: "2025-11-28T10:05:00Z"
-  - type: WorkflowSelected
-    status: "True"
-    reason: HighConfidenceMatch
-    message: "Workflow oomkill-increase-memory selected with 92% confidence"
-    lastTransitionTime: "2025-11-28T10:10:00Z"
-  - type: AnalysisComplete
-    status: "True"
-    reason: WorkflowSelectedSuccessfully
-    message: "Analysis completed, workflow ready for execution"
-    lastTransitionTime: "2025-11-28T10:10:00Z"
+    rationale: "OOMKilled signal with GitOps-managed deployment; conservative memory increase recommended"
+  approvalRequired: false
 ```
 
 ---
 
-## Complete Example: AIAnalysis with Low Confidence (Requires Approval)
+## Example: Recovery Attempt
 
 ```yaml
 apiVersion: kubernaut.io/v1alpha1
 kind: AIAnalysis
 metadata:
-  name: aianalysis-payment-unknown-001
+  name: aianalysis-recovery-abc123-2
   namespace: kubernaut-system
 spec:
   remediationRequestRef:
-    name: remediation-payment-unknown
+    name: remediation-abc12345
     namespace: kubernaut-system
+  remediationId: "abc12345"
+
   analysisRequest:
     signalContext:
-      fingerprint: "sha256:payment-unknown-fingerprint"
-      severity: warning
-      environment: production
-      businessPriority: p1
+      # Same as original...
+      enrichmentResults:
+        # Reused from original SignalProcessing (no re-enrichment)
+
+  isRecoveryAttempt: true
+  recoveryAttemptNumber: 2
+  previousExecutions:
+  # First attempt
+  - workflowExecutionRef: "workflow-abc123-1"
+    originalRCA:
+      summary: "Memory limit exceeded"
+      signalType: OOMKilled
+      severity: critical
+    selectedWorkflow:
+      workflowId: oomkill-increase-memory
+      version: "1.0.0"
+      containerImage: quay.io/kubernaut/workflow-oomkill:v1.0.0
+      rationale: "Conservative memory increase"
+    failure:
+      failedStepIndex: 2
+      failedStepName: "apply-memory-increase"
+      reason: "Forbidden"  # K8s reason code
+      message: "RBAC denied: cannot patch deployments"
+      failedAt: "2025-11-30T10:15:00Z"
+      executionTime: "45s"
+  # Second attempt can reference first if needed
+
 status:
-  phase: Completed  # NOTE: Completed, NOT "Approving"
-
-  investigationResult:
-    rootCauseHypotheses:
-    - hypothesis: "Possible memory leak in application code"
-      confidence: 0.55
-      evidence:
-      - "Gradual memory increase over 72 hours"
-      - "No correlation with traffic patterns"
-    - hypothesis: "External dependency causing memory pressure"
-      confidence: 0.35
-      evidence:
-      - "New database client library deployed 3 days ago"
-
-  # LOW CONFIDENCE - Requires approval
+  phase: Completed
+  recoveryStatus:
+    previousAttemptAssessment:
+      failureUnderstood: true
+      failureReasonAnalysis: "RBAC permissions insufficient for deployment patching"
+    stateChanged: false
   selectedWorkflow:
-    workflowId: "memory-leak-collect-diagnostics"
+    workflowId: oomkill-restart-pods
     version: "1.0.0"
-    containerImage: "quay.io/kubernaut/workflow-diagnostics:v1.0.0"  # Resolved by HolmesGPT-API
-    containerDigest: "sha256:def456abc789..."
-    confidence: 0.65  # Below 80% threshold
-    parameters:
-      NAMESPACE: "payment"
-      DEPLOYMENT_NAME: "payment-api"
-      DIAGNOSTIC_DURATION: "30m"
-    rationale: |
-      Uncertain root cause - recommending diagnostic collection
-      before any remediation action. Low confidence due to:
-      1. Multiple possible root causes
-      2. No clear historical pattern match
-      3. Novel failure signature
-
-  alternativeWorkflows:
-  - workflowId: "oomkill-increase-memory"
-    version: "1.0.0"
-    confidence: 0.45
-    rationale: "May address symptom but could mask underlying issue"
-
-  # APPROVAL REQUIRED
+    containerImage: quay.io/kubernaut/workflow-restart:v1.0.0
+    confidence: 0.78
+    rationale: "Alternative approach avoiding deployment patch; restart with current limits"
   approvalRequired: true
-  approvalReason: "Confidence 65% below 80% threshold - multiple possible root causes"
-
-  approvalContext:
-    investigationSummary: |
-      Uncertain root cause for memory growth in payment-api. Two hypotheses:
-      1. Application memory leak (55% confidence)
-      2. External dependency issue (35% confidence)
-      Recommending diagnostic collection to gather more data before remediation.
-    evidenceCollected:
-    - "Gradual memory increase over 72 hours"
-    - "No correlation with traffic patterns"
-    - "New database client library deployed 3 days ago"
-    alternativesConsidered:
-    - workflowId: "oomkill-increase-memory"
-      confidence: 0.45
-      rationale: "May address symptom but could mask underlying issue"
-
-  conditions:
-  - type: InvestigationComplete
-    status: "True"
-    reason: RootCauseUncertain
-    message: "Investigation complete but root cause uncertain"
-  - type: WorkflowSelected
-    status: "True"
-    reason: LowConfidenceMatch
-    message: "Workflow selected with 65% confidence - approval required"
-  - type: AnalysisComplete
-    status: "True"
-    reason: ApprovalRequired
-    message: "Analysis complete, awaiting manual approval"
+  approvalReason: "Confidence 78% below 80% threshold; recovery attempt requires review"
 ```
-
----
-
-## Migration from v1.x Schema
-
-| Old Field (v1.x) | New Field (v2.0) | Notes |
-|------------------|------------------|-------|
-| `recommendations[]` | `selectedWorkflow` | Single workflow, not array |
-| `recommendations[].action` | `selectedWorkflow.workflowId` | Uses catalog ID |
-| `recommendations[].parameters` | `selectedWorkflow.parameters` | UPPER_SNAKE_CASE keys |
-| `recommendations[].effectivenessProbability` | `selectedWorkflow.confidence` | Same semantic |
-| `recommendations[].explanation` | `selectedWorkflow.rationale` | Renamed |
-| `approvalStatus` | Moved to RemediationApprovalRequest CRD | Per ADR-040 |
-| `approvedBy`, `approvalTime`, etc. | Moved to RemediationApprovalRequest CRD | Per ADR-040 |
 
 ---
 
 ## Related Documents
 
-| Document | Relationship |
-|----------|--------------|
-| **DD-CONTRACT-001** | Authoritative for AIAnalysis ↔ WorkflowExecution contract |
-| **ADR-041** | LLM Response Contract (defines `selected_workflow` format) |
-| **ADR-043** | Workflow Schema Definition (catalog integration) |
-| **ADR-040** | RemediationApprovalRequest Architecture |
-| **DD-WORKFLOW-003** | Parameterized Actions (UPPER_SNAKE_CASE parameters) |
-| **BR-AI-075** | Workflow Selection Output Format |
-| **BR-AI-076** | Approval Context for Low Confidence |
-
----
-
-## Changelog
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 2.1 | 2025-11-28 | Added `containerImage` and `containerDigest` to `SelectedWorkflow` (resolved by HolmesGPT-API during MCP search). RO passes through without catalog lookup. Per DD-CONTRACT-001 v1.2. |
-| 2.0 | 2025-11-28 | **Breaking**: Replaced `recommendations[]` with `selectedWorkflow` per DD-CONTRACT-001 and ADR-041. Removed approval lifecycle fields (moved to RemediationApprovalRequest per ADR-040). Added `alternativeWorkflows`. |
-| 1.x | Prior | Legacy schema with `recommendations[]` and embedded approval fields |
-
+| Document | Purpose |
+|----------|---------|
+| [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | DetectedLabels, CustomLabels, OwnerChain |
+| [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) | Recovery flow design |
+| [DD-RECOVERY-003](../../../architecture/decisions/DD-RECOVERY-003-recovery-prompt-design.md) | Recovery prompt with K8s reason codes |
+| [DD-CONTRACT-002](../../../architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md) | Service integration contracts |
+| [REGO_POLICY_EXAMPLES.md](./REGO_POLICY_EXAMPLES.md) | Approval policy input schema |
+| [BR_MAPPING.md](./BR_MAPPING.md) | Business requirements mapping |
