@@ -3,11 +3,66 @@
 **Date**: November 14, 2025
 **Status**: ✅ APPROVED
 **Deciders**: Architecture Team
-**Version**: 2.0
+**Version**: 3.0
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), ADR-034 (Unified Audit Table), DD-WORKFLOW-014 (Workflow Selection Audit Trail), DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)
+
+---
+
+## 🔗 **Workflow Immutability Reference**
+
+**CRITICAL**: This DD's semantic search relies on workflow immutability.
+
+**Authority**: **DD-WORKFLOW-012: Workflow Immutability Constraints**
+- Workflow embeddings are immutable (cannot change after creation)
+- Semantic search results remain consistent for same workflow version
+- Description and labels cannot be updated (would invalidate embeddings)
+
+**Cross-Reference**: All semantic search operations assume workflow immutability per DD-WORKFLOW-012.
+
+---
 
 ---
 
 ## Changelog
+
+### Version 3.0 (2025-11-29)
+- **BREAKING**: `workflow_id` is now a UUID (auto-generated primary key)
+- **BREAKING**: Removed `version` from `search_workflow_catalog` response - LLM only needs `workflow_id`
+- **BREAKING**: Removed `estimated_duration` from response - field is circumstantial and irrelevant to LLM
+- **BREAKING**: Response structure is now FLAT (no nested `workflow` object) per DD-WORKFLOW-002 contract
+- **BREAKING**: Renamed `name` to `title` in search response for clarity
+- **BREAKING**: Changed `signal_types` (array) to `signal_type` (string) - one workflow per signal type
+- `workflow_name` and `version` remain as metadata fields (for humans), not in search response
+- Database uses `UNIQUE (workflow_name, version)` constraint to prevent duplicates
+- Updated DD-WORKFLOW-012 cross-reference for UUID primary key design
+- **Impact**: All consumers must update to use UUID `workflow_id` as single identifier
+
+### Version 2.4 (2025-11-28)
+- **BREAKING**: Added `container_image` and `container_digest` to `search_workflow_catalog` response contract
+- HolmesGPT-API now resolves `workflow_id` → `container_image` during MCP search (per DD-CONTRACT-001 v1.2)
+- RO no longer needs to call Data Storage for workflow resolution - passes through from AIAnalysis
+- Added cross-reference to DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)
+- **Impact**: Data Storage must return `container_image` and `container_digest` in workflow search results
+
+### Version 2.3 (2025-11-27)
+- **API DESIGN**: Clarified that `remediation_id` is passed in JSON request body (not HTTP header)
+- Added cross-reference to DD-WORKFLOW-014 v2.1 for transport mechanism decision
+- Updated implementation notes to show JSON body approach for consistency
+- **Impact**: Implementation clarification - JSON body is the standard transport
+
+### Version 2.2 (2025-11-27)
+- **CRITICAL CLARIFICATION**: Clarified `remediation_id` usage constraint - field is MANDATORY but for CORRELATION/AUDIT ONLY
+- Added `usage_note` to `remediation_id` parameter: "Pass-through value from investigation context. Do not interpret or use in search logic."
+- Explicitly documented that LLM must NOT use `remediation_id` for RCA analysis or workflow matching
+- Updated description to emphasize: "⚠️ IMPORTANT: This field is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or workflow matching"
+- **Impact**: No functional change - clarifies existing behavior for LLM implementers
+
+### Version 2.1 (2025-11-27)
+- **MANDATORY**: Added `remediation_id` as required parameter for audit trail correlation
+- Added cross-references to ADR-034 (Unified Audit Table) and DD-WORKFLOW-014 (Workflow Selection Audit Trail)
+- Updated MCP tool contract to require `remediation_id` for all workflow search requests
+- Ensures workflow selection audit events can be correlated with remediation requests
+- **Impact**: All MCP clients must provide `remediation_id` when calling `search_workflow_catalog`
 
 ### Version 2.0 (2025-11-22)
 - **BREAKING**: Updated all query examples to use structured format per DD-LLM-001
@@ -86,6 +141,15 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
   "description": "Search the workflow catalog using structured query format '<signal_type> <severity>' with optional label filters for exact matching.",
 
   "parameters": {
+    "remediation_id": {
+      "type": "string",
+      "required": true,
+      "description": "Remediation request ID for audit correlation. MANDATORY for audit trail tracking per ADR-034. ⚠️ IMPORTANT: This field is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or workflow matching. Simply propagate from request context to workflow search for traceability.",
+      "example": "req-2025-10-06-abc123",
+      "usage_note": "Pass-through value from investigation context. Do not interpret or use in search logic.",
+      "transport": "JSON body (not HTTP header) - per DD-WORKFLOW-014 v2.1"
+    },
+
     "query": {
       "type": "string",
       "required": true,
@@ -145,17 +209,22 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
 
   "returns": {
     "type": "array",
+    "description": "FLAT array of workflow results (no nested objects) - v3.0",
     "items": {
-      "workflow_id": "string",
-      "version": "string",
-      "title": "string",
-      "description": "string",
-      "signal_types": "array",
-      "similarity_score": "number (0.0-1.0)",
-      "estimated_duration": "string",
-      "success_rate": "number (0.0-1.0)"
+      "workflow_id": "string (UUID - auto-generated primary key, single identifier for all operations)",
+      "title": "string (human-readable workflow name)",
+      "description": "string (workflow description)",
+      "signal_type": "string (the signal type this workflow handles, e.g., 'OOMKilled')",
+      "container_image": "string (OCI bundle reference, e.g., quay.io/kubernaut/workflow-oomkill:v1.0.0)",
+      "container_digest": "string (sha256 digest for audit, e.g., sha256:abc123...)",
+      "confidence": "number (0.0-1.0, semantic similarity score)"
     }
-  }
+  },
+  "notes": [
+    "container_image and container_digest are resolved by Data Storage from the workflow catalog (DD-WORKFLOW-009)",
+    "HolmesGPT-API passes these through to AIAnalysis.status.selectedWorkflow (DD-CONTRACT-001 v1.2)",
+    "RO does NOT need to call Data Storage for workflow resolution - passes through from AIAnalysis"
+  ]
 }
 ```
 
@@ -170,29 +239,24 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
 
   "parameters": {
     "workflow_id": {
-      "type": "string",
+      "type": "string (UUID)",
       "required": true,
-      "description": "Playbook identifier"
-    },
-    "version": {
-      "type": "string",
-      "required": true,
-      "description": "Playbook version (semantic version)"
+      "description": "Workflow UUID (from search_workflow_catalog response)"
     }
   },
 
   "returns": {
-    "workflow_id": "string",
-    "version": "string",
+    "workflow_id": "string (UUID)",
+    "workflow_name": "string (human-readable name)",
+    "version": "string (human metadata, informational only)",
     "title": "string",
     "description": "string",
-    "signal_types": "array",
+    "signal_type": "string (the signal type this workflow handles)",
     "steps": "array",
     "prerequisites": "array",
     "rollback_steps": "array",
-    "estimated_duration": "string",
     "risk_level": "string",
-    "success_rate": "number"
+    "content": "string (full workflow-schema.yaml)"
   }
 }
 ```
@@ -363,49 +427,36 @@ POST http://data-storage:8085/api/v1/workflows/search
 }
 
 // Step 4: Data Storage returns workflows with high confidence (90-95%)
+// DD-WORKFLOW-002 v3.0: FLAT response structure with UUID workflow_id
 {
   "workflows": [
     {
-      "workflow_id": "increase-memory-conservative-oom",
-      "version": "v1.2",
+      "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
       "title": "OOMKilled Remediation - Conservative Memory Increase",
       "description": "OOMKilled critical: Increases memory limits conservatively without restart",
-      "labels": {
-        "signal-type": "OOMKilled",
-        "severity": "critical",
-        "environment": "production",
-        "business-category": "payments",
-        "risk-tolerance": "low"
-      },
-      "confidence": 0.95,
-      "estimated_duration": "10 minutes",
-      "success_rate": 0.92
+      "signal_type": "OOMKilled",
+      "container_image": "quay.io/kubernaut/workflow-oom-conservative:v1.2.0",
+      "container_digest": "sha256:abc123def456...",
+      "confidence": 0.95
     },
     {
-      "workflow_id": "scale-horizontal-oom-recovery",
-      "version": "v2.0",
+      "workflow_id": "660f9500-f30c-52e5-b827-557766551111",
       "title": "OOMKilled Remediation - Horizontal Scaling",
       "description": "OOMKilled critical: Add replicas to distribute load before increasing memory",
-      "labels": {
-        "signal-type": "OOMKilled",
-        "severity": "critical",
-        "environment": "production",
-        "business-category": "payments",
-        "risk-tolerance": "medium"
-      },
-      "confidence": 0.88,
-      "estimated_duration": "15 minutes",
-      "success_rate": 0.85
+      "signal_type": "OOMKilled",
+      "container_image": "quay.io/kubernaut/workflow-oom-horizontal:v2.0.0",
+      "container_digest": "sha256:def789ghi012...",
+      "confidence": 0.88
     }
   ],
   "total_results": 2
 }
 
-// Step 5: LLM selects workflow based on confidence and risk tolerance match
+// Step 5: LLM selects workflow based on confidence
+// DD-WORKFLOW-002 v3.0: Only workflow_id (UUID) needed for selection
 {
   "selected_workflow": {
-    "workflow_id": "increase-memory-conservative-oom",
-    "version": "v1.2"
+    "workflow_id": "550e8400-e29b-41d4-a716-446655440000"
   },
   "reasoning": "MCP search with structured query 'OOMKilled critical' and exact label matching returned this workflow with 95% confidence. Workflow respects low risk tolerance by avoiding service restart."
 }
@@ -523,10 +574,15 @@ POST http://data-storage:8085/api/v1/workflows/search
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: November 22, 2025
-**Status**: ✅ APPROVED (MCP Architecture + DD-LLM-001 Query Format)
-**Next Review**: After Embedding Service V1.0 deployment
+**Document Version**: 3.0
+**Last Updated**: November 29, 2025
+**Status**: ✅ APPROVED (MCP Architecture + UUID Primary Key + Flat Response)
+**Next Review**: After Data Storage Service UUID migration
 
-**Breaking Changes in v2.0**: Query format changed from free-text to structured format per DD-LLM-001. All implementations must use `<signal_type> <severity>` query format with `label.*` parameters for exact matching.
+**Breaking Changes in v3.0**:
+- `workflow_id` is now UUID (auto-generated)
+- Response is FLAT (no nested objects)
+- Removed `version`, `estimated_duration` from search response
+- Changed `signal_types` (array) to `signal_type` (string)
+- Renamed `name` to `title`
 
