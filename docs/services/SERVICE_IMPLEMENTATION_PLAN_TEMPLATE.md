@@ -385,6 +385,7 @@ UNIVERSAL=(
 CRD_CONTROLLER=(
   "DD-006-controller-scaffolding-strategy.md"
   "DD-013-kubernetes-client-initialization-standard.md"
+  "DD-CRD-001-api-group-domain-selection.md"
   "ADR-004-fake-kubernetes-client.md"
 )
 
@@ -3598,7 +3599,7 @@ make test-[service]
 | `metrics-bind-address` | `:9090` | Prometheus metrics endpoint | Standard port for all services |
 | `health-probe-bind-address` | `:8081` | Liveness/readiness probes | Standard health port |
 | `leader-elect` | `true` (production) | Leader election for HA | **Always enabled** in production to prevent split-brain |
-| `leader-election-id` | `[service].kubernaut.io` | Unique leader election ID | Must be unique per controller |
+| `leader-election-id` | `[service].kubernaut.ai` | Unique leader election ID | Must be unique per controller (see [DD-CRD-001](../architecture/decisions/DD-CRD-001-api-group-domain-selection.md)) |
 
 ```go
 // pkg/[service]/config/controller.go
@@ -3629,7 +3630,7 @@ func DefaultControllerConfig() ControllerConfig {
         MetricsAddr:      ":9090",
         HealthProbeAddr:  ":8081",
         LeaderElection:   true, // ALWAYS true in production
-        LeaderElectionID: "[service].kubernaut.io",
+        LeaderElectionID: "[service].kubernaut.ai", // DD-CRD-001: Use .ai domain
     }
 }
 ```
