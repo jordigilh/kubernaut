@@ -1,12 +1,12 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V1.4 - 5 Mandatory Labels + Customer-Derived Labels via Rego)
+**Status**: ✅ **APPROVED** (V1.5 - 5 Mandatory Labels + Subdomain-Based Custom Labels)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
 **Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
-**Version**: 1.4
+**Version**: 1.5
 
 ---
 
@@ -34,6 +34,14 @@
 ---
 
 ## 📝 **Changelog**
+
+### Version 1.5 (2025-11-30)
+- **Custom Labels**: Subdomain-based extraction design finalized
+- **Format**: `<subdomain>.kubernaut.io/<key>[:<value>]` → `map[string][]string`
+- **Pass-Through**: Kubernaut is a conduit, not transformer (labels flow unchanged)
+- **Boolean Normalization**: Empty/true → key only; false → omitted
+- **Industry Alignment**: Follows Kubernetes label propagation pattern
+- **Reference**: HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md
 
 ### Version 1.4 (2025-11-30)
 - 5 mandatory labels: `signal_type`, `severity`, `component`, `environment`, `priority`
@@ -75,29 +83,82 @@ Labels are grouped by how they are populated:
 
 ---
 
-### **Optional Custom Labels (V1.3)**
+### **Custom Labels (V1.5 - Subdomain-Based)**
 
-Users can define additional labels via Rego policies. These are **NOT mandatory** and are only used if configured.
+Operators define custom labels via Rego policies. Kubernaut extracts and passes them through unchanged.
 
-| Label | Type | Example Values | Use Case |
-|---|---|---|---|
-| `business_category` | TEXT | payment-service, analytics, infrastructure | Business domain categorization |
-| `gitops_tool` | TEXT | argocd, flux, helm | GitOps tooling preferences |
-| `region` | TEXT | us-east-1, eu-west-1 | Geographic targeting |
-| `team` | TEXT | platform, sre, payments | Team ownership |
+#### **Label Format**
 
-**Configuration**: Define custom labels in Signal Processing Rego policies. Custom labels are stored in JSONB column and matched against workflow labels.
+```
+<subdomain>.kubernaut.io/<key>[:<value>]
+```
+
+| Component | Description | Example |
+|-----------|-------------|---------|
+| `subdomain` | Category/dimension (becomes filter key) | `constraint`, `team`, `region` |
+| `.kubernaut.io/` | Namespace (hidden from downstream) | *(internal)* |
+| `key` | Label identifier | `cost-constrained`, `name` |
+| `value` | Optional (empty = boolean true) | `payments`, `us-east-1` |
+
+#### **Extraction Rules**
+
+| Input Value | Output | Example |
+|-------------|--------|---------|
+| Empty `""` | `key` only | `cost-constrained` |
+| `"true"` | `key` only (normalized) | `stateful-safe` |
+| `"false"` | *(omitted)* | — |
+| Other value | `key=value` | `name=payments` |
+
+#### **Storage Structure**
+
+```go
+// map[subdomain][]string
+CustomLabels map[string][]string
+
+// Example:
+{
+  "constraint": ["cost-constrained", "stateful-safe"],
+  "team": ["name=payments"],
+  "region": ["zone=us-east-1"]
+}
+```
+
+#### **Query Behavior**
+
+Each subdomain becomes a **hard filter** in Data Storage:
+
+```sql
+WHERE custom_labels->'constraint' ? 'cost-constrained'
+  AND custom_labels->'team' ? 'name=payments'
+```
+
+#### **Operator Freedom**
+
+Operators define their own subdomains. Kubernaut does NOT validate subdomain names.
+
+**Recommended Conventions** (documentation only):
+
+| Subdomain | Use Case | Example Values |
+|-----------|----------|----------------|
+| `constraint` | Workflow constraints | `cost-constrained`, `stateful-safe` |
+| `team` | Ownership | `name=payments`, `name=platform` |
+| `region` | Geographic | `zone=us-east-1` |
+| `compliance` | Regulatory | `pci`, `hipaa` |
+
+**Key Principle**: Kubernaut is a **conduit, not a transformer**. Custom labels flow unchanged from Rego → SignalProcessing → HolmesGPT-API → Data Storage.
+
+**Reference**: [HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md](../../services/crd-controllers/01-signalprocessing/HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md)
 
 ---
 
 ### **Label Matching Rules**
 
 **For MCP Workflow Search** (DD-LLM-001):
-1. **Exact Match Filtering**: `signal_type`, `severity`, `environment`, `priority`, `risk_tolerance` are used as exact label filters in SQL WHERE clause
-2. **Semantic Ranking**: Query string (`<signal_type> <severity>`) is used for semantic similarity ranking via pgvector embeddings
-3. **Component Storage Only**: `component` is stored but NOT used as search filter (workflows are generic, not resource-specific)
+1. **Mandatory Label Filtering**: `signal_type`, `severity`, `environment`, `priority` used as SQL WHERE filters
+2. **Semantic Ranking**: Query string (`<signal_type> <severity>`) for pgvector semantic similarity
+3. **Component Storage Only**: `component` is stored but NOT used as search filter (workflows are generic)
 4. **Wildcard Support**: `environment`, `priority` support `'*'` (matches any value)
-5. **Custom Label Matching**: If custom labels are provided, they are matched against workflow custom labels
+5. **Custom Label Filtering**: Each subdomain becomes a separate WHERE clause (see V1.5 format above)
 6. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
 
 **For Workflow Registration**:
@@ -348,7 +409,7 @@ WHERE signal_type = $1
 ```
 
 **Match Scoring (for LLM ranking)**:
-- **Score 6**: All 6 mandatory labels exact match (most specific)
+- **Score 5**: All 5 mandatory labels exact match (most specific, per v1.4)
 - **Score 5**: 5 exact + 1 wildcard
 - **Score 4**: 4 exact + 2 wildcards (least specific)
 - **Bonus**: +1 for each custom label match (if custom labels used)
@@ -358,7 +419,7 @@ Workflows are ranked by: `(match_score * 10) + semantic_similarity_score`
 **Pros**:
 - ✅ **Type safety**: Database enforces NOT NULL constraints
 - ✅ **Query performance**: Direct column access for mandatory labels
-- ✅ **Index efficiency**: B-tree index on 6 mandatory labels
+- ✅ **Index efficiency**: B-tree index on 5 mandatory labels (v1.4)
 - ✅ **Flexible custom labels**: JSONB with GIN index for user-defined labels
 - ✅ **Zero-friction adoption**: No mandatory business_category configuration
 - ✅ **Schema clarity**: Explicit columns for mandatory, JSONB for optional
@@ -405,7 +466,7 @@ Workflows are ranked by: `(match_score * 10) + semantic_similarity_score`
 
 ## ✅ **Decision**
 
-**APPROVED: Alternative 2** - Structured Columns (7 Mandatory Fields)
+**APPROVED: Alternative 2** - Structured Columns (5 Mandatory + DetectedLabels + CustomLabels)
 
 **Rationale**:
 
@@ -633,11 +694,11 @@ LIMIT 10;
 
 ### **V1.1 Extension: Custom Labels**
 
-**V1.3 Schema**: 6 mandatory structured columns + optional custom labels in JSONB:
+**V1.4 Schema**: 5 mandatory structured columns + optional custom labels in JSONB:
 
 **Database Schema**:
 ```sql
--- V1.3: 6 Mandatory structured columns
+-- V1.4: 5 Mandatory structured columns
 signal_type       TEXT NOT NULL,      -- Group A: Auto-populated
 severity          TEXT NOT NULL,      -- Group A: Auto-populated
 component         TEXT NOT NULL,      -- Group A: Auto-populated
@@ -662,7 +723,7 @@ custom_labels     JSONB  -- {"business_category": "payment-service", "team": "sr
 **Custom Label Keys**: User-defined (no `kubernaut.io/` prefix required for simplicity)
 
 **V1.3 Filtering Strategy**:
-- **Step 1**: Filter by 6 mandatory structured columns (fast, deterministic)
+- **Step 1**: Filter by 5 mandatory structured columns (fast, deterministic, per v1.4)
 - **Step 2**: Filter by custom labels in JSONB if provided (flexible, optional)
 - **Step 3**: Semantic search on pre-filtered subset
 
@@ -681,7 +742,7 @@ custom_labels     JSONB  -- {"business_category": "payment-service", "team": "sr
 
 ### **Negative**
 
-- ⚠️ **Validation Complexity**: 7 mandatory fields require comprehensive validation logic
+- ⚠️ **Validation Complexity**: 5 mandatory fields require validation logic
   - **Mitigation**: Centralized validation function, comprehensive unit tests
 - ⚠️ **Cognitive Load**: More fields to understand and maintain
   - **Mitigation**: Clear documentation, examples, validation error messages
@@ -754,7 +815,7 @@ custom_labels     JSONB  -- {"business_category": "payment-service", "team": "sr
 #### **BR-STORAGE-013: Mandatory Workflow Label Validation**
 - **Category**: STORAGE
 - **Priority**: P0 (blocking for Data Storage V1.0)
-- **Description**: MUST validate that all playbooks have 7 mandatory labels with valid values per DD-WORKFLOW-001
+- **Description**: MUST validate that all workflows have 5 mandatory labels with valid values per DD-WORKFLOW-001 v1.4
 - **Acceptance Criteria**:
   - Workflow creation fails if any mandatory label is missing
   - Workflow creation fails if any label has invalid value (not in authoritative list)
@@ -785,16 +846,16 @@ custom_labels     JSONB  -- {"business_category": "payment-service", "team": "sr
   - Return match score in API response for LLM decision-making
   - Unit tests validate scoring logic
 
-#### **BR-SIGNAL-PROCESSING-001: Signal Label Enrichment (6 Mandatory Labels)**
+#### **BR-SIGNAL-PROCESSING-001: Signal Label Enrichment (5 Mandatory Labels per v1.4)**
 - **Category**: SIGNAL-PROCESSING
 - **Priority**: P0 (blocking for Signal Processing V1.0)
-- **Description**: MUST enrich signals with ALL 6 mandatory labels during categorization per DD-WORKFLOW-001 v1.3
+- **Description**: MUST enrich signals with ALL 5 mandatory labels during categorization per DD-WORKFLOW-001 v1.4
 - **Authority**: DD-WORKFLOW-001 v1.3 (authoritative label definitions)
 - **Label Groups**:
   - **Auto-Populated** (Group A): `signal_type`, `severity`, `component`
   - **Rego-Configurable** (Group B): `environment`, `priority`, `risk_tolerance`
 - **Acceptance Criteria**:
-  - Signal categorization outputs all 6 mandatory labels
+  - Signal categorization outputs all 5 mandatory labels (v1.4)
   - Group A labels extracted from K8s events/Prometheus alerts (no user config needed)
   - Group B labels derived via Rego policies (customizable by user)
   - Labels match DD-WORKFLOW-001 v1.3 authoritative values
@@ -871,9 +932,9 @@ custom_labels     JSONB  -- {"business_category": "payment-service", "team": "sr
 ## 🚀 **Next Steps**
 
 1. ✅ **DD-WORKFLOW-001 v1.3 Approved** (this document - authoritative label schema)
-2. ✅ **Simplified to 6 Mandatory Labels**: Removed `business_category` from mandatory
+2. ✅ **Simplified to 5 Mandatory Labels (v1.4)**: Removed `risk_tolerance` from mandatory (now customer-derived via Rego)
 3. 🚧 **Update DD-STORAGE-008**: Reference DD-WORKFLOW-001 v1.3 for label schema
-4. 🚧 **Implement Label Validation**: `pkg/datastorage/validation/workflow_labels.go` (6 mandatory)
+4. 🚧 **Implement Label Validation**: `pkg/datastorage/validation/workflow_labels.go` (5 mandatory per v1.4)
 5. 🚧 **Update Workflow Schema Migration**: Add enums, CHECK constraints for 6 labels
 6. 🚧 **Update Signal Processing Rego**: Implement Group A (auto-populate) + Group B (configurable)
 7. 🚧 **Optional Custom Label Support**: JSONB storage for user-defined custom labels
@@ -888,7 +949,7 @@ custom_labels     JSONB  -- {"business_category": "payment-service", "team": "sr
 - ✅ **Removed `business_category` from mandatory**: Moved to optional custom labels
 - ✅ **Added Label Grouping**: Auto-populated (Group A) vs Rego-configurable (Group B)
 - ✅ **Added Custom Labels Section**: User-defined labels for organization-specific needs
-- ✅ **Updated BR-SIGNAL-PROCESSING-001**: Now references 6 mandatory labels
+- ✅ **Updated BR-SIGNAL-PROCESSING-001**: Now references 5 mandatory labels (v1.4)
 - ✅ **Updated BR-SIGNAL-PROCESSING-003**: Changed to optional custom label support
 - ✅ **Simplified Adoption**: No namespace→category mapping required by default
 

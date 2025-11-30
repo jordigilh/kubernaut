@@ -198,10 +198,15 @@ type EnrichmentResults struct {
 	// Flow: SignalProcessing → AIAnalysis → HolmesGPT-API → LLM prompt + MCP workflow filter
 	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
 
-	// Custom labels from Rego policies - CUSTOMER DEFINED
-	// Only for labels we can't auto-detect (team, cost-center, region)
-	// Extracted via Rego policies during enrichment
-	CustomLabels map[string]string `json:"customLabels,omitempty"`
+	// CustomLabels: Subdomain-based custom labels from Rego policies
+	// Format: <subdomain>.kubernaut.io/<key>[:<value>] → map[subdomain][]values
+	// Key = subdomain (filter dimension in Data Storage)
+	// Value = list of extracted labels (boolean keys or "key=value" pairs)
+	// Boolean: empty/"true" → key only; "false" → omitted
+	// Key-value: other values → "key=value" string
+	// Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+	// Reference: HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md
+	CustomLabels map[string][]string `json:"customLabels,omitempty"`
 
 	// Overall enrichment quality score (0.0-1.0)
 	// 1.0 = all enrichments successful, 0.0 = all failed

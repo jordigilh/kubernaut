@@ -143,9 +143,18 @@ func (in *EnrichmentResults) DeepCopyInto(out *EnrichmentResults) {
 	}
 	if in.CustomLabels != nil {
 		in, out := &in.CustomLabels, &out.CustomLabels
-		*out = make(map[string]string, len(*in))
+		*out = make(map[string][]string, len(*in))
 		for key, val := range *in {
-			(*out)[key] = val
+			var outVal []string
+			if val == nil {
+				(*out)[key] = nil
+			} else {
+				inVal := (*in)[key]
+				in, out := &inVal, &outVal
+				*out = make([]string, len(*in))
+				copy(*out, *in)
+			}
+			(*out)[key] = outVal
 		}
 	}
 }
