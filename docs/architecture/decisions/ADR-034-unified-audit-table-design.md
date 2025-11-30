@@ -2,8 +2,19 @@
 
 **Date**: 2025-11-08
 **Status**: ✅ Approved
+**Version**: 1.1
+**Last Updated**: 2025-11-27
 **Deciders**: Architecture Team
 **Consulted**: Gateway, Data Storage, Context API, AI Analysis teams
+
+---
+
+## 📋 **Version History**
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| **v1.0** | 2025-11-08 | Initial ADR: Unified audit table design with event sourcing pattern, 7 service audit requirements | Architecture Team |
+| **v1.1** | 2025-11-27 | Added Workflow Catalog Service (Phase 3, Item 4): `workflow.catalog.search_completed` event type with scoring breakdown for debugging workflow selection. Added DD-WORKFLOW-014 cross-reference. | Architecture Team |
 
 ---
 
@@ -363,7 +374,14 @@ CREATE TABLE audit_events (
      - `actor_type: "user"`, `actor_id: "operator@example.com"` → Manual approval/rejection
      - `actor_type: "service"`, `actor_id: "remediationapprovalrequest-controller"` → Timeout expiration
 
-4. **Remediation Orchestrator Service** (6 hours)
+4. **Workflow Catalog Service** (4 hours) - **NEW**
+   - `workflow.catalog.search_completed` (actor: holmesgpt-api)
+   - **Event Data**: Includes scoring breakdown (base_similarity, label_boost, label_penalty, confidence)
+   - **Event Category**: `workflow` (new category for workflow-related operations)
+   - **Use Cases**: Debugging workflow selection, tuning workflow definitions, compliance tracking
+   - **Authority**: DD-WORKFLOW-014 (Workflow Selection Audit Trail)
+
+5. **Remediation Orchestrator Service** (6 hours)
    - `remediationorchestrator.request.created`
    - `remediationorchestrator.phase.transitioned`
    - `remediationorchestrator.approval.requested` (creates RemediationApprovalRequest)
@@ -478,6 +496,7 @@ CREATE TABLE audit_events (
 - **DD-AUDIT-001**: [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) - Defines who writes audit traces (distributed pattern)
 - **DD-AUDIT-002**: [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) - Implementation details for `pkg/audit/` shared library
 - **DD-AUDIT-003**: [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) - Defines which 8 of 11 services must generate audit traces
+- **DD-WORKFLOW-014**: [Workflow Selection Audit Trail](./DD-WORKFLOW-014-workflow-selection-audit-trail.md) - Defines workflow catalog search audit events with scoring breakdown
 - **DD-007**: [Graceful Shutdown Pattern](./DD-007-kubernetes-aware-graceful-shutdown.md) - 4-step Kubernetes-aware shutdown (ensures audit flush)
 
 ---
