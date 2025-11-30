@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added Rego policy ConfigMap RBAC, PDB/HPA/NetworkPolicy read access | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 > | v1.2 | 2025-11-28 | RBAC API groups updated to kubernaut.io, resource names fixed | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
 > | v1.1 | 2025-11-27 | Service rename: SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.0 | 2025-01-15 | Initial security configuration | - |
@@ -43,13 +44,39 @@ rules:
 
 # Kubernetes core resources (read-only for enrichment)
 - apiGroups: [""]
-  resources: ["pods", "nodes", "namespaces", "configmaps", "secrets"]
+  resources: ["pods", "nodes", "namespaces", "secrets"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["batch"]
   resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+
+# ========================================
+# LABEL DETECTION RBAC (DD-WORKFLOW-001 v1.8) ⭐ NEW
+# ========================================
+
+# Rego policy ConfigMap (signal-processing-policies in kubernaut-system)
+# Required for CustomLabels extraction via Rego
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["signal-processing-policies"]
+  verbs: ["get", "watch", "list"]
+
+# DetectedLabels detection: PodDisruptionBudgets
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "watch"]
+
+# DetectedLabels detection: HorizontalPodAutoscalers
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch"]
+
+# DetectedLabels detection: NetworkPolicies
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
   verbs: ["get", "list", "watch"]
 
 # Event emission (write-only)
@@ -76,6 +103,8 @@ subjects:
 - ✅ Write access ONLY to SignalProcessing CRDs
 - ✅ No Secret modification permissions (read-only for enrichment metadata)
 - ✅ Event creation scoped to SignalProcessing events only
+- ✅ Rego ConfigMap read limited to specific resource name (`signal-processing-policies`) ⭐ NEW
+- ✅ PDB/HPA/NetworkPolicy read-only for DetectedLabels detection ⭐ NEW
 
 **Remediation Orchestrator Pattern - RBAC Justification**:
 
