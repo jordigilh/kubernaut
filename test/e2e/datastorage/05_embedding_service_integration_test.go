@@ -30,8 +30,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
-
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 5: Embedding Service Integration - Complete Journey (P0)
@@ -68,7 +66,6 @@ import (
 
 var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey", Label("e2e", "embedding-service", "p0"), Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    *zap.Logger
 		httpClient    *http.Client
@@ -79,7 +76,7 @@ var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey",
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 20*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 20*time.Minute)
 		testLogger = logger.With(zap.String("test", "embedding-service-integration"))
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 
@@ -90,33 +87,11 @@ var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey",
 		// Generate unique test ID for workflow isolation
 		testID = fmt.Sprintf("e2e-embed-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 
-		// Generate unique namespace for this test (parallel execution)
-		testNamespace = generateUniqueNamespace()
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
-
-		// Deploy PostgreSQL, Redis, Python Embedding Service, and Data Storage Service
-		testLogger.Info("📦 Deploying infrastructure: PostgreSQL + Redis + Embedding Service + Data Storage")
-		err := infrastructure.DeployDataStorageTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// TODO: Deploy Python Embedding Service
-		// This requires creating a Kubernetes deployment manifest for the embedding service
-		// For now, we'll skip this and document it as a manual step
-
-		// Set up port-forward to Data Storage Service
-		localPort := 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
-		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
-
-		// Start port-forward in background
-		portForwardCancel, err := portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Store cancel function for cleanup
-		DeferCleanup(func() {
-			if portForwardCancel != nil {
-				portForwardCancel()
-			}
-		})
+		// Use shared deployment from SynchronizedBeforeSuite (no per-test deployment)
+		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
+		testNamespace = sharedNamespace
+		serviceURL = dataStorageURL
+		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
 
 		// Wait for service to be ready
 		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
@@ -134,23 +109,12 @@ var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey",
 
 		testLogger.Info("✅ Data Storage Service is ready")
 
-		// Connect to PostgreSQL for direct database verification
-		testLogger.Info("🔌 Connecting to PostgreSQL for verification...")
-		// Port-forward to PostgreSQL
-		pgLocalPort := 25433 + GinkgoParallelProcess() // DD-TEST-001: E2E PostgreSQL port range (25433-25436)
-		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", kubeconfigPath, pgLocalPort, 5432)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			if pgPortForwardCancel != nil {
-				pgPortForwardCancel()
-			}
-		})
+		// Connect to PostgreSQL for direct database verification (using shared NodePort - no port-forward needed)
+		testLogger.Info("🔌 Connecting to PostgreSQL via NodePort...")
 
-		// Wait for PostgreSQL port-forward to be ready
-		time.Sleep(2 * time.Second)
-
-		postgresURL := fmt.Sprintf("postgresql://postgres:postgres@localhost:%d/kubernaut?sslmode=disable", pgLocalPort)
-		db, err = sql.Open("pgx", postgresURL)
+		connStr := "host=localhost port=5432 user=slm_user password=test_password dbname=action_history sslmode=disable"
+		var err error
+		db, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(db.Ping()).To(Succeed())
 
@@ -185,30 +149,59 @@ var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey",
 			// ========================================
 			testLogger.Info("📝 Phase 1: CREATE workflow WITHOUT embedding (automatic generation)")
 
-			workflowReq := map[string]interface{}{
-				"workflow_id": workflowID,
-				"version":     "1.0.0",
-				"name":        "OOMKilled Recovery with Auto-Embedding",
-				"description": "Recover from OOMKilled events using automated remediation with automatic embedding generation",
-				"content": `apiVersion: v1
-kind: Pod
+			// ADR-043 compliant workflow-schema.yaml content
+			// YAML uses underscored keys (signal_type, risk_tolerance)
+			// DD-WORKFLOW-001: All 7 mandatory labels required
+			workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
 metadata:
-  name: oomkilled-recovery
-spec:
-  containers:
-  - name: app
-    image: nginx:latest
-    resources:
-      limits:
-        memory: "512Mi"
-      requests:
-        memory: "256Mi"`,
+  workflow_id: %s
+  version: "1.0.0"
+  description: Recover from OOMKilled events using automated remediation with automatic embedding generation
+labels:
+  signal_type: OOMKilled
+  severity: critical
+  risk_tolerance: low
+  environment: production
+  priority: p0
+  business_category: availability
+  component: deployment
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: Target namespace
+  - name: POD_NAME
+    type: string
+    required: true
+    description: Name of the pod to restart
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/oom-recovery:v1.0.0
+`, workflowID)
+
+			// DD-WORKFLOW-002 v2.4: container_image is MANDATORY with digest
+			containerImage := fmt.Sprintf("ghcr.io/kubernaut/workflows/oom-recovery:v1.0.0@sha256:%064d", 1)
+
+			// DD-WORKFLOW-002 v3.0: workflow_name is the human identifier, workflow_id is auto-generated UUID
+			workflowReq := map[string]interface{}{
+				"workflow_name": workflowID, // Using workflowID test field as workflow_name
+				"version":       "1.0.0",
+				"name":          "OOMKilled Recovery with Auto-Embedding",
+				"description":   "Recover from OOMKilled events using automated remediation with automatic embedding generation",
+				"content":       workflowSchemaContent,
 				"labels": map[string]interface{}{
-					"signal-type": "OOMKilled",
-					"severity":    "critical",
+					// JSON labels use hyphenated keys (signal-type, risk-tolerance)
+					"signal-type":       "OOMKilled",
+					"severity":          "critical",
+					"risk-tolerance":    "low",
+					"environment":       "production",
+					"priority":          "P0",
+					"business-category": "availability",
+					"component":         "deployment",
 				},
-				"status":            "active",
-				"is_latest_version": true,
+				"container_image": containerImage,
+				"status":          "active",
 				// NOTE: No "embedding" field provided - should be generated automatically
 			}
 
@@ -230,11 +223,23 @@ spec:
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				fmt.Sprintf("Failed to create workflow: %s", string(bodyBytes)))
 
+			// DD-WORKFLOW-002 v3.0: Extract UUID workflow_id from create response
+			var createResponse struct {
+				WorkflowID string `json:"workflow_id"` // UUID
+			}
+			err = json.Unmarshal(bodyBytes, &createResponse)
+			Expect(err).ToNot(HaveOccurred())
+			createdUUID := createResponse.WorkflowID
+			Expect(createdUUID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
+				"Created workflow_id should be UUID format")
+
 			testLogger.Info("✅ Workflow created successfully",
 				zap.Duration("duration", createDuration),
-				zap.String("workflow_id", workflowID))
+				zap.String("workflow_name", workflowID),
+				zap.String("workflow_id_uuid", createdUUID))
 
 			// Verify embedding was generated in database (768 dimensions)
+			// DD-WORKFLOW-002 v3.0: Use workflow_name for filtering (workflow_id is UUID)
 			testLogger.Info("🔍 Verifying embedding was generated automatically...")
 			var embeddingDims int
 			var embeddingExists bool
@@ -243,7 +248,7 @@ spec:
 					embedding IS NOT NULL as embedding_exists,
 					COALESCE(vector_dims(embedding), 0) as embedding_dims
 				FROM remediation_workflow_catalog
-				WHERE workflow_id = $1 AND version = $2`,
+				WHERE workflow_name = $1 AND version = $2`,
 				workflowID, "1.0.0").Scan(&embeddingExists, &embeddingDims)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(embeddingExists).To(BeTrue(), "Embedding should be generated automatically")
@@ -255,9 +260,10 @@ spec:
 			// ========================================
 			// PHASE 2: RETRIEVE - Verify Workflow with Embedding
 			// ========================================
+			// DD-WORKFLOW-002 v3.0: Use UUID workflow_id for retrieval
 			testLogger.Info("📖 Phase 2: RETRIEVE workflow and verify embedding")
 
-			resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/workflows/%s/1.0.0", serviceURL, workflowID))
+			resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/workflows/%s", serviceURL, createdUUID))
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -315,12 +321,11 @@ spec:
 			Expect(resp.StatusCode).To(Equal(http.StatusOK),
 				fmt.Sprintf("Search failed: %s", string(bodyBytes)))
 
+			// DD-WORKFLOW-002 v2.4: Flat response structure
 			var searchResults struct {
 				Workflows []struct {
-					Workflow struct {
-						WorkflowID string `json:"workflow_id"`
-					} `json:"workflow"`
-					SimilarityScore float64 `json:"similarity_score"`
+					WorkflowID string  `json:"workflow_id"`
+					Confidence float64 `json:"confidence"` // DD-WORKFLOW-002: renamed from similarity_score
 				} `json:"workflows"`
 			}
 			err = json.Unmarshal(bodyBytes, &searchResults)
@@ -328,13 +333,13 @@ spec:
 
 			Expect(searchResults.Workflows).ToNot(BeEmpty(), "Search should return results")
 
-			// Find our workflow in results
+			// Find our workflow in results (DD-WORKFLOW-002 v3.0 flat structure, UUID workflow_id)
 			found := false
 			var similarity float64
 			for _, result := range searchResults.Workflows {
-				if result.Workflow.WorkflowID == workflowID {
+				if result.WorkflowID == createdUUID {
 					found = true
-					similarity = result.SimilarityScore
+					similarity = result.Confidence
 					break
 				}
 			}
@@ -346,88 +351,157 @@ spec:
 				zap.Float64("similarity", similarity))
 
 			// ========================================
-			// PHASE 4: UPDATE - Content Change Triggers Re-Embedding
+			// PHASE 4: NEW VERSION - Create New Version (DD-WORKFLOW-012: Immutability)
 			// ========================================
-			testLogger.Info("✏️  Phase 4: UPDATE workflow content (triggers re-embedding)")
+			// Per DD-WORKFLOW-012: Workflows are immutable. To "update" a workflow,
+			// you create a new version. This tests that a new version gets its own embedding.
+			testLogger.Info("📝 Phase 4: CREATE new version (workflows are immutable per DD-WORKFLOW-012)")
 
-			updateReq := map[string]interface{}{
-				"description": "Updated description - triggers re-embedding",
-				"content": `apiVersion: v1
-kind: Pod
+			// ADR-043 compliant workflow-schema.yaml content for v2.0.0
+			// YAML uses underscored keys (signal_type, risk_tolerance)
+			// DD-WORKFLOW-001: All 7 mandatory labels required
+			workflowSchemaContentV2 := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
 metadata:
-  name: oomkilled-recovery-updated
-spec:
-  containers:
-  - name: app
-    image: nginx:1.21
-    resources:
-      limits:
-        memory: "1Gi"
-      requests:
-        memory: "512Mi"`,
+  workflow_id: %s
+  version: "2.0.0"
+  description: Recover from OOMKilled events - UPDATED with improved memory handling
+labels:
+  signal_type: OOMKilled
+  severity: critical
+  risk_tolerance: low
+  environment: production
+  priority: p0
+  business_category: availability
+  component: deployment
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: Target namespace
+  - name: POD_NAME
+    type: string
+    required: true
+    description: Name of the pod to restart
+  - name: MEMORY_LIMIT
+    type: string
+    required: false
+    description: New memory limit to apply
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/oom-recovery:v2.0.0
+`, workflowID)
+
+			// DD-WORKFLOW-002 v2.4: container_image is MANDATORY with digest
+			containerImageV2 := fmt.Sprintf("ghcr.io/kubernaut/workflows/oom-recovery:v2.0.0@sha256:%064d", 2)
+
+			// DD-WORKFLOW-002 v3.0: workflow_name is the human identifier
+			workflowReqV2 := map[string]interface{}{
+				"workflow_name": workflowID, // Same workflow_name, new version
+				"version":       "2.0.0",
+				"name":          "OOMKilled Recovery with Auto-Embedding (v2)",
+				"description":   "Recover from OOMKilled events - UPDATED with improved memory handling",
+				"content":       workflowSchemaContentV2,
+				"labels": map[string]interface{}{
+					// JSON labels use hyphenated keys (signal-type, risk-tolerance)
+					"signal-type":       "OOMKilled",
+					"severity":          "critical",
+					"risk-tolerance":    "low",
+					"environment":       "production",
+					"priority":          "P0",
+					"business-category": "availability",
+					"component":         "deployment",
+				},
+				"container_image": containerImageV2,
+				"status":          "active",
 			}
 
-			reqBody, err = json.Marshal(updateReq)
+			reqBody, err = json.Marshal(workflowReqV2)
 			Expect(err).ToNot(HaveOccurred())
 
-			req, err := http.NewRequest(http.MethodPatch,
-				fmt.Sprintf("%s/api/v1/workflows/%s/1.0.0", serviceURL, workflowID),
-				bytes.NewBuffer(reqBody))
-			Expect(err).ToNot(HaveOccurred())
-			req.Header.Set("Content-Type", "application/json")
-
-			updateStart := time.Now()
-			resp, err = httpClient.Do(req)
-			updateDuration := time.Since(updateStart)
+			createV2Start := time.Now()
+			resp, err = httpClient.Post(
+				serviceURL+"/api/v1/workflows",
+				"application/json",
+				bytes.NewBuffer(reqBody),
+			)
+			createV2Duration := time.Since(createV2Start)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
 			bodyBytes, err = io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK),
-				fmt.Sprintf("Failed to update workflow: %s", string(bodyBytes)))
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				fmt.Sprintf("Failed to create workflow v2: %s", string(bodyBytes)))
 
-			testLogger.Info("✅ Workflow updated successfully",
-				zap.Duration("duration", updateDuration))
+			testLogger.Info("✅ Workflow v2.0.0 created successfully",
+				zap.Duration("duration", createV2Duration))
 
-			// Verify new embedding was generated
-			testLogger.Info("🔍 Verifying new embedding was generated...")
-			var newEmbeddingDims int
+			// Verify new version has its own embedding
+			// DD-WORKFLOW-002 v3.0: Use workflow_name for filtering
+			testLogger.Info("🔍 Verifying new version has embedding...")
+			var newVersionEmbeddingDims int
 			err = db.QueryRow(`
 				SELECT vector_dims(embedding)
 				FROM remediation_workflow_catalog
-				WHERE workflow_id = $1 AND version = $2`,
-				workflowID, "1.0.0").Scan(&newEmbeddingDims)
+				WHERE workflow_name = $1 AND version = $2`,
+				workflowID, "2.0.0").Scan(&newVersionEmbeddingDims)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(newEmbeddingDims).To(Equal(768), "New embedding should be 768 dimensions")
+			Expect(newVersionEmbeddingDims).To(Equal(768), "New version embedding should be 768 dimensions")
 
-			testLogger.Info("✅ New embedding generated after update",
-				zap.Int("dimensions", newEmbeddingDims))
+			testLogger.Info("✅ New version embedding generated automatically",
+				zap.Int("dimensions", newVersionEmbeddingDims))
+
+			// Verify we now have 2 versions
+			// DD-WORKFLOW-002 v3.0: Use workflow_name for filtering
+			var versionCount int
+			err = db.QueryRow("SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name = $1",
+				workflowID).Scan(&versionCount)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(versionCount).To(Equal(2), "Should have 2 versions of the workflow")
 
 			// ========================================
-			// PHASE 5: DELETE - Cleanup
+			// PHASE 5: DISABLE - Soft Delete (DD-WORKFLOW-012: No hard delete)
 			// ========================================
-			testLogger.Info("🗑️  Phase 5: DELETE workflow")
+			// Per DD-WORKFLOW-012: We use soft delete (disable) instead of hard delete
+			// DD-WORKFLOW-002 v3.0: Use UUID workflow_id for disable endpoint
+			testLogger.Info("🚫 Phase 5: DISABLE workflow v1.0.0 (soft delete per DD-WORKFLOW-012)")
 
-			req, err = http.NewRequest(http.MethodDelete,
-				fmt.Sprintf("%s/api/v1/workflows/%s/1.0.0", serviceURL, workflowID),
-				nil)
+			disableReq := map[string]interface{}{
+				"reason":     "Replaced by v2.0.0 with improved memory handling",
+				"updated_by": "e2e-test",
+			}
+			reqBody, err = json.Marshal(disableReq)
 			Expect(err).ToNot(HaveOccurred())
+
+			// DD-WORKFLOW-002 v3.0: Use UUID for disable endpoint
+			req, err := http.NewRequest(http.MethodPatch,
+				fmt.Sprintf("%s/api/v1/workflows/%s/disable", serviceURL, createdUUID),
+				bytes.NewBuffer(reqBody))
+			Expect(err).ToNot(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
 
 			resp, err = httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-			Expect(resp.StatusCode).To(Equal(http.StatusNoContent), "Workflow should be deleted")
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Workflow should be disabled")
 
-			testLogger.Info("✅ Workflow deleted successfully")
+			testLogger.Info("✅ Workflow v1.0.0 disabled successfully")
 
-			// Verify workflow no longer exists
-			var count int
-			err = db.QueryRow("SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_id = $1",
-				workflowID).Scan(&count)
+			// Verify workflow v1.0.0 is disabled but still exists
+			// DD-WORKFLOW-002 v3.0: Use workflow_name for filtering
+			var status string
+			err = db.QueryRow("SELECT status FROM remediation_workflow_catalog WHERE workflow_name = $1 AND version = $2",
+				workflowID, "1.0.0").Scan(&status)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(count).To(Equal(0), "Workflow should be deleted from database")
+			Expect(status).To(Equal("disabled"), "Workflow v1.0.0 should be disabled")
+
+			// Verify workflow v2.0.0 is still active
+			err = db.QueryRow("SELECT status FROM remediation_workflow_catalog WHERE workflow_name = $1 AND version = $2",
+				workflowID, "2.0.0").Scan(&status)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(status).To(Equal("active"), "Workflow v2.0.0 should still be active")
 
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			testLogger.Info("✅ Embedding Service Integration - Complete Journey Validated")
@@ -437,9 +511,9 @@ spec:
 			testLogger.Info("  ✅ AUTO-EMBED: 768-dimensional embedding generated automatically")
 			testLogger.Info("  ✅ RETRIEVE: Embedding returned in API response")
 			testLogger.Info("  ✅ SEARCH: Semantic search found workflow (similarity > 0.0)")
-			testLogger.Info("  ✅ UPDATE: Content change triggered re-embedding")
-			testLogger.Info("  ✅ DELETE: Workflow removed from catalog")
-			testLogger.Info("  ✅ PERFORMANCE: Create + Search + Update < 5s total")
+			testLogger.Info("  ✅ NEW VERSION: v2.0.0 created with its own embedding (DD-WORKFLOW-012)")
+			testLogger.Info("  ✅ DISABLE: v1.0.0 soft-deleted, v2.0.0 still active (DD-WORKFLOW-012)")
+			testLogger.Info("  ✅ PERFORMANCE: Create + Search + New Version < 5s total")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		})
 	})
@@ -464,4 +538,3 @@ spec:
 		})
 	})
 })
-

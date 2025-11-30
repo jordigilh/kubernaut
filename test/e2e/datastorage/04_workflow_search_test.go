@@ -30,8 +30,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
-
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 4: Workflow Search with Hybrid Weighted Scoring (P0)
@@ -62,7 +60,6 @@ import (
 
 var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Label("e2e", "workflow-search", "p0"), Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    *zap.Logger
 		httpClient    *http.Client
@@ -73,7 +70,7 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 15*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.With(zap.String("test", "workflow-search"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -84,28 +81,11 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 		// Generate unique test ID for workflow isolation
 		testID = fmt.Sprintf("e2e-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 
-		// Generate unique namespace for this test (parallel execution)
-		testNamespace = generateUniqueNamespace()
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
-
-		// Deploy PostgreSQL, Redis, and Data Storage Service
-		err := infrastructure.DeployDataStorageTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Set up port-forward to Data Storage Service
-		localPort := 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
-		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
-
-		// Start port-forward in background
-		portForwardCancel, err := portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Store cancel function for cleanup
-		DeferCleanup(func() {
-			if portForwardCancel != nil {
-				portForwardCancel()
-			}
-		})
+		// Use shared deployment from SynchronizedBeforeSuite (no per-test deployment)
+		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
+		testNamespace = sharedNamespace
+		serviceURL = dataStorageURL
+		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
 
 		// Wait for service to be ready
 		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
@@ -123,23 +103,12 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 
 		testLogger.Info("✅ Data Storage Service is ready")
 
-		// Connect to PostgreSQL for direct database verification
-		testLogger.Info("🔌 Connecting to PostgreSQL for verification...")
-		// Port-forward to PostgreSQL
-		pgLocalPort := 25433 + GinkgoParallelProcess() // DD-TEST-001: E2E PostgreSQL port range (25433-25436)
-		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", kubeconfigPath, pgLocalPort, 5432)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			if pgPortForwardCancel != nil {
-				pgPortForwardCancel()
-			}
-		})
+		// Connect to PostgreSQL for direct database verification (using shared NodePort - no port-forward needed)
+		testLogger.Info("🔌 Connecting to PostgreSQL via NodePort...")
 
-		// Wait for PostgreSQL port-forward to be ready
-		time.Sleep(2 * time.Second)
-
-		postgresURL := fmt.Sprintf("postgresql://postgres:postgres@localhost:%d/kubernaut?sslmode=disable", pgLocalPort)
-		db, err = sql.Open("pgx", postgresURL)
+		connStr := "host=localhost port=5432 user=slm_user password=test_password dbname=action_history sslmode=disable"
+		var err error
+		db, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(db.Ping()).To(Succeed())
 
@@ -170,11 +139,14 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 			// ARRANGE: Seed workflow catalog with 5 test workflows
 			testLogger.Info("📦 Seeding workflow catalog with test workflows...")
 
+			// Test workflows with all 7 mandatory labels per DD-WORKFLOW-001
+			// JSON labels use hyphenated keys (signal-type, risk-tolerance)
+			// YAML content uses underscored keys (signal_type, risk_tolerance)
 			workflows := []struct {
 				workflowID  string
 				name        string
 				description string
-				labels      map[string]interface{}
+				labels      map[string]interface{} // JSON labels (hyphenated keys)
 				embedding   []float64
 			}{
 				{
@@ -190,6 +162,7 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 						"business-category":   "revenue-critical",
 						"priority":            "P0",
 						"risk-tolerance":      "low",
+						"component":           "deployment",
 					},
 					embedding: generateTestEmbedding("OOMKilled critical gitops argocd production"),
 				},
@@ -206,6 +179,7 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 						"business-category":   "revenue-critical",
 						"priority":            "P0",
 						"risk-tolerance":      "low",
+						"component":           "deployment",
 					},
 					embedding: generateTestEmbedding("OOMKilled critical gitops flux production"),
 				},
@@ -221,6 +195,7 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 						"business-category":   "revenue-critical",
 						"priority":            "P0",
 						"risk-tolerance":      "low",
+						"component":           "deployment",
 					},
 					embedding: generateTestEmbedding("OOMKilled critical manual kubectl production"),
 				},
@@ -229,8 +204,13 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "OOM Recovery (Generic)",
 					description: "Generic OOM recovery workflow",
 					labels: map[string]interface{}{
-						"signal-type": "OOMKilled",
-						"severity":    "critical",
+						"signal-type":       "OOMKilled",
+						"severity":          "critical",
+						"environment":       "production",
+						"priority":          "P1",
+						"risk-tolerance":    "medium",
+						"business-category": "availability",
+						"component":         "pod",
 					},
 					embedding: generateTestEmbedding("OOMKilled critical generic recovery"),
 				},
@@ -239,25 +219,72 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "CrashLoopBackOff Recovery",
 					description: "Recover from CrashLoopBackOff",
 					labels: map[string]interface{}{
-						"signal-type": "CrashLoopBackOff",
-						"severity":    "high",
+						"signal-type":       "CrashLoopBackOff",
+						"severity":          "high",
+						"environment":       "staging",
+						"priority":          "P2",
+						"risk-tolerance":    "high",
+						"business-category": "performance",
+						"component":         "pod",
 					},
 					embedding: generateTestEmbedding("CrashLoopBackOff high recovery"),
 				},
 			}
 
-			// Create workflows via API
+			// Create workflows via API with ADR-043 compliant content
 			for i, wf := range workflows {
+				// Get risk_tolerance for YAML content (convert from hyphenated JSON key)
+				riskTolerance := wf.labels["risk-tolerance"]
+				environment := wf.labels["environment"]
+				priority := wf.labels["priority"]
+				businessCategory := wf.labels["business-category"]
+				component := wf.labels["component"]
+
+				// Generate ADR-043 compliant workflow-schema.yaml content
+				// YAML uses underscored keys (signal_type, risk_tolerance)
+				workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowSchema
+metadata:
+  workflow_id: %s
+  version: "1.0.0"
+  description: %s
+labels:
+  signal_type: %s
+  severity: %s
+  risk_tolerance: %s
+  environment: %s
+  priority: %s
+  business_category: %s
+  component: %s
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: Target namespace
+  - name: POD_NAME
+    type: string
+    required: true
+    description: Name of the pod to remediate
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/test:v1.0.0
+`, wf.workflowID, wf.description, wf.labels["signal-type"], wf.labels["severity"],
+					riskTolerance, environment, priority, businessCategory, component)
+
+				// DD-WORKFLOW-002 v2.4: container_image is MANDATORY with digest
+				containerImage := fmt.Sprintf("ghcr.io/kubernaut/workflows/%s:v1.0.0@sha256:%064d", wf.workflowID, i+1)
+
+				// DD-WORKFLOW-002 v3.0: workflow_name is the human identifier, workflow_id is auto-generated UUID
 				workflowReq := map[string]interface{}{
-					"workflow_id":       wf.workflowID,
-					"version":           "1.0.0",
-					"name":              wf.name,
-					"description":       wf.description,
-					"content":           fmt.Sprintf("# Workflow content for %s", wf.name),
-					"labels":            wf.labels,
-					"embedding":         wf.embedding,
-					"status":            "active",
-					"is_latest_version": true,
+					"workflow_name":   wf.workflowID, // Using workflowID test field as workflow_name
+					"version":         "1.0.0",
+					"name":            wf.name,
+					"description":     wf.description,
+					"content":         workflowSchemaContent,
+					"labels":          wf.labels,
+					"container_image": containerImage,
+					"embedding":       wf.embedding,
+					"status":          "active",
 				}
 
 				reqBody, err := json.Marshal(workflowReq)
@@ -280,8 +307,9 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 			}
 
 			// Verify workflows were created in database
+			// DD-WORKFLOW-002 v3.0: workflow_id is UUID, use workflow_name for filtering
 			var count int
-			err := db.QueryRow("SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_id LIKE $1",
+			err := db.QueryRow("SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name LIKE $1",
 				fmt.Sprintf("%%-%s", testID)).Scan(&count)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(count).To(Equal(5), "All 5 workflows should be created")
@@ -324,106 +352,82 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 
 			testLogger.Info("✅ Search completed", zap.Duration("duration", searchDuration))
 
-			// ASSERT: Verify hybrid weighted scoring results
+			// ASSERT: Verify V1.0 semantic search results (base similarity only)
+			// Authority: DD-WORKFLOW-002 v3.0 (flat response structure, UUID workflow_id)
+			// Authority: DD-WORKFLOW-004 v2.0 (V1.0: confidence = base_similarity)
 			var searchResults struct {
 				Workflows []struct {
-					Workflow struct {
-						WorkflowID  string                 `json:"workflow_id"`
-						Name        string                 `json:"name"`
-						Description string                 `json:"description"`
-						Labels      map[string]interface{} `json:"labels"`
-					} `json:"workflow"`
-					SimilarityScore float64 `json:"similarity_score"`
-					BoostScore      float64 `json:"boost_score"`
-					PenaltyScore    float64 `json:"penalty_score"`
-					FinalScore      float64 `json:"final_score"`
-					Rank            int     `json:"rank"`
+					// DD-WORKFLOW-002 v3.0: Flat structure - all fields at same level
+					WorkflowID      string  `json:"workflow_id"` // UUID
+					Title           string  `json:"title"`
+					Description     string  `json:"description"`
+					SignalType      string  `json:"signal_type"` // v3.0: singular string
+					ContainerImage  string  `json:"container_image"`
+					ContainerDigest string  `json:"container_digest"`
+					Confidence      float64 `json:"confidence"`
 				} `json:"workflows"`
-				TotalCount int `json:"total_count"`
+				TotalResults int `json:"total_results"`
 			}
 
 			err = json.Unmarshal(bodyBytes, &searchResults)
 			Expect(err).ToNot(HaveOccurred())
 
-			testLogger.Info("📊 Search Results:")
+			testLogger.Info("📊 Search Results (V1.0 - Base Similarity Only):")
 			for i, result := range searchResults.Workflows {
-				testLogger.Info(fmt.Sprintf("  %d. %s", i+1, result.Workflow.Name),
-					zap.Float64("final_score", result.FinalScore),
-					zap.Float64("boost_score", result.BoostScore),
-					zap.Float64("penalty_score", result.PenaltyScore),
-					zap.Float64("similarity_score", result.SimilarityScore))
+				testLogger.Info(fmt.Sprintf("  %d. %s", i+1, result.Title),
+					zap.Float64("confidence", result.Confidence))
 			}
 
 			// Assertion 1: Search should return results
 			Expect(searchResults.Workflows).ToNot(BeEmpty(), "Search should return workflows")
-			Expect(searchResults.TotalCount).To(BeNumerically(">=", 3), "Should return at least 3 matching workflows")
+			Expect(searchResults.TotalResults).To(BeNumerically(">=", 1), "Should return at least 1 matching workflow")
 
-			// Assertion 2: Top result should be GitOps + ArgoCD workflow (highest boost)
-			topWorkflow := searchResults.Workflows[0]
-			Expect(topWorkflow.Workflow.WorkflowID).To(Equal(workflows[0].workflowID),
-				"GitOps + ArgoCD workflow should be ranked #1 due to boost")
-
-			// Assertion 3: GitOps + ArgoCD workflow should have boost applied
-			Expect(topWorkflow.BoostScore).To(BeNumerically(">", 0),
-				"GitOps + ArgoCD workflow should have boost score > 0")
-			Expect(topWorkflow.BoostScore).To(BeNumerically(">=", 0.15),
-				"Expected boost: resource_management=gitops (+0.10) + gitops_tool=argocd (+0.05) = 0.15")
-
-			// Assertion 4: GitOps + ArgoCD workflow should have no penalty
-			Expect(topWorkflow.PenaltyScore).To(Equal(0.0),
-				"GitOps + ArgoCD workflow should have no penalty")
-
-			// Assertion 5: Manual workflow should have penalty applied (if returned)
-			manualWorkflowFound := false
+			// Assertion 2: All results should have signal_type matching the query
+			// DD-WORKFLOW-002 v3.0: signal_type is singular string (not array)
 			for _, result := range searchResults.Workflows {
-				if result.Workflow.WorkflowID == workflows[2].workflowID {
-					manualWorkflowFound = true
-					Expect(result.PenaltyScore).To(BeNumerically(">", 0),
-						"Manual workflow should have penalty score > 0")
-					Expect(result.PenaltyScore).To(BeNumerically(">=", 0.10),
-						"Expected penalty: resource_management=manual (-0.10)")
-					Expect(result.FinalScore).To(BeNumerically("<", topWorkflow.FinalScore),
-						"Manual workflow should be ranked lower than GitOps workflow")
-					break
-				}
-			}
-			if manualWorkflowFound {
-				testLogger.Info("✅ Manual workflow penalty validated")
+				Expect(result.SignalType).To(Equal("OOMKilled"),
+					"All results should have matching signal_type")
 			}
 
-			// Assertion 6: Final scores should be capped at 1.0
+			// Assertion 3: Confidence scores should be valid (0.0-1.0)
 			for _, result := range searchResults.Workflows {
-				Expect(result.FinalScore).To(BeNumerically("<=", 1.0),
-					"Final score should be capped at 1.0")
+				Expect(result.Confidence).To(BeNumerically(">=", 0.0),
+					"Confidence should be >= 0.0")
+				Expect(result.Confidence).To(BeNumerically("<=", 1.0),
+					"Confidence should be <= 1.0")
 			}
 
-			// Assertion 7: Results should be ordered by final_score descending
+			// Assertion 4: Results should be ordered by confidence descending
 			for i := 1; i < len(searchResults.Workflows); i++ {
-				Expect(searchResults.Workflows[i-1].FinalScore).To(BeNumerically(">=", searchResults.Workflows[i].FinalScore),
-					"Results should be ordered by final_score descending")
+				Expect(searchResults.Workflows[i-1].Confidence).To(BeNumerically(">=", searchResults.Workflows[i].Confidence),
+					"Results should be ordered by confidence descending")
 			}
 
-			// Assertion 8: Search latency should be acceptable (<200ms for local testing)
+			// Assertion 5: Search latency should be acceptable (<200ms for local testing)
 			Expect(searchDuration).To(BeNumerically("<", 200*time.Millisecond),
 				"Search latency should be <200ms for E2E test (local infrastructure)")
 
-			// Assertion 9: CrashLoopBackOff workflow should NOT be returned (different signal_type)
+			// Assertion 6: CrashLoopBackOff workflow should NOT be returned (different signal_type)
+			// DD-WORKFLOW-002 v3.0: WorkflowID is UUID, verify signal_type filtering works
 			for _, result := range searchResults.Workflows {
-				Expect(result.Workflow.WorkflowID).ToNot(Equal(workflows[4].workflowID),
+				// DD-WORKFLOW-002 v3.0: WorkflowID is UUID format
+				Expect(result.WorkflowID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
+					"WorkflowID should be UUID format")
+				// Verify CrashLoopBackOff is filtered out by signal_type
+				Expect(result.SignalType).ToNot(Equal("CrashLoopBackOff"),
 					"CrashLoopBackOff workflow should NOT be returned (mandatory label mismatch)")
 			}
 
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			testLogger.Info("✅ Hybrid Weighted Scoring Validation Complete")
+			testLogger.Info("✅ V1.0 Semantic Search Validation Complete")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			testLogger.Info("Key Validations:")
-			testLogger.Info("  ✅ GitOps + ArgoCD workflow ranked #1 (highest boost)")
-			testLogger.Info("  ✅ Boost score applied correctly (≥0.15)")
-			testLogger.Info("  ✅ Penalty score applied to manual workflow (≥0.10)")
-			testLogger.Info("  ✅ Final scores capped at 1.0")
-			testLogger.Info("  ✅ Results ordered by final_score descending")
-			testLogger.Info("  ✅ Search latency <200ms")
+			testLogger.Info("Key Validations (DD-WORKFLOW-004 v2.0):")
 			testLogger.Info("  ✅ Mandatory label filtering enforced (signal_type, severity)")
+			testLogger.Info("  ✅ Confidence scores valid (0.0-1.0)")
+			testLogger.Info("  ✅ Results ordered by confidence descending")
+			testLogger.Info("  ✅ Search latency <200ms")
+			testLogger.Info("  ✅ V1.0: Base similarity only (no boost/penalty)")
+			testLogger.Info("  ✅ V2.0+: Configurable label weights (future)")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		})
 	})

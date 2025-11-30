@@ -29,7 +29,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 2: DLQ Fallback - Service Outage Response (P0)
@@ -61,20 +60,17 @@ import (
 
 var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2e", "dlq", "p0"), Ordered, func() {
 	var (
-		testCtx           context.Context
-		testCancel        context.CancelFunc
-		testLogger        *zap.Logger
-		httpClient        *http.Client
-		testNamespace     string
-		serviceURL        string
-		db                *sql.DB
-		correlationID     string
-		portForwardCancel context.CancelFunc
-		localPort         int
+		testCancel    context.CancelFunc
+		testLogger    *zap.Logger
+		httpClient    *http.Client
+		testNamespace string
+		serviceURL    string
+		db            *sql.DB
+		correlationID string
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 15*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.With(zap.String("test", "dlq-fallback"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -82,28 +78,11 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 		testLogger.Info("Scenario 2: DLQ Fallback - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace for this test (parallel execution)
-		testNamespace = generateUniqueNamespace()
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
-
-		// Deploy PostgreSQL, Redis, and Data Storage Service
-		var err error
-		err = infrastructure.DeployDataStorageTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Set up port-forward to Data Storage Service
-		localPort = 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
-		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
-
-		portForwardCancel, err = portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			if portForwardCancel != nil {
-				portForwardCancel()
-			}
-		})
-
-		testLogger.Info("Service URL configured", zap.String("url", serviceURL))
+		// Use shared deployment from SynchronizedBeforeSuite (no per-test deployment)
+		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
+		testNamespace = sharedNamespace
+		serviceURL = dataStorageURL
+		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
 
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
@@ -124,18 +103,10 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
 		testLogger.Info("✅ Data Storage Service is responsive")
 
-		// Connect to PostgreSQL for verification
-		testLogger.Info("🔌 Connecting to PostgreSQL for verification...")
-		pgLocalPort := 25433 + GinkgoParallelProcess() // DD-TEST-001: E2E PostgreSQL port range (25433-25436)
-		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", kubeconfigPath, pgLocalPort, 5432)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			if pgPortForwardCancel != nil {
-				pgPortForwardCancel()
-			}
-		})
-
-		connStr := fmt.Sprintf("host=localhost port=%d user=slm_user password=test_password dbname=action_history sslmode=disable", pgLocalPort)
+		// Connect to PostgreSQL for verification (using shared NodePort - no port-forward needed)
+		testLogger.Info("🔌 Connecting to PostgreSQL via NodePort...")
+		connStr := fmt.Sprintf("host=localhost port=5432 user=slm_user password=test_password dbname=action_history sslmode=disable")
+		var err error
 		db, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -152,7 +123,35 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 	})
 
 	AfterAll(func() {
-		testLogger.Info("🧹 Cleaning up test namespace...")
+		testLogger.Info("🧹 Cleaning up DLQ test resources...")
+
+		// CRITICAL: Restore PostgreSQL to 1 replica before cleanup
+		// This test scales PostgreSQL to 0 to simulate outage, but since we use
+		// shared infrastructure, we MUST restore it for subsequent tests.
+		testLogger.Info("🔄 Restoring PostgreSQL to 1 replica (shared infrastructure)...")
+		if err := scalePod(testNamespace, "postgresql", kubeconfigPath, 1); err != nil {
+			testLogger.Error("Failed to restore PostgreSQL - subsequent tests may fail!",
+				zap.Error(err),
+				zap.String("namespace", testNamespace))
+		} else {
+			testLogger.Info("✅ PostgreSQL restored to 1 replica")
+
+			// Wait for PostgreSQL to be ready before continuing
+			testLogger.Info("⏳ Waiting for PostgreSQL to be ready...")
+			Eventually(func() error {
+				// Create a new connection to test PostgreSQL availability
+				connStr := fmt.Sprintf("host=localhost port=5432 user=slm_user password=test_password dbname=action_history sslmode=disable")
+				testDB, err := sql.Open("pgx", connStr)
+				if err != nil {
+					return err
+				}
+				defer testDB.Close()
+				return testDB.Ping()
+			}, 60*time.Second, 2*time.Second).Should(Succeed(), "PostgreSQL should be ready after restore")
+			testLogger.Info("✅ PostgreSQL is ready")
+		}
+
+		// Close database connection
 		if db != nil {
 			if err := db.Close(); err != nil {
 				testLogger.Warn("failed to close database connection", zap.Error(err))
@@ -162,10 +161,9 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 			testCancel()
 		}
 
-		err := infrastructure.CleanupDataStorageTestNamespace(testNamespace, kubeconfigPath, GinkgoWriter)
-		if err != nil {
-			testLogger.Warn("Failed to cleanup namespace", zap.Error(err))
-		}
+		// NOTE: Do NOT cleanup the shared namespace - it's used by other tests
+		// The namespace cleanup is handled by SynchronizedAfterSuite
+		testLogger.Info("✅ DLQ test cleanup complete (shared namespace preserved)")
 	})
 
 	It("should preserve audit events during PostgreSQL outage using DLQ", func() {
