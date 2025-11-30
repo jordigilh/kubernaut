@@ -3,22 +3,23 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
-  name: remediationprocessings.remediationprocessing.kubernaut.io
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: signalprocessings.signalprocessing.kubernaut.io
 spec:
-  group: remediationprocessing.kubernaut.io
+  group: signalprocessing.kubernaut.io
   names:
-    kind: RemediationProcessing
-    listKind: RemediationProcessingList
-    plural: remediationprocessings
-    singular: remediationprocessing
+    kind: SignalProcessing
+    listKind: SignalProcessingList
+    plural: signalprocessings
+    singular: signalprocessing
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: RemediationProcessing is the Schema for the remediationprocessings
-          API.
+        description: |-
+          SignalProcessing is the Schema for the signalprocessings API.
+          DD-SIGNAL-PROCESSING-001: Renamed from RemediationProcessing per ADR-015
         properties:
           apiVersion:
             description: |-
@@ -39,7 +40,7 @@ spec:
             type: object
           spec:
             description: |-
-              RemediationProcessingSpec defines the desired state of RemediationProcessing.
+              SignalProcessingSpec defines the desired state of SignalProcessing.
               Phase 1 Enhancement: Self-contained CRD pattern - contains all data from RemediationRequest
               No external CRD reads required during reconciliation (performance, reliability, isolation)
             properties:
@@ -146,7 +147,7 @@ spec:
                   PARENT REFERENCE (Audit/Lineage Only)
                   ========================================
                   Reference to parent RemediationRequest CRD for audit trail and lineage
-                  RemediationProcessor does NOT read RemediationRequest - all data is self-contained
+                  SignalProcessor does NOT read RemediationRequest - all data is self-contained
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -284,19 +285,272 @@ spec:
             - targetType
             type: object
           status:
-            description: RemediationProcessingStatus defines the observed state of
-              RemediationProcessing.
+            description: |-
+              SignalProcessingStatus defines the observed state of SignalProcessing.
+              DD-CONTRACT-002: Structured types replace unstructured ContextData map[string]string
             properties:
               completedAt:
                 format: date-time
                 type: string
-              contextData:
-                additionalProperties:
-                  type: string
-                description: Enriched context data from processing
+              enrichmentResults:
+                description: |-
+                  Structured enrichment results (DD-CONTRACT-002)
+                  Replaces ContextData map[string]string anti-pattern
+                properties:
+                  enrichmentQuality:
+                    description: |-
+                      Overall enrichment quality score (0.0-1.0)
+                      1.0 = all enrichments successful, 0.0 = all failed
+                    type: number
+                  historicalContext:
+                    description: Historical signal patterns and resource usage
+                    properties:
+                      averageCPUUsage:
+                        type: string
+                      averageMemoryUsage:
+                        description: Historical resource usage
+                        type: string
+                      lastSignalTimestamp:
+                        type: string
+                      lastSuccessfulResolution:
+                        description: Historical success rate
+                        type: string
+                      previousSignals:
+                        description: Historical signal patterns
+                        type: integer
+                      resolutionSuccessRate:
+                        type: number
+                      signalFrequency:
+                        type: number
+                    required:
+                    - previousSignals
+                    - resolutionSuccessRate
+                    - signalFrequency
+                    type: object
+                  kubernetesContext:
+                    description: Kubernetes resource context (from cluster API queries)
+                    properties:
+                      deploymentDetails:
+                        description: Deployment/workload context
+                        properties:
+                          availableReplicas:
+                            format: int32
+                            type: integer
+                          labels:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          name:
+                            type: string
+                          readyReplicas:
+                            format: int32
+                            type: integer
+                          replicas:
+                            format: int32
+                            type: integer
+                          strategy:
+                            type: string
+                        required:
+                        - availableReplicas
+                        - name
+                        - readyReplicas
+                        - replicas
+                        - strategy
+                        type: object
+                      namespace:
+                        description: Namespace information
+                        type: string
+                      namespaceLabels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      nodeDetails:
+                        description: Node context
+                        properties:
+                          allocatable:
+                            description: ResourceList contains resource quantities
+                            properties:
+                              cpu:
+                                type: string
+                              memory:
+                                type: string
+                            required:
+                            - cpu
+                            - memory
+                            type: object
+                          capacity:
+                            description: ResourceList contains resource quantities
+                            properties:
+                              cpu:
+                                type: string
+                              memory:
+                                type: string
+                            required:
+                            - cpu
+                            - memory
+                            type: object
+                          conditions:
+                            items:
+                              description: NodeCondition contains node condition status
+                              properties:
+                                status:
+                                  type: string
+                                type:
+                                  type: string
+                              required:
+                              - status
+                              - type
+                              type: object
+                            type: array
+                          labels:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          name:
+                            type: string
+                        required:
+                        - allocatable
+                        - capacity
+                        - name
+                        type: object
+                      podDetails:
+                        description: Pod context
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          containers:
+                            items:
+                              description: ContainerStatus contains container-level
+                                status
+                              properties:
+                                image:
+                                  type: string
+                                name:
+                                  type: string
+                                ready:
+                                  type: boolean
+                                restartCount:
+                                  format: int32
+                                  type: integer
+                                state:
+                                  type: string
+                              required:
+                              - image
+                              - name
+                              - ready
+                              - restartCount
+                              - state
+                              type: object
+                            type: array
+                          creationTimestamp:
+                            type: string
+                          labels:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          name:
+                            type: string
+                          phase:
+                            type: string
+                          restartCount:
+                            format: int32
+                            type: integer
+                        required:
+                        - creationTimestamp
+                        - name
+                        - phase
+                        - restartCount
+                        type: object
+                      relatedConfigMaps:
+                        items:
+                          description: ConfigMapSummary contains ConfigMap targeting
+                            information
+                          properties:
+                            keys:
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              type: string
+                          required:
+                          - keys
+                          - name
+                          type: object
+                        type: array
+                      relatedIngresses:
+                        items:
+                          description: IngressSummary contains ingress targeting information
+                          properties:
+                            hosts:
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              type: string
+                            rules:
+                              items:
+                                description: IngressRule contains ingress rule configuration
+                                properties:
+                                  host:
+                                    type: string
+                                  path:
+                                    type: string
+                                required:
+                                - host
+                                - path
+                                type: object
+                              type: array
+                          required:
+                          - hosts
+                          - name
+                          type: object
+                        type: array
+                      relatedServices:
+                        description: Related resources (targeting data only)
+                        items:
+                          description: ServiceSummary contains service targeting information
+                          properties:
+                            clusterIP:
+                              type: string
+                            name:
+                              type: string
+                            ports:
+                              items:
+                                description: ServicePort contains service port configuration
+                                properties:
+                                  name:
+                                    type: string
+                                  port:
+                                    format: int32
+                                    type: integer
+                                  protocol:
+                                    type: string
+                                  targetPort:
+                                    type: string
+                                required:
+                                - name
+                                - port
+                                - protocol
+                                - targetPort
+                                type: object
+                              type: array
+                            type:
+                              type: string
+                          required:
+                          - clusterIP
+                          - name
+                          - type
+                          type: object
+                        type: array
+                    required:
+                    - namespace
+                    type: object
                 type: object
               phase:
-                description: Phase tracking
+                description: 'Phase tracking: "pending", "enriching", "completed",
+                  "failed"'
                 type: string
               startTime:
                 description: Timestamps

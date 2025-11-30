@@ -1,10 +1,22 @@
 ## CRD Schema Specification
 
-**Full Schema**: See [docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md](../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, file location updated | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
+> | v1.1 | 2025-11-27 | Type rename: RemediationProcessing* → SignalProcessing* | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.1 | 2025-11-27 | Terminology: Alert → Signal | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
+> | v1.1 | 2025-11-27 | Recovery context: Now embedded by Remediation Orchestrator in spec.failureData | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
+> | v1.1 | 2025-11-27 | Categorization: Priority fields added (consolidated from Gateway) | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+> | v1.0 | 2025-01-15 | Initial CRD schema | - |
 
-**Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `02_REMEDIATION_PROCESSING_CRD.md`.
+**Full Schema**: See [docs/design/CRD/02_SIGNAL_PROCESSING_CRD.md](../../design/CRD/02_SIGNAL_PROCESSING_CRD.md)
 
-**Location**: `api/remediationprocessing/v1/alertprocessing_types.go`
+**Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `02_SIGNAL_PROCESSING_CRD.md`.
+
+**Location**: `api/kubernaut.io/v1alpha1/signalprocessing_types.go`
+
+**API Group**: `kubernaut.io/v1alpha1` (unified API group for all Kubernaut CRDs)
 
 ### ✅ **TYPE SAFETY COMPLIANCE**
 
@@ -16,23 +28,31 @@ This CRD specification uses **fully structured types** and eliminates all `map[s
 | **HistoricalContext** | `map[string]interface{}` | Structured type | Clear data contract |
 | **ProcessingPhase.Results** | `map[string]interface{}` | 3 phase-specific types | Database query performance |
 
-**Related Triage**: See `ALERT_PROCESSOR_TYPE_SAFETY_TRIAGE.md` for detailed analysis and remediation plan.
+**Related Triage**: See `SIGNAL_PROCESSING_TYPE_SAFETY_TRIAGE.md` for detailed analysis and remediation plan.
 
 ```go
-package v1
+package v1alpha1
 
 import (
     corev1 "k8s.io/api/core/v1"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// RemediationProcessingSpec defines the desired state of RemediationProcessing
-type RemediationProcessingSpec struct {
-    // RemediationRequestRef references the parent RemediationRequest CRD
-    RemediationRequestRef corev1.ObjectReference `json:"alertRemediationRef"`
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,shortName=sp
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Environment",type=string,JSONPath=`.status.environmentClassification.environment`
+// +kubebuilder:printcolumn:name="Priority",type=string,JSONPath=`.status.categorization.priority`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-    // Alert contains the raw alert payload from webhook
-    Alert Alert `json:"alert"`
+// SignalProcessingSpec defines the desired state of SignalProcessing
+type SignalProcessingSpec struct {
+    // RemediationRequestRef references the parent RemediationRequest CRD
+    RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+
+    // Signal contains the raw signal payload from webhook
+    Signal Signal `json:"signal"`
 
     // EnrichmentConfig specifies enrichment sources and depth
     EnrichmentConfig EnrichmentConfig `json:"enrichmentConfig,omitempty"`
@@ -41,15 +61,16 @@ type RemediationProcessingSpec struct {
     EnvironmentClassification EnvironmentClassificationConfig `json:"environmentClassification,omitempty"`
 
     // ========================================
-    // RECOVERY FIELDS (DD-001: Alternative 2)
+    // RECOVERY FIELDS
     // 📋 Design Decision: DD-001 | ✅ Approved Design
-    // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
-    // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Version 1.2)
-    // See: BR-WF-RECOVERY-011 (Context API integration requirement)
+    // UPDATE (2025-11-11): Context API DEPRECATED per DD-CONTEXT-006
+    // Recovery context now embedded by Remediation Orchestrator in failureData
+    // See: docs/architecture/decisions/DD-001-recovery-context-enrichment.md
+    // See: docs/architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md
     // ========================================
 
     // IsRecoveryAttempt indicates this is a recovery attempt (not initial processing)
-    // When true, RemediationProcessing will enrich with Context API recovery context (BR-WF-RECOVERY-011)
+    // When true, Signal Processing reads recovery context from FailureData (embedded by Remediation Orchestrator)
     IsRecoveryAttempt bool `json:"isRecoveryAttempt,omitempty"`
 
     // RecoveryAttemptNumber tracks which recovery attempt this is (1, 2, 3)
@@ -67,16 +88,53 @@ type RemediationProcessingSpec struct {
     // OriginalProcessingRef references the initial SignalProcessing CRD
     // (for audit trail - links recovery attempts back to original)
     OriginalProcessingRef *corev1.LocalObjectReference `json:"originalProcessingRef,omitempty"`
+
+    // FailureData contains embedded failure context from Remediation Orchestrator
+    // Populated when IsRecoveryAttempt = true (replaces Context API queries per DD-CONTEXT-006)
+    // This data comes from the WorkflowExecution CRD that failed
+    FailureData *FailureData `json:"failureData,omitempty"`
 }
 
-// Alert represents the alert data from Prometheus/Grafana
-type Alert struct {
+// Signal represents the signal data from Prometheus/Grafana
+// (Renamed from Alert per ADR-015: alert-to-signal-naming-migration)
+type Signal struct {
     Fingerprint string            `json:"fingerprint"`
     Payload     map[string]string `json:"payload"`
     Severity    string            `json:"severity"`
     Namespace   string            `json:"namespace"`
     Labels      map[string]string `json:"labels"`
     Annotations map[string]string `json:"annotations"`
+}
+
+// FailureData contains failure context embedded by Remediation Orchestrator
+// This replaces Context API queries per DD-CONTEXT-006
+type FailureData struct {
+    // WorkflowRef is the name of the failed WorkflowExecution
+    WorkflowRef string `json:"workflowRef"`
+
+    // AttemptNumber is which attempt failed (1, 2, 3)
+    AttemptNumber int `json:"attemptNumber"`
+
+    // FailedStep is which step failed (0-based index)
+    FailedStep int `json:"failedStep"`
+
+    // Action is the action type that failed (e.g., "scale-deployment")
+    Action string `json:"action"`
+
+    // ErrorType is the classified error type ("timeout", "permission_denied", etc.)
+    ErrorType string `json:"errorType"`
+
+    // FailureReason is a human-readable failure reason
+    FailureReason string `json:"failureReason"`
+
+    // Duration is how long the step ran before failure
+    Duration string `json:"duration"`
+
+    // FailedAt is when the failure occurred
+    FailedAt metav1.Time `json:"failedAt"`
+
+    // ResourceState contains target resource state at failure time
+    ResourceState map[string]string `json:"resourceState,omitempty"`
 }
 
 // EnrichmentConfig specifies context enrichment parameters
@@ -93,16 +151,19 @@ type EnvironmentClassificationConfig struct {
     BusinessRules         map[string]string `json:"businessRules,omitempty"`
 }
 
-// RemediationProcessingStatus defines the observed state
-type RemediationProcessingStatus struct {
+// SignalProcessingStatus defines the observed state
+type SignalProcessingStatus struct {
     // Phase tracks current processing stage
-    Phase string `json:"phase"` // "enriching", "classifying", "routing", "completed"
+    Phase string `json:"phase"` // "enriching", "classifying", "categorizing", "completed"
 
     // EnrichmentResults contains context data gathered
     EnrichmentResults EnrichmentResults `json:"enrichmentResults,omitempty"`
 
     // EnvironmentClassification result with confidence
     EnvironmentClassification EnvironmentClassification `json:"environmentClassification,omitempty"`
+
+    // Categorization result with priority assignment (DD-CATEGORIZATION-001)
+    Categorization Categorization `json:"categorization,omitempty"`
 
     // RoutingDecision for next service
     RoutingDecision RoutingDecision `json:"routingDecision,omitempty"`
@@ -120,10 +181,9 @@ type EnrichmentResults struct {
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
     EnrichmentQuality float64            `json:"enrichmentQuality,omitempty"` // 0.0-1.0
 
-    // RecoveryContext contains historical failure context from Context API
-    // Only populated when IsRecoveryAttempt = true (BR-WF-RECOVERY-011)
-    // Design Decision: DD-001 - Alternative 2 (RP enriches ALL contexts)
-    // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+    // RecoveryContext contains failure context for recovery attempts
+    // Populated from spec.failureData when IsRecoveryAttempt = true
+    // Note: Context API queries deprecated per DD-CONTEXT-006
     RecoveryContext *RecoveryContext `json:"recoveryContext,omitempty"`
 }
 
@@ -225,10 +285,10 @@ type ConfigMapSummary struct {
 }
 
 type HistoricalContext struct {
-    // Historical alert patterns
-    PreviousAlerts     int     `json:"previousAlerts"`
-    LastAlertTimestamp string  `json:"lastAlertTimestamp,omitempty"`
-    AlertFrequency     float64 `json:"alertFrequency"` // alerts per hour
+    // Historical signal patterns
+    PreviousSignals     int     `json:"previousSignals"`
+    LastSignalTimestamp string  `json:"lastSignalTimestamp,omitempty"`
+    SignalFrequency     float64 `json:"signalFrequency"` // signals per hour
 
     // Historical resource usage
     AverageMemoryUsage string `json:"averageMemoryUsage,omitempty"` // e.g., "3.2Gi"
@@ -239,30 +299,22 @@ type HistoricalContext struct {
     ResolutionSuccessRate    float64 `json:"resolutionSuccessRate"` // 0.0-1.0
 }
 
-// RecoveryContext contains historical failure context from Context API
-// Populated by RemediationProcessing Controller when IsRecoveryAttempt = true
-// See: BR-WF-RECOVERY-011, Alternative 2 Design
+// RecoveryContext contains failure context for recovery attempts
+// Populated from spec.failureData when IsRecoveryAttempt = true
+// Note: Context API queries deprecated per DD-CONTEXT-006
 type RecoveryContext struct {
     // Context quality indicator
     ContextQuality string `json:"contextQuality"` // "complete", "partial", "minimal", "degraded"
 
-    // Previous workflow failures for this remediation
-    PreviousFailures []PreviousFailure `json:"previousFailures,omitempty"`
+    // Previous workflow failure (from spec.failureData)
+    PreviousFailure *PreviousFailure `json:"previousFailure,omitempty"`
 
-    // Related alerts correlated with this remediation
-    RelatedAlerts []RelatedAlert `json:"relatedAlerts,omitempty"`
-
-    // Historical failure patterns for this alert type
-    HistoricalPatterns []HistoricalPattern `json:"historicalPatterns,omitempty"`
-
-    // Successful recovery strategies from similar failures
-    SuccessfulStrategies []SuccessfulStrategy `json:"successfulStrategies,omitempty"`
-
-    // When this context was retrieved
-    RetrievedAt metav1.Time `json:"retrievedAt"`
+    // When this context was processed
+    ProcessedAt metav1.Time `json:"processedAt"`
 }
 
-// PreviousFailure describes a previous workflow execution failure
+// PreviousFailure describes the workflow execution failure
+// Data comes from spec.failureData (embedded by Remediation Orchestrator)
 type PreviousFailure struct {
     WorkflowRef    string      `json:"workflowRef"`              // Failed WorkflowExecution name
     AttemptNumber  int         `json:"attemptNumber"`            // 1, 2, 3
@@ -272,73 +324,106 @@ type PreviousFailure struct {
     FailureReason  string      `json:"failureReason"`            // Human-readable reason
     Duration       string      `json:"duration"`                 // How long before failure (e.g., "5m3s")
     Timestamp      metav1.Time `json:"timestamp"`                // When it failed
-    ClusterState   map[string]string `json:"clusterState,omitempty"`   // Cluster state at failure
-    ResourceSnapshot map[string]string `json:"resourceSnapshot,omitempty"` // Target resource state
-}
-
-// RelatedAlert describes alerts correlated with this remediation
-type RelatedAlert struct {
-    AlertFingerprint string      `json:"alertFingerprint"`  // Unique alert identifier
-    AlertName        string      `json:"alertName"`         // Alert name
-    Correlation      float64     `json:"correlation"`       // Correlation score (0.0-1.0)
-    Timestamp        metav1.Time `json:"timestamp"`         // Alert timestamp
-}
-
-// HistoricalPattern describes failure patterns for this alert type
-type HistoricalPattern struct {
-    Pattern             string  `json:"pattern"`                    // Pattern name (e.g., "scale_timeout_on_crashloop")
-    Occurrences         int     `json:"occurrences"`                // How many times seen
-    SuccessRate         float64 `json:"successRate"`                // Success rate for this pattern (0.0-1.0)
-    AverageRecoveryTime string  `json:"averageRecoveryTime"`        // Average time to recover (e.g., "8m30s")
-}
-
-// SuccessfulStrategy describes successful recovery strategies
-type SuccessfulStrategy struct {
-    Strategy     string      `json:"strategy"`       // Strategy name (e.g., "restart_pods_before_scale")
-    Description  string      `json:"description"`    // Strategy description
-    SuccessCount int         `json:"successCount"`   // Times this strategy succeeded
-    LastUsed     metav1.Time `json:"lastUsed"`       // Last time strategy was used
-    Confidence   float64     `json:"confidence"`     // Confidence score (0.0-1.0)
+    ResourceState  map[string]string `json:"resourceState,omitempty"` // Target resource state at failure
 }
 
 // EnvironmentClassification result
 type EnvironmentClassification struct {
     Environment      string  `json:"environment"`      // "production", "staging", "development", "testing"
     Confidence       float64 `json:"confidence"`       // 0.0-1.0
-    BusinessPriority string  `json:"businessPriority"` // "P0", "P1", "P2", "P3"
+    BusinessCriticality string `json:"businessCriticality"` // "critical", "high", "medium", "low"
     SLARequirement   string  `json:"slaRequirement"`   // "5m", "15m", "30m"
+}
+
+// Categorization contains priority assignment results
+// Added per DD-CATEGORIZATION-001: all categorization consolidated in Signal Processing
+type Categorization struct {
+    // Priority is the final priority level (P0-P3)
+    Priority string `json:"priority"` // "P0", "P1", "P2", "P3"
+
+    // PriorityScore is the numeric score (0-100) used for ranking
+    PriorityScore int `json:"priorityScore"`
+
+    // CategorizationFactors lists what influenced the priority
+    CategorizationFactors []CategorizationFactor `json:"categorizationFactors,omitempty"`
+
+    // CategorizationSource indicates how priority was determined
+    CategorizationSource string `json:"categorizationSource"` // "enriched_context", "fallback_labels", "default"
+
+    // CategorizationTime is when categorization was performed
+    CategorizationTime metav1.Time `json:"categorizationTime"`
+}
+
+// CategorizationFactor describes a factor that influenced priority
+type CategorizationFactor struct {
+    Factor      string  `json:"factor"`      // e.g., "namespace_labels", "workload_type", "environment"
+    Value       string  `json:"value"`       // e.g., "production", "deployment", "critical"
+    Weight      float64 `json:"weight"`      // 0.0-1.0
+    Contribution int    `json:"contribution"` // Points contributed to priority score
 }
 
 // RoutingDecision for workflow continuation
 type RoutingDecision struct {
     NextService string `json:"nextService"` // "ai-analysis"
-    RoutingKey  string `json:"routingKey"`  // Alert fingerprint
-    Priority    int    `json:"priority"`    // 0-10
+    RoutingKey  string `json:"routingKey"`  // Signal fingerprint
+    Priority    int    `json:"priority"`    // 0-10 (derived from Categorization)
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
-// RemediationProcessing is the Schema for the alertprocessings API
-type RemediationProcessing struct {
+// SignalProcessing is the Schema for the signalprocessings API
+type SignalProcessing struct {
     metav1.TypeMeta   `json:",inline"`
     metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    Spec   RemediationProcessingSpec   `json:"spec,omitempty"`
-    Status RemediationProcessingStatus `json:"status,omitempty"`
+    Spec   SignalProcessingSpec   `json:"spec,omitempty"`
+    Status SignalProcessingStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
-// RemediationProcessingList contains a list of RemediationProcessing
-type RemediationProcessingList struct {
+// SignalProcessingList contains a list of SignalProcessing
+type SignalProcessingList struct {
     metav1.TypeMeta `json:",inline"`
     metav1.ListMeta `json:"metadata,omitempty"`
-    Items           []RemediationProcessing `json:"items"`
+    Items           []SignalProcessing `json:"items"`
 }
 
 func init() {
-    SchemeBuilder.Register(&RemediationProcessing{}, &RemediationProcessingList{})
+    SchemeBuilder.Register(&SignalProcessing{}, &SignalProcessingList{})
 }
 ```
+
+---
+
+## Key Changes from Previous Schema
+
+### Service Rename (DD-SIGNAL-PROCESSING-001)
+- `RemediationProcessing` → `SignalProcessing`
+- `RemediationProcessingSpec` → `SignalProcessingSpec`
+- `RemediationProcessingStatus` → `SignalProcessingStatus`
+- `RemediationProcessingReconciler` → `SignalProcessingReconciler`
+
+### Terminology Migration (ADR-015)
+- `Alert` type → `Signal` type
+- `alert` field names → `signal` field names
+- `alertFingerprint` → `signalFingerprint`
+- `DuplicateAlerts` → `DuplicateSignals`
+
+### Context API Deprecation (DD-CONTEXT-006)
+- Removed: `RecoveryContext` populated from Context API queries
+- Added: `FailureData` field in spec (embedded by Remediation Orchestrator)
+- `RecoveryContext` now populated from `spec.failureData`
+- Simplified architecture: no external Context API dependency for recovery
+
+### Categorization Consolidation (DD-CATEGORIZATION-001)
+- Added: `Categorization` type in status
+- Added: `CategorizationFactor` type
+- Added: `categorizing` phase in reconciliation
+- Priority now assigned by Signal Processing (not Gateway)
+
+### Data Access Layer (ADR-032)
+- Audit writes via Data Storage Service REST API
+- No direct PostgreSQL access from Signal Processing
 

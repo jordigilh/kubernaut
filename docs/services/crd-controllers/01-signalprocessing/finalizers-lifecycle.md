@@ -1,18 +1,26 @@
 ## Finalizer Implementation
 
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, graceful shutdown added | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) |
+> | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.1 | 2025-11-27 | Data access via Data Storage Service REST API | [ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md) |
+> | v1.0 | 2025-01-15 | Initial finalizer implementation | - |
+
 ### Finalizer Name
 
 Following Kubernetes finalizer naming convention:
 
 ```go
-const alertProcessingFinalizer = "signalprocessing.kubernaut.io/alertprocessing-cleanup"
+const signalProcessingFinalizer = "signalprocessing.kubernaut.io/finalizer"
 ```
 
-**Naming Pattern**: `{domain}.kubernaut.io/{resource}-cleanup`
+**Naming Pattern**: `{resource}.kubernaut.io/finalizer`
 
 **Why This Pattern**:
 - **Domain-Scoped**: `signalprocessing.kubernaut.io` prevents conflicts with other services
-- **Resource-Specific**: `alertprocessing-cleanup` clearly indicates what's being cleaned up
+- **Resource-Specific**: Clearly indicates what's being cleaned up
 - **Kubernetes Convention**: Follows standard finalizer naming (domain/action format)
 
 ---
@@ -26,7 +34,7 @@ import (
     "context"
     "fmt"
 
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
 
     "github.com/go-logr/logr"
     "k8s.io/apimachinery/pkg/runtime"
@@ -36,40 +44,40 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const alertProcessingFinalizer = "signalprocessing.kubernaut.io/alertprocessing-cleanup"
+const signalProcessingFinalizer = "signalprocessing.kubernaut.io/finalizer"
 
-type RemediationProcessingReconciler struct {
+type SignalProcessingReconciler struct {
     client.Client
     Scheme            *runtime.Scheme
     Log               logr.Logger
     Recorder          record.EventRecorder
-    ContextClient     ContextClient
-    StorageClient     StorageClient
+    EnrichmentService EnrichmentService
+    DataStorageClient DataStorageClient  // REST API client (ADR-032)
 }
 
-func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    var ap processingv1.RemediationProcessing
-    if err := r.Get(ctx, req.NamespacedName, &ap); err != nil {
+func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    var sp signalprocessingv1.SignalProcessing
+    if err := r.Get(ctx, req.NamespacedName, &sp); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
     // ========================================
     // DELETION HANDLING WITH FINALIZER
     // ========================================
-    if !ap.ObjectMeta.DeletionTimestamp.IsZero() {
-        if controllerutil.ContainsFinalizer(&ap, alertProcessingFinalizer) {
+    if !sp.ObjectMeta.DeletionTimestamp.IsZero() {
+        if controllerutil.ContainsFinalizer(&sp, signalProcessingFinalizer) {
             // Perform cleanup before deletion
-            if err := r.cleanupRemediationProcessing(ctx, &ap); err != nil {
-                r.Log.Error(err, "Failed to cleanup RemediationProcessing resources",
-                    "name", ap.Name,
-                    "namespace", ap.Namespace,
+            if err := r.cleanupSignalProcessing(ctx, &sp); err != nil {
+                r.Log.Error(err, "Failed to cleanup SignalProcessing resources",
+                    "name", sp.Name,
+                    "namespace", sp.Namespace,
                 )
                 return ctrl.Result{}, err
             }
 
             // Remove finalizer to allow deletion
-            controllerutil.RemoveFinalizer(&ap, alertProcessingFinalizer)
-            if err := r.Update(ctx, &ap); err != nil {
+            controllerutil.RemoveFinalizer(&sp, signalProcessingFinalizer)
+            if err := r.Update(ctx, &sp); err != nil {
                 return ctrl.Result{}, err
             }
         }
@@ -79,9 +87,9 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
     // ========================================
     // ADD FINALIZER IF NOT PRESENT
     // ========================================
-    if !controllerutil.ContainsFinalizer(&ap, alertProcessingFinalizer) {
-        controllerutil.AddFinalizer(&ap, alertProcessingFinalizer)
-        if err := r.Update(ctx, &ap); err != nil {
+    if !controllerutil.ContainsFinalizer(&sp, signalProcessingFinalizer) {
+        controllerutil.AddFinalizer(&sp, signalProcessingFinalizer)
+        if err := r.Update(ctx, &sp); err != nil {
             return ctrl.Result{}, err
         }
     }
@@ -91,7 +99,7 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
     // ========================================
 
     // Skip if already completed or failed
-    if ap.Status.Phase == "completed" || ap.Status.Phase == "failed" {
+    if sp.Status.Phase == "completed" || sp.Status.Phase == "failed" {
         return ctrl.Result{}, nil
     }
 
@@ -116,62 +124,63 @@ import (
     "fmt"
     "time"
 
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
 )
 
-func (r *RemediationProcessingReconciler) cleanupRemediationProcessing(
+func (r *SignalProcessingReconciler) cleanupSignalProcessing(
     ctx context.Context,
-    ap *processingv1.RemediationProcessing,
+    sp *signalprocessingv1.SignalProcessing,
 ) error {
-    r.Log.Info("Cleaning up RemediationProcessing resources",
-        "name", ap.Name,
-        "namespace", ap.Namespace,
-        "phase", ap.Status.Phase,
+    r.Log.Info("Cleaning up SignalProcessing resources",
+        "name", sp.Name,
+        "namespace", sp.Namespace,
+        "phase", sp.Status.Phase,
     )
 
-    // 1. Record final audit to database
-    if err := r.recordFinalAudit(ctx, ap); err != nil {
-        r.Log.Error(err, "Failed to record final audit", "name", ap.Name)
+    // 1. Record final audit to Data Storage Service (ADR-032)
+    if err := r.recordFinalAudit(ctx, sp); err != nil {
+        r.Log.Error(err, "Failed to record final audit", "name", sp.Name)
         // Don't block deletion on audit failure
         // Audit is best-effort during cleanup
     }
 
     // 2. Emit deletion event
-    r.Recorder.Event(ap, "Normal", "RemediationProcessingDeleted",
-        fmt.Sprintf("RemediationProcessing cleanup completed (phase: %s)", ap.Status.Phase))
+    r.Recorder.Event(sp, "Normal", "SignalProcessingDeleted",
+        fmt.Sprintf("SignalProcessing cleanup completed (phase: %s)", sp.Status.Phase))
 
-    r.Log.Info("RemediationProcessing cleanup completed successfully",
-        "name", ap.Name,
-        "namespace", ap.Namespace,
+    r.Log.Info("SignalProcessing cleanup completed successfully",
+        "name", sp.Name,
+        "namespace", sp.Namespace,
     )
 
     return nil
 }
 
-func (r *RemediationProcessingReconciler) recordFinalAudit(
+func (r *SignalProcessingReconciler) recordFinalAudit(
     ctx context.Context,
-    ap *processingv1.RemediationProcessing,
+    sp *signalprocessingv1.SignalProcessing,
 ) error {
-    auditRecord := &AuditRecord{
-        AlertFingerprint: ap.Spec.Signal.Fingerprint,
-        ServiceType:      "RemediationProcessing",
-        CRDName:          ap.Name,
-        Namespace:        ap.Namespace,
-        Phase:            ap.Status.Phase,
-        CreatedAt:        ap.CreationTimestamp.Time,
-        DeletedAt:        ap.DeletionTimestamp.Time,
-        DegradedMode:     ap.Status.DegradedMode,
+    auditRecord := &SignalProcessingAudit{
+        SignalFingerprint: sp.Spec.Signal.Fingerprint,
+        ServiceType:       "SignalProcessing",
+        CRDName:           sp.Name,
+        Namespace:         sp.Namespace,
+        Phase:             sp.Status.Phase,
+        CreatedAt:         sp.CreationTimestamp.Time,
+        DeletedAt:         sp.DeletionTimestamp.Time,
+        DegradedMode:      sp.Status.EnrichmentResults.EnrichmentQuality < 0.8,
     }
 
-    return r.StorageClient.RecordAudit(ctx, auditRecord)
+    // Send to Data Storage Service via REST API (ADR-032)
+    return r.DataStorageClient.CreateAuditRecord(ctx, auditRecord)
 }
 ```
 
-**Cleanup Philosophy for RemediationProcessing**:
-- ✅ **Record final audit**: Capture that processing occurred (best-effort)
+**Cleanup Philosophy for SignalProcessing**:
+- ✅ **Record final audit**: Capture that processing occurred (best-effort via Data Storage Service)
 - ✅ **Emit deletion event**: Operational visibility
-- ❌ **No external cleanup needed**: RemediationProcessing is a leaf CRD (owns nothing)
-- ❌ **No child CRD cleanup**: RemediationProcessing doesn't create child CRDs
+- ❌ **No external cleanup needed**: SignalProcessing is a leaf CRD (owns nothing)
+- ❌ **No child CRD cleanup**: SignalProcessing doesn't create child CRDs
 - ✅ **Non-blocking**: Audit failures don't block deletion (best-effort)
 
 ---
@@ -187,8 +196,8 @@ import (
     "context"
     "fmt"
 
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
-    "github.com/jordigilh/kubernaut/pkg/remediationprocessing/controller"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
+    "github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
@@ -201,11 +210,11 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var _ = Describe("RemediationProcessing Finalizer", func() {
+var _ = Describe("SignalProcessing Finalizer", func() {
     var (
         ctx       context.Context
         k8sClient client.Client
-        reconciler *controller.RemediationProcessingReconciler
+        reconciler *controller.SignalProcessingReconciler
     )
 
     BeforeEach(func() {
@@ -214,97 +223,97 @@ var _ = Describe("RemediationProcessing Finalizer", func() {
             WithScheme(scheme.Scheme).
             Build()
 
-        reconciler = &controller.RemediationProcessingReconciler{
-            Client:        k8sClient,
-            StorageClient: &mockStorageClient{},
+        reconciler = &controller.SignalProcessingReconciler{
+            Client:            k8sClient,
+            DataStorageClient: &mockDataStorageClient{},
         }
     })
 
-    Context("when RemediationProcessing is created", func() {
+    Context("when SignalProcessing is created", func() {
         It("should add finalizer on first reconcile", func() {
-            ap := &processingv1.RemediationProcessing{
+            sp := &signalprocessingv1.SignalProcessing{
                 ObjectMeta: metav1.ObjectMeta{
                     Name:      "test-processing",
                     Namespace: "default",
                 },
-                Spec: processingv1.RemediationProcessingSpec{
-                    Alert: processingv1.Alert{
+                Spec: signalprocessingv1.SignalProcessingSpec{
+                    Signal: signalprocessingv1.Signal{
                         Fingerprint: "abc123",
                     },
                 },
             }
-            Expect(k8sClient.Create(ctx, ap)).To(Succeed())
+            Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
             // First reconcile should add finalizer
             _, err := reconciler.Reconcile(ctx, ctrl.Request{
-                NamespacedName: client.ObjectKeyFromObject(ap),
+                NamespacedName: client.ObjectKeyFromObject(sp),
             })
             Expect(err).ToNot(HaveOccurred())
 
             // Verify finalizer added
-            Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(ap), ap)).To(Succeed())
-            Expect(controllerutil.ContainsFinalizer(ap, alertProcessingFinalizer)).To(BeTrue())
+            Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), sp)).To(Succeed())
+            Expect(controllerutil.ContainsFinalizer(sp, signalProcessingFinalizer)).To(BeTrue())
         })
     })
 
-    Context("when RemediationProcessing is deleted", func() {
+    Context("when SignalProcessing is deleted", func() {
         It("should execute cleanup and remove finalizer", func() {
-            ap := &processingv1.RemediationProcessing{
+            sp := &signalprocessingv1.SignalProcessing{
                 ObjectMeta: metav1.ObjectMeta{
                     Name:       "test-processing",
                     Namespace:  "default",
-                    Finalizers: []string{alertProcessingFinalizer},
+                    Finalizers: []string{signalProcessingFinalizer},
                 },
-                Spec: processingv1.RemediationProcessingSpec{
-                    Alert: processingv1.Alert{
+                Spec: signalprocessingv1.SignalProcessingSpec{
+                    Signal: signalprocessingv1.Signal{
                         Fingerprint: "abc123",
                     },
                 },
-                Status: processingv1.RemediationProcessingStatus{
+                Status: signalprocessingv1.SignalProcessingStatus{
                     Phase: "completed",
                 },
             }
-            Expect(k8sClient.Create(ctx, ap)).To(Succeed())
+            Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-            // Delete RemediationProcessing
-            Expect(k8sClient.Delete(ctx, ap)).To(Succeed())
+            // Delete SignalProcessing
+            Expect(k8sClient.Delete(ctx, sp)).To(Succeed())
 
             // Reconcile should execute cleanup
             _, err := reconciler.Reconcile(ctx, ctrl.Request{
-                NamespacedName: client.ObjectKeyFromObject(ap),
+                NamespacedName: client.ObjectKeyFromObject(sp),
             })
             Expect(err).ToNot(HaveOccurred())
 
             // Verify finalizer removed (CRD will be deleted by Kubernetes)
-            err = k8sClient.Get(ctx, client.ObjectKeyFromObject(ap), ap)
+            err = k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), sp)
             Expect(err).To(HaveOccurred())
             Expect(client.IgnoreNotFound(err)).ToNot(HaveOccurred())
         })
 
         It("should not block deletion if audit fails", func() {
-            // Mock storage client to return error
-            reconciler.StorageClient = &mockStorageClient{
-                recordAuditError: fmt.Errorf("database unavailable"),
+            // Mock data storage client to return error
+            reconciler.DataStorageClient = &mockDataStorageClient{
+                createAuditError: fmt.Errorf("data storage unavailable"),
             }
 
-            ap := &processingv1.RemediationProcessing{
+            sp := &signalprocessingv1.SignalProcessing{
                 ObjectMeta: metav1.ObjectMeta{
                     Name:       "test-processing",
                     Namespace:  "default",
-                    Finalizers: []string{alertProcessingFinalizer},
+                    Finalizers: []string{signalProcessingFinalizer},
                 },
             }
-            Expect(k8sClient.Create(ctx, ap)).To(Succeed())
-            Expect(k8sClient.Delete(ctx, ap)).To(Succeed())
+            Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+            Expect(k8sClient.Delete(ctx, sp)).To(Succeed())
 
             // Cleanup should succeed even if audit fails
             _, err := reconciler.Reconcile(ctx, ctrl.Request{
-                NamespacedName: client.ObjectKeyFromObject(ap),
+                NamespacedName: client.ObjectKeyFromObject(sp),
             })
             Expect(err).ToNot(HaveOccurred())
 
             // Verify finalizer removed despite audit failure
-            err = k8sClient.Get(ctx, client.ObjectKeyFromObject(ap), ap)
+            err = k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), sp)
             Expect(client.IgnoreNotFound(err)).ToNot(HaveOccurred())
         })
     })
@@ -330,10 +339,10 @@ RemediationRequest.status.overallPhase = "pending"
 RemediationRequest Controller reconciles
     ↓
 RemediationRequest Controller creates SignalProcessing CRD
-    ↓ (with owner reference)
-RemediationProcessing Controller reconciles (this controller)
+    ↓ (with owner reference, embeds failureData for recovery)
+SignalProcessing Controller reconciles (this controller)
     ↓
-RemediationProcessing.status.phase = "completed"
+SignalProcessing.status.phase = "completed"
     ↓ (watch trigger <100ms)
 RemediationRequest Controller detects completion
     ↓
@@ -349,18 +358,18 @@ import (
     "fmt"
 
     remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1"
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // In RemediationRequestReconciler
-func (r *RemediationRequestReconciler) createRemediationProcessing(
+func (r *RemediationRequestReconciler) createSignalProcessing(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
 ) error {
-    alertProcessing := &processingv1.RemediationProcessing{
+    signalProcessing := &signalprocessingv1.SignalProcessing{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-processing", remediation.Name),
             Namespace: remediation.Namespace,
@@ -369,29 +378,29 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
                     remediationv1.GroupVersion.WithKind("RemediationRequest")),
             },
         },
-        Spec: processingv1.RemediationProcessingSpec{
-            RemediationRequestRef: processingv1.RemediationRequestReference{
+        Spec: signalprocessingv1.SignalProcessingSpec{
+            RemediationRequestRef: signalprocessingv1.RemediationRequestReference{
                 Name:      remediation.Name,
                 Namespace: remediation.Namespace,
             },
-            Alert: processingv1.Alert{
+            Signal: signalprocessingv1.Signal{
                 Fingerprint: remediation.Spec.SignalFingerprint,
                 Payload:     remediation.Spec.OriginalPayload,
             },
         },
     }
 
-    return r.Create(ctx, alertProcessing)
+    return r.Create(ctx, signalProcessing)
 }
 ```
 
-**Result**: RemediationProcessing is owned by RemediationRequest (cascade deletion applies)
+**Result**: SignalProcessing is owned by RemediationRequest (cascade deletion applies)
 
 ---
 
 ### Update Lifecycle
 
-**Status Updates by RemediationProcessing Controller**:
+**Status Updates by SignalProcessing Controller**:
 
 ```go
 package controller
@@ -400,31 +409,33 @@ import (
     "context"
     "time"
 
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (r *RemediationProcessingReconciler) updateStatusCompleted(
+func (r *SignalProcessingReconciler) updateStatusCompleted(
     ctx context.Context,
-    ap *processingv1.RemediationProcessing,
-    enriched processingv1.EnrichedAlert,
-    classification string,
+    sp *signalprocessingv1.SignalProcessing,
+    enrichment signalprocessingv1.EnrichmentResults,
+    classification signalprocessingv1.EnvironmentClassification,
+    categorization signalprocessingv1.Categorization,
 ) error {
     // Controller updates own status
-    ap.Status.Phase = "completed"
-    ap.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-    ap.Status.EnrichedAlert = enriched
-    ap.Status.EnvironmentClassification = classification
+    sp.Status.Phase = "completed"
+    sp.Status.ProcessingTime = time.Since(sp.CreationTimestamp.Time).String()
+    sp.Status.EnrichmentResults = enrichment
+    sp.Status.EnvironmentClassification = classification
+    sp.Status.Categorization = categorization
 
-    return r.Status().Update(ctx, ap)
+    return r.Status().Update(ctx, sp)
 }
 ```
 
 **Watch Triggers RemediationRequest Reconciliation**:
 
 ```
-RemediationProcessing.status.phase = "completed"
+SignalProcessing.status.phase = "completed"
     ↓ (watch event)
 RemediationRequest watch triggers
     ↓ (<100ms latency)
@@ -436,9 +447,9 @@ RemediationRequest creates AIAnalysis CRD
 ```
 
 **No Self-Updates After Completion**:
-- RemediationProcessing does NOT update itself after `phase = "completed"`
-- RemediationProcessing does NOT create other CRDs (leaf controller)
-- RemediationProcessing does NOT watch other CRDs
+- SignalProcessing does NOT update itself after `phase = "completed"`
+- SignalProcessing does NOT create other CRDs (leaf controller)
+- SignalProcessing does NOT watch other CRDs
 
 ---
 
@@ -452,12 +463,12 @@ User/System deletes RemediationRequest
     ↓
 Kubernetes garbage collector detects owner reference
     ↓ (parallel deletion of all owned CRDs)
-RemediationProcessing.deletionTimestamp set
+SignalProcessing.deletionTimestamp set
     ↓
-RemediationProcessing Controller reconciles (detects deletion)
+SignalProcessing Controller reconciles (detects deletion)
     ↓
 Finalizer cleanup executes:
-  - Record final audit
+  - Record final audit to Data Storage Service
   - Emit deletion event
     ↓
 Finalizer removed
@@ -465,12 +476,12 @@ Finalizer removed
 Kubernetes deletes SignalProcessing CRD
 ```
 
-**Parallel Deletion**: All service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) deleted in parallel when RemediationRequest is deleted.
+**Parallel Deletion**: All service CRDs (SignalProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) deleted in parallel when RemediationRequest is deleted.
 
 **Retention**:
-- **RemediationProcessing**: No independent retention (deleted with parent)
+- **SignalProcessing**: No independent retention (deleted with parent)
 - **RemediationRequest**: 24-hour retention (parent CRD manages retention)
-- **Audit Data**: 90-day retention in PostgreSQL (persisted before deletion)
+- **Audit Data**: 90-day retention in PostgreSQL (persisted via Data Storage Service before deletion)
 
 ---
 
@@ -485,47 +496,47 @@ import (
     "fmt"
     "time"
 
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
 
     "k8s.io/client-go/tools/record"
 )
 
-func (r *RemediationProcessingReconciler) emitLifecycleEvents(
-    ap *processingv1.RemediationProcessing,
+func (r *SignalProcessingReconciler) emitLifecycleEvents(
+    sp *signalprocessingv1.SignalProcessing,
     oldPhase string,
     duration time.Duration,
 ) {
     // Creation event
-    r.Recorder.Event(ap, "Normal", "RemediationProcessingCreated",
-        fmt.Sprintf("Alert processing started for %s", ap.Spec.Signal.Fingerprint))
+    r.Recorder.Event(sp, "Normal", "SignalProcessingCreated",
+        fmt.Sprintf("Signal processing started for %s", sp.Spec.Signal.Fingerprint))
 
     // Phase transition events
-    r.Recorder.Event(ap, "Normal", "PhaseTransition",
-        fmt.Sprintf("Phase: %s → %s", oldPhase, ap.Status.Phase))
+    r.Recorder.Event(sp, "Normal", "PhaseTransition",
+        fmt.Sprintf("Phase: %s → %s", oldPhase, sp.Status.Phase))
 
     // Degraded mode event
-    if ap.Status.DegradedMode {
-        r.Recorder.Event(ap, "Warning", "DegradedMode",
-            "Context Service unavailable, using minimal context from alert labels")
+    if sp.Status.EnrichmentResults.EnrichmentQuality < 0.8 {
+        r.Recorder.Event(sp, "Warning", "DegradedMode",
+            "Enrichment service unavailable, using minimal context from signal labels")
     }
 
     // Completion event
-    r.Recorder.Event(ap, "Normal", "RemediationProcessingCompleted",
-        fmt.Sprintf("Alert processing completed in %s", duration))
+    r.Recorder.Event(sp, "Normal", "SignalProcessingCompleted",
+        fmt.Sprintf("Signal processing completed in %s", duration))
 
     // Deletion event (in cleanup function)
-    r.Recorder.Event(ap, "Normal", "RemediationProcessingDeleted",
-        fmt.Sprintf("RemediationProcessing cleanup completed (phase: %s)", ap.Status.Phase))
+    r.Recorder.Event(sp, "Normal", "SignalProcessingDeleted",
+        fmt.Sprintf("SignalProcessing cleanup completed (phase: %s)", sp.Status.Phase))
 }
 ```
 
 **Event Visibility**:
 ```bash
-kubectl describe alertprocessing <name>
+kubectl describe signalprocessing <name>
 # Shows all events in chronological order
 
 kubectl get events --field-selector involvedObject.name=<name>
-# Filter events for specific RemediationProcessing
+# Filter events for specific SignalProcessing
 ```
 
 ---
@@ -536,36 +547,36 @@ kubectl get events --field-selector involvedObject.name=<name>
 
 ```promql
 # CRD creation rate
-rate(alertprocessing_created_total[5m])
+rate(kubernaut_signal_processing_created_total[5m])
 
 # CRD completion time (end-to-end)
-histogram_quantile(0.95, alertprocessing_lifecycle_duration_seconds)
+histogram_quantile(0.95, kubernaut_signal_processing_lifecycle_duration_seconds)
 
 # Active SignalProcessing CRDs
-alertprocessing_active_total
+kubernaut_signal_processing_active_total
 
 # CRD deletion rate
-rate(alertprocessing_deleted_total[5m])
+rate(kubernaut_signal_processing_deleted_total[5m])
 
 # Degraded mode percentage
-sum(alertprocessing_active_total{degraded_mode="true"}) / sum(alertprocessing_active_total)
+sum(kubernaut_signal_processing_active_total{degraded_mode="true"}) / sum(kubernaut_signal_processing_active_total)
 ```
 
 **Grafana Dashboard**:
 ```yaml
 panels:
-  - title: "RemediationProcessing Lifecycle"
+  - title: "SignalProcessing Lifecycle"
     targets:
-      - expr: alertprocessing_active_total
+      - expr: kubernaut_signal_processing_active_total
         legendFormat: "Active CRDs"
-      - expr: rate(alertprocessing_created_total[5m])
+      - expr: rate(kubernaut_signal_processing_created_total[5m])
         legendFormat: "Creation Rate"
-      - expr: rate(alertprocessing_deleted_total[5m])
+      - expr: rate(kubernaut_signal_processing_deleted_total[5m])
         legendFormat: "Deletion Rate"
 
   - title: "Processing Latency (P95)"
     targets:
-      - expr: histogram_quantile(0.95, alertprocessing_lifecycle_duration_seconds)
+      - expr: histogram_quantile(0.95, kubernaut_signal_processing_lifecycle_duration_seconds)
         legendFormat: "P95 Duration"
 ```
 
@@ -573,35 +584,34 @@ panels:
 
 ```yaml
 groups:
-- name: alertprocessing-lifecycle
+- name: signalprocessing-lifecycle
   rules:
-  - alert: RemediationProcessingStuckInPhase
-    expr: time() - alertprocessing_phase_start_timestamp > 600
+  - alert: SignalProcessingStuckInPhase
+    expr: time() - kubernaut_signal_processing_phase_start_timestamp > 600
     for: 5m
     labels:
       severity: warning
     annotations:
-      summary: "RemediationProcessing stuck in phase for >10 minutes"
-      description: "RemediationProcessing {{ $labels.name }} has been in phase {{ $labels.phase }} for over 10 minutes"
+      summary: "SignalProcessing stuck in phase for >10 minutes"
+      description: "SignalProcessing {{ $labels.name }} has been in phase {{ $labels.phase }} for over 10 minutes"
 
-  - alert: RemediationProcessingHighDeletionRate
-    expr: rate(alertprocessing_deleted_total[5m]) > rate(alertprocessing_created_total[5m]) * 1.5
+  - alert: SignalProcessingHighDeletionRate
+    expr: rate(kubernaut_signal_processing_deleted_total[5m]) > rate(kubernaut_signal_processing_created_total[5m]) * 1.5
     for: 5m
     labels:
       severity: warning
     annotations:
-      summary: "RemediationProcessing deletion rate exceeds creation rate"
+      summary: "SignalProcessing deletion rate exceeds creation rate"
       description: "More SignalProcessing CRDs being deleted than created (possible cascade deletion issue)"
 
-  - alert: RemediationProcessingHighDegradedMode
-    expr: sum(alertprocessing_active_total{degraded_mode="true"}) / sum(alertprocessing_active_total) > 0.5
+  - alert: SignalProcessingHighDegradedMode
+    expr: sum(kubernaut_signal_processing_active_total{degraded_mode="true"}) / sum(kubernaut_signal_processing_active_total) > 0.5
     for: 5m
     labels:
       severity: critical
     annotations:
       summary: ">50% of SignalProcessing CRDs in degraded mode"
-      description: "Context Service may be unavailable"
+      description: "Enrichment service may be unavailable"
 ```
 
 ---
-

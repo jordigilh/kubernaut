@@ -24,9 +24,9 @@ resources:
     namespaced: true
   controller: true
   domain: kubernaut.io
-  group: remediationprocessing
-  kind: RemediationProcessing
-  path: github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1
+  group: signalprocessing
+  kind: SignalProcessing
+  path: github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1

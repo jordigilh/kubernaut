@@ -1,0 +1,4697 @@
+# Signal Processing Service - Implementation Plan
+
+**Filename Convention**: `IMPLEMENTATION_PLAN_V1.12.md`
+**Version**: v1.12
+**Last Updated**: 2025-11-28
+**Timeline**: 12-14 days (quality-focused, no time pressure)
+**Status**: 📋 DRAFT
+**Quality Level**: Production-Ready Standard (98% Confidence Target)
+
+**Change Log**:
+- **v1.12** (2025-11-28): Template v2.8 alignment - comprehensive new sections
+  - ✅ **Logging Framework Decision Matrix**: DD-005 v2.0 compliance with `ctrl.Log` for CRD controllers
+  - ✅ **Pre-Implementation Design Decisions**: DD format for ambiguous requirements
+  - ✅ **Risk Assessment Matrix**: 6 identified risks with mitigations
+  - ✅ **Files Affected Section**: Complete inventory of new/modified/deleted files
+  - ✅ **Enhancement Application Checklist**: Day-by-day pattern tracking
+  - ✅ **Metrics Cardinality Audit**: Prometheus memory protection (<1,000 target)
+  - ✅ **Rollback Plan Template**: Production deployment recovery procedure
+  - ✅ **Critical Issues Resolved Section**: Knowledge capture template
+  - ✅ **Pre-Day Validation Checklists**: Formal checkpoints for Days 7, 10, 12
+  - ✅ **Template Reference Updated**: v2.3 → v2.8
+  - ✅ **Package Name Fixed**: `signalprocessing_test` → `signalprocessing` (per 03-testing-strategy.mdc)
+  - ✅ **MockK8sClient Fixed**: Replaced with `fake.NewClientBuilder()` + `WithInterceptorFuncs()` (ADR-004 compliance)
+  - 📏 **Plan size**: ~4,900 lines (growth for template v2.8 compliance)
+- **v1.11** (2025-11-28): Gateway migration triage + ADR/DD link validation
+  - ✅ **Gateway Migration Triage**: Complete inventory of code to migrate (~1,400 lines, ~48 tests)
+  - ✅ **Detailed File List**: Source → Target mapping for all migration files
+  - ✅ **Effort Estimate**: ~8 hours (1 full day) for complete migration
+  - ✅ **ADR/DD Links Validated**: All 15 referenced documents confirmed to exist
+  - ✅ **Old Plan Versions Removed**: Only v1.11 retained (authoritative)
+  - ✅ **Template Aligned**: v2.5 with pre-implementation ADR/DD checklist
+- **v1.10** (2025-11-28): Document structure fix - Error Handling Philosophy nesting
+  - ✅ **Heading Levels Fixed**: Core Principles, Retry Strategy, Error Wrapping, Logging → `####` level
+  - ✅ **TOC Updated**: Error Handling sections nested under Days 3-6 EOD deliverable
+  - ✅ **Context Preserved**: Sections now clearly part of Day 6 Error Handling Philosophy document
+  - ✅ **Developer Flow**: Day-by-day implementation no longer interrupted by standalone sections
+- **v1.9** (2025-11-28): ADR/DD triage - comprehensive template compliance
+  - ✅ **Universal Standards Added**: DD-005 (Observability), DD-013 (K8s Client), ADR-015 (Signal naming)
+  - ✅ **CRD Standards Added**: ADR-004 (Fake K8s Client - MANDATORY for unit tests)
+  - ✅ **Audit Standards Added**: DD-014, DD-AUDIT-003, ADR-032, ADR-034
+  - ✅ **Prerequisites Restructured**: Categorized by Universal/CRD/Audit/Testing/Service-Specific
+  - ✅ **References Section Restructured**: Categorized with MANDATORY markers
+  - ✅ **K8s Client Mandate Section**: Added fake client pattern per ADR-004
+  - ✅ **Aligned with Template v2.4**: Full ADR/DD reference matrix compliance
+  - ✅ **DD-009 Triaged**: DLQ pattern deferred to V2 (ADR-038 fire-and-forget sufficient for V1)
+- **v1.8** (2025-11-28): E2E NodePort infrastructure
+  - ✅ **E2E NodePort Configuration**: Complete Kind config with `extraPortMappings` (no port-forward)
+  - ✅ **DD-TEST-001 Compliance**: Port allocation per authoritative document (30182 for metrics)
+  - ✅ **Controller Service YAML**: NodePort service configuration for E2E tests
+  - ✅ **Test Suite Pattern**: NodePort access without kubectl port-forward
+  - ✅ **Template Reference Updated**: Now based on SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.3
+- **v1.7** (2025-11-28): Testing methodology alignment + parallel execution standard
+  - ✅ **Testing Order Alignment**: Standard Unit → Integration → E2E methodology (removed "Integration-First")
+  - ✅ **Parallel Test Execution**: **4 concurrent processes** standard for all test tiers
+  - ✅ **Parallel Execution Section**: Complete configuration with `go test -p 4` and `ginkgo -procs=4`
+  - ✅ **Test Isolation Patterns**: Unique namespace per test for parallel safety
+  - ✅ **Parallel Anti-Patterns**: Common mistakes to avoid (hardcoded namespaces, shared state)
+  - ✅ **Makefile Targets Updated**: All test targets now include `-p 4` flag
+  - ✅ **Quick Reference Updated**: Methodology and parallel execution standards added
+  - ✅ **Template Reference Updated**: Now based on SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.2
+- **v1.6** (2025-11-28): Test scenarios, operational sections, Gateway code migration
+  - ✅ Defined 138 concrete test scenarios upfront (per TDD methodology)
+  - ✅ Test scenarios organized by component with ID, input, expected outcome
+  - ✅ Fixed E2E test path from `test/e2e/` to `test/e2e/signalprocessing/`
+  - ✅ Updated configuration to separate controller config (hardcoded) from business config (YAML)
+  - ✅ Removed configurable `leader_election` (always enabled in production)
+  - ✅ Removed configurable `audit.enabled` (audit is mandatory per ADR-032)
+  - ✅ Fixed port allocation: metrics=`:9090`, health=`:8081` (per DD-TEST-001)
+  - ✅ Added `audit.buffer_size` and `audit.flush_interval` config (per ADR-038)
+  - ✅ Added DD-007 (Graceful Shutdown) and DD-017 (K8s Enrichment Depth) to references
+  - ✅ Added Service-Specific Error Categories (A-E) with code examples
+  - ✅ Added Production Runbooks section (3 runbooks)
+  - ✅ Added Edge Case Categories section (5 categories)
+  - ✅ Added Metrics Validation Commands section
+  - ✅ Added Blockers Section template
+  - ✅ Added Lessons Learned / Technical Debt templates
+  - ✅ Added Team Handoff Notes with debugging tips
+  - ✅ **Gateway Code Migration**: Detailed step-by-step migration plan
+    - Source files: `classification.go` (267 LOC), `priority.go` (222 LOC), `priority.rego` (74 LOC)
+    - Unit tests: 34 tests (~860 LOC) to migrate
+    - Integration tests: 6 files affected
+    - E2E tests: 1 file affected
+  - ✅ Ported all operational sections to `SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md`
+- **v1.5** (2025-11-28): Template compliance and documentation completeness
+  - ✅ Added Table of Contents with section links
+  - ✅ Added Common Pitfalls section (Signal Processing specific)
+  - ✅ Added Success Criteria with completion checklist
+  - ✅ Added Makefile Targets for development workflow
+  - ✅ Expanded Table-Driven Testing patterns (4 patterns with examples)
+  - ✅ Fixed CRD group from `signalprocessing.kubernaut.io` to `kubernaut.io`
+  - ✅ Fixed package name from `signalprocessing_test` to `signalprocessing`
+  - ✅ Added package declarations and imports to all code snippets
+- **v1.4** (2025-11-28): Metrics triage and test location fixes
+  - ✅ Triaged metrics for business value (12 → 6 metrics)
+  - ✅ Removed redundant metrics (Enrichment/Classification/Audit totals)
+  - ✅ Added business value documentation for each metric
+  - ✅ Fixed test location: moved from `api/.../types_test.go` to `test/unit/signalprocessing/`
+  - ✅ Tests now focus on business outcomes, not struct validation
+- **v1.3** (2025-11-27): DD-017 documentation for enrichment depth strategy
+  - ✅ Created DD-017: K8s Enrichment Depth Strategy (signal-driven, standard depth, no config)
+  - ✅ Added DD-017 to key decisions and references sections
+  - ✅ Cross-referenced DD-017 in ADR-041
+- **v1.2** (2025-11-27): Signal-driven K8s enrichment strategy
+  - ✅ K8s Enricher now uses signal-driven enrichment based on `signal.Resource.Kind`
+  - ✅ Standard depth (hardcoded, no configuration): Pod→Ns+Pod+Node+Owner, Deploy→Ns+Deploy, Node→Node only
+  - ✅ Updated architecture diagram with signal-driven enrichment description
+  - ✅ Updated K8s Enricher implementation with `enrichPodSignal()`, `enrichDeploymentSignal()`, `enrichNodeSignal()`
+  - ✅ Design decision: No configurable depth (YAGNI, avoid configuration complexity)
+- **v1.1** (2025-11-27): Template compliance enhancements
+  - ✅ Added ADR-041: Rego Policy Data Fetching Separation (K8s Enricher + Rego architecture)
+  - ✅ Added Critical Checkpoints section (5 checkpoints from Gateway learnings)
+  - ✅ Added Error Handling Philosophy section (Day 6 EOD deliverable)
+  - ✅ Added Appendix A: EOD Documentation Templates (Day 1, 4, 7)
+  - ✅ Added Appendix B: Production Readiness Report Template
+  - ✅ Added Appendix C: Handoff Summary Template
+  - ✅ Added "Why K8s Enricher + Rego" architecture explanation with ADR-041 reference
+  - ✅ Updated References section with ADR-041
+- **v1.0** (2025-11-27): Initial implementation plan created
+  - ✅ Full CRD controller implementation using DD-006 templates
+  - ✅ Complete categorization ownership (migrated from Gateway)
+  - ✅ Rego policy engine integration (ConfigMap hot-reload)
+  - ✅ K8s context enrichment and business classification
+  - ✅ Gateway migration tasks (last day)
+  - ✅ ENVTEST integration test environment
+
+---
+
+## 🎯 **Quick Reference**
+
+**Use this plan for**: Signal Processing CRD Controller implementation
+**Based on**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.8 + DD-006 Controller Scaffolding
+**Methodology**: APDC-TDD with Defense-in-Depth Testing (Unit → Integration → E2E)
+**Parallel Execution**: **4 concurrent processes** for all test tiers (standard)
+**Test Environment**: ENVTEST (confirmed)
+**Logging Framework**: `logr.Logger` via `ctrl.Log.WithName()` (DD-005 v2.0)
+**Target Success Rate**:
+- Unit Test Coverage: 70%+
+- Integration Test Coverage: 50%+
+- BR Coverage: 100% (12/12 BRs)
+- Overall Confidence: 90%+
+
+**Quality Standard**: V3.0 - Production-ready with comprehensive examples
+
+---
+
+## 📑 **Table of Contents**
+
+| Section | Purpose |
+|---------|---------|
+| [Quick Reference](#-quick-reference) | Template overview and success metrics |
+| [Critical: Read This First](#-critical-read-this-first) | Key decisions and prerequisites |
+| [CRD API Group Standard](#-crd-api-group-standard-authoritative) | Unified API group rationale |
+| [Business Requirements](#-business-requirements) | BR-SP-001 through BR-SP-012 |
+| [Authoritative References](#-authoritative-references) | DDs and ADRs |
+| [Prerequisites Checklist](#-prerequisites-checklist) | Pre-Day 1 requirements |
+| [Logging Framework Decision Matrix](#-logging-framework-decision-matrix-dd-005-v20) | `logr.Logger` usage for CRD controllers ⭐ v1.12 |
+| [Pre-Implementation Design Decisions](#-pre-implementation-design-decisions) | DD format for ambiguous requirements ⭐ v1.12 |
+| [Risk Assessment Matrix](#️-risk-assessment-matrix) | Risk identification and mitigation ⭐ v1.12 |
+| [Files Affected](#-files-affected) | New/modified/deleted file inventory ⭐ v1.12 |
+| [Enhancement Application Checklist](#-enhancement-application-checklist) | Pattern tracking by day ⭐ v1.12 |
+| [Critical Checkpoints](#-critical-checkpoints-from-gateway-learnings) | 5 checkpoints from Gateway learnings |
+| [Timeline Overview](#-timeline-overview) | Phase breakdown (14 days) |
+| [Architecture](#-architecture) | Component diagram and data flow |
+| **Day-by-Day Breakdown** | |
+| ├─ [Day 0: ANALYSIS + PLAN](#day-0-analysis--plan-pre-work-) | Pre-work planning |
+| ├─ [Day 1: Foundation](#day-1-foundation---dd-006-scaffolding) | DD-006 scaffolding, types |
+| ├─ [Day 2: CRD Types](#day-2-foundation---crd-types) | API types and CRD generation |
+| ├─ [Days 3-6: Core Logic](#days-3-6-core-logic-components) | Enricher, classifiers, Rego |
+|    ├─ Day 6 EOD: Error Handling Philosophy | Document deliverable |
+|       ├─ [Core Principles](#-core-principles) | Error classification |
+|       ├─ [Retry Strategy](#-retry-strategy-for-crd-controller) | Backoff and requeue |
+|       ├─ [Error Wrapping](#-error-wrapping-pattern) | Standard error patterns |
+|       └─ [Logging Best Practices](#-logging-best-practices) | Structured logging |
+| ├─ [Days 7-8: Integration](#days-7-8-integration) | Metrics, server, controller |
+| ├─ [Days 9-10: Testing](#days-9-10-testing) | Unit, integration, E2E |
+| └─ [Days 11-12: Finalization](#days-11-12-finalization) | Docs, cleanup, handoff |
+| [BR Coverage Matrix](#-business-requirements-coverage-matrix) | Requirements to tests mapping |
+| [Key Files and Locations](#-key-files-and-locations) | Directory structure |
+| [Production Readiness Checklist](#-production-readiness-checklist) | Deployment validation |
+| [Confidence Assessment](#-confidence-assessment) | Overall confidence rating |
+| [Common Pitfalls](#-common-pitfalls-signal-processing-specific) | Do's and don'ts |
+| [Success Criteria](#-success-criteria) | Completion checklist |
+| [Makefile Targets](#-makefile-targets) | Development commands |
+| **Appendices** | |
+| ├─ [Appendix A: EOD Templates](#-appendix-a-eod-documentation-templates) | Days 1, 4, 7 templates |
+| ├─ [Appendix B: Production Readiness](#-appendix-b-production-readiness-report-template) | Report template |
+| └─ [Appendix C: Handoff Summary](#-appendix-c-handoff-summary-template) | Handoff template |
+
+---
+
+## 🚨 **CRITICAL: Read This First**
+
+**Before starting implementation, you MUST review these critical decisions:**
+
+1. **DD-CATEGORIZATION-001**: Signal Processing owns ALL categorization (environment + priority)
+2. **DD-006**: Use CRD controller scaffolding templates from `docs/templates/crd-controller-gap-remediation/`
+3. **DD-001**: Recovery context from embedded RemediationRequest data (no Context API)
+4. **ADR-032**: Use Data Storage Service REST API for audit writes (no direct DB access)
+5. **ADR-015**: Use "Signal" terminology throughout (not "Alert")
+6. **DD-SIGNAL-PROCESSING-001**: Service renamed from RemediationProcessor to SignalProcessing
+7. **001-crd-api-group-rationale**: Use unified `kubernaut.io/v1alpha1` API group for ALL CRDs
+8. **ADR-041**: K8s Enricher fetches data, Rego policies evaluate classification (no `http.send` in Rego)
+9. **DD-017**: Signal-driven K8s enrichment with standard depth (hardcoded, no configuration)
+
+⚠️ **Build Fresh**: No legacy code migration. Use DD-006 templates and deprecate existing `pkg/signalprocessing/` code.
+
+---
+
+## 🔷 **CRD API Group Standard (AUTHORITATIVE)**
+
+**API Group**: `kubernaut.io/v1alpha1`
+**Reference**: `docs/architecture/decisions/001-crd-api-group-rationale.md`
+
+### **Decision**
+All Kubernaut CRDs use the **unified** `kubernaut.io` API group:
+
+```yaml
+apiVersion: kubernaut.io/v1alpha1
+kind: SignalProcessing
+```
+
+### **Rationale**
+1. **Simplicity**: Single API group is easier to manage, document, and use in kubectl commands
+2. **Project Identity**: `kubernaut.io` clearly identifies all CRDs as part of the Kubernaut project
+3. **Convention**: Follows industry patterns (Tekton uses `tekton.dev`, Istio uses `istio.io`)
+4. **No Fragmentation**: Avoids namespace pollution with controller-specific subgroups
+
+### **Industry Best Practices Analysis**
+
+| Project | API Group Strategy | Pattern |
+|---------|-------------------|---------|
+| **Tekton** | `tekton.dev/v1` | ✅ Unified - all CRDs under single domain |
+| **Istio** | `istio.io/v1` | ✅ Unified - network, security, config all under `istio.io` |
+| **Cert-Manager** | `cert-manager.io/v1` | ✅ Unified - certificates, issuers, challenges |
+| **ArgoCD** | `argoproj.io/v1alpha1` | ✅ Unified - applications, projects, rollouts |
+| **Crossplane** | `crossplane.io/v1` | ✅ Unified - compositions, providers |
+| **Knative** | Multiple: `serving.knative.dev`, `eventing.knative.dev` | ⚠️ Split by domain |
+
+**Conclusion**: 5/6 major CNCF projects use unified API groups. Splitting is only justified when:
+- Projects have **distinct product lines** (Knative Serving vs Eventing)
+- Projects have **independent release cycles**
+- Projects may be **deployed separately**
+
+Kubernaut's CRD controllers are **tightly coupled** in a single remediation workflow, making unified grouping the correct choice.
+
+### **Confidence Assessment**
+
+| Factor | Assessment | Confidence |
+|--------|------------|------------|
+| Industry alignment | Matches 5/6 major CNCF projects | 95% |
+| Simplicity benefit | Reduced complexity for users/operators | 95% |
+| Future scalability | V2 features can add fields, not new groups | 90% |
+| Migration risk | Low - pre-release product | 98% |
+
+**Overall Confidence**: **95%** - Strong alignment with industry best practices
+
+### **CRD Inventory (Unified API Group)**
+
+| CRD Kind | Full Resource Name | Controller |
+|----------|-------------------|------------|
+| `RemediationRequest` | `remediationrequests.kubernaut.io` | RemediationOrchestrator |
+| `SignalProcessing` | `signalprocessings.kubernaut.io` | SignalProcessing |
+| `AIAnalysis` | `aianalyses.kubernaut.io` | AIAnalysis |
+| `WorkflowExecution` | `workflowexecutions.kubernaut.io` | RemediationExecution |
+| `NotificationRequest` | `notificationrequests.kubernaut.io` | Notification |
+
+---
+
+## 📋 **Version History**
+
+| Version | Date | Changes | Status |
+|---------|------|---------|--------|
+| **v1.6** | 2025-11-28 | Test scenarios (138), Gateway code migration (489 LOC + 34 tests), operational sections, DD-007 | ✅ **CURRENT** |
+| **v1.5** | 2025-11-28 | Template compliance: TOC, Common Pitfalls, Success Criteria, Makefile, Table-Driven Tests | ✅ |
+| **v1.4** | 2025-11-28 | Metrics triage (12→6), test location fix (api/ → test/unit/), null-testing removal | ✅ |
+| **v1.3** | 2025-11-27 | DD-017: K8s Enrichment Depth Strategy documentation | ✅ |
+| **v1.2** | 2025-11-27 | Signal-driven K8s enrichment with standard depth (no config) | ✅ |
+| **v1.1** | 2025-11-27 | ADR-041, Critical Checkpoints, Error Handling, EOD Templates, Appendices | ✅ |
+| **v1.0** | 2025-11-27 | Initial implementation plan: CRD controller with full categorization ownership | ✅ |
+
+---
+
+## 🎯 **Business Requirements**
+
+### **Primary Business Requirements**
+
+| BR ID | Description | Success Criteria |
+|-------|-------------|------------------|
+| **BR-SP-001** | K8s Context Enrichment | Fetch deployment, pod, node context within 2 seconds |
+| **BR-SP-002** | Business Classification | Classify signals by business criticality |
+| **BR-SP-003** | Recovery Context Integration | Embed recovery data from RemediationRequest (DD-001) |
+| **BR-SP-051** | Environment Classification (Primary) | Classify from namespace labels with 95%+ confidence |
+| **BR-SP-052** | Environment Classification (Fallback) | ConfigMap override when labels unavailable |
+| **BR-SP-053** | Environment Classification (Default) | Graceful degradation to "unknown" |
+| **BR-SP-070** | Priority Assignment (Rego) | Rego policies with K8s + business context |
+| **BR-SP-071** | Priority Fallback Matrix | Severity + environment fallback when Rego fails |
+| **BR-SP-072** | Rego Hot-Reload | ConfigMap-based policy updates without restart |
+| **BR-SP-080** | Confidence Scoring | 0.0-1.0 confidence score for all categorization |
+| **BR-SP-081** | Multi-dimensional Categorization | businessUnit, serviceOwner, criticality, sla |
+| **BR-SP-090** | Categorization Audit Trail | Log all decisions via Data Storage API |
+
+### **Success Metrics**
+
+**Format**: `[Metric]: [Target] - *Justification: [Why this target?]*`
+
+- **K8s Enrichment Latency**: <2 seconds P95 - *Justification: Acceptable delay for rich context*
+- **Categorization Accuracy**: 95%+ confidence - *Justification: Enables AI analysis reliability*
+- **Rego Policy Evaluation**: <100ms P95 - *Justification: Fast policy decisions*
+- **Audit Write Latency**: <1ms P95 - *Justification: Fire-and-forget pattern per ADR-038 (non-blocking)*
+- **Test Coverage**: 70%+ unit, 50%+ integration - *Justification: Defense-in-depth testing*
+
+---
+
+## 📚 **Authoritative References**
+
+### **Design Decisions (DD)**
+
+| DD ID | Title | Impact on Implementation |
+|-------|-------|--------------------------|
+| **DD-006** | Controller Scaffolding Strategy | Use templates from `docs/templates/crd-controller-gap-remediation/` |
+| **DD-007** | Kubernetes-Aware Graceful Shutdown | Implement 4-step shutdown with readiness probe coordination |
+| **DD-017** | K8s Enrichment Depth Strategy | Standard depth enrichment (hardcoded, no config knobs) |
+| **DD-001** | Recovery Context Enrichment | Recovery data from embedded RemediationRequest, not Context API |
+| **DD-CATEGORIZATION-001** | Gateway vs Signal Processing Split | Signal Processing owns ALL categorization |
+| **DD-SIGNAL-PROCESSING-001** | Service Rename | Use SignalProcessing (not RemediationProcessor) |
+| **DD-CONTEXT-006** | Context API Deprecation | No Context API integration |
+
+### **Architecture Decision Records (ADR)**
+
+| ADR ID | Title | Impact on Implementation |
+|--------|-------|--------------------------|
+| **ADR-015** | Alert-to-Signal Naming | Use "Signal" terminology throughout |
+| **ADR-032** | Data Access Layer Isolation | Audit writes via Data Storage REST API |
+| **ADR-034** | Unified Audit Table | Audit events: `signalprocessing.enrichment.*`, `signalprocessing.categorization.*` |
+| **ADR-038** | Async Buffered Audit Ingestion | Fire-and-forget audit writes (<1ms overhead, non-blocking) |
+| **ADR-041** | Rego Policy Data Fetching Separation | K8s Enricher fetches data, Rego evaluates policies (no `http.send`) |
+
+---
+
+## ✅ **Prerequisites Checklist**
+
+**Before starting Day 1, ensure all items are checked:**
+
+### **Documentation Prerequisites**
+- [ ] Service specifications complete:
+  - [ ] `overview.md` - Service overview and responsibilities
+  - [ ] `crd-schema.md` - SignalProcessing CRD schema
+  - [ ] `controller-implementation.md` - Reconciler design
+  - [ ] `reconciliation-phases.md` - Phase state machine
+  - [ ] `integration-points.md` - Upstream/downstream services
+- [ ] Business requirements documented (BR-SP-XXX format) - 12 BRs defined ✅
+- [ ] Architecture decisions approved:
+  - **Universal Standards (ALL services)**:
+    - [ ] DD-005: Observability Standards (**MANDATORY** - metrics/logging) ✅
+    - [ ] DD-007: Graceful Shutdown (**MANDATORY**) ✅
+    - [ ] DD-014: Binary Version Logging (**MANDATORY**) ✅
+    - [ ] ADR-015: Signal Naming (**MANDATORY** - use "Signal" terminology) ✅
+  - **CRD Controller Standards**:
+    - [ ] DD-006: Controller Scaffolding ✅
+    - [ ] DD-013: K8s Client Initialization ✅
+    - [ ] ADR-004: Fake K8s Client (**MANDATORY for unit tests**) ✅
+  - **Audit Standards (Signal Processing is P1)**:
+    - [ ] DD-AUDIT-003: Service Audit Requirements ✅
+    - [ ] ADR-032: Data Access Layer Isolation (**MANDATORY**) ✅
+    - [ ] ADR-034: Unified Audit Table Design ✅
+    - [ ] ADR-038: Async Buffered Audit Ingestion ✅
+  - **Testing Standards**:
+    - [ ] DD-TEST-001: Port Allocation (**MANDATORY for E2E**) ✅
+  - **Service-Specific**:
+    - [ ] DD-CATEGORIZATION-001: Categorization Ownership ✅
+    - [ ] DD-017: K8s Enrichment Depth ✅
+    - [ ] DD-001: Recovery Context Enrichment ✅
+    - [ ] ADR-041: Rego Policy Data Fetching Separation ✅
+
+### **Dependency Prerequisites**
+- [ ] Data Storage Service REST API available (`/api/v1/audit/events`)
+- [ ] Kubernetes API access configured
+- [ ] RemediationRequest CRD deployed (Gateway dependency)
+
+### **Test Infrastructure Prerequisites**
+- [ ] **Integration test environment determined**: ENVTEST ✅
+- [ ] **envtest binaries installed**: `setup-envtest use 1.31.0`
+- [ ] **Test framework available**: Ginkgo/Gomega
+
+### **Template Sections Review** (V2.1 Compliance)
+- [ ] Error Handling Philosophy Template reviewed (create on Day 6)
+- [ ] BR Coverage Matrix Methodology reviewed (create on Day 9)
+- [ ] EOD Documentation Templates reviewed (Appendix A)
+- [ ] CRD Controller Variant patterns reviewed (Appendix B)
+- [ ] Complete Integration Test Examples reviewed (Day 9)
+- [ ] Production Readiness Report template reviewed (Day 12)
+- [ ] Handoff Summary template reviewed (Day 12)
+- [ ] Confidence Assessment Methodology reviewed (Day 12)
+
+### **Success Criteria Defined**
+- [ ] K8s Enrichment Latency: <2 seconds P95
+- [ ] Categorization Accuracy: 95%+ confidence
+- [ ] Rego Policy Evaluation: <100ms P95
+- [ ] Test Coverage: 70%+ unit, 50%+ integration
+
+---
+
+## 📝 **Logging Framework Decision Matrix (DD-005 v2.0)** ⭐ v1.12 NEW
+
+**Authority**: [DD-005-OBSERVABILITY-STANDARDS.md](../../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md) v2.0
+
+### **Unified Logging Interface**
+
+**MANDATORY**: Signal Processing Controller uses `logr.Logger` as the unified logging interface.
+
+| Component | Logger Creation | Usage |
+|-----------|----------------|-------|
+| **Controller (main.go)** | `ctrl.Log.WithName("signalprocessing")` | Native logr from controller-runtime |
+| **Reconciler** | `log.FromContext(ctx)` | Request-scoped logger with correlation |
+| **Shared Libraries** | Accept `logr.Logger` parameter | Passed by caller |
+
+### **Implementation Pattern (CRD Controller)**
+
+```go
+package main
+
+import (
+    "github.com/go-logr/logr"
+    ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/log/zap"
+)
+
+func main() {
+    // Setup logr via controller-runtime (native, no adapter needed)
+    opts := zap.Options{Development: false}
+    ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+    // Get named logger for this controller
+    logger := ctrl.Log.WithName("signalprocessing-controller")
+
+    // Pass to shared libraries
+    auditStore, _ := audit.NewBufferedStore(client, config, "signalprocessing", logger.WithName("audit"))
+    enricher := enricher.New(k8sClient, logger.WithName("enricher"))
+}
+```
+
+### **Logging Syntax (logr)**
+
+```go
+// INFO level (V=0, always shown)
+logger.Info("Signal received", "fingerprint", fp, "phase", "enriching")
+
+// DEBUG level (V=1, shown when verbosity >= 1)
+logger.V(1).Info("Fetching K8s context", "namespace", ns, "resource", res)
+
+// ERROR level (error as first argument)
+logger.Error(err, "Failed to enrich signal", "fingerprint", fp, "phase", phase)
+
+// Named sub-logger for component
+enricherLog := logger.WithName("enricher")
+classifierLog := logger.WithName("classifier")
+```
+
+### **❌ FORBIDDEN Patterns**
+
+```go
+// ❌ WRONG: Using *zap.Logger directly in shared libraries
+func NewEnricher(..., logger *zap.Logger) // FORBIDDEN
+
+// ❌ WRONG: Using zap.String() helpers with logr
+logger.Info("Message", zap.String("key", "value")) // FORBIDDEN
+
+// ❌ WRONG: Creating separate zap logger in CRD controllers
+zapLogger, _ := zap.NewProduction() // FORBIDDEN in CRD controllers
+
+// ✅ CORRECT: Accept logr.Logger in shared libraries
+func NewEnricher(..., logger logr.Logger) *Enricher // CORRECT
+```
+
+---
+
+## 🔍 **Pre-Implementation Design Decisions** ⭐ v1.12 NEW
+
+**Purpose**: Document decisions made during ANALYSIS phase for ambiguous requirements.
+
+### **DD-1: Reconciliation Trigger Strategy**
+
+| Question | Should reconciliation be triggered by all field changes or specific fields only? |
+|----------|----------------------------------------------------------------------------------|
+| **Decision** | **Option B**: Specific fields only (spec changes, not status). |
+| **Rationale** | Prevents reconciliation loops from status updates. |
+| **Implementation** | Use `GenerationChangedPredicate` in controller builder. |
+
+```go
+// In SetupWithManager
+ctrl.NewControllerManagedBy(mgr).
+    For(&kubernautv1alpha1.SignalProcessing{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+    Complete(r)
+```
+
+### **DD-2: Finalizer Strategy**
+
+| Question | Should the controller use finalizers for cleanup? |
+|----------|--------------------------------------------------|
+| **Decision** | **Option A**: Yes, use finalizers for audit trail completion. |
+| **Rationale** | Ensures audit data persisted before CRD deletion. |
+| **Implementation** | Add finalizer on first reconcile, remove after audit write in delete handler. |
+
+### **DD-3: Rego Policy Reload Strategy**
+
+| Question | Should Rego policies reload on every reconciliation or watch ConfigMap changes? |
+|----------|--------------------------------------------------------------------------------|
+| **Decision** | **Option B**: Watch ConfigMap changes (hot-reload). |
+| **Rationale** | Avoids re-parsing policies on every reconciliation (~50ms savings). |
+| **Implementation** | Use informer to watch `kubernaut-rego-policies` ConfigMap, cache compiled policy. |
+
+### **DD-4: K8s Enrichment Failure Handling**
+
+| Question | Should enrichment failure block processing or use degraded mode? |
+|----------|------------------------------------------------------------------|
+| **Decision** | **Option B**: Degraded mode with partial context. |
+| **Rationale** | Availability over completeness - signal processing continues. |
+| **Implementation** | Set `status.degradedMode = true`, use signal labels as fallback context. |
+
+### **Pre-Implementation Checklist**
+
+- [x] All ambiguous requirements have documented decisions (DD-1 to DD-4)
+- [x] Each decision has clear rationale
+- [x] Implementation impact is documented
+- [x] Decisions approved by stakeholder
+
+---
+
+## ⚠️ **Risk Assessment Matrix** ⭐ v1.12 NEW
+
+**Purpose**: Identify and mitigate risks before implementation begins.
+
+### **Identified Risks**
+
+| # | Risk | Probability | Impact | Mitigation | Owner |
+|---|------|-------------|--------|------------|-------|
+| 1 | **K8s API unavailable** | Medium | High | Degraded mode with signal labels fallback | Dev |
+| 2 | **Rego policy evaluation timeout** | Low | Medium | 100ms timeout, fallback to severity+environment matrix | Dev |
+| 3 | **Data Storage Service unavailable** | Medium | Medium | Async buffered audit (ADR-038), retry on failure | Dev |
+| 4 | **Gateway migration breaks existing tests** | Low | High | Feature flag for gradual rollout, comprehensive test migration | Dev |
+| 5 | **ConfigMap hot-reload race condition** | Low | Medium | Mutex protection on policy reload, version tracking | Dev |
+| 6 | **Memory pressure from large K8s contexts** | Low | Medium | Context size limit (100KB), pagination for large resources | Dev |
+
+### **Risk Severity Matrix**
+
+| Probability ↓ / Impact → | Low | Medium | High | Critical |
+|---------------------------|-----|--------|------|----------|
+| **High** | Monitor | Mitigate | Mitigate | Block |
+| **Medium** | Accept | Monitor | Mitigate | Mitigate |
+| **Low** | Accept | Accept | Monitor | Mitigate |
+
+### **Mitigation Status**
+
+| Risk # | Action Required | Status |
+|--------|-----------------|--------|
+| 1 | Implement `buildDegradedContext()` in Day 3 | ⬜ Pending |
+| 2 | Add Rego timeout and fallback matrix in Day 5 | ⬜ Pending |
+| 3 | Use `audit.NewBufferedStore()` with retry in Day 8 | ⬜ Pending |
+| 4 | Create Gateway test migration checklist in Day 12 | ⬜ Pending |
+| 5 | Add `sync.RWMutex` to policy cache in Day 5 | ⬜ Pending |
+| 6 | Add context size validation in Day 3 | ⬜ Pending |
+
+---
+
+## 📋 **Files Affected** ⭐ v1.12 NEW
+
+**Purpose**: Document all files that will be created, modified, or deleted during implementation.
+
+### **New Files** (to be created)
+
+| File | Purpose | Day |
+|------|---------|-----|
+| `cmd/signalprocessing/main.go` | Controller entry point | Day 1 |
+| `api/kubernaut.io/v1alpha1/signalprocessing_types.go` | CRD type definitions | Day 2 |
+| `api/kubernaut.io/v1alpha1/zz_generated.deepcopy.go` | Generated deepcopy | Day 2 |
+| `internal/controller/signalprocessing/reconciler.go` | Main reconciler | Day 7 |
+| `internal/controller/signalprocessing/phases.go` | Phase handlers | Day 7 |
+| `pkg/signalprocessing/enricher/enricher.go` | K8s context enricher | Day 3 |
+| `pkg/signalprocessing/enricher/degraded.go` | Degraded mode fallback | Day 3 |
+| `pkg/signalprocessing/classifier/environment.go` | Environment classifier | Day 4 |
+| `pkg/signalprocessing/classifier/business.go` | Business classifier | Day 6 |
+| `pkg/signalprocessing/categorizer/priority.go` | Priority engine | Day 5 |
+| `pkg/signalprocessing/categorizer/rego.go` | Rego policy engine | Day 5 |
+| `pkg/signalprocessing/config/config.go` | Configuration types | Day 1 |
+| `pkg/signalprocessing/metrics/metrics.go` | Prometheus metrics | Day 8 |
+| `config/signalprocessing/policies/priority.rego` | Priority Rego policy | Day 5 |
+| `config/signalprocessing/policies/environment.rego` | Environment Rego policy | Day 4 |
+| `test/unit/signalprocessing/enricher_test.go` | Enricher unit tests | Day 9 |
+| `test/unit/signalprocessing/classifier_test.go` | Classifier unit tests | Day 9 |
+| `test/unit/signalprocessing/categorizer_test.go` | Categorizer unit tests | Day 9 |
+| `test/integration/signalprocessing/reconciler_test.go` | Integration tests | Day 10 |
+| `test/e2e/signalprocessing/e2e_test.go` | E2E tests | Day 11 |
+
+### **Modified Files** (existing files to update)
+
+| File | Changes | Day |
+|------|---------|-----|
+| `pkg/gateway/processing/crd_creator.go` | Remove classification, pass through raw values | Day 12 |
+| `pkg/gateway/server.go` | Remove classifier/categorizer instantiation | Day 12 |
+| `pkg/gateway/config/config.go` | Remove classification config section | Day 12 |
+| `config/crd/bases/kubernaut.io_signalprocessings.yaml` | Generated CRD manifest | Day 2 |
+| `Makefile` | Add signalprocessing targets | Day 1 |
+
+### **Deleted Files** (obsolete files to remove)
+
+| File | Reason | Day |
+|------|--------|-----|
+| `pkg/gateway/processing/classification.go` | Moved to Signal Processing | Day 12 |
+| `pkg/gateway/processing/priority.go` | Moved to Signal Processing | Day 12 |
+| `config.app/gateway/policies/priority.rego` | Moved to Signal Processing | Day 12 |
+| `test/unit/gateway/processing/environment_classification_test.go` | Moved to Signal Processing | Day 12 |
+| `test/unit/gateway/priority_classification_test.go` | Moved to Signal Processing | Day 12 |
+
+**Validation**: Run `git status` at end of each day to verify file changes match plan.
+
+---
+
+## 🔄 **Enhancement Application Checklist** ⭐ v1.12 NEW
+
+**Purpose**: Track which patterns and enhancements have been applied to which implementation days.
+
+### **Enhancement Tracking**
+
+| Enhancement | Applied To | Status | Notes |
+|-------------|------------|--------|-------|
+| **Error Handling Philosophy** | Day 6 EOD | ⬜ Pending | Document 5 error categories (A-E) |
+| **Service-Specific Error Categories** | Day 6 EOD | ⬜ Pending | CRD Not Found, K8s API, Rego, Status Conflict, Audit |
+| **Retry with Exponential Backoff** | Day 7 | ⬜ Pending | K8s API calls, audit writes |
+| **Graceful Degradation** | Day 3 | ⬜ Pending | Degraded enrichment fallback |
+| **Metrics Cardinality Audit** | Day 8 EOD | ⬜ Pending | Per DD-005 |
+| **Integration Test Anti-Flaky** | Day 10 | ⬜ Pending | `Eventually()` pattern, 30s timeout |
+| **Production Runbooks** | Day 12 | ⬜ Pending | 3 runbooks |
+
+### **Day-by-Day Enhancement Application**
+
+**Day 3** (K8s Enricher):
+- [ ] Apply graceful degradation for K8s API failures (Category E)
+- [ ] Implement context size validation (Risk #6 mitigation)
+
+**Day 5** (Priority Engine):
+- [ ] Implement Rego timeout and fallback (Risk #2 mitigation)
+- [ ] Add mutex protection for policy hot-reload (Risk #5 mitigation)
+
+**Day 6** (Error Handling EOD):
+- [ ] Document all 5 error categories in Error Handling Philosophy
+- [ ] Create error classification helper functions
+
+**Day 7** (Reconciler):
+- [ ] Implement exponential backoff for transient errors (Category B)
+- [ ] Add optimistic locking for status updates (Category D)
+
+**Day 8** (Metrics EOD):
+- [ ] Complete Metrics Cardinality Audit per DD-005
+- [ ] Verify all metrics have bounded label cardinality
+
+**Day 10** (Testing):
+- [ ] Apply anti-flaky patterns (`Eventually()`, 30s timeout)
+- [ ] Test all edge case categories
+
+**Day 12** (Production Readiness):
+- [ ] Create 3 production runbooks
+- [ ] Add Prometheus metrics for runbook automation
+
+---
+
+## 🔍 **Critical Checkpoints (From Gateway Learnings)**
+
+### ✅ Checkpoint 1: Defense-in-Depth Testing (Days 8-10)
+**Why**: Catches architectural issues early (2 days cheaper to fix)
+**Action**: Write 5 integration tests before unit tests
+**Evidence**: Gateway caught function signature mismatches early
+**Signal Processing Application**:
+- Test SignalProcessing CRD lifecycle (Pending → Enriching → Categorizing → Complete)
+- Test Rego policy evaluation with real K8s context
+- Test audit event creation via Data Storage Service
+
+### ✅ Checkpoint 2: Schema Validation (Day 7 EOD)
+**Why**: Prevents test failures from schema mismatches
+**Action**: Validate 100% field alignment before testing
+**Evidence**: Gateway added missing CRD fields, avoided test failures
+**Signal Processing Application**:
+- Validate SignalProcessingSpec matches CRD YAML
+- Validate SignalProcessingStatus has all enrichment/classification fields
+- Confirm KubernetesContext struct matches what K8s Enricher populates
+
+### ✅ Checkpoint 3: BR Coverage Matrix (Day 10 EOD)
+**Why**: Ensures all requirements have test coverage
+**Action**: Map every BR to tests, justify any skipped
+**Evidence**: Gateway achieved 100% BR coverage
+**Signal Processing Application**:
+- Map all 12 BRs to specific test files
+- Ensure BR-SP-051/052/053 (environment) have dedicated tests
+- Ensure BR-SP-070/071/072 (priority) have dedicated tests
+
+### ✅ Checkpoint 4: Production Readiness (Day 12)
+**Why**: Reduces production deployment issues
+**Action**: Complete comprehensive readiness checklist
+**Evidence**: Gateway deployment went smoothly
+**Signal Processing Application**:
+- Complete Production Readiness Report (Appendix C)
+- Validate metrics endpoint serves 10+ metrics
+- Verify graceful shutdown handles in-flight reconciliations
+
+### ✅ Checkpoint 5: Daily Status Docs (Days 1, 4, 7, 12)
+**Why**: Better progress tracking and handoffs
+**Action**: Create progress documentation at key milestones
+**Evidence**: Gateway handoff was smooth
+**Signal Processing Application**:
+- Day 1: `01-day1-complete.md` - Package structure, CRD types
+- Day 4: `02-day4-midpoint.md` - Enricher + Environment Classifier
+- Day 7: `03-day7-complete.md` - All classifiers + Reconciler
+- Day 12: `00-HANDOFF-SUMMARY.md` - Complete handoff
+
+---
+
+## 📅 **Timeline Overview**
+
+### **Phase Breakdown**
+
+| Phase | Duration | Days | Purpose | Key Deliverables |
+|-------|----------|------|---------|------------------|
+| **ANALYSIS** | 4 hours | Day 0 | Context understanding | Analysis document, existing pattern review |
+| **PLAN** | 4 hours | Day 0 | Implementation strategy | This document, TDD phase mapping |
+| **Foundation** | 2 days | Days 1-2 | Package structure, CRD types | DD-006 scaffolding, API types |
+| **Core Logic** | 4 days | Days 3-6 | Business logic components | Enrichment, classification, Rego |
+| **Integration** | 2 days | Days 7-8 | Controller, metrics, audit | Complete CRD controller |
+| **Testing** | 2 days | Days 9-10 | Unit → Integration → E2E | 70%+ coverage |
+| **Finalization** | 2 days | Days 11-12 | E2E, docs, Gateway migration | Production-ready |
+
+### **14-Day Implementation Timeline**
+
+| Day | Phase | Focus | Hours | Key Milestones |
+|-----|-------|-------|-------|----------------|
+| **Day 0** | ANALYSIS + PLAN | Pre-work | 8h | ✅ Analysis complete, Plan approved |
+| **Day 1** | Foundation | DD-006 scaffolding | 8h | Package structure, main.go, config |
+| **Day 2** | Foundation | CRD types, API | 8h | SignalProcessing CRD, types_test.go |
+| **Day 3** | Core Logic | K8s Enricher | 8h | Kubernetes context fetching |
+| **Day 4** | Core Logic | Environment Classifier | 8h | Namespace labels, ConfigMap, fallback |
+| **Day 5** | Core Logic | Priority Engine (Rego) | 8h | Rego policy engine, hot-reload |
+| **Day 6** | Core Logic | Business Classifier | 8h | Confidence scoring, multi-dimensional |
+| **Day 7** | Integration | Reconciler | 8h | SignalProcessingReconciler |
+| **Day 8** | Integration | Metrics, Audit | 8h | Prometheus metrics, audit client |
+| **Day 9** | Testing | Unit Tests | 8h | 70%+ unit coverage (foundation layer) |
+| **Day 10** | Testing | Integration + E2E | 8h | ENVTEST integration tests, E2E validation |
+| **Day 11** | Finalization | E2E, Documentation | 8h | E2E tests, service docs |
+| **Day 12** | Finalization | Gateway Migration | 8h | Remove Gateway classification code |
+
+---
+
+## 📐 **Architecture**
+
+### **Component Diagram**
+
+```
+                            ┌───────────────────────────────────────────┐
+                            │       Remediation Orchestrator            │
+                            │  (Creates SignalProcessing CRD)           │
+                            └───────────────────┬───────────────────────┘
+                                                │ Creates
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Signal Processing Controller                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────────────────┐                                                   │
+│  │ SignalProcessing │  (Input CRD - created by RemediationOrchestrator) │
+│  │   kubernaut.io/  │                                                   │
+│  │   v1alpha1       │                                                   │
+│  └────────┬─────────┘                                                   │
+│           │ Watches                                                      │
+│           ▼                                                              │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │              SignalProcessingReconciler (Sequential Pipeline)     │   │
+│  │                                                                   │   │
+│  │  STEP 1: K8s Data Fetching (Signal-Driven, Standard Depth)       │   │
+│  │  ┌────────────────────────────────────────────────────────────┐  │   │
+│  │  │ K8s Enricher (based on signal.resourceKind)                │  │   │
+│  │  │                                                            │  │   │
+│  │  │  Pod signal    → Namespace + Pod + Node + Owner            │  │   │
+│  │  │  Deploy signal → Namespace + Deployment                    │  │   │
+│  │  │  SS signal     → Namespace + StatefulSet                   │  │   │
+│  │  │  DS signal     → Namespace + DaemonSet                     │  │   │
+│  │  │  Node signal   → Node only (no namespace)                  │  │   │
+│  │  │  Unknown       → Namespace only (graceful fallback)        │  │   │
+│  │  │                                                            │  │   │
+│  │  │  OUTPUT: Raw KubernetesContext (no interpretation)         │  │   │
+│  │  └──────────────────────────┬─────────────────────────────────┘  │   │
+│  │                              │                                    │   │
+│  │                              ▼                                    │   │
+│  │  STEP 2-4: Customer-Defined Rego Policies (ALL classification)   │   │
+│  │  ┌────────────────────────────────────────────────────────────┐  │   │
+│  │  │                   Rego Policy Engine                        │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────┐   │  │   │
+│  │  │  │ ConfigMap: kubernaut-rego-policies                   │   │  │   │
+│  │  │  │  (Customer-defined, hot-reloadable)                  │   │  │   │
+│  │  │  └─────────────────────────────────────────────────────┘   │  │   │
+│  │  │                              │                              │  │   │
+│  │  │      ┌───────────────────────┼───────────────────────┐     │  │   │
+│  │  │      │                       │                       │     │  │   │
+│  │  │      ▼                       ▼                       ▼     │  │   │
+│  │  │ ┌──────────────┐   ┌──────────────┐   ┌──────────────┐    │  │   │
+│  │  │ │ environment. │   │  priority.   │   │  business.   │    │  │   │
+│  │  │ │    rego      │   │    rego      │   │    rego      │    │  │   │
+│  │  │ │              │   │              │   │              │    │  │   │
+│  │  │ │ Customer     │   │ Customer     │   │ Customer     │    │  │   │
+│  │  │ │ defines how  │   │ defines how  │   │ defines how  │    │  │   │
+│  │  │ │ to classify  │   │ to assign    │   │ to extract   │    │  │   │
+│  │  │ │ environment  │   │ P0/P1/P2/P3  │   │ businessUnit │    │  │   │
+│  │  │ └──────┬───────┘   └──────┬───────┘   └──────┬───────┘    │  │   │
+│  │  │        │                  │                  │             │  │   │
+│  │  │        ▼                  ▼                  ▼             │  │   │
+│  │  │   Environment       Priority           Business           │  │   │
+│  │  │   Classification    Assignment         Classification     │  │   │
+│  │  │   + Confidence      + Confidence       + Confidence       │  │   │
+│  │  └────────────────────────────────────────────────────────────┘  │   │
+│  │                                                                   │   │
+│  │  STEP 5: Recovery Context (from RemediationRequest embedded data) │   │
+│  │  ┌────────────────────────────────────────────────────────────┐  │   │
+│  │  │ Recovery Context Extractor                                  │  │   │
+│  │  │  • Extract historical failure data from parent CRD         │  │   │
+│  │  │  • No external API calls (DD-001)                          │  │   │
+│  │  └────────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│  ┌──────────────────┐     ┌──────────────────┐                          │
+│  │   Audit Client   │     │      Metrics     │                          │
+│  │ (Data Storage)   │     │   (Prometheus)   │                          │
+│  └────────┬─────────┘     └──────────────────┘                          │
+│           │                                                              │
+└───────────┼──────────────────────────────────────────────────────────────┘
+            │                              │
+            ▼                              │ Updates Status
+    ┌───────────────┐                      ▼
+    │ Data Storage  │        ┌───────────────────────────────────────────┐
+    │  REST API     │        │       Remediation Orchestrator            │
+    │ /api/v1/audit │        │  (Watches SignalProcessing completion)    │
+    └───────────────┘        └───────────────────────────────────────────┘
+```
+
+### **Key Architecture Principle: Customer-Defined Classification**
+
+**⚠️ CRITICAL**: Kubernaut does NOT hardcode classification logic. ALL classification is defined by the customer via Rego policies.
+
+| Component | What it does | What it does NOT do |
+|-----------|--------------|---------------------|
+| **K8s Enricher** | Fetches raw K8s objects based on signal type (standard depth) | No classification, no interpretation, no configurable depth |
+| **Rego Policies** | Customer-defined classification rules | No hardcoded labels or keywords |
+
+**Why Rego Policies?**
+1. **Customer-specific**: Every organization has different labeling conventions
+2. **Hot-reloadable**: Update policies without restarting the controller
+3. **Auditable**: Policy decisions can be logged and traced
+4. **Testable**: Policies can be unit tested independently
+
+**Why K8s Enricher + Rego (Not Rego Alone)?**
+
+Per [ADR-041: Rego Policy Data Fetching Separation](../../../architecture/decisions/ADR-041-rego-policy-data-fetching-separation.md):
+
+| Concern | K8s Enricher (Go) | Rego Policy Engine |
+|---------|-------------------|-------------------|
+| **Data Fetching** | ✅ Fetches K8s objects via client-go | ❌ Never fetches data |
+| **Authentication** | ✅ Uses ServiceAccount + RBAC | ❌ No auth concerns |
+| **Caching** | ✅ TTL cache for repeated lookups | ❌ Stateless evaluation |
+| **Policy Evaluation** | ❌ No business logic | ✅ All classification rules |
+
+Rego CAN make HTTP calls via `http.send`, but this was **rejected** for security (customer policies would have raw K8s API access), performance (no caching), and complexity (auth token management).
+
+### **Key Components**
+
+| Component | Purpose | Key Files |
+|-----------|---------|-----------|
+| **Reconciler** | Watches SignalProcessing CRD, orchestrates enrichment pipeline | `internal/controller/signalprocessing/reconciler.go` |
+| **K8s Enricher** | Signal-driven K8s object fetching (standard depth, hardcoded) | `pkg/signalprocessing/enricher/k8s_enricher.go` |
+| **Environment Classifier** | Classifies environment using Rego policies | `pkg/signalprocessing/classifier/environment.go` |
+| **Priority Engine** | Assigns priority using Rego policies | `pkg/signalprocessing/classifier/priority.go` |
+| **Business Classifier** | Multi-dimensional categorization with confidence | `pkg/signalprocessing/classifier/business.go` |
+| **Audit Client** | Writes audit events to Data Storage Service | `pkg/signalprocessing/audit/client.go` |
+| **Metrics** | Prometheus metrics (DD-005 compliant) | `pkg/signalprocessing/metrics/metrics.go` |
+
+### **Data Flow**
+
+**Upstream Flow** (before Signal Processing):
+1. **Gateway**: Receives signal (Prometheus alert, K8s event, webhook)
+2. **Gateway**: Creates RemediationRequest CRD with raw signal data
+3. **RemediationOrchestrator**: Watches RemediationRequest CRD
+4. **RemediationOrchestrator**: Creates SignalProcessing CRD in "Pending" phase
+
+**Signal Processing Controller Flow**:
+5. **Watch**: SignalProcessingReconciler watches SignalProcessing CRDs
+6. **Enrich**: Fetch K8s context (namespace, deployment, pod, node)
+7. **Classify**: Environment classification using Rego policies
+8. **Prioritize**: Priority assignment using Rego policies with K8s context
+9. **Business**: Multi-dimensional categorization with confidence scores
+10. **Audit**: Write categorization audit event to Data Storage Service
+11. **Status**: Update SignalProcessing CRD status to "Complete"
+
+**Downstream Flow** (after Signal Processing):
+12. **RemediationOrchestrator**: Watches SignalProcessing completion
+13. **RemediationOrchestrator**: Creates AIAnalysis CRD for next phase
+
+---
+
+## 📆 **Day-by-Day Implementation Breakdown**
+
+### **Day 0: ANALYSIS + PLAN (Pre-Work) ✅**
+
+**Phase**: ANALYSIS + PLAN
+**Duration**: 8 hours
+**Status**: ✅ COMPLETE (this document represents Day 0 completion)
+
+**Deliverables**:
+- ✅ Analysis of existing Gateway classification code
+- ✅ DD-CATEGORIZATION-001 migration assessment
+- ✅ Implementation plan (this document v1.0)
+- ✅ BR coverage matrix (12 BRs mapped)
+- ✅ Architecture diagram and component design
+
+---
+
+### **Day 1: Foundation - DD-006 Scaffolding**
+
+**Phase**: DO-DISCOVERY
+**Duration**: 8 hours
+**TDD Focus**: Create package structure using DD-006 templates
+
+**Morning Tasks (4 hours)**:
+
+**Hour 1-2: Scaffold Package Structure**
+```bash
+# Create directory structure
+mkdir -p cmd/signalprocessing
+mkdir -p pkg/signalprocessing/{config,metrics,enricher,classifier,audit}
+mkdir -p internal/controller/signalprocessing
+mkdir -p api/signalprocessing/v1alpha1
+mkdir -p test/unit/signalprocessing
+mkdir -p test/integration/signalprocessing
+mkdir -p deploy/signalprocessing
+```
+
+**Hour 3-4: Copy and Customize DD-006 Templates**
+1. **Copy** `docs/templates/crd-controller-gap-remediation/cmd-main-template.go.template` → `cmd/signalprocessing/main.go`
+2. **Replace placeholders**:
+   - `{{CONTROLLER_NAME}}` → `signalprocessing`
+   - `{{PACKAGE_PATH}}` → `github.com/jordigilh/kubernaut/pkg/signalprocessing`
+   - `{{CRD_GROUP}}` → `kubernaut.io`
+   - `{{CRD_VERSION}}` → `v1alpha1`
+   - `{{CRD_KIND}}` → `SignalProcessing`
+
+**Afternoon Tasks (4 hours)**:
+
+**Hour 5-6: Configuration Package**
+1. **Copy** `config-template.go.template` → `pkg/signalprocessing/config/config.go`
+2. **Add Signal Processing specific config**:
+```go
+// Package config provides configuration types for Signal Processing controller.
+package config
+
+import (
+    "time"
+
+    "github.com/go-playground/validator/v10"
+)
+
+// Config holds all configuration for the Signal Processing controller.
+// Note: MetricsAddr, HealthProbeAddr, and LeaderElection are NOT configurable
+// in YAML - they are hardcoded or set via CLI flags for safety.
+type Config struct {
+    // Signal Processing specific configuration
+    Enrichment EnrichmentConfig `yaml:"enrichment" validate:"required"`
+    Classifier ClassifierConfig `yaml:"classifier" validate:"required"`
+    Audit      AuditConfig      `yaml:"audit" validate:"required"`
+}
+
+// ControllerConfig holds controller-manager options (CLI flags, not YAML).
+// These are NOT exposed in config.yaml for safety reasons.
+type ControllerConfig struct {
+    // MetricsAddr is the address for Prometheus metrics endpoint.
+    // Default: ":9090" - hardcoded, not configurable.
+    MetricsAddr string
+
+    // HealthProbeAddr is the address for health probe endpoint.
+    // Default: ":8081" - hardcoded, not configurable.
+    HealthProbeAddr string
+
+    // LeaderElection is ALWAYS enabled for CRD controllers in production.
+    // This prevents split-brain scenarios. Not configurable.
+    LeaderElection bool
+
+    // LeaderElectionID uniquely identifies this controller for leader election.
+    LeaderElectionID string
+}
+
+// EnrichmentConfig configures K8s context enrichment behavior.
+type EnrichmentConfig struct {
+    // CacheTTL is how long to cache K8s context lookups.
+    CacheTTL time.Duration `yaml:"cache_ttl" validate:"min=0"`
+
+    // Timeout is the maximum time for enrichment operations.
+    Timeout time.Duration `yaml:"timeout" validate:"required,min=1s"`
+}
+
+// ClassifierConfig configures Rego policy-based classification.
+type ClassifierConfig struct {
+    // RegoPolicyPath is the path to Rego policy files (for local development).
+    RegoPolicyPath string `yaml:"rego_policy_path"`
+
+    // RegoConfigMapName is the ConfigMap containing Rego policies.
+    RegoConfigMapName string `yaml:"rego_configmap_name" validate:"required"`
+
+    // RegoConfigMapKey is the key within the ConfigMap for policy content.
+    RegoConfigMapKey string `yaml:"rego_configmap_key" validate:"required"`
+
+    // HotReloadInterval is how often to check for policy updates.
+    HotReloadInterval time.Duration `yaml:"hot_reload_interval" validate:"min=10s"`
+}
+
+// AuditConfig configures audit trail persistence via Data Storage Service.
+// ADR-032, ADR-034: Audit is MANDATORY - no "enabled" flag.
+type AuditConfig struct {
+    // DataStorageURL is the base URL for Data Storage Service REST API.
+    // ADR-032: All audit writes go through Data Storage Service (no direct DB access).
+    DataStorageURL string `yaml:"data_storage_url" validate:"required,url"`
+
+    // Timeout is the maximum time for audit write operations.
+    // ADR-038: Fire-and-forget pattern means this is for buffer flush, not blocking.
+    Timeout time.Duration `yaml:"timeout" validate:"required,min=1s"`
+
+    // BufferSize is the in-memory buffer size for fire-and-forget audit writes.
+    // ADR-038: Events buffered locally, flushed asynchronously.
+    BufferSize int `yaml:"buffer_size" validate:"min=100,max=10000"`
+
+    // FlushInterval is how often to flush buffered audit events.
+    FlushInterval time.Duration `yaml:"flush_interval" validate:"min=1s,max=30s"`
+}
+
+// Validate validates the configuration using struct tags.
+func (c *Config) Validate() error {
+    validate := validator.New()
+    return validate.Struct(c)
+}
+```
+
+**Hour 7-8: Metrics Package**
+1. **Copy** `metrics-template.go.template` → `pkg/signalprocessing/metrics/metrics.go`
+2. **Add Signal Processing specific metrics** (triaged for business value):
+
+> ⚠️ **Metrics Triage**: Reduced from 12 metrics to 6 based on business value analysis.
+> Removed redundant metrics (Enrichment/Classification/Audit totals) - use ReconciliationTotal with labels instead.
+
+```go
+// Package metrics provides Prometheus metrics for Signal Processing controller.
+// DD-005 compliant metrics implementation.
+// Metrics triaged for business value - see implementation plan v1.4.
+package metrics
+
+import (
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+const (
+    namespace = "kubernaut"
+    subsystem = "signalprocessing"
+)
+
+// Metrics holds all Prometheus metrics for Signal Processing.
+// Triaged for business value:
+// - Core business metrics: ReconciliationTotal, ReconciliationDuration, CategorizationConfidence
+// - SLO metrics: EnrichmentDuration (<2s P95), RegoEvaluationDuration (<100ms P95)
+// - Operational metrics: RegoHotReloadTotal
+type Metrics struct {
+    // === CORE BUSINESS METRICS ===
+
+    // ReconciliationTotal tracks all reconciliation operations.
+    // Labels: phase (enriching, classifying, categorizing, complete, failed), status (success, failure)
+    // Business value: Core throughput and success rate metric.
+    ReconciliationTotal *prometheus.CounterVec
+
+    // ReconciliationDuration measures end-to-end processing time.
+    // Labels: phase
+    // Business value: End-to-end latency for SLO tracking.
+    ReconciliationDuration *prometheus.HistogramVec
+
+    // CategorizationConfidence tracks confidence scores for all classifications.
+    // Labels: classifier (environment, priority, business)
+    // Business value: Are classifications reliable? Low confidence = review Rego policies.
+    CategorizationConfidence *prometheus.HistogramVec
+
+    // === SLO METRICS ===
+
+    // EnrichmentDuration measures K8s API enrichment latency.
+    // Labels: resource_kind (Pod, Deployment, Node, etc.)
+    // SLO: <2 seconds P95 (BR-SP-001)
+    EnrichmentDuration *prometheus.HistogramVec
+
+    // RegoEvaluationDuration measures Rego policy evaluation time.
+    // Labels: policy (environment, priority, business)
+    // SLO: <100ms P95
+    RegoEvaluationDuration *prometheus.HistogramVec
+
+    // === OPERATIONAL METRICS ===
+
+    // RegoHotReloadTotal tracks Rego policy hot-reload events.
+    // Labels: status (success, failure)
+    // Operational: Did policy updates succeed?
+    RegoHotReloadTotal *prometheus.CounterVec
+}
+
+// NewMetrics creates and registers all Prometheus metrics.
+func NewMetrics() *Metrics {
+    return &Metrics{
+        // Core business metrics
+        ReconciliationTotal: promauto.NewCounterVec(
+            prometheus.CounterOpts{
+                Namespace: namespace,
+                Subsystem: subsystem,
+                Name:      "reconciliation_total",
+                Help:      "Total number of reconciliation operations by phase and status",
+            },
+            []string{"phase", "status"},
+        ),
+        ReconciliationDuration: promauto.NewHistogramVec(
+            prometheus.HistogramOpts{
+                Namespace: namespace,
+                Subsystem: subsystem,
+                Name:      "reconciliation_duration_seconds",
+                Help:      "Duration of reconciliation operations in seconds",
+                Buckets:   []float64{0.5, 1, 2, 5, 10, 30},
+            },
+            []string{"phase"},
+        ),
+        CategorizationConfidence: promauto.NewHistogramVec(
+            prometheus.HistogramOpts{
+                Namespace: namespace,
+                Subsystem: subsystem,
+                Name:      "categorization_confidence",
+                Help:      "Confidence scores for categorization decisions (0.0-1.0)",
+                Buckets:   []float64{0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0},
+            },
+            []string{"classifier"},
+        ),
+
+        // SLO metrics
+        EnrichmentDuration: promauto.NewHistogramVec(
+            prometheus.HistogramOpts{
+                Namespace: namespace,
+                Subsystem: subsystem,
+                Name:      "enrichment_duration_seconds",
+                Help:      "Duration of K8s context enrichment operations (SLO: <2s P95)",
+                Buckets:   []float64{0.1, 0.25, 0.5, 1, 2, 5},
+            },
+            []string{"resource_kind"},
+        ),
+        RegoEvaluationDuration: promauto.NewHistogramVec(
+            prometheus.HistogramOpts{
+                Namespace: namespace,
+                Subsystem: subsystem,
+                Name:      "rego_evaluation_duration_seconds",
+                Help:      "Duration of Rego policy evaluations (SLO: <100ms P95)",
+                Buckets:   []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25},
+            },
+            []string{"policy"},
+        ),
+
+        // Operational metrics
+        RegoHotReloadTotal: promauto.NewCounterVec(
+            prometheus.CounterOpts{
+                Namespace: namespace,
+                Subsystem: subsystem,
+                Name:      "rego_hot_reload_total",
+                Help:      "Total number of Rego policy hot-reload events",
+            },
+            []string{"status"},
+        ),
+    }
+}
+```
+
+**Metrics Summary** (6 metrics, triaged for business value):
+
+| Metric | Type | Business Value | SLO |
+|--------|------|----------------|-----|
+| `reconciliation_total` | Counter | ✅ Throughput, success rate | - |
+| `reconciliation_duration_seconds` | Histogram | ✅ End-to-end latency | <5s P95 |
+| `categorization_confidence` | Histogram | ✅ Classification reliability | >0.8 avg |
+| `enrichment_duration_seconds` | Histogram | ✅ K8s API latency | <2s P95 |
+| `rego_evaluation_duration_seconds` | Histogram | ✅ Policy evaluation speed | <100ms P95 |
+| `rego_hot_reload_total` | Counter | ⚠️ Operational health | - |
+
+**EOD Day 1 Checklist**:
+- [ ] Package structure created
+- [ ] `main.go` compiles (basic skeleton)
+- [ ] `config.go` with validation
+- [ ] `metrics.go` with DD-005 compliant metrics
+- [ ] Zero lint errors
+
+---
+
+### **Day 2: Foundation - CRD Types**
+
+**Phase**: DO-RED → DO-GREEN
+**Duration**: 8 hours
+**TDD Focus**: Define CRD types, then write business outcome tests in `test/unit/`
+
+**Morning Tasks (4 hours)**:
+
+**Hour 1-2: Define CRD Types (Pure Data Structures)**
+
+**File**: `api/signalprocessing/v1alpha1/signalprocessing_types.go`
+
+> ⚠️ **IMPORTANT**: API types packages contain ONLY struct definitions - no validation methods, no business logic.
+> Tests reside in `test/unit/signalprocessing/`, not alongside API types.
+
+**Hour 3-4: CRD Types - No Separate Tests Required**
+
+> **⚠️ IMPORTANT: CRD Types Do NOT Need Separate Unit Tests**
+>
+> Per [TESTING_GUIDELINES.md](../../../development/business-requirements/TESTING_GUIDELINES.md) and [03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc):
+>
+> **Why No `types_test.go`:**
+> 1. **Compile-time safety**: Go guarantees struct field existence at compile time
+> 2. **Schema validation**: Kubernetes API server validates CRDs via OpenAPI spec
+> 3. **Null-testing anti-pattern**: Testing struct initialization has zero business value
+> 4. **Controller tests**: Business behavior is tested through controller reconciliation
+>
+> **What Gets Tested Instead:**
+> - **Day 3-6**: Controller behavior tests (reconciliation, status updates)
+> - **Day 8**: Unit tests - all components (parallel: 4 procs)
+> - **Day 9**: Integration tests with real K8s API (envtest) (parallel: 4 procs)
+> - **Day 10**: E2E tests with full workflow validation (parallel: 4 procs)
+>
+> **Validation Responsibilities:**
+> | Concern | Mechanism | Location |
+> |---------|-----------|----------|
+> | Required fields | `// +kubebuilder:validation:Required` | CRD OpenAPI spec |
+> | Field formats | `// +kubebuilder:validation:Pattern` | CRD OpenAPI spec |
+> | Enum values | `// +kubebuilder:validation:Enum` | CRD OpenAPI spec |
+> | Phase transitions | Reconciler logic | Controller tests |
+> | Business outcomes | Controller behavior | Integration tests |
+
+**Hour 5-6: Implement CRD Types (DO-GREEN)**
+
+**File**: `api/signalprocessing/v1alpha1/signalprocessing_types.go`
+```go
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Environment",type=string,JSONPath=`.status.environmentClassification.environment`
+// +kubebuilder:printcolumn:name="Priority",type=string,JSONPath=`.status.priorityAssignment.priority`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+
+type SignalProcessing struct {
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
+
+    Spec   SignalProcessingSpec   `json:"spec,omitempty"`
+    Status SignalProcessingStatus `json:"status,omitempty"`
+}
+
+type SignalProcessingSpec struct {
+    // Reference to parent RemediationRequest
+    RemediationRequestRef ObjectReference `json:"remediationRequestRef"`
+
+    // Signal data (copied from RemediationRequest for processing)
+    Signal SignalData `json:"signal"`
+
+    // Configuration for processing
+    EnrichmentConfig EnrichmentConfig `json:"enrichmentConfig,omitempty"`
+}
+
+type SignalProcessingStatus struct {
+    // Phase: Pending, Enriching, Classifying, Categorizing, Complete, Failed
+    Phase SignalProcessingPhase `json:"phase"`
+
+    // Processing timestamps
+    StartTime      *metav1.Time `json:"startTime,omitempty"`
+    CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+    // Enrichment results
+    KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
+    RecoveryContext   *RecoveryContext   `json:"recoveryContext,omitempty"`
+
+    // Categorization results (DD-CATEGORIZATION-001)
+    EnvironmentClassification *EnvironmentClassification `json:"environmentClassification,omitempty"`
+    PriorityAssignment        *PriorityAssignment        `json:"priorityAssignment,omitempty"`
+    BusinessClassification    *BusinessClassification    `json:"businessClassification,omitempty"`
+
+    // Conditions for detailed status
+    Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+    // Error information
+    Error string `json:"error,omitempty"`
+}
+
+// EnvironmentClassification from DD-CATEGORIZATION-001
+type EnvironmentClassification struct {
+    Environment      string  `json:"environment"`       // production, staging, development
+    Confidence       float64 `json:"confidence"`        // 0.0-1.0
+    Source           string  `json:"source"`            // namespace-labels, configmap, signal-labels, default
+    ClassifiedAt     metav1.Time `json:"classifiedAt"`
+}
+
+// PriorityAssignment from DD-CATEGORIZATION-001
+type PriorityAssignment struct {
+    Priority         string  `json:"priority"`          // P0, P1, P2, P3
+    Confidence       float64 `json:"confidence"`        // 0.0-1.0
+    Source           string  `json:"source"`            // rego-policy, fallback-matrix
+    PolicyName       string  `json:"policyName,omitempty"` // Which Rego rule matched
+    AssignedAt       metav1.Time `json:"assignedAt"`
+}
+
+// BusinessClassification for multi-dimensional categorization
+type BusinessClassification struct {
+    BusinessUnit     string  `json:"businessUnit,omitempty"`
+    ServiceOwner     string  `json:"serviceOwner,omitempty"`
+    Criticality      string  `json:"criticality,omitempty"`  // critical, high, medium, low
+    SLARequirement   string  `json:"slaRequirement,omitempty"` // 5m, 15m, 1h
+    OverallConfidence float64 `json:"overallConfidence"`
+}
+```
+
+**Afternoon Tasks (4 hours)**:
+
+**Hour 5-6: Deep Copy and Register**
+1. Run `make generate` to create `zz_generated.deepcopy.go`
+2. Register types in scheme
+
+**Hour 7-8: CRD Manifest Generation**
+1. Run `make manifests` to generate CRD YAML
+2. Verify CRD in `config/crd/bases/kubernaut.io_signalprocessings.yaml`
+
+**EOD Day 2 Checklist**:
+- [ ] CRD types defined with all fields
+- [ ] Types tests passing
+- [ ] Deep copy generated
+- [ ] CRD manifest generated
+- [ ] Phase state machine validated
+
+---
+
+### **Days 3-6: Core Logic Components**
+
+#### **Day 3: K8s Enricher**
+
+**BR Coverage**: BR-SP-001 (K8s Context Enrichment)
+
+**File**: `pkg/signalprocessing/enricher/k8s_enricher.go`
+
+```go
+// Package enricher provides Kubernetes context enrichment for signals.
+package enricher
+
+import (
+    "context"
+    "fmt"
+    "time"
+
+    "go.uber.org/zap"
+    corev1 "k8s.io/api/core/v1"
+    appsv1 "k8s.io/api/apps/v1"
+    "k8s.io/apimachinery/pkg/types"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+
+    signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+    "github.com/jordigilh/kubernaut/pkg/signalprocessing/cache"
+    "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
+)
+
+// K8sEnricher fetches Kubernetes context for signal enrichment.
+type K8sEnricher struct {
+    client  client.Client
+    logger  *zap.Logger
+    cache   *cache.TTLCache // TTL-based cache for repeated lookups
+    metrics *metrics.Metrics
+    timeout time.Duration
+}
+
+// NewK8sEnricher creates a new K8s context enricher.
+func NewK8sEnricher(c client.Client, logger *zap.Logger, m *metrics.Metrics, timeout time.Duration) *K8sEnricher {
+    return &K8sEnricher{
+        client:  c,
+        logger:  logger.Named("k8s-enricher"),
+        cache:   cache.NewTTLCache(5 * time.Minute),
+        metrics: m,
+        timeout: timeout,
+    }
+}
+
+// Enrich fetches Kubernetes context based on signal type (standard depth, hardcoded).
+// BR-SP-001: <2 seconds P95
+//
+// Standard Depth Strategy (no configuration):
+//   Pod signal    → Namespace + Pod + Node + Owner (Deployment/SS/DS)
+//   Deploy signal → Namespace + Deployment
+//   SS signal     → Namespace + StatefulSet
+//   DS signal     → Namespace + DaemonSet
+//   Node signal   → Node only (no namespace)
+//   Unknown       → Namespace only (graceful fallback)
+func (e *K8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
+    startTime := time.Now()
+    defer func() {
+        e.metrics.EnrichmentDuration.WithLabelValues("k8s_context").Observe(time.Since(startTime).Seconds())
+    }()
+
+    // Apply timeout
+    ctx, cancel := context.WithTimeout(ctx, e.timeout)
+    defer cancel()
+
+    result := &signalprocessingv1alpha1.KubernetesContext{}
+
+    // Signal-driven enrichment based on resource kind
+    switch signal.Resource.Kind {
+    case "Pod":
+        return e.enrichPodSignal(ctx, signal, result)
+    case "Deployment":
+        return e.enrichDeploymentSignal(ctx, signal, result)
+    case "StatefulSet":
+        return e.enrichStatefulSetSignal(ctx, signal, result)
+    case "DaemonSet":
+        return e.enrichDaemonSetSignal(ctx, signal, result)
+    case "ReplicaSet":
+        return e.enrichReplicaSetSignal(ctx, signal, result)
+    case "Node":
+        return e.enrichNodeSignal(ctx, signal, result)
+    default:
+        // Graceful fallback: namespace only for unknown resource types
+        return e.enrichNamespaceOnly(ctx, signal, result)
+    }
+}
+
+// enrichPodSignal fetches Namespace + Pod + Node + Owner (standard depth).
+func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
+    // 1. Fetch namespace
+    ns, err := e.getNamespace(ctx, signal.Namespace)
+    if err != nil {
+        e.metrics.EnrichmentTotal.WithLabelValues("failure").Inc()
+        return nil, fmt.Errorf("failed to get namespace %s: %w", signal.Namespace, err)
+    }
+    result.Namespace = ns
+
+    // 2. Fetch pod
+    pod, err := e.getPod(ctx, signal.Namespace, signal.Resource.Name)
+    if err != nil {
+        e.logger.Warn("Pod not found, continuing with partial context", zap.Error(err))
+    } else {
+        result.Pod = pod
+
+        // 3. Fetch node where pod runs (standard depth)
+        if pod.NodeName != "" {
+            node, err := e.getNode(ctx, pod.NodeName)
+            if err == nil {
+                result.Node = node
+            }
+        }
+
+        // 4. Fetch owner workload (Deployment/StatefulSet/DaemonSet)
+        owner, err := e.getOwnerWorkload(ctx, signal.Namespace, pod.OwnerReferences)
+        if err == nil {
+            result.Owner = owner
+        }
+    }
+
+    e.metrics.EnrichmentTotal.WithLabelValues("success").Inc()
+    return result, nil
+}
+
+// enrichDeploymentSignal fetches Namespace + Deployment (no pods - standard depth).
+func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
+    // 1. Fetch namespace
+    ns, err := e.getNamespace(ctx, signal.Namespace)
+    if err != nil {
+        e.metrics.EnrichmentTotal.WithLabelValues("failure").Inc()
+        return nil, fmt.Errorf("failed to get namespace %s: %w", signal.Namespace, err)
+    }
+    result.Namespace = ns
+
+    // 2. Fetch deployment
+    deployment, err := e.getDeployment(ctx, signal.Namespace, signal.Resource.Name)
+    if err != nil {
+        e.logger.Warn("Deployment not found, continuing with namespace only", zap.Error(err))
+    } else {
+        result.Deployment = deployment
+    }
+
+    // NO pods fetched - ephemeral, expensive (standard depth decision)
+
+    e.metrics.EnrichmentTotal.WithLabelValues("success").Inc()
+    return result, nil
+}
+
+// enrichNodeSignal fetches Node only (no namespace for node signals).
+func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
+    // Node signals have no namespace
+    node, err := e.getNode(ctx, signal.Resource.Name)
+    if err != nil {
+        e.metrics.EnrichmentTotal.WithLabelValues("failure").Inc()
+        return nil, fmt.Errorf("failed to get node %s: %w", signal.Resource.Name, err)
+    }
+    result.Node = node
+
+    e.metrics.EnrichmentTotal.WithLabelValues("success").Inc()
+    return result, nil
+}
+
+// getNamespace fetches namespace with caching.
+func (e *K8sEnricher) getNamespace(ctx context.Context, name string) (*signalprocessingv1alpha1.NamespaceContext, error) {
+    // Check cache first
+    if cached, ok := e.cache.Get("ns:" + name); ok {
+        return cached.(*signalprocessingv1alpha1.NamespaceContext), nil
+    }
+
+    ns := &corev1.Namespace{}
+    if err := e.client.Get(ctx, types.NamespacedName{Name: name}, ns); err != nil {
+        return nil, err
+    }
+
+    result := &signalprocessingv1alpha1.NamespaceContext{
+        Name:        ns.Name,
+        Labels:      ns.Labels,
+        Annotations: ns.Annotations,
+    }
+
+    e.cache.Set("ns:"+name, result)
+    return result, nil
+}
+```
+
+**Tests**: `test/unit/signalprocessing/enricher_test.go`
+
+---
+
+#### **Day 4: Environment Classifier (Rego)**
+
+**BR Coverage**: BR-SP-051, BR-SP-052, BR-SP-053
+
+**File**: `pkg/signalprocessing/classifier/environment.go`
+
+```go
+type EnvironmentClassifier struct {
+    regoQuery *rego.PreparedEvalQuery
+    logger    *zap.Logger
+}
+
+// Classify determines environment using Rego policy
+// Priority order: namespace labels → ConfigMap → signal labels → default
+func (c *EnvironmentClassifier) Classify(ctx context.Context, k8sCtx *KubernetesContext, signal *SignalData) (*EnvironmentClassification, error) {
+    input := map[string]interface{}{
+        "namespace": map[string]interface{}{
+            "name":   k8sCtx.Namespace.Name,
+            "labels": k8sCtx.Namespace.Labels,
+        },
+        "signal": map[string]interface{}{
+            "labels": signal.Labels,
+        },
+    }
+
+    results, err := c.regoQuery.Eval(ctx, rego.EvalInput(input))
+    if err != nil {
+        // Fallback to default
+        return &EnvironmentClassification{
+            Environment: "unknown",
+            Confidence:  0.0,
+            Source:      "default",
+        }, nil
+    }
+
+    // Extract result from Rego
+    env := results[0].Expressions[0].Value.(map[string]interface{})
+    return &EnvironmentClassification{
+        Environment: env["environment"].(string),
+        Confidence:  env["confidence"].(float64),
+        Source:      env["source"].(string),
+    }, nil
+}
+```
+
+**Rego Policy**: `deploy/signalprocessing/policies/environment.rego`
+```rego
+package signalprocessing.environment
+
+# Primary: Namespace labels
+result = {"environment": env, "confidence": 0.95, "source": "namespace-labels"} {
+    env := input.namespace.labels["environment"]
+    env != ""
+}
+
+# Secondary: Signal labels
+result = {"environment": env, "confidence": 0.80, "source": "signal-labels"} {
+    not input.namespace.labels["environment"]
+    env := input.signal.labels["environment"]
+    env != ""
+}
+
+# Default fallback
+result = {"environment": "unknown", "confidence": 0.0, "source": "default"} {
+    not input.namespace.labels["environment"]
+    not input.signal.labels["environment"]
+}
+```
+
+---
+
+#### **Day 5: Priority Engine (Rego)**
+
+**BR Coverage**: BR-SP-070, BR-SP-071, BR-SP-072
+
+**File**: `pkg/signalprocessing/classifier/priority.go`
+
+```go
+type PriorityEngine struct {
+    regoQuery     *rego.PreparedEvalQuery
+    configMapName string
+    configMapKey  string
+    hotReloader   *HotReloader
+    logger        *zap.Logger
+}
+
+// Assign determines priority using Rego policy with K8s + business context
+// BR-SP-070: Rego policies with rich context
+func (p *PriorityEngine) Assign(ctx context.Context, k8sCtx *KubernetesContext, envClass *EnvironmentClassification, signal *SignalData) (*PriorityAssignment, error) {
+    input := map[string]interface{}{
+        "severity":    signal.Severity,
+        "environment": envClass.Environment,
+        "kubernetesContext": map[string]interface{}{
+            "deployment": map[string]interface{}{
+                "replicas":    k8sCtx.Deployment.Replicas,
+                "minReplicas": k8sCtx.Deployment.MinReplicas,
+            },
+            "node": map[string]interface{}{
+                "conditions": k8sCtx.Node.Conditions,
+            },
+        },
+        "signal": map[string]interface{}{
+            "labels":    signal.Labels,
+            "namespace": signal.Namespace,
+        },
+    }
+
+    results, err := p.regoQuery.Eval(ctx, rego.EvalInput(input))
+    if err != nil {
+        return p.fallbackMatrix(signal.Severity, envClass.Environment)
+    }
+
+    // Extract from Rego
+    priority := results[0].Expressions[0].Value.(map[string]interface{})
+    return &PriorityAssignment{
+        Priority:   priority["priority"].(string),
+        Confidence: priority["confidence"].(float64),
+        Source:     "rego-policy",
+        PolicyName: priority["policy_name"].(string),
+    }, nil
+}
+
+// BR-SP-072: Hot-reload from ConfigMap
+func (p *PriorityEngine) StartHotReload(ctx context.Context, client client.Client) {
+    p.hotReloader.Start(ctx, client, p.configMapName, p.configMapKey, func(policy string) {
+        query, err := rego.New(
+            rego.Query("data.signalprocessing.priority.result"),
+            rego.Module("priority.rego", policy),
+        ).PrepareForEval(ctx)
+        if err != nil {
+            p.logger.Error("Failed to reload Rego policy", zap.Error(err))
+            return
+        }
+        p.regoQuery = &query
+        p.logger.Info("Rego policy hot-reloaded successfully")
+    })
+}
+```
+
+---
+
+#### **Day 6: Business Classifier**
+
+**BR Coverage**: BR-SP-080, BR-SP-081
+
+**File**: `pkg/signalprocessing/classifier/business.go`
+
+```go
+type BusinessClassifier struct {
+    regoQuery *rego.PreparedEvalQuery
+    logger    *zap.Logger
+}
+
+// Classify performs multi-dimensional business categorization
+// BR-SP-081: businessUnit, serviceOwner, criticality, sla
+func (b *BusinessClassifier) Classify(ctx context.Context, k8sCtx *KubernetesContext, envClass *EnvironmentClassification, priority *PriorityAssignment) (*BusinessClassification, error) {
+    input := map[string]interface{}{
+        "environment": envClass.Environment,
+        "priority":    priority.Priority,
+        "namespace": map[string]interface{}{
+            "labels":      k8sCtx.Namespace.Labels,
+            "annotations": k8sCtx.Namespace.Annotations,
+        },
+        "deployment": map[string]interface{}{
+            "labels":      k8sCtx.Deployment.Labels,
+            "annotations": k8sCtx.Deployment.Annotations,
+        },
+    }
+
+    results, err := b.regoQuery.Eval(ctx, rego.EvalInput(input))
+    if err != nil {
+        return &BusinessClassification{
+            OverallConfidence: 0.5,
+        }, nil
+    }
+
+    biz := results[0].Expressions[0].Value.(map[string]interface{})
+    return &BusinessClassification{
+        BusinessUnit:      biz["business_unit"].(string),
+        ServiceOwner:      biz["service_owner"].(string),
+        Criticality:       biz["criticality"].(string),
+        SLARequirement:    biz["sla"].(string),
+        OverallConfidence: biz["confidence"].(float64),
+    }, nil
+}
+```
+
+---
+
+#### **Day 6 EOD: Error Handling Philosophy Document** ⭐
+
+**File**: `docs/services/crd-controllers/01-signalprocessing/implementation/design/ERROR_HANDLING_PHILOSOPHY.md`
+
+**MANDATORY**: Create this document at end of Day 6 to establish consistent error handling across all Signal Processing components.
+
+```markdown
+# Error Handling Philosophy - Signal Processing Service
+
+**Date**: [Implementation Date]
+**Status**: ✅ Authoritative Guide
+**Version**: 1.0
+
+---
+
+#### 🎯 **Core Principles**
+
+##### 1. **Error Classification**
+
+#### **Transient Errors** (Retry-able)
+- **Definition**: Temporary failures that may succeed on retry
+- **Examples**: K8s API timeouts, Data Storage Service 503, network errors
+- **Strategy**: Exponential backoff with jitter (requeue with delay)
+- **Max Retries**: 5 attempts (30s, 60s, 120s, 240s, 480s)
+
+#### **Permanent Errors** (Non-retry-able)
+- **Definition**: Failures that will not succeed on retry
+- **Examples**: Invalid CRD spec, missing required fields, Rego policy syntax error
+- **Strategy**: Fail immediately, update status.phase = Failed, log error
+- **Max Retries**: 0 (no retry)
+
+#### **Partial Errors** (Graceful Degradation)
+- **Definition**: Some operations succeed while others fail
+- **Examples**: K8s API returns partial namespace data, one classifier fails
+- **Strategy**: Continue with available data, set confidence = 0.5 for failed components
+- **Max Retries**: N/A (proceed with degraded results)
+
+---
+
+##### 2. **Signal Processing-Specific Error Categories (A-E)**
+
+> **Source**: Adapted from Notification Controller v3.2 patterns
+
+#### **Category A: SignalProcessing CR Not Found**
+- **When**: CRD deleted during reconciliation (race condition)
+- **Action**: Log deletion, return without error (normal cleanup)
+- **Recovery**: Automatic (Kubernetes garbage collection)
+- **Metric**: `signalprocessing_reconciliation_total{result="not_found"}`
+
+```go
+// Category A: Handle CR deleted during reconciliation
+if apierrors.IsNotFound(err) {
+    log.Info("SignalProcessing CR deleted during reconciliation, skipping")
+    return ctrl.Result{}, nil // No requeue, normal cleanup
+}
+```
+
+#### **Category B: K8s API Errors** (Retry with Backoff)
+- **When**: K8s API timeouts, 503 errors, rate limiting (429)
+- **Action**: Exponential backoff (30s → 60s → 120s → 240s → 480s)
+- **Recovery**: Automatic retry up to 5 attempts, then mark as failed
+- **Metric**: `signalprocessing_k8s_api_errors_total{error_type="..."}`
+
+```go
+// Category B: K8s API transient error
+if isTransientK8sError(err) {
+    log.Error(err, "K8s API transient error, will retry",
+        "attempt", attemptCount, "backoff", CalculateBackoff(attemptCount))
+    return HandleTransientError(attemptCount), nil
+}
+```
+
+#### **Category C: Rego Policy Errors** (User Configuration Error)
+- **When**: Rego syntax error, invalid policy output, policy not found
+- **Action**: Mark as failed immediately, create Kubernetes Event
+- **Recovery**: Manual (fix Rego policy in ConfigMap, controller will re-evaluate)
+- **Metric**: `signalprocessing_rego_policy_errors_total{policy="...",error_type="..."}`
+
+```go
+// Category C: Rego policy user error (permanent)
+if isRegoPolicyError(err) {
+    log.Error(err, "Rego policy configuration error - manual intervention required",
+        "policy", policyName, "error", err.Error())
+    r.recorder.Event(sp, corev1.EventTypeWarning, "RegoPolicyError",
+        fmt.Sprintf("Rego policy %s has configuration error: %v", policyName, err))
+    return HandlePermanentError(), r.updateStatusFailed(ctx, sp, err)
+}
+```
+
+#### **Category D: Status Update Conflicts** (Optimistic Locking)
+- **When**: Multiple reconcile attempts updating status simultaneously
+- **Action**: Retry status update with fresh resource version (3 attempts)
+- **Recovery**: Automatic (retry with latest version)
+- **Metric**: `signalprocessing_status_update_conflicts_total`
+
+```go
+// Category D: Status update with retry for conflicts
+func (r *SignalProcessingReconciler) updateStatusWithRetry(ctx context.Context, sp *v1alpha1.SignalProcessing) error {
+    return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+        // Get fresh version
+        fresh := &v1alpha1.SignalProcessing{}
+        if err := r.Get(ctx, client.ObjectKeyFromObject(sp), fresh); err != nil {
+            return err
+        }
+        fresh.Status = sp.Status
+        return r.Status().Update(ctx, fresh)
+    })
+}
+```
+
+#### **Category E: Enrichment/Classification Failures** (Partial Data)
+- **When**: K8s enrichment partially succeeds, one classifier fails while others succeed
+- **Action**: Continue with available data, set component confidence to 0.0
+- **Recovery**: Automatic (degraded results are acceptable for non-critical data)
+- **Metric**: `signalprocessing_partial_success_total{component="..."}`
+
+```go
+// Category E: Partial enrichment (graceful degradation)
+k8sContext, err := r.enricher.EnrichSignal(ctx, signal)
+if err != nil {
+    if isPartialEnrichmentError(err) {
+        log.Info("Partial K8s enrichment - proceeding with degraded context",
+            "missing_fields", err.(*PartialEnrichmentError).MissingFields)
+        k8sContext = err.(*PartialEnrichmentError).PartialContext
+        k8sContext.Confidence = 0.5 // Reduced confidence
+    } else {
+        return HandleTransientError(attemptCount), err
+    }
+}
+```
+
+---
+
+#### 🔄 **Retry Strategy for CRD Controller**
+
+### Requeue with Backoff
+
+```go
+package controller
+
+import (
+    "math"
+    "math/rand"
+    "time"
+
+    ctrl "sigs.k8s.io/controller-runtime"
+)
+
+// CalculateBackoff returns exponential backoff duration for controller requeue.
+// Attempts: 0→30s, 1→60s, 2→120s, 3→240s, 4+→480s (capped)
+func CalculateBackoff(attemptCount int) time.Duration {
+    baseDelay := 30 * time.Second
+    maxDelay := 480 * time.Second
+
+    delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(attemptCount)))
+    if delay > maxDelay {
+        delay = maxDelay
+    }
+
+    // Add jitter (±10%) to prevent thundering herd
+    jitter := time.Duration(float64(delay) * (0.9 + 0.2*rand.Float64()))
+    return jitter
+}
+
+// HandleTransientError returns a requeue result with backoff.
+func HandleTransientError(attemptCount int) ctrl.Result {
+    return ctrl.Result{
+        RequeueAfter: CalculateBackoff(attemptCount),
+    }
+}
+
+// HandlePermanentError returns a result that does NOT requeue.
+func HandlePermanentError() ctrl.Result {
+    return ctrl.Result{Requeue: false}
+}
+```
+
+### Retry Decision Matrix
+
+| Error Type | HTTP/K8s Status | Retry? | Backoff | Max Attempts | Example |
+|-----------|-----------------|--------|---------|--------------|---------|
+| Transient | K8s API timeout | ✅ Yes | Exponential | 5 | `context deadline exceeded` |
+| Transient | Data Storage 503 | ✅ Yes | Exponential | 5 | Service temporarily unavailable |
+| Transient | K8s API 429 | ✅ Yes | Exponential | 5 | Rate limited |
+| Permanent | K8s API 404 | ❌ No | N/A | 0 | Namespace not found |
+| Permanent | Validation | ❌ No | N/A | 0 | Missing required field |
+| Permanent | Rego syntax | ❌ No | N/A | 0 | Invalid policy syntax |
+| Partial | K8s partial | ⚠️ Continue | N/A | N/A | Some fields unavailable |
+
+---
+
+### Backoff Progression Table (Signal Processing Controller)
+
+| Attempt | Backoff (base) | With Jitter (±10%) | Cumulative Time |
+|---------|----------------|---------------------|-----------------|
+| 0 (initial fail) | 30s | 27s - 33s | ~30s |
+| 1 | 60s | 54s - 66s | ~90s |
+| 2 | 120s | 108s - 132s | ~210s |
+| 3 | 240s | 216s - 264s | ~450s |
+| 4+ | 480s (capped) | 432s - 528s | ~930s (~15.5 min) |
+
+**Total retry window**: ~15 minutes before permanent failure status
+**K8s Requeue**: Uses `ctrl.Result{RequeueAfter: backoff}` (native K8s pattern)
+
+---
+
+### ⚠️ Circuit Breaker: NOT APPLICABLE for CRD Controllers
+
+**Why Notification uses Circuit Breaker**:
+- External API calls (Slack, email SMTP) can overload external services
+- Channel-specific isolation (Slack failure shouldn't affect console)
+- Thundering herd protection during external outages
+
+**Why Signal Processing does NOT use Circuit Breaker**:
+- ✅ **K8s API is internal** - not an external service to protect
+- ✅ **K8s has built-in rate limiting** - 429 responses handled via requeue
+- ✅ **Controller-runtime handles backpressure** - work queue manages concurrency
+- ✅ **Data Storage API uses fire-and-forget** (ADR-038) - audit writes don't block
+
+**Pattern Comparison**:
+| Service | External Dependencies | Circuit Breaker Needed? |
+|---------|----------------------|------------------------|
+| Notification | Slack API, Email SMTP | ✅ Yes - external APIs |
+| Signal Processing | K8s API, Data Storage API | ❌ No - internal services |
+| Gateway | External webhooks | ⚠️ Optional - depends on webhook targets |
+
+**Reference**: See ADR-038 (fire-and-forget audit) for async pattern details
+
+---
+
+#### 📝 **Error Wrapping Pattern**
+
+### Standard Error Wrapping
+
+```go
+package enricher
+
+import (
+    "context"
+    "fmt"
+)
+
+// EnrichSignal wraps errors with context for debugging.
+func (e *K8sEnricher) EnrichSignal(ctx context.Context, signal *Signal) (*KubernetesContext, error) {
+    ns, err := e.getNamespace(ctx, signal.Namespace)
+    if err != nil {
+        return nil, fmt.Errorf("failed to enrich namespace %s: %w", signal.Namespace, err)
+    }
+
+    deploy, err := e.getDeployment(ctx, signal.Namespace, signal.DeploymentName)
+    if err != nil {
+        // Graceful degradation: continue without deployment context
+        e.logger.Warn("deployment not found, continuing with partial context",
+            zap.String("namespace", signal.Namespace),
+            zap.String("deployment", signal.DeploymentName),
+            zap.Error(err))
+        deploy = &DeploymentContext{} // Empty context
+    }
+
+    return &KubernetesContext{Namespace: ns, Deployment: deploy}, nil
+}
+```
+
+---
+
+#### 📊 **Logging Best Practices**
+
+### Structured Logging for Signal Processing
+
+```go
+package reconciler
+
+import (
+    "go.uber.org/zap"
+    ctrl "sigs.k8s.io/controller-runtime"
+)
+
+// Reconcile logs errors with full context.
+func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    logger := r.Log.WithValues(
+        "signalProcessing", req.NamespacedName,
+        "reconcileID", uuid.New().String(),
+    )
+
+    // Transient error
+    if isTransient(err) {
+        logger.Error(err, "transient error during enrichment, will retry",
+            "attemptCount", sp.Status.AttemptCount,
+            "nextRetry", CalculateBackoff(sp.Status.AttemptCount),
+        )
+        return HandleTransientError(sp.Status.AttemptCount), nil
+    }
+
+    // Permanent error
+    if isPermanent(err) {
+        logger.Error(err, "permanent error, marking as failed",
+            "phase", "Failed",
+            "reason", err.Error(),
+        )
+        sp.Status.Phase = "Failed"
+        sp.Status.Message = err.Error()
+        return HandlePermanentError(), r.Status().Update(ctx, sp)
+    }
+
+    return ctrl.Result{}, nil
+}
+```
+```
+
+---
+
+### **Days 7-8: Integration**
+
+#### **Day 7: Reconciler**
+
+**File**: `internal/controller/signalprocessing/reconciler.go`
+
+```go
+// SignalProcessingReconciler reconciles SignalProcessing CRDs
+type SignalProcessingReconciler struct {
+    client.Client
+    Scheme              *runtime.Scheme
+    Logger              *zap.Logger
+    K8sEnricher         *enricher.K8sEnricher
+    EnvironmentClassifier *classifier.EnvironmentClassifier
+    PriorityEngine      *classifier.PriorityEngine
+    BusinessClassifier  *classifier.BusinessClassifier
+    AuditClient         *audit.Client
+    Metrics             *metrics.Metrics
+}
+
+// RBAC: Own CRD - SignalProcessing (created by RemediationOrchestrator)
+//+kubebuilder:rbac:groups=kubernaut.io,resources=signalprocessings,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=kubernaut.io,resources=signalprocessings/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=kubernaut.io,resources=signalprocessings/finalizers,verbs=update
+
+// RBAC: K8s resources for enrichment (read-only)
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+//+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch
+
+// RBAC: ConfigMaps for Rego policy hot-reload
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+
+func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    log := r.Logger.With(zap.String("signalprocessing", req.NamespacedName.String()))
+
+    // 1. Fetch SignalProcessing CRD
+    sp := &signalprocessingv1alpha1.SignalProcessing{}
+    if err := r.Get(ctx, req.NamespacedName, sp); err != nil {
+        return ctrl.Result{}, client.IgnoreNotFound(err)
+    }
+
+    // 2. Check terminal state
+    if sp.Status.Phase == signalprocessingv1alpha1.PhaseComplete ||
+       sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
+        return ctrl.Result{}, nil
+    }
+
+    // 3. Phase state machine
+    switch sp.Status.Phase {
+    case "", signalprocessingv1alpha1.PhasePending:
+        return r.handlePendingPhase(ctx, sp)
+    case signalprocessingv1alpha1.PhaseEnriching:
+        return r.handleEnrichingPhase(ctx, sp)
+    case signalprocessingv1alpha1.PhaseClassifying:
+        return r.handleClassifyingPhase(ctx, sp)
+    case signalprocessingv1alpha1.PhaseCategorizing:
+        return r.handleCategorizingPhase(ctx, sp)
+    default:
+        log.Error("Unknown phase", zap.String("phase", string(sp.Status.Phase)))
+        return ctrl.Result{}, nil
+    }
+}
+
+func (r *SignalProcessingReconciler) handleEnrichingPhase(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) (ctrl.Result, error) {
+    // K8s context enrichment
+    k8sCtx, err := r.K8sEnricher.Enrich(ctx, &sp.Spec.Signal)
+    if err != nil {
+        return r.handleError(ctx, sp, err)
+    }
+
+    // Update status
+    sp.Status.KubernetesContext = k8sCtx
+    sp.Status.Phase = signalprocessingv1alpha1.PhaseClassifying
+
+    if err := r.Status().Update(ctx, sp); err != nil {
+        return ctrl.Result{}, err
+    }
+
+    return ctrl.Result{Requeue: true}, nil
+}
+```
+
+#### **Day 8: Metrics and Audit**
+
+**BR Coverage**: BR-SP-090 (Categorization Audit Trail)
+
+**File**: `pkg/signalprocessing/audit/client.go`
+
+**Pattern**: Fire-and-forget with buffered writes (ADR-038)
+
+```go
+package audit
+
+import (
+    "context"
+
+    "go.uber.org/zap"
+
+    "github.com/jordigilh/kubernaut/pkg/audit" // Shared audit library (ADR-038)
+    signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+// Client wraps the shared audit store for Signal Processing events.
+// ADR-038: Uses fire-and-forget pattern with buffered writes (<1ms overhead).
+type Client struct {
+    store  audit.AuditStore // Shared library from pkg/audit/
+    logger *zap.Logger
+}
+
+// NewClient creates an audit client using the shared buffered audit store.
+func NewClient(store audit.AuditStore, logger *zap.Logger) *Client {
+    return &Client{
+        store:  store,
+        logger: logger,
+    }
+}
+
+// WriteCategorizationAudit writes categorization decisions using fire-and-forget pattern.
+// ADR-034: signalprocessing.categorization.completed event
+// ADR-038: Non-blocking, returns immediately (<1ms), event buffered for async write
+func (c *Client) WriteCategorizationAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) {
+    event := audit.Event{
+        Version:       "1.0",
+        Service:       "signalprocessing",
+        EventType:     "signalprocessing.categorization.completed",
+        EventCategory: "categorization",
+        EventAction:   "categorized",
+        EventOutcome:  "success",
+        CorrelationID: sp.Spec.RemediationRequestRef.Name,
+        ResourceType:  "SignalProcessing",
+        ResourceID:    sp.Name,
+        EventData: map[string]interface{}{
+            "environment": sp.Status.EnvironmentClassification,
+            "priority":    sp.Status.PriorityAssignment,
+            "business":    sp.Status.BusinessClassification,
+        },
+    }
+
+    // Fire-and-forget: Returns immediately, event added to buffer
+    // Background worker flushes buffer to Data Storage Service asynchronously
+    // Business logic NEVER waits for audit writes (ADR-038)
+    if err := c.store.StoreAudit(ctx, event); err != nil {
+        // Log and continue - audit failures don't block business operations
+        c.logger.Warn("audit event buffering failed",
+            zap.Error(err),
+            zap.String("correlation_id", sp.Spec.RemediationRequestRef.Name),
+        )
+    }
+    // Returns immediately - no wait for actual write
+}
+
+// WriteEnrichmentAudit writes enrichment completion events.
+// ADR-034: signalprocessing.enrichment.completed event
+func (c *Client) WriteEnrichmentAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) {
+    event := audit.Event{
+        Version:       "1.0",
+        Service:       "signalprocessing",
+        EventType:     "signalprocessing.enrichment.completed",
+        EventCategory: "enrichment",
+        EventAction:   "enriched",
+        EventOutcome:  "success",
+        CorrelationID: sp.Spec.RemediationRequestRef.Name,
+        ResourceType:  "SignalProcessing",
+        ResourceID:    sp.Name,
+        EventData: map[string]interface{}{
+            "k8s_context": sp.Status.KubernetesContext != nil,
+        },
+    }
+
+    // Fire-and-forget (ADR-038)
+    if err := c.store.StoreAudit(ctx, event); err != nil {
+        c.logger.Warn("audit event buffering failed", zap.Error(err))
+    }
+}
+```
+
+**Key ADR-038 Principles**:
+- ✅ **Returns immediately** (<1ms) - no wait for HTTP response
+- ✅ **Event buffered** - added to in-memory buffer
+- ✅ **Background worker** - flushes buffer asynchronously
+- ✅ **Business never waits** - reconciliation continues regardless of audit
+- ✅ **Graceful degradation** - audit failures logged, not propagated
+
+---
+
+#### 📊 **Metrics Cardinality Audit** (Day 8 EOD) ⭐ v1.12 NEW
+
+**⚠️ MANDATORY**: Audit all Prometheus metrics for high-cardinality label combinations per DD-005.
+
+**Target**: Keep total unique metric combinations < 1,000 (ideal) or < 5,000 (acceptable)
+
+**File**: `docs/services/crd-controllers/01-signalprocessing/implementation/METRICS_CARDINALITY_AUDIT.md`
+
+##### **Signal Processing Metrics Inventory**
+
+| Metric | Labels | Cardinality | Status |
+|--------|--------|-------------|--------|
+| `signalprocessing_reconciliation_total` | `phase`, `result` | **Low** (5×2=10) | ✅ SAFE |
+| `signalprocessing_reconciliation_duration_seconds` | `phase` | **Low** (5) | ✅ SAFE |
+| `signalprocessing_categorization_confidence` | (none) | **Low** (1) | ✅ SAFE |
+| `signalprocessing_enrichment_duration_seconds` | (none) | **Low** (1) | ✅ SAFE |
+| `signalprocessing_rego_evaluation_duration_seconds` | `policy` | **Low** (3) | ✅ SAFE |
+| `signalprocessing_rego_hot_reload_total` | `status` | **Low** (2) | ✅ SAFE |
+
+##### **Cardinality Analysis**
+
+| Label | Possible Values | Bounded? |
+|-------|-----------------|----------|
+| `phase` | `pending`, `enriching`, `categorizing`, `completed`, `failed` | ✅ Fixed (5 values) |
+| `result` | `success`, `error` | ✅ Fixed (2 values) |
+| `policy` | `priority`, `environment`, `business` | ✅ Fixed (3 values) |
+| `status` | `success`, `error` | ✅ Fixed (2 values) |
+
+**Total Combinations**: 10 + 5 + 1 + 1 + 3 + 2 = **22 unique metrics** ✅ EXCELLENT
+
+##### **Cardinality Protection Applied**
+
+- ✅ **No unbounded labels** (no user IDs, signal fingerprints, or dynamic values)
+- ✅ **Phase labels fixed** (enum-based, not string input)
+- ✅ **Policy labels fixed** (known set of policy names)
+- ✅ **No HTTP path metrics** (CRD controller, not HTTP service)
+
+##### **Audit Status**: ✅ **SAFE** (22 combinations << 1,000 threshold)
+
+---
+
+### **Days 9-10: Testing**
+
+#### **Defense-in-Depth Testing Strategy** (per `03-testing-strategy.mdc`)
+
+**Standard Methodology**: Unit → Integration → E2E
+
+**Reference**: Actual test counts from production services:
+- Gateway: **275 unit** + **143 integration** = 418 tests
+- Data Storage: **392 unit** + **160 integration** = 552 tests
+
+**Signal Processing Expected** (CRD Controller, medium complexity):
+- Unit Tests: **100-150** tests
+- Integration Tests: **50-80** tests
+- E2E Tests: **5-10** tests
+
+| Test Type | Expected Count | Purpose | Location |
+|-----------|----------------|---------|----------|
+| **Unit** | 100-150 | Component logic, edge cases, error handling | `test/unit/signalprocessing/` |
+| **Integration** | 50-80 | CRD reconciliation, real K8s API (envtest) | `test/integration/signalprocessing/` |
+| **E2E** | 5-10 | Full workflow validation | `test/e2e/signalprocessing/` |
+
+---
+
+#### ⚡ **Parallel Test Execution** (MANDATORY)
+
+**Standard**: **4 concurrent processes** for all test tiers.
+
+**Configuration**:
+```bash
+# Unit tests - parallel execution
+go test -v -p 4 ./test/unit/signalprocessing/...
+ginkgo -p -procs=4 -v ./test/unit/signalprocessing/...
+
+# Integration tests - parallel with shared envtest
+go test -v -p 4 ./test/integration/signalprocessing/...
+ginkgo -p -procs=4 -v ./test/integration/signalprocessing/...
+
+# E2E tests - parallel with isolated namespaces
+go test -v -p 4 ./test/e2e/signalprocessing/...
+ginkgo -p -procs=4 -v ./test/e2e/signalprocessing/...
+
+# All tests at once
+ginkgo -p -procs=4 -v ./test/unit/signalprocessing/... ./test/integration/signalprocessing/... ./test/e2e/signalprocessing/...
+```
+
+**Parallel Test Requirements**:
+| Tier | Isolation Strategy | Shared Resources | Port Allocation |
+|------|-------------------|------------------|-----------------|
+| **Unit** | No shared state between tests | Mock/fake clients | N/A |
+| **Integration** | Unique namespace per test | Shared envtest API server | Per DD-TEST-001 |
+| **E2E** | Unique namespace per test | Shared cluster | Per DD-TEST-001 |
+
+---
+
+#### ⚠️ **K8s Client Mandate** (per ADR-004 - MANDATORY)
+
+**Reference**: [ADR-004: Fake Kubernetes Client](../../../architecture/decisions/ADR-004-fake-kubernetes-client.md)
+
+| Test Tier | MANDATORY Interface | Package |
+|-----------|---------------------|---------|
+| **Unit Tests** | **Fake K8s Client** | `sigs.k8s.io/controller-runtime/pkg/client/fake` |
+| **Integration** | Real K8s API (envtest) | `sigs.k8s.io/controller-runtime/pkg/client` |
+| **E2E** | Real K8s API (KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
+
+**❌ FORBIDDEN**: Custom `MockK8sClient` implementations
+**✅ APPROVED**: `fake.NewClientBuilder()` for all unit tests
+
+**Unit Test Setup Pattern**:
+```go
+package signalprocessing
+
+import (
+    "context"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
+)
+
+var _ = Describe("K8s Enricher", func() {
+    var (
+        ctx        context.Context
+        fakeClient client.Client  // ADR-004: Use fake client for unit tests
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+
+        // ADR-004: Create fake client with scheme
+        scheme := runtime.NewScheme()
+        Expect(kubernautv1alpha1.AddToScheme(scheme)).To(Succeed())
+        Expect(corev1.AddToScheme(scheme)).To(Succeed())
+
+        fakeClient = fake.NewClientBuilder().
+            WithScheme(scheme).
+            Build()
+    })
+
+    It("should enrich pod signal", func() {
+        // Use fakeClient for K8s operations
+        // NO custom MockK8sClient allowed
+    })
+})
+```
+
+---
+
+#### 🔄 **Retry Strategy Tests** (Unit Tests)
+
+**File**: `test/unit/signalprocessing/retry_test.go`
+
+```go
+package signalprocessing
+
+import (
+    "context"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    apierrors "k8s.io/apimachinery/pkg/api/errors"
+    "k8s.io/apimachinery/pkg/runtime/schema"
+
+    "github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
+)
+
+var _ = Describe("Retry Strategy", func() {
+    // TABLE-DRIVEN: Backoff calculation with jitter
+    DescribeTable("should calculate correct backoff",
+        func(attempt int, minBackoff, maxBackoff time.Duration) {
+            backoff := signalprocessing.CalculateBackoff(attempt)
+            Expect(backoff).To(BeNumerically(">=", minBackoff), "backoff too low for attempt %d", attempt)
+            Expect(backoff).To(BeNumerically("<=", maxBackoff), "backoff too high for attempt %d", attempt)
+        },
+        Entry("attempt 0 (first fail)", 0, 27*time.Second, 33*time.Second),
+        Entry("attempt 1", 1, 54*time.Second, 66*time.Second),
+        Entry("attempt 2", 2, 108*time.Second, 132*time.Second),
+        Entry("attempt 3", 3, 216*time.Second, 264*time.Second),
+        Entry("attempt 4 (cap)", 4, 432*time.Second, 528*time.Second),
+        Entry("attempt 10 (still capped)", 10, 432*time.Second, 528*time.Second),
+    )
+
+    // TABLE-DRIVEN: Error classification
+    DescribeTable("should classify errors correctly",
+        func(err error, expectedRetryable bool, description string) {
+            result := signalprocessing.IsRetryableError(err)
+            Expect(result).To(Equal(expectedRetryable), description)
+        },
+        Entry("context timeout is retryable", context.DeadlineExceeded, true, "timeouts should retry"),
+        Entry("K8s API 429 is retryable", apierrors.NewTooManyRequests("rate limited", 30), true, "rate limits should retry"),
+        Entry("K8s API 503 is retryable", apierrors.NewServiceUnavailable("unavailable"), true, "503 should retry"),
+        Entry("K8s API 500 is retryable", apierrors.NewInternalError(nil), true, "500 should retry"),
+        Entry("K8s API 404 is permanent", apierrors.NewNotFound(schema.GroupResource{}, "test"), false, "404 should not retry"),
+        Entry("K8s API 400 is permanent", apierrors.NewBadRequest("invalid"), false, "400 should not retry"),
+        Entry("K8s API 401 is permanent", apierrors.NewUnauthorized("denied"), false, "401 should not retry"),
+        Entry("K8s API 403 is permanent", apierrors.NewForbidden(schema.GroupResource{}, "", nil), false, "403 should not retry"),
+    )
+
+    Context("max attempts enforcement", func() {
+        It("should allow retries up to max attempts (5)", func() {
+            for attempt := 0; attempt < 5; attempt++ {
+                shouldRetry := signalprocessing.ShouldRetry(attempt, context.DeadlineExceeded)
+                Expect(shouldRetry).To(BeTrue(), "attempt %d should be allowed", attempt)
+            }
+        })
+
+        It("should stop retrying after max attempts", func() {
+            shouldRetry := signalprocessing.ShouldRetry(5, context.DeadlineExceeded)
+            Expect(shouldRetry).To(BeFalse(), "should stop after 5 attempts")
+        })
+
+        It("should not retry permanent errors even on first attempt", func() {
+            err := apierrors.NewNotFound(schema.GroupResource{}, "test")
+            shouldRetry := signalprocessing.ShouldRetry(0, err)
+            Expect(shouldRetry).To(BeFalse(), "permanent errors should not retry")
+        })
+    })
+})
+```
+
+---
+
+**Test Isolation Pattern** (Required for Integration/E2E):
+```go
+package signalprocessing
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/google/uuid"
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    corev1 "k8s.io/api/core/v1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+var _ = Describe("SignalProcessing Controller", func() {
+    var (
+        ctx           context.Context
+        testNamespace string
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+        // Unique namespace enables parallel execution (4 concurrent tests)
+        testNamespace = fmt.Sprintf("test-sp-%s", uuid.New().String()[:8])
+        Expect(k8sClient.Create(ctx, &corev1.Namespace{
+            ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+        })).To(Succeed())
+    })
+
+    AfterEach(func() {
+        // Cleanup after test
+        Expect(k8sClient.Delete(ctx, &corev1.Namespace{
+            ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+        })).To(Succeed())
+    })
+
+    It("should process signal successfully", func() {
+        // Test uses unique namespace - safe for parallel execution
+    })
+})
+```
+
+**⚠️ Parallel Test Anti-Patterns** (AVOID):
+- ❌ Hardcoded namespace names (`test-namespace`, `default`)
+- ❌ Shared mutable state between tests (global vars modified during tests)
+- ❌ Fixed port numbers without DD-TEST-001 allocation
+- ❌ Tests that depend on execution order
+- ❌ Tests that modify cluster-scoped resources
+
+---
+
+**Test Scenarios by Component** (Defined Upfront per TDD):
+
+---
+
+##### **K8s Enricher** (`test/unit/signalprocessing/enricher_test.go`) - 25-33 tests
+
+**Happy Path (5-8 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| E-HP-01 | Pod signal enrichment | Signal with Pod resource | Returns Pod, Node, OwnerReference data |
+| E-HP-02 | Deployment signal enrichment | Signal with Deployment resource | Returns Namespace, Deployment, ReplicaSet data |
+| E-HP-03 | StatefulSet signal enrichment | Signal with StatefulSet resource | Returns Namespace, StatefulSet, PVC data |
+| E-HP-04 | Service signal enrichment | Signal with Service resource | Returns Namespace, Service, Endpoints data |
+| E-HP-05 | Node signal enrichment | Signal with Node resource | Returns Node details only |
+| E-HP-06 | Standard depth fetching | Any valid signal | Fetches exactly standard depth objects (DD-017) |
+
+**Edge Cases (12-15 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| E-EC-01 | Pod without owner | Orphan Pod signal | Returns Pod + Node, empty OwnerReference |
+| E-EC-02 | Pod on deleted node | Pod signal, node doesn't exist | Returns Pod, Node=nil, continues without error |
+| E-EC-03 | Deployment with 0 replicas | Deployment signal, no pods | Returns Deployment, empty pod list |
+| E-EC-04 | Namespace not found | Signal in non-existent namespace | Returns partial context, logs warning |
+| E-EC-05 | Cross-namespace owner | Pod owned by cluster-scoped resource | Returns Pod + cluster-scoped owner |
+| E-EC-06 | Multiple owner references | Pod with multiple owners | Returns first owner (controller=true) |
+| E-EC-07 | Resource name with special chars | Signal with `my-app_v2.0` name | Handles URL encoding correctly |
+| E-EC-08 | Very long resource name | 253-char resource name | Handles within K8s limits |
+| E-EC-09 | Resource in kube-system | Signal in kube-system namespace | Enriches normally (no special filtering) |
+| E-EC-10 | Empty labels on resource | Resource without any labels | Returns resource with empty Labels map |
+| E-EC-11 | Empty annotations on resource | Resource without annotations | Returns resource with empty Annotations map |
+| E-EC-12 | Resource being deleted | Resource with DeletionTimestamp set | Returns resource with deletion status |
+
+**Error Handling (8-10 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| E-ER-01 | K8s API timeout | Signal, API times out | Returns error with timeout code |
+| E-ER-02 | K8s API 403 forbidden | Signal, RBAC denies access | Returns error with forbidden code, logs RBAC hint |
+| E-ER-03 | K8s API 404 not found | Signal, resource deleted | Returns NotFound error, allows graceful handling |
+| E-ER-04 | K8s API 500 server error | Signal, API server error | Returns error with retry hint |
+| E-ER-05 | Invalid resource kind | Signal with unknown Kind | Returns validation error |
+| E-ER-06 | Empty signal resource | Signal with empty resource ref | Returns validation error |
+| E-ER-07 | Context cancelled | Signal, context cancelled mid-fetch | Returns context.Canceled error |
+| E-ER-08 | Rate limited by API | Signal, API returns 429 | Returns error with backoff hint |
+
+---
+
+##### **Environment Classifier** (`test/unit/signalprocessing/environment_classifier_test.go`) - 21-28 tests
+
+**Happy Path (5-8 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| EC-HP-01 | Production via namespace label | K8sContext with `environment: production` | Returns "production", confidence ≥0.95 |
+| EC-HP-02 | Staging via namespace label | K8sContext with `environment: staging` | Returns "staging", confidence ≥0.90 |
+| EC-HP-03 | Development via namespace label | K8sContext with `environment: development` | Returns "development", confidence ≥0.90 |
+| EC-HP-04 | Production via namespace name | Namespace "prod-payments" | Returns "production", confidence ≥0.85 |
+| EC-HP-05 | Staging via namespace name | Namespace "staging-api" | Returns "staging", confidence ≥0.80 |
+| EC-HP-06 | Custom environment via Rego | K8sContext matching custom Rego rule | Returns custom env, confidence from Rego |
+
+**Edge Cases (10-12 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| EC-EC-01 | Conflicting labels | `environment: prod` + `env: staging` | Uses primary label (`environment`), logs conflict |
+| EC-EC-02 | Partial match namespace name | Namespace "production-like-test" | Returns "unknown" (avoid false positive) |
+| EC-EC-03 | Case sensitivity | `Environment: PRODUCTION` | Normalizes to "production" |
+| EC-EC-04 | Empty K8sContext | No namespace data | Returns "unknown", confidence 0.0 |
+| EC-EC-05 | Nil namespace in context | K8sContext with namespace=nil | Returns "unknown", doesn't panic |
+| EC-EC-06 | Very long label value | 253-char environment label | Handles within K8s limits |
+| EC-EC-07 | Non-standard environment value | `environment: uat` | Returns "uat" as-is (customer-defined) |
+| EC-EC-08 | Numeric label value | `environment: 1` | Returns "1" as string environment |
+| EC-EC-09 | Multiple Rego rules match | Context matches 2 rules | Uses highest confidence rule |
+| EC-EC-10 | No Rego rules match | Context doesn't match any rule | Returns "unknown", confidence 0.0 |
+
+**Error Handling (6-8 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| EC-ER-01 | Rego policy syntax error | Malformed Rego policy | Returns error, logs policy issue |
+| EC-ER-02 | Rego policy timeout | Policy takes >5s to evaluate | Returns error with timeout |
+| EC-ER-03 | Rego policy runtime panic | Policy causes OPA panic | Returns error, doesn't crash service |
+| EC-ER-04 | ConfigMap mount missing | Rego policy ConfigMap not mounted | Returns error at startup |
+| EC-ER-05 | Invalid Rego output type | Rego returns number instead of string | Returns type validation error |
+| EC-ER-06 | Nil input to classifier | Classify(ctx, nil, nil) | Returns validation error, doesn't panic |
+
+---
+
+##### **Priority Engine** (`test/unit/signalprocessing/priority_engine_test.go`) - 21-28 tests
+
+**Happy Path (5-8 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| PE-HP-01 | P0 - Critical production | Production env, critical severity | Returns "P0", confidence ≥0.95 |
+| PE-HP-02 | P1 - High production | Production env, high severity | Returns "P1", confidence ≥0.90 |
+| PE-HP-03 | P2 - Medium production | Production env, medium severity | Returns "P2", confidence ≥0.85 |
+| PE-HP-04 | P3 - Staging critical | Staging env, critical severity | Returns "P3", confidence ≥0.90 |
+| PE-HP-05 | P4 - Development any | Development env, any severity | Returns "P4", confidence ≥0.85 |
+| PE-HP-06 | Custom priority via Rego | Matching custom Rego rule | Returns custom priority |
+
+**Edge Cases (10-12 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| PE-EC-01 | Unknown environment | Environment "unknown", critical severity | Returns "P2" (conservative default) |
+| PE-EC-02 | Unknown severity | Production env, unknown severity | Returns "P2" (conservative default) |
+| PE-EC-03 | Both unknown | Environment and severity unknown | Returns "P3" (middle ground) |
+| PE-EC-04 | Empty string environment | Environment "", critical | Treats as "unknown" |
+| PE-EC-05 | Empty string severity | Production env, severity "" | Treats as "unknown" |
+| PE-EC-06 | Case normalization | "PRODUCTION", "CRITICAL" | Normalizes before evaluation |
+| PE-EC-07 | Custom severity value | Production env, "urgent" | Handles customer-defined severity |
+| PE-EC-08 | Multiple Rego rules match | Context matches 2 priority rules | Uses highest priority (lowest P-number) |
+| PE-EC-09 | Boundary condition | Exactly on severity threshold | Rounds up to higher priority |
+| PE-EC-10 | Low confidence environment | Environment confidence <0.5 | Reduces priority confidence proportionally |
+
+**Error Handling (6-8 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| PE-ER-01 | Rego policy syntax error | Malformed priority Rego policy | Returns error, logs policy issue |
+| PE-ER-02 | Rego policy timeout | Policy takes >5s | Returns error with timeout |
+| PE-ER-03 | Nil environment classification | AssignPriority with nil env | Returns validation error |
+| PE-ER-04 | Invalid Rego output | Rego returns "PX" (invalid) | Returns validation error |
+| PE-ER-05 | Rego returns negative number | Rego returns P-1 | Returns validation error |
+| PE-ER-06 | Context cancelled | Context cancelled mid-evaluation | Returns context.Canceled |
+
+---
+
+##### **Business Classifier** (`test/unit/signalprocessing/business_classifier_test.go`) - 18-25 tests
+
+**Happy Path (5-8 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| BC-HP-01 | Payment service classification | Signal from payment-service pod | Returns business_domain="payments", criticality="high" |
+| BC-HP-02 | API gateway classification | Signal from api-gateway pod | Returns business_domain="platform", criticality="critical" |
+| BC-HP-03 | Background job classification | Signal from worker-job pod | Returns business_domain="processing", criticality="low" |
+| BC-HP-04 | Classification via labels | Pod with `team: checkout` label | Returns team="checkout" in context |
+| BC-HP-05 | Classification via namespace | Namespace "billing-prod" | Returns business_domain="billing" |
+| BC-HP-06 | Custom Rego business rules | Matching custom business Rego | Returns customer-defined classification |
+
+**Edge Cases (8-10 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| BC-EC-01 | No business context available | Generic pod with no business labels | Returns empty BusinessContext, confidence 0.0 |
+| BC-EC-02 | Conflicting business labels | `domain: payments` + `service: orders` | Uses primary label hierarchy |
+| BC-EC-03 | Unknown business domain | Pod in "misc" namespace | Returns business_domain="unknown" |
+| BC-EC-04 | Multiple team labels | `team: a` + `owner: b` | Returns both in context |
+| BC-EC-05 | Very long business label | 253-char business label | Handles within K8s limits |
+| BC-EC-06 | Non-ASCII business name | `team: 支付团队` | Handles UTF-8 correctly |
+| BC-EC-07 | Whitespace in labels | `team: " checkout "` | Trims whitespace |
+| BC-EC-08 | No Rego rules match | Context doesn't match any business rule | Returns minimal context |
+
+**Error Handling (5-7 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| BC-ER-01 | Rego policy syntax error | Malformed business Rego | Returns error, logs policy issue |
+| BC-ER-02 | Rego policy timeout | Policy takes >5s | Returns error with timeout |
+| BC-ER-03 | Nil K8sContext | Classify with nil context | Returns validation error |
+| BC-ER-04 | Invalid Rego output structure | Rego returns string instead of object | Returns type validation error |
+| BC-ER-05 | Context cancelled | Context cancelled mid-evaluation | Returns context.Canceled |
+
+---
+
+##### **Audit Client** (`test/unit/signalprocessing/audit_client_test.go`) - 14-20 tests
+
+**Happy Path (3-5 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| AC-HP-01 | Successful audit write | Valid categorization result | Fire-and-forget, no error returned |
+| AC-HP-02 | Audit buffering | Multiple rapid writes | All buffered, flushed in batch |
+| AC-HP-03 | Audit with full context | Complete SignalProcessing status | All fields serialized correctly |
+| AC-HP-04 | Async write verification | Write audit, check buffer | Audit in buffer within 1ms |
+
+**Edge Cases (6-8 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| AC-EC-01 | Large audit payload | 1MB audit data | Handles large payload |
+| AC-EC-02 | Unicode in audit data | Japanese/Chinese characters | Correctly encoded |
+| AC-EC-03 | Empty optional fields | Audit with nil BusinessContext | Writes with empty fields |
+| AC-EC-04 | Buffer at capacity | Buffer full (1000 items) | Oldest items flushed first |
+| AC-EC-05 | Flush interval trigger | Time-based flush | Flushes after configured interval |
+| AC-EC-06 | Special characters in IDs | Signal ID with `/` or `:` | Correctly escaped |
+
+**Error Handling (5-7 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| AC-ER-01 | Data Storage unavailable | Write, Data Storage down | Logs error, doesn't block business (ADR-038) |
+| AC-ER-02 | Data Storage timeout | Write, Data Storage slow | Timeout after configured period, logs warning |
+| AC-ER-03 | Data Storage 4xx error | Write, validation error | Logs error with response body |
+| AC-ER-04 | Data Storage 5xx error | Write, server error | Logs error, may retry based on config |
+| AC-ER-05 | Network partition | Write, network unreachable | Logs error, doesn't block business |
+| AC-ER-06 | Invalid audit data | Nil categorization result | Returns validation error |
+
+---
+
+##### **Reconciler** (`test/unit/signalprocessing/reconciler_test.go`) - 26-39 tests
+
+**Happy Path (8-12 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| R-HP-01 | Full happy path | Valid SignalProcessing CR | Status=Completed, all fields populated |
+| R-HP-02 | Phase: Pending → Enriching | New CR | Status.Phase="Enriching" |
+| R-HP-03 | Phase: Enriching → Classifying | Enriched CR | Status.Phase="Classifying" |
+| R-HP-04 | Phase: Classifying → Completed | Classified CR | Status.Phase="Completed" |
+| R-HP-05 | Requeue on transient error | API timeout during enrichment | Requeued with backoff |
+| R-HP-06 | No requeue on permanent error | Invalid signal (validation) | Status=Failed, no requeue |
+| R-HP-07 | Finalizer added | New CR | Finalizer present |
+| R-HP-08 | Finalizer cleanup | CR deleted | Finalizer removed after cleanup |
+| R-HP-09 | Metrics updated | Any reconciliation | Metrics recorded |
+| R-HP-10 | Audit written | Completed reconciliation | Audit sent to Data Storage |
+
+**Edge Cases (10-15 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| R-EC-01 | CR deleted during enrichment | CR deleted mid-reconcile | Graceful termination, no error |
+| R-EC-02 | CR modified during reconcile | CR updated mid-reconcile | Detects conflict, requeues |
+| R-EC-03 | Already completed CR | CR with Status=Completed | No-op, no requeue |
+| R-EC-04 | Already failed CR | CR with Status=Failed | No-op, no requeue |
+| R-EC-05 | Empty signal in spec | CR with empty Signal field | Status=Failed, validation error |
+| R-EC-06 | Unknown resource kind | Signal with Kind="Unknown" | Status=Failed, validation error |
+| R-EC-07 | Very old CR | CR created 24h ago | Still processes (no timeout) |
+| R-EC-08 | Concurrent reconciles | Same CR reconciled twice | Only one succeeds (optimistic locking) |
+| R-EC-09 | Owner reference present | CR with owner reference | Respects owner, no orphan cleanup |
+| R-EC-10 | No owner reference | Orphan CR | Still processes normally |
+| R-EC-11 | Namespace being deleted | CR in terminating namespace | Graceful handling |
+| R-EC-12 | Low confidence classification | Environment confidence <0.5 | Logs warning, continues |
+| R-EC-13 | All classifiers return unknown | No matching Rego rules | Status=Completed with unknowns |
+
+**Error Handling (8-12 tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| R-ER-01 | K8s API unavailable | CR, API server down | Requeue with exponential backoff |
+| R-ER-02 | Enricher fails | CR, enrichment error | Status=Failed, error in conditions |
+| R-ER-03 | Environment classifier fails | CR, classification error | Status=Failed, error in conditions |
+| R-ER-04 | Priority engine fails | CR, priority error | Status=Failed, error in conditions |
+| R-ER-05 | Business classifier fails | CR, business error | Status=Failed, error in conditions |
+| R-ER-06 | Audit write fails | CR, audit error | Logs warning, Status=Completed (ADR-038) |
+| R-ER-07 | Status update conflict | CR, concurrent update | Retries with fresh version |
+| R-ER-08 | Context timeout | CR, slow processing | Returns error, requeues |
+| R-ER-09 | Panic recovery | CR, internal panic | Recovers, logs stack trace, Status=Failed |
+| R-ER-10 | RBAC permission denied | CR, missing RBAC | Status=Failed, logs RBAC hint |
+
+---
+
+**Test Count Summary**:
+
+| Component | Happy Path | Edge Cases | Error Handling | **Total** |
+|-----------|------------|------------|----------------|-----------|
+| K8s Enricher | 6 | 12 | 8 | **26** |
+| Environment Classifier | 6 | 10 | 6 | **22** |
+| Priority Engine | 6 | 10 | 6 | **22** |
+| Business Classifier | 6 | 8 | 5 | **19** |
+| Audit Client | 4 | 6 | 6 | **16** |
+| Reconciler | 10 | 13 | 10 | **33** |
+| **Total** | **38** | **59** | **41** | **138** |
+
+**Key Principle**: Mock ONLY external dependencies (K8s API, Data Storage, LLM). Use REAL business logic (Enricher, Classifiers, Rego Engine).
+
+---
+
+#### **Day 9: Unit Tests (70%+ Coverage)** - FOUNDATION LAYER
+
+**Why Unit Tests First?**
+- Validates component logic before integration
+- Fast feedback loop during development
+- 70%+ of BRs covered at this layer
+- Foundation for integration and E2E tests
+
+**Unit Test Files**:
+
+**Test Files**:
+- `test/unit/signalprocessing/enricher_test.go`
+- `test/unit/signalprocessing/environment_classifier_test.go`
+- `test/unit/signalprocessing/priority_engine_test.go`
+- `test/unit/signalprocessing/business_classifier_test.go`
+- `test/unit/signalprocessing/audit_client_test.go`
+
+**Table-Driven Testing Patterns (Recommended)**:
+
+Why table-driven tests?
+- **38% code reduction** (from Gateway experience)
+- **25-40% faster** to add new test cases
+- **Better maintainability**: Change logic once, all entries benefit
+- **Clearer coverage**: Easy to see all scenarios at a glance
+
+**Pattern 1: Classification Success Scenarios**
+```go
+package signalprocessing
+
+import (
+    "context"
+    "testing"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    "github.com/jordigilh/kubernaut/pkg/signalprocessing"
+)
+
+var _ = Describe("BR-SP-003: EnvironmentClassifier", func() {
+    var (
+        classifier *signalprocessing.EnvironmentClassifier
+        ctx        context.Context
+    )
+
+    BeforeEach(func() {
+        classifier = signalprocessing.NewEnvironmentClassifier(policy, logger)
+        ctx = context.Background()
+    })
+
+    DescribeTable("should classify environment correctly based on labels",
+        func(namespaceLabels map[string]string, signalLabels map[string]string, expectedEnv string, expectedConfidence float64) {
+            k8sCtx := buildK8sContext(namespaceLabels)
+            signal := buildSignal(signalLabels)
+
+            result, err := classifier.Classify(ctx, k8sCtx, signal)
+
+            Expect(err).ToNot(HaveOccurred())
+            Expect(result.Environment).To(Equal(expectedEnv))
+            Expect(result.Confidence).To(BeNumerically(">=", expectedConfidence))
+        },
+        Entry("production via namespace label",
+            map[string]string{"environment": "production"},
+            nil,
+            "production", 0.95),
+        Entry("staging via signal label fallback",
+            nil,
+            map[string]string{"environment": "staging"},
+            "staging", 0.80),
+        Entry("unknown when no labels present",
+            nil,
+            nil,
+            "unknown", 0.0),
+        Entry("production namespace overrides signal staging",
+            map[string]string{"environment": "production"},
+            map[string]string{"environment": "staging"},
+            "production", 0.95),
+    )
+})
+```
+
+**Pattern 2: Error Scenarios**
+```go
+package signalprocessing
+
+import (
+    "context"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    corev1 "k8s.io/api/core/v1"
+    apierrors "k8s.io/apimachinery/pkg/api/errors"
+    "k8s.io/apimachinery/pkg/runtime/schema"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    "sigs.k8s.io/controller-runtime/pkg/client/fake"
+    "sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+    "github.com/jordigilh/kubernaut/pkg/signalprocessing"
+)
+
+var _ = Describe("BR-SP-002: K8sEnricher Error Handling", func() {
+    // ✅ CORRECT: Use fake.NewClientBuilder() with WithInterceptorFuncs() for error simulation
+    // ❌ FORBIDDEN: Custom MockK8sClient implementations (per ADR-004)
+
+    DescribeTable("should handle enrichment errors gracefully",
+        func(interceptor interceptor.Funcs, expectedError string) {
+            // Use fake client with interceptor for error injection
+            fakeClient := fake.NewClientBuilder().
+                WithScheme(scheme).
+                WithInterceptorFuncs(interceptor).
+                Build()
+
+            enricher := signalprocessing.NewK8sEnricher(fakeClient, logger)
+
+            result, err := enricher.EnrichSignal(ctx, signal)
+
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring(expectedError))
+            Expect(result).To(BeNil())
+        },
+        Entry("namespace not found",
+            interceptor.Funcs{
+                Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+                    if _, ok := obj.(*corev1.Namespace); ok {
+                        return apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, key.Name)
+                    }
+                    return client.Get(ctx, key, obj, opts...)
+                },
+            },
+            "namespace not found"),
+        Entry("pod access forbidden",
+            interceptor.Funcs{
+                Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+                    if _, ok := obj.(*corev1.Pod); ok {
+                        return apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, key.Name, nil)
+                    }
+                    return client.Get(ctx, key, obj, opts...)
+                },
+            },
+            "forbidden"),
+        Entry("API server timeout",
+            interceptor.Funcs{
+                Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+                    if _, ok := obj.(*corev1.Pod); ok {
+                        return context.DeadlineExceeded
+                    }
+                    return client.Get(ctx, key, obj, opts...)
+                },
+            },
+            "deadline exceeded"),
+    )
+})
+```
+
+**Pattern 3: Enrichment Depth Scenarios (DD-017)**
+```go
+package signalprocessing
+
+var _ = Describe("BR-SP-002: Signal-Driven Enrichment Depth", func() {
+    DescribeTable("should enrich based on signal resource kind (DD-017)",
+        func(resourceKind string, expectedContextFields []string, unexpectedContextFields []string) {
+            signal := &signalprocessingv1alpha1.SignalData{
+                Resource: signalprocessingv1alpha1.ResourceReference{
+                    Kind:      resourceKind,
+                    Name:      "test-resource",
+                    Namespace: "test-ns",
+                },
+            }
+
+            result, err := enricher.EnrichSignal(ctx, signal)
+
+            Expect(err).ToNot(HaveOccurred())
+            for _, field := range expectedContextFields {
+                Expect(result).To(HaveField(field, Not(BeNil())), "expected %s to be present", field)
+            }
+            for _, field := range unexpectedContextFields {
+                Expect(result).To(HaveField(field, BeNil()), "expected %s to be nil", field)
+            }
+        },
+        Entry("Pod signal fetches Namespace+Pod+Node+Owner",
+            "Pod",
+            []string{"Namespace", "Pod", "Node", "Owner"},
+            []string{}),
+        Entry("Deployment signal fetches Namespace+Workload only",
+            "Deployment",
+            []string{"Namespace", "Workload"},
+            []string{"Pod", "Node"}),
+        Entry("Node signal fetches Node only",
+            "Node",
+            []string{"Node"},
+            []string{"Namespace", "Pod", "Workload"}),
+    )
+})
+```
+
+**Pattern 4: Rego Policy Evaluation**
+```go
+package signalprocessing
+
+var _ = Describe("BR-SP-006: Rego Policy Evaluation", func() {
+    DescribeTable("should evaluate Rego policies correctly",
+        func(policyName string, inputData map[string]interface{}, expectedDecision string, expectedConfidence float64) {
+            engine := signalprocessing.NewRegoEngine(policies, logger)
+
+            result, err := engine.Evaluate(ctx, policyName, inputData)
+
+            Expect(err).ToNot(HaveOccurred())
+            Expect(result.Decision).To(Equal(expectedDecision))
+            Expect(result.Confidence).To(BeNumerically(">=", expectedConfidence))
+        },
+        Entry("production environment via namespace label",
+            "environment_classification",
+            map[string]interface{}{"namespace_labels": map[string]string{"env": "prod"}},
+            "production", 0.95),
+        Entry("critical priority for production outage",
+            "priority_assignment",
+            map[string]interface{}{"environment": "production", "signal_severity": "critical"},
+            "P0", 0.90),
+        Entry("pci business classification for payment namespace",
+            "business_classification",
+            map[string]interface{}{"namespace": "payment-processing"},
+            "pci-compliant", 0.85),
+    )
+})
+```
+
+**Best Practices for Table-Driven Tests**:
+1. Use descriptive Entry names that document the scenario
+2. Keep table logic simple and consistent
+3. Use traditional `It()` for truly unique scenarios
+4. Group related scenarios in same `DescribeTable`
+5. Add new scenarios by just adding `Entry()` (no code duplication)
+6. All entries must map to a BR-SP-XXX requirement
+
+#### **Day 10: Integration Tests (ENVTEST)**
+
+**Test Environment**: ENVTEST (confirmed)
+
+**File**: `test/integration/signalprocessing/reconciler_integration_test.go`
+
+```go
+package signalprocessing
+
+import (
+    "context"
+    "path/filepath"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/client-go/kubernetes/scheme"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    "sigs.k8s.io/controller-runtime/pkg/envtest"
+
+    signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+const (
+    timeout  = 30 * time.Second
+    interval = 250 * time.Millisecond
+)
+
+var _ = Describe("SignalProcessing Integration", func() {
+    var (
+        ctx       context.Context
+        cancel    context.CancelFunc
+        testEnv   *envtest.Environment
+        k8sClient client.Client
+    )
+
+    BeforeSuite(func() {
+        testEnv = &envtest.Environment{
+            CRDDirectoryPaths: []string{
+                filepath.Join("..", "..", "..", "config", "crd", "bases"),
+            },
+        }
+        cfg, err := testEnv.Start()
+        Expect(err).ToNot(HaveOccurred())
+
+        k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+        Expect(err).ToNot(HaveOccurred())
+    })
+
+    It("should process production pod signal and assign P0 priority", func() {
+        // BUSINESS OUTCOME: Production pod signals get highest priority
+        // Create SignalProcessing CRD with production namespace signal
+        sp := &signalprocessingv1alpha1.SignalProcessing{
+            ObjectMeta: metav1.ObjectMeta{
+                Name:      "test-signal-prod",
+                Namespace: "kubernaut-system",
+            },
+            Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+                Signal: signalprocessingv1alpha1.SignalData{
+                    Name:      "HighCPU",
+                    Severity:  "critical",
+                    Namespace: "production",
+                    Resource: signalprocessingv1alpha1.ResourceReference{
+                        Kind: "Pod",
+                        Name: "api-server-xyz",
+                    },
+                },
+            },
+        }
+        Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+        // Wait for completion - BUSINESS OUTCOME: Processing completes
+        Eventually(func() string {
+            var updated signalprocessingv1alpha1.SignalProcessing
+            k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)
+            return string(updated.Status.Phase)
+        }, timeout, interval).Should(Equal("Complete"))
+
+        // Verify BUSINESS OUTCOMES (not null-testing)
+        var final signalprocessingv1alpha1.SignalProcessing
+        Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+
+        // BUSINESS OUTCOME: Production namespace → "production" environment
+        Expect(final.Status.EnvironmentClassification.Environment).To(Equal("production"))
+        Expect(final.Status.EnvironmentClassification.Confidence).To(BeNumerically(">=", 0.8))
+
+        // BUSINESS OUTCOME: Production + Critical → P0 priority
+        Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
+        Expect(final.Status.PriorityAssignment.Confidence).To(BeNumerically(">=", 0.9))
+    })
+})
+```
+
+---
+
+### **Days 11-12: Finalization**
+
+#### **Day 11: E2E Tests and Documentation**
+
+**Reference**: [DD-TEST-001: Port Allocation Strategy](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
+
+**E2E Infrastructure Setup** (Kind NodePort - NO port-forward):
+
+**Step 1: Kind Config** (`test/infrastructure/kind-signalprocessing-config.yaml`)
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  # Metrics endpoint (controller doesn't have HTTP API)
+  - containerPort: 30182    # Signal Processing Metrics NodePort
+    hostPort: 9182          # localhost:9182/metrics
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+- role: worker
+```
+
+**Step 2: Controller Service** (`test/e2e/signalprocessing/deployment.yaml`)
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: signalprocessing-controller-metrics
+spec:
+  type: NodePort
+  selector:
+    app: signalprocessing-controller
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    nodePort: 30182  # From DD-TEST-001
+```
+
+**Step 3: Test Suite** (NodePort access - no port-forward)
+```go
+// All parallel processes use same NodePort URL
+metricsURL = "http://localhost:9182/metrics"
+
+// Wait for controller readiness via NodePort
+Eventually(func() error {
+    resp, err := http.Get(metricsURL)
+    if err != nil { return err }
+    defer resp.Body.Close()
+    return nil
+}, 60*time.Second, 2*time.Second).Should(Succeed())
+```
+
+**Port Allocation** (from DD-TEST-001):
+| Port | Purpose |
+|------|---------|
+| `30182` | Signal Processing Metrics NodePort |
+| `9182` | Host port for metrics access |
+
+**E2E Test Scenarios**: `test/e2e/signalprocessing/`
+- Happy path: RemediationRequest → SignalProcessing → Complete
+- Error recovery: Transient K8s API failure → Retry → Success
+- Timeout: Enrichment timeout → Failed with error message
+
+**Documentation Updates**:
+- Update `docs/services/crd-controllers/01-signalprocessing/` with implementation details
+- Create `BUILD.md`, `OPERATIONS.md`, `DEPLOYMENT.md` from DD-006 templates
+
+#### **Day 12: Gateway Code Migration (CRITICAL)**
+
+> **KEY PRINCIPLE**: We are MOVING code from Gateway to Signal Processing, not rewriting it.
+> The existing Gateway code is tested and working - reuse it!
+
+---
+
+### **📊 Gateway Migration Triage Summary (v1.11)**
+
+| Category | Source | Lines/Tests | Effort |
+|----------|--------|-------------|--------|
+| **Production Code** | `pkg/gateway/processing/classification.go` | 266 lines | 1h |
+| **Production Code** | `pkg/gateway/processing/priority.go` | 221 lines | 1h |
+| **Unit Tests** | `test/unit/gateway/processing/environment_classification_test.go` | 385 lines (~19 tests) | 1.5h |
+| **Unit Tests** | `test/unit/gateway/priority_classification_test.go` | 472 lines (~29 tests) | 1.5h |
+| **Rego Policy** | `config.app/gateway/policies/priority.rego` | 73 lines | 30m |
+| **Gateway Updates** | Remove classification from server, crd_creator, config, metrics | ~10 files | 2h |
+| **Integration Tests** | Update 5 Gateway integration test files | ~5 files | 1h |
+| **E2E Tests** | Update 1 Gateway E2E test file | 1 file | 30m |
+| **TOTAL** | | **~1,400 lines, ~48 tests** | **~8h (1 day)** |
+
+**Files to MOVE** (copy to Signal Processing, then delete from Gateway):
+- `pkg/gateway/processing/classification.go` → `pkg/signalprocessing/classifier/environment.go`
+- `pkg/gateway/processing/priority.go` → `pkg/signalprocessing/classifier/priority.go`
+- `test/unit/gateway/processing/environment_classification_test.go` → `test/unit/signalprocessing/environment_classifier_test.go`
+- `test/unit/gateway/priority_classification_test.go` → `test/unit/signalprocessing/priority_engine_test.go`
+- `config.app/gateway/policies/priority.rego` → `config.app/signalprocessing/policies/priority.rego`
+
+**Files to UPDATE in Gateway** (remove classification logic):
+- `pkg/gateway/server.go` - Remove classifier/priorityEngine initialization
+- `pkg/gateway/processing/crd_creator.go` - Pass-through raw values
+- `pkg/gateway/processing/crd_updater.go` - Remove classification updates
+- `pkg/gateway/config/config.go` - Remove classification config
+- `pkg/gateway/metrics/metrics.go` - Remove classification metrics
+- `test/integration/gateway/k8s_api_integration_test.go`
+- `test/integration/gateway/k8s_api_failure_test.go`
+- `test/integration/gateway/prometheus_adapter_integration_test.go`
+- `test/integration/gateway/helpers.go`
+- `test/e2e/gateway/09_signal_validation_test.go`
+
+---
+
+### **Step 1: Copy Gateway Categorization Code to Signal Processing**
+
+**Production Code to Copy** (~487 lines):
+
+| Source (Gateway) | Target (Signal Processing) | Lines |
+|------------------|----------------------------|-------|
+| `pkg/gateway/processing/classification.go` | `pkg/signalprocessing/classifier/environment.go` | 267 |
+| `pkg/gateway/processing/priority.go` | `pkg/signalprocessing/classifier/priority.go` | 222 |
+
+**Rego Policy to Copy**:
+
+| Source | Target | Lines |
+|--------|--------|-------|
+| `config.app/gateway/policies/priority.rego` | `config.app/signalprocessing/policies/priority.rego` | 74 |
+
+**Refactoring Notes**:
+- Change package from `processing` to `classifier`
+- Update Rego package path: `kubernaut.gateway.priority` → `kubernaut.signalprocessing.priority`
+- Replace `types.NormalizedSignal` with `signalprocessingv1alpha1.SignalData`
+- Add metrics integration (use Signal Processing metrics)
+
+---
+
+### **Step 2: Copy Tests (Adapt Package Paths)**
+
+**Unit Tests to Copy** (~860 lines, 34 test cases):
+
+| Source | Target | Tests |
+|--------|--------|-------|
+| `test/unit/gateway/processing/environment_classification_test.go` | `test/unit/signalprocessing/environment_classifier_test.go` | 15 |
+| `test/unit/gateway/priority_classification_test.go` | `test/unit/signalprocessing/priority_engine_test.go` | 19 |
+
+**Test Adaptations Needed**:
+```go
+// Change imports
+- "github.com/jordigilh/kubernaut/pkg/gateway/processing"
+- "github.com/jordigilh/kubernaut/pkg/gateway/types"
++ "github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
++ signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
+
+// Change type references
+- signal := &types.NormalizedSignal{Namespace: "test-ns"}
++ signal := &signalprocessingv1alpha1.SignalData{Namespace: "test-ns"}
+
+// Change struct references
+- classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
++ classifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+```
+
+**Integration Tests Affected** (in `test/integration/gateway/`):
+- Files referencing `EnvironmentClassifier` or `PriorityEngine`:
+  - `adapter_interaction_test.go`
+  - `k8s_api_integration_test.go`
+  - `k8s_api_interaction_test.go`
+  - `observability_test.go`
+  - `prometheus_adapter_integration_test.go`
+
+**E2E Tests Affected**:
+- `test/e2e/gateway/09_signal_validation_test.go`
+
+---
+
+### **Step 3: Remove from Gateway (After Signal Processing is Working)**
+
+**Files to DELETE from Gateway**:
+```bash
+# Production code
+rm pkg/gateway/processing/classification.go
+rm pkg/gateway/processing/priority.go
+
+# Tests (after migrating)
+rm test/unit/gateway/processing/environment_classification_test.go
+rm test/unit/gateway/priority_classification_test.go
+
+# Note: Rego policy can stay in gateway/policies/ if used as shared config
+# OR move to signalprocessing/policies/ if Signal Processing specific
+```
+
+**Files to MODIFY in Gateway**:
+1. `pkg/gateway/server.go` - Remove classifier initialization and usage
+2. `pkg/gateway/processing/crd_creator.go` - Pass-through signal values:
+```go
+// BEFORE (current - Gateway classifies):
+environment := g.classifier.Classify(ctx, signal.Namespace)
+priority := g.priorityEngine.Assign(ctx, signal.Severity, environment)
+
+// AFTER (pass-through - Signal Processing classifies):
+// Gateway does NOT classify - it passes raw signal data
+// Signal Processing will classify after K8s enrichment
+```
+
+**Gateway Tests to Update**:
+- Update integration tests to expect raw values (not classified)
+- Remove classification-specific test assertions
+
+---
+
+### **Step 4: Update Documentation**
+
+**Business Requirements to DEPRECATE** (in `docs/requirements/`):
+- BR-GATEWAY-051: Environment Classification (Primary) → **DEPRECATED, moved to BR-SP-051**
+- BR-GATEWAY-052: Environment Classification (Fallback) → **DEPRECATED, moved to BR-SP-052**
+- BR-GATEWAY-053: Environment Classification (Default) → **DEPRECATED, moved to BR-SP-053**
+- BR-GATEWAY-020: Priority Assignment (Rego) → **DEPRECATED, moved to BR-SP-070**
+- BR-GATEWAY-021: Priority Fallback → **DEPRECATED, moved to BR-SP-071**
+
+**Reference**: DD-CATEGORIZATION-001 for migration rationale
+
+---
+
+### **Verification Checklist**
+
+**Before Removing from Gateway**:
+- [ ] Signal Processing compiles with moved code
+- [ ] All 34 unit tests pass in Signal Processing location
+- [ ] Rego policy loads correctly in Signal Processing
+- [ ] Signal Processing reconciler uses new classifiers
+- [ ] Integration test: SignalProcessing CRD → Classified result
+
+**After Removing from Gateway**:
+- [ ] Gateway compiles without classification code
+- [ ] Gateway unit tests pass (classification tests removed)
+- [ ] Gateway integration tests pass (updated expectations)
+- [ ] E2E test: Gateway → RemediationOrchestrator → SignalProcessing → Classified result
+
+**Final Verification**:
+- [ ] No duplicate classification code in codebase
+- [ ] BR-GATEWAY-05x marked as DEPRECATED with migration reference
+- [ ] DD-CATEGORIZATION-001 updated with completion status
+
+---
+
+#### 🔄 **Rollback Plan** (Day 12 EOD) ⭐ v1.12 NEW
+
+**Purpose**: Document rollback procedures for Signal Processing deployment.
+
+**File**: `docs/services/crd-controllers/01-signalprocessing/implementation/ROLLBACK_PLAN.md`
+
+##### **Rollback Triggers**
+
+| Trigger | Threshold | Action |
+|---------|-----------|--------|
+| Error rate spike | >5% of reconciliations failing | Initiate rollback |
+| Latency degradation | P95 >10s (2x target) | Investigate, consider rollback |
+| CRD stuck in phase | >50% stuck in enriching/categorizing | Immediate rollback |
+| Gateway tests failing | Any regression after migration | Rollback Gateway changes |
+
+##### **Rollback Procedure**
+
+**Step 1: Verify Rollback Need** (5 min)
+- [ ] Confirm issue is related to Signal Processing deployment
+- [ ] Check `signalprocessing_reconciliation_total{result="error"}` metrics
+- [ ] Review controller logs for errors
+- [ ] Notify on-call team
+
+**Step 2: Execute Rollback** (10 min)
+
+```bash
+# Option A: Rollback Signal Processing controller
+kubectl rollout undo deployment/signalprocessing-controller -n kubernaut-system
+
+# Option B: Rollback to specific revision
+kubectl rollout undo deployment/signalprocessing-controller -n kubernaut-system --to-revision=X
+
+# Verify rollback
+kubectl rollout status deployment/signalprocessing-controller -n kubernaut-system
+```
+
+**Step 3: Gateway Rollback (if migration was applied)**
+
+```bash
+# If Gateway changes were deployed, rollback Gateway too
+kubectl rollout undo deployment/gateway -n kubernaut-system
+
+# Verify Gateway is using old classification code
+kubectl logs deployment/gateway -n kubernaut-system | grep "Classification"
+```
+
+**Step 4: Verify Rollback Success** (15 min)
+- [ ] Pods running previous version
+- [ ] Error rate returned to baseline
+- [ ] CRDs processing successfully
+- [ ] Gateway classification working (if rolled back)
+
+##### **Rollback Safeguards**
+
+| Safeguard | Implementation |
+|-----------|----------------|
+| **Feature flag** | `ENABLE_SIGNAL_PROCESSING_CATEGORIZATION=false` disables new categorization |
+| **Canary deployment** | Deploy to 10% of cluster first, monitor for 30 min |
+| **CRD version** | `v1alpha1` allows schema changes without migration |
+| **Dual-write period** | Keep Gateway classification active for 7 days post-migration |
+
+---
+
+#### 🔧 **Critical Issues Resolved** (Fill During Implementation) ⭐ v1.12 NEW
+
+**Purpose**: Document critical issues encountered during implementation.
+
+**File**: `docs/services/crd-controllers/01-signalprocessing/implementation/CRITICAL_ISSUES_RESOLVED.md`
+
+##### **Issue Summary** (Fill during implementation)
+
+| Issue # | Title | Severity | Resolution Time | Status |
+|---------|-------|----------|-----------------|--------|
+| 1 | [TBD] | Critical/High | Xh | ⬜ |
+| 2 | [TBD] | Critical/High | Xh | ⬜ |
+
+##### **Issue Template**
+
+```markdown
+### **Issue #N: [Issue Title]**
+
+**Severity**: Critical | High | Medium
+**Time to Resolve**: X hours
+**Impact**: [What was broken/blocked]
+
+**Problem**:
+[Describe the problem in detail]
+
+**Error Message**:
+\`\`\`
+[Paste actual error message]
+\`\`\`
+
+**Root Cause**:
+[Explain why this happened]
+
+**Solution**:
+[Describe the fix applied]
+
+**Lesson Learned**:
+> **[Key takeaway for future implementations]**
+
+**Prevention**:
+- [ ] Add to pre-implementation checklist
+- [ ] Create automated check
+- [ ] Update documentation
+```
+
+---
+
+#### 📋 **Pre-Day Validation Checklists** ⭐ v1.12 NEW
+
+##### **Pre-Day 7 Validation** (Before Integration Phase)
+
+| Category | Items | Status |
+|----------|-------|--------|
+| **Core Logic Complete** | Enricher, Environment Classifier, Priority Engine, Business Classifier | ⬜ |
+| **Unit Tests Written** | Tests exist for all 4 core components | ⬜ |
+| **Tests Passing** | All unit tests pass (0 failures) | ⬜ |
+| **Error Handling** | Error categories A-E implemented | ⬜ |
+| **DD-4 Decisions** | All pre-implementation decisions resolved | ⬜ |
+
+**Ready for Day 7**: ⬜ YES
+
+##### **Pre-Day 10 Validation** (Before E2E Testing)
+
+| Category | Items | Status |
+|----------|-------|--------|
+| **Integration Tests** | 50-80 integration tests written | ⬜ |
+| **Integration Passing** | All integration tests pass | ⬜ |
+| **BR Coverage** | All 12 BRs have at least 1 test | ⬜ |
+| **Metrics Working** | Prometheus endpoint returns metrics | ⬜ |
+| **Audit Working** | Audit events created in Data Storage | ⬜ |
+
+**Ready for Day 10**: ⬜ YES
+
+##### **Pre-Day 12 Validation** (Before Production Readiness)
+
+| Category | Items | Status |
+|----------|-------|--------|
+| **E2E Tests** | 5-10 E2E tests written | ⬜ |
+| **E2E Passing** | All E2E tests pass | ⬜ |
+| **Documentation** | All docs updated | ⬜ |
+| **Production Readiness** | Checklist 90%+ complete | ⬜ |
+| **Gateway Migration Plan** | Detailed migration steps documented | ⬜ |
+
+**Ready for Day 12**: ⬜ YES
+
+---
+
+## 📊 **Business Requirements Coverage Matrix**
+
+| BR ID | Description | Test File | Test Type | Coverage |
+|-------|-------------|-----------|-----------|----------|
+| **BR-SP-001** | K8s Context Enrichment | `enricher_test.go` | Unit + Integration | ✅ |
+| **BR-SP-002** | Business Classification | `business_classifier_test.go` | Unit | ✅ |
+| **BR-SP-003** | Recovery Context Integration | `reconciler_test.go` | Integration | ✅ |
+| **BR-SP-051** | Environment Classification (Primary) | `environment_classifier_test.go` | Unit | ✅ |
+| **BR-SP-052** | Environment Classification (Fallback) | `environment_classifier_test.go` | Unit | ✅ |
+| **BR-SP-053** | Environment Classification (Default) | `environment_classifier_test.go` | Unit | ✅ |
+| **BR-SP-070** | Priority Assignment (Rego) | `priority_engine_test.go` | Unit | ✅ |
+| **BR-SP-071** | Priority Fallback Matrix | `priority_engine_test.go` | Unit | ✅ |
+| **BR-SP-072** | Rego Hot-Reload | `hot_reloader_test.go` | Integration | ✅ |
+| **BR-SP-080** | Confidence Scoring | All classifier tests | Unit | ✅ |
+| **BR-SP-081** | Multi-dimensional Categorization | `business_classifier_test.go` | Unit | ✅ |
+| **BR-SP-090** | Categorization Audit Trail | `audit_client_test.go` | Unit + Integration | ✅ |
+
+**Coverage**: 12/12 BRs (100%)
+
+---
+
+## 🔧 **Key Files and Locations**
+
+### **Production Code**
+
+| File | Purpose |
+|------|---------|
+| `cmd/signalprocessing/main.go` | Main entry point |
+| `pkg/signalprocessing/config/config.go` | Configuration |
+| `pkg/signalprocessing/metrics/metrics.go` | Prometheus metrics |
+| `pkg/signalprocessing/enricher/k8s_enricher.go` | K8s context enrichment |
+| `pkg/signalprocessing/classifier/environment.go` | Environment classification |
+| `pkg/signalprocessing/classifier/priority.go` | Priority assignment |
+| `pkg/signalprocessing/classifier/business.go` | Business classification |
+| `pkg/signalprocessing/audit/client.go` | Audit client |
+| `internal/controller/signalprocessing/reconciler.go` | CRD controller |
+| `api/signalprocessing/v1alpha1/signalprocessing_types.go` | CRD types |
+
+### **Rego Policies**
+
+| File | Purpose |
+|------|---------|
+| `deploy/signalprocessing/policies/environment.rego` | Environment classification |
+| `deploy/signalprocessing/policies/priority.rego` | Priority assignment |
+| `deploy/signalprocessing/policies/business.rego` | Business classification |
+
+### **Tests**
+
+| Directory | Type | Count |
+|-----------|------|-------|
+| `test/unit/signalprocessing/` | Unit | ~20 |
+| `test/integration/signalprocessing/` | Integration (ENVTEST) | ~10 |
+| `test/e2e/signalprocessing/` | E2E | ~3 |
+
+---
+
+## ✅ **Production Readiness Checklist**
+
+### **Code Quality**
+- [ ] Zero lint errors (`golangci-lint run`)
+- [ ] Zero compilation errors
+- [ ] 70%+ unit test coverage
+- [ ] 50%+ integration test coverage
+- [ ] All BRs covered by tests
+
+### **CRD Controller**
+- [ ] Reconciliation loop handles all phases
+- [ ] Status updates work correctly
+- [ ] Finalizer implemented for cleanup
+- [ ] RBAC rules complete
+
+### **Observability**
+- [ ] Prometheus metrics exposed (DD-005 compliant)
+- [ ] Structured logging (Zap)
+- [ ] Health checks (/healthz, /readyz)
+- [ ] Audit trail to Data Storage Service
+
+### **Configuration**
+- [ ] ConfigMap for Rego policies
+- [ ] Environment variable overrides
+- [ ] Validation for all required fields
+- [ ] Hot-reload for Rego policies
+
+### **Gateway Migration**
+- [ ] Classification code removed from Gateway
+- [ ] Gateway tests updated
+- [ ] BRs marked as DEPRECATED
+- [ ] E2E validation complete
+
+---
+
+## 📈 **Confidence Assessment**
+
+### **Calculation**
+
+```
+Confidence = (Implementation Accuracy × 0.30) +
+             (Test Coverage × 0.25) +
+             (BR Coverage × 0.20) +
+             (Production Readiness × 0.15) +
+             (Documentation Quality × 0.10)
+```
+
+### **Target**
+
+| Component | Target | Weight |
+|-----------|--------|--------|
+| Implementation Accuracy | 95% | 30% |
+| Test Coverage | 70% | 25% |
+| BR Coverage | 100% | 20% |
+| Production Readiness | 90% | 15% |
+| Documentation Quality | 90% | 10% |
+
+**Overall Target Confidence**: 90%+
+
+---
+
+## ⚠️ **Common Pitfalls (Signal Processing Specific)**
+
+### ❌ **Don't Do This**
+
+| Anti-Pattern | Impact | Correct Approach |
+|--------------|--------|------------------|
+| **Run tests sequentially** | Slow feedback (10x slower) | Parallel execution: 4 concurrent procs |
+| **Test CRD struct fields exist** | Null-testing, zero value | Test controller behavior instead |
+| **Create `types_test.go` for API types** | Useless tests | Controller tests validate behavior |
+| **Use `http.send` in Rego policies** | Security + performance issues | K8s Enricher fetches data first |
+| **Configure enrichment depth** | SRE nightmare | Standard depth (DD-017) |
+| **Direct database access for audits** | ADR-032 violation | Data Storage Service REST API |
+| **Use "Alert" terminology** | ADR-015 violation | Use "Signal" everywhere |
+| **Copy existing `pkg/signalprocessing/`** | Legacy code risk | Build fresh with DD-006 |
+| **Hardcode Rego policies in code** | No hot-reload | ConfigMap-based policies |
+| **Skip BR coverage matrix** | Untested requirements | Map all tests to BR-SP-XXX |
+
+### ✅ **Do This Instead**
+
+| Best Practice | Benefit | Implementation |
+|---------------|---------|----------------|
+| **Parallel test execution** | 4x faster feedback | `ginkgo -p -procs=4` or `go test -p 4` |
+| **Table-driven tests** | 38% code reduction | `DescribeTable` with `Entry` patterns |
+| **Business outcome tests** | Real validation | Test controller reconciliation results |
+| **Standard enrichment depth** | Predictable, simple | Pod→Ns+Pod+Node+Owner (DD-017) |
+| **Rego ConfigMap hot-reload** | Policy updates without restart | fsnotify-based policy watcher |
+| **Daily status docs** | Clear handoffs | Days 1, 4, 7, 12 EOD templates |
+| **BR coverage matrix** | Complete validation | Map all 12 BRs to specific tests |
+| **envtest for integration** | Fast, reliable | No KIND/Podman complexity |
+
+### ⚠️ **Signal Processing Specific Gotchas**
+
+1. **Remediation Orchestrator Creates SignalProcessing CRD**
+   - Gateway does NOT create SignalProcessing directly
+   - Gateway creates RemediationRequest → RO creates SignalProcessing
+   - Correct RBAC: watch `kubernaut.io` group for `remediationrequests`
+
+2. **K8s Enricher vs Rego Policy Engine**
+   - K8s Enricher: Fetches raw K8s data (ADR-041)
+   - Rego Engine: Evaluates classification policies with pre-fetched data
+   - NO `http.send` in Rego (security, performance, testing)
+
+3. **Signal-Driven Enrichment (DD-017)**
+   - Pod signals: Fetch Namespace + Pod + Node + Owner
+   - Deployment signals: Fetch Namespace + Deployment
+   - Node signals: Fetch Node only
+   - NO configurable depth (avoid complexity)
+
+4. **Unified CRD API Group**
+   - All CRDs use `kubernaut.io/v1alpha1`
+   - NOT `signalprocessing.kubernaut.io` (legacy pattern)
+   - All RBAC rules must reference `kubernaut.io` group
+
+---
+
+## 📚 **Production Runbooks**
+
+> **IMPORTANT**: Create these runbooks in `docs/services/crd-controllers/01-signalprocessing/runbooks/` during Day 12.
+
+### **Runbook 1: High Classification Failure Rate** (>10%)
+
+**Symptoms**:
+- `signalprocessing_reconciliation_total{result="failed"}` spike
+- Multiple `SignalProcessing` CRDs stuck in `Failed` phase
+- Increased error logs with `phase=classifying`
+
+**Investigation Steps**:
+```bash
+# 1. Check failed SignalProcessing CRDs
+kubectl get signalprocessings -A -o json | jq '.items[] | select(.status.phase=="Failed") | {name: .metadata.name, error: .status.conditions[-1].message}'
+
+# 2. Check Rego policy ConfigMap
+kubectl get configmap signalprocessing-rego-policies -n kubernaut-system -o yaml
+
+# 3. Check controller logs for policy errors
+kubectl logs -l app=signalprocessing-controller -n kubernaut-system --since=10m | grep -i "rego\|policy\|classify"
+
+# 4. Check K8s API availability
+kubectl get --raw /healthz
+```
+
+**Resolution**:
+1. If Rego policy syntax error → Fix ConfigMap, controller will hot-reload
+2. If K8s API unavailable → Wait for API recovery (transient)
+3. If RBAC issue → Update ClusterRole with missing permissions
+
+**Escalation**: If >20% failure rate for >10 minutes
+
+---
+
+### **Runbook 2: Stuck Signal Processing** (>5min in Enriching/Classifying)
+
+**Symptoms**:
+- `signalprocessing_phase_duration_seconds{phase="enriching"}` histogram shows >5m
+- SignalProcessing CRDs not transitioning to `Completed`
+- Controller reconcile queue growing
+
+**Investigation Steps**:
+```bash
+# 1. Find stuck CRDs
+kubectl get signalprocessings -A -o json | jq '.items[] | select(.status.phase=="Enriching" or .status.phase=="Classifying") | {name: .metadata.name, phase: .status.phase, since: .status.conditions[-1].lastTransitionTime}'
+
+# 2. Check controller reconcile rate
+curl -s localhost:9090/metrics | grep signalprocessing_reconciliation_duration
+
+# 3. Check K8s API latency
+kubectl get --raw /readyz?verbose
+
+# 4. Check controller memory/CPU
+kubectl top pod -l app=signalprocessing-controller -n kubernaut-system
+```
+
+**Resolution**:
+1. If K8s API slow → Check API server health, consider rate limit increase
+2. If controller OOM → Increase memory limits
+3. If ConfigMap mount missing → Verify Rego policy ConfigMap mount
+
+**Escalation**: If >10 stuck for >5 minutes
+
+---
+
+### **Runbook 3: Rego Policy Errors**
+
+**Symptoms**:
+- Events with `RegoPolicyError` on SignalProcessing CRDs
+- `signalprocessing_rego_policy_errors_total` increasing
+- Classification results show `environment=unknown`, `priority=unknown`
+
+**Investigation Steps**:
+```bash
+# 1. Check Rego policy ConfigMap syntax
+kubectl get configmap signalprocessing-rego-policies -n kubernaut-system -o jsonpath='{.data.environment\.rego}' | opa check -
+
+# 2. Validate policy with test input
+echo '{"namespace_labels": {"environment": "production"}}' | opa eval -d /tmp/env.rego -I 'data.signalprocessing.classify_environment'
+
+# 3. Check controller policy reload logs
+kubectl logs -l app=signalprocessing-controller -n kubernaut-system | grep -i "policy.*reload\|configmap.*watch"
+```
+
+**Resolution**:
+1. Fix Rego syntax in ConfigMap
+2. Test policy locally with OPA before applying
+3. Restart controller if hot-reload fails (rare)
+
+---
+
+## 🎯 **Edge Case Categories**
+
+> **Apply to**: Days 9-10 (Testing phase)
+
+### **Category 1: Rego Policy Hot-Reload During Evaluation**
+- **Scenario**: Policy ConfigMap updated while classification in progress
+- **Expected**: Current evaluation completes with old policy, next uses new
+- **Test**: Start long classification, update ConfigMap, verify next uses new policy
+
+### **Category 2: K8s API Rate Limiting**
+- **Scenario**: K8s Enricher hits API rate limits during high signal volume
+- **Expected**: Exponential backoff, eventual success
+- **Test**: Mock 429 responses, verify backoff behavior
+
+### **Category 3: Large Enrichment Payloads**
+- **Scenario**: Deployment with 100+ pods causes large K8s context
+- **Expected**: Enricher completes within timeout, no OOM
+- **Test**: Create deployment with high replica count, verify enrichment
+
+### **Category 4: Concurrent Classification Attempts**
+- **Scenario**: Same SignalProcessing reconciled by two controller replicas
+- **Expected**: Optimistic locking prevents duplicate work
+- **Test**: Simulate concurrent status updates, verify conflict handling
+
+### **Category 5: Partial K8s API Response**
+- **Scenario**: Namespace exists but Pod deleted during enrichment
+- **Expected**: Graceful degradation with partial context (confidence 0.5)
+- **Test**: Delete Pod mid-enrichment, verify partial result
+
+---
+
+## 📊 **Metrics Validation Commands**
+
+```bash
+# Start controller locally (for validation)
+go run ./cmd/signalprocessing/main.go \
+    --metrics-bind-address=:9090 \
+    --health-probe-bind-address=:8081
+
+# Verify metrics endpoint
+curl -s localhost:9090/metrics | grep signalprocessing_
+
+# Expected metrics:
+# signalprocessing_reconciliation_total{result="success",phase="completed"} 0
+# signalprocessing_reconciliation_duration_seconds_bucket{phase="enriching",le="1"} 0
+# signalprocessing_k8s_api_errors_total{error_type="timeout"} 0
+# signalprocessing_rego_evaluation_duration_seconds_bucket{policy="environment",le="0.1"} 0
+# signalprocessing_categorization_confidence{type="environment"} 0
+# signalprocessing_audit_write_total{status="success"} 0
+
+# Verify health endpoints
+curl -s localhost:8081/healthz  # Should return 200
+curl -s localhost:8081/readyz   # Should return 200
+
+# Create test SignalProcessing CRD
+kubectl apply -f config/samples/signalprocessing_v1alpha1_signalprocessing.yaml
+
+# Verify reconciliation metric increments
+watch -n 1 'curl -s localhost:9090/metrics | grep signalprocessing_reconciliation_total'
+```
+
+---
+
+## 🚧 **Blockers Section**
+
+> **Status**: Updated during implementation. Track any blocking issues here.
+
+| ID | Description | Status | Owner | Resolution Date |
+|----|-------------|--------|-------|-----------------|
+| _None at start_ | | | | |
+
+**Blocker Template**:
+```markdown
+| B-001 | [Description] | 🔴 Blocked / 🟡 In Progress / ✅ Resolved | [Name] | [Date] |
+```
+
+---
+
+## 📝 **Lessons Learned** (Fill During Implementation)
+
+> **Update after each phase completion**
+
+### **What Worked Well**
+1. _[To be filled during Day 4 review]_
+2. _[To be filled during Day 7 review]_
+3. _[To be filled during Day 12 review]_
+
+### **Technical Wins**
+1. _[To be filled]_
+2. _[To be filled]_
+
+### **Challenges Overcome**
+1. _[To be filled]_
+2. _[To be filled]_
+
+---
+
+## 🔧 **Technical Debt** (Fill During Implementation)
+
+> **Track items to address post-V1**
+
+### **Minor Issues (Non-Blocking)**
+1. _[To be identified during implementation]_
+
+### **Future Enhancements (Post-V1)**
+1. Configurable Rego policy location (currently hardcoded ConfigMap name)
+2. Multi-tenant policy support (namespace-scoped rules)
+3. Classification audit dashboard (Grafana)
+4. Rego policy versioning and rollback
+
+---
+
+## 🤝 **Team Handoff Notes** (Fill Day 12)
+
+### **Key Files to Review**
+1. `api/kubernaut.io/v1alpha1/signalprocessing_types.go` - CRD definition
+2. `internal/controller/signalprocessing/reconciler.go` - Main reconciliation logic
+3. `pkg/signalprocessing/enricher/k8s_enricher.go` - K8s context enrichment
+4. `pkg/signalprocessing/classifier/*.go` - Rego-based classifiers
+5. `pkg/signalprocessing/rego/engine.go` - OPA policy engine
+6. `docs/.../ERROR_HANDLING_PHILOSOPHY.md` - Error handling guide
+
+### **Running Locally**
+```bash
+# Terminal 1: Start KIND cluster with CRDs
+make kind-create
+make install
+
+# Terminal 2: Start controller
+make run-signalprocessing
+
+# Terminal 3: Create test resources
+kubectl apply -f config/samples/signalprocessing_v1alpha1_signalprocessing.yaml
+kubectl get signalprocessings -w
+
+# Terminal 4: Watch logs
+kubectl logs -f -l app=signalprocessing-controller -n kubernaut-system
+```
+
+### **Debugging Tips**
+```bash
+# Watch SignalProcessing CRD status changes
+kubectl get signalprocessings -A -w -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,ENV:.status.environmentClassification.environment,PRIORITY:.status.priorityAssignment.priority
+
+# Check Rego policy loaded correctly
+kubectl logs -l app=signalprocessing-controller -n kubernaut-system | grep -i "policy.*loaded\|rego.*ready"
+
+# Force re-reconciliation
+kubectl annotate signalprocessing <name> force-reconcile=$(date +%s) --overwrite
+
+# Check controller leader election status
+kubectl get lease signalprocessing-controller-leader -n kubernaut-system -o yaml
+```
+
+---
+
+## ✅ **Success Criteria**
+
+### **Completion Checklist**
+
+#### **Functional Validation**
+- [ ] All 12 BRs covered by tests (BR-SP-001 through BR-SP-012)
+- [ ] K8s Enricher correctly enriches Pod, Deployment, and Node signals
+- [ ] Rego policy engine evaluates environment, priority, and business classification
+- [ ] Controller correctly updates SignalProcessing CRD status
+- [ ] ConfigMap hot-reload works for Rego policy updates
+- [ ] All phase transitions validated (Pending → Enriching → Classifying → Completed)
+
+#### **Quality Validation**
+- [ ] Unit test coverage ≥70%
+- [ ] Integration test coverage ≥50%
+- [ ] BR coverage = 100% (12/12 BRs)
+- [ ] No linter errors (`golangci-lint run ./...`)
+- [ ] All tests pass (`go test ./...`)
+- [ ] Confidence assessment ≥90%
+
+#### **Operational Validation**
+- [ ] Metrics exposed and validated (6 core metrics)
+- [ ] Health/ready endpoints functional
+- [ ] Structured logging with correlation IDs
+- [ ] Error handling with proper requeue strategy
+- [ ] RBAC rules correctly scoped
+
+#### **Documentation Validation**
+- [ ] EOD templates completed (Days 1, 4, 7, 12)
+- [ ] Production readiness report generated
+- [ ] Handoff summary completed
+- [ ] All design decisions documented and cross-referenced
+
+### **Definition of Done**
+
+| Criteria | Target | Evidence |
+|----------|--------|----------|
+| BR Coverage | 100% | BR coverage matrix with test links |
+| Unit Tests | 70%+ | `go tool cover` output |
+| Integration Tests | 50%+ | envtest results |
+| Build Success | 100% | `go build ./...` passes |
+| Lint Clean | 100% | `golangci-lint run ./...` passes |
+| Confidence | 90%+ | Evidence-based assessment |
+
+---
+
+## 🔧 **Makefile Targets**
+
+```makefile
+# Signal Processing Service Development Targets
+# Standard: 4 concurrent processes for all test tiers
+
+# Build
+.PHONY: build-signalprocessing
+build-signalprocessing:
+	go build -o bin/signalprocessing ./cmd/signalprocessing
+
+# Unit tests (parallel: 4 procs)
+.PHONY: test-unit-signalprocessing
+test-unit-signalprocessing:
+	go test -v -p 4 ./test/unit/signalprocessing/...
+
+# Integration tests (parallel: 4 procs)
+.PHONY: test-integration-signalprocessing
+test-integration-signalprocessing:
+	go test -v -p 4 ./test/integration/signalprocessing/...
+
+# E2E tests (parallel: 4 procs)
+.PHONY: test-e2e-signalprocessing
+test-e2e-signalprocessing:
+	go test -v -p 4 ./test/e2e/signalprocessing/... --tags=e2e
+
+# Ginkgo targets (preferred - parallel with 4 procs)
+.PHONY: test-unit-ginkgo-signalprocessing
+test-unit-ginkgo-signalprocessing:
+	ginkgo -p -procs=4 -v ./test/unit/signalprocessing/...
+
+.PHONY: test-integration-ginkgo-signalprocessing
+test-integration-ginkgo-signalprocessing:
+	ginkgo -p -procs=4 -v ./test/integration/signalprocessing/...
+
+.PHONY: test-e2e-ginkgo-signalprocessing
+test-e2e-ginkgo-signalprocessing:
+	ginkgo -p -procs=4 -v ./test/e2e/signalprocessing/...
+
+# All tests with parallel execution
+.PHONY: test-all-signalprocessing
+test-all-signalprocessing:
+	ginkgo -p -procs=4 -v ./test/unit/signalprocessing/... ./test/integration/signalprocessing/... ./test/e2e/signalprocessing/...
+
+# Coverage (parallel: 4 procs)
+.PHONY: coverage-signalprocessing
+coverage-signalprocessing:
+	go test -v -p 4 -coverprofile=coverage-signalprocessing.out ./test/unit/signalprocessing/...
+	go tool cover -html=coverage-signalprocessing.out -o coverage-signalprocessing.html
+	@echo "Coverage report: coverage-signalprocessing.html"
+
+# Lint
+.PHONY: lint-signalprocessing
+lint-signalprocessing:
+	golangci-lint run ./pkg/signalprocessing/... ./cmd/signalprocessing/... ./internal/controller/signalprocessing/...
+
+# CRD Generation
+.PHONY: generate-signalprocessing-crd
+generate-signalprocessing-crd:
+	controller-gen crd:trivialVersions=true paths="./api/signalprocessing/..." output:crd:artifacts:config=config/crd/bases
+
+# All validations (parallel)
+.PHONY: validate-signalprocessing
+validate-signalprocessing: lint-signalprocessing test-unit-signalprocessing test-integration-signalprocessing
+	@echo "✅ All validations passed for Signal Processing"
+
+# Development cycle (quick)
+.PHONY: dev-signalprocessing
+dev-signalprocessing: build-signalprocessing lint-signalprocessing test-signalprocessing
+	@echo "✅ Dev cycle complete"
+
+# Full validation (before commit)
+.PHONY: precommit-signalprocessing
+precommit-signalprocessing: validate-signalprocessing coverage-signalprocessing
+	@echo "✅ Ready for commit"
+```
+
+### **Daily Workflow**
+
+```bash
+# Morning: Build and quick test
+make dev-signalprocessing
+
+# After implementation: Full validation
+make validate-signalprocessing
+
+# Before commit: Coverage and lint
+make precommit-signalprocessing
+
+# CRD changes: Regenerate
+make generate-signalprocessing-crd
+```
+
+---
+
+## 📎 **Appendix A: EOD Documentation Templates**
+
+### **Day 1 EOD: `01-day1-complete.md`**
+
+```markdown
+# Signal Processing Service - Day 1 Complete
+
+**Date**: [YYYY-MM-DD]
+**Phase**: Foundation
+**Status**: ✅ Complete
+
+---
+
+## Package Structure Created
+
+- [ ] `cmd/signalprocessing/main.go` - Main entry point
+- [ ] `pkg/signalprocessing/config/config.go` - Configuration
+- [ ] `pkg/signalprocessing/metrics/metrics.go` - Prometheus metrics
+- [ ] `api/signalprocessing/v1alpha1/signalprocessing_types.go` - CRD types
+
+## Types and Interfaces Defined
+
+- [ ] `SignalProcessingSpec` struct
+- [ ] `SignalProcessingStatus` struct
+- [ ] `KubernetesContext` struct
+- [ ] `EnvironmentClassification` struct
+- [ ] `PriorityAssignment` struct
+- [ ] `BusinessClassification` struct
+
+## Build Validation
+
+```bash
+go build ./cmd/signalprocessing/...
+# Expected: Build successful with no errors
+```
+
+## Confidence Assessment
+
+| Component | Status | Confidence |
+|-----------|--------|------------|
+| Package structure | ✅ | 95% |
+| CRD types | ✅ | 90% |
+| Configuration | ✅ | 85% |
+| Build success | ✅ | 100% |
+
+**Day 1 Confidence**: 92%
+
+---
+
+## Blockers
+
+- None identified
+
+## Tomorrow's Focus
+
+- Day 2: CRD types test, DD-006 scaffolding complete
+```
+
+---
+
+### **Day 4 EOD: `02-day4-midpoint.md`**
+
+```markdown
+# Signal Processing Service - Day 4 Midpoint
+
+**Date**: [YYYY-MM-DD]
+**Phase**: Core Logic (Midpoint)
+**Status**: ✅ In Progress
+
+---
+
+## Components Completed (Days 1-4)
+
+### Foundation (Days 1-2)
+- [x] Package structure created
+- [x] CRD types defined and tested
+- [x] Configuration structure established
+- [x] DD-006 scaffolding applied
+
+### Core Logic (Days 3-4)
+- [x] K8s Enricher implemented
+- [x] K8s Enricher unit tests
+- [x] Environment Classifier (Rego) implemented
+- [x] Environment Rego policies created
+- [x] Environment Classifier unit tests
+
+## Integration Status
+
+| Integration Point | Status | Notes |
+|-------------------|--------|-------|
+| K8s API (via client-go) | ✅ Working | Cache implemented |
+| Rego Policy Engine | ✅ Working | Hot-reload pending |
+| Data Storage Service | ⏳ Pending | Day 8 |
+
+## Test Coverage So Far
+
+| Component | Unit Tests | Integration Tests | Coverage |
+|-----------|------------|-------------------|----------|
+| K8s Enricher | 8 | 0 | 75% |
+| Environment Classifier | 6 | 0 | 80% |
+| **Total** | 14 | 0 | ~77% |
+
+## Blockers
+
+- [Blocker 1 if any]
+- [Blocker 2 if any]
+
+## Confidence Assessment
+
+| Component | Status | Confidence |
+|-----------|--------|------------|
+| K8s Enricher | ✅ Complete | 90% |
+| Environment Classifier | ✅ Complete | 88% |
+| Integration readiness | 🟡 Partial | 75% |
+
+**Day 4 Confidence**: 85%
+
+---
+
+## Days 5-6 Focus
+
+- Day 5: Priority Engine (Rego)
+- Day 6: Business Classifier + Error Handling Philosophy
+```
+
+---
+
+### **Day 7 EOD: `03-day7-complete.md`**
+
+```markdown
+# Signal Processing Service - Day 7 Complete
+
+**Date**: [YYYY-MM-DD]
+**Phase**: Integration
+**Status**: ✅ Complete
+
+---
+
+## Core Implementation Complete
+
+### All Classifiers Implemented
+- [x] K8s Enricher with caching
+- [x] Environment Classifier (Rego)
+- [x] Priority Engine (Rego + hot-reload)
+- [x] Business Classifier (Rego)
+
+### Reconciler Implemented
+- [x] SignalProcessingReconciler
+- [x] Phase state machine (Pending → Enriching → Categorizing → Complete)
+- [x] Status updates
+- [x] Error handling with exponential backoff
+
+### Metrics Implemented (DD-005 Compliant)
+- [x] `signalprocessing_reconciliations_total`
+- [x] `signalprocessing_reconciliation_duration_seconds`
+- [x] `signalprocessing_enrichment_duration_seconds`
+- [x] `signalprocessing_classification_duration_seconds`
+- [x] `signalprocessing_errors_total`
+
+## Schema Validation (Checkpoint 2) ✅
+
+| CRD Field | Go Struct Field | Validated |
+|-----------|-----------------|-----------|
+| `spec.remediationRequestRef` | `RemediationRequestRef` | ✅ |
+| `spec.signal` | `Signal` | ✅ |
+| `status.phase` | `Phase` | ✅ |
+| `status.kubernetesContext` | `KubernetesContext` | ✅ |
+| `status.environmentClassification` | `EnvironmentClassification` | ✅ |
+| `status.priorityAssignment` | `PriorityAssignment` | ✅ |
+| `status.businessClassification` | `BusinessClassification` | ✅ |
+
+**Schema Validation**: 100% field alignment confirmed
+
+## Test Infrastructure Ready
+
+- [x] ENVTEST configured
+- [x] Ginkgo/Gomega test suites created
+- [x] Mock Data Storage client ready
+- [x] Test Rego policies ready
+
+## Confidence Assessment
+
+| Component | Status | Confidence |
+|-----------|--------|------------|
+| All classifiers | ✅ Complete | 92% |
+| Reconciler | ✅ Complete | 90% |
+| Metrics | ✅ Complete | 95% |
+| Schema validation | ✅ Complete | 100% |
+| Test infrastructure | ✅ Ready | 85% |
+
+**Day 7 Confidence**: 92%
+
+---
+
+## Days 8-10 Focus
+
+- Day 8: Audit client, metrics integration
+- Day 9: Integration tests (Checkpoint 1)
+- Day 10: Unit tests, BR coverage matrix (Checkpoint 3)
+```
+
+---
+
+## 📎 **Appendix B: Production Readiness Report Template**
+
+**File**: `docs/services/crd-controllers/01-signalprocessing/implementation/PRODUCTION_READINESS_REPORT.md`
+
+```markdown
+# Signal Processing Service - Production Readiness Assessment
+
+**Assessment Date**: [YYYY-MM-DD]
+**Assessment Status**: ✅ Production-Ready | 🚧 Partially Ready | ❌ Not Ready
+**Overall Score**: XX/119 (target 95+)
+
+---
+
+## 1. Functional Validation (Weight: 30%)
+
+### 1.1 Critical Path Testing
+- [ ] **Happy path** - Complete workflow from SignalProcessing CRD creation to Complete phase
+  - **Test**: `test/integration/signalprocessing/workflow_test.go`
+  - **Evidence**: Phases transition correctly (Pending → Enriching → Categorizing → Complete)
+  - **Score**: X/10
+
+- [ ] **Error recovery** - Transient K8s API failure with automatic retry
+  - **Test**: `test/integration/signalprocessing/failure_recovery_test.go`
+  - **Evidence**: Exponential backoff working, retries succeed after transient errors
+  - **Score**: X/10
+
+- [ ] **Permanent failure** - Failure after max retries
+  - **Test**: `test/integration/signalprocessing/failure_recovery_test.go`
+  - **Evidence**: Fails gracefully after 5 retry attempts, status.phase = Failed
+  - **Score**: X/10
+
+### 1.2 Edge Cases and Boundary Conditions
+- [ ] **Missing namespace** - Handles namespace not found
+  - **Test**: `test/unit/signalprocessing/enricher_test.go`
+  - **Score**: X/5
+
+- [ ] **Invalid Rego policy** - Handles policy syntax errors gracefully
+  - **Test**: `test/unit/signalprocessing/classifier_test.go`
+  - **Score**: X/5
+
+### Functional Validation Score: XX/35 (Target: 32+)
+
+---
+
+## 2. Operational Validation (Weight: 25%)
+
+### 2.1 Observability - Metrics
+- [ ] **10+ Prometheus metrics** defined and exported
+  - **File**: `pkg/signalprocessing/metrics/metrics.go`
+  - **Endpoint**: `:9090/metrics`
+  - **Score**: X/5
+
+- [ ] **Metrics recorded** in all reconciliation paths
+  - **Score**: X/5
+
+### 2.2 Observability - Logging
+- [ ] **Structured logging** using logr/zap throughout
+  - **Score**: X/4
+
+- [ ] **Log levels** appropriate
+  - **Score**: X/3
+
+### 2.3 Health Checks
+- [ ] **Liveness probe** - `GET /healthz`
+  - **Score**: X/3
+
+- [ ] **Readiness probe** - `GET /readyz`
+  - **Score**: X/3
+
+### 2.4 Graceful Shutdown
+- [ ] **Signal handling** - SIGTERM/SIGINT handled gracefully
+  - **Score**: X/3
+
+### Operational Validation Score: XX/29 (Target: 27+)
+
+---
+
+## 3. Security Validation (Weight: 15%)
+
+### 3.1 RBAC Permissions
+- [ ] **Minimal permissions** - Only required Kubernetes permissions
+  - **File**: `config/rbac/role.yaml`
+  - **Score**: X/5
+
+- [ ] **ServiceAccount** properly configured
+  - **Score**: X/3
+
+### 3.2 Secret Management
+- [ ] **No hardcoded secrets** in code
+  - **Score**: X/4
+
+### Security Validation Score: XX/15 (Target: 14+)
+
+---
+
+## 4. Performance Validation (Weight: 15%)
+
+### 4.1 Latency
+- [ ] **K8s Enrichment P95** < 2s
+  - **Score**: X/5
+
+- [ ] **Rego Evaluation P95** < 100ms
+  - **Score**: X/5
+
+### 4.2 Throughput
+- [ ] **Reconciliation rate** meets requirements
+  - **Score**: X/5
+
+### Performance Validation Score: XX/15 (Target: 13+)
+
+---
+
+## 5. Deployment Validation (Weight: 15%)
+
+### 5.1 Kubernetes Manifests
+- [ ] **Deployment manifest** complete
+  - **Score**: X/4
+
+- [ ] **ConfigMap** for Rego policies
+  - **Score**: X/3
+
+- [ ] **RBAC manifests** complete
+  - **Score**: X/3
+
+### 5.2 Probes Configuration
+- [ ] **Probes configured** with appropriate thresholds
+  - **Score**: X/5
+
+### Deployment Validation Score: XX/15 (Target: 14+)
+
+---
+
+## 6. Documentation Quality (Weight: 10% bonus)
+
+- [ ] **Service README** comprehensive
+  - **Score**: X/3
+
+- [ ] **Design Decisions** documented
+  - **Score**: X/2
+
+- [ ] **Testing Strategy** documented
+  - **Score**: X/2
+
+- [ ] **Troubleshooting Guide** included
+  - **Score**: X/3
+
+### Documentation Score: XX/10 (Bonus)
+
+---
+
+## Overall Production Readiness Assessment
+
+**Total Score**: XX/109
+**With Documentation Bonus**: XX/119
+
+**Production Readiness Level**:
+- **95-100%** (113+): ✅ **Production-Ready**
+- **85-94%** (101-112): 🚧 **Mostly Ready**
+- **75-84%** (89-100): ⚠️ **Needs Work**
+- **<75%** (<89): ❌ **Not Ready**
+
+**Current Level**: [Status]
+```
+
+---
+
+## 📎 **Appendix C: Handoff Summary Template**
+
+**File**: `docs/services/crd-controllers/01-signalprocessing/implementation/00-HANDOFF-SUMMARY.md`
+
+```markdown
+# Signal Processing Service - Implementation Handoff Summary
+
+**Service Name**: Signal Processing CRD Controller
+**Implementation Dates**: [Start Date] - [End Date]
+**Handoff Date**: [YYYY-MM-DD]
+**Document Status**: ✅ Complete
+
+---
+
+## Executive Summary
+
+**What Was Built**:
+The Signal Processing CRD Controller is a Kubernetes controller that enriches incoming signals with Kubernetes context (namespace, deployment, pod, node data) and performs multi-dimensional categorization using customer-configurable Rego policies. It processes signals created by the Remediation Orchestrator and prepares them for AI analysis.
+
+**Current Status**: ✅ Production-Ready
+
+**Production Readiness Score**: XX/119 (XX%)
+
+**Key Achievement**: Complete categorization ownership migrated from Gateway to Signal Processing with 100% BR coverage.
+
+---
+
+## Implementation Overview
+
+### Scope Accomplished
+✅ **Phase 1 (Days 1-2)**: Foundation
+- Package structure created with DD-006 scaffolding
+- CRD types defined (SignalProcessing, KubernetesContext, classifications)
+- Configuration structure established
+
+✅ **Phase 2 (Days 3-6)**: Core Logic
+- K8s Enricher with caching (ADR-041 compliant)
+- Environment Classifier (Rego policies)
+- Priority Engine (Rego + hot-reload)
+- Business Classifier (multi-dimensional)
+
+✅ **Phase 3 (Days 7-8)**: Integration
+- SignalProcessingReconciler (phase state machine)
+- Prometheus metrics (DD-005 compliant)
+- Audit client (ADR-032 compliant)
+
+✅ **Phase 4 (Days 9-10)**: Testing
+- Integration tests with ENVTEST
+- Unit tests (70%+ coverage)
+- BR coverage matrix (100% coverage)
+
+✅ **Phase 5 (Days 11-12)**: Finalization
+- E2E tests
+- Gateway migration (classification code removed)
+- Documentation complete
+
+---
+
+## Architecture Summary
+
+### Component Diagram
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ RemediationOrchestrator creates SignalProcessing CRD             │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ SignalProcessingReconciler                                        │
+│  ┌──────────────────────────────────────────────────────────┐    │
+│  │ K8s Enricher (Go) → Rego Policies (OPA)                  │    │
+│  │                                                          │    │
+│  │ 1. Fetch K8s objects (namespace, deployment, pod, node)  │    │
+│  │ 2. Environment Classifier → environment.rego             │    │
+│  │ 3. Priority Engine → priority.rego                       │    │
+│  │ 4. Business Classifier → business.rego                   │    │
+│  └──────────────────────────────────────────────────────────┘    │
+│                           │                                       │
+│                           ▼                                       │
+│  ┌──────────────────────────────────────────────────────────┐    │
+│  │ Update SignalProcessing status.phase = Complete          │    │
+│  │ Write audit event to Data Storage Service                │    │
+│  └──────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Business Requirements Coverage
+
+### Implemented Requirements
+- ✅ **BR-SP-001**: K8s Context Enrichment - Fully implemented
+- ✅ **BR-SP-002**: Business Classification - Fully implemented
+- ✅ **BR-SP-003**: Recovery Context Integration - Fully implemented
+- ✅ **BR-SP-051**: Environment Classification (Primary) - Fully implemented
+- ✅ **BR-SP-052**: Environment Classification (Fallback) - Fully implemented
+- ✅ **BR-SP-053**: Environment Classification (Default) - Fully implemented
+- ✅ **BR-SP-070**: Priority Assignment (Rego) - Fully implemented
+- ✅ **BR-SP-071**: Priority Fallback Matrix - Fully implemented
+- ✅ **BR-SP-072**: Rego Hot-Reload - Fully implemented
+- ✅ **BR-SP-080**: Confidence Scoring - Fully implemented
+- ✅ **BR-SP-081**: Multi-dimensional Categorization - Fully implemented
+- ✅ **BR-SP-090**: Categorization Audit Trail - Fully implemented
+
+**Total**: 12/12 business requirements implemented (100%)
+
+---
+
+## Key Design Decisions
+
+### ADR-041: Rego Policy Data Fetching Separation
+**Decision**: K8s Enricher (Go) fetches data, Rego policies evaluate classification
+**Rationale**: Security (no raw K8s API access for customer policies), performance (caching), separation of concerns
+**Impact**: All classifiers receive pre-fetched K8s context as input
+
+### DD-CATEGORIZATION-001: Gateway/Signal Processing Split
+**Decision**: Signal Processing owns ALL categorization
+**Rationale**: Richer K8s context available, simplifies Gateway
+**Impact**: Gateway code simplified, categorization tests moved
+
+---
+
+## Key Files and Locations
+
+### Production Code
+- **Main Entry Point**: `cmd/signalprocessing/main.go`
+- **Reconciler**: `internal/controller/signalprocessing/reconciler.go`
+- **K8s Enricher**: `pkg/signalprocessing/enricher/k8s_enricher.go`
+- **Classifiers**: `pkg/signalprocessing/classifier/*.go`
+- **CRD Types**: `api/signalprocessing/v1alpha1/signalprocessing_types.go`
+
+### Tests
+- **Integration**: `test/integration/signalprocessing/` (~10 tests)
+- **Unit**: `test/unit/signalprocessing/` (~20 tests)
+- **E2E**: `test/e2e/signalprocessing/` (~3 tests)
+
+### Configuration
+- **CRD Schema**: `config/crd/bases/kubernaut.io_signalprocessings.yaml`
+- **RBAC**: `config/rbac/signalprocessing_role.yaml`
+- **Rego Policies**: `deploy/signalprocessing/policies/*.rego`
+
+---
+
+## Testing Summary
+
+### Test Coverage Breakdown
+| Test Type | Count | Coverage | Confidence |
+|-----------|-------|----------|------------|
+| **Integration** | 10 | 50%+ | 85% |
+| **Unit** | 20 | 70%+ | 90% |
+| **E2E** | 3 | <10% | 95% |
+
+### Key Test Scenarios Covered
+✅ Happy path (Pending → Enriching → Categorizing → Complete)
+✅ Error recovery with exponential backoff
+✅ Permanent failure after max retries
+✅ Partial enrichment (graceful degradation)
+✅ Rego policy hot-reload
+✅ Audit event creation
+
+---
+
+## Deployment Guide
+
+### Quick Deployment
+```bash
+# Build
+make build-signalprocessing
+
+# Deploy to cluster
+kubectl apply -f config/crd/bases/
+kubectl apply -f config/rbac/
+kubectl apply -f deploy/signalprocessing/
+
+# Verify
+kubectl get pods -n kubernaut | grep signalprocessing
+```
+
+---
+
+## Operational Considerations
+
+### Monitoring
+**Key Metrics**:
+- `signalprocessing_reconciliations_total{status="success|failure"}`
+- `signalprocessing_reconciliation_duration_seconds` (P50, P95, P99)
+- `signalprocessing_enrichment_duration_seconds`
+- `signalprocessing_classification_duration_seconds`
+- `signalprocessing_errors_total{type="transient|permanent"}`
+
+### Alerting Recommendations
+- Error rate > 5% for 5 minutes → Page on-call
+- Enrichment latency P95 > 5s → Investigate
+- Rego evaluation failures → Check policy syntax
+
+---
+
+## Lessons Learned
+
+### What Went Well ✅
+1. **ADR-041 separation**: Clean architecture between data fetching and policy evaluation
+2. **Parallel test execution**: 4 concurrent processes cut test time by 75%
+3. **Rego hot-reload**: Zero-downtime policy updates
+4. **DD-006 scaffolding**: Consistent project structure
+
+### Challenges Encountered ⚠️
+1. **Rego debugging**: Policy evaluation errors can be cryptic
+   - **Resolution**: Added comprehensive logging for policy inputs/outputs
+   - **Lesson**: Always log Rego inputs for debugging
+
+---
+
+## Next Steps
+
+### Immediate (Week 1-2)
+- [ ] Monitor production deployment for 72 hours
+- [ ] Create Grafana dashboard for key metrics
+- [ ] Brief on-call team on troubleshooting
+
+### Short-Term (Month 1-3)
+- [ ] Performance optimization for high-volume signals
+- [ ] Additional Rego policy templates for common use cases
+
+---
+
+**Handoff Complete**: ✅ [Date]
+```
+
+---
+
+## 📚 **References**
+
+### **Design Decisions**
+
+**Universal Standards**:
+- [DD-005: Observability Standards](../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md) **MANDATORY** - metrics/logging
+- [DD-007: Kubernetes-Aware Graceful Shutdown](../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) **MANDATORY**
+- [DD-014: Binary Version Logging Standard](../../architecture/decisions/DD-014-binary-version-logging-standard.md) **MANDATORY**
+
+**CRD Controller Standards**:
+- [DD-006: Controller Scaffolding Strategy](../../architecture/decisions/DD-006-controller-scaffolding-strategy.md)
+- [DD-013: K8s Client Initialization Standard](../../architecture/decisions/DD-013-kubernetes-client-initialization-standard.md)
+
+**Testing Standards**:
+- [DD-TEST-001: Port Allocation Strategy](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) **MANDATORY for E2E**
+
+**Audit Standards**:
+- [DD-AUDIT-003: Service Audit Trace Requirements](../../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md)
+
+**Service-Specific**:
+- [DD-001: Recovery Context Enrichment](../../architecture/decisions/DD-001-recovery-context-enrichment.md)
+- [DD-CATEGORIZATION-001: Gateway vs Signal Processing Split](../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+- [DD-SIGNAL-PROCESSING-001: Service Rename](../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md)
+- [DD-017: K8s Enrichment Depth Strategy](../../architecture/decisions/DD-017-k8s-enrichment-depth-strategy.md)
+
+### **Architecture Decision Records**
+
+**Universal Standards**:
+- [ADR-015: Alert-to-Signal Naming Migration](../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) **MANDATORY** - use "Signal" terminology
+
+**CRD Controller Standards**:
+- [ADR-004: Fake Kubernetes Client](../../architecture/decisions/ADR-004-fake-kubernetes-client.md) **MANDATORY for unit tests**
+
+**Audit Standards**:
+- [ADR-032: Data Access Layer Isolation](../../architecture/decisions/ADR-032-data-access-layer-isolation.md) **MANDATORY** - use Data Storage API
+- [ADR-034: Unified Audit Table Design](../../architecture/decisions/ADR-034-unified-audit-table-design.md) - audit schema
+- [ADR-038: Async Buffered Audit Ingestion](../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md) - fire-and-forget
+
+**Service-Specific**:
+- [ADR-041: Rego Policy Data Fetching Separation](../../architecture/decisions/ADR-041-rego-policy-data-fetching-separation.md)
+
+### **Templates**
+- [DD-006 Controller Templates](../../templates/crd-controller-gap-remediation/)
+- [Service Implementation Plan Template](../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
+
+---
+
+**Document Status**: 📋 DRAFT
+**Version**: v1.11
+**Last Updated**: 2025-11-28
+**Author**: AI Assistant (Cursor)
+**Approved By**: Pending
+**Next Review**: After Day 0 approval
+

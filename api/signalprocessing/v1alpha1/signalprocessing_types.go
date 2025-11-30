@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package v1alpha1 contains API Schema definitions for the signalprocessing v1alpha1 API group
+// Design Decision: DD-SIGNAL-PROCESSING-001 - CRD Naming per ADR-015
+// Design Decision: DD-CONTRACT-002 - Structured types for AIAnalysis integration
 package v1alpha1
 
 import (
@@ -21,18 +24,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// RemediationProcessingSpec defines the desired state of RemediationProcessing.
+// SignalProcessingSpec defines the desired state of SignalProcessing.
 // Phase 1 Enhancement: Self-contained CRD pattern - contains all data from RemediationRequest
 // No external CRD reads required during reconciliation (performance, reliability, isolation)
-type RemediationProcessingSpec struct {
+type SignalProcessingSpec struct {
 	// ========================================
 	// PARENT REFERENCE (Audit/Lineage Only)
 	// ========================================
 	// Reference to parent RemediationRequest CRD for audit trail and lineage
-	// RemediationProcessor does NOT read RemediationRequest - all data is self-contained
+	// SignalProcessor does NOT read RemediationRequest - all data is self-contained
 	RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
 
 	// ========================================
@@ -172,40 +172,183 @@ type EnrichmentConfiguration struct {
 	EnableHistorical bool `json:"enableHistorical,omitempty"`
 }
 
-// RemediationProcessingStatus defines the observed state of RemediationProcessing.
-type RemediationProcessingStatus struct {
-	// Phase tracking
-	Phase string `json:"phase,omitempty"` // "pending", "enriching", "completed", "failed"
+// SignalProcessingStatus defines the observed state of SignalProcessing.
+// DD-CONTRACT-002: Structured types replace unstructured ContextData map[string]string
+type SignalProcessingStatus struct {
+	// Phase tracking: "pending", "enriching", "completed", "failed"
+	Phase string `json:"phase,omitempty"`
 
-	// Enriched context data from processing
-	ContextData map[string]string `json:"contextData,omitempty"`
+	// Structured enrichment results (DD-CONTRACT-002)
+	// Replaces ContextData map[string]string anti-pattern
+	EnrichmentResults EnrichmentResults `json:"enrichmentResults,omitempty"`
 
 	// Timestamps
 	StartTime   *metav1.Time `json:"startTime,omitempty"`
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 }
 
+// EnrichmentResults contains all enrichment data from SignalProcessing
+// DD-CONTRACT-002: Structured types for AIAnalysis integration
+type EnrichmentResults struct {
+	// Kubernetes resource context (from cluster API queries)
+	KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
+
+	// Historical signal patterns and resource usage
+	HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
+
+	// Overall enrichment quality score (0.0-1.0)
+	// 1.0 = all enrichments successful, 0.0 = all failed
+	EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
+}
+
+// KubernetesContext contains Kubernetes resource context (~8KB typical size)
+// DD-CONTRACT-002: Type-safe structured data for HolmesGPT-API integration
+type KubernetesContext struct {
+	// Namespace information
+	Namespace       string            `json:"namespace"`
+	NamespaceLabels map[string]string `json:"namespaceLabels,omitempty"`
+
+	// Pod context
+	PodDetails *PodDetails `json:"podDetails,omitempty"`
+
+	// Deployment/workload context
+	DeploymentDetails *DeploymentDetails `json:"deploymentDetails,omitempty"`
+
+	// Node context
+	NodeDetails *NodeDetails `json:"nodeDetails,omitempty"`
+
+	// Related resources (targeting data only)
+	RelatedServices   []ServiceSummary   `json:"relatedServices,omitempty"`
+	RelatedIngresses  []IngressSummary   `json:"relatedIngresses,omitempty"`
+	RelatedConfigMaps []ConfigMapSummary `json:"relatedConfigMaps,omitempty"`
+}
+
+// PodDetails contains pod-level context
+type PodDetails struct {
+	Name              string            `json:"name"`
+	Phase             string            `json:"phase"` // Running, Pending, Failed
+	Labels            map[string]string `json:"labels,omitempty"`
+	Annotations       map[string]string `json:"annotations,omitempty"`
+	Containers        []ContainerStatus `json:"containers,omitempty"`
+	RestartCount      int32             `json:"restartCount"`
+	CreationTimestamp string            `json:"creationTimestamp"`
+}
+
+// ContainerStatus contains container-level status
+type ContainerStatus struct {
+	Name         string `json:"name"`
+	Image        string `json:"image"`
+	Ready        bool   `json:"ready"`
+	RestartCount int32  `json:"restartCount"`
+	State        string `json:"state"` // running, waiting, terminated
+}
+
+// DeploymentDetails contains deployment-level context
+type DeploymentDetails struct {
+	Name              string            `json:"name"`
+	Replicas          int32             `json:"replicas"`
+	ReadyReplicas     int32             `json:"readyReplicas"`
+	AvailableReplicas int32             `json:"availableReplicas"`
+	Strategy          string            `json:"strategy"` // RollingUpdate, Recreate
+	Labels            map[string]string `json:"labels,omitempty"`
+}
+
+// NodeDetails contains node-level context
+type NodeDetails struct {
+	Name        string            `json:"name"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Capacity    ResourceList      `json:"capacity"`
+	Allocatable ResourceList      `json:"allocatable"`
+	Conditions  []NodeCondition   `json:"conditions,omitempty"`
+}
+
+// ResourceList contains resource quantities
+type ResourceList struct {
+	CPU    string `json:"cpu"`    // e.g., "4000m"
+	Memory string `json:"memory"` // e.g., "16Gi"
+}
+
+// NodeCondition contains node condition status
+type NodeCondition struct {
+	Type   string `json:"type"`   // Ready, MemoryPressure, DiskPressure
+	Status string `json:"status"` // True, False, Unknown
+}
+
+// ServiceSummary contains service targeting information
+type ServiceSummary struct {
+	Name      string        `json:"name"`
+	Type      string        `json:"type"` // ClusterIP, NodePort, LoadBalancer
+	ClusterIP string        `json:"clusterIP"`
+	Ports     []ServicePort `json:"ports,omitempty"`
+}
+
+// ServicePort contains service port configuration
+type ServicePort struct {
+	Name       string `json:"name"`
+	Port       int32  `json:"port"`
+	TargetPort string `json:"targetPort"`
+	Protocol   string `json:"protocol"` // TCP, UDP
+}
+
+// IngressSummary contains ingress targeting information
+type IngressSummary struct {
+	Name  string        `json:"name"`
+	Hosts []string      `json:"hosts"`
+	Rules []IngressRule `json:"rules,omitempty"`
+}
+
+// IngressRule contains ingress rule configuration
+type IngressRule struct {
+	Host string `json:"host"`
+	Path string `json:"path"`
+}
+
+// ConfigMapSummary contains ConfigMap targeting information
+type ConfigMapSummary struct {
+	Name string   `json:"name"`
+	Keys []string `json:"keys"` // ConfigMap key names (not full data)
+}
+
+// HistoricalContext contains historical signal patterns and resource usage
+// DD-CONTRACT-002: Structured historical data for AI analysis
+type HistoricalContext struct {
+	// Historical signal patterns
+	PreviousSignals     int     `json:"previousSignals"`
+	LastSignalTimestamp string  `json:"lastSignalTimestamp,omitempty"`
+	SignalFrequency     float64 `json:"signalFrequency"` // signals per hour
+
+	// Historical resource usage
+	AverageMemoryUsage string `json:"averageMemoryUsage,omitempty"` // e.g., "3.2Gi"
+	AverageCPUUsage    string `json:"averageCPUUsage,omitempty"`    // e.g., "1.5 cores"
+
+	// Historical success rate
+	LastSuccessfulResolution string  `json:"lastSuccessfulResolution,omitempty"`
+	ResolutionSuccessRate    float64 `json:"resolutionSuccessRate"` // 0.0-1.0
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// RemediationProcessing is the Schema for the remediationprocessings API.
-type RemediationProcessing struct {
+// SignalProcessing is the Schema for the signalprocessings API.
+// DD-SIGNAL-PROCESSING-001: Renamed from RemediationProcessing per ADR-015
+type SignalProcessing struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   RemediationProcessingSpec   `json:"spec,omitempty"`
-	Status RemediationProcessingStatus `json:"status,omitempty"`
+	Spec   SignalProcessingSpec   `json:"spec,omitempty"`
+	Status SignalProcessingStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// RemediationProcessingList contains a list of RemediationProcessing.
-type RemediationProcessingList struct {
+// SignalProcessingList contains a list of SignalProcessing.
+type SignalProcessingList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []RemediationProcessing `json:"items"`
+	Items           []SignalProcessing `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&RemediationProcessing{}, &RemediationProcessingList{})
+	SchemeBuilder.Register(&SignalProcessing{}, &SignalProcessingList{})
 }
+

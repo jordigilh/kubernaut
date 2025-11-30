@@ -31,7 +31,8 @@ type AIAnalysisSpec struct {
 
 	// Analysis input
 	SignalType    string            `json:"signalType"`
-	SignalContext map[string]string `json:"signalContext"` // Enriched context from RemediationProcessing
+	SignalContext map[string]string `json:"signalContext"` // Enriched context from SignalProcessing (legacy format)
+	// TODO: Migrate to EnrichmentResults per DD-CONTRACT-002 when SignalProcessing controller is updated
 
 	// Analysis configuration
 	// +kubebuilder:validation:Enum=openai;anthropic;local;holmesgpt
