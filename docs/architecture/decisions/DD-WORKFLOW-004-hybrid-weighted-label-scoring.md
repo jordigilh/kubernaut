@@ -4,7 +4,7 @@
 **Status**: ✅ **APPROVED**
 **Confidence**: 95%
 **Purpose**: Define the hybrid weighted scoring strategy for workflow catalog semantic search that combines strict filtering for mandatory labels with semantic similarity ranking.
-**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.6 (Mandatory Label Schema), DD-HAPI-001 (Custom Labels Auto-Append)
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.7 (Mandatory Label Schema), DD-HAPI-001 (Custom Labels Auto-Append)
 **Version**: 2.2
 
 ---
@@ -12,7 +12,7 @@
 ## 📝 **Changelog**
 
 ### Version 2.2 (2025-11-30)
-**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.6 (snake_case API fields + DetectedLabels wildcards).
+**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.7 (snake_case API fields + DetectedLabels wildcards).
 
 **Changes**:
 - ✅ **snake_case API Fields**: All label field names use snake_case (`signal_type`, `severity`, etc.)
@@ -21,7 +21,7 @@
 - ✅ **Updated SQL Queries**: Use structured column references, not `labels->>'signal-type'`
 - ✅ **DetectedLabels Wildcard Support**: String fields (`gitOpsTool`, `podSecurityLevel`, `serviceMesh`) support `"*"`
 - ✅ **Matching Semantics**: `"*"` = "requires SOME value", *(absent)* = "no requirement"
-- ✅ **Cross-reference**: DD-WORKFLOW-001 v1.6, DD-HAPI-001
+- ✅ **Cross-reference**: DD-WORKFLOW-001 v1.7, DD-HAPI-001
 
 **Breaking Changes**:
 - All examples updated to snake_case field names
@@ -30,7 +30,7 @@
 - DetectedLabels string fields now support wildcard matching
 
 ### Version 2.1 (2025-11-30)
-**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.6 (5 mandatory labels, snake_case API fields, risk_tolerance customer-derived).
+**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.7 (5 mandatory labels, snake_case API fields, risk_tolerance customer-derived).
 
 **Changes**:
 - ✅ **5 Mandatory Labels**: Reduced from 6 to 5 (removed `risk_tolerance` from mandatory)
@@ -101,11 +101,11 @@
 ### V2.0+ (Future - Configurable Label Weights)
 3. **Configurable Boost/Penalty** for customer-defined labels - weights defined per customer environment
 
-**Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only **5 mandatory labels** (DD-WORKFLOW-001 v1.6). Additionally, **DetectedLabels** are auto-populated (V1.0) and **CustomLabels** (including `risk_tolerance`) are user-defined via Rego (V1.0). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
+**Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only **5 mandatory labels** (DD-WORKFLOW-001 v1.7). Additionally, **DetectedLabels** are auto-populated (V1.0) and **CustomLabels** (including `risk_tolerance`) are user-defined via Rego (V1.0). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
 
 ---
 
-## 🏗️ **Label Architecture (DD-WORKFLOW-001 v1.6)**
+## 🏗️ **Label Architecture (DD-WORKFLOW-001 v1.7)**
 
 ### Label Taxonomy Overview
 
@@ -119,7 +119,7 @@
 
 ### Kubernaut-Enforced Labels (5 Mandatory)
 
-Per **DD-WORKFLOW-001 v1.6**, these labels are Kubernaut-defined with fixed keys:
+Per **DD-WORKFLOW-001 v1.7**, these labels are Kubernaut-defined with fixed keys:
 
 #### Group A: Auto-Populated (from K8s/Prometheus)
 
@@ -152,7 +152,7 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 | `podSecurityLevel` | string | ✅ `"*"` | Namespace PSS label | Security posture |
 | `serviceMesh` | string | ✅ `"*"` | Istio/Linkerd sidecar | Traffic management |
 
-**Wildcard Matching for String Fields** (per DD-WORKFLOW-001 v1.6):
+**Wildcard Matching for String Fields** (per DD-WORKFLOW-001 v1.7):
 
 | Workflow Specifies | Signal Has Value | Signal Absent | Meaning |
 |--------------------|------------------|---------------|---------|
@@ -202,7 +202,7 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 - `team`: "platform" (from Rego) - **CustomLabels**
 
 **Key Insight**:
-- The **5 mandatory labels** are Kubernaut-enforced (DD-WORKFLOW-001 v1.6)
+- The **5 mandatory labels** are Kubernaut-enforced (DD-WORKFLOW-001 v1.7)
 - **DetectedLabels** are auto-detected from K8s without configuration (V1.0 priority)
 - **CustomLabels** like `risk_tolerance`, `business_category`, `region`, `team` are **user-defined** via Rego (V1.0)
 - Both label **keys** and **values** for CustomLabels are customer-controlled
@@ -257,7 +257,7 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 | `environment` | Signal Processing | **EXCLUDE** if mismatch (wildcard '*' matches any) |
 | `priority` | Signal Processing | **EXCLUDE** if mismatch (wildcard '*' matches any) |
 
-**Note**: `risk_tolerance` and `business_category` are now **CustomLabels** (per DD-WORKFLOW-001 v1.6).
+**Note**: `risk_tolerance` and `business_category` are now **CustomLabels** (per DD-WORKFLOW-001 v1.7).
 
 **Behavior**: 5 mandatory labels provide strict pre-filtering before semantic ranking.
 
@@ -280,7 +280,7 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 
 ```sql
 -- V1.0: Two-Phase Semantic Search (Base Similarity Only)
--- Authority: DD-WORKFLOW-004 v2.1, DD-WORKFLOW-001 v1.6
+-- Authority: DD-WORKFLOW-004 v2.1, DD-WORKFLOW-001 v1.7
 --
 -- Phase 1: Strict filtering on 5 mandatory labels (structured columns)
 -- Phase 2: Semantic ranking by cosine similarity
@@ -500,7 +500,7 @@ Labels are **customer-defined** and **detected** by the **Signal Processing Serv
 
 ### Mandatory Labels (Kubernaut-Enforced)
 
-These **5 mandatory labels** have fixed keys defined by Kubernaut (DD-WORKFLOW-001 v1.6):
+These **5 mandatory labels** have fixed keys defined by Kubernaut (DD-WORKFLOW-001 v1.7):
 
 | Label | Detection Source | Detection Method |
 |-------|------------------|------------------|
@@ -524,7 +524,7 @@ Customers define additional labels via Rego policies. Examples:
 | `region` | Namespace label | `["us-east-1"]`, `["eu-west-1"]` |
 | `team` | Namespace label | `["platform"]`, `["payments"]` |
 
-**Note**: CustomLabels use the subdomain format per DD-WORKFLOW-001 v1.6: `map[subdomain][]string`
+**Note**: CustomLabels use the subdomain format per DD-WORKFLOW-001 v1.7: `map[subdomain][]string`
 
 ### Example Rego Policy (Customer-Provided)
 
@@ -604,7 +604,7 @@ custom_labels["team"] = [input.namespace.labels["team"]] {
 
 ```python
 def search_workflows(context, rca_findings):
-    # LLM-determined mandatory labels (snake_case per DD-WORKFLOW-001 v1.6)
+    # LLM-determined mandatory labels (snake_case per DD-WORKFLOW-001 v1.7)
     mandatory_labels = {
         "signal_type": rca_findings["signal_type"],
         "severity": rca_findings["severity"],
@@ -644,7 +644,7 @@ def search_workflows(context, rca_findings):
 ```go
 func (r *WorkflowRepository) SearchWorkflows(ctx context.Context, filters *WorkflowSearchFilters) ([]*models.Workflow, error) {
     // V1.0: Base similarity only (no boost/penalty)
-    // Authority: DD-WORKFLOW-004 v2.1, DD-WORKFLOW-001 v1.6
+    // Authority: DD-WORKFLOW-004 v2.1, DD-WORKFLOW-001 v1.7
     query := `
         SELECT
             id,
@@ -731,7 +731,7 @@ func (r *WorkflowRepository) SearchWorkflows(ctx context.Context, filters *Workf
 **Confidence**: 95% (V1.0 Base Similarity Approach)
 
 **Evidence**:
-- ✅ Aligns with DD-WORKFLOW-001 v1.6 (5 mandatory labels + DetectedLabels + CustomLabels, snake_case)
+- ✅ Aligns with DD-WORKFLOW-001 v1.7 (5 mandatory labels + DetectedLabels + CustomLabels, snake_case)
 - ✅ Aligns with DD-LLM-001 (structured query format with exact labels)
 - ✅ Respects customer-defined labels (no hardcoded assumptions)
 - ✅ Simple implementation (base similarity only)

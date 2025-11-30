@@ -231,7 +231,7 @@ If you have questions about:
 ## References
 
 - **HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md**: Full extraction design
-- **DD-WORKFLOW-001 v1.6**: Label schema (snake_case field names)
+- **DD-WORKFLOW-001 v1.7**: Label schema (snake_case field names)
 - **DD-WORKFLOW-004 v2.2**: Scoring (no custom label impact in V1.0)
 - **FOLLOWUP_CUSTOM_LABELS_CLARIFICATION.md**: Previous Q&A
 
@@ -253,6 +253,6 @@ If you have questions about:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.1 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case field names) |
+| 1.1 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.7 (snake_case field names) |
 | 1.0 | 2025-11-30 | Initial handoff - subdomain-based custom labels |
 

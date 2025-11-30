@@ -13,7 +13,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| **3.1** | Nov 30, 2025 | SignalProcessing Team | DD-WORKFLOW-001 v1.6 alignment: naming convention, risk_tolerance now customer-defined |
+| **3.1** | Nov 30, 2025 | SignalProcessing Team | DD-WORKFLOW-001 v1.7 alignment: naming convention, risk_tolerance now customer-defined |
 | **3.0** | Nov 30, 2025 | AIAnalysis Team | **MAJOR**: CustomLabels (Rego) pulled into V1.0, unified naming |
 | 2.1 | Nov 30, 2025 | AIAnalysis Team | Added 7 Rego transformation examples |
 | 2.0 | Nov 30, 2025 | AIAnalysis Team | Added DetectedLabels (V1.0), restructured document |
@@ -59,7 +59,7 @@ All labels use the same naming convention from V1.0 to avoid migration:
 | `constraint.kubernaut.io/*` | Workflow constraints | `constraint.kubernaut.io/cost-constrained` |
 | `custom.kubernaut.io/*` | Customer-defined | `custom.kubernaut.io/business-unit` |
 
-### 📛 Naming Convention (DD-WORKFLOW-001 v1.6)
+### 📛 Naming Convention (DD-WORKFLOW-001 v1.7)
 
 | Context | Convention | Example |
 |---------|------------|---------|
@@ -313,7 +313,7 @@ package signalprocessing.security
 import data.signalprocessing.labels as customer_labels
 
 # System labels that cannot be overridden by customer policies
-# These are the 5 mandatory labels from DD-WORKFLOW-001 v1.6
+# These are the 5 mandatory labels from DD-WORKFLOW-001 v1.7
 # K8s label keys use kebab-case; API/DB fields use snake_case
 system_labels := {
     "kubernaut.io/signal-type",   # API: signal_type
@@ -322,7 +322,7 @@ system_labels := {
     "kubernaut.io/environment",   # API: environment
     "kubernaut.io/priority"       # API: priority
 }
-# NOTE: The following are ALLOWED (customer-defined via Rego, per DD-WORKFLOW-001 v1.6):
+# NOTE: The following are ALLOWED (customer-defined via Rego, per DD-WORKFLOW-001 v1.7):
 #   - kubernaut.io/risk-tolerance  → stored in custom_labels JSONB
 #   - kubernaut.io/business-category → stored in custom_labels JSONB (optional)
 
@@ -411,11 +411,11 @@ labels["constraint.kubernaut.io/high-availability"] = "true" {
 
 ---
 
-## 📋 **Label Taxonomy Clarification (DD-WORKFLOW-001 v1.6)**
+## 📋 **Label Taxonomy Clarification (DD-WORKFLOW-001 v1.7)**
 
 | Label Category | Source | Examples | Purpose |
 |----------------|--------|----------|---------|
-| **5 Mandatory Labels** (DD-WORKFLOW-001 v1.6) | Signal Processing core | `signal_type`, `severity`, `component`, `environment`, `priority` | Required for workflow matching |
+| **5 Mandatory Labels** (DD-WORKFLOW-001 v1.7) | Signal Processing core | `signal_type`, `severity`, `component`, `environment`, `priority` | Required for workflow matching |
 | **Customer-Derived Labels** (Rego) | Rego policies | `risk_tolerance`, `business_category`, `team`, `region` | Customer-defined via Rego |
 | **DetectedLabels** (this handoff) | Auto-detection from K8s | `GitOpsManaged`, `PDBProtected`, `HPAEnabled`, `Stateful` | Additional context for LLM |
 
@@ -701,7 +701,7 @@ Without extracted labels, HolmesGPT-API cannot filter workflows by customer-spec
 type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
 
-    // Custom labels for workflow catalog filtering (DD-WORKFLOW-001 v1.6)
+    // Custom labels for workflow catalog filtering (DD-WORKFLOW-001 v1.7)
     // These are user-defined labels extracted via Rego policies
     CustomLabels map[string]string `json:"customLabels,omitempty"`
 
@@ -1037,7 +1037,7 @@ labels["region"] = region {
 deny_labels := {
     "kubernaut.io/priority",      # System-controlled
     "kubernaut.io/severity"       # System-controlled
-    # NOTE: risk_tolerance is now CUSTOMER-DEFINED (DD-WORKFLOW-001 v1.6)
+    # NOTE: risk_tolerance is now CUSTOMER-DEFINED (DD-WORKFLOW-001 v1.7)
 }
 
 # Allow custom- prefixed labels (user-safe)
@@ -1579,7 +1579,7 @@ system_labels := {
 
 | Label | Status | Who sets it? |
 |-------|--------|--------------|
-| `kubernaut.io/risk-tolerance` (hyphen) | ALLOWED | Customer Rego (DD-WORKFLOW-001 v1.6) |
+| `kubernaut.io/risk-tolerance` (hyphen) | ALLOWED | Customer Rego (DD-WORKFLOW-001 v1.7) |
 
 **Question**: Is this intentional dual-naming? The customer's Rego-derived `risk-tolerance` (hyphen) is supplementary to the system's `risk_tolerance` (underscore)?
 

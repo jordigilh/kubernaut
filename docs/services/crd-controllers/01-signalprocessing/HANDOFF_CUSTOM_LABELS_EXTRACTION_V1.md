@@ -188,7 +188,7 @@ This design follows the **"Conduit, Not Transformer"** pattern used by:
 
 ## References
 
-- **DD-WORKFLOW-001 v1.6**: Mandatory label schema + custom labels (snake_case)
+- **DD-WORKFLOW-001 v1.7**: Mandatory label schema + custom labels (snake_case)
 - **DD-WORKFLOW-004 v2.2**: Hybrid weighted scoring (custom labels as filters)
 - **HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0**: Rego policy design
 
@@ -198,6 +198,6 @@ This design follows the **"Conduit, Not Transformer"** pattern used by:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.1 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case field names) |
+| 1.1 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.7 (snake_case field names) |
 | 1.0 | 2025-11-30 | Initial design - subdomain extraction, boolean normalization |
 
