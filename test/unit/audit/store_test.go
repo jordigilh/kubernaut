@@ -7,11 +7,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	audit "github.com/jordigilh/kubernaut/pkg/audit"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
 // MockDataStorageClient is a mock implementation of audit.DataStorageClient for testing
@@ -136,15 +137,15 @@ var _ = Describe("BufferedAuditStore", func() {
 	var (
 		store      audit.AuditStore
 		mockClient *MockDataStorageClient
-		logger     *zap.Logger
+		logger     logr.Logger
 		ctx        context.Context
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		mockClient = NewMockDataStorageClient()
-		// Use zap logger per DD-005 (all services use zap)
-		logger, _ = zap.NewDevelopment()
+		// Use logr.Logger per DD-005 v2.0 (unified logging interface)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 	})
 
 	AfterEach(func() {
@@ -178,14 +179,9 @@ var _ = Describe("BufferedAuditStore", func() {
 			Expect(err.Error()).To(ContainSubstring("client cannot be nil"))
 		})
 
-		It("should return error if logger is nil", func() {
-			config := audit.DefaultConfig()
-
-			_, err := audit.NewBufferedStore(mockClient, config, "test-service", nil)
-
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("logger cannot be nil"))
-		})
+		// Note: logr.Logger is a value type, not a pointer.
+		// A zero-value logr.Logger is a valid no-op logger, so we don't test for nil.
+		// This is different from *zap.Logger which could be nil.
 
 		It("should use default config if validation fails", func() {
 			config := audit.Config{
