@@ -1,8 +1,26 @@
 # DD-WORKFLOW-004: Parameter Schema Location - Analysis
 
-**Date**: 2025-11-15  
-**Status**: Analysis - Awaiting Decision  
-**Related**: DD-WORKFLOW-003
+**Date**: 2025-11-15
+**Status**: ✅ **SUPERSEDED by ADR-043**
+**Related**: DD-WORKFLOW-003, ADR-043
+
+---
+
+## ⚠️ SUPERSEDED
+
+**This document has been superseded by [ADR-043: Workflow Schema Definition Standard](./ADR-043-workflow-schema-definition-standard.md).**
+
+**Decision**: Option B (Hybrid - Catalog with Schema, Container Validates) was approved and formalized in ADR-043.
+
+**Key Changes from ADR-043**:
+- Schema file renamed: `playbook-schema.json` → `workflow-schema.yaml`
+- YAML format (more readable than JSON)
+- Rich validation support (enum, pattern, min/max)
+- Discovery labels included in schema file
+
+---
+
+## Original Analysis (Historical Reference)
 
 ---
 
@@ -91,14 +109,14 @@ spec:
     - name: extract-schema
       image: $(params.playbook-image)
       command: ["cat", "/playbook-schema.json"]
-      
+
     - name: validate-parameters
       image: $(params.playbook-image)
       script: |
         #!/bin/bash
         # Validate provided params against schema
         python3 /usr/local/bin/validate-params.py
-    
+
     - name: execute-playbook
       image: $(params.playbook-image)
       env:
@@ -134,7 +152,7 @@ LLM Investigation → Search Workflow Catalog → Get Schema → Populate Parame
 LLM Investigation → ??? How to discover playbooks ??? → Must pull ALL containers to read schemas
 ```
 
-**Impact**: 
+**Impact**:
 - Cannot search playbooks by labels (signal_type, severity, etc.)
 - Must pull every container image to read schema
 - Slow, expensive, impractical
@@ -229,7 +247,7 @@ playbooks = mcp_client.search_playbooks(
 ### Alternative 1: **Hybrid - Catalog with Schema, Container Validates** ⭐
 **Confidence: 92%** - **RECOMMENDED**
 
-**Concept**: 
+**Concept**:
 - Catalog contains parameter schema (for discovery and LLM guidance)
 - Container contains same schema (for validation at execution time)
 
@@ -287,7 +305,7 @@ python3 /usr/local/bin/validate-params.py /playbook-schema.json
   "workflow_id": "oomkill-cost-optimized",
   "version": "1.0.0",
   "container_image": "quay.io/kubernaut/playbook-oomkill-cost:v1.0.0",
-  
+
   "parameters": [
     {
       "name": "TARGET_RESOURCE_KIND",
@@ -296,7 +314,7 @@ python3 /usr/local/bin/validate-params.py /playbook-schema.json
       "enum": ["Deployment", "StatefulSet"]
     }
   ],
-  
+
   "labels": {
     "signal_type": "OOMKilled",
     "severity": "high"
@@ -460,7 +478,7 @@ playbook-oomkill-cost-schema:v1.0.0    # 1KB (just schema)
   "workflow_id": "oomkill-cost-optimized",
   "version": "1.0.0",
   "container_image": "quay.io/kubernaut/playbook-oomkill-cost:v1.0.0",
-  
+
   "parameters": [
     {
       "name": "TARGET_RESOURCE_KIND",
@@ -481,7 +499,7 @@ playbook-oomkill-cost-schema:v1.0.0    # 1KB (just schema)
       "enum": ["scale_down", "increase_memory"]
     }
   ],
-  
+
   "labels": {
     "signal_type": "OOMKilled",
     "severity": "high",
@@ -550,7 +568,7 @@ spec:
     - name: playbook-image
     - name: catalog-schema-json
       description: Schema from catalog (for drift detection)
-  
+
   steps:
     - name: detect-schema-drift
       image: $(params.playbook-image)
@@ -558,23 +576,23 @@ spec:
         #!/bin/bash
         CONTAINER_SCHEMA=$(cat /playbook-schema.json)
         CATALOG_SCHEMA='$(params.catalog-schema-json)'
-        
+
         CONTAINER_VERSION=$(echo "$CONTAINER_SCHEMA" | jq -r .version)
         CATALOG_VERSION=$(echo "$CATALOG_SCHEMA" | jq -r .version)
-        
+
         if [ "$CONTAINER_VERSION" != "$CATALOG_VERSION" ]; then
             echo "WARNING: Schema version mismatch"
             echo "Container: $CONTAINER_VERSION"
             echo "Catalog: $CATALOG_VERSION"
         fi
-        
+
         # Compare parameter schemas
         if ! diff <(echo "$CONTAINER_SCHEMA" | jq -S .parameters) \
                   <(echo "$CATALOG_SCHEMA" | jq -S .parameters); then
             echo "ERROR: Schema drift detected"
             exit 1
         fi
-    
+
     - name: execute-playbook
       image: $(params.playbook-image)
       env:
@@ -607,7 +625,7 @@ spec:
 
 **Trade-off**: Schema maintained in two places (catalog + container)
 
-**Mitigation**: 
+**Mitigation**:
 - Operators define schema once
 - Copy to both locations
 - Automated drift detection
@@ -629,7 +647,7 @@ spec:
 
 ---
 
-**Status**: Analysis Complete - Awaiting Decision  
-**Confidence**: 92% for Hybrid approach  
-**Risk**: Low (proven pattern)  
+**Status**: Analysis Complete - Awaiting Decision
+**Confidence**: 92% for Hybrid approach
+**Risk**: Low (proven pattern)
 **Effort**: Low (simple implementation)
