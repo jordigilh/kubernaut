@@ -21,7 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,13 +35,13 @@ var _ = Describe("Environment Classification", func() {
 	var (
 		ctx        context.Context
 		classifier *processing.EnvironmentClassifier
-		logger     *zap.Logger
+		logger     logr.Logger
 		scheme     *runtime.Scheme
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard()
 		scheme = runtime.NewScheme()
 		_ = corev1.AddToScheme(scheme)
 	})

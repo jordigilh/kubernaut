@@ -17,11 +17,11 @@ limitations under the License.
 package gateway
 
 import (
+	"github.com/go-logr/logr"
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 )
@@ -292,11 +292,11 @@ var _ = Describe("BR-GATEWAY-020: Custom Priority Rules via Rego Policies", func
 	var (
 		priorityEngine *processing.PriorityEngine
 		ctx            context.Context
-		logger         *zap.Logger
+		logger         logr.Logger
 	)
 
 	BeforeEach(func() {
-		logger = zap.NewNop()
+		logger = logr.Discard()
 		// No-op logger (no output needed for tests)
 		ctx = context.Background()
 	})
