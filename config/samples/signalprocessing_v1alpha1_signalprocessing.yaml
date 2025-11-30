@@ -1,0 +1,57 @@
+apiVersion: signalprocessing.kubernaut.io/v1alpha1
+kind: SignalProcessing
+metadata:
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/managed-by: kustomize
+  name: signalprocessing-sample
+spec:
+  # Parent reference for audit trail
+  remediationRequestRef:
+    apiVersion: remediation.kubernaut.io/v1alpha1
+    kind: RemediationRequest
+    name: sample-remediation-request
+    namespace: default
+
+  # Signal identification
+  signalFingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  signalName: "HighMemoryUsage"
+  severity: "warning"
+
+  # Signal classification
+  environment: "prod"
+  priority: "P1"
+  signalType: "prometheus"
+  signalSource: "prometheus-adapter"
+  targetType: "kubernetes"
+
+  # Signal metadata
+  signalLabels:
+    alertname: "HighMemoryUsage"
+    namespace: "production"
+    pod: "app-pod-abc123"
+  signalAnnotations:
+    summary: "Memory usage above 90%"
+    description: "Pod app-pod-abc123 is using more than 90% of its memory limit"
+
+  # Target resource
+  targetResource:
+    kind: "Pod"
+    name: "app-pod-abc123"
+    namespace: "production"
+
+  # Timestamps
+  receivedTime: "2025-01-01T12:00:00Z"
+
+  # Deduplication
+  deduplication:
+    firstOccurrence: "2025-01-01T12:00:00Z"
+    lastOccurrence: "2025-01-01T12:00:00Z"
+    occurrenceCount: 1
+
+  # Enrichment configuration
+  enrichmentConfig:
+    enableClusterState: true
+    enableMetrics: true
+    enableHistorical: true
+

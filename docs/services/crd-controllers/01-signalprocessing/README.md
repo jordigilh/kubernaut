@@ -1,13 +1,27 @@
-# Remediation Processor Service
+# Signal Processing Service
 
-**Version**: v1.0
-**Status**: ✅ Design Complete (98%)
-**Health/Ready Port**: 8080 (`/health`, `/ready` - no auth required)
+**Version**: v1.2
+**Status**: ✅ Design Complete (100%)
+**Health/Ready Port**: 8081 (`/health`, `/ready` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
-**CRD**: RemediationProcessing
-**Controller**: RemediationProcessingReconciler
+**CRD**: SignalProcessing
+**CRD API Group**: `kubernaut.io/v1alpha1`
+**Controller**: SignalProcessingReconciler
 **Priority**: **P0 - HIGH**
 **Effort**: 1 week
+
+---
+
+## 📋 Changelog
+
+| Version | Date | Changes | Reference |
+|---------|------|---------|-----------|
+| v1.2 | 2025-11-28 | Port fix: 8080 → 8081, API group standardization, metrics naming, graceful shutdown, parallel testing | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md), [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
+| v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+| v1.1 | 2025-11-27 | Terminology migration: Alert → Signal | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
+| v1.1 | 2025-11-27 | Context API deprecated: Recovery context now embedded by Remediation Orchestrator | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md), [DD-001 Update](../../../architecture/decisions/DD-001-recovery-context-enrichment.md) |
+| v1.1 | 2025-11-27 | Categorization consolidated: All categorization now in Signal Processing | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+| v1.0 | 2025-01-15 | Initial design specification | - |
 
 ---
 
@@ -24,7 +38,7 @@
 | **[Security Configuration](./security-configuration.md)** | RBAC, network policies, secret handling, security context | ~500 | ✅ Complete |
 | **[Observability & Logging](./observability-logging.md)** | Structured logging, distributed tracing, correlation IDs | ~460 | ✅ Complete |
 | **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards, alert rules | ~420 | ✅ Complete |
-| **[Database Integration](./database-integration.md)** | Audit storage, PostgreSQL schema, vector DB | ~240 | ✅ Complete |
+| **[Database Integration](./database-integration.md)** | Audit storage via Data Storage Service REST API | ~240 | ✅ Complete |
 | **[Integration Points](./integration-points.md)** | Upstream/downstream services, external dependencies | ~200 | ✅ Complete |
 | **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path, reusability analysis | ~290 | ✅ Complete |
 | **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~220 | ✅ Complete |
@@ -55,24 +69,24 @@
 
 **Legend**:
 - **(COMMON PATTERN)** = Duplicated across all CRD services with service-specific adaptations
-- Service-specific files contain Remediation Processor unique logic
+- Service-specific files contain Signal Processing unique logic
 
 ---
 
 ## 🏗️ Implementation Structure
 
 ### **Binary Location**
-- **Directory**: `cmd/remediationprocessor/`
-- **Entry Point**: `cmd/remediationprocessor/main.go`
-- **Build Command**: `go build -o bin/remediation-processor ./cmd/remediationprocessor`
+- **Directory**: `cmd/signalprocessing/`
+- **Entry Point**: `cmd/signalprocessing/main.go`
+- **Build Command**: `go build -o bin/signal-processing ./cmd/signalprocessing`
 
 ### **Controller Location**
-- **Controller**: `internal/controller/remediationprocessing/remediationprocessing_controller.go`
-- **CRD Types**: `api/remediationprocessing/v1alpha1/`
+- **Controller**: `internal/controller/signalprocessing/signalprocessing_controller.go`
+- **CRD Types**: `api/signalprocessing/v1alpha1/`
 
 ### **Business Logic**
-- **Package**: `pkg/alertprocessor/` (formerly `pkg/remediationprocessing/`)
-- **Tests**: `test/unit/alertprocessor/`
+- **Package**: `pkg/signalprocessing/`
+- **Tests**: `test/unit/signalprocessing/`
 
 **See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
 
@@ -101,16 +115,21 @@
 
 | Service | Relationship | Purpose |
 |---------|--------------|---------|
-| **Gateway Service** | Upstream | Creates RemediationRequest CRD (duplicate detection already done) |
-| **RemediationRequest Controller** | Parent | Creates SignalProcessing CRD (initial & recovery), watches for completion |
-| **AIAnalysis Service** | Downstream | Receives complete enrichment data (monitoring + business + recovery) |
-| **Context Service** | External | Provides Kubernetes context enrichment (monitoring + business contexts) |
-| **Context API** | External | Provides recovery context (ONLY for recovery attempts - DD-001: Alternative 2) |
-| **Data Storage Service** | External | Persists audit trail for compliance |
+| **Gateway Service** | Upstream | Creates RemediationRequest CRD (duplicate detection already done, sets placeholder categorization) |
+| **RemediationRequest Controller** | Parent | Creates SignalProcessing CRD (initial & recovery), embeds failure data for recovery attempts |
+| **AIAnalysis Service** | Downstream | Receives complete enrichment data (monitoring + business context) |
+| **Data Storage Service** | External | Provides audit trail persistence via REST API ([ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md)) |
 
 **Coordination Pattern**: CRD-based (no HTTP calls between controllers)
-**Recovery Pattern**: RemediationProcessing enriches with FRESH contexts (DD-001: Alternative 2)
-**Design Decision**: [DD-001](../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
+
+**Key Architectural Changes**:
+- **Context API DEPRECATED**: Recovery context no longer queried from Context API. Remediation Orchestrator embeds current failure data from WorkflowExecution CRD. See [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md)
+- **Categorization Consolidated**: All categorization (environment classification + priority assignment) performed by Signal Processing after K8s context enrichment. Gateway sets placeholder values. See [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+- **Data Access Layer Isolation**: Signal Processing uses Data Storage Service REST API for audit writes (no direct PostgreSQL). See [ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
+
+**Design Decisions**:
+- [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) - Service rename
+- [DD-001](../../../architecture/decisions/DD-001-recovery-context-enrichment.md) - Recovery context enrichment (updated: embedded by Remediation Orchestrator)
 
 ---
 
@@ -118,16 +137,17 @@
 
 | Category | Range | Description |
 |----------|-------|-------------|
-| **Primary** | BR-SP-001 to BR-SP-050 | Alert processing and enrichment logic |
+| **Primary** | BR-SP-001 to BR-SP-050 | Signal processing and enrichment logic |
 | **Environment** | BR-SP-051 to BR-SP-053 | Environment classification (production/staging/dev) |
-| **Enrichment** | BR-SP-060 to BR-SP-062 | Alert enrichment, correlation, timeout handling |
-| **Recovery** | BR-WF-RECOVERY-011 | Recovery context enrichment from Context API (DD-001: Alternative 2) |
-| **Tracking** | BR-SP-021 | Alert lifecycle state tracking |
-| **Deduplication** | BR-WH-008 | Gateway Service responsibility (NOT Remediation Processor) |
+| **Enrichment** | BR-SP-060 to BR-SP-062 | Signal enrichment, correlation, timeout handling |
+| **Categorization** | BR-SP-070 to BR-SP-075 | Priority assignment after K8s context enrichment ([DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)) |
+| **Tracking** | BR-SP-021 | Signal lifecycle state tracking |
+| **Deduplication** | BR-WH-008 | Gateway Service responsibility (NOT Signal Processing) |
 
 **Notes**:
-- Duplicate alert handling is a Gateway Service responsibility
-- Recovery enrichment provides FRESH monitoring + business + recovery contexts (DD-001: Alternative 2)
+- Duplicate signal handling is a Gateway Service responsibility
+- Recovery context is embedded by Remediation Orchestrator (Context API deprecated per [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md))
+- All categorization consolidated in Signal Processing per [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
 
 ---
 
@@ -135,32 +155,39 @@
 
 | Decision | Choice | Rationale | Document |
 |----------|--------|-----------|----------|
-| **Processing Model** | Single-phase synchronous | Fast operations (4-7s), no multi-phase complexity | [Reconciliation Phases](./reconciliation-phases.md) |
+| **Service Name** | SignalProcessing | Alignment with Gateway's "signal" terminology | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+| **CRD API Group** | `kubernaut.io/v1alpha1` | Unified API group for all Kubernaut CRDs | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
+| **Processing Model** | Single-phase synchronous | Fast operations (<5s), no multi-phase complexity | [Reconciliation Phases](./reconciliation-phases.md) |
 | **State Management** | CRD-based with watch | Watch-based coordination, no HTTP polling | [Controller Implementation](./controller-implementation.md) |
-| **Enrichment** | Dual providers (V1) | Context Service (always) + Context API (recovery only) | [Overview](./overview.md) |
-| **Recovery Enrichment** | Alternative 2 pattern | RP queries Context API for temporal consistency | [Reconciliation Phases](./reconciliation-phases.md) |
-| **Degraded Mode** | Multi-level fallback | Alert labels + minimal recovery context fallback | [Reconciliation Phases](./reconciliation-phases.md) |
+| **Recovery Context** | Embedded by Remediation Orchestrator | Context API deprecated; failure data from WorkflowExecution CRD | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md), [DD-001](../../../architecture/decisions/DD-001-recovery-context-enrichment.md) |
+| **Categorization** | Consolidated in Signal Processing | Richer K8s context available after enrichment | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+| **Degraded Mode** | Multi-level fallback | Signal labels + minimal context fallback | [Reconciliation Phases](./reconciliation-phases.md) |
 | **Duplicate Detection** | Gateway Service | Already handled upstream (BR-WH-008) | [Overview](./overview.md#deduplication) |
 | **Owner Reference** | RemediationRequest owns this | Cascade deletion with 24h retention | [Finalizers & Lifecycle](./finalizers-lifecycle.md) |
 | **Secret Handling** | Never log verbatim | Sanitize all secrets before storage/logging | [Security Configuration](./security-configuration.md) |
+| **Audit Storage** | Data Storage Service REST API | No direct PostgreSQL access per ADR-032 | [ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md) |
+| **Graceful Shutdown** | 4-step K8s-aware pattern | Zero request failures during rolling updates | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) |
+| **Retry Strategy** | K8s requeue (no circuit breaker) | Internal dependencies only, K8s handles backpressure | [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
+| **K8s Enrichment** | Standard depth (hardcoded) | Avoids SRE configuration complexity | [DD-017](../../../architecture/decisions/DD-017-k8s-enrichment-depth-strategy.md) |
+| **Rego Data Fetching** | K8s Enricher + Rego Engine | Separation of concerns for security/performance | [ADR-041](../../../architecture/decisions/ADR-041-rego-policy-data-fetching-separation.md) |
 
 ---
 
 ## 🏗️ Implementation Status
 
 ### Existing Code (Verified)
-- **Location**: `pkg/remediationprocessing/` (1,103 lines - requires migration to `pkg/alertprocessor/`)
+- **Location**: `pkg/signalprocessing/` (migrated from `pkg/remediationprocessing/`)
 - **Reusability**: 85-95% (see [Migration & Current State](./migration-current-state.md))
-- **Tests**: `test/unit/remediationprocessing/` (needs migration to `test/unit/alertprocessor/`)
+- **Tests**: `test/unit/signalprocessing/`
 
 ### Gap Analysis
 - ❌ SignalProcessing CRD schema (need to create)
-- ❌ RemediationProcessingReconciler controller (need to create)
+- ❌ SignalProcessingReconciler controller (need to create)
 - ❌ CRD lifecycle management (owner refs, finalizers)
 - ❌ Watch-based status coordination with RemediationRequest
 
 ### Migration Effort
-- **Package Migration**: 1-2 days (rename `pkg/remediationprocessing/` → `pkg/alertprocessor/`, fix imports)
+- **Package Migration**: Complete - renamed to `pkg/signalprocessing/`
 - **CRD Controller**: 3-4 days (new implementation)
 - **Testing**: 1 day (migrate tests, add integration tests)
 - **Total**: ~1 week
@@ -184,37 +211,38 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 | Metric | Target | Business Impact |
 |--------|--------|----------------|
-| **Enrichment (Initial)** | 3-4s | Fast context gathering (monitoring + business) |
-| **Enrichment (Recovery)** | 5-7s | Complete enrichment (monitoring + business + recovery) |
-| **Classification** | 1-2s | Quick environment detection |
-| **Total Processing (Initial)** | 4-7s | Rapid remediation start |
-| **Total Processing (Recovery)** | 6-9s | Complete recovery context (Alternative 2) |
+| **Total Processing (Initial)** | <5s | Rapid remediation start (SLO target) |
+| **Enrichment** | <2s | Fast K8s context gathering |
+| **Classification** | <1s | Quick environment detection |
+| **Categorization** | <1s | Priority assignment after K8s context enrichment |
+| **Audit Write** | <1ms P95 | Fire-and-forget pattern (ADR-038) |
 | **Accuracy** | >99% for production | Correct priority routing |
-| **Degraded Mode** | <5% of alerts | Most alerts fully enriched |
-| **Context API Availability** | >99.5% | Recovery context success rate |
+| **Degraded Mode** | <5% of signals | Most signals fully enriched |
+
+**Note**: Performance targets aligned with [IMPLEMENTATION_PLAN_V1.11.md](./IMPLEMENTATION_PLAN_V1.11.md).
 
 **Monitoring**: See [Metrics & SLOs](./metrics-slos.md) for Prometheus metrics and Grafana dashboards.
-**Key**: Recovery enrichment includes FRESH monitoring + business + recovery contexts (Alternative 2)
 
 ---
 
 ## 🔍 Common Pitfalls & Best Practices
 
 **Don't**:
-- ❌ Poll Context Service (use single HTTP call per enrichment)
-- ❌ Query Context API for non-recovery attempts (only when `isRecoveryAttempt = true`)
+- ❌ Query Context API for recovery context (DEPRECATED per [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md))
+- ❌ Access PostgreSQL directly (use Data Storage Service REST API per [ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md))
 - ❌ Create AIAnalysis CRD directly (RemediationRequest does this)
 - ❌ Log secrets verbatim (sanitize all sensitive data)
 - ❌ Skip owner reference (needed for cascade deletion)
-- ❌ Fail recovery if Context API unavailable (use fallback context)
+- ❌ Perform categorization in Gateway (consolidated in Signal Processing per [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md))
 
 **Do**:
-- ✅ Use degraded mode for Context Service failures
-- ✅ Build fallback recovery context from `failedWorkflowRef` if Context API fails
-- ✅ Capture ALL contexts at same timestamp (temporal consistency - Alternative 2)
+- ✅ Use degraded mode for enrichment service failures
+- ✅ Read recovery context from `spec.failureData` (embedded by Remediation Orchestrator)
+- ✅ Perform all categorization after K8s context enrichment
 - ✅ Emit Kubernetes events for visibility
 - ✅ Implement phase timeouts (5s for enrichment, 2s for classification)
 - ✅ Cache environment classification (5 min TTL)
+- ✅ Use Data Storage Service REST API for audit writes
 
 **See**: Each document's "Common Pitfalls" section for detailed guidance.
 
@@ -224,8 +252,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 - **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
 - **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
-- **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
-- **CRD Design Spec**: [docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md](../../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
+- **Architecture Overview**: [docs/architecture/KUBERNAUT_CRD_ARCHITECTURE.md](../../../architecture/KUBERNAUT_CRD_ARCHITECTURE.md)
+- **CRD Design Spec**: [docs/design/CRD/02_SIGNAL_PROCESSING_CRD.md](../../../design/CRD/02_SIGNAL_PROCESSING_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)
 - **AI Assistant Rules**: [.cursor/rules/10-ai-assistant-behavioral-constraints.mdc](../../../../.cursor/rules/10-ai-assistant-behavioral-constraints.mdc)
 
@@ -233,8 +261,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📝 Document Maintenance
 
-**Last Updated**: 2025-01-15
-**Document Structure Version**: 1.0
+**Last Updated**: 2025-11-27
+**Document Structure Version**: 1.1
 **Status**: ✅ Production Ready (98% Confidence)
 
 **Common Pattern Updates**: When updating common patterns (testing, security, observability, metrics), update:

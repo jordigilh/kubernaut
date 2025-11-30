@@ -3,7 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/remediation.kubernaut.io_remediationrequests.yaml
-- bases/remediationprocessing.kubernaut.io_remediationprocessings.yaml
+- bases/signalprocessing.kubernaut.io_signalprocessings.yaml
 - bases/aianalysis.kubernaut.io_aianalyses.yaml
 - bases/workflowexecution.kubernaut.io_workflowexecutions.yaml
 - bases/kubernetesexecution.kubernaut.io_kubernetesexecutions.yaml

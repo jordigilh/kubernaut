@@ -1,24 +1,34 @@
 ## Integration Points
 
-**Updated**: October 16, 2025
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, async audit (ADR-038) | [ADR-038](../../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md) |
+> | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.1 | 2025-11-27 | Context API removed (deprecated) | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
+> | v1.1 | 2025-11-27 | Categorization consolidated in Signal Processing | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+> | v1.1 | 2025-11-27 | Data access via Data Storage Service REST API | [ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md) |
+> | v1.0 | 2025-01-15 | Initial integration points | - |
+
+**Updated**: November 27, 2025
 **Downstream Impact**: Ultra-Compact JSON (DD-HOLMESGPT-009)
 
-**Note**: RemediationProcessor prepares enriched context that is consumed by AIAnalysis Controller and formatted as **self-documenting JSON** for HolmesGPT API calls. While this service doesn't directly interact with HolmesGPT, its enrichment quality enables 60% token reduction in downstream AI analysis.
+**Note**: Signal Processing prepares enriched context that is consumed by AIAnalysis Controller and formatted as **self-documenting JSON** for HolmesGPT API calls. While this service doesn't directly interact with HolmesGPT, its enrichment quality enables 60% token reduction in downstream AI analysis.
 
 ### 1. Upstream Integration: RemediationRequest Controller
 
 **Integration Pattern**: Watch-based status coordination
 
-**How RemediationProcessing is Created**:
+**How SignalProcessing is Created**:
 ```go
-// In RemediationRequestReconciler (Remediation Coordinator)
-func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
+// In RemediationRequestReconciler (Remediation Orchestrator)
+func (r *RemediationRequestReconciler) reconcileSignalProcessing(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
 ) error {
-    // When RemediationRequest is first created, create RemediationProcessing
-    if remediation.Status.RemediationProcessingRef == nil {
-        alertProcessing := &processingv1.RemediationProcessing{
+    // When RemediationRequest is first created, create SignalProcessing
+    if remediation.Status.SignalProcessingRef == nil {
+        signalProcessing := &signalprocessingv1.SignalProcessing{
             ObjectMeta: metav1.ObjectMeta{
                 Name:      fmt.Sprintf("%s-processing", remediation.Name),
                 Namespace: remediation.Namespace,
@@ -26,13 +36,13 @@ func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
                     *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
                 },
             },
-            Spec: processingv1.RemediationProcessingSpec{
-                RemediationRequestRef: processingv1.RemediationRequestReference{
+            Spec: signalprocessingv1.SignalProcessingSpec{
+                RemediationRequestRef: signalprocessingv1.RemediationRequestReference{
                     Name:      remediation.Name,
                     Namespace: remediation.Namespace,
                 },
-                // Copy original alert data
-                Alert: processingv1.Alert{
+                // Copy original signal data
+                Signal: signalprocessingv1.Signal{
                     Fingerprint: remediation.Spec.SignalFingerprint,
                     Payload:     remediation.Spec.OriginalPayload,
                     Severity:    remediation.Spec.Severity,
@@ -40,29 +50,81 @@ func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
             },
         }
 
-        return r.Create(ctx, alertProcessing)
+        return r.Create(ctx, signalProcessing)
     }
 
     return nil
 }
 ```
 
-**Note**: RemediationRequest controller creates SignalProcessing CRD when remediation workflow starts.
+**Recovery Flow (with embedded failureData)**:
+```go
+// In RemediationRequestReconciler - creating recovery SignalProcessing
+func (r *RemediationRequestReconciler) reconcileRecoverySignalProcessing(
+    ctx context.Context,
+    remediation *remediationv1.RemediationRequest,
+    failedWorkflow *workflowv1.WorkflowExecution,
+) error {
+    signalProcessing := &signalprocessingv1.SignalProcessing{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("%s-recovery-%d", remediation.Name, remediation.Status.RecoveryAttemptNumber),
+            Namespace: remediation.Namespace,
+            OwnerReferences: []metav1.OwnerReference{
+                *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
+            },
+        },
+        Spec: signalprocessingv1.SignalProcessingSpec{
+            RemediationRequestRef: signalprocessingv1.RemediationRequestReference{
+                Name:      remediation.Name,
+                Namespace: remediation.Namespace,
+            },
+            Signal: signalprocessingv1.Signal{
+                Fingerprint: remediation.Spec.SignalFingerprint,
+                Payload:     remediation.Spec.OriginalPayload,
+                Severity:    remediation.Spec.Severity,
+            },
+            // Recovery-specific fields
+            IsRecoveryAttempt:     true,
+            RecoveryAttemptNumber: remediation.Status.RecoveryAttemptNumber,
+            FailedWorkflowRef:     &corev1.LocalObjectReference{Name: failedWorkflow.Name},
+            FailedStep:            &failedWorkflow.Status.FailedStep,
+            FailureReason:         &failedWorkflow.Status.FailureReason,
 
-### 2. Downstream Integration: RemediationRequest Watches RemediationProcessing Status
+            // Embedded failure data (replaces Context API per DD-CONTEXT-006)
+            FailureData: &signalprocessingv1.FailureData{
+                WorkflowRef:   failedWorkflow.Name,
+                AttemptNumber: remediation.Status.RecoveryAttemptNumber - 1,
+                FailedStep:    failedWorkflow.Status.FailedStep,
+                Action:        failedWorkflow.Status.FailedAction,
+                ErrorType:     failedWorkflow.Status.ErrorType,
+                FailureReason: failedWorkflow.Status.FailureReason,
+                Duration:      failedWorkflow.Status.Duration,
+                FailedAt:      failedWorkflow.Status.CompletionTime,
+                ResourceState: failedWorkflow.Status.ResourceSnapshot,
+            },
+        },
+    }
 
-**Integration Pattern**: Data snapshot - RemediationRequest creates AIAnalysis after RemediationProcessing completes
+    return r.Create(ctx, signalProcessing)
+}
+```
+
+**Note**: RemediationRequest controller creates SignalProcessing CRD when remediation workflow starts. For recovery attempts, it embeds `failureData` from the failed WorkflowExecution CRD (Context API deprecated per DD-CONTEXT-006).
+
+### 2. Downstream Integration: RemediationRequest Watches SignalProcessing Status
+
+**Integration Pattern**: Data snapshot - RemediationRequest creates AIAnalysis after SignalProcessing completes
 
 **How RemediationRequest Responds to Completion**:
 ```go
-// In RemediationRequestReconciler (Remediation Coordinator)
+// In RemediationRequestReconciler (Remediation Orchestrator)
 func (r *RemediationRequestReconciler) reconcileAIAnalysis(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
-    alertProcessing *processingv1.RemediationProcessing,
+    signalProcessing *signalprocessingv1.SignalProcessing,
 ) error {
-    // When RemediationProcessing completes, create AIAnalysis with enriched data
-    if alertProcessing.Status.Phase == "completed" && remediation.Status.AIAnalysisRef == nil {
+    // When SignalProcessing completes, create AIAnalysis with enriched data
+    if signalProcessing.Status.Phase == "completed" && remediation.Status.AIAnalysisRef == nil {
         aiAnalysis := &aianalysisv1.AIAnalysis{
             ObjectMeta: metav1.ObjectMeta{
                 Name:      fmt.Sprintf("%s-analysis", remediation.Name),
@@ -76,21 +138,25 @@ func (r *RemediationRequestReconciler) reconcileAIAnalysis(
                     Name:      remediation.Name,
                     Namespace: remediation.Namespace,
                 },
-                // COPY enriched alert data (data snapshot pattern - TARGETING DATA ONLY)
+                // COPY enriched signal data (data snapshot pattern - TARGETING DATA ONLY)
                 AnalysisRequest: aianalysisv1.AnalysisRequest{
-                    AlertContext: aianalysisv1.SignalContext{
-                        Fingerprint:      alertProcessing.Status.EnrichedSignal.Fingerprint,
-                        Severity:         alertProcessing.Status.EnrichedSignal.Severity,
-                        Environment:      alertProcessing.Status.EnrichedSignal.Environment,
-                        BusinessPriority: alertProcessing.Status.EnrichedSignal.BusinessPriority,
+                    SignalContext: aianalysisv1.SignalContext{
+                        Fingerprint:         signalProcessing.Status.EnrichmentResults.Fingerprint,
+                        Severity:            signalProcessing.Spec.Signal.Severity,
+                        Environment:         signalProcessing.Status.EnvironmentClassification.Environment,
+                        BusinessCriticality: signalProcessing.Status.EnvironmentClassification.BusinessCriticality,
+                        Priority:            signalProcessing.Status.Categorization.Priority,
 
                         // Resource targeting for HolmesGPT (NOT logs/metrics - toolsets fetch those)
-                        Namespace:    alertProcessing.Status.EnrichedSignal.Namespace,
-                        ResourceKind: alertProcessing.Status.EnrichedSignal.ResourceKind,
-                        ResourceName: alertProcessing.Status.EnrichedSignal.ResourceName,
+                        Namespace:    signalProcessing.Spec.Signal.Namespace,
+                        ResourceKind: signalProcessing.Status.EnrichmentResults.KubernetesContext.ResourceKind,
+                        ResourceName: signalProcessing.Status.EnrichmentResults.KubernetesContext.ResourceName,
 
                         // Kubernetes context (small data ~8KB)
-                        KubernetesContext: alertProcessing.Status.EnrichedSignal.KubernetesContext,
+                        KubernetesContext: signalProcessing.Status.EnrichmentResults.KubernetesContext,
+
+                        // Recovery context if present
+                        RecoveryContext: signalProcessing.Status.EnrichmentResults.RecoveryContext,
                     },
                 },
             },
@@ -103,27 +169,29 @@ func (r *RemediationRequestReconciler) reconcileAIAnalysis(
 }
 ```
 
-**Note**: RemediationProcessing does NOT create AIAnalysis CRD. RemediationRequest controller watches RemediationProcessing status and creates AIAnalysis when processing completes.
+**Note**: SignalProcessing does NOT create AIAnalysis CRD. RemediationRequest controller watches SignalProcessing status and creates AIAnalysis when processing completes.
 
-### 3. External Service Integration: Context Service
+### 3. External Service Integration: Enrichment Service
 
 **Integration Pattern**: Synchronous HTTP REST API call
 
-**Endpoint**: Context Service - see [README: Context Service](../../README.md#-9-context-service)
+**Endpoint**: Kubernetes API (via controller-runtime client)
+
+**Purpose**: Retrieve Kubernetes resource context for signal enrichment
 
 **Request**:
 ```go
-type ContextRequest struct {
+type EnrichmentRequest struct {
     Namespace     string            `json:"namespace"`
     ResourceKind  string            `json:"resourceKind"`
     ResourceName  string            `json:"resourceName"`
-    AlertLabels   map[string]string `json:"alertLabels"`
+    SignalLabels  map[string]string `json:"signalLabels"`
 }
 ```
 
 **Response**:
 ```go
-type ContextResponse struct {
+type EnrichmentResponse struct {
     PodDetails        PodDetails        `json:"podDetails"`
     DeploymentDetails DeploymentDetails `json:"deploymentDetails"`
     NodeDetails       NodeDetails       `json:"nodeDetails"`
@@ -133,266 +201,156 @@ type ContextResponse struct {
 
 **Degraded Mode Fallback**:
 ```go
-// If Context Service unavailable, extract minimal context from alert labels
-func (e *Enricher) DegradedModeEnrich(signal Signal) EnrichedAlert {
-    return EnrichedAlert{
-        Fingerprint: alert.Fingerprint,
-        Severity:    alert.Severity,
-        Environment: extractEnvironmentFromLabels(alert.Labels),
-        KubernetesContext: KubernetesContext{
-            Namespace:    alert.Labels["namespace"],
-            PodName:      alert.Labels["pod"],
-            // Minimal context from alert labels only
-        },
-    }
-}
-```
-
-### 4. External Service Integration: Context API (Recovery Enrichment - DD-001: Alternative 2)
-
-> **📋 Design Decision: DD-001 | ✅ Approved Design**
-> **See**: [DD-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
-
-**Integration Pattern**: Conditional synchronous HTTP REST API call (ONLY for recovery attempts)
-**Business Requirement**: BR-WF-RECOVERY-011
-**Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Version 1.2 - Alternative 2)
-
-**When Used**: Only when `spec.isRecoveryAttempt = true`
-
-**Endpoint**: Context API `/api/v1/context/remediation/{remediationRequestId}`
-
-**Purpose**: Retrieve historical failure context to enable AI to generate alternative recovery strategies
-
-**Request**:
-```go
-// GET /api/v1/context/remediation/{remediationRequestId}
-// Query parameter: remediationRequestId from spec.remediationRequestRef.name
-
-type ContextAPIClient interface {
-    GetRemediationContext(ctx context.Context, remediationRequestID string) (*ContextAPIResponse, error)
-}
-```
-
-**Response**:
-```go
-type ContextAPIResponse struct {
-    RemediationRequestID string                    `json:"remediationRequestId"`
-    CurrentAttempt       int                       `json:"currentAttempt"`
-    PreviousFailures     []PreviousFailureDTO      `json:"previousFailures"`
-    RelatedAlerts        []RelatedAlertDTO         `json:"relatedAlerts"`
-    HistoricalPatterns   []HistoricalPatternDTO    `json:"historicalPatterns"`
-    SuccessfulStrategies []SuccessfulStrategyDTO   `json:"successfulStrategies"`
-    ContextQuality       string                    `json:"contextQuality"` // "complete", "partial", "minimal"
-}
-
-type PreviousFailureDTO struct {
-    WorkflowRef      string                 `json:"workflowRef"`
-    AttemptNumber    int                    `json:"attemptNumber"`
-    FailedStep       int                    `json:"failedStep"`
-    Action           string                 `json:"action"`
-    ErrorType        string                 `json:"errorType"`
-    FailureReason    string                 `json:"failureReason"`
-    Duration         string                 `json:"duration"`
-    ClusterState     map[string]interface{} `json:"clusterState"`
-    ResourceSnapshot map[string]interface{} `json:"resourceSnapshot"`
-    Timestamp        time.Time              `json:"timestamp"`
-}
-```
-
-**Integration Flow (Alternative 2)**:
-```go
-// In RemediationProcessingReconciler.reconcileEnriching()
-func (r *RemediationProcessingReconciler) reconcileEnriching(
-    ctx context.Context,
-    rp *processingv1.RemediationProcessing,
-) (ctrl.Result, error) {
-
-    log := ctrl.LoggerFrom(ctx)
-
-    // ALWAYS: Enrich monitoring + business context (gets FRESH data)
-    enrichmentResults, err := r.ContextService.GetContext(ctx, rp.Spec.Alert)
-    if err != nil {
-        return ctrl.Result{RequeueAfter: 30 * time.Second}, err
-    }
-
-    rp.Status.EnrichmentResults = enrichmentResults
-
-    // IF RECOVERY: ALSO query Context API for recovery context (Alternative 2)
-    if rp.Spec.IsRecoveryAttempt {
-        log.Info("Recovery attempt detected - querying Context API for historical context",
-            "attemptNumber", rp.Spec.RecoveryAttemptNumber,
-            "remediationRequestID", rp.Spec.RemediationRequestRef.Name)
-
-        // Query Context API
-        recoveryCtx, err := r.enrichRecoveryContext(ctx, rp)
-        if err != nil {
-            // Graceful degradation: Use fallback context
-            log.Warn("Context API unavailable, using fallback recovery context",
-                "error", err,
-                "attemptNumber", rp.Spec.RecoveryAttemptNumber)
-
-            r.Recorder.Event(rp, "Warning", "ContextAPIUnavailable",
-                fmt.Sprintf("Context API query failed: %v. Using fallback context.", err))
-
-            recoveryCtx = r.buildFallbackRecoveryContext(rp)
-        }
-
-        // Add recovery context to enrichment results
-        rp.Status.EnrichmentResults.RecoveryContext = recoveryCtx
-
-        log.Info("Recovery context enrichment completed",
-            "contextQuality", recoveryCtx.ContextQuality,
-            "previousFailuresCount", len(recoveryCtx.PreviousFailures),
-            "relatedAlertsCount", len(recoveryCtx.RelatedAlerts))
-    }
-
-    rp.Status.Phase = "classifying"
-    return ctrl.Result{Requeue: true}, r.Status().Update(ctx, rp)
-}
-
-// Helper function to query Context API
-func (r *RemediationProcessingReconciler) enrichRecoveryContext(
-    ctx context.Context,
-    rp *processingv1.RemediationProcessing,
-) (*processingv1.RecoveryContext, error) {
-
-    // Query Context API
-    contextResp, err := r.ContextAPIClient.GetRemediationContext(
-        ctx,
-        rp.Spec.RemediationRequestRef.Name,
-    )
-
-    if err != nil {
-        return nil, fmt.Errorf("Context API query failed: %w", err)
-    }
-
-    // Convert DTO to CRD type
-    return convertToRecoveryContext(contextResp), nil
-}
-
-// Graceful degradation fallback
-func (r *RemediationProcessingReconciler) buildFallbackRecoveryContext(
-    rp *processingv1.RemediationProcessing,
-) *processingv1.RecoveryContext {
-
-    return &processingv1.RecoveryContext{
-        ContextQuality: "degraded",
-        PreviousFailures: []processingv1.PreviousFailure{
-            {
-                WorkflowRef:   rp.Spec.FailedWorkflowRef.Name,
-                FailedStep:    *rp.Spec.FailedStep,
-                FailureReason: *rp.Spec.FailureReason,
-                AttemptNumber: rp.Spec.RecoveryAttemptNumber - 1,
+// If enrichment service unavailable, extract minimal context from signal labels
+func (e *Enricher) DegradedModeEnrich(signal Signal) EnrichmentResults {
+    return EnrichmentResults{
+        KubernetesContext: &KubernetesContext{
+            Namespace: signal.Labels["namespace"],
+            PodDetails: &PodDetails{
+                Name: signal.Labels["pod"],
             },
         },
-        RetrievedAt: metav1.Now(),
+        EnrichmentQuality: 0.5, // Low quality fallback
     }
 }
 ```
 
-**Key Benefits (Alternative 2)**:
-- ✅ **Temporal Consistency**: Recovery context retrieved at same time as monitoring/business contexts
-- ✅ **Fresh Data**: All contexts (monitoring + business + recovery) captured at same timestamp
-- ✅ **Graceful Degradation**: Falls back to minimal context from `failedWorkflowRef` if API unavailable
-- ✅ **Architectural Consistency**: ALL enrichment happens in RemediationProcessing controller
-- ✅ **Immutable Audit Trail**: Each SignalProcessing CRD contains complete snapshot
+### 4. Context API Integration - DEPRECATED
 
-**Graceful Degradation Example**:
-```yaml
-# Context API unavailable - fallback context created
-status:
-  enrichmentResults:
-    recoveryContext:
-      contextQuality: "degraded"
-      previousFailures:
-      - workflowRef: "workflow-001"
-        failedStep: 3
-        failureReason: "timeout"
-        attemptNumber: 1
-      retrievedAt: "2025-01-15T10:00:00Z"
+> **⚠️ DEPRECATED per [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md)**
+>
+> Signal Processing NO LONGER queries Context API for recovery context.
+> Recovery context is now embedded by Remediation Orchestrator in `spec.failureData`.
+>
+> **Rationale**:
+> - Eliminates external dependency for recovery
+> - Simplifies architecture
+> - Remediation Orchestrator has direct access to WorkflowExecution CRD
+> - All failure data available at CRD creation time
+
+**Previous Integration** (removed):
+```go
+// DEPRECATED - DO NOT USE
+// Context API queries are no longer performed
+// See: DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md
 ```
 
-**Success Example**:
-```yaml
-# Context API available - complete recovery context
-status:
-  enrichmentResults:
-    recoveryContext:
-      contextQuality: "complete"
-      previousFailures:
-      - workflowRef: "workflow-001"
-        attemptNumber: 1
-        failedStep: 3
-        action: "scale-deployment"
-        errorType: "timeout"
-        failureReason: "Operation timed out after 5m"
-        duration: "5m 3s"
-        timestamp: "2025-01-15T09:50:00Z"
-      relatedAlerts:
-      - alertFingerprint: "related-123"
-        alertName: "HighMemoryUsage"
-        correlation: 0.85
-      historicalPatterns:
-      - pattern: "scale_timeout_high_memory"
-        occurrences: 12
-        successRate: 0.73
-      successfulStrategies:
-      - strategy: "force-delete-pods-then-scale"
-        confidence: 0.88
-        successCount: 8
-      retrievedAt: "2025-01-15T10:00:00Z"
+**New Integration Pattern**:
+```go
+// Recovery context now read from spec.failureData (embedded by Remediation Orchestrator)
+func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp *signalprocessingv1.SignalProcessing) {
+    if sp.Spec.IsRecoveryAttempt && sp.Spec.FailureData != nil {
+        // Build recovery context from embedded data
+        recoveryCtx := &signalprocessingv1.RecoveryContext{
+            ContextQuality: "complete",
+            PreviousFailure: &signalprocessingv1.PreviousFailure{
+                WorkflowRef:   sp.Spec.FailureData.WorkflowRef,
+                AttemptNumber: sp.Spec.FailureData.AttemptNumber,
+                FailedStep:    sp.Spec.FailureData.FailedStep,
+                Action:        sp.Spec.FailureData.Action,
+                ErrorType:     sp.Spec.FailureData.ErrorType,
+                FailureReason: sp.Spec.FailureData.FailureReason,
+                Duration:      sp.Spec.FailureData.Duration,
+                Timestamp:     sp.Spec.FailureData.FailedAt,
+                ResourceState: sp.Spec.FailureData.ResourceState,
+            },
+            ProcessedAt: metav1.Now(),
+        }
+        sp.Status.EnrichmentResults.RecoveryContext = recoveryCtx
+    }
+}
 ```
 
 ---
 
-### 5. Database Integration: Data Storage Service
+### 5. Database Integration: Data Storage Service (ADR-032)
 
-**Integration Pattern**: Audit trail persistence
+**Integration Pattern**: Audit trail persistence via REST API
 
-**Endpoint**: Data Storage Service HTTP POST `/api/v1/audit/signal-processing`
+> **📋 ADR-032: Data Access Layer Isolation**
+> Only Data Storage Service connects directly to PostgreSQL.
+> Signal Processing uses Data Storage Service REST API for audit writes.
+> **See**: [ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
+
+**Endpoint**: Data Storage Service `POST /api/v1/audit/signal-processing`
 
 **Audit Record**:
 ```go
-type RemediationProcessingAudit struct {
-    AlertFingerprint    string                     `json:"alertFingerprint"`
-    ProcessingStartTime time.Time                  `json:"processingStartTime"`
-    ProcessingEndTime   time.Time                  `json:"processingEndTime"`
-    EnrichmentResult    EnrichedAlert              `json:"enrichmentResult"`
-    ClassificationResult EnvironmentClassification `json:"classificationResult"`
-    DegradedMode        bool                       `json:"degradedMode"`
-    // Alternative 2: Recovery context audit
-    RecoveryContext     *RecoveryContext           `json:"recoveryContext,omitempty"`
-    IsRecoveryAttempt   bool                       `json:"isRecoveryAttempt"`
+type SignalProcessingAudit struct {
+    SignalFingerprint    string                     `json:"signalFingerprint"`
+    ProcessingStartTime  time.Time                  `json:"processingStartTime"`
+    ProcessingEndTime    time.Time                  `json:"processingEndTime"`
+    EnrichmentResult     *EnrichmentResults         `json:"enrichmentResult"`
+    ClassificationResult *EnvironmentClassification `json:"classificationResult"`
+    Categorization       *Categorization            `json:"categorization"`
+    DegradedMode         bool                       `json:"degradedMode"`
+    IsRecoveryAttempt    bool                       `json:"isRecoveryAttempt"`
 }
 ```
+
+**Integration Code**:
+```go
+// DataStorageClient interface for audit trail persistence
+type DataStorageClient interface {
+    CreateAuditRecord(ctx context.Context, audit *SignalProcessingAudit) error
+}
+
+// Implementation using HTTP client
+type dataStorageClientImpl struct {
+    httpClient *http.Client
+    baseURL    string
+}
+
+func (c *dataStorageClientImpl) CreateAuditRecord(ctx context.Context, audit *SignalProcessingAudit) error {
+    url := fmt.Sprintf("%s/api/v1/audit/signal-processing", c.baseURL)
+    body, _ := json.Marshal(audit)
+
+    req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.httpClient.Do(req)
+    if err != nil {
+        return fmt.Errorf("data storage request failed: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusCreated {
+        return fmt.Errorf("data storage returned status %d", resp.StatusCode)
+    }
+
+    return nil
+}
+```
+
+**Note**: Signal Processing does NOT connect directly to PostgreSQL. All audit persistence goes through Data Storage Service REST API per ADR-032.
 
 ### 6. Dependencies Summary
 
 **Upstream Services**:
-- **Gateway Service** - Creates RemediationRequest CRD with duplicate detection already performed (BR-WH-008)
-- **RemediationRequest Controller** - Creates SignalProcessing CRD when workflow starts (initial & recovery)
+- **Gateway Service** - Creates RemediationRequest CRD with duplicate detection already performed (BR-WH-008), sets placeholder priority
+- **RemediationRequest Controller** - Creates SignalProcessing CRD when workflow starts (initial & recovery), embeds `failureData` for recovery
 
 **Downstream Services**:
-- **RemediationRequest Controller** - Watches RemediationProcessing status and creates AIAnalysis CRD upon completion
+- **RemediationRequest Controller** - Watches SignalProcessing status and creates AIAnalysis CRD upon completion
 
 **External Services**:
-- **Context Service** - HTTP GET for Kubernetes context enrichment (monitoring + business contexts)
-- **Context API** - HTTP GET for recovery context enrichment (ONLY for recovery attempts - Alternative 2)
-- **Data Storage Service** - HTTP POST for audit trail persistence
+- **Kubernetes API** - For resource context enrichment (pods, deployments, nodes)
+- **Data Storage Service** - REST API for audit trail persistence (ADR-032)
+
+**Deprecated Services**:
+- ~~**Context API**~~ - Removed per DD-CONTEXT-006 (recovery context now embedded by Remediation Orchestrator)
 
 **Database**:
-- PostgreSQL - `alert_processing_audit` table for long-term audit storage
-- Vector DB (optional) - Enrichment context embeddings for ML analysis
+- ~~PostgreSQL - Direct access~~ - **REMOVED** per ADR-032
+- Data Storage Service REST API - Audit persistence
 
-**Existing Code to Leverage** (after migration to `pkg/remediationprocessing/`):
-- `pkg/remediationprocessing/` (migrated from `pkg/alert/`) - Alert processing business logic (1,103 lines)
-  - `service.go` - AlertProcessorService interface (to be renamed)
+**Existing Code to Leverage** (after migration to `pkg/signalprocessing/`):
+- `pkg/signalprocessing/` - Signal processing business logic
+  - `service.go` - SignalProcessingService interface
   - `implementation.go` - Service implementation
-  - `components.go` - Processing components (AlertProcessorImpl, AlertEnricherImpl, etc.)
+  - `components.go` - Processing components (SignalEnricher, EnvironmentClassifier, PriorityCategorizer)
 - `pkg/processor/environment/classifier.go` - Environment classification
-- `pkg/ai/context/` - Context gathering functions
-- `pkg/storage/` - Database client and audit storage (to be created)
+- `pkg/processor/priority/categorizer.go` - Priority categorization (new per DD-CATEGORIZATION-001)
 
 **Code to Move to Gateway Service**:
-- `pkg/alert/components.go` → Gateway Service - `AlertDeduplicatorImpl` (fingerprint generation logic reusable)
-
+- `pkg/signal/components.go` → Gateway Service - `SignalDeduplicatorImpl` (fingerprint generation logic reusable)
