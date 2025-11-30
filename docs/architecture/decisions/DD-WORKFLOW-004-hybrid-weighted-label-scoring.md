@@ -4,15 +4,33 @@
 **Status**: ✅ **APPROVED**
 **Confidence**: 95%
 **Purpose**: Define the hybrid weighted scoring strategy for workflow catalog semantic search that combines strict filtering for mandatory labels with semantic similarity ranking.
-**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.4 (Mandatory Label Schema)
-**Version**: 2.1
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.6 (Mandatory Label Schema), DD-HAPI-001 (Custom Labels Auto-Append)
+**Version**: 2.2
 
 ---
 
 ## 📝 **Changelog**
 
+### Version 2.2 (2025-11-30)
+**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.6 (snake_case API fields + DetectedLabels wildcards).
+
+**Changes**:
+- ✅ **snake_case API Fields**: All label field names use snake_case (`signal_type`, `severity`, etc.)
+- ✅ **Structured Columns**: 5 mandatory labels are structured columns (not JSONB)
+- ✅ **CustomLabels JSONB**: `risk_tolerance`, `business_category` stored in `custom_labels` JSONB
+- ✅ **Updated SQL Queries**: Use structured column references, not `labels->>'signal-type'`
+- ✅ **DetectedLabels Wildcard Support**: String fields (`gitOpsTool`, `podSecurityLevel`, `serviceMesh`) support `"*"`
+- ✅ **Matching Semantics**: `"*"` = "requires SOME value", *(absent)* = "no requirement"
+- ✅ **Cross-reference**: DD-WORKFLOW-001 v1.6, DD-HAPI-001
+
+**Breaking Changes**:
+- All examples updated to snake_case field names
+- SQL queries use structured columns for mandatory labels
+- CustomLabels use subdomain format: `map[subdomain][]string`
+- DetectedLabels string fields now support wildcard matching
+
 ### Version 2.1 (2025-11-30)
-**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived).
+**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.6 (5 mandatory labels, snake_case API fields, risk_tolerance customer-derived).
 
 **Changes**:
 - ✅ **5 Mandatory Labels**: Reduced from 6 to 5 (removed `risk_tolerance` from mandatory)
@@ -77,17 +95,17 @@
 **Decision**: Implement a **Two-Phase Semantic Search** approach for workflow selection:
 
 ### V1.0 (Current - Base Similarity Only)
-1. **Phase 1: Strict Filtering** for mandatory labels (`signal-type`, `severity`, + other mandatory labels) - mismatch = exclude workflow
+1. **Phase 1: Strict Filtering** for mandatory labels (`signal_type`, `severity`, + other mandatory labels) - mismatch = exclude workflow
 2. **Phase 2: Semantic Ranking** using pgvector cosine similarity - `confidence = base_similarity`
 
 ### V2.0+ (Future - Configurable Label Weights)
 3. **Configurable Boost/Penalty** for customer-defined labels - weights defined per customer environment
 
-**Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only **5 mandatory labels** (DD-WORKFLOW-001 v1.4). Additionally, **DetectedLabels** are auto-populated (V1.0) and **CustomLabels** (including `risk_tolerance`) are user-defined via Rego (V1.0). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
+**Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only **5 mandatory labels** (DD-WORKFLOW-001 v1.6). Additionally, **DetectedLabels** are auto-populated (V1.0) and **CustomLabels** (including `risk_tolerance`) are user-defined via Rego (V1.0). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
 
 ---
 
-## 🏗️ **Label Architecture (DD-WORKFLOW-001 v1.4)**
+## 🏗️ **Label Architecture (DD-WORKFLOW-001 v1.6)**
 
 ### Label Taxonomy Overview
 
@@ -101,7 +119,7 @@
 
 ### Kubernaut-Enforced Labels (5 Mandatory)
 
-Per **DD-WORKFLOW-001 v1.4**, these labels are Kubernaut-defined with fixed keys:
+Per **DD-WORKFLOW-001 v1.6**, these labels are Kubernaut-defined with fixed keys:
 
 #### Group A: Auto-Populated (from K8s/Prometheus)
 
@@ -122,17 +140,25 @@ Per **DD-WORKFLOW-001 v1.4**, these labels are Kubernaut-defined with fixed keys
 
 SignalProcessing auto-detects these from K8s resources (NO config required):
 
-| Field | Detection Method | Used For |
-|-------|------------------|----------|
-| `GitOpsManaged` | ArgoCD/Flux annotations | LLM context + workflow filtering |
-| `GitOpsTool` | Specific annotation patterns | Workflow selection preference |
-| `PDBProtected` | PDB exists for workload | Risk assessment |
-| `HPAEnabled` | HPA targets workload | Scaling context |
-| `Stateful` | StatefulSet or PVC | State handling |
-| `HelmManaged` | Helm labels present | Deployment method |
-| `NetworkIsolated` | NetworkPolicy exists | Security context |
-| `PodSecurityLevel` | Namespace PSS label | Security posture |
-| `ServiceMesh` | Istio/Linkerd sidecar | Traffic management |
+| Field | Type | Wildcard | Detection Method | Used For |
+|-------|------|----------|------------------|----------|
+| `gitOpsManaged` | bool | ❌ No | ArgoCD/Flux annotations | LLM context |
+| `gitOpsTool` | string | ✅ `"*"` | Specific annotation patterns | Workflow selection |
+| `pdbProtected` | bool | ❌ No | PDB exists for workload | Risk assessment |
+| `hpaEnabled` | bool | ❌ No | HPA targets workload | Scaling context |
+| `stateful` | bool | ❌ No | StatefulSet or PVC | State handling |
+| `helmManaged` | bool | ❌ No | Helm labels present | Deployment method |
+| `networkIsolated` | bool | ❌ No | NetworkPolicy exists | Security context |
+| `podSecurityLevel` | string | ✅ `"*"` | Namespace PSS label | Security posture |
+| `serviceMesh` | string | ✅ `"*"` | Istio/Linkerd sidecar | Traffic management |
+
+**Wildcard Matching for String Fields** (per DD-WORKFLOW-001 v1.6):
+
+| Workflow Specifies | Signal Has Value | Signal Absent | Meaning |
+|--------------------|------------------|---------------|---------|
+| `"argocd"` | ✅ if `argocd` | ❌ No | "I only support ArgoCD" |
+| `"*"` | ✅ Any value | ❌ No | "I support any GitOps tool (but require one)" |
+| *(absent)* | ✅ Any value | ✅ Yes | "I have no GitOps requirement" (generic) |
 
 ### CustomLabels (V1.0 - Subdomain-Based)
 
@@ -162,7 +188,7 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 **Scenario**: A signal is detected for a payment service in production that is managed by GitOps (ArgoCD).
 
 **Labels Detected** (multi-tier):
-- `signal-type`: "OOMKilled" (from LLM RCA) - **Mandatory (Group A)**
+- `signal_type`: "OOMKilled" (from LLM RCA) - **Mandatory (Group A)**
 - `severity`: "critical" (from LLM RCA) - **Mandatory (Group A)**
 - `component`: "pod" (from K8s) - **Mandatory (Group A)**
 - `environment`: "production" (from Rego) - **Mandatory (Group B)**
@@ -171,14 +197,14 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 - `GitOpsTool`: "argocd" (auto-detected) - **DetectedLabels**
 - `risk_tolerance`: "low" (from Rego) - **CustomLabels (customer-derived)**
 - `PDBProtected`: true (auto-detected) - **DetectedLabels**
-- `business-category`: "payment-service" (from Rego) - **CustomLabels**
+- `business_category`: "payment-service" (from Rego) - **CustomLabels**
 - `region`: "us-east-1" (from Rego) - **CustomLabels**
 - `team`: "platform" (from Rego) - **CustomLabels**
 
 **Key Insight**:
-- The **5 mandatory labels** are Kubernaut-enforced (DD-WORKFLOW-001 v1.4)
+- The **5 mandatory labels** are Kubernaut-enforced (DD-WORKFLOW-001 v1.6)
 - **DetectedLabels** are auto-detected from K8s without configuration (V1.0 priority)
-- **CustomLabels** like `risk-tolerance`, `business-category`, `region`, `team` are **user-defined** via Rego (V1.0)
+- **CustomLabels** like `risk_tolerance`, `business_category`, `region`, `team` are **user-defined** via Rego (V1.0)
 - Both label **keys** and **values** for CustomLabels are customer-controlled
 - **Naming convention**: `kubernaut.io/*`, `constraint.kubernaut.io/*`, `custom.kubernaut.io/*`
 - Kubernaut cannot hardcode boost/penalty weights for labels that vary per customer
@@ -197,10 +223,9 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 ┌─────────────────────────────────────────────────────────────────┐
 │ Phase 1: Strict Filtering (Mandatory Labels)                   │
 │                                                                  │
-│ WHERE labels->>'signal-type' = $signal_type                    │
-│   AND labels->>'severity' = $severity                          │
-│   AND (labels->>'environment' = $environment OR                │
-│        labels->>'environment' = '*')                           │
+│ WHERE signal_type = $signal_type                               │
+│   AND severity = $severity                                     │
+│   AND (environment = $environment OR environment = '*')        │
 │   AND (1 - (embedding <=> $embedding)) >= $min_similarity      │
 │                                                                  │
 │ Result: Workflows matching mandatory labels                     │
@@ -226,15 +251,15 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 
 | Label | Source | Behavior |
 |-------|--------|----------|
-| `signal-type` | LLM RCA | **EXCLUDE** if mismatch |
+| `signal_type` | LLM RCA | **EXCLUDE** if mismatch |
 | `severity` | LLM RCA | **EXCLUDE** if mismatch |
+| `component` | Signal Processing | Stored but NOT used as filter |
 | `environment` | Signal Processing | **EXCLUDE** if mismatch (wildcard '*' matches any) |
 | `priority` | Signal Processing | **EXCLUDE** if mismatch (wildcard '*' matches any) |
-| `risk-tolerance` | Signal Processing | **EXCLUDE** if mismatch |
-| `business-category` | Signal Processing | **EXCLUDE** if mismatch (wildcard '*' matches any) |
-| `component` | Signal Processing | Stored but NOT used as filter |
 
-**Behavior**: Mandatory labels provide strict pre-filtering before semantic ranking.
+**Note**: `risk_tolerance` and `business_category` are now **CustomLabels** (per DD-WORKFLOW-001 v1.6).
+
+**Behavior**: 5 mandatory labels provide strict pre-filtering before semantic ranking.
 
 ### Custom Labels (V1.0 - No Scoring Impact)
 
@@ -255,13 +280,13 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 
 ```sql
 -- V1.0: Two-Phase Semantic Search (Base Similarity Only)
--- Authority: DD-WORKFLOW-004 v2.0
+-- Authority: DD-WORKFLOW-004 v2.1, DD-WORKFLOW-001 v1.6
 --
--- Phase 1: Strict filtering on mandatory labels
+-- Phase 1: Strict filtering on 5 mandatory labels (structured columns)
 -- Phase 2: Semantic ranking by cosine similarity
 --
 -- NOTE: No boost/penalty logic in V1.0
---       Custom labels are customer-defined via Rego policies
+--       Custom labels (risk_tolerance, business_category) are filtered via JSONB containment
 --       Configurable weights deferred to V2.0+
 
 SELECT
@@ -270,21 +295,20 @@ SELECT
     version,
     name,
     description,
-    labels,
     embedding,
     -- Confidence = base semantic similarity (V1.0)
     (1 - (embedding <=> $embedding)) AS confidence
 FROM remediation_workflow_catalog
 WHERE status = 'active'
   AND is_latest_version = true
-  -- PHASE 1: Strict Filtering (Mandatory Labels)
-  AND labels->>'signal-type' = $signal_type
-  AND labels->>'severity' = $severity
-  -- Optional mandatory label filters (with wildcard support)
-  AND (labels->>'environment' = $environment OR labels->>'environment' = '*')
-  AND (labels->>'priority' = $priority OR labels->>'priority' = '*')
-  AND labels->>'risk-tolerance' = $risk_tolerance
-  AND (labels->>'business-category' = $business_category OR labels->>'business-category' = '*')
+  -- PHASE 1: Strict Filtering (5 Mandatory Labels - structured columns)
+  AND signal_type = $signal_type
+  AND severity = $severity
+  AND component = $component
+  AND (environment = $environment OR environment = '*')
+  AND (priority = $priority OR priority = '*')
+  -- Custom labels (JSONB containment - includes risk_tolerance, business_category)
+  AND (custom_labels @> $custom_labels OR $custom_labels IS NULL)
   -- Minimum semantic similarity threshold
   AND (1 - (embedding <=> $embedding)) >= $min_similarity
 -- PHASE 2: Semantic Ranking
@@ -308,34 +332,46 @@ confidence = (1 - (embedding <=> query_embedding))
 
 ### Example 1: Multiple Workflows with Same Mandatory Labels
 
-**Query**:
+**Query** (signal with auto-detected GitOps and PDB protection):
 ```json
 {
   "query": "OOMKilled critical memory increase production",
   "filters": {
     "signal_type": "OOMKilled",
     "severity": "critical",
+    "component": "pod",
     "environment": "production",
-    "priority": "P0",
-    "risk_tolerance": "low",
-    "business_category": "revenue-critical"
+    "priority": "P0"
+  },
+  "detected_labels": {
+    "gitOpsManaged": true,
+    "gitOpsTool": "argocd",
+    "pdbProtected": true,
+    "helmManaged": true
+  },
+  "custom_labels": {
+    "risk_tolerance": ["low"],
+    "business_category": ["revenue-critical"]
   }
 }
 ```
+
+**Note**: `detected_labels` only includes booleans when `true` (per v1.5 Boolean Normalization). Fields like `hpaEnabled: false`, `stateful: false` are **omitted**.
 
 **Workflow A** (GitOps workflow - better semantic match):
 ```json
 {
   "name": "increase-memory-gitops-conservative-prod",
   "description": "OOMKilled critical: Increases memory limits via GitOps PR for production workloads",
-  "labels": {
-    "signal-type": "OOMKilled",
-    "severity": "critical",
-    "environment": "production",
-    "priority": "P0",
-    "risk-tolerance": "low",
-    "business-category": "revenue-critical",
-    "gitops-tool": "argocd"
+  "signal_type": "OOMKilled",
+  "severity": "critical",
+  "component": "pod",
+  "environment": "production",
+  "priority": "P0",
+  "custom_labels": {
+    "risk_tolerance": ["low"],
+    "business_category": ["revenue-critical"],
+    "constraint": ["gitops-only"]
   }
 }
 ```
@@ -345,13 +381,14 @@ confidence = (1 - (embedding <=> query_embedding))
 {
   "name": "increase-memory-manual-kubectl",
   "description": "OOMKilled critical: Increases memory limits via kubectl patch",
-  "labels": {
-    "signal-type": "OOMKilled",
-    "severity": "critical",
-    "environment": "production",
-    "priority": "P0",
-    "risk-tolerance": "low",
-    "business-category": "revenue-critical"
+  "signal_type": "OOMKilled",
+  "severity": "critical",
+  "component": "pod",
+  "environment": "production",
+  "priority": "P0",
+  "custom_labels": {
+    "risk_tolerance": ["low"],
+    "business_category": ["revenue-critical"]
   }
 }
 ```
@@ -361,7 +398,7 @@ confidence = (1 - (embedding <=> query_embedding))
 - **Workflow B**: confidence = 0.88 (lower semantic similarity)
 - **Result**: Workflow A ranked first based on semantic similarity alone
 
-**Note**: In V1.0, the `gitops-tool: argocd` custom label does NOT affect scoring. Ranking is purely by semantic similarity.
+**Note**: In V1.0, the `detected_labels` and `custom_labels` do NOT affect scoring. Ranking is purely by semantic similarity. Future V2.0+ may add configurable boost/penalty based on these labels.
 
 ---
 
@@ -381,22 +418,22 @@ confidence = (1 - (embedding <=> query_embedding))
 **Workflow C** (Environment-specific):
 ```json
 {
-  "labels": {
-    "signal-type": "OOMKilled",
-    "severity": "critical",
-    "environment": "staging"
-  }
+  "signal_type": "OOMKilled",
+  "severity": "critical",
+  "component": "pod",
+  "environment": "staging",
+  "priority": "P1"
 }
 ```
 
 **Workflow D** (Wildcard environment):
 ```json
 {
-  "labels": {
-    "signal-type": "OOMKilled",
-    "severity": "critical",
-    "environment": "*"
-  }
+  "signal_type": "OOMKilled",
+  "severity": "critical",
+  "component": "pod",
+  "environment": "*",
+  "priority": "*"
 }
 ```
 
@@ -463,17 +500,17 @@ Labels are **customer-defined** and **detected** by the **Signal Processing Serv
 
 ### Mandatory Labels (Kubernaut-Enforced)
 
-These 7 labels have fixed keys defined by Kubernaut (DD-WORKFLOW-001):
+These **5 mandatory labels** have fixed keys defined by Kubernaut (DD-WORKFLOW-001 v1.6):
 
 | Label | Detection Source | Detection Method |
 |-------|------------------|------------------|
-| `signal-type` | LLM RCA | LLM determines from investigation |
+| `signal_type` | LLM RCA | LLM determines from investigation |
 | `severity` | LLM RCA | LLM assesses from impact analysis |
+| `component` | Resource type | Kubernetes resource kind |
 | `environment` | Namespace label | `namespace.labels["environment"]` |
 | `priority` | Derived (Rego policy) | Calculated from context |
-| `risk-tolerance` | Derived (environment) | Calculated from context |
-| `business-category` | Namespace label | `namespace.labels["business-category"]` |
-| `component` | Resource type | Kubernetes resource kind |
+
+**Note**: `risk_tolerance` and `business_category` are now **CustomLabels** (customer-defined via Rego).
 
 ### Custom Labels (Customer-Defined)
 
@@ -481,10 +518,13 @@ Customers define additional labels via Rego policies. Examples:
 
 | Label Key (Customer-Defined) | Detection Source | Example Value |
 |------------------------------|------------------|---------------|
-| `gitops-tool` | Deployment annotation | `argocd`, `flux` |
-| `region` | Namespace label | `us-east-1`, `eu-west-1` |
-| `team` | Namespace label | `platform`, `payments` |
-| `sla-tier` | Namespace label | `gold`, `silver`, `bronze` |
+| `risk_tolerance` | Derived (Rego policy) | `["low"]`, `["medium"]`, `["high"]` |
+| `business_category` | Namespace label | `["payment-service"]`, `["analytics"]` |
+| `gitops_tool` | Deployment annotation | `["argocd"]`, `["flux"]` |
+| `region` | Namespace label | `["us-east-1"]`, `["eu-west-1"]` |
+| `team` | Namespace label | `["platform"]`, `["payments"]` |
+
+**Note**: CustomLabels use the subdomain format per DD-WORKFLOW-001 v1.5: `map[subdomain][]string`
 
 ### Example Rego Policy (Customer-Provided)
 
@@ -497,26 +537,37 @@ environment = env {
     env != ""
 }
 
-# Custom labels (customer-defined keys)
-# Customer decides which labels to detect and how
-gitops_tool = "argocd" {
+priority = "P0" {
+    input.severity == "critical"
+    environment == "production"
+}
+
+# Custom labels (customer-defined keys - stored in custom_labels JSONB)
+# Format: map[subdomain][]string per DD-WORKFLOW-001 v1.5
+
+custom_labels["risk_tolerance"] = ["low"] {
+    priority == "P0"
+    environment == "production"
+}
+
+custom_labels["risk_tolerance"] = ["high"] {
+    environment in ["staging", "development", "test"]
+}
+
+custom_labels["gitops_tool"] = ["argocd"] {
     input.deployment.annotations["argocd.argoproj.io/instance"]
 }
 
-gitops_tool = "flux" {
+custom_labels["gitops_tool"] = ["flux"] {
     input.deployment.annotations["flux.fluxcd.io/sync-checksum"]
 }
 
-region = input.namespace.labels["region"]
+custom_labels["region"] = [input.namespace.labels["region"]] {
+    input.namespace.labels["region"]
+}
 
-team = input.namespace.labels["team"]
-
-# Aggregate all labels (mandatory + custom)
-labels = {
-    "environment": environment,
-    "gitops-tool": gitops_tool,  # Custom
-    "region": region,             # Custom
-    "team": team                  # Custom
+custom_labels["team"] = [input.namespace.labels["team"]] {
+    input.namespace.labels["team"]
 }
 ```
 
@@ -545,28 +596,32 @@ labels = {
 
 **Flow**:
 1. AIAnalysis receives `RemediationProcessing` CRD with detected labels
-2. LLM performs RCA → determines `signal-type` and `severity`
+2. LLM performs RCA → determines `signal_type` and `severity`
 3. AIAnalysis combines LLM-determined labels + detected labels
-4. Calls Data Storage workflow search with ALL labels
+4. Calls Data Storage workflow search with ALL labels (custom_labels auto-appended per DD-HAPI-001)
 
 **Implementation**: `holmesgpt-api/src/extensions/recovery.py`
 
 ```python
 def search_workflows(context, rca_findings):
-    # LLM-determined labels
-    llm_labels = {
-        "signal-type": rca_findings["signal_type"],
-        "severity": rca_findings["severity"]
+    # LLM-determined mandatory labels (snake_case per DD-WORKFLOW-001 v1.6)
+    mandatory_labels = {
+        "signal_type": rca_findings["signal_type"],
+        "severity": rca_findings["severity"],
+        "component": context.get("component", "pod"),
+        "environment": context.get("environment", "production"),
+        "priority": context.get("priority", "P0")
     }
 
-    # Detected labels (from Signal Processing)
-    detected_labels = context.get("detected_labels", {})
+    # Custom labels (from Signal Processing enrichment_results)
+    # Auto-appended to workflow search per DD-HAPI-001
+    custom_labels = context.get("enrichment_results", {}).get("customLabels", {})
 
-    # Combine ALL labels
+    # Combine for semantic query
     search_params = {
-        "query": f"{llm_labels['signal-type']} {llm_labels['severity']}",
-        **{f"label.{k}": v for k, v in llm_labels.items()},
-        **{f"label.{k}": v for k, v in detected_labels.items()}
+        "query": f"{mandatory_labels['signal_type']} {mandatory_labels['severity']}",
+        "filters": mandatory_labels,
+        "custom_labels": custom_labels  # Auto-appended by WorkflowCatalogToolset
     }
 
     return mcp_client.search_workflow_catalog(**search_params)
@@ -588,25 +643,30 @@ def search_workflows(context, rca_findings):
 
 ```go
 func (r *WorkflowRepository) SearchWorkflows(ctx context.Context, filters *WorkflowSearchFilters) ([]*models.Workflow, error) {
+    // V1.0: Base similarity only (no boost/penalty)
+    // Authority: DD-WORKFLOW-004 v2.1, DD-WORKFLOW-001 v1.6
     query := `
-        WITH label_scores AS (
-            SELECT
-                *,
-                (1 - (embedding <=> $1)) AS base_similarity,
-                (/* boost calculation */) AS label_boost,
-                (/* penalty calculation */) AS label_penalty
-            FROM remediation_workflow_catalog
-            WHERE status = 'active'
-              AND is_latest_version = true
-              AND labels->>'signal-type' = $2
-              AND labels->>'severity' = $3
-              AND (1 - (embedding <=> $1)) >= $4
-        )
         SELECT
-            *,
-            LEAST(base_similarity + label_boost - label_penalty, 1.0) AS final_score
-        FROM label_scores
-        ORDER BY final_score DESC
+            id,
+            workflow_id,
+            version,
+            name,
+            description,
+            embedding,
+            (1 - (embedding <=> $1)) AS confidence
+        FROM remediation_workflow_catalog
+        WHERE status = 'active'
+          AND is_latest_version = true
+          -- 5 Mandatory labels (structured columns, snake_case)
+          AND signal_type = $2
+          AND severity = $3
+          AND component = $4
+          AND (environment = $5 OR environment = '*')
+          AND (priority = $6 OR priority = '*')
+          -- Custom labels (JSONB containment)
+          AND (custom_labels @> $7 OR $7 IS NULL)
+          AND (1 - (embedding <=> $1)) >= $8
+        ORDER BY confidence DESC
         LIMIT $5
     `
 
@@ -671,7 +731,7 @@ func (r *WorkflowRepository) SearchWorkflows(ctx context.Context, filters *Workf
 **Confidence**: 95% (V1.0 Base Similarity Approach)
 
 **Evidence**:
-- ✅ Aligns with DD-WORKFLOW-001 v1.4 (5 mandatory labels + DetectedLabels + CustomLabels)
+- ✅ Aligns with DD-WORKFLOW-001 v1.6 (5 mandatory labels + DetectedLabels + CustomLabels, snake_case)
 - ✅ Aligns with DD-LLM-001 (structured query format with exact labels)
 - ✅ Respects customer-defined labels (no hardcoded assumptions)
 - ✅ Simple implementation (base similarity only)

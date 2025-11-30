@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.5 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case API fields, DetectedLabels wildcard support) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.1, [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.4 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.0) for workflow filtering | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0 |
 > | v1.2 | 2025-11-28 | Performance targets updated (<5s), graceful shutdown, parallel testing, retry strategy | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
@@ -30,7 +31,7 @@
 > **📋 Design Decision: Label Detection Architecture (v1.4)**
 > **Impact**: Signal Processing now populates DetectedLabels (V1.0) and CustomLabels (V1.0)
 > **Purpose**: Provide structured labels for workflow filtering via HolmesGPT-API
-> **Label Taxonomy**: 5 mandatory labels (DD-WORKFLOW-001 v1.4) + Customer-Derived Labels (Rego) + DetectedLabels
+> **Label Taxonomy**: 5 mandatory labels (DD-WORKFLOW-001 v1.6) + Customer-Derived Labels (Rego) + DetectedLabels
 > **See**: [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)
 
 ---

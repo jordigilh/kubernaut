@@ -46,7 +46,6 @@ status:
 ```go
 type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
-    HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
     DetectedLabels    *DetectedLabels    `json:"detectedLabels,omitempty"`
 
     // CustomLabels: Operator-defined labels via Rego
@@ -54,9 +53,13 @@ type EnrichmentResults struct {
     // Value = list of label values (boolean keys or "key=value" pairs)
     CustomLabels map[string][]string `json:"customLabels,omitempty"`
 
+    // CONSUMER: RO only - NOT for LLM/HolmesGPT
+    // RO uses to detect degraded mode (< 0.8) and notify operators
     EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
 }
 ```
+
+> **Note (v1.1)**: `HistoricalContext` was removed - it contained circumstantial data (success rates) meant for operator dashboards, not AI investigation context.
 
 ---
 
@@ -136,7 +139,7 @@ customLabels:            # Operator-defined via Rego
 
 - **HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md**: Full extraction design
 - **HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0**: Rego policy design
-- **DD-WORKFLOW-001 v1.5**: Label schema
+- **DD-WORKFLOW-001 v1.6**: Label schema (snake_case API fields)
 
 ---
 
@@ -153,5 +156,7 @@ customLabels:            # Operator-defined via Rego
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2025-11-30 | Clarified `EnrichmentQuality` is for RO only, NOT for LLM/HolmesGPT |
+| 1.1 | 2025-11-30 | Removed `HistoricalContext` - not applicable for AI investigation (operator metrics only) |
 | 1.0 | 2025-11-30 | Initial handoff - custom labels context |
 

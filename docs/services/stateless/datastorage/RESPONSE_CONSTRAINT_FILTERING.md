@@ -40,7 +40,7 @@ labels JSONB NOT NULL DEFAULT '{}'::jsonb
 ```
 
 **What's Needed**:
-The current search API has **hardcoded filter fields** (6 mandatory + 6 optional labels). To support arbitrary constraint labels, we need to add a `custom_labels` filter parameter.
+The current search API has **hardcoded filter fields** (5 mandatory labels per DD-WORKFLOW-001 v1.6). To support DetectedLabels and CustomLabels (pass-through), we need to add JSONB filter parameters.
 
 **Proposed Enhancement** (Option A - Pre-filter):
 ```go
@@ -74,16 +74,19 @@ WHERE labels->>'constraint.kubernaut.io/cost-constrained' = 'true'
 labels JSONB NOT NULL DEFAULT '{}'::jsonb
 ```
 
-**Example Workflow with Constraint Labels**:
+**Example Workflow with Constraint Labels** (v1.6 - snake_case per DD-WORKFLOW-001):
 ```json
 {
   "workflow_name": "oom-recovery-cost-aware",
   "version": "1.0.0",
-  "labels": {
-    "signal-type": "OOMKilled",
-    "severity": "critical",
-    "constraint.kubernaut.io/cost-constrained": "true",
-    "constraint.kubernaut.io/requires-approval": "false"
+  "signal_type": "OOMKilled",
+  "severity": "critical",
+  "component": "pod",
+  "environment": "production",
+  "priority": "P0",
+  "custom_labels": {
+    "constraint": ["cost-constrained"],
+    "team": ["name=payments"]
   }
 }
 ```
@@ -92,33 +95,29 @@ labels JSONB NOT NULL DEFAULT '{}'::jsonb
 
 ---
 
-### Q3: Does the search API support arbitrary label filtering (beyond the 6 mandatory labels)?
+### Q3: Does the search API support arbitrary label filtering (beyond the 5 mandatory labels)?
 
 **Answer: 🟡 PARTIAL (enhancement needed)**
 
-**Current Support**:
+**Current Support** (per DD-WORKFLOW-001 v1.6):
 
 | Label Type | Example | Filterable? | Notes |
 |------------|---------|-------------|-------|
-| **Mandatory (2)** | `signal-type: OOMKilled`, `severity: critical` | ✅ Yes | Mandatory WHERE clause |
-| **Optional (6)** | `environment: production`, `priority: p0` | ✅ Yes | Boost scoring (+0.05 to +0.10) |
-| **Custom** | `kubernaut.io/team: payments` | ❌ Not yet | Needs `custom_labels` filter |
-| **Constraint** | `constraint.kubernaut.io/cost-constrained: true` | ❌ Not yet | Needs `custom_labels` filter |
+| **Mandatory (5)** | `signal_type: OOMKilled`, `severity: critical`, `component: pod`, `environment: production`, `priority: P0` | ✅ Yes | Structured columns with WHERE clause |
+| **Custom** | `custom_labels: {"constraint": ["cost-constrained"]}` | ✅ Yes | JSONB containment filter |
 
-**Current Filter Fields** (`pkg/datastorage/models/workflow.go`):
+**Filter Fields** (`pkg/datastorage/models/workflow.go`) - snake_case per DD-WORKFLOW-001 v1.6:
 ```go
 type WorkflowSearchFilters struct {
-    // MANDATORY (required for search)
-    SignalType string  `json:"signal-type" validate:"required"`
-    Severity   string  `json:"severity" validate:"required"`
+    // 5 MANDATORY (structured columns per DD-WORKFLOW-001 v1.6)
+    SignalType  string `json:"signal_type" validate:"required"`
+    Severity    string `json:"severity" validate:"required,oneof=critical high medium low"`
+    Component   string `json:"component" validate:"required"`
+    Environment string `json:"environment" validate:"required"`
+    Priority    string `json:"priority" validate:"required"`
 
-    // OPTIONAL (boost scoring)
-    ResourceManagement *string `json:"resource-management,omitempty"`
-    GitOpsTool         *string `json:"gitops-tool,omitempty"`
-    Environment        *string `json:"environment,omitempty"`
-    BusinessCategory   *string `json:"business-category,omitempty"`
-    Priority           *string `json:"priority,omitempty"`
-    RiskTolerance      *string `json:"risk-tolerance,omitempty"`
+    // CUSTOM LABELS (JSONB - includes risk_tolerance, business_category, constraints, etc.)
+    CustomLabels map[string][]string `json:"custom_labels,omitempty"`
 }
 ```
 
@@ -151,14 +150,17 @@ CustomLabels map[string]string `json:"custom_labels,omitempty"`
    CREATE INDEX idx_workflow_labels ON remediation_workflow_catalog USING GIN (labels);
    ```
 
-**Implementation Approach**:
+**Implementation Approach** (per DD-WORKFLOW-001 v1.6 - structured columns + JSONB):
 ```sql
--- Pre-filter constraint labels in WHERE clause
+-- Pre-filter using structured columns for mandatory labels + JSONB for custom labels
 SELECT * FROM remediation_workflow_catalog
-WHERE labels->>'signal-type' = 'OOMKilled'
-  AND labels->>'severity' = 'critical'
-  AND labels->>'constraint.kubernaut.io/cost-constrained' = 'true'  -- Constraint filter
-ORDER BY final_score DESC
+WHERE signal_type = 'OOMKilled'            -- Structured column
+  AND severity = 'critical'                 -- Structured column
+  AND component = 'pod'                     -- Structured column
+  AND (environment = 'production' OR environment = '*')  -- Wildcard support
+  AND (priority = 'P0' OR priority = '*')   -- Wildcard support
+  AND custom_labels @> '{"constraint": ["cost-constrained"]}'  -- JSONB containment
+ORDER BY confidence DESC
 LIMIT 10;
 ```
 
@@ -214,28 +216,34 @@ LIMIT 10;
 
 ## API Contract Update
 
-### Current Search Request
+### Current Search Request (v1.6 - snake_case per DD-WORKFLOW-001)
 ```json
 {
   "query": "OOMKilled memory increase",
   "filters": {
-    "signal-type": "OOMKilled",
-    "severity": "critical"
+    "signal_type": "OOMKilled",
+    "severity": "critical",
+    "component": "pod",
+    "environment": "production",
+    "priority": "P0"
   }
 }
 ```
 
-### Enhanced Search Request (with constraints)
+### Enhanced Search Request (with custom labels including constraints)
 ```json
 {
   "query": "OOMKilled memory increase",
   "filters": {
-    "signal-type": "OOMKilled",
+    "signal_type": "OOMKilled",
     "severity": "critical",
-    "custom_labels": {
-      "constraint.kubernaut.io/cost-constrained": "true",
-      "constraint.kubernaut.io/high-availability": "true"
-    }
+    "component": "pod",
+    "environment": "production",
+    "priority": "P0"
+  },
+  "custom_labels": {
+    "constraint": ["cost-constrained", "high-availability"],
+    "risk_tolerance": ["low"]
   }
 }
 ```
@@ -293,7 +301,7 @@ LIMIT 10;
 
 | Document | Relevance |
 |----------|-----------|
-| [DD-WORKFLOW-001 v1.3](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Mandatory label schema |
+| [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Mandatory label schema (snake_case API fields) |
 | [DD-WORKFLOW-002 v3.0](../../../architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md) | Workflow catalog API |
 | [DD-WORKFLOW-004](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-scoring.md) | Hybrid scoring |
 | [Migration 015](../../../../migrations/015_create_workflow_catalog_table.sql) | JSONB labels schema |
