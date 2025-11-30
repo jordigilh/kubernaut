@@ -28,10 +28,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/go-logr/logr"
 	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
-	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
@@ -172,13 +172,11 @@ func NewServer(
 	internalClient := audit.NewInternalAuditClient(db)
 
 	// Create audit store with logr logger (DD-005 v2.0: Unified logging interface)
-	// Use zapr adapter to convert zap.Logger to logr.Logger for shared libraries
-	logrLogger := zapr.NewLogger(logger)
 	auditStore, err := audit.NewBufferedStore(
 		internalClient,
 		audit.DefaultConfig(),
 		"datastorage", // service name
-		logrLogger,    // Use logr.Logger via zapr adapter
+		logger,        // Use logr.Logger directly (DD-005 v2.0)
 	)
 	if err != nil {
 		_ = db.Close() // Clean up DB connection
@@ -186,10 +184,10 @@ func NewServer(
 	}
 
 	logger.Info("Self-auditing audit store initialized (DD-STORAGE-012)",
-		"buffer_size", audit.DefaultConfig(.BufferSize),
-		"batch_size", audit.DefaultConfig(.BatchSize),
-		"flush_interval", audit.DefaultConfig(.FlushInterval),
-		"max_retries", audit.DefaultConfig(.MaxRetries),
+		"buffer_size", audit.DefaultConfig().BufferSize,
+		"batch_size", audit.DefaultConfig().BatchSize,
+		"flush_interval", audit.DefaultConfig().FlushInterval,
+		"max_retries", audit.DefaultConfig().MaxRetries,
 	)
 
 	// Create Prometheus metrics (BR-STORAGE-019, GAP-10)
@@ -211,12 +209,12 @@ func NewServer(
 	}
 
 	// Create Redis cache for embeddings (24-hour TTL)
-	// DD-005 v2.0: Use zapr adapter to convert zap.Logger to logr.Logger for shared libraries
+	// DD-005 v2.0: Use logr.Logger directly for shared libraries
 	redisOpts := &redis.Options{
 		Addr:     redisAddr,
 		Password: redisPassword,
 	}
-	redisSharedClient := rediscache.NewClient(redisOpts, logrLogger) // Use logr.Logger via zapr adapter
+	redisSharedClient := rediscache.NewClient(redisOpts, logger) // Use logr.Logger directly (DD-005 v2.0)
 	embeddingCache := rediscache.NewCache[[]float32](redisSharedClient, "embeddings", 24*time.Hour)
 
 	// Create embedding client
@@ -434,8 +432,7 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 	}
 
 	if err := s.httpServer.Shutdown(drainCtx); err != nil {
-		s.logger.Error("Error during HTTP connection drain",
-			"error", err,
+		s.logger.Error(err, "Error during HTTP connection drain",
 			"dd", "DD-007-step-3-error")
 		return fmt.Errorf("HTTP connection drain failed: %w", err)
 	}
@@ -457,8 +454,7 @@ func (s *Server) shutdownStep4CloseResources() error {
 		s.logger.Info("Flushing remaining audit events (DD-STORAGE-012)",
 			"dd", "DD-007-step-4-audit-flush")
 		if err := s.auditStore.Close(); err != nil {
-			s.logger.Error("Failed to flush audit events",
-				"error", err,
+			s.logger.Error(err, "Failed to flush audit events",
 				"dd", "DD-007-step-4-audit-error")
 			// Continue with shutdown even if audit flush fails
 			// (audit failures should not block graceful shutdown)
@@ -470,8 +466,7 @@ func (s *Server) shutdownStep4CloseResources() error {
 
 	// Close PostgreSQL connection
 	if err := s.db.Close(); err != nil {
-		s.logger.Error("Failed to close PostgreSQL connection",
-			"error", err,
+		s.logger.Error(err, "Failed to close PostgreSQL connection",
 			"dd", "DD-007-step-4-error")
 		return fmt.Errorf("failed to close PostgreSQL: %w", err)
 	}

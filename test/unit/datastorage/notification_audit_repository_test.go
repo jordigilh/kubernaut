@@ -9,7 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn" // DD-010: Migrated from lib/pq
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -27,7 +28,7 @@ var _ = Describe("NotificationAuditRepository", func() {
 		mockDB *sql.DB
 		mock   sqlmock.Sqlmock
 		ctx    context.Context
-		logger *zap.Logger
+		logger logr.Logger
 		audit  *models.NotificationAudit
 		now    time.Time
 	)
@@ -37,7 +38,7 @@ var _ = Describe("NotificationAuditRepository", func() {
 		mockDB, mock, err = sqlmock.New(sqlmock.MonitorPingsOption(true))
 		Expect(err).ToNot(HaveOccurred())
 
-		logger = zap.NewNop()
+		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 		repo = repository.NewNotificationAuditRepository(mockDB, logger)
 		ctx = context.Background()
 		now = time.Now()

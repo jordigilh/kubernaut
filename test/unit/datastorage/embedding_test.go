@@ -24,7 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -75,11 +75,11 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 		pipeline  *embedding.Pipeline
 		mockAPI   *MockEmbeddingAPIClient
 		mockCache *MockCache
-		logger    *zap.Logger
+		logger    = kubelog.NewLogger(kubelog.DefaultOptions())
 	)
 
 	BeforeEach(func() {
-		logger, _ = zap.NewDevelopment()
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 		mockCache = NewMockCache()
 
 		// Create 384-dimensional embedding

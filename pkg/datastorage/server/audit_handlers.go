@@ -22,8 +22,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-logr/logr"
-
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -119,8 +117,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 	writeDuration := time.Since(writeStart).Seconds()
 
 	if err != nil {
-		s.logger.Error("Database write failed",
-			"error", err,
+		s.logger.Error(err, "Database write failed",
 			"notification_id", audit.NotificationID,
 			"write_duration_seconds", writeDuration)
 		// Check if it's a known RFC 7807 error type (validation, conflict, not found)
@@ -134,8 +131,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		}
 
 		// DD-009: Unknown database error → DLQ fallback
-		s.logger.Error("Database write failed, using DLQ fallback",
-			"error", err,
+		s.logger.Error(err, "Database write failed, using DLQ fallback",
 			"notification_id", audit.NotificationID,
 			"remediation_id", audit.RemediationID)
 
@@ -150,8 +146,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 			"db_error", err.Error())
 
 		if dlqErr := s.dlqClient.EnqueueNotificationAudit(dlqCtx, &audit, err); dlqErr != nil {
-			s.logger.Error("DLQ fallback also failed - data loss risk",
-				"error", dlqErr,
+			s.logger.Error(dlqErr, "DLQ fallback also failed - data loss risk",
 				"notification_id", audit.NotificationID,
 				"original_error", err.Error())
 			writeRFC7807Error(w, validation.NewServiceUnavailableProblem(

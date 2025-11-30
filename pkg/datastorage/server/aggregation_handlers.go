@@ -24,8 +24,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-logr/logr"
-
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -266,10 +264,9 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 				Status: http.StatusInternalServerError,
 				Detail: "Failed to retrieve success rate data",
 			})
-			h.logger.Error("repository error",
+			h.logger.Error(err, "repository error",
 				"playbook_id", playbookID,
-				"playbook_version", playbookVersion,
-				"error", err)
+				"playbook_version", playbookVersion)
 			return
 		}
 	} else {
@@ -339,7 +336,7 @@ func (h *Handler) respondWithRFC7807(w http.ResponseWriter, statusCode int, prob
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(problem); err != nil {
-		h.logger.Error("failed to encode RFC 7807 error response")
+		h.logger.Error(err, "failed to encode RFC 7807 error response")
 	}
 }
 
@@ -445,14 +442,13 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 // logMultiDimensionalError logs errors for multi-dimensional queries with full context
 // REFACTOR: Extracted for consistent error logging
 func (h *Handler) logMultiDimensionalError(params *models.MultiDimensionalQuery, err error) {
-	h.logger.Error("failed to get multi-dimensional success rate",
+	h.logger.Error(err, "failed to get multi-dimensional success rate",
 		"incident_type", params.IncidentType,
 		"playbook_id", params.PlaybookID,
 		"playbook_version", params.PlaybookVersion,
 		"action_type", params.ActionType,
 		"time_range", params.TimeRange,
-		"min_samples", params.MinSamples,
-		"error", err)
+		"min_samples", params.MinSamples)
 }
 
 // logMultiDimensionalSuccess logs successful multi-dimensional queries

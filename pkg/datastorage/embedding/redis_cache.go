@@ -48,16 +48,14 @@ func (r *RedisCache) Get(ctx context.Context, key string) ([]float32, error) {
 		if err == redis.Nil {
 			return nil, fmt.Errorf("cache miss")
 		}
-		r.logger.Error("failed to get from cache",
-			"error", err,
+		r.logger.Error(err, "failed to get from cache",
 			"key", key)
 		return nil, fmt.Errorf("cache get error: %w", err)
 	}
 
 	var embedding []float32
 	if err := json.Unmarshal(data, &embedding); err != nil {
-		r.logger.Error("failed to unmarshal cached embedding",
-			"error", err,
+		r.logger.Error(err, "failed to unmarshal cached embedding",
 			"key", key)
 		return nil, fmt.Errorf("unmarshal error: %w", err)
 	}
@@ -73,15 +71,13 @@ func (r *RedisCache) Get(ctx context.Context, key string) ([]float32, error) {
 func (r *RedisCache) Set(ctx context.Context, key string, embedding []float32, ttl time.Duration) error {
 	data, err := json.Marshal(embedding)
 	if err != nil {
-		r.logger.Error("failed to marshal embedding",
-			"error", err,
+		r.logger.Error(err, "failed to marshal embedding",
 			"key", key)
 		return fmt.Errorf("marshal error: %w", err)
 	}
 
 	if err := r.client.Set(ctx, key, data, ttl).Err(); err != nil {
-		r.logger.Error("failed to set cache",
-			"error", err,
+		r.logger.Error(err, "failed to set cache",
 			"key", key,
 			"ttl", ttl)
 		return fmt.Errorf("cache set error: %w", err)

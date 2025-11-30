@@ -3,7 +3,8 @@ package datastorage
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -13,20 +14,16 @@ import (
 var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 	var (
 		validator *validation.Validator
-		logger    *zap.Logger
+		logger    logr.Logger
 	)
 
 	BeforeEach(func() {
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 		validator = validation.NewValidator(logger)
 	})
 
 	AfterEach(func() {
-		if logger != nil {
-			_ = logger.Sync()
-		}
+		kubelog.Sync(logger)
 	})
 
 	// ========================================

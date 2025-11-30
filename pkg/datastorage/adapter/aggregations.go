@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 )
 
 // ========================================
@@ -57,10 +56,9 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interfac
 
 	rows, err := d.db.Query(sqlQuery, workflowID)
 	if err != nil {
-		d.logger.Error("Failed to execute success rate aggregation",
-			"error", err,
-			"workflow_id", workflowID,
-		)
+		d.logger.Error(err, "Failed to execute success rate aggregation",
+		"workflow_id", workflowID,
+	)
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -81,10 +79,9 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interfac
 	var successRate float64
 
 	if err := rows.Scan(&totalCount, &successCount, &failureCount, &successRate); err != nil {
-		d.logger.Error("Failed to scan aggregation results",
-			"error", err,
-			"workflow_id", workflowID,
-		)
+		d.logger.Error(err, "Failed to scan aggregation results",
+		"workflow_id", workflowID,
+	)
 		return nil, fmt.Errorf("result scan error: %w", err)
 	}
 
@@ -127,9 +124,7 @@ func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
 
 	rows, err := d.db.Query(sqlQuery)
 	if err != nil {
-		d.logger.Error("Failed to execute namespace aggregation",
-			"error", err,
-		)
+		d.logger.Error(err, "Failed to execute namespace aggregation")
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -142,9 +137,7 @@ func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
 		var count int
 
 		if err := rows.Scan(&namespace, &count); err != nil {
-			d.logger.Error("Failed to scan namespace aggregation row",
-				"error", err,
-			)
+			d.logger.Error(err, "Failed to scan namespace aggregation row")
 			return nil, fmt.Errorf("result scan error: %w", err)
 		}
 
@@ -198,9 +191,7 @@ func (d *DBAdapter) AggregateBySeverity() (map[string]interface{}, error) {
 
 	rows, err := d.db.Query(sqlQuery)
 	if err != nil {
-		d.logger.Error("Failed to execute severity aggregation",
-			"error", err,
-		)
+		d.logger.Error(err, "Failed to execute severity aggregation")
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -213,9 +204,7 @@ func (d *DBAdapter) AggregateBySeverity() (map[string]interface{}, error) {
 		var count int
 
 		if err := rows.Scan(&severity, &count); err != nil {
-			d.logger.Error("Failed to scan severity aggregation row",
-				"error", err,
-			)
+			d.logger.Error(err, "Failed to scan severity aggregation row")
 			return nil, fmt.Errorf("result scan error: %w", err)
 		}
 
@@ -270,10 +259,9 @@ func (d *DBAdapter) AggregateIncidentTrend(period string) (map[string]interface{
 
 	rows, err := d.db.Query(sqlQuery)
 	if err != nil {
-		d.logger.Error("Failed to execute incident trend aggregation",
-			"error", err,
-			"period", period,
-		)
+		d.logger.Error(err, "Failed to execute incident trend aggregation",
+		"period", period,
+	)
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -286,9 +274,7 @@ func (d *DBAdapter) AggregateIncidentTrend(period string) (map[string]interface{
 		var count int
 
 		if err := rows.Scan(&date, &count); err != nil {
-			d.logger.Error("Failed to scan trend aggregation row",
-				"error", err,
-			)
+			d.logger.Error(err, "Failed to scan trend aggregation row")
 			return nil, fmt.Errorf("result scan error: %w", err)
 		}
 

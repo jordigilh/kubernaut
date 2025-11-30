@@ -105,7 +105,7 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Remedi
 
 	_, err := r.db.NamedExecContext(ctx, query, workflow)
 	if err != nil {
-		r.logger.Error("failed to create workflow",
+		r.logger.Error(err, "failed to create workflow",
 			"workflow_id", workflow.WorkflowID,
 			"version", workflow.Version,
 			"error", err)
@@ -137,7 +137,7 @@ func (r *WorkflowRepository) GetByID(ctx context.Context, workflowID, version st
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("workflow not found: %s@%s", workflowID, version)
 		}
-		r.logger.Error("failed to get workflow",
+		r.logger.Error(err, "failed to get workflow",
 			"workflow_id", workflowID,
 			"version", version,
 			"error", err)
@@ -606,7 +606,7 @@ func (r *WorkflowRepository) UpdateSuccessMetrics(ctx context.Context, workflowI
 
 	result, err := r.db.ExecContext(ctx, query, totalExecutions, successfulExecutions, workflowID, version)
 	if err != nil {
-		r.logger.Error("failed to update workflow success metrics",
+		r.logger.Error(err, "failed to update workflow success metrics",
 			"workflow_id", workflowID,
 			"version", version,
 			"error", err)
@@ -647,7 +647,7 @@ func (r *WorkflowRepository) UpdateStatus(ctx context.Context, workflowID, versi
 
 	result, err := r.db.ExecContext(ctx, query, status, updatedBy, reason, workflowID, version)
 	if err != nil {
-		r.logger.Error("failed to update workflow status",
+		r.logger.Error(err, "failed to update workflow status",
 			"workflow_id", workflowID,
 			"version", version,
 			"status", status,

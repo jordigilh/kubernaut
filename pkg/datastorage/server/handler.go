@@ -70,9 +70,7 @@ type HandlerOption func(*Handler)
 // REFACTOR: Production deployments should provide a real logger
 func WithLogger(logger logr.Logger) HandlerOption {
 	return func(h *Handler) {
-		if logger != nil {
-			h.logger = logger
-		}
+		h.logger = logger
 	}
 }
 
@@ -202,9 +200,8 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	// Query database
 	incidents, err := h.db.Query(filters, limit, offset)
 	if err != nil {
-		h.logger.Error("Database query failed",
+		h.logger.Error(err, "Database query failed",
 			"request_id", requestID,
-			"error", err,
 			"limit", limit,
 			"offset", offset,
 		)
@@ -217,9 +214,8 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-INTEGRATION-TEST-TRIAGE.md
 	totalCount, err := h.db.CountTotal(filters)
 	if err != nil {
-		h.logger.Error("Database count query failed",
+		h.logger.Error(err, "Database count query failed",
 			"request_id", requestID,
-			"error", err,
 		)
 		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Count Error", err.Error())
 		return
@@ -244,9 +240,8 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		// Note: We've already written the status code, so we can't change the response
 		// Log the encoding failure for observability
-		h.logger.Error("Failed to encode JSON response",
+		h.logger.Error(err, "Failed to encode JSON response",
 			"request_id", requestID,
-			"error", err,
 			"result_count", len(incidents),
 		)
 		return
@@ -312,10 +307,9 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 	// Query database
 	incident, err := h.db.Get(id)
 	if err != nil {
-		h.logger.Error("Database query failed for GetIncident",
+		h.logger.Error(err, "Database query failed for GetIncident",
 			"request_id", requestID,
 			"incident_id", id,
-			"error", err,
 		)
 		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
 		return
@@ -340,10 +334,9 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(incident); err != nil {
 		// Note: We've already written the status code, so we can't change the response
 		// Log the encoding failure for observability
-		h.logger.Error("Failed to encode JSON response",
+		h.logger.Error(err, "Failed to encode JSON response",
 			"request_id", requestID,
 			"incident_id", id,
-			"error", err,
 		)
 		return
 	}
@@ -375,10 +368,9 @@ func (h *Handler) writeRFC7807Error(w http.ResponseWriter, status int, errorType
 	if err := json.NewEncoder(w).Encode(problemDetail); err != nil {
 		// Note: We've already written the status code, so we can't change the response
 		// Log the encoding failure for observability
-		h.logger.Error("Failed to encode RFC 7807 error response",
+		h.logger.Error(err, "Failed to encode RFC 7807 error response",
 			"status", status,
 			"error_type", errorType,
-			"error", err,
 		)
 		// Still return - client gets the status code at least
 	}
@@ -474,10 +466,9 @@ func (h *Handler) AggregateSuccessRate(w http.ResponseWriter, r *http.Request) {
 	// Query database for aggregation
 	result, err := h.db.AggregateSuccessRate(workflowID)
 	if err != nil {
-		h.logger.Error("Database aggregation failed",
+		h.logger.Error(err, "Database aggregation failed",
 			"request_id", requestID,
 			"workflow_id", workflowID,
-			"error", err,
 		)
 		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
 		return
@@ -489,10 +480,9 @@ func (h *Handler) AggregateSuccessRate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("Failed to encode aggregation response",
-			"request_id", requestID,
-			"error", err,
-		)
+		h.logger.Error(err, "Failed to encode aggregation response",
+		"request_id", requestID,
+	)
 		return
 	}
 
@@ -524,10 +514,9 @@ func (h *Handler) AggregateByNamespace(w http.ResponseWriter, r *http.Request) {
 	// Query database for namespace aggregation
 	result, err := h.db.AggregateByNamespace()
 	if err != nil {
-		h.logger.Error("Database aggregation failed",
-			"request_id", requestID,
-			"error", err,
-		)
+		h.logger.Error(err, "Database aggregation failed",
+		"request_id", requestID,
+	)
 		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
 		return
 	}
@@ -538,10 +527,9 @@ func (h *Handler) AggregateByNamespace(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("Failed to encode aggregation response",
-			"request_id", requestID,
-			"error", err,
-		)
+		h.logger.Error(err, "Failed to encode aggregation response",
+		"request_id", requestID,
+	)
 		return
 	}
 
@@ -572,10 +560,9 @@ func (h *Handler) AggregateBySeverity(w http.ResponseWriter, r *http.Request) {
 	// Query database for severity aggregation
 	result, err := h.db.AggregateBySeverity()
 	if err != nil {
-		h.logger.Error("Database aggregation failed",
-			"request_id", requestID,
-			"error", err,
-		)
+		h.logger.Error(err, "Database aggregation failed",
+		"request_id", requestID,
+	)
 		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
 		return
 	}
@@ -586,10 +573,9 @@ func (h *Handler) AggregateBySeverity(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("Failed to encode aggregation response",
-			"request_id", requestID,
-			"error", err,
-		)
+		h.logger.Error(err, "Failed to encode aggregation response",
+		"request_id", requestID,
+	)
 		return
 	}
 
@@ -637,10 +623,9 @@ func (h *Handler) AggregateIncidentTrend(w http.ResponseWriter, r *http.Request)
 	// Query database for trend aggregation
 	result, err := h.db.AggregateIncidentTrend(period)
 	if err != nil {
-		h.logger.Error("Database aggregation failed",
+		h.logger.Error(err, "Database aggregation failed",
 			"request_id", requestID,
 			"period", period,
-			"error", err,
 		)
 		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
 		return
@@ -652,10 +637,9 @@ func (h *Handler) AggregateIncidentTrend(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("Failed to encode aggregation response",
-			"request_id", requestID,
-			"error", err,
-		)
+		h.logger.Error(err, "Failed to encode aggregation response",
+		"request_id", requestID,
+	)
 		return
 	}
 

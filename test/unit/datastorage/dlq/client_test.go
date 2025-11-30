@@ -12,7 +12,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
@@ -30,7 +31,7 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 		redisClient *redis.Client
 		dlqClient   *dlq.Client
 		ctx         context.Context
-		logger      *zap.Logger
+		logger      logr.Logger
 	)
 
 	BeforeEach(func() {
@@ -46,7 +47,7 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 		})
 
 		// Create logger
-		logger = zap.NewNop()
+		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 
 		// Create DLQ client
 		dlqClient, err = dlq.NewClient(redisClient, logger)
@@ -283,15 +284,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 			Expect(client).To(BeNil())
 		})
 
-		It("should return error when logger is nil", func() {
-			// ACT: Create client with nil logger
-			client, err := dlq.NewClient(redisClient, nil)
-
-			// ASSERT: Should fail
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("logger cannot be nil"))
-			Expect(client).To(BeNil())
-		})
+		// Note: This test was removed because logr.Logger is a value type and cannot be nil.
+		// The DLQ client now accepts any logr.Logger (including logr.Discard() for testing).
 	})
 
 	// ============================================================================

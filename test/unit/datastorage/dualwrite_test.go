@@ -25,7 +25,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dualwrite"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -154,12 +155,12 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 		coordinator  *dualwrite.Coordinator
 		mockDB       *MockDB
 		mockVectorDB *MockVectorDB
-		logger       *zap.Logger
+		logger       logr.Logger
 		testAudit    *models.RemediationAudit
 	)
 
 	BeforeEach(func() {
-		logger, _ = zap.NewDevelopment()
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 		mockDB = NewMockDB()
 		mockVectorDB = NewMockVectorDB()
 
@@ -409,12 +410,12 @@ var _ = Describe("BR-STORAGE-015: Graceful Degradation", func() {
 		coordinator  *dualwrite.Coordinator
 		mockDB       *MockDB
 		mockVectorDB *MockVectorDB
-		logger       *zap.Logger
+		logger       logr.Logger
 		testAudit    *models.RemediationAudit
 	)
 
 	BeforeEach(func() {
-		logger, _ = zap.NewDevelopment()
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 		mockDB = NewMockDB()
 		mockVectorDB = NewMockVectorDB()
 

@@ -19,10 +19,10 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-logr/logr"
 )
 
 // Health check handlers
@@ -83,13 +83,12 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 				requestID := middleware.GetReqID(r.Context())
 
 				// Log the panic with full details
-				s.logger.Error("🚨 PANIC RECOVERED",
+				s.logger.Error(fmt.Errorf("panic: %v", err), "🚨 PANIC RECOVERED",
 					"request_id", requestID,
 					"method", r.Method,
 					"path", r.URL.Path,
 					"remote_addr", r.RemoteAddr,
-					"panic", err,
-					zap.Stack("stack_trace"),
+					"stack_trace", string(debug.Stack()),
 				)
 
 				// Let chi's Recoverer handle the response

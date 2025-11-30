@@ -7,7 +7,8 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"golang.org/x/mod/semver"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
@@ -21,7 +22,7 @@ var _ = Describe("VersionValidator", func() {
 		mock      sqlmock.Sqlmock
 		validator *schema.VersionValidator
 		ctx       context.Context
-		logger    *zap.Logger
+		logger    logr.Logger
 	)
 
 	BeforeEach(func() {
@@ -29,7 +30,7 @@ var _ = Describe("VersionValidator", func() {
 		mockDB, mock, err = sqlmock.New()
 		Expect(err).ToNot(HaveOccurred())
 
-		logger = zap.NewNop()
+		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 		validator = schema.NewVersionValidator(mockDB, logger)
 		ctx = context.Background()
 	})

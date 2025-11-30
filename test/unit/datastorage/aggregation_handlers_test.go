@@ -22,9 +22,10 @@ import (
 	"net/http/httptest"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -56,7 +57,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		rec     *httptest.ResponseRecorder
 		mockDB  sqlmock.Sqlmock
 		repo    *repository.ActionTraceRepository
-		logger  *zap.Logger
+		logger  logr.Logger
 	)
 
 	BeforeEach(func() {
@@ -65,7 +66,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		Expect(err).ToNot(HaveOccurred())
 		mockDB = mock
 
-		logger = zap.NewNop()
+		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 		repo = repository.NewActionTraceRepository(db, logger)
 
 		// Create handler with mock repository

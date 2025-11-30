@@ -307,7 +307,7 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 	}
 
 	if err != nil {
-		r.logger.Error("failed to query playbook success rate",
+		r.logger.Error(err, "failed to query playbook success rate",
 			"playbook_id", playbookID,
 			"playbook_version", playbookVersion,
 			"error", err)
