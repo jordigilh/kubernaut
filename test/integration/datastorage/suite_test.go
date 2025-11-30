@@ -862,7 +862,11 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 
 	GinkgoWriter.Println("  ✅ All migrations applied successfully")
 
-	// 4. Wait for schema propagation (Context API lesson)
+	// 4. Create dynamic partitions for current month (prevents time-based test failures)
+	GinkgoWriter.Println("  📅 Creating dynamic partitions for current month...")
+	createDynamicPartitions(ctx, targetDB)
+
+	// 5. Wait for schema propagation (Context API lesson)
 	// PostgreSQL needs time to propagate schema changes to new connections
 	GinkgoWriter.Println("  ⏳ Waiting for schema propagation...")
 	time.Sleep(500 * time.Millisecond)
@@ -936,7 +940,11 @@ func applyMigrationsWithPropagation() {
 	}
 	GinkgoWriter.Println("  ✅ All migrations applied successfully")
 
-	// 4. Grant permissions to test user
+	// 4. Create dynamic partitions for current month (prevents time-based test failures)
+	GinkgoWriter.Println("  📅 Creating dynamic partitions for current month...")
+	createDynamicPartitions(ctx, db)
+
+	// 5. Grant permissions to test user
 	GinkgoWriter.Println("  🔐 Granting permissions...")
 	_, err = db.ExecContext(ctx, `
 		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
@@ -1148,4 +1156,61 @@ func waitForServiceReady() {
 	}
 
 	GinkgoWriter.Printf("  ✅ Data Storage Service ready at %s\n", datastorageURL)
+}
+
+// DBExecutor is an interface that both *sql.DB and *sqlx.DB satisfy
+// Used for dynamic partition creation in tests
+type DBExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
+
+// createDynamicPartitions creates partitions for the current month and next month
+// This ensures tests don't fail due to time-based partition issues
+// DD-TEST-001: Dynamic partition creation for time-independent tests
+func createDynamicPartitions(ctx context.Context, targetDB DBExecutor) {
+	now := time.Now()
+
+	// Create partitions for current month and next 2 months
+	for i := 0; i < 3; i++ {
+		month := now.AddDate(0, i, 0)
+		year := month.Year()
+		monthNum := int(month.Month())
+
+		// Calculate partition boundaries
+		startDate := time.Date(year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC)
+		endDate := startDate.AddDate(0, 1, 0)
+
+		partitionName := fmt.Sprintf("resource_action_traces_y%dm%02d", year, monthNum)
+		startStr := startDate.Format("2006-01-02")
+		endStr := endDate.Format("2006-01-02")
+
+		// Check if partition already exists
+		var exists bool
+		checkQuery := `SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)`
+		err := targetDB.QueryRowContext(ctx, checkQuery, partitionName).Scan(&exists)
+		if err != nil {
+			GinkgoWriter.Printf("  ⚠️  Failed to check partition %s: %v\n", partitionName, err)
+			continue
+		}
+
+		if exists {
+			GinkgoWriter.Printf("  ✅ Partition %s already exists\n", partitionName)
+			continue
+		}
+
+		// Create partition
+		createQuery := fmt.Sprintf(`
+			CREATE TABLE %s
+			PARTITION OF resource_action_traces
+			FOR VALUES FROM ('%s') TO ('%s')
+		`, partitionName, startStr, endStr)
+
+		_, err = targetDB.ExecContext(ctx, createQuery)
+		if err != nil {
+			GinkgoWriter.Printf("  ⚠️  Failed to create partition %s: %v\n", partitionName, err)
+		} else {
+			GinkgoWriter.Printf("  ✅ Created partition %s (%s to %s)\n", partitionName, startStr, endStr)
+		}
+	}
 }
