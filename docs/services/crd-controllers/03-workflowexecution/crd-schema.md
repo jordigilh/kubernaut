@@ -1,29 +1,67 @@
 ## CRD Schema Specification
 
+**Version**: 2.0
+**Last Updated**: 2025-11-28
+**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001, ADR-043
+
 **Full Schema**: See [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
 
-**Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `04_WORKFLOW_EXECUTION_CRD.md`.
+**Location**: `api/v1alpha1/workflowexecution_types.go`
 
-**Location**: `api/v1/workflowexecution_types.go`
+---
 
-### ✅ **TYPE SAFETY COMPLIANCE**
+## Key Design Decisions
 
-This CRD specification uses **fully structured types** and eliminates all `map[string]interface{}` anti-patterns:
+| Document | Impact on CRD |
+|----------|---------------|
+| **ADR-044** | **Engine Delegation** - Tekton handles step orchestration; controller just creates PipelineRun |
+| **DD-CONTRACT-001** | **Simplified Spec** - Uses `WorkflowRef` with containerImage, not complex WorkflowDefinition |
+| **ADR-043** | **OCI Bundle** - Workflow definition lives in container, not CRD |
+| **DD-WORKFLOW-003** | **Parameters** - UPPER_SNAKE_CASE keys for Tekton params |
 
-| Type | Previous (Anti-Pattern) | Current (Type-Safe) | Benefit |
-|------|------------------------|---------------------|---------|
-| **WorkflowStep.Parameters** | `map[string]interface{}` | Action-specific parameter types (10+ types) | Compile-time validation, self-documenting |
-| **StepStatus.Result** | `map[string]interface{}` | Action-specific result types | Type-safe execution results |
-| **AIRecommendations** | `map[string]interface{}` | Structured AI response | Clear HolmesGPT contract |
-| **DryRunResults** | `map[string]interface{}` | Structured validation results | Detailed dry-run analysis |
-| **RollbackSpec.Parameters** | `map[string]interface{}` | Rollback-specific parameters | Type-safe rollback operations |
+---
 
-**Related Triage**: See `WORKFLOW_EXECUTION_TYPE_SAFETY_TRIAGE.md` for detailed analysis and remediation plan.
+## Architecture Overview (ADR-044)
 
-**Total Structured Types**: 30+ types defined for comprehensive type safety
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SIMPLIFIED WORKFLOW EXECUTION                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  WorkflowExecution Controller Responsibilities:                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ 1. Receive WorkflowExecution CRD (from RemediationOrchestrator) │   │
+│  │ 2. Create Tekton PipelineRun from OCI bundle                    │   │
+│  │ 3. Watch PipelineRun status                                     │   │
+│  │ 4. Update WorkflowExecution status                              │   │
+│  │ 5. Write audit trace                                            │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  Tekton Responsibilities (DELEGATED):                                   │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ • Step orchestration and execution                              │   │
+│  │ • Retry logic per task                                          │   │
+│  │ • Timeout enforcement                                           │   │
+│  │ • Failure handling and cleanup (finally tasks)                  │   │
+│  │ • Parameter injection                                           │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  Controller does NOT:                                                   │
+│  ✗ Orchestrate individual steps                                        │
+│  ✗ Create per-step CRDs                                                │
+│  ✗ Handle rollback (Tekton finally tasks or not at all)                │
+│  ✗ Transform workflow definition                                        │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Go Type Definitions (DD-CONTRACT-001)
 
 ```go
-package v1
+// pkg/api/workflowexecution/v1alpha1/types.go
+package v1alpha1
 
 import (
     corev1 "k8s.io/api/core/v1"
@@ -31,544 +69,111 @@ import (
 )
 
 // WorkflowExecutionSpec defines the desired state of WorkflowExecution
+// Simplified per ADR-044 - Tekton handles step orchestration
 type WorkflowExecutionSpec struct {
     // RemediationRequestRef references the parent RemediationRequest CRD
     RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
 
-    // WorkflowDefinition contains the workflow to execute
-    WorkflowDefinition WorkflowDefinition `json:"workflowDefinition"`
+    // WorkflowRef contains the workflow catalog reference
+    // Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
+    WorkflowRef WorkflowRef `json:"workflowRef"`
 
-    // ExecutionStrategy specifies how to execute the workflow
-    ExecutionStrategy ExecutionStrategy `json:"executionStrategy"`
+    // Parameters from LLM selection (per DD-WORKFLOW-003)
+    // Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params
+    Parameters map[string]string `json:"parameters"`
 
-    // AdaptiveOrchestration enables runtime optimization
-    AdaptiveOrchestration AdaptiveOrchestrationConfig `json:"adaptiveOrchestration,omitempty"`
+    // Confidence score from LLM (for audit trail)
+    Confidence float64 `json:"confidence"`
+
+    // Rationale from LLM (for audit trail)
+    Rationale string `json:"rationale,omitempty"`
+
+    // ExecutionConfig contains minimal execution settings
+    ExecutionConfig ExecutionConfig `json:"executionConfig,omitempty"`
 }
 
-// WorkflowDefinition represents the workflow to execute
-type WorkflowDefinition struct {
-    Name             string                  `json:"name"`
-    Version          string                  `json:"version"`
-    Steps            []WorkflowStep          `json:"steps"`
-    Dependencies     map[string][]string     `json:"dependencies,omitempty"`
-    AIRecommendations *AIRecommendations     `json:"aiRecommendations,omitempty"` // ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
+// WorkflowRef contains catalog-resolved workflow reference
+type WorkflowRef struct {
+    // WorkflowID is the catalog lookup key
+    WorkflowID string `json:"workflowId"`
+
+    // Version of the workflow
+    Version string `json:"version"`
+
+    // ContainerImage resolved from workflow catalog (Data Storage API)
+    // OCI bundle reference for Tekton PipelineRun
+    ContainerImage string `json:"containerImage"`
+
+    // ContainerDigest for audit trail and reproducibility
+    ContainerDigest string `json:"containerDigest,omitempty"`
 }
 
-// WorkflowStep represents a single step in the workflow
-type WorkflowStep struct {
-    StepNumber     int                    `json:"stepNumber"`
-    Name           string                 `json:"name"`
-    Action         string                 `json:"action"` // e.g., "scale-deployment", "restart-pod"
-    TargetCluster  string                 `json:"targetCluster"`
-    Parameters     *StepParameters        `json:"parameters"` // ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-    CriticalStep   bool                   `json:"criticalStep"` // Failure triggers rollback
-    MaxRetries     int                    `json:"maxRetries,omitempty"`
-    Timeout        string                 `json:"timeout,omitempty"` // e.g., "5m"
-    DependsOn      []int                  `json:"dependsOn,omitempty"` // Step numbers
-    RollbackSpec   *RollbackSpec          `json:"rollbackSpec,omitempty"`
+// ExecutionConfig contains minimal execution settings
+// Note: Most execution logic is delegated to Tekton (ADR-044)
+type ExecutionConfig struct {
+    // Timeout for the entire workflow (Tekton PipelineRun timeout)
+    // Default: use global timeout from RemediationRequest or 30m
+    Timeout *metav1.Duration `json:"timeout,omitempty"`
 
-    // ✅ NEW: Step Validation Framework (DD-002)
-    // See: docs/architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2
-    PreConditions  []StepCondition        `json:"preConditions,omitempty"`  // BR-WF-016: Validate before step execution
-    PostConditions []StepCondition        `json:"postConditions,omitempty"` // BR-WF-052: Verify after step completion
-}
-
-// RollbackSpec defines how to rollback a step
-type RollbackSpec struct {
-    Action     string                 `json:"action"` // e.g., "restore-previous-config"
-    Parameters *RollbackParameters    `json:"parameters"` // ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-    Timeout    string                 `json:"timeout,omitempty"`
-}
-
-// ExecutionStrategy specifies execution behavior
-type ExecutionStrategy struct {
-    ApprovalRequired bool   `json:"approvalRequired"`
-    DryRunFirst      bool   `json:"dryRunFirst"`
-    RollbackStrategy string `json:"rollbackStrategy"` // "automatic", "manual", "none"
-    MaxRetries       int    `json:"maxRetries,omitempty"`
-    SafetyChecks     []SafetyCheck `json:"safetyChecks,omitempty"`
-}
-
-// SafetyCheck represents a validation requirement
-type SafetyCheck struct {
-    Type        string `json:"type"` // "rbac", "capacity", "health", "network"
-    Description string `json:"description"`
-    Required    bool   `json:"required"`
-}
-
-// AdaptiveOrchestrationConfig enables runtime optimization
-type AdaptiveOrchestrationConfig struct {
-    OptimizationEnabled      bool `json:"optimizationEnabled"`
-    LearningFromHistory      bool `json:"learningFromHistory"`
-    DynamicStepAdjustment    bool `json:"dynamicStepAdjustment"`
-}
-
-// ========================================
-// STEP VALIDATION FRAMEWORK (DD-002)
-// ✅ NEW: Per-step precondition/postcondition validation
-// See: docs/architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2
-// ========================================
-
-// StepCondition defines a validation rule for workflow steps
-// Evaluated before (precondition) or after (postcondition) step execution
-type StepCondition struct {
-    // Type categorizes the condition (e.g., "resource_state", "metric_threshold", "pod_count")
-    Type string `json:"type"`
-
-    // Description provides human-readable explanation of the condition
-    Description string `json:"description"`
-
-    // Rego contains the Rego policy expression for evaluation
-    // Policy should return 'allow' decision for condition pass
-    // Example: "allow if { input.deployment_found == true }"
-    Rego string `json:"rego"`
-
-    // Required determines if condition failure blocks execution
-    // - true: Condition failure blocks step execution (precondition) or marks step failed (postcondition)
-    // - false: Condition failure logs warning but allows execution to proceed
-    Required bool `json:"required"`
-
-    // Timeout specifies maximum wait time for async condition checks
-    // Example: "30s" for preconditions, "2m" for postconditions (pod startup)
-    // Default: "30s"
-    Timeout string `json:"timeout,omitempty"`
+    // ServiceAccountName for the PipelineRun
+    // Default: "kubernaut-workflow-runner"
+    ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
 // WorkflowExecutionStatus defines the observed state
+// Simplified per ADR-044 - just tracks PipelineRun status
 type WorkflowExecutionStatus struct {
     // Phase tracks current execution stage
-    Phase string `json:"phase"` // "planning", "validating", "executing", "monitoring", "completed", "failed"
+    // +kubebuilder:validation:Enum=Pending;Running;Completed;Failed
+    Phase string `json:"phase"`
 
-    // CurrentStep tracks progress
-    CurrentStep int `json:"currentStep"`
-    TotalSteps  int `json:"totalSteps"`
+    // StartTime when execution started
+    StartTime *metav1.Time `json:"startTime,omitempty"`
 
-    // ExecutionPlan generated during planning phase
-    ExecutionPlan *ExecutionPlan `json:"executionPlan,omitempty"`
+    // CompletionTime when execution completed (success or failure)
+    CompletionTime *metav1.Time `json:"completionTime,omitempty"`
 
-    // ValidationResults from validation phase
-    ValidationResults *ValidationResults `json:"validationResults,omitempty"`
+    // Duration of the execution
+    Duration string `json:"duration,omitempty"`
 
-    // StepStatuses tracks individual step execution
-    StepStatuses []StepStatus `json:"stepStatuses,omitempty"`
+    // PipelineRunRef references the created Tekton PipelineRun
+    PipelineRunRef *corev1.LocalObjectReference `json:"pipelineRunRef,omitempty"`
 
-    // ExecutionMetrics tracks workflow performance
-    ExecutionMetrics *ExecutionMetrics `json:"executionMetrics,omitempty"`
+    // PipelineRunStatus mirrors key PipelineRun status fields
+    PipelineRunStatus *PipelineRunStatusSummary `json:"pipelineRunStatus,omitempty"`
 
-    // AdaptiveAdjustments made during execution
-    AdaptiveAdjustments []AdaptiveAdjustment `json:"adaptiveAdjustments,omitempty"`
-
-    // WorkflowResult final outcome
-    WorkflowResult *WorkflowResult `json:"workflowResult,omitempty"`
-
-    // Phase timestamps
-    PlanningStartTime    *metav1.Time `json:"planningStartTime,omitempty"`
-    ValidationStartTime  *metav1.Time `json:"validationStartTime,omitempty"`
-    ExecutionStartTime   *metav1.Time `json:"executionStartTime,omitempty"`
-    MonitoringStartTime  *metav1.Time `json:"monitoringStartTime,omitempty"`
-    CompletionTime       *metav1.Time `json:"completionTime,omitempty"`
-
-    // Error handling
+    // FailureReason explains why execution failed (if applicable)
     FailureReason string `json:"failureReason,omitempty"`
-    RollbackReason string `json:"rollbackReason,omitempty"`
 
-    // ========================================
-    // RECOVERY TRACKING FIELDS (Alternative 2)
-    // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md
-    // ========================================
-
-    // FailedStep tracks which workflow step failed (0-based index)
-    // Used by RemediationOrchestrator to create recovery context
-    FailedStep *int `json:"failedStep,omitempty"`
-
-    // FailedAction tracks the action type that failed (e.g., "scale_deployment", "restart_pod")
-    // Helps recovery analysis understand what was attempted
-    FailedAction *string `json:"failedAction,omitempty"`
-
-    // ErrorType classifies the error for recovery decision-making
-    // Values: "timeout", "resource_conflict", "insufficient_permissions", "validation_error"
-    ErrorType *string `json:"errorType,omitempty"`
-
-    // ExecutionSnapshot captures cluster state at failure time
-    // Used as fallback context if Context API unavailable during recovery
-    ExecutionSnapshot *ExecutionSnapshot `json:"executionSnapshot,omitempty"`
-
-    // Conditions for status tracking
+    // Conditions provide detailed status information
     Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// ExecutionSnapshot captures workflow state at failure for recovery context
-type ExecutionSnapshot struct {
-    CompletedSteps   []int                  `json:"completedSteps"`   // Successfully completed step indices
-    CurrentStep      int                    `json:"currentStep"`      // Step that failed
-    ClusterState     map[string]interface{} `json:"clusterState"`     // Relevant resource states
-    ResourceSnapshot map[string]interface{} `json:"resourceSnapshot"` // Target resource state before failure
-}
+// PipelineRunStatusSummary captures key PipelineRun status fields
+// Lightweight summary to avoid duplicating full Tekton status
+type PipelineRunStatusSummary struct {
+    // Status from PipelineRun (Unknown, True, False)
+    Status string `json:"status"`
 
-// ExecutionPlan generated during planning phase
-type ExecutionPlan struct {
-    Strategy          string `json:"strategy"` // "sequential", "parallel", "sequential-with-parallel"
-    EstimatedDuration string `json:"estimatedDuration"`
-    RollbackStrategy  string `json:"rollbackStrategy"`
-    SafetyChecks      []SafetyCheck `json:"safetyChecks"`
-}
+    // Reason from PipelineRun (e.g., "Succeeded", "Failed", "Running")
+    Reason string `json:"reason,omitempty"`
 
-// ValidationResults from validation phase
-type ValidationResults struct {
-    SafetyChecksPassed  bool                   `json:"safetyChecksPassed"`
-    DryRunPerformed     bool                   `json:"dryRunPerformed"`
-    DryRunResults       *DryRunResults         `json:"dryRunResults,omitempty"` // ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-    ApprovalReceived    bool                   `json:"approvalReceived"`
-    ApprovalTimestamp   *metav1.Time           `json:"approvalTimestamp,omitempty"`
-    ValidationErrors    []string               `json:"validationErrors,omitempty"`
-}
+    // Message from PipelineRun
+    Message string `json:"message,omitempty"`
 
-// StepStatus tracks individual step execution
-type StepStatus struct {
-    StepNumber        int                    `json:"stepNumber"`
-    Action            string                 `json:"action"`
-    Status            string                 `json:"status"` // "pending", "executing", "completed", "failed", "rolled_back"
-    StartTime         *metav1.Time           `json:"startTime,omitempty"`
-    EndTime           *metav1.Time           `json:"endTime,omitempty"`
-    Result            *StepExecutionResult   `json:"result,omitempty"` // ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-    ErrorMessage      string                 `json:"errorMessage,omitempty"`
-    RetriesAttempted  int                    `json:"retriesAttempted,omitempty"`
-    K8sExecutionRef   *corev1.ObjectReference `json:"k8sExecutionRef,omitempty"`
+    // CompletedTasks count
+    CompletedTasks int `json:"completedTasks,omitempty"`
 
-    // ✅ NEW: Step Validation Framework (DD-002)
-    PreConditionResults  []ConditionResult  `json:"preConditionResults,omitempty"`  // BR-WF-016: Precondition evaluation results
-    PostConditionResults []ConditionResult  `json:"postConditionResults,omitempty"` // BR-WF-052: Postcondition verification results
-}
-
-// ConditionResult captures the outcome of a single condition evaluation
-// Used for both preconditions and postconditions
-type ConditionResult struct {
-    // ConditionType identifies which condition was evaluated (e.g., "deployment_exists", "desired_replicas_running")
-    ConditionType string `json:"conditionType"`
-
-    // Evaluated indicates whether the condition was actually evaluated
-    // false if evaluation was skipped (e.g., due to earlier failure)
-    Evaluated bool `json:"evaluated"`
-
-    // Passed indicates whether the condition passed
-    // Only meaningful if Evaluated == true
-    Passed bool `json:"passed"`
-
-    // ErrorMessage provides details when condition fails
-    // Example: "Only 2 of 5 desired pods running (insufficient resources)"
-    ErrorMessage string `json:"errorMessage,omitempty"`
-
-    // EvaluationTime records when the condition was evaluated
-    EvaluationTime metav1.Time `json:"evaluationTime"`
-}
-
-// ExecutionMetrics tracks workflow performance
-type ExecutionMetrics struct {
-    TotalDuration      string  `json:"totalDuration"`
-    StepSuccessRate    float64 `json:"stepSuccessRate"`
-    RollbacksPerformed int     `json:"rollbacksPerformed"`
-    ResourcesAffected  int     `json:"resourcesAffected"`
-}
-
-// AdaptiveAdjustment records runtime optimization
-type AdaptiveAdjustment struct {
-    Timestamp   metav1.Time `json:"timestamp"`
-    Adjustment  string      `json:"adjustment"` // Description of what was adjusted
-    Reason      string      `json:"reason"`
-}
-
-// WorkflowResult final outcome
-type WorkflowResult struct {
-    Outcome             string  `json:"outcome"` // "success", "partial_success", "failed", "unknown"
-    EffectivenessScore  float64 `json:"effectivenessScore"` // 0.0-1.0
-    ResourceHealth      string  `json:"resourceHealth"` // "healthy", "degraded", "unhealthy"
-    NewAlertsTriggered  bool    `json:"newAlertsTriggered"`
-    RecommendedActions  []string `json:"recommendedActions,omitempty"` // For partial success or failure
-}
-
-// ===================================================================
-// STRUCTURED TYPES - Replacing map[string]interface{} anti-patterns
-// ===================================================================
-
-// AIRecommendations contains AI-generated workflow optimization suggestions
-// ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-type AIRecommendations struct {
-    // Confidence and metadata
-    OverallConfidence    float64   `json:"overallConfidence"` // 0.0-1.0
-    RecommendationSource string    `json:"recommendationSource"` // "holmesgpt", "history-based"
-    GeneratedAt          string    `json:"generatedAt"` // ISO 8601 timestamp
-
-    // Step-level recommendations
-    StepOptimizations    []StepOptimization    `json:"stepOptimizations,omitempty"`
-
-    // Workflow-level recommendations
-    ParallelExecutionSuggestions []ParallelExecutionGroup `json:"parallelExecutionSuggestions,omitempty"`
-    SafetyImprovements          []SafetyImprovement      `json:"safetyImprovements,omitempty"`
-
-    // Historical success data
-    SimilarWorkflowSuccessRate float64 `json:"similarWorkflowSuccessRate"` // 0.0-1.0
-    EstimatedDuration          string  `json:"estimatedDuration"` // e.g., "5m30s"
-
-    // Risk assessment
-    RiskFactors []RiskFactor `json:"riskFactors,omitempty"`
-}
-
-type StepOptimization struct {
-    StepNumber        int     `json:"stepNumber"`
-    Recommendation    string  `json:"recommendation"` // Human-readable suggestion
-    Confidence        float64 `json:"confidence"` // 0.0-1.0
-    ImpactLevel       string  `json:"impactLevel"` // "low", "medium", "high"
-    ParameterChanges  *ParameterOptimization `json:"parameterChanges,omitempty"`
-}
-
-type ParameterOptimization struct {
-    SuggestedParameters map[string]string `json:"suggestedParameters"` // Key-value pairs
-    Reason              string            `json:"reason"` // Why these parameters
-}
-
-type ParallelExecutionGroup struct {
-    GroupName   string `json:"groupName"`
-    StepNumbers []int  `json:"stepNumbers"` // Steps that can run in parallel
-    Confidence  float64 `json:"confidence"` // 0.0-1.0
-}
-
-type SafetyImprovement struct {
-    Description  string `json:"description"`
-    StepNumber   int    `json:"stepNumber,omitempty"` // 0 = workflow-level
-    SafetyCheck  string `json:"safetyCheck"` // Suggested safety check to add
-    Priority     string `json:"priority"` // "low", "medium", "high"
-}
-
-type RiskFactor struct {
-    Factor      string  `json:"factor"` // Description of risk
-    Severity    string  `json:"severity"` // "low", "medium", "high"
-    Probability float64 `json:"probability"` // 0.0-1.0
-    Mitigation  string  `json:"mitigation,omitempty"` // Suggested mitigation
-}
-
-// StepParameters is a discriminated union based on Action type
-// ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-// Only ONE of these should be populated based on the Action field
-type StepParameters struct {
-    // Deployment actions
-    ScaleDeployment   *ScaleDeploymentParams   `json:"scaleDeployment,omitempty"`
-    RestartDeployment *RestartDeploymentParams `json:"restartDeployment,omitempty"`
-    UpdateImage       *UpdateImageParams       `json:"updateImage,omitempty"`
-
-    // Pod actions
-    RestartPod        *RestartPodParams        `json:"restartPod,omitempty"`
-    DeletePod         *DeletePodParams         `json:"deletePod,omitempty"`
-
-    // ConfigMap/Secret actions
-    UpdateConfigMap   *UpdateConfigMapParams   `json:"updateConfigMap,omitempty"`
-    UpdateSecret      *UpdateSecretParams      `json:"updateSecret,omitempty"`
-
-    // Node actions
-    CordonNode        *CordonNodeParams        `json:"cordonNode,omitempty"`
-    DrainNode         *DrainNodeParams         `json:"drainNode,omitempty"`
-
-    // Custom actions (for extensibility)
-    Custom            *CustomActionParams      `json:"custom,omitempty"`
-}
-
-// Deployment action parameters
-type ScaleDeploymentParams struct {
-    Namespace  string `json:"namespace"`
-    Deployment string `json:"deployment"`
-    Replicas   int32  `json:"replicas"`
-}
-
-type RestartDeploymentParams struct {
-    Namespace  string `json:"namespace"`
-    Deployment string `json:"deployment"`
-    GracePeriod string `json:"gracePeriod,omitempty"` // e.g., "30s"
-}
-
-type UpdateImageParams struct {
-    Namespace  string `json:"namespace"`
-    Deployment string `json:"deployment"`
-    Container  string `json:"container"`
-    NewImage   string `json:"newImage"`
-}
-
-// Pod action parameters
-type RestartPodParams struct {
-    Namespace  string `json:"namespace"`
-    PodName    string `json:"podName,omitempty"` // Empty = all pods matching selector
-    Selector   string `json:"selector,omitempty"` // e.g., "app=web"
-    GracePeriod string `json:"gracePeriod,omitempty"`
-}
-
-type DeletePodParams struct {
-    Namespace  string `json:"namespace"`
-    PodName    string `json:"podName"`
-    GracePeriod string `json:"gracePeriod,omitempty"`
-}
-
-// ConfigMap/Secret parameters
-type UpdateConfigMapParams struct {
-    Namespace   string            `json:"namespace"`
-    Name        string            `json:"name"`
-    DataUpdates map[string]string `json:"dataUpdates"` // Key-value pairs to update
-}
-
-type UpdateSecretParams struct {
-    Namespace   string            `json:"namespace"`
-    Name        string            `json:"name"`
-    DataUpdates map[string]string `json:"dataUpdates"` // Base64 encoded values
-}
-
-// Node action parameters
-type CordonNodeParams struct {
-    NodeName string `json:"nodeName"`
-}
-
-type DrainNodeParams struct {
-    NodeName         string `json:"nodeName"`
-    GracePeriod      string `json:"gracePeriod,omitempty"`
-    IgnoreDaemonSets bool   `json:"ignoreDaemonSets"`
-    DeleteLocalData  bool   `json:"deleteLocalData"`
-}
-
-// Custom action for extensibility
-type CustomActionParams struct {
-    ActionType string            `json:"actionType"` // Custom action identifier
-    Config     map[string]string `json:"config"` // String-only key-value pairs
-}
-
-// RollbackParameters is a discriminated union based on rollback action
-// ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-type RollbackParameters struct {
-    // Deployment rollbacks
-    RestorePreviousDeployment *RestorePreviousDeploymentParams `json:"restorePreviousDeployment,omitempty"`
-    ScaleToPrevious           *ScaleToPreviousParams           `json:"scaleToPrevious,omitempty"`
-
-    // Config rollbacks
-    RestorePreviousConfig     *RestorePreviousConfigParams     `json:"restorePreviousConfig,omitempty"`
-
-    // Node rollbacks
-    UncordonNode              *UncordonNodeParams              `json:"uncordonNode,omitempty"`
-
-    // Custom rollbacks
-    Custom                    *CustomRollbackParams            `json:"custom,omitempty"`
-}
-
-type RestorePreviousDeploymentParams struct {
-    Namespace  string `json:"namespace"`
-    Deployment string `json:"deployment"`
-    Revision   int32  `json:"revision,omitempty"` // 0 = previous revision
-}
-
-type ScaleToPreviousParams struct {
-    Namespace  string `json:"namespace"`
-    Deployment string `json:"deployment"`
-    PreviousReplicas int32 `json:"previousReplicas"` // Captured before change
-}
-
-type RestorePreviousConfigParams struct {
-    Namespace string `json:"namespace"`
-    Name      string `json:"name"`
-    Type      string `json:"type"` // "ConfigMap" or "Secret"
-    Snapshot  string `json:"snapshot"` // Reference to saved snapshot
-}
-
-type UncordonNodeParams struct {
-    NodeName string `json:"nodeName"`
-}
-
-type CustomRollbackParams struct {
-    ActionType string            `json:"actionType"`
-    Config     map[string]string `json:"config"`
-}
-
-// DryRunResults contains structured dry-run execution results
-// ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-type DryRunResults struct {
-    OverallSuccess    bool                    `json:"overallSuccess"`
-    ExecutionTime     string                  `json:"executionTime"` // Duration
-    StepsSimulated    int                     `json:"stepsSimulated"`
-    StepResults       []DryRunStepResult      `json:"stepResults"`
-    ResourceChanges   []ResourceChange        `json:"resourceChanges,omitempty"`
-    PotentialIssues   []PotentialIssue        `json:"potentialIssues,omitempty"`
-}
-
-type DryRunStepResult struct {
-    StepNumber       int    `json:"stepNumber"`
-    Action           string `json:"action"`
-    WouldSucceed     bool   `json:"wouldSucceed"`
-    SimulatedDuration string `json:"simulatedDuration"`
-    ValidationErrors []string `json:"validationErrors,omitempty"`
-}
-
-type ResourceChange struct {
-    ResourceType string            `json:"resourceType"` // "Deployment", "Pod", etc.
-    ResourceName string            `json:"resourceName"`
-    Namespace    string            `json:"namespace"`
-    ChangeType   string            `json:"changeType"` // "scale", "update", "delete"
-    BeforeState  map[string]string `json:"beforeState"` // String key-value pairs only
-    AfterState   map[string]string `json:"afterState"`
-}
-
-type PotentialIssue struct {
-    Severity    string `json:"severity"` // "low", "medium", "high"
-    Description string `json:"description"`
-    StepNumber  int    `json:"stepNumber,omitempty"`
-    Recommendation string `json:"recommendation,omitempty"`
-}
-
-// StepExecutionResult contains structured execution results
-// ✅ TYPE SAFE - Replaces map[string]interface{} anti-pattern
-type StepExecutionResult struct {
-    Success          bool                   `json:"success"`
-    ExecutionTime    string                 `json:"executionTime"` // Duration
-
-    // Action-specific results (discriminated union - only one populated)
-    ScaleResult      *ScaleExecutionResult      `json:"scaleResult,omitempty"`
-    RestartResult    *RestartExecutionResult    `json:"restartResult,omitempty"`
-    UpdateResult     *UpdateExecutionResult     `json:"updateResult,omitempty"`
-    CustomResult     *CustomExecutionResult     `json:"customResult,omitempty"`
-
-    // Common result metadata
-    ResourcesAffected []AffectedResource         `json:"resourcesAffected,omitempty"`
-    Warnings          []string                   `json:"warnings,omitempty"`
-}
-
-type ScaleExecutionResult struct {
-    PreviousReplicas int32 `json:"previousReplicas"`
-    NewReplicas      int32 `json:"newReplicas"`
-    ScaledNamespace  string `json:"scaledNamespace"`
-    ScaledDeployment string `json:"scaledDeployment"`
-}
-
-type RestartExecutionResult struct {
-    PodsRestarted    int      `json:"podsRestarted"`
-    RestartedPods    []string `json:"restartedPods"` // Pod names
-    Namespace        string   `json:"namespace"`
-}
-
-type UpdateExecutionResult struct {
-    ResourceType   string `json:"resourceType"` // "Deployment", "ConfigMap", etc.
-    ResourceName   string `json:"resourceName"`
-    Namespace      string `json:"namespace"`
-    UpdateType     string `json:"updateType"` // "image", "config", "spec"
-    PreviousValue  string `json:"previousValue,omitempty"`
-    NewValue       string `json:"newValue,omitempty"`
-}
-
-type CustomExecutionResult struct {
-    ActionType string            `json:"actionType"`
-    Output     map[string]string `json:"output"` // String key-value pairs only
-}
-
-type AffectedResource struct {
-    ResourceType string `json:"resourceType"`
-    Name         string `json:"name"`
-    Namespace    string `json:"namespace"`
-    ChangeType   string `json:"changeType"` // "modified", "restarted", "scaled"
+    // TotalTasks count (from pipeline spec)
+    TotalTasks int `json:"totalTasks,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+//+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`
+//+kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.duration`
+//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // WorkflowExecution is the Schema for the workflowexecutions API
 type WorkflowExecution struct {
@@ -595,476 +200,377 @@ func init() {
 
 ---
 
-## Complete Example: WorkflowExecution with Dependencies
-
-**Business Requirements**: BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033
-
-This example demonstrates a multi-step workflow with dependencies from AIAnalysis recommendations, showing both the AIAnalysis output and the resulting WorkflowExecution CRD.
-
-### AIAnalysis Recommendations (Source)
+## Complete YAML Example
 
 ```yaml
-# AIAnalysis CRD status (upstream)
-status:
-  phase: completed
-  recommendations:
-  - id: "rec-001"
-    action: "scale-deployment"
-    targetResource:
-      kind: Deployment
-      name: payment-api
-      namespace: production
-    parameters:
-      replicas: 5
-    effectivenessProbability: 0.92
-    riskLevel: low
-    dependencies: []  # No dependencies - executes first
-
-  - id: "rec-002"
-    action: "restart-pods"
-    targetResource:
-      kind: Pod
-      namespace: production
-      labelSelector: "app=payment-api"
-    parameters:
-      gracePeriodSeconds: 30
-    effectivenessProbability: 0.88
-    riskLevel: medium
-    dependencies: ["rec-001"]  # Waits for scale to complete
-
-  - id: "rec-003"
-    action: "increase-memory-limit"
-    targetResource:
-      kind: Deployment
-      name: payment-api
-      namespace: production
-    parameters:
-      newMemoryLimit: "2Gi"
-    effectivenessProbability: 0.85
-    riskLevel: low
-    dependencies: ["rec-001"]  # Also waits for scale
-
-  # rec-002 and rec-003 can execute IN PARALLEL after rec-001
-
-  - id: "rec-004"
-    action: "verify-deployment"
-    targetResource:
-      kind: Deployment
-      name: payment-api
-      namespace: production
-    parameters:
-      healthCheckEndpoint: "/health"
-    effectivenessProbability: 0.95
-    riskLevel: low
-    dependencies: ["rec-002", "rec-003"]  # Waits for BOTH
-```
-
-### WorkflowExecution CRD (Generated)
-
-```yaml
-apiVersion: workflow.kubernaut.io/v1
+apiVersion: kubernaut.io/v1alpha1
 kind: WorkflowExecution
 metadata:
-  name: payment-api-workflow-abc123
-  namespace: production
+  name: workflow-payment-oom-001
+  namespace: kubernaut-system
   ownerReferences:
-  - apiVersion: remediation.kubernaut.io/v1
+  - apiVersion: kubernaut.io/v1alpha1
     kind: RemediationRequest
-    name: payment-api-remediation
-    uid: xyz789
+    name: remediation-payment-oom
+    uid: abc-123-def-456
     controller: true
+  labels:
+    kubernaut.io/remediation-request: remediation-payment-oom
+    kubernaut.io/workflow-id: oomkill-increase-memory
 spec:
   remediationRequestRef:
-    name: payment-api-remediation
-    namespace: production
+    name: remediation-payment-oom
+    namespace: kubernaut-system
+    apiVersion: kubernaut.io/v1alpha1
+    kind: RemediationRequest
 
-  workflowDefinition:
-    name: "ai-generated-workflow"
-    version: "v1"
-    steps:
-      # Step 1: No dependencies - executes first
-      - stepNumber: 1
-        name: "scale-deployment"
-        action: "scale-deployment"
-        targetCluster: "production-cluster"
-        parameters:
-          deployment:
-            name: payment-api
-            namespace: production
-            replicas: 5
-        criticalStep: false
-        maxRetries: 3
-        timeout: "5m"
-        dependsOn: []  # ✅ Empty - no dependencies
+  workflowRef:
+    workflowId: "oomkill-increase-memory"
+    version: "1.0.0"
+    containerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0"
+    containerDigest: "sha256:abc123def456..."
 
-      # Step 2: Depends on step 1 (rec-001 → step 1)
-      - stepNumber: 2
-        name: "restart-pods"
-        action: "restart-pods"
-        targetCluster: "production-cluster"
-        parameters:
-          podSelector:
-            namespace: production
-            labelSelector: "app=payment-api"
-          gracePeriodSeconds: 30
-        criticalStep: true
-        maxRetries: 2
-        timeout: "5m"
-        dependsOn: [1]  # ✅ rec-001 mapped to step 1
+  parameters:
+    NAMESPACE: "payment"
+    DEPLOYMENT_NAME: "payment-api"
+    NEW_MEMORY_LIMIT: "1Gi"
 
-      # Step 3: Also depends on step 1 (rec-001 → step 1)
-      - stepNumber: 3
-        name: "increase-memory-limit"
-        action: "patch-resource"
-        targetCluster: "production-cluster"
-        parameters:
-          patchResource:
-            kind: Deployment
-            name: payment-api
-            namespace: production
-            patch:
-              spec:
-                template:
-                  spec:
-                    containers:
-                    - name: api
-                      resources:
-                        limits:
-                          memory: "2Gi"
-        criticalStep: false
-        maxRetries: 3
-        timeout: "5m"
-        dependsOn: [1]  # ✅ rec-001 mapped to step 1
+  confidence: 0.92
+  rationale: "High confidence match for OOMKill pattern"
 
-      # Steps 2 and 3 execute IN PARALLEL (both depend only on step 1)
-
-      # Step 4: Depends on steps 2 AND 3 (rec-002 → step 2, rec-003 → step 3)
-      - stepNumber: 4
-        name: "verify-deployment"
-        action: "verify-health"
-        targetCluster: "production-cluster"
-        parameters:
-          verifyHealth:
-            kind: Deployment
-            name: payment-api
-            namespace: production
-            healthCheckEndpoint: "/health"
-        criticalStep: false
-        maxRetries: 5
-        timeout: "2m"
-        dependsOn: [2, 3]  # ✅ rec-002 → step 2, rec-003 → step 3
-
-    aiRecommendations:
-      source: "holmesgpt"
-      count: 4
-
-  executionStrategy:
-    approvalRequired: false
-    dryRunFirst: true
-    rollbackStrategy: "automatic"
-    maxRetries: 3
-    safetyChecks:
-    - type: "rbac-check"
-      enabled: true
-    - type: "resource-availability"
-      enabled: true
+  executionConfig:
+    timeout: "30m"
+    serviceAccountName: "kubernaut-workflow-runner"
 
 status:
-  phase: "executing"
-  totalSteps: 4
-  currentStep: 2
+  phase: Completed
+  startTime: "2025-11-28T10:15:00Z"
+  completionTime: "2025-11-28T10:18:30Z"
+  duration: "3m30s"
 
-  # Execution plan determined from dependencies
-  executionPlan:
-    strategy: "parallel-with-dependencies"
-    estimatedDuration: "15m"
-    rollbackStrategy: "automatic"
-    batches:
-    - batchNumber: 1
-      steps: [1]  # Step 1 executes alone
-    - batchNumber: 2
-      steps: [2, 3]  # Steps 2 and 3 execute IN PARALLEL
-    - batchNumber: 3
-      steps: [4]  # Step 4 executes after 2 and 3 complete
+  pipelineRunRef:
+    name: workflow-payment-oom-001-run
 
-  stepStatuses:
-  - stepNumber: 1
-    phase: "completed"
-    executionTime: "2m30s"
-    kubernetesExecutionRef:
-      name: payment-api-workflow-abc123-step-1
+  pipelineRunStatus:
+    status: "True"
+    reason: "Succeeded"
+    message: "All tasks completed successfully"
+    completedTasks: 3
+    totalTasks: 3
 
-  - stepNumber: 2
-    phase: "running"
-    startTime: "2025-10-08T10:05:00Z"
-    kubernetesExecutionRef:
-      name: payment-api-workflow-abc123-step-2
-
-  - stepNumber: 3
-    phase: "running"
-    startTime: "2025-10-08T10:05:00Z"
-    kubernetesExecutionRef:
-      name: payment-api-workflow-abc123-step-3
-
-  - stepNumber: 4
-    phase: "pending"
-    # Waiting for steps 2 and 3 to complete
-
-  message: "Executing steps 2 and 3 in parallel (batch 2 of 3)"
-```
-
-### Execution Flow (Determined by Dependencies)
-
-```
-Batch 1 (Sequential):
-  Step 1: scale-deployment
-    ↓ completes
-Batch 2 (Parallel):
-  Step 2: restart-pods      ⟋ both start simultaneously
-  Step 3: increase-memory   ⟍ both depend only on step 1
-    ↓ both complete
-Batch 3 (Sequential):
-  Step 4: verify-deployment
-    ↓ waits for steps 2 AND 3
+  conditions:
+  - type: PipelineRunCreated
+    status: "True"
+    reason: PipelineRunCreated
+    message: "Tekton PipelineRun created successfully"
+    lastTransitionTime: "2025-11-28T10:15:00Z"
+  - type: ExecutionComplete
+    status: "True"
+    reason: Succeeded
+    message: "Workflow execution completed successfully"
+    lastTransitionTime: "2025-11-28T10:18:30Z"
 ```
 
 ---
 
-## Representative Example: scale_deployment with Precondition/Postcondition Validation
+## Controller Logic (Simplified per ADR-044)
 
-> **📋 Design Decision Status**
->
-> **Current Implementation**: **DD-002 Alternative 2** (Approved Design)
-> **Status**: ✅ **Framework Design Complete**
-> **Confidence**: 78%
-> **Design Decision**: [DD-002](../../../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2)
-> **Business Requirements**: BR-WF-016, BR-WF-052, BR-WF-053
->
-> <details>
-> <summary><b>Why DD-002?</b> (Click to expand)</summary>
->
-> - ✅ **Prevents Cascade Failures**: Validates state before each step (20% reduction)
-> - ✅ **Verifies Outcomes**: Confirms intended effect achieved (15-20% effectiveness improvement)
-> - ✅ **Better Observability**: Step-level failure diagnosis with state evidence
-> - ✅ **Leverages Infrastructure**: Reuses Rego policy engine (BR-REGO-001 to BR-REGO-010)
->
-> **Full Analysis**: See [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md)
-> </details>
+```go
+// pkg/workflowexecution/controller.go
+package controller
 
-This example demonstrates the per-step validation framework with a `scale_deployment` action that includes both preconditions and postconditions:
+import (
+    "context"
+    "fmt"
+    "time"
 
-```yaml
-apiVersion: workflow.kubernaut.io/v1
-kind: WorkflowExecution
-metadata:
-  name: web-app-scale-workflow
-  namespace: production
-spec:
-  remediationRequestRef:
-    name: web-app-high-cpu-remediation
-    namespace: production
+    tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/v1alpha1"
+    corev1 "k8s.io/api/core/v1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    "sigs.k8s.io/controller-runtime/pkg/log"
+)
 
-  workflowDefinition:
-    name: "scale-web-application"
-    version: "v1"
-    steps:
-      - stepNumber: 1
-        name: "scale-web-deployment"
-        action: "scale_deployment"
-        targetCluster: "production-cluster"
-        parameters:
-          deployment:
-            name: web-app
-            namespace: production
-            replicas: 5
-        criticalStep: true
-        maxRetries: 2
-        timeout: "5m"
+type WorkflowExecutionReconciler struct {
+    client.Client
+    AuditClient AuditClient
+}
 
-        # ========================================
-        # PRECONDITIONS (DD-002, BR-WF-016)
-        # Validated BEFORE creating KubernetesExecution CRD
-        # ========================================
-        preConditions:
-          - type: deployment_exists
-            description: "Deployment must exist before scaling"
-            rego: |
-              package precondition
-              import future.keywords.if
-              allow if { input.deployment_found == true }
-            required: true
-            timeout: "10s"
+func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    _log := log.FromContext(ctx)
 
-          - type: current_replicas_match
-            description: "Current replicas should match expected baseline"
-            rego: |
-              package precondition
-              import future.keywords.if
-              allow if { input.current_replicas == 3 }
-            required: false  # warning only, not blocking
-            timeout: "5s"
+    var wfe kubernautv1alpha1.WorkflowExecution
+    if err := r.Get(ctx, req.NamespacedName, &wfe); err != nil {
+        return ctrl.Result{}, client.IgnoreNotFound(err)
+    }
 
-          - type: cluster_capacity_available
-            description: "Cluster must have capacity for additional pods"
-            rego: |
-              package precondition
-              import future.keywords.if
-              allow if {
-                input.available_cpu >= input.required_cpu_per_pod * 2
-                input.available_memory >= input.required_memory_per_pod * 2
-              }
-            required: true
-            timeout: "10s"
+    switch wfe.Status.Phase {
+    case "", "Pending":
+        return r.handlePending(ctx, &wfe)
+    case "Running":
+        return r.handleRunning(ctx, &wfe)
+    case "Completed", "Failed":
+        // Terminal states - no action needed
+        return ctrl.Result{}, nil
+    default:
+        _log.Error(nil, "Unknown phase", "phase", wfe.Status.Phase)
+        return ctrl.Result{}, nil
+    }
+}
 
-        # ========================================
-        # POSTCONDITIONS (DD-002, BR-WF-052)
-        # Verified AFTER KubernetesExecution completes
-        # ========================================
-        postConditions:
-          - type: desired_replicas_running
-            description: "All desired replicas must be running"
-            rego: |
-              package postcondition
-              import future.keywords.if
-              allow if {
-                input.running_pods >= input.target_replicas
-                input.ready_pods >= input.target_replicas
-              }
-            required: true
-            timeout: "2m"  # wait for pods to start
+// handlePending creates the Tekton PipelineRun
+func (r *WorkflowExecutionReconciler) handlePending(
+    ctx context.Context,
+    wfe *kubernautv1alpha1.WorkflowExecution,
+) (ctrl.Result, error) {
+    _log := log.FromContext(ctx)
+    _log.Info("Creating PipelineRun", "workflowId", wfe.Spec.WorkflowRef.WorkflowID)
 
-          - type: deployment_health_check
-            description: "Deployment must be Available and Progressing"
-            rego: |
-              package postcondition
-              import future.keywords.if
-              allow if {
-                input.conditions.Available == true
-                input.conditions.Progressing == true
-              }
-            required: true
-            timeout: "1m"
+    // Build Tekton PipelineRun
+    pipelineRun := r.buildPipelineRun(wfe)
 
-          - type: no_crashloop_pods
-            description: "No pods should be in CrashLoopBackOff"
-            rego: |
-              package postcondition
-              import future.keywords.if
-              allow if {
-                count([p | p := input.pods[_]; p.status == "CrashLoopBackOff"]) == 0
-              }
-            required: true
-            timeout: "1m"
+    // Create PipelineRun
+    if err := r.Create(ctx, pipelineRun); err != nil {
+        _log.Error(err, "Failed to create PipelineRun")
+        return ctrl.Result{}, err
+    }
 
-  executionStrategy:
-    approvalRequired: false
-    dryRunFirst: true
-    rollbackStrategy: "automatic"
-    maxRetries: 2
+    // Update status
+    now := metav1.Now()
+    wfe.Status.Phase = "Running"
+    wfe.Status.StartTime = &now
+    wfe.Status.PipelineRunRef = &corev1.LocalObjectReference{
+        Name: pipelineRun.Name,
+    }
 
-status:
-  phase: "completed"
-  currentStep: 1
-  totalSteps: 1
+    if err := r.Status().Update(ctx, wfe); err != nil {
+        return ctrl.Result{}, err
+    }
 
-  stepStatuses:
-    - stepNumber: 1
-      action: "scale_deployment"
-      status: "completed"
-      startTime: "2025-10-14T10:00:00Z"
-      endTime: "2025-10-14T10:02:30Z"
+    // Write audit trace
+    go r.AuditClient.WriteExecutionStarted(ctx, wfe)
 
-      # ========================================
-      # PRECONDITION EVALUATION RESULTS
-      # ========================================
-      preConditionResults:
-        - conditionType: deployment_exists
-          evaluated: true
-          passed: true
-          evaluationTime: "2025-10-14T10:00:01Z"
+    return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
 
-        - conditionType: current_replicas_match
-          evaluated: true
-          passed: false  # warning only, execution proceeded
-          errorMessage: "Current replicas: 1, expected: 3 (previous step may have failed)"
-          evaluationTime: "2025-10-14T10:00:02Z"
+// buildPipelineRun creates the Tekton PipelineRun spec
+func (r *WorkflowExecutionReconciler) buildPipelineRun(
+    wfe *kubernautv1alpha1.WorkflowExecution,
+) *tektonv1.PipelineRun {
+    // Convert parameters to Tekton format
+    params := make([]tektonv1.Param, 0, len(wfe.Spec.Parameters))
+    for key, value := range wfe.Spec.Parameters {
+        params = append(params, tektonv1.Param{
+            Name:  key,
+            Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: value},
+        })
+    }
 
-        - conditionType: cluster_capacity_available
-          evaluated: true
-          passed: true
-          evaluationTime: "2025-10-14T10:00:03Z"
+    // Determine timeout
+    timeout := metav1.Duration{Duration: 30 * time.Minute}
+    if wfe.Spec.ExecutionConfig.Timeout != nil {
+        timeout = *wfe.Spec.ExecutionConfig.Timeout
+    }
 
-      # ========================================
-      # POSTCONDITION VERIFICATION RESULTS
-      # ========================================
-      postConditionResults:
-        - conditionType: desired_replicas_running
-          evaluated: true
-          passed: true
-          evaluationTime: "2025-10-14T10:02:25Z"
+    // Service account
+    serviceAccount := "kubernaut-workflow-runner"
+    if wfe.Spec.ExecutionConfig.ServiceAccountName != "" {
+        serviceAccount = wfe.Spec.ExecutionConfig.ServiceAccountName
+    }
 
-        - conditionType: deployment_health_check
-          evaluated: true
-          passed: true
-          evaluationTime: "2025-10-14T10:02:26Z"
+    return &tektonv1.PipelineRun{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("%s-run", wfe.Name),
+            Namespace: wfe.Namespace,
+            Labels: map[string]string{
+                "kubernaut.io/workflow-execution": wfe.Name,
+                "kubernaut.io/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+            },
+            OwnerReferences: []metav1.OwnerReference{
+                {
+                    APIVersion:         wfe.APIVersion,
+                    Kind:               wfe.Kind,
+                    Name:               wfe.Name,
+                    UID:                wfe.UID,
+                    Controller:         ptrBool(true),
+                    BlockOwnerDeletion: ptrBool(true),
+                },
+            },
+        },
+        Spec: tektonv1.PipelineRunSpec{
+            PipelineRef: &tektonv1.PipelineRef{
+                ResolverRef: tektonv1.ResolverRef{
+                    Resolver: "bundles",
+                    Params: []tektonv1.Param{
+                        {
+                            Name:  "bundle",
+                            Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ContainerImage},
+                        },
+                        {
+                            Name:  "name",
+                            Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.WorkflowID},
+                        },
+                    },
+                },
+            },
+            Params: params,
+            Timeouts: &tektonv1.TimeoutFields{
+                Pipeline: &timeout,
+            },
+            TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
+                ServiceAccountName: serviceAccount,
+            },
+        },
+    }
+}
 
-        - conditionType: no_crashloop_pods
-          evaluated: true
-          passed: true
-          evaluationTime: "2025-10-14T10:02:27Z"
+// handleRunning watches PipelineRun status
+func (r *WorkflowExecutionReconciler) handleRunning(
+    ctx context.Context,
+    wfe *kubernautv1alpha1.WorkflowExecution,
+) (ctrl.Result, error) {
+    _log := log.FromContext(ctx)
 
-      k8sExecutionRef:
-        name: web-app-scale-workflow-step-1
-        namespace: production
+    // Get PipelineRun
+    if wfe.Status.PipelineRunRef == nil {
+        _log.Error(nil, "PipelineRunRef is nil in Running phase")
+        return ctrl.Result{}, fmt.Errorf("pipelineRunRef is nil")
+    }
 
-  executionMetrics:
-    totalDuration: "2m30s"
-    stepSuccessRate: 1.0
-    rollbacksPerformed: 0
-    resourcesAffected: 1
+    var pipelineRun tektonv1.PipelineRun
+    if err := r.Get(ctx, client.ObjectKey{
+        Name:      wfe.Status.PipelineRunRef.Name,
+        Namespace: wfe.Namespace,
+    }, &pipelineRun); err != nil {
+        _log.Error(err, "Failed to get PipelineRun")
+        return ctrl.Result{}, err
+    }
 
-  completionTime: "2025-10-14T10:02:30Z"
+    // Update status summary
+    wfe.Status.PipelineRunStatus = r.buildStatusSummary(&pipelineRun)
+
+    // Check completion
+    if pipelineRun.IsDone() {
+        now := metav1.Now()
+        wfe.Status.CompletionTime = &now
+
+        if wfe.Status.StartTime != nil {
+            duration := now.Sub(wfe.Status.StartTime.Time)
+            wfe.Status.Duration = duration.Round(time.Second).String()
+        }
+
+        if pipelineRun.Status.GetCondition(tektonv1.PipelineRunConditionSucceeded).IsTrue() {
+            wfe.Status.Phase = "Completed"
+            _log.Info("Workflow completed successfully")
+        } else {
+            wfe.Status.Phase = "Failed"
+            wfe.Status.FailureReason = pipelineRun.Status.GetCondition(
+                tektonv1.PipelineRunConditionSucceeded,
+            ).GetMessage()
+            _log.Info("Workflow failed", "reason", wfe.Status.FailureReason)
+        }
+
+        // Write audit trace
+        go r.AuditClient.WriteExecutionCompleted(ctx, wfe)
+    }
+
+    if err := r.Status().Update(ctx, wfe); err != nil {
+        return ctrl.Result{}, err
+    }
+
+    // Requeue if still running
+    if wfe.Status.Phase == "Running" {
+        return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+    }
+
+    return ctrl.Result{}, nil
+}
+
+// buildStatusSummary creates a lightweight status summary
+func (r *WorkflowExecutionReconciler) buildStatusSummary(
+    pr *tektonv1.PipelineRun,
+) *kubernautv1alpha1.PipelineRunStatusSummary {
+    condition := pr.Status.GetCondition(tektonv1.PipelineRunConditionSucceeded)
+    if condition == nil {
+        return &kubernautv1alpha1.PipelineRunStatusSummary{
+            Status: "Unknown",
+        }
+    }
+
+    completed := 0
+    total := 0
+    for _, taskStatus := range pr.Status.ChildReferences {
+        total++
+        if taskStatus.PipelineTaskName != "" {
+            // Task has been created
+            completed++
+        }
+    }
+
+    return &kubernautv1alpha1.PipelineRunStatusSummary{
+        Status:         string(condition.Status),
+        Reason:         condition.Reason,
+        Message:        condition.Message,
+        CompletedTasks: completed,
+        TotalTasks:     total,
+    }
+}
+
+func ptrBool(b bool) *bool {
+    return &b
+}
 ```
-
-### Validation Flow
-
-```
-1. WorkflowExecution receives step execution request
-   ↓
-2. Evaluate step.preConditions[] (BR-WF-016)
-   - deployment_exists: ✅ PASS (blocking)
-   - current_replicas_match: ❌ FAIL (warning only, log and proceed)
-   - cluster_capacity_available: ✅ PASS (blocking)
-   ↓ (all required preconditions passed)
-3. Create KubernetesExecution CRD
-   ↓
-4. KubernetesExecutor executes action (kubectl scale)
-   ↓
-5. KubernetesExecutor reports completion
-   ↓
-6. WorkflowExecution evaluates step.postConditions[] (BR-WF-052)
-   - desired_replicas_running: ✅ PASS (5 pods running)
-   - deployment_health_check: ✅ PASS (Available=true, Progressing=true)
-   - no_crashloop_pods: ✅ PASS (0 crashloop pods)
-   ↓ (all postconditions passed)
-7. Mark step as "completed"
-```
-
-### Condition Template Placeholder
-
-**Note**: This representative example shows complete precondition/postcondition policies for the `scale_deployment` action. Condition templates for the **remaining 26 actions** will be defined during implementation.
-
-See [Precondition/Postcondition Framework](../standards/precondition-postcondition-framework.md) for phased rollout strategy:
-- **Phase 1** (Weeks 1-2): Top 5 actions (scale_deployment, restart_pod, increase_resources, rollback_deployment, expand_pvc)
-- **Phase 2** (Weeks 3-4): Next 10 actions (infrastructure, storage, application lifecycle)
-- **Phase 3** (Weeks 5-6): Remaining 12 actions (security, network, database, monitoring)
-
-**Key Points**:
-- ✅ AIAnalysis uses `recommendation.id` (string) and `dependencies []string`
-- ✅ WorkflowExecution uses `step.StepNumber` (int) and `dependsOn []int`
-- ✅ `buildWorkflowFromRecommendations()` maps IDs → step numbers
-- ✅ WorkflowExecution identifies parallel opportunities (steps 2 and 3)
-- ✅ Execution plan shows 3 batches with parallelization in batch 2
 
 ---
+
+## Migration from v1.x Schema
+
+| Old Field (v1.x) | New Field (v2.0) | Notes |
+|------------------|------------------|-------|
+| `workflowDefinition` | `workflowRef` | OCI bundle reference, not embedded definition |
+| `workflowDefinition.steps[]` | Removed | Steps live in Tekton Pipeline (ADR-044) |
+| `workflowDefinition.dependencies` | Removed | Tekton handles dependencies |
+| `executionStrategy` | `executionConfig` | Simplified to timeout + serviceAccount |
+| `stepStatuses[]` | Removed | Use PipelineRun.status directly |
+| `executionPlan` | Removed | Tekton determines execution plan |
+| `validationResults` | Removed | Validation in Tekton tasks |
+| `adaptiveOrchestration` | Removed | Out of scope for v1.0 |
+| `executionSnapshot` | Removed | Recovery handled by RO |
+
+---
+
+## What Controller Does NOT Do (ADR-044)
+
+| Responsibility | Owner | Notes |
+|---------------|-------|-------|
+| Step orchestration | **Tekton** | Controller creates single PipelineRun |
+| Retry logic per step | **Tekton** | Tekton task retries |
+| Step timeout enforcement | **Tekton** | Pipeline task timeouts |
+| Rollback on failure | **Tekton/None** | Use Tekton `finally` tasks or don't rollback |
+| Parameter transformation | **None** | Pass through from spec to PipelineRun |
+| Workflow definition parsing | **Tekton** | OCI bundle contains Pipeline definition |
+
+---
+
+## Related Documents
+
+| Document | Relationship |
+|----------|--------------|
+| **ADR-044** | **Authoritative** - Workflow Execution Engine Delegation |
+| **DD-CONTRACT-001** | AIAnalysis ↔ WorkflowExecution contract alignment |
+| **ADR-043** | Workflow Schema Definition (OCI bundle format) |
+| **DD-WORKFLOW-003** | Parameterized Actions (UPPER_SNAKE_CASE parameters) |
+| **DD-WORKFLOW-005** | Automated Schema Extraction (workflow registration) |
+| **DD-WORKFLOW-011** | Tekton Pipeline OCI Bundles |
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 2.0 | 2025-11-28 | **Breaking**: Simplified schema per ADR-044. Replaced `WorkflowDefinition` with `WorkflowRef`. Removed step orchestration, status tracking, rollback logic. Controller now creates single PipelineRun and watches status. |
+| 1.x | Prior | Complex schema with embedded WorkflowDefinition, step-level status, rollback spec, preconditions/postconditions |
 
