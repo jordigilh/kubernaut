@@ -427,17 +427,19 @@ class TestEnrichmentResultsModel:
     def test_enrichment_results_allows_custom_labels(self):
         """
         Business Outcome: Custom labels from resource annotations
+
+        DD-HAPI-001: customLabels format is Dict[str, List[str]] (subdomain → list of values)
         """
         from src.models.incident_models import EnrichmentResults
 
         enrichment = EnrichmentResults(
             customLabels={
-                "team": "platform",
-                "cost-center": "engineering"
+                "team": ["platform"],
+                "cost-center": ["engineering"]
             }
         )
 
-        assert enrichment.customLabels["team"] == "platform"
+        assert enrichment.customLabels["team"] == ["platform"]
 
     def test_enrichment_quality_bounded_0_to_1(self):
         """

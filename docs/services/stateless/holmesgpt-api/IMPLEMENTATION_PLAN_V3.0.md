@@ -233,11 +233,12 @@ Essential Infrastructure:
 
 **Configuration** (minimal for internal service):
 ```python
+# Configuration via environment variables only (no dev_mode - removed in v3.0)
+# LLM_ENDPOINT, LLM_MODEL, AUTH_ENABLED
 {
     "service_name": "holmesgpt-api",
     "version": "1.0.0",
     "environment": "development",
-    "dev_mode": True,
     "auth_enabled": False,  # K8s ServiceAccount tokens only
     "llm": {
         "provider": "ollama",
@@ -246,6 +247,9 @@ Essential Infrastructure:
     }
 }
 ```
+
+> **Note (v3.0)**: `dev_mode` was removed as an anti-pattern. Tests use a mock LLM server
+> (same code path as production) instead of branching on DEV_MODE flags.
 
 ---
 
@@ -384,8 +388,7 @@ spec:
         env:
         - name: ENVIRONMENT
           value: "production"
-        - name: DEV_MODE
-          value: "false"
+        # NOTE: DEV_MODE removed in v3.0 - tests use mock LLM server instead
         - name: LLM_PROVIDER
           value: "ollama"
         - name: LLM_MODEL

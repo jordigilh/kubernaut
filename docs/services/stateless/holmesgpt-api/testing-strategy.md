@@ -1,9 +1,63 @@
 # HolmesGPT API Service - Testing Strategy
 
-**Version**: v1.0
-**Last Updated**: October 6, 2025
+**Version**: v2.0
+**Last Updated**: November 30, 2025
 **Service Type**: Stateless HTTP Service (Python REST API)
 **Port**: 8080 (REST API + Health), 9090 (Metrics)
+
+---
+
+## 🔄 **v2.0 Architecture Update (November 30, 2025)**
+
+### **DEV_MODE Anti-Pattern Removed**
+
+The previous testing approach used `DEV_MODE` flags to branch between stub responses (for tests) and real LLM calls (production). **This was identified as an anti-pattern** because tests didn't exercise the actual production code path.
+
+### **New Architecture: Mock LLM Server**
+
+Tests now use a **mock Ollama-compatible HTTP server** (`tests/mock_llm_server.py`) that:
+- Responds to `/v1/chat/completions` and `/chat/completions` endpoints
+- Returns predictable responses based on prompt content
+- Allows tests to exercise the **exact same code path as production**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Integration Tests                            │
+│                           │                                      │
+│                           ▼                                      │
+│                  ┌──────────────────┐                           │
+│                  │  FastAPI Client  │                           │
+│                  └────────┬─────────┘                           │
+│                           │                                      │
+│                           ▼                                      │
+│ ┌──────────────────┐     ┌─────────────────────┐               │
+│ │  HolmesGPT API   │────▶│  Mock LLM Server    │               │
+│ │  (Same as Prod)  │     │  (tests/mock_llm_   │               │
+│ └──────────────────┘     │   server.py)        │               │
+│                          └─────────────────────┘               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key benefit**: Tests exercise the **exact same code path** as production. No `DEV_MODE` branches, no stub functions.
+
+### **Test Configuration**
+
+```python
+# tests/conftest.py
+@pytest.fixture
+def client(mock_llm_server):
+    """FastAPI test client with mock LLM endpoint."""
+    os.environ["LLM_ENDPOINT"] = mock_llm_server.url
+    os.environ["LLM_MODEL"] = "mock-model"
+    os.environ["OPENAI_API_KEY"] = "sk-mock-test-key-not-used"
+    from src.main import app
+    return TestClient(app)
+```
+
+### **Reference Implementation**
+- **Mock LLM Server**: `holmesgpt-api/tests/mock_llm_server.py`
+- **Test Fixtures**: `holmesgpt-api/tests/conftest.py`
+- **Integration Tests**: `holmesgpt-api/tests/integration/test_recovery_dd003_integration.py`
 
 ---
 
@@ -1371,6 +1425,27 @@ def test_openai_api_investigation():
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 6, 2025
-**Testing Framework**: pytest + testcontainers + real LLM APIs
+**Last Updated**: November 30, 2025
+**Testing Framework**: pytest + mock LLM server + real LLM APIs (optional)
+
+---
+
+## 📝 v2.0 Changelog (November 30, 2025)
+
+### **Breaking Changes**
+- ❌ `DEV_MODE` environment variable removed
+- ❌ `_stub_recovery_analysis()` function removed
+- ❌ `_stub_incident_analysis()` function removed
+- ❌ `router.config` pattern removed from `main.py`
+
+### **New Additions**
+- ✅ Mock LLM server (`tests/mock_llm_server.py`)
+- ✅ Session-scoped mock server fixture
+- ✅ Environment variable-based LLM configuration
+- ✅ Same code path for tests and production
+
+### **Test Results**
+- **Unit Tests**: 47 passing
+- **Integration Tests**: 10 passing
+- **Total**: 57 tests (all using mock LLM server)
 

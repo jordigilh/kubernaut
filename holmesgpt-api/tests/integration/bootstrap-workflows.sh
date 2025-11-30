@@ -57,9 +57,9 @@ execution:
     "description": "${description}",
     "content": ${escaped_content},
     "labels": {
-        "signal-type": "${signal_type}",
+        "signal_type": "${signal_type}",
         "severity": "${severity}",
-        "risk-tolerance": "${risk_tolerance}"
+        "risk_tolerance": "${risk_tolerance}"
     },
     "container_image": "${container_image}"
 }

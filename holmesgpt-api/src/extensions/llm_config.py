@@ -32,7 +32,7 @@ import logging
 import tempfile
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from holmes.config import Config
 from holmes.core.toolset_manager import ToolsetManager
@@ -162,7 +162,11 @@ def get_model_config_for_sdk(app_config: Optional[Dict[str, Any]] = None) -> tup
 def register_workflow_catalog_toolset(
     config: Config,
     app_config: Optional[Dict[str, Any]] = None,
-    remediation_id: Optional[str] = None
+    remediation_id: Optional[str] = None,
+    custom_labels: Optional[Dict[str, List[str]]] = None,
+    detected_labels: Optional[Dict[str, Any]] = None,
+    source_resource: Optional[Dict[str, str]] = None,
+    owner_chain: Optional[List[Dict[str, str]]] = None
 ) -> Config:
     """
     Register the workflow catalog toolset with HolmesGPT SDK Config.
@@ -170,6 +174,8 @@ def register_workflow_catalog_toolset(
     Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
     Business Requirement: BR-AUDIT-001 - Unified audit trail (remediation_id)
     Design Decision: DD-WORKFLOW-002 v2.2 - remediation_id mandatory
+    Design Decision: DD-HAPI-001 - Custom Labels Auto-Append Architecture
+    Design Decision: DD-WORKFLOW-001 v1.7 - DetectedLabels 100% safe validation
 
     CRITICAL: After extensive investigation, the HolmesGPT SDK does NOT support:
     1. Direct assignment of Toolset instances (causes '.get()' AttributeError during SDK's toolset loading)
@@ -185,15 +191,37 @@ def register_workflow_catalog_toolset(
         remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-002 v2.2)
                        MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY -
                        do NOT use for RCA analysis or workflow matching.
+        custom_labels: Custom labels for auto-append (DD-HAPI-001)
+                      Format: map[string][]string (subdomain → list of values)
+                      Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+                      Auto-appended to all MCP workflow search calls - invisible to LLM.
+        detected_labels: Auto-detected labels for workflow matching (DD-WORKFLOW-001 v1.7)
+                        Format: {"gitOpsManaged": true, "gitOpsTool": "argocd", ...}
+                        Only included when relationship to RCA resource is PROVEN.
+        source_resource: Original signal's resource for DetectedLabels validation
+                        Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
+                        Compared against LLM's rca_resource.
+        owner_chain: K8s ownership chain from SignalProcessing enrichment
+                    Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "..."}, ...]
+                    Used for PROVEN relationship validation (100% safe).
 
     Returns:
         The same Config instance with workflow catalog registered via monkey-patch
     """
     from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 
-    # Create the workflow catalog toolset instance with remediation_id for audit trail
+    # Create the workflow catalog toolset instance
     # BR-AUDIT-001: Pass remediation_id for audit correlation
-    workflow_toolset = WorkflowCatalogToolset(enabled=True, remediation_id=remediation_id)
+    # DD-HAPI-001: Pass custom_labels for auto-append to workflow search
+    # DD-WORKFLOW-001 v1.7: Pass detected_labels with source_resource and owner_chain for 100% safe validation
+    workflow_toolset = WorkflowCatalogToolset(
+        enabled=True,
+        remediation_id=remediation_id,
+        custom_labels=custom_labels,
+        detected_labels=detected_labels,
+        source_resource=source_resource,
+        owner_chain=owner_chain
+    )
 
     # Initialize toolset manager if needed
     if not hasattr(config, 'toolset_manager') or config.toolset_manager is None:

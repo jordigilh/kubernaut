@@ -38,34 +38,37 @@
 
 ---
 
-## 📬 **PENDING CROSS-TEAM REQUESTS**
+## ✅ **COMPLETED CROSS-TEAM REQUESTS**
 
 ### **Request 1: Recovery Prompt Implementation** (From AIAnalysis Team)
 
-**Status**: 🟢 **IN PROGRESS** - Implementation active
+**Status**: ✅ **COMPLETED** (2025-11-30)
 
-**Handoff Document**: [HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md](../../crd-controllers/02-aianalysis/HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md)
+**Handoff Document**: [HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md](../../crd-controllers/02-aianalysis/HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md) v3.0
 
 **Design Decisions**:
-- [DD-RECOVERY-002: Direct AIAnalysis Recovery Flow](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md)
-- [DD-RECOVERY-003: Recovery Prompt Design](../../../architecture/decisions/DD-RECOVERY-003-recovery-prompt-design.md)
+- [DD-RECOVERY-002: Direct AIAnalysis Recovery Flow](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) ✅
+- [DD-RECOVERY-003: Recovery Prompt Design](../../../architecture/decisions/DD-RECOVERY-003-recovery-prompt-design.md) ✅
 
-**Summary**:
-- Update `RecoveryRequest` model with structured `PreviousExecution` context
-- Implement `_create_recovery_investigation_prompt()` with failure context
-- Add Kubernetes reason code guidance map
-- Update response parsing for recovery-specific fields
-- Handle DetectedLabels for workflow filtering
+**Implementation Summary** (v3.0):
+- ✅ `RecoveryRequest` model with structured `PreviousExecution` context
+- ✅ `_create_recovery_investigation_prompt()` with failure context
+- ✅ Kubernetes reason code guidance map (`_get_failure_reason_guidance()`)
+- ✅ Response parsing for recovery-specific fields
+- ✅ DetectedLabels integration for workflow filtering
+- ✅ **DEV_MODE anti-pattern removed** - tests use mock LLM server (same code path as production)
+- ❌ **Backward compatibility NOT maintained** - legacy `failed_action`/`failure_context` fields removed
 
-**Estimated Effort**: 3-4 days
+**Files Modified**:
+- `src/models/recovery_models.py` - Added PreviousExecution, OriginalRCA, SelectedWorkflowSummary, ExecutionFailure
+- `src/models/incident_models.py` - Added DetectedLabels, EnrichmentResults
+- `src/extensions/recovery.py` - Recovery prompt generation, DEV_MODE removed
+- `src/extensions/incident.py` - Cluster context section, DEV_MODE removed
+- `src/main.py` - Removed router.config anti-pattern
+- `tests/mock_llm_server.py` - **NEW** Mock Ollama-compatible LLM for integration tests
+- `tests/conftest.py` - Mock LLM server fixtures
 
-**Files to Modify**:
-- `src/models/recovery_models.py` - Add PreviousExecution, OriginalRCA, SelectedWorkflowSummary, ExecutionFailure
-- `src/models/incident_models.py` - Add DetectedLabels, EnrichmentResults
-- `src/extensions/recovery.py` - Recovery prompt generation with failure context
-- `src/extensions/incident.py` - Cluster context section for DetectedLabels
-- `tests/unit/test_recovery_*.py` - Unit tests
-- `tests/integration/test_recovery_endpoint.py` - Integration tests
+**Tests**: 57 passing (47 unit + 10 integration)
 
 ---
 

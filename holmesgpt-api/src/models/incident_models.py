@@ -21,10 +21,22 @@ Business Requirement: BR-HAPI-002 (Incident analysis request schema)
 Business Requirement: BR-AUDIT-001 (Unified audit trail - remediation_id)
 Design Decision: DD-WORKFLOW-002 v2.2 (remediation_id mandatory)
 Design Decision: DD-RECOVERY-003 (DetectedLabels for workflow filtering)
+Design Decision: DD-HAPI-001 (Custom Labels Auto-Append Architecture)
 """
 
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field, field_validator
+
+
+# ========================================
+# TYPE ALIASES (DD-HAPI-001)
+# ========================================
+
+# Custom labels type: subdomain → list of label values
+# Key = subdomain (e.g., "constraint", "team")
+# Value = list of strings (boolean keys or "key=value" pairs)
+# Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
+CustomLabels = Dict[str, List[str]]
 
 
 # ========================================
@@ -66,11 +78,21 @@ class EnrichmentResults(BaseModel):
     Contains Kubernetes context, auto-detected labels, and custom labels
     that are used for workflow filtering and LLM context.
 
-    Design Decision: DD-RECOVERY-003
+    Design Decision: DD-RECOVERY-003, DD-HAPI-001
+
+    Custom Labels (DD-HAPI-001):
+    - Format: map[string][]string (subdomain → list of values)
+    - Keys are subdomains (e.g., "constraint", "team")
+    - Values are lists of strings (boolean keys or "key=value" pairs)
+    - Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+    - Auto-appended to MCP workflow search (invisible to LLM)
     """
     kubernetesContext: Optional[Dict[str, Any]] = Field(None, description="Kubernetes resource context")
     detectedLabels: Optional[DetectedLabels] = Field(None, description="Auto-detected cluster characteristics")
-    customLabels: Optional[Dict[str, str]] = Field(None, description="Custom labels from resource annotations")
+    customLabels: Optional[CustomLabels] = Field(
+        None,
+        description="Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per DD-HAPI-001."
+    )
     enrichmentQuality: float = Field(default=0.0, ge=0.0, le=1.0, description="Quality score of enrichment (0-1)")
 
 

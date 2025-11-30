@@ -36,8 +36,7 @@ from src.extensions.recovery import (
     MinimalDAL,
     _get_holmes_config,
     _extract_strategies_from_analysis,
-    _extract_warnings_from_analysis,
-    _stub_recovery_analysis
+    _extract_warnings_from_analysis
 )
 
 
@@ -92,21 +91,15 @@ class TestMinimalDAL:
 # ========================================
 # TEST SUITE 2: HolmesGPT Config
 # ========================================
+# NOTE: DEV_MODE tests removed as part of the DEV_MODE anti-pattern cleanup (DD-HAPI-001 v3.0).
+# Testing is now done using the mock LLM server approach configured via LLM_* env vars.
 
 class TestGetHolmesConfig:
     """Test HolmesGPT SDK configuration"""
 
-    def test_get_holmes_config_dev_mode(self):
-        """Test config returns None in dev mode"""
-        with patch.dict('os.environ', {'DEV_MODE': 'true'}):
-            config = _get_holmes_config()
-
-            assert config is None
-
-    def test_get_holmes_config_production_with_model(self):
-        """Test config creation in production mode with LLM_MODEL"""
+    def test_get_holmes_config_with_model(self):
+        """Test config creation with LLM_MODEL"""
         with patch.dict('os.environ', {
-            'DEV_MODE': 'false',
             'LLM_MODEL': 'gpt-4'
         }, clear=True):
             config = _get_holmes_config()
@@ -114,16 +107,16 @@ class TestGetHolmesConfig:
             assert config is not None
             # Config object exists
 
-    def test_get_holmes_config_production_without_model_raises_error(self):
+    def test_get_holmes_config_without_model_raises_error(self):
         """
         Test that config creation without LLM_MODEL raises HTTPException
 
-        BR-HAPI-001: LLM_MODEL is required for production mode
+        BR-HAPI-001: LLM_MODEL is required
         BEHAVIOR: Missing LLM_MODEL should raise HTTPException with 500 status
         """
         from fastapi import HTTPException
 
-        with patch.dict('os.environ', {'DEV_MODE': 'false'}, clear=True):
+        with patch.dict('os.environ', {}, clear=True):
             # Ensure LLM_MODEL is not set
             import os
             if 'LLM_MODEL' in os.environ:
@@ -293,84 +286,11 @@ Everything looks good. Proceed with the remediation.
 
 
 # ========================================
-# TEST SUITE 5: Stub Recovery Analysis
+# TEST SUITE 5: Edge Cases
 # ========================================
-
-class TestStubRecoveryAnalysis:
-    """Test stub implementation for dev mode"""
-
-    def test_stub_returns_valid_response(self):
-        """Test stub returns valid recovery response"""
-        request_data = {
-            "incident_id": "test-123",
-            "failed_action": {
-                "type": "scale-deployment",
-                "target": "deployment/api-server"
-            },
-            "failure_context": {
-                "error": "timeout"
-            }
-        }
-
-        result = _stub_recovery_analysis(request_data)
-
-        assert result is not None
-        assert "incident_id" in result
-        assert result["incident_id"] == "test-123"
-        assert "can_recover" in result
-        assert "strategies" in result
-
-    def test_stub_includes_strategies(self):
-        """Test stub includes recovery strategies"""
-        request_data = {
-            "incident_id": "test-123",
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"}
-        }
-
-        result = _stub_recovery_analysis(request_data)
-
-        strategies = result.get("strategies", [])
-        assert len(strategies) > 0
-
-        # Check first strategy has required fields
-        strategy = strategies[0]
-        assert "action_type" in strategy
-        assert "confidence" in strategy
-        assert "rationale" in strategy
-
-    def test_stub_includes_metadata(self):
-        """Test stub includes analysis metadata"""
-        request_data = {
-            "incident_id": "test-123",
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"}
-        }
-
-        result = _stub_recovery_analysis(request_data)
-
-        # Actual key is "metadata" not "analysis_metadata"
-        assert "metadata" in result
-        metadata = result["metadata"]
-        assert "stub" in metadata
-
-    def test_stub_handles_missing_fields(self):
-        """Test stub handles request with missing fields"""
-        request_data = {
-            "incident_id": "test-123"
-            # Missing failed_action and failure_context
-        }
-
-        result = _stub_recovery_analysis(request_data)
-
-        # Should not crash, should return valid response
-        assert result is not None
-        assert result["incident_id"] == "test-123"
-
-
-# ========================================
-# TEST SUITE 6: Edge Cases
-# ========================================
+# NOTE: TestStubRecoveryAnalysis was removed as _stub_recovery_analysis was
+# removed as part of the DEV_MODE anti-pattern cleanup (DD-HAPI-001 v3.0).
+# Testing is now done using the mock LLM server approach.
 
 class TestRecoveryAnalysisEdgeCases:
     """Test edge cases and boundary conditions for non-prompt functions"""

@@ -25,6 +25,7 @@ Design Decisions:
   - DD-LLM-001 - MCP Workflow Search Parameter Taxonomy
   - DD-STORAGE-008 - Workflow Catalog Schema
   - DD-WORKFLOW-004 - Hybrid Weighted Label Scoring
+  - DD-HAPI-001 - Custom Labels Auto-Append Architecture
 
 Query Format (per DD-LLM-001):
   - Structured format: '<signal_type> <severity> [optional_keywords]'
@@ -52,6 +53,7 @@ import json
 import os
 import requests
 from typing import Dict, Any, List, Optional
+
 from holmes.core.tools import Tool, Toolset, StructuredToolResult, StructuredToolResultStatus, ToolParameter, ToolsetStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,152 @@ logger = logging.getLogger(__name__)
 #   - Two-phase semantic search (exact labels + pgvector similarity)
 #   - Hybrid scoring (base_similarity + label_boost - label_penalty)
 #   - Real-time embedding generation
+
+
+# ========================================
+# DETECTED LABELS VALIDATION (100% SAFE)
+# ========================================
+# DD-WORKFLOW-001 v1.7: DetectedLabels validation with owner chain support
+#
+# PRINCIPLE: Include ONLY when relationship is PROVEN. Default to EXCLUDE.
+# This ensures 100% safety - we never include wrong labels that could cause
+# query failures or return incorrect workflows.
+#
+# Two-tier validation:
+# 1. Owner chain (preferred): Use actual K8s ownerReferences from SignalProcessing
+# 2. Heuristic fallback: Namespace/kind matching when owner_chain unavailable
+
+# Cluster-scoped resources (no namespace)
+CLUSTER_SCOPED_KINDS = {"Node", "PersistentVolume", "ClusterRole", "ClusterRoleBinding", "Namespace", "StorageClass"}
+
+
+def _resources_match(r1: Dict[str, str], r2: Dict[str, Any]) -> bool:
+    """
+    Check if two resource references match (kind + namespace + name).
+
+    Args:
+        r1: First resource {kind, namespace, name}
+        r2: Second resource {kind, namespace, name}
+
+    Returns:
+        True if all fields match
+    """
+    return (
+        r1.get("kind", "") == r2.get("kind", "") and
+        r1.get("namespace", "") == r2.get("namespace", "") and
+        r1.get("name", "") == r2.get("name", "")
+    )
+
+
+def should_include_detected_labels(
+    source_resource: Optional[Dict[str, str]],
+    rca_resource: Optional[Dict[str, Any]],
+    owner_chain: Optional[List[Dict[str, str]]] = None
+) -> bool:
+    """
+    100% SAFE: Include DetectedLabels ONLY when relationship is PROVEN.
+
+    Design Decision: DD-WORKFLOW-001 v1.7
+
+    DetectedLabels describe the original signal's resource characteristics.
+    Including wrong labels for a different resource can cause:
+    - Query failures (no workflows match)
+    - Wrong workflows returned
+
+    SAFETY PRINCIPLE: Default to EXCLUDE. Only include when we can PROVE
+    the RCA resource is related to the source resource.
+
+    Validation order:
+    1. Required data check (source_resource, rca_resource, rca_resource.kind)
+    2. Exact match (same resource)
+    3. Owner chain match (K8s ownerReferences from SignalProcessing)
+    4. Same namespace + kind (fallback when owner_chain provided but empty)
+    5. Default: EXCLUDE (safe - prevents query failures)
+
+    Args:
+        source_resource: Original signal's resource {namespace, kind, name}
+        rca_resource: LLM's RCA resource {signal_type, namespace, kind, name}
+        owner_chain: K8s ownership chain from SignalProcessing enrichment
+                    [{kind, namespace, name}, ...] - ordered from direct parent to root
+                    Example for Pod: [ReplicaSet, Deployment]
+
+    Returns:
+        True ONLY if relationship is PROVEN, False otherwise (safe default)
+
+    Examples:
+        - Pod(prod/api-xyz) → Pod(prod/api-xyz): True (exact match)
+        - Pod(prod/api-xyz) → Deployment(prod/api) with owner_chain: True (proven)
+        - Pod(prod/api-xyz) → Node(worker-3): False (different scope)
+        - Pod(prod/api-xyz) → Deployment(prod/api) no owner_chain: False (can't prove)
+    """
+    # GATE 1: Required data must be present
+    if not source_resource:
+        logger.debug("DetectedLabels EXCLUDED - source_resource missing")
+        return False
+
+    if not rca_resource:
+        logger.debug("DetectedLabels EXCLUDED - rca_resource not provided by LLM")
+        return False
+
+    if not rca_resource.get("kind"):
+        logger.debug("DetectedLabels EXCLUDED - rca_resource.kind missing")
+        return False
+
+    source_kind = source_resource.get("kind", "")
+    rca_kind = rca_resource.get("kind", "")
+    source_ns = source_resource.get("namespace", "")
+    rca_ns = rca_resource.get("namespace", "")
+
+    # GATE 2: Exact match (same resource)
+    if _resources_match(source_resource, rca_resource):
+        logger.info(
+            f"🔍 DetectedLabels INCLUDED - exact resource match: "
+            f"{source_kind}/{source_ns}/{source_resource.get('name')}"
+        )
+        return True
+
+    # GATE 3: Owner chain match (PROVEN relationship via K8s ownerReferences)
+    if owner_chain:
+        for owner in owner_chain:
+            if _resources_match(owner, rca_resource):
+                logger.info(
+                    f"🔍 DetectedLabels INCLUDED - owner chain match: "
+                    f"{source_kind} → {owner.get('kind')}/{owner.get('name')} (proven)"
+                )
+                return True
+
+    # GATE 4: Same namespace + same kind (conservative fallback)
+    # Only if owner_chain was explicitly provided (even if empty)
+    # This handles sibling resources in same workload context
+    if owner_chain is not None:
+        # Check scope compatibility first
+        source_is_cluster = source_kind in CLUSTER_SCOPED_KINDS
+        rca_is_cluster = rca_kind in CLUSTER_SCOPED_KINDS
+
+        if source_is_cluster and rca_is_cluster:
+            # Both cluster-scoped - same kind is sufficient
+            if source_kind == rca_kind:
+                logger.info(
+                    f"🔍 DetectedLabels INCLUDED - same cluster-scoped kind: {source_kind}"
+                )
+                return True
+        elif not source_is_cluster and not rca_is_cluster:
+            # Both namespaced - check namespace + kind
+            if source_ns == rca_ns and source_kind == rca_kind:
+                logger.info(
+                    f"🔍 DetectedLabels INCLUDED - same namespace/kind: "
+                    f"{source_kind}/{source_ns}"
+                )
+                return True
+
+    # DEFAULT: Cannot prove relationship → EXCLUDE (100% safe)
+    logger.info(
+        f"⚠️  DetectedLabels EXCLUDED - no proven relationship: "
+        f"source={source_kind}/{source_ns or 'cluster'}, "
+        f"rca={rca_kind}/{rca_ns or 'cluster'}, "
+        f"owner_chain={'provided' if owner_chain is not None else 'not provided'}"
+    )
+    return False
 
 
 # ========================================
@@ -108,7 +256,37 @@ class SearchWorkflowCatalogTool(Tool):
     - Real-time embedding generation
     """
 
-    def __init__(self, data_storage_url: Optional[str] = None, remediation_id: Optional[str] = None):
+    def __init__(
+        self,
+        data_storage_url: Optional[str] = None,
+        remediation_id: Optional[str] = None,
+        custom_labels: Optional[Dict[str, List[str]]] = None,
+        detected_labels: Optional[Dict[str, Any]] = None,
+        source_resource: Optional[Dict[str, str]] = None,
+        owner_chain: Optional[List[Dict[str, str]]] = None
+    ):
+        """
+        Initialize SearchWorkflowCatalogTool.
+
+        Args:
+            data_storage_url: Data Storage Service URL (default from env or http://data-storage:8080)
+            remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-014)
+            custom_labels: Custom labels for auto-append to workflow search (DD-HAPI-001)
+                          Format: map[string][]string (subdomain → values)
+                          Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+                          These are auto-appended to all MCP calls - invisible to LLM.
+            detected_labels: Auto-detected labels for workflow matching (DD-WORKFLOW-001 v1.7)
+                            Format: {"gitOpsManaged": true, "gitOpsTool": "argocd", ...}
+                            Only booleans=true and non-empty strings are included.
+                            ONLY included if RCA resource relationship is PROVEN.
+            source_resource: Original signal's resource for DetectedLabels validation
+                            Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
+                            Used to compare against LLM's rca_resource.
+            owner_chain: K8s ownership chain from SignalProcessing enrichment
+                        Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "api-xyz"}, ...]
+                        Ordered from direct parent to root (e.g., [ReplicaSet, Deployment])
+                        Used for PROVEN relationship validation (100% safe).
+        """
         super().__init__(
             name="search_workflow_catalog",
             description=(
@@ -126,6 +304,17 @@ class SearchWorkflowCatalogTool(Tool):
                     ),
                     required=True
                 ),
+                "rca_resource": ToolParameter(
+                    type="object",
+                    description=(
+                        "The Kubernetes resource you identified as root cause. REQUIRED for accurate workflow matching. "
+                        "Include: signal_type (the issue found), kind (resource type), namespace (if namespaced), name (resource name). "
+                        "Examples: "
+                        "{signal_type: 'DiskPressure', kind: 'Node', name: 'worker-3'} for cluster-scoped resources, "
+                        "{signal_type: 'OOMKilled', kind: 'Pod', namespace: 'production', name: 'api-server-xyz'} for namespaced resources."
+                    ),
+                    required=True
+                ),
                 "filters": ToolParameter(
                     type="object",
                     description="Optional filters for workflow search (environment, priority, etc.)",
@@ -140,6 +329,7 @@ class SearchWorkflowCatalogTool(Tool):
             additional_instructions=(
                 "IMPORTANT: Use structured query format '<signal_type> <severity>' per DD-LLM-001. "
                 "The signal_type must be a canonical Kubernetes event reason from your RCA findings. "
+                "You MUST provide rca_resource with the root cause resource details for accurate workflow matching. "
                 "The 'confidence' score (0.0-1.0, typically 0.90-0.95 for exact matches) indicates how well "
                 "the workflow matches your query. Higher confidence means better match. "
                 "Select workflows with highest confidence scores."
@@ -161,10 +351,43 @@ class SearchWorkflowCatalogTool(Tool):
         # Value: remediation_id from AIAnalysis controller (e.g., "req-2025-10-06-abc123")
         object.__setattr__(self, '_remediation_id', remediation_id or "")
 
+        # Store custom_labels for auto-append (DD-HAPI-001)
+        # These are automatically appended to all workflow search calls
+        # LLM does NOT need to know about or provide these - they are invisible to the LLM
+        # Format: map[string][]string (subdomain → list of values)
+        object.__setattr__(self, '_custom_labels', custom_labels or {})
+
+        # Store detected_labels for workflow matching (DD-WORKFLOW-001 v1.6)
+        # Auto-detected from K8s resources by SignalProcessing
+        # Used for workflow wildcard matching (e.g., workflow specifies gitOpsTool: "*")
+        # Format: {"gitOpsManaged": true, "gitOpsTool": "argocd", ...}
+        # Only booleans=true and non-empty strings are included (Boolean Normalization Rule)
+        # IMPORTANT: Only included if RCA resource matches source resource context
+        object.__setattr__(self, '_detected_labels', detected_labels or {})
+
+        # Store source_resource for DetectedLabels validation
+        # When LLM provides rca_resource, we compare to source_resource
+        # to decide if detected_labels should be included in the search
+        # Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
+        object.__setattr__(self, '_source_resource', source_resource or {})
+
+        # Store owner_chain for PROVEN relationship validation (DD-WORKFLOW-001 v1.7)
+        # From SignalProcessing's K8s ownerReferences traversal
+        # Format: [{"kind": "ReplicaSet", ...}, {"kind": "Deployment", ...}]
+        # None = not provided (use heuristics), [] = explicitly empty (orphan resource)
+        object.__setattr__(self, '_owner_chain', owner_chain)
+
+        # Log labels info for debugging (not the values for security)
+        custom_labels_info = f"{len(self._custom_labels)} subdomains" if self._custom_labels else "none"
+        detected_labels_info = f"{len(self._detected_labels)} fields" if self._detected_labels else "none"
+        source_resource_info = f"{source_resource.get('kind', 'unknown')}/{source_resource.get('namespace', 'cluster')}" if source_resource else "none"
+        owner_chain_info = f"{len(owner_chain)} owners" if owner_chain else ("empty" if owner_chain == [] else "not provided")
         logger.info(
             f"🔄 BR-STORAGE-013: Workflow catalog configured - "
             f"data_storage_url={self._data_storage_url}, timeout={self._http_timeout}s, "
-            f"remediation_id={self._remediation_id or 'not-set'}"
+            f"remediation_id={self._remediation_id or 'not-set'}, "
+            f"custom_labels={custom_labels_info}, detected_labels={detected_labels_info}, "
+            f"source_resource={source_resource_info}, owner_chain={owner_chain_info}"
         )
 
     @property
@@ -208,6 +431,7 @@ class SearchWorkflowCatalogTool(Tool):
         try:
             # Extract and validate parameters
             query = params.get("query", "")
+            rca_resource = params.get("rca_resource", {})
             filters = params.get("filters", {})
             top_k = params.get("top_k", 3)
 
@@ -216,15 +440,17 @@ class SearchWorkflowCatalogTool(Tool):
                 logger.warning(f"top_k={top_k} exceeds maximum (10), capping to 10")
                 top_k = 10
 
+            # Log RCA resource for debugging
+            rca_info = f"{rca_resource.get('kind', 'unknown')}/{rca_resource.get('namespace', 'cluster')}" if rca_resource else "not-provided"
             logger.info(
                 f"🔍 BR-HAPI-250: Workflow catalog search - "
-                f"query='{query}', filters={filters}, top_k={top_k}"
+                f"query='{query}', rca_resource={rca_info}, filters={filters}, top_k={top_k}"
             )
 
             # Search workflows
             # DD-WORKFLOW-014 v2.0: remediation_id passed in JSON body
             # Data Storage Service generates audit events (not HolmesGPT API)
-            workflows = self._search_workflows(query, filters, top_k)
+            workflows = self._search_workflows(query, rca_resource, filters, top_k)
 
             logger.info(
                 f"📤 BR-HAPI-250: Workflow catalog search completed - "
@@ -317,7 +543,7 @@ class SearchWorkflowCatalogTool(Tool):
         return filters
 
     def _search_workflows(
-        self, query: str, filters: Dict, top_k: int
+        self, query: str, rca_resource: Dict[str, Any], filters: Dict, top_k: int
     ) -> List[Dict[str, Any]]:
         """
         Search workflows using Data Storage Service REST API
@@ -329,9 +555,11 @@ class SearchWorkflowCatalogTool(Tool):
           - DD-LLM-001 - Structured query format
           - DD-STORAGE-008 - Workflow Catalog Schema
           - DD-WORKFLOW-004 - Hybrid Weighted Label Scoring
+          - DD-WORKFLOW-001 v1.6 - DetectedLabels validation against RCA resource
 
         Args:
             query: Structured query string '<signal_type> <severity> [keywords]' (per DD-LLM-001)
+            rca_resource: LLM's RCA resource {signal_type, kind, namespace, name}
             filters: Optional filter criteria (additional labels)
             top_k: Maximum number of results to return
 
@@ -348,10 +576,38 @@ class SearchWorkflowCatalogTool(Tool):
           - Data Storage Service generates audit events
           - HolmesGPT API does NOT generate audit events
           - remediation_id is for CORRELATION ONLY (not used in search logic)
+
+        DD-WORKFLOW-001 v1.6: DetectedLabels validation
+          - Compare source_resource to rca_resource
+          - Only include detected_labels if same resource context
+          - Handles Pod ↔ Deployment ownership relationships
         """
         try:
             # Build request per DD-STORAGE-008
             search_filters = self._build_filters_from_query(query, filters)
+
+            # DD-HAPI-001: Auto-append custom_labels to filters (invisible to LLM)
+            # Custom labels are passed through from the original request context
+            # They are NOT provided by the LLM - HolmesGPT-API auto-appends them
+            if self._custom_labels:
+                search_filters["custom_labels"] = self._custom_labels
+                logger.debug(
+                    f"🏷️  DD-HAPI-001: Auto-appending custom_labels - "
+                    f"subdomains={list(self._custom_labels.keys())}"
+                )
+
+            # DD-WORKFLOW-001 v1.7: Conditionally append detected_labels (100% SAFE)
+            # DetectedLabels are ONLY included when relationship is PROVEN
+            # Uses owner_chain from SignalProcessing for deterministic validation
+            # Default: EXCLUDE (prevents query failures from wrong labels)
+            if self._detected_labels:
+                if should_include_detected_labels(
+                    self._source_resource,
+                    rca_resource,
+                    self._owner_chain
+                ):
+                    search_filters["detected_labels"] = self._detected_labels
+                # Logging is handled inside should_include_detected_labels()
 
             # DD-WORKFLOW-014 v2.1: Include remediation_id in JSON body
             # This enables Data Storage Service to generate audit events
@@ -364,11 +620,13 @@ class SearchWorkflowCatalogTool(Tool):
                 "remediation_id": self._remediation_id  # For audit correlation
             }
 
+            # Log custom_labels presence (not values for security)
+            custom_labels_info = f", custom_labels={len(self._custom_labels)} subdomains" if self._custom_labels else ""
             logger.info(
                 f"🔍 BR-STORAGE-013: Calling Data Storage Service - "
                 f"url={self._data_storage_url}/api/v1/workflows/search, "
                 f"query='{query}', filters={search_filters}, top_k={top_k}, "
-                f"remediation_id={self._remediation_id or 'not-set'}"
+                f"remediation_id={self._remediation_id or 'not-set'}{custom_labels_info}"
             )
 
             # Call Data Storage Service
@@ -525,6 +783,7 @@ class WorkflowCatalogToolset(Toolset):
       - DD-WORKFLOW-002 v2.3 - MCP Workflow Catalog Architecture
       - DD-WORKFLOW-014 v2.1 - Audit trail (Data Storage generates)
       - DD-LLM-001 - MCP Workflow Search Parameter Taxonomy
+      - DD-HAPI-001 - Custom Labels Auto-Append Architecture
 
     Query Format (per DD-LLM-001):
     - Structured format: '<signal_type> <severity> [optional_keywords]'
@@ -543,9 +802,23 @@ class WorkflowCatalogToolset(Toolset):
     - HolmesGPT API passes remediation_id in JSON body
     - Data Storage Service generates audit events (richer context)
     - remediation_id is for CORRELATION ONLY (not used in search logic)
+
+    Custom Labels Auto-Append (DD-HAPI-001):
+    - custom_labels are extracted from enrichment_results.customLabels
+    - auto-appended to all MCP workflow search calls
+    - invisible to LLM (LLM does NOT provide these)
+    - ensures 100% reliable custom label filtering
     """
 
-    def __init__(self, enabled: bool = True, remediation_id: Optional[str] = None):
+    def __init__(
+        self,
+        enabled: bool = True,
+        remediation_id: Optional[str] = None,
+        custom_labels: Optional[Dict[str, List[str]]] = None,
+        detected_labels: Optional[Dict[str, Any]] = None,
+        source_resource: Optional[Dict[str, str]] = None,
+        owner_chain: Optional[List[Dict[str, str]]] = None
+    ):
         """
         Initialize workflow catalog toolset
 
@@ -554,13 +827,33 @@ class WorkflowCatalogToolset(Toolset):
             remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-002 v2.2)
                            MANDATORY for audit trail - passed through to SearchWorkflowCatalogTool
                            This is for CORRELATION ONLY - not used in workflow search logic
+            custom_labels: Custom labels for auto-append (DD-HAPI-001)
+                          Format: map[string][]string (subdomain → list of values)
+                          Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+                          Auto-appended to all MCP workflow search calls - invisible to LLM.
+            detected_labels: Auto-detected labels for workflow matching (DD-WORKFLOW-001 v1.7)
+                            Format: {"gitOpsManaged": true, "gitOpsTool": "argocd", ...}
+                            Only booleans=true and non-empty strings are included.
+                            ONLY included if relationship is PROVEN (100% safe).
+            source_resource: Original signal's resource for DetectedLabels validation
+                            Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
+                            Compared against LLM's rca_resource.
+            owner_chain: K8s ownership chain from SignalProcessing enrichment
+                        Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "api-xyz"}, ...]
+                        Used for PROVEN relationship validation (100% safe).
         """
         super().__init__(
             name="workflow/catalog",
             description="Search and retrieve remediation workflows based on incident characteristics",
             enabled=enabled,
             status=ToolsetStatusEnum.ENABLED,  # CRITICAL: Must be ENABLED for SDK to include in function calling
-            tools=[SearchWorkflowCatalogTool(remediation_id=remediation_id)],
+            tools=[SearchWorkflowCatalogTool(
+                remediation_id=remediation_id,
+                custom_labels=custom_labels,  # DD-HAPI-001: Pass custom_labels for auto-append
+                detected_labels=detected_labels,  # DD-WORKFLOW-001 v1.7: Pass detected_labels (100% safe)
+                source_resource=source_resource,  # DD-WORKFLOW-001 v1.7: For RCA resource comparison
+                owner_chain=owner_chain  # DD-WORKFLOW-001 v1.7: For PROVEN relationship validation
+            )],
             docs_url=(
                 "https://github.com/jordigilh/kubernaut/blob/main/docs/architecture/decisions/"
                 "DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md"
