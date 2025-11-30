@@ -85,10 +85,15 @@ spec:
                         properties:
                           customLabels:
                             additionalProperties:
-                              type: string
+                              items:
+                                type: string
+                              type: array
                             description: |-
                               Custom labels from Rego policies - CUSTOMER DEFINED
-                              Only for labels we can't auto-detect (team, cost-center, region)
+                              Key = subdomain/category (e.g., "constraint", "team", "region")
+                              Value = list of label values (boolean keys or "key=value" pairs)
+                              Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
+                              Passed through to HolmesGPT-API for workflow filtering + LLM context
                             type: object
                           detectedLabels:
                             description: |-

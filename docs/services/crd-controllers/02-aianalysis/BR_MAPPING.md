@@ -1,9 +1,29 @@
 # AIAnalysis Service - Business Requirements Mapping
 
 **Service**: AIAnalysis Controller
-**Version**: 1.0
-**Date**: November 29, 2025
+**Version**: 1.1
+**Date**: November 30, 2025
 **Status**: V1.0 Scope Defined
+
+---
+
+## Changelog
+
+### Version 1.1 (2025-11-30)
+- **REMOVED FROM V1.0**: BR-AI-051, BR-AI-052, BR-AI-053 (Dependency Validation)
+  - **Reason**: With predefined workflows from the catalog (DD-WORKFLOW-002), the LLM **selects** workflows, not **generates** them
+  - Circular dependency detection (Kahn's algorithm) was designed for dynamically-generated workflow DAGs
+  - Predefined workflows are **pre-validated** at registration time - no runtime validation needed
+  - **Deferred To**: V2.0+ if dynamic workflow generation is added
+- **CLARIFIED**: BR-AI-023 (Hallucination Detection)
+  - **Old**: "Detect and handle AI hallucinations" (implied runtime DAG validation)
+  - **New**: Clarified to mean **catalog validation** - ensure selected `workflowId` exists in catalog
+  - Also includes: Schema validation, parameter validation, `containerImage` format validation
+  - **Reference**: DD-WORKFLOW-002 v3.3 (MCP Workflow Catalog Architecture)
+- **V1.0 BR Count**: Reduced from 34 to **31**
+
+### Version 1.0 (2025-11-29)
+- Initial comprehensive BR mapping for V1.0 scope
 
 ---
 
@@ -15,6 +35,7 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 - `docs/requirements/02_AI_MACHINE_LEARNING.md` - Primary AI/ML requirements
 - `docs/architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md` - Integration contracts
 - `docs/architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md` - Recovery flow
+- `docs/architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md` - Workflow catalog (predefined workflows)
 
 ---
 
@@ -25,10 +46,11 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 | **Core AI Analysis** | 15 | Investigation, RCA, recommendations |
 | **Approval & Policy** | 5 | Rego policies, approval signaling |
 | **Data Management** | 3 | Payload handling, timeouts, fallback |
-| **Quality Assurance** | 5 | Validation, hallucination detection |
+| **Quality Assurance** | 5 | Catalog validation, schema validation |
 | **Workflow Selection** | 2 | Output format, approval context |
 | **Recovery Flow** | 4 | Recovery attempt handling |
-| **TOTAL V1.0** | **34** | |
+| **~~Dependency Validation~~** | ~~3~~ | ~~Moved to V2.0+~~ |
+| **TOTAL V1.0** | **31** | |
 
 ---
 
@@ -49,7 +71,7 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 | **BR-AI-012** | Identify root cause candidates with evidence | ✅ | `status.rootCause` |
 | **BR-AI-013** | Correlate alerts across time windows | ✅ | HolmesGPT correlation features |
 | **BR-AI-014** | Generate investigation reports with actionable insights | ✅ | `status.approvalContext.investigationSummary` |
-| **BR-AI-015** | Support custom investigation scopes and time windows | ✅ | `spec.analysisRequest.investigationScope` |
+| **BR-AI-015** | Support custom investigation scopes and time windows | ✅ | HolmesGPT-API internal config (scope determined dynamically) |
 | **BR-AI-016** | Provide real-time health status | ✅ | Controller health endpoints |
 | **BR-AI-017** | Track service performance metrics | ✅ | Prometheus metrics |
 | **BR-AI-020** | Maintain service availability above 99.5% SLA | ✅ | Circuit breaker, retries |
@@ -76,11 +98,26 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 | BR ID | Description | V1.0 | Implementation Notes |
 |-------|-------------|------|---------------------|
-| **BR-AI-021** | Validate AI responses for completeness and accuracy | ✅ | Response schema validation |
+| **BR-AI-021** | Validate AI responses for completeness and accuracy | ✅ | Response schema validation (required fields present) |
 | **BR-AI-022** | Implement confidence thresholds for automated decisions | ✅ | 80% threshold for auto-approval |
-| **BR-AI-023** | Detect and handle AI hallucinations | ✅ | Response validation + fallback |
+| **BR-AI-023** | Validate workflow selection against catalog | ✅ | See V1.0 clarification below |
 | **BR-AI-024** | Provide fallback when AI services unavailable | ✅ | Graceful degradation |
 | **BR-AI-025** | Maintain response quality metrics | ✅ | Prometheus metrics |
+
+### BR-AI-023 V1.0 Clarification
+
+**Context**: With predefined workflows (DD-WORKFLOW-002), "hallucination detection" means:
+
+| Validation Type | Description | V1.0? |
+|-----------------|-------------|-------|
+| **Workflow ID Validation** | Ensure `workflowId` exists in catalog | ✅ |
+| **Schema Validation** | Ensure response matches expected JSON schema | ✅ |
+| **Parameter Validation** | Ensure parameters are valid for selected workflow | ✅ |
+| **ContainerImage Format** | Ensure `containerImage` is valid OCI reference | ✅ |
+| ~~Circular DAG Detection~~ | ~~Detect cycles in dynamically-generated workflows~~ | ❌ N/A |
+| ~~Invalid Action Detection~~ | ~~Detect non-existent workflow steps~~ | ❌ N/A |
+
+**Reference**: DD-WORKFLOW-002 v3.3 - LLM selects from catalog, does not generate workflows.
 
 ---
 
@@ -120,15 +157,21 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 ---
 
-## Category 7: Dependency Validation (3 BRs)
+## ~~Category 7: Dependency Validation (3 BRs)~~ → Deferred to V2.0+
 
-### Direct Ownership - Service Implements
+### ❌ NOT APPLICABLE FOR V1.0
 
-| BR ID | Description | V1.0 | Implementation Notes |
-|-------|-------------|------|---------------------|
-| **BR-AI-051** | Validate AI responses for dependency completeness | ✅ | Dependency ID validation |
-| **BR-AI-052** | Detect circular dependencies in recommendation graphs | ✅ | Kahn's algorithm |
-| **BR-AI-053** | Handle missing/invalid dependencies with fallback | ✅ | Sequential execution fallback |
+**Reason**: V1.0 uses **predefined workflows** from the catalog (DD-WORKFLOW-002). These BRs were designed for a dynamic workflow generation architecture that was not implemented.
+
+| BR ID | Description | V1.0 | Deferred Reason |
+|-------|-------------|------|-----------------|
+| **BR-AI-051** | Validate AI responses for dependency completeness | ❌ | Predefined workflows have no runtime dependencies |
+| **BR-AI-052** | Detect circular dependencies in recommendation graphs | ❌ | No DAG generation - LLM selects from catalog |
+| **BR-AI-053** | Handle missing/invalid dependencies with fallback | ❌ | Predefined workflows are pre-validated at registration |
+
+**Reference**: DD-WORKFLOW-002 v3.3 - Workflow Catalog Architecture (predefined, immutable workflows)
+
+**Future Scope**: If dynamic workflow generation is added in V2.0+, these BRs will be relevant.
 
 ---
 
@@ -173,14 +216,24 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 ## Deferred to V1.1+
 
-| BR ID | Description | Deferred Reason |
-|-------|-------------|-----------------|
-| **BR-AI-071-074** | AI-driven dependency cycle correction | V1.2 extension scope |
-| **BR-AI-037** | Historical pattern analysis before resource increases | V2.0 advanced analytics |
-| **BR-LLM-001-005** | Multi-provider LLM support | V2.0 multi-provider |
-| **BR-LLM-010** | Cost optimization with model selection | V2.0 multi-provider |
-| **BR-COND-001-020** | AI Conditions Engine | V2.0 advanced features |
-| **BR-INS-001-020** | AI Insights Service (full) | V1.0 has graceful degradation only |
+### Deferred - Dynamic Workflow Generation (V2.0+)
+
+| BR ID | Description | Deferred Reason | Reference |
+|-------|-------------|-----------------|-----------|
+| **BR-AI-051** | Validate AI responses for dependency completeness | V1.0 uses predefined workflows | DD-WORKFLOW-002 |
+| **BR-AI-052** | Detect circular dependencies in recommendation graphs | V1.0 uses predefined workflows | DD-WORKFLOW-002 |
+| **BR-AI-053** | Handle missing/invalid dependencies with fallback | V1.0 uses predefined workflows | DD-WORKFLOW-002 |
+| **BR-AI-071-074** | AI-driven dependency cycle correction | Requires dynamic workflow generation | V2.0+ |
+
+### Deferred - Advanced Features (V1.1+/V2.0+)
+
+| BR ID | Description | Deferred Reason | Target Version |
+|-------|-------------|-----------------|----------------|
+| **BR-AI-037** | Historical pattern analysis before resource increases | Advanced analytics | V2.0 |
+| **BR-LLM-001-005** | Multi-provider LLM support | Multi-provider | V2.0 |
+| **BR-LLM-010** | Cost optimization with model selection | Multi-provider | V2.0 |
+| **BR-COND-001-020** | AI Conditions Engine | Advanced features | V2.0 |
+| **BR-INS-001-020** | AI Insights Service (full) | V1.0 has graceful degradation only | V1.1+ |
 
 ---
 
@@ -193,6 +246,8 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 | **DD-RECOVERY-002** | Direct AIAnalysis Recovery Flow | Recovery pattern |
 | **DD-RECOVERY-003** | Recovery Prompt Design | HolmesGPT-API integration |
 | **DD-AIANALYSIS-001** | Rego Policy Loading Strategy | Approval policy implementation |
+| **DD-WORKFLOW-002** | MCP Workflow Catalog Architecture | Predefined workflows (v3.3) - justifies BR-AI-051-053 deferral |
+| **DD-WORKFLOW-012** | Workflow Immutability Constraints | Pre-validated workflows at registration |
 | **ADR-041** | LLM Prompt and Response Contract | HolmesGPT response format |
 
 ---
@@ -213,10 +268,12 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 |-------------|-----------|-------------------|-----------|
 | Core AI Analysis | BR-AI-001-015 | HolmesGPT integration | Full flow |
 | Approval & Policy | BR-AI-026-030 | Rego policy evaluation | Approval workflow |
-| Quality Assurance | BR-AI-021-025 | Response validation | Graceful degradation |
+| Quality Assurance | BR-AI-021-025 | Catalog validation, schema checks | Graceful degradation |
 | Data Management | BR-AI-031-033 | Payload handling | Timeout scenarios |
 | Workflow Selection | BR-AI-075-076 | Contract validation | RO integration |
 | Recovery Flow | BR-AI-080-083 | Recovery analysis | Recovery E2E |
+
+> **Note**: BR-AI-051-053 (Dependency Validation) removed from V1.0 - see Deferred section.
 
 ---
 
@@ -224,11 +281,12 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2025-11-30 | Removed BR-AI-051-053 from V1.0 (predefined workflows); Clarified BR-AI-023 |
 | 1.0 | 2025-11-29 | Initial comprehensive BR mapping for V1.0 scope |
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: November 29, 2025
+**Document Version**: 1.1
+**Last Updated**: November 30, 2025
 **Maintained By**: AIAnalysis Service Team
 

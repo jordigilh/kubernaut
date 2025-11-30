@@ -1,6 +1,6 @@
 # Signal Processing Service
 
-**Version**: v1.2
+**Version**: v1.3
 **Status**: ✅ Design Complete (100%)
 **Health/Ready Port**: 8081 (`/health`, `/ready` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
@@ -16,6 +16,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v1.3 | 2025-11-30 | DD-WORKFLOW-001 v1.8: OwnerChain, DetectedLabels, CustomLabels, updated gap analysis | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 | v1.2 | 2025-11-28 | Port fix: 8080 → 8081, API group standardization, metrics naming, graceful shutdown, parallel testing | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md), [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
 | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 | v1.1 | 2025-11-27 | Terminology migration: Alert → Signal | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
@@ -170,6 +171,8 @@
 | **Retry Strategy** | K8s requeue (no circuit breaker) | Internal dependencies only, K8s handles backpressure | [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
 | **K8s Enrichment** | Standard depth (hardcoded) | Avoids SRE configuration complexity | [DD-017](../../../architecture/decisions/DD-017-k8s-enrichment-depth-strategy.md) |
 | **Rego Data Fetching** | K8s Enricher + Rego Engine | Separation of concerns for security/performance | [ADR-041](../../../architecture/decisions/ADR-041-rego-policy-data-fetching-separation.md) |
+| **Label Detection** ⭐ | OwnerChain + DetectedLabels + CustomLabels | Workflow filtering via DD-WORKFLOW-001 v1.8 | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+| **CustomLabels Rego** ⭐ | Customer policies with security wrapper | 5 mandatory labels protected from override | [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 
 ---
 
@@ -185,12 +188,16 @@
 - ❌ SignalProcessingReconciler controller (need to create)
 - ❌ CRD lifecycle management (owner refs, finalizers)
 - ❌ Watch-based status coordination with RemediationRequest
+- ❌ OwnerChain builder (DD-WORKFLOW-001 v1.8) ⭐ NEW
+- ❌ DetectedLabels auto-detection (9 types) ⭐ NEW
+- ❌ CustomLabels Rego engine with security wrapper ⭐ NEW
 
 ### Migration Effort
 - **Package Migration**: Complete - renamed to `pkg/signalprocessing/`
 - **CRD Controller**: 3-4 days (new implementation)
-- **Testing**: 1 day (migrate tests, add integration tests)
-- **Total**: ~1 week
+- **Label Detection**: 2-3 days (DD-WORKFLOW-001 v1.8) ⭐ NEW
+- **Testing**: 2 days (migrate tests, add integration tests, label detection tests)
+- **Total**: ~2 weeks (extended for label detection)
 
 ---
 
