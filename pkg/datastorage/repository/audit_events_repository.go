@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // ========================================
@@ -115,11 +115,11 @@ type AuditEvent struct {
 // AuditEventsRepository handles PostgreSQL operations for audit_events table
 type AuditEventsRepository struct {
 	db     *sql.DB
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewAuditEventsRepository creates a new repository instance
-func NewAuditEventsRepository(db *sql.DB, logger *zap.Logger) *AuditEventsRepository {
+func NewAuditEventsRepository(db *sql.DB, logger logr.Logger) *AuditEventsRepository {
 	return &AuditEventsRepository{
 		db:     db,
 		logger: logger,
@@ -257,11 +257,11 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	// Populate returned timestamp
 	event.EventTimestamp = returnedTimestamp
 
-	r.logger.Debug("Audit event created",
-		zap.String("event_id", event.EventID.String()),
-		zap.String("event_type", event.EventType),
-		zap.String("event_category", event.EventCategory),
-		zap.String("correlation_id", event.CorrelationID),
+	r.logger.V(1).Info("Audit event created",
+		"event_id", event.EventID.String(),
+		"event_type", event.EventType,
+		"event_category", event.EventCategory,
+		"correlation_id", event.CorrelationID,
 	)
 
 	return event, nil
@@ -372,11 +372,11 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		HasMore: offset+len(events) < total,
 	}
 
-	r.logger.Debug("Audit events queried",
-		zap.Int("count", len(events)),
-		zap.Int("total", total),
-		zap.Int("limit", limit),
-		zap.Int("offset", offset),
+	r.logger.V(1).Info("Audit events queried",
+		"count", len(events),
+		"total", total,
+		"limit", limit,
+		"offset", offset,
 	)
 
 	return events, pagination, nil

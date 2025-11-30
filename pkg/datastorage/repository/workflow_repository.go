@@ -22,9 +22,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/jmoiron/sqlx"
 	"github.com/pgvector/pgvector-go"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -41,13 +41,13 @@ import (
 // WorkflowRepository handles workflow catalog operations
 type WorkflowRepository struct {
 	db              *sqlx.DB
-	logger          *zap.Logger
+	logger          logr.Logger
 	embeddingClient embedding.Client
 }
 
 // NewWorkflowRepository creates a new workflow repository
 // BR-STORAGE-014: Embedding client is optional (nil = no automatic embedding generation)
-func NewWorkflowRepository(db *sqlx.DB, logger *zap.Logger, embeddingClient embedding.Client) *WorkflowRepository {
+func NewWorkflowRepository(db *sqlx.DB, logger logr.Logger, embeddingClient embedding.Client) *WorkflowRepository {
 	return &WorkflowRepository{
 		db:              db,
 		logger:          logger,
@@ -71,19 +71,19 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Remedi
 		// Generate embedding vector
 		embeddingVec, err := r.embeddingClient.Embed(ctx, searchText)
 		if err != nil {
-			r.logger.Warn("failed to generate embedding, proceeding without it",
-				zap.String("workflow_id", workflow.WorkflowID),
-				zap.String("version", workflow.Version),
-				zap.Error(err))
+			r.logger.Info("failed to generate embedding, proceeding without it",
+				"workflow_id", workflow.WorkflowID,
+				"version", workflow.Version,
+				"error", err)
 			// Continue without embedding (graceful degradation)
 		} else {
 			// Convert []float32 to *pgvector.Vector
 			vec := pgvector.NewVector(embeddingVec)
 			workflow.Embedding = &vec
-			r.logger.Debug("generated embedding for workflow",
-				zap.String("workflow_id", workflow.WorkflowID),
-				zap.String("version", workflow.Version),
-				zap.Int("dimensions", len(embeddingVec)))
+			r.logger.V(1).Info("generated embedding for workflow",
+				"workflow_id", workflow.WorkflowID,
+				"version", workflow.Version,
+				"dimensions", len(embeddingVec))
 		}
 	}
 
@@ -106,16 +106,16 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Remedi
 	_, err := r.db.NamedExecContext(ctx, query, workflow)
 	if err != nil {
 		r.logger.Error("failed to create workflow",
-			zap.String("workflow_id", workflow.WorkflowID),
-			zap.String("version", workflow.Version),
-			zap.Error(err))
+			"workflow_id", workflow.WorkflowID,
+			"version", workflow.Version,
+			"error", err)
 		return fmt.Errorf("failed to create workflow: %w", err)
 	}
 
 	r.logger.Info("workflow created",
-		zap.String("workflow_id", workflow.WorkflowID),
-		zap.String("version", workflow.Version),
-		zap.Bool("has_embedding", workflow.Embedding != nil))
+		"workflow_id", workflow.WorkflowID,
+		"version", workflow.Version,
+		"has_embedding", workflow.Embedding != nil)
 
 	return nil
 }
@@ -138,9 +138,9 @@ func (r *WorkflowRepository) GetByID(ctx context.Context, workflowID, version st
 			return nil, fmt.Errorf("workflow not found: %s@%s", workflowID, version)
 		}
 		r.logger.Error("failed to get workflow",
-			zap.String("workflow_id", workflowID),
-			zap.String("version", version),
-			zap.Error(err))
+			"workflow_id", workflowID,
+			"version", version,
+			"error", err)
 		return nil, fmt.Errorf("failed to get workflow: %w", err)
 	}
 
@@ -161,9 +161,7 @@ func (r *WorkflowRepository) GetLatestVersion(ctx context.Context, workflowID st
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("workflow not found: %s", workflowID)
 		}
-		r.logger.Error("failed to get latest workflow version",
-			zap.String("workflow_id", workflowID),
-			zap.Error(err))
+		r.logger.Error(err, "failed to get latest workflow version", "workflow_id", workflowID)
 		return nil, fmt.Errorf("failed to get latest workflow version: %w", err)
 	}
 
@@ -239,7 +237,7 @@ func (r *WorkflowRepository) List(ctx context.Context, filters *models.WorkflowS
 	var total int
 	err := r.db.GetContext(ctx, &total, countQuery, args...)
 	if err != nil {
-		r.logger.Error("failed to count workflows", zap.Error(err))
+		r.logger.Error(err, "failed to count workflows")
 		return nil, 0, fmt.Errorf("failed to count workflows: %w", err)
 	}
 
@@ -256,7 +254,7 @@ func (r *WorkflowRepository) List(ctx context.Context, filters *models.WorkflowS
 	var workflows []models.RemediationWorkflow
 	err = r.db.SelectContext(ctx, &workflows, query, args...)
 	if err != nil {
-		r.logger.Error("failed to list workflows", zap.Error(err))
+		r.logger.Error(err, "failed to list workflows")
 		return nil, 0, fmt.Errorf("failed to list workflows: %w", err)
 	}
 
@@ -555,9 +553,7 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 	var results []workflowWithScore
 	err := r.db.SelectContext(ctx, &results, query, args...)
 	if err != nil {
-		r.logger.Error("failed to search workflows",
-			zap.String("query", request.Query),
-			zap.Error(err))
+		r.logger.Error(err, "failed to search workflows", "query", request.Query)
 		return nil, fmt.Errorf("failed to search workflows: %w", err)
 	}
 
@@ -583,8 +579,8 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 	}
 
 	r.logger.Info("semantic search completed",
-		zap.String("query", request.Query),
-		zap.Int("results", len(searchResults)))
+		"query", request.Query,
+		"results", len(searchResults))
 
 	return response, nil
 }
@@ -611,9 +607,9 @@ func (r *WorkflowRepository) UpdateSuccessMetrics(ctx context.Context, workflowI
 	result, err := r.db.ExecContext(ctx, query, totalExecutions, successfulExecutions, workflowID, version)
 	if err != nil {
 		r.logger.Error("failed to update workflow success metrics",
-			zap.String("workflow_id", workflowID),
-			zap.String("version", version),
-			zap.Error(err))
+			"workflow_id", workflowID,
+			"version", version,
+			"error", err)
 		return fmt.Errorf("failed to update workflow success metrics: %w", err)
 	}
 
@@ -627,10 +623,10 @@ func (r *WorkflowRepository) UpdateSuccessMetrics(ctx context.Context, workflowI
 	}
 
 	r.logger.Info("workflow success metrics updated",
-		zap.String("workflow_id", workflowID),
-		zap.String("version", version),
-		zap.Int("total_executions", totalExecutions),
-		zap.Int("successful_executions", successfulExecutions))
+		"workflow_id", workflowID,
+		"version", version,
+		"total_executions", totalExecutions,
+		"successful_executions", successfulExecutions)
 
 	return nil
 }
@@ -652,10 +648,10 @@ func (r *WorkflowRepository) UpdateStatus(ctx context.Context, workflowID, versi
 	result, err := r.db.ExecContext(ctx, query, status, updatedBy, reason, workflowID, version)
 	if err != nil {
 		r.logger.Error("failed to update workflow status",
-			zap.String("workflow_id", workflowID),
-			zap.String("version", version),
-			zap.String("status", status),
-			zap.Error(err))
+			"workflow_id", workflowID,
+			"version", version,
+			"status", status,
+			"error", err)
 		return fmt.Errorf("failed to update workflow status: %w", err)
 	}
 
@@ -669,9 +665,9 @@ func (r *WorkflowRepository) UpdateStatus(ctx context.Context, workflowID, versi
 	}
 
 	r.logger.Info("workflow status updated",
-		zap.String("workflow_id", workflowID),
-		zap.String("version", version),
-		zap.String("status", status))
+		"workflow_id", workflowID,
+		"version", version,
+		"status", status)
 
 	return nil
 }

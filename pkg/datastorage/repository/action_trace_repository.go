@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -35,11 +35,11 @@ import (
 // ActionTraceRepository handles PostgreSQL operations for resource_action_traces table (ADR-033)
 type ActionTraceRepository struct {
 	db     *sql.DB
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewActionTraceRepository creates a new repository instance for action traces
-func NewActionTraceRepository(db *sql.DB, logger *zap.Logger) *ActionTraceRepository {
+func NewActionTraceRepository(db *sql.DB, logger logr.Logger) *ActionTraceRepository {
 	return &ActionTraceRepository{
 		db:     db,
 		logger: logger,
@@ -58,10 +58,10 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	duration time.Duration,
 	minSamples int,
 ) (*models.IncidentTypeSuccessRateResponse, error) {
-	r.logger.Debug("GetSuccessRateByIncidentType called",
-		zap.String("incident_type", incidentType),
-		zap.Duration("duration", duration),
-		zap.Int("min_samples", minSamples))
+	r.logger.V(1).Info("GetSuccessRateByIncidentType called",
+		"incident_type", incidentType,
+		"duration", duration,
+		"min_samples", minSamples)
 
 	// Calculate time threshold
 	sinceTime := time.Now().Add(-duration)
@@ -109,9 +109,7 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	}
 
 	if err != nil {
-		r.logger.Error("failed to query incident-type success rate",
-			zap.String("incident_type", incidentType),
-			zap.Error(err))
+		r.logger.Error(err, "failed to query incident-type success rate", "incident_type", incidentType)
 		return nil, fmt.Errorf("failed to query incident-type success rate: %w", err)
 	}
 
@@ -138,9 +136,9 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	if totalExecutions > 0 {
 		workflowBreakdown, err := r.getPlaybookBreakdownForIncidentType(ctx, incidentType, sinceTime)
 		if err != nil {
-			r.logger.Warn("failed to get playbook breakdown",
-				zap.String("incident_type", incidentType),
-				zap.Error(err))
+			r.logger.Info("failed to get playbook breakdown",
+				"incident_type", incidentType,
+				"error", err)
 			// Don't fail the entire request for breakdown query failure
 			workflowBreakdown = []models.WorkflowBreakdownItem{}
 		}
@@ -149,9 +147,9 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 		// Query AI execution mode stats
 		aiStats, err := r.getAIExecutionModeForIncidentType(ctx, incidentType, sinceTime)
 		if err != nil {
-			r.logger.Warn("failed to get AI execution mode stats",
-				zap.String("incident_type", incidentType),
-				zap.Error(err))
+			r.logger.Info("failed to get AI execution mode stats",
+				"incident_type", incidentType,
+				"error", err)
 			// Don't fail for AI stats query failure
 		} else {
 			response.AIExecutionMode = aiStats
@@ -159,10 +157,10 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	}
 
 	r.logger.Info("incident-type success rate calculated",
-		zap.String("incident_type", incidentType),
-		zap.Int("total_executions", totalExecutions),
-		zap.Float64("success_rate", successRate),
-		zap.String("confidence", confidence))
+		"incident_type", incidentType,
+		"total_executions", totalExecutions,
+		"success_rate", successRate,
+		"confidence", confidence)
 
 	return response, nil
 }
@@ -253,11 +251,11 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 	duration time.Duration,
 	minSamples int,
 ) (*models.WorkflowSuccessRateResponse, error) {
-	r.logger.Debug("GetSuccessRateByWorkflow called",
-		zap.String("playbook_id", playbookID),
-		zap.String("playbook_version", playbookVersion),
-		zap.Duration("duration", duration),
-		zap.Int("min_samples", minSamples))
+	r.logger.V(1).Info("GetSuccessRateByWorkflow called",
+		"playbook_id", playbookID,
+		"playbook_version", playbookVersion,
+		"duration", duration,
+		"min_samples", minSamples)
 
 	sinceTime := time.Now().Add(-duration)
 
@@ -310,9 +308,9 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 
 	if err != nil {
 		r.logger.Error("failed to query playbook success rate",
-			zap.String("playbook_id", playbookID),
-			zap.String("playbook_version", playbookVersion),
-			zap.Error(err))
+			"playbook_id", playbookID,
+			"playbook_version", playbookVersion,
+			"error", err)
 		return nil, fmt.Errorf("failed to query playbook success rate: %w", err)
 	}
 
@@ -340,9 +338,9 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 	if totalExecutions > 0 {
 		incidentBreakdown, err := r.getIncidentTypeBreakdownForPlaybook(ctx, playbookID, playbookVersion, sinceTime)
 		if err != nil {
-			r.logger.Warn("failed to get incident type breakdown",
-				zap.String("playbook_id", playbookID),
-				zap.Error(err))
+			r.logger.Info("failed to get incident type breakdown",
+				"playbook_id", playbookID,
+				"error", err)
 			incidentBreakdown = []models.IncidentTypeBreakdownItem{}
 		}
 		response.BreakdownByIncidentType = incidentBreakdown
@@ -350,20 +348,20 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 		// Query AI execution mode stats
 		aiStats, err := r.getAIExecutionModeForPlaybook(ctx, playbookID, playbookVersion, sinceTime)
 		if err != nil {
-			r.logger.Warn("failed to get AI execution mode stats",
-				zap.String("playbook_id", playbookID),
-				zap.Error(err))
+			r.logger.Info("failed to get AI execution mode stats",
+				"playbook_id", playbookID,
+				"error", err)
 		} else {
 			response.AIExecutionMode = aiStats
 		}
 	}
 
 	r.logger.Info("playbook success rate calculated",
-		zap.String("playbook_id", playbookID),
-		zap.String("playbook_version", playbookVersion),
-		zap.Int("total_executions", totalExecutions),
-		zap.Float64("success_rate", successRate),
-		zap.String("confidence", confidence))
+		"playbook_id", playbookID,
+		"playbook_version", playbookVersion,
+		"total_executions", totalExecutions,
+		"success_rate", successRate,
+		"confidence", confidence)
 
 	return response, nil
 }
@@ -539,13 +537,13 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 	ctx context.Context,
 	query *models.MultiDimensionalQuery,
 ) (*models.MultiDimensionalSuccessRateResponse, error) {
-	r.logger.Debug("GetSuccessRateMultiDimensional called",
-		zap.String("incident_type", query.IncidentType),
-		zap.String("playbook_id", query.PlaybookID),
-		zap.String("playbook_version", query.PlaybookVersion),
-		zap.String("action_type", query.ActionType),
-		zap.String("time_range", query.TimeRange),
-		zap.Int("min_samples", query.MinSamples))
+	r.logger.V(1).Info("GetSuccessRateMultiDimensional called",
+		"incident_type", query.IncidentType,
+		"playbook_id", query.PlaybookID,
+		"playbook_version", query.PlaybookVersion,
+		"action_type", query.ActionType,
+		"time_range", query.TimeRange,
+		"min_samples", query.MinSamples)
 
 	// Validation: playbook_version requires playbook_id
 	if query.PlaybookVersion != "" && query.PlaybookID == "" {
@@ -666,11 +664,11 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 		MinSamplesMet:        minSamplesMet,
 	}
 
-	r.logger.Debug("GetSuccessRateMultiDimensional result",
-		zap.Int("total_executions", totalExecutions),
-		zap.Int("successful_executions", successfulExecutions),
-		zap.Float64("success_rate", successRate),
-		zap.String("confidence", confidence))
+	r.logger.V(1).Info("GetSuccessRateMultiDimensional result",
+		"total_executions", totalExecutions,
+		"successful_executions", successfulExecutions,
+		"success_rate", successRate,
+		"confidence", confidence)
 
 	return response, nil
 }
