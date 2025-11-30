@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // Builder constructs SQL queries with parameterized filters
@@ -39,7 +39,7 @@ type Builder struct {
 	actionType  string
 	limit       int
 	offset      int
-	logger      *zap.Logger
+	logger      logr.Logger
 }
 
 // QueryParams represents query filter parameters
@@ -56,9 +56,9 @@ type QueryParams struct {
 // REFACTOR: Supports optional logger for production observability
 func NewBuilder(opts ...BuilderOption) *Builder {
 	b := &Builder{
-		limit:  100,          // Default limit
-		offset: 0,            // Default offset
-		logger: zap.NewNop(), // Noop logger by default (tests don't need logs)
+		limit:  100,            // Default limit
+		offset: 0,              // Default offset
+		logger: logr.Discard(), // Discard logger by default (tests don't need logs)
 	}
 
 	// Apply options
@@ -74,11 +74,9 @@ type BuilderOption func(*Builder)
 
 // WithLogger sets a custom logger for the query builder
 // REFACTOR: Production deployments should provide a real logger
-func WithLogger(logger *zap.Logger) BuilderOption {
+func WithLogger(logger logr.Logger) BuilderOption {
 	return func(b *Builder) {
-		if logger != nil {
-			b.logger = logger
-		}
+		b.logger = logger
 	}
 }
 
@@ -153,31 +151,31 @@ func (b *Builder) Build() (string, []interface{}, error) {
 	// BR-STORAGE-023: Validate pagination parameters with detailed error messages
 	if b.limit < 1 || b.limit > 1000 {
 		err := fmt.Errorf("pagination validation failed: limit must be between 1 and 1000, got %d (BR-STORAGE-023)", b.limit)
-		b.logger.Warn("Query build failed",
-			zap.Int("limit", b.limit),
-			zap.String("error", "invalid_limit"),
+		b.logger.Info("Query build failed",
+			"limit", b.limit,
+			"error", "invalid_limit",
 		)
 		return "", nil, err
 	}
 	if b.offset < 0 {
 		err := fmt.Errorf("pagination validation failed: offset must be non-negative, got %d (BR-STORAGE-023)", b.offset)
-		b.logger.Warn("Query build failed",
-			zap.Int("offset", b.offset),
-			zap.String("error", "invalid_offset"),
+		b.logger.Info("Query build failed",
+			"offset", b.offset,
+			"error", "invalid_offset",
 		)
 		return "", nil, err
 	}
 
 	// REFACTOR: Log query construction for observability
-	b.logger.Debug("Building SQL query",
-		zap.String("namespace", b.namespace),
-		zap.String("signal_name", b.signalName),
-		zap.String("severity", b.severity),
-		zap.String("cluster", b.cluster),
-		zap.String("environment", b.environment),
-		zap.String("action_type", b.actionType),
-		zap.Int("limit", b.limit),
-		zap.Int("offset", b.offset),
+	b.logger.V(1).Info("Building SQL query",
+		"namespace", b.namespace,
+		"signal_name", b.signalName,
+		"severity", b.severity,
+		"cluster", b.cluster,
+		"environment", b.environment,
+		"action_type", b.actionType,
+		"limit", b.limit,
+		"offset", b.offset,
 	)
 
 	// Base query
@@ -253,11 +251,11 @@ func (b *Builder) Build() (string, []interface{}, error) {
 	standardSQL := convertToStandardPlaceholders(sql)
 
 	// REFACTOR: Log successful query construction
-	b.logger.Debug("SQL query built successfully",
-		zap.Int("filter_count", filterCount),
-		zap.Int("arg_count", len(args)),
-		zap.Int("limit", b.limit),
-		zap.Int("offset", b.offset),
+	b.logger.V(1).Info("SQL query built successfully",
+		"filter_count", filterCount,
+		"arg_count", len(args),
+		"limit", b.limit,
+		"offset", b.offset,
 	)
 
 	return standardSQL, args, nil
@@ -274,13 +272,13 @@ func (b *Builder) Build() (string, []interface{}, error) {
 //   - Error if validation fails
 func (b *Builder) BuildCount() (string, []interface{}, error) {
 	// REFACTOR: Log count query construction for observability
-	b.logger.Debug("Building COUNT(*) query",
-		zap.String("namespace", b.namespace),
-		zap.String("signal_name", b.signalName),
-		zap.String("severity", b.severity),
-		zap.String("cluster", b.cluster),
-		zap.String("environment", b.environment),
-		zap.String("action_type", b.actionType),
+	b.logger.V(1).Info("Building COUNT(*) query",
+		"namespace", b.namespace,
+		"signal_name", b.signalName,
+		"severity", b.severity,
+		"cluster", b.cluster,
+		"environment", b.environment,
+		"action_type", b.actionType,
 	)
 
 	// Base COUNT query (no SELECT *, no ORDER BY, no LIMIT/OFFSET)
@@ -349,9 +347,9 @@ func (b *Builder) BuildCount() (string, []interface{}, error) {
 	standardSQL := convertToStandardPlaceholders(sql)
 
 	// REFACTOR: Log successful count query construction
-	b.logger.Debug("COUNT(*) query built successfully",
-		zap.Int("filter_count", filterCount),
-		zap.Int("arg_count", len(args)),
+	b.logger.V(1).Info("COUNT(*) query built successfully",
+		"filter_count", filterCount,
+		"arg_count", len(args),
 	)
 
 	return standardSQL, args, nil

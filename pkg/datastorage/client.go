@@ -126,8 +126,7 @@ func NewClient(ctx context.Context, db *sql.DB, logger logr.Logger) (Client, err
 func (c *ClientImpl) CreateRemediationAudit(ctx context.Context, audit *models.RemediationAudit) error {
 	// BR-STORAGE-010: Validate input
 	if err := c.validator.ValidateRemediationAudit(audit); err != nil {
-		c.logger.Error("validation failed",
-			"error", err,
+		c.logger.Error(err, "validation failed",
 			"name", audit.Name)
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -147,8 +146,7 @@ func (c *ClientImpl) CreateRemediationAudit(ctx context.Context, audit *models.R
 	embeddingStart := time.Now()
 	embeddingResult, err := c.embeddingPipeline.Generate(ctx, audit)
 	if err != nil {
-		c.logger.Error("embedding generation failed",
-			"error", err,
+		c.logger.Error(err, "embedding generation failed",
 			"name", audit.Name)
 		return fmt.Errorf("embedding generation failed: %w", err)
 	}
@@ -165,8 +163,7 @@ func (c *ClientImpl) CreateRemediationAudit(ctx context.Context, audit *models.R
 	// BR-STORAGE-014: Dual-write (atomic write to PostgreSQL + Vector DB)
 	writeResult, err := c.coordinator.Write(ctx, audit, embeddingResult.Embedding)
 	if err != nil {
-		c.logger.Error("dual-write failed",
-			"error", err,
+		c.logger.Error(err, "dual-write failed",
 			"name", audit.Name)
 		return fmt.Errorf("dual-write failed: %w", err)
 	}
@@ -198,7 +195,7 @@ func (c *ClientImpl) GetRemediationAudit(ctx context.Context, id int64) (*models
 			c.logger.Info("audit not found", "id", id)
 			return nil, fmt.Errorf("audit not found: %d", id)
 		}
-		c.logger.Error("query failed", "error", err, "id", id)
+		c.logger.Error(err, "query failed", "id", id)
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
 

@@ -93,8 +93,7 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 			metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
 		}
 
-		c.logger.Error("failed to begin transaction",
-			"error", err,
+		c.logger.Error(err, "failed to begin transaction",
 			"name", audit.Name)
 		return nil, fmt.Errorf("begin transaction failed: %w", err)
 	}
@@ -104,8 +103,7 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	defer func() {
 		if shouldRollback {
 			if rbErr := tx.Rollback(); rbErr != nil {
-				c.logger.Error("failed to rollback transaction",
-					"error", rbErr,
+				c.logger.Error(rbErr, "failed to rollback transaction",
 					"name", audit.Name)
 			}
 		}
@@ -115,8 +113,7 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	pgID, err := c.writeToPostgreSQL(tx, audit, embedding)
 	if err != nil {
 		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
-		c.logger.Error("failed to write to PostgreSQL",
-			"error", err,
+		c.logger.Error(err, "failed to write to PostgreSQL",
 			"name", audit.Name)
 		return nil, fmt.Errorf("postgresql write failed: %w", err)
 	}
@@ -130,8 +127,7 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 		metadata := buildMetadata(audit)
 		if err := c.vectorDB.Insert(ctx, pgID, embedding, metadata); err != nil {
 			metrics.DualWriteFailure.WithLabelValues(metrics.ReasonVectorDBFailure).Inc()
-			c.logger.Error("failed to write to Vector DB, rolling back",
-				"error", err,
+			c.logger.Error(err, "failed to write to Vector DB, rolling back",
 				"postgresql_id", pgID,
 				"name", audit.Name)
 			// Wrap with typed error for reliable error detection
@@ -150,8 +146,7 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	// Commit PostgreSQL transaction
 	if err := tx.Commit(); err != nil {
 		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonTransactionRollback).Inc()
-		c.logger.Error("failed to commit transaction",
-			"error", err,
+		c.logger.Error(err, "failed to commit transaction",
 			"postgresql_id", pgID,
 			"name", audit.Name)
 		// Rollback will be called by defer
@@ -207,8 +202,7 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 	// Check if error is Vector DB related (using typed errors)
 	if !IsVectorDBError(err) {
 		// PostgreSQL error - cannot fall back
-		c.logger.Error("PostgreSQL error, cannot fall back",
-			"error", err,
+		c.logger.Error(err, "PostgreSQL error, cannot fall back",
 			"name", audit.Name)
 		return nil, err
 	}
@@ -218,14 +212,13 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 	metrics.FallbackModeTotal.Inc()
 
 	c.logger.Info("Vector DB unavailable, falling back to PostgreSQL-only",
-		"error", err,
+		"error", err.Error(),
 		"name", audit.Name)
 
 	pgID, pgErr := c.writePostgreSQLOnly(ctx, audit, embedding)
 	if pgErr != nil {
 		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
-		c.logger.Error("PostgreSQL-only write failed",
-			"error", pgErr,
+		c.logger.Error(pgErr, "PostgreSQL-only write failed",
 			"name", audit.Name)
 		return nil, fmt.Errorf("postgresql-only write failed: %w", pgErr)
 	}

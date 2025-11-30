@@ -19,7 +19,7 @@ package datastorage
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -28,7 +28,7 @@ var _ = Describe("BR-STORAGE-011: Input Sanitization", func() {
 	var validator *validation.Validator
 
 	BeforeEach(func() {
-		logger, _ := zap.NewDevelopment()
+		logger := kubelog.NewLogger(kubelog.DevelopmentOptions())
 		validator = validation.NewValidator(logger)
 	})
 

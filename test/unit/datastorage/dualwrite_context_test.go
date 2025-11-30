@@ -25,7 +25,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dualwrite"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -161,14 +162,12 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 		coordinator  *dualwrite.Coordinator
 		mockDB       *MockDBWithContext
 		mockVectorDB *MockVectorDBForContext
-		logger       *zap.Logger
+		logger       logr.Logger
 		testAudit    *models.RemediationAudit
 	)
 
 	BeforeEach(func() {
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 		mockDB = NewMockDBWithContext()
 		mockVectorDB = NewMockVectorDBForContext()

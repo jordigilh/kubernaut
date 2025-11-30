@@ -25,8 +25,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
-	"go.uber.org/zap"
 )
 
 const (
@@ -72,7 +72,7 @@ type service struct {
 	baseURL    string
 	httpClient *http.Client
 	cache      *rediscache.Cache[[]float32]
-	logger     *zap.Logger
+	logger     logr.Logger
 	maxRetries int
 	retryDelay time.Duration
 }
@@ -111,7 +111,7 @@ type HealthResponse struct {
 //	cache := rediscache.NewCache[[]float32](redisClient, "embeddings", 24*time.Hour)
 //	client := embedding.NewClient("http://localhost:8086", cache, logger)
 //	embedding, err := client.Embed(ctx, "OOMKilled pod in production")
-func NewClient(baseURL string, cache *rediscache.Cache[[]float32], logger *zap.Logger) Client {
+func NewClient(baseURL string, cache *rediscache.Cache[[]float32], logger logr.Logger) Client {
 	return &service{
 		baseURL: baseURL,
 		httpClient: &http.Client{
@@ -166,17 +166,17 @@ func (c *service) Embed(ctx context.Context, text string) ([]float32, error) {
 	if c.cache != nil {
 		cached, err := c.cache.Get(ctx, text)
 		if err == nil && cached != nil {
-			c.logger.Debug("Cache hit for embedding",
-				zap.String("text", text[:min(50, len(text))]),
-				zap.Int("dimensions", len(*cached)))
+			c.logger.V(1).Info("Cache hit for embedding",
+				"text", truncateText(text, 50),
+				"dimensions", len(*cached))
 			return *cached, nil
 		}
 
 		// Log cache miss (not an error)
 		if err != rediscache.ErrCacheMiss {
-			c.logger.Warn("Cache lookup failed, proceeding without cache",
-				zap.Error(err),
-				zap.String("text", text[:min(50, len(text))]))
+			c.logger.Info("Cache lookup failed, proceeding without cache",
+				"error", err.Error(),
+				"text", truncateText(text, 50))
 		}
 	}
 
@@ -194,13 +194,13 @@ func (c *service) Embed(ctx context.Context, text string) ([]float32, error) {
 			defer cancel()
 
 			if err := c.cache.Set(cacheCtx, text, &embedding); err != nil {
-				c.logger.Warn("Failed to cache embedding",
-					zap.Error(err),
-					zap.String("text", text[:min(50, len(text))]))
+				c.logger.Info("Failed to cache embedding",
+					"error", err.Error(),
+					"text", truncateText(text, 50))
 			} else {
-				c.logger.Debug("Cached embedding",
-					zap.String("text", text[:min(50, len(text))]),
-					zap.Duration("ttl", DefaultCacheTTL))
+				c.logger.V(1).Info("Cached embedding",
+					"text", truncateText(text, 50),
+					"ttl", DefaultCacheTTL)
 			}
 		}()
 	}
@@ -237,8 +237,8 @@ func (c *service) embedWithRetry(ctx context.Context, text string) ([]float32, e
 		if err == nil {
 			if attempt > 0 {
 				c.logger.Info("Embedding generation succeeded after retry",
-					zap.Int("attempt", attempt+1),
-					zap.String("text", text[:min(50, len(text))]))
+					"attempt", attempt+1,
+					"text", truncateText(text, 50))
 			}
 			return embedding, nil
 		}
@@ -247,9 +247,9 @@ func (c *service) embedWithRetry(ctx context.Context, text string) ([]float32, e
 
 		// Check if error is retryable
 		if !isRetryable(err) {
-			c.logger.Warn("Non-retryable error, aborting",
-				zap.Error(err),
-				zap.Int("attempt", attempt+1))
+			c.logger.Info("Non-retryable error, aborting",
+				"error", err.Error(),
+				"attempt", attempt+1)
 			return nil, err
 		}
 
@@ -260,10 +260,10 @@ func (c *service) embedWithRetry(ctx context.Context, text string) ([]float32, e
 
 		// Calculate exponential backoff delay
 		delay := c.retryDelay * time.Duration(1<<attempt) // 1s, 2s, 4s
-		c.logger.Warn("Embedding generation failed, retrying",
-			zap.Error(err),
-			zap.Int("attempt", attempt+1),
-			zap.Duration("retry_delay", delay))
+		c.logger.Info("Embedding generation failed, retrying",
+			"error", err.Error(),
+			"attempt", attempt+1,
+			"retry_delay", delay)
 
 		// Wait before retry (with context cancellation check)
 		select {
@@ -368,9 +368,9 @@ func (c *service) Health(ctx context.Context) error {
 			healthResp.Dimensions, EmbeddingDimensions)
 	}
 
-	c.logger.Debug("Embedding service healthy",
-		zap.String("model", healthResp.Model),
-		zap.Int("dimensions", healthResp.Dimensions))
+	c.logger.V(1).Info("Embedding service healthy",
+		"model", healthResp.Model,
+		"dimensions", healthResp.Dimensions)
 
 	return nil
 }
@@ -434,4 +434,12 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// truncateText safely truncates text to maxLen characters for logging
+func truncateText(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
+	}
+	return text[:maxLen]
 }

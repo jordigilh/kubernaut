@@ -146,8 +146,7 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 	var results []RemediationAuditResult
 	if err := s.db.SelectContext(ctx, &results, query, args...); err != nil {
 		metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusFailure).Inc()
-		s.logger.Error("query failed",
-			"error", err,
+		s.logger.Error(err, "query failed",
 			"query", query)
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
@@ -273,8 +272,7 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 	rows := make([]*SemanticResultRow, 0)
 	if err := s.db.SelectContext(ctx, &rows, sqlQuery, queryEmbeddingStr); err != nil {
 		metrics.QueryTotal.WithLabelValues(metrics.OperationSemanticSearch, metrics.StatusFailure).Inc()
-		s.logger.Error("semantic search failed",
-			"error", err,
+		s.logger.Error(err, "semantic search failed",
 			"query", queryText)
 		return nil, fmt.Errorf("semantic search failed: %w", err)
 	}
@@ -320,8 +318,7 @@ func (s *Service) countRemediationAudits(ctx context.Context, opts *ListOptions)
 	// Execute count query
 	var count int64
 	if err := s.db.GetContext(ctx, &count, query, args...); err != nil {
-		s.logger.Error("count query failed",
-			"error", err,
+		s.logger.Error(err, "count query failed",
 			"query", query)
 		return 0, fmt.Errorf("count query failed: %w", err)
 	}

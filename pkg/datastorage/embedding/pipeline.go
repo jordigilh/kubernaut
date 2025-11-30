@@ -84,8 +84,7 @@ func (p *Pipeline) Generate(ctx context.Context, audit *models.RemediationAudit)
 
 	embedding, err := p.apiClient.Embed(ctx, text)
 	if err != nil {
-		p.logger.Error("failed to generate embedding",
-			"error", err,
+		p.logger.Error(err, "failed to generate embedding",
 			"cache_key", cacheKey)
 		return nil, fmt.Errorf("embedding API error: %w", err)
 	}

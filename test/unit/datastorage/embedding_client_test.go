@@ -27,7 +27,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
@@ -44,7 +45,7 @@ import (
 var _ = Describe("Embedding Client", func() {
 	var (
 		ctx         context.Context
-		logger      *zap.Logger
+		logger      logr.Logger
 		miniRedis   *miniredis.Miniredis
 		redisClient *rediscache.Client
 		cache       *rediscache.Cache[[]float32]
@@ -54,7 +55,7 @@ var _ = Describe("Embedding Client", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 
 		// Start miniredis
 		var err error

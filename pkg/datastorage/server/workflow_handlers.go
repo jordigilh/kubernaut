@@ -28,9 +28,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var searchReq models.WorkflowSearchRequest
 	if err := json.NewDecoder(r.Body).Decode(&searchReq); err != nil {
-		h.logger.Error("Failed to decode workflow search request",
-			"error", err,
-		)
+		h.logger.Error(err, "Failed to decode workflow search request")
 		h.writeRFC7807Error(w, http.StatusBadRequest,
 			"https://kubernaut.dev/problems/bad-request",
 			"Bad Request",
@@ -41,8 +39,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 
 	// Validate request
 	if err := h.validateWorkflowSearchRequest(&searchReq); err != nil {
-		h.logger.Error("Invalid workflow search request",
-			"error", err,
+		h.logger.Error(err, "Invalid workflow search request",
 			"query", searchReq.Query,
 		)
 		h.writeRFC7807Error(w, http.StatusBadRequest,
@@ -56,7 +53,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 	// Generate embedding from query text if not provided
 	if searchReq.Embedding == nil {
 		if h.embeddingService == nil {
-			h.logger.Error("Embedding service not configured",
+			h.logger.Error(fmt.Errorf("embedding service not configured"), "Embedding service not configured",
 				"query", searchReq.Query,
 			)
 			h.writeRFC7807Error(w, http.StatusInternalServerError,
@@ -69,8 +66,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 
 		embedding, err := h.embeddingService.GenerateEmbedding(r.Context(), searchReq.Query)
 		if err != nil {
-			h.logger.Error("Failed to generate embedding",
-				"error", err,
+			h.logger.Error(err, "Failed to generate embedding",
 				"query", searchReq.Query,
 			)
 			h.writeRFC7807Error(w, http.StatusInternalServerError,
@@ -86,8 +82,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 	// Execute semantic search
 	response, err := h.workflowRepo.SearchByEmbedding(r.Context(), &searchReq)
 	if err != nil {
-		h.logger.Error("Failed to search workflows",
-			"error", err,
+		h.logger.Error(err, "Failed to search workflows",
 			"query", searchReq.Query,
 			"top_k", searchReq.TopK,
 		)
@@ -157,8 +152,7 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	// Execute list query
 	workflows, total, err := h.workflowRepo.List(r.Context(), filters, limit, offset)
 	if err != nil {
-		h.logger.Error("Failed to list workflows",
-			"error", err,
+		h.logger.Error(err, "Failed to list workflows",
 			"filters", filters,
 			"limit", limit,
 			"offset", offset,

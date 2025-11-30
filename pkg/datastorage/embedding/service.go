@@ -39,9 +39,6 @@ type PlaceholderService struct {
 
 // NewPlaceholderService creates a new placeholder embedding service
 func NewPlaceholderService(logger logr.Logger) Service {
-	if logger == nil {
-		logger = logr.Discard()
-	}
 	return &PlaceholderService{
 		logger: logger,
 	}
@@ -85,12 +82,4 @@ func (s *PlaceholderService) GenerateBatchEmbeddings(ctx context.Context, texts 
 	}
 
 	return embeddings, nil
-}
-
-// truncateText truncates text to maxLen characters
-func truncateText(text string, maxLen int) string {
-	if len(text) <= maxLen {
-		return text
-	}
-	return text[:maxLen] + "..."
 }

@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
@@ -348,8 +347,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err != nil {
-		s.logger.Error("Database write failed",
-			"error", err,
+		s.logger.Error(err, "Database write failed",
 			"event_type", eventType,
 			"correlation_id", correlationID,
 			"duration_seconds", duration)
@@ -373,8 +371,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		// Serialize event_data to JSON
 		eventDataJSON, marshalErr := json.Marshal(eventData)
 		if marshalErr != nil {
-			s.logger.Error("Failed to marshal event_data for DLQ",
-				"error", marshalErr,
+			s.logger.Error(marshalErr, "Failed to marshal event_data for DLQ",
 				"event_type", eventType)
 			eventDataJSON = []byte("{}")
 		}
@@ -401,8 +398,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 
 		// Attempt to enqueue to DLQ (use original database error, not marshalErr)
 		if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, dlqAuditEvent, err); dlqErr != nil {
-			s.logger.Error("DLQ fallback also failed - data loss risk",
-				"error", dlqErr,
+			s.logger.Error(dlqErr, "DLQ fallback also failed - data loss risk",
 				"event_type", eventType,
 				"correlation_id", correlationID,
 				"original_error", err.Error())
