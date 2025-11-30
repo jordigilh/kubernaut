@@ -229,7 +229,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 				// Create aggregator with low namespace limit
 				limitedAggregator := processing.NewStormAggregatorWithConfig(
 					redisClient,
-					nil, // logger
+					logr.Discard(), // DD-005: Use logr.Discard() for silent logging in tests
 					5,
 					5*time.Second,
 					30*time.Second,

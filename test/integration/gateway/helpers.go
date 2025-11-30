@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -33,6 +33,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	gatewayconfig "github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
 // Suite-level namespace tracking for batch cleanup
@@ -283,19 +284,22 @@ func (k *K8sTestClient) DeleteCRD(ctx context.Context, name, namespace string) e
 //	resp, _ := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", body)
 //
 // DD-GATEWAY-004: Authentication removed - security now at network layer
+// DD-005: Uses logr.Logger for unified logging interface
 func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) (*gateway.Server, error) {
-	// Use production logger with console output to capture errors in test logs
-	logConfig := zap.NewProductionConfig()
-	logConfig.OutputPaths = []string{"stdout"}
-	logConfig.ErrorOutputPaths = []string{"stderr"}
-	logger, _ := logConfig.Build()
+	// DD-005: Use shared logging library (logr.Logger interface)
+	logger := kubelog.NewLogger(kubelog.Options{
+		Development: true,
+		Level:       0, // INFO
+		ServiceName: "gateway-test",
+	})
 
 	return StartTestGatewayWithLogger(ctx, redisClient, k8sClient, logger)
 }
 
 // StartTestGatewayWithLogger creates and starts a Gateway server with a custom logger
 // This is useful for observability tests that need to capture and verify log output
-func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, logger *zap.Logger) (*gateway.Server, error) {
+// DD-005: Uses logr.Logger for unified logging interface
+func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, logger logr.Logger) (*gateway.Server, error) {
 
 	// v2.9: Wire deduplication and storm detection services (REQUIRED)
 	// BR-GATEWAY-008, BR-GATEWAY-009, BR-GATEWAY-010
@@ -356,9 +360,9 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 	}
 
 	logger.Info("Creating Gateway server for integration tests",
-		zap.Duration("deduplication_ttl", cfg.Processing.Deduplication.TTL),
-		zap.Int("storm_rate_threshold", cfg.Processing.Storm.RateThreshold),
-		zap.Int("rate_limit", cfg.Middleware.RateLimit.RequestsPerMinute),
+		"deduplication_ttl", cfg.Processing.Deduplication.TTL,
+		"storm_rate_threshold", cfg.Processing.Storm.RateThreshold,
+		"rate_limit", cfg.Middleware.RateLimit.RequestsPerMinute,
 	)
 
 	// Create isolated Prometheus registry for this test
@@ -437,11 +441,12 @@ func DefaultTestServerOptions() TestServerOptions {
 //	// ... send requests ...
 //	gatewayServer.Stop(ctx) // Trigger graceful shutdown
 func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, opts TestServerOptions) (*gateway.Server, error) {
-	// Use production logger with console output to capture errors in test logs
-	logConfig := zap.NewProductionConfig()
-	logConfig.OutputPaths = []string{"stdout"}
-	logConfig.ErrorOutputPaths = []string{"stderr"}
-	logger, _ := logConfig.Build()
+	// DD-005: Use shared logging library (logr.Logger interface)
+	logger := kubelog.NewLogger(kubelog.Options{
+		Development: true,
+		Level:       0, // INFO
+		ServiceName: "gateway-test",
+	})
 
 	// v2.9: Wire deduplication and storm detection services (REQUIRED)
 	if redisClient == nil || redisClient.Client == nil {
@@ -499,12 +504,12 @@ func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClie
 	}
 
 	logger.Info("Creating Gateway server with custom options",
-		zap.Duration("read_timeout", opts.ReadTimeout),
-		zap.Duration("write_timeout", opts.WriteTimeout),
-		zap.Duration("idle_timeout", opts.IdleTimeout),
-		zap.Duration("deduplication_ttl", opts.DeduplicationTTL),
-		zap.Int("storm_rate_threshold", opts.StormRateThreshold),
-		zap.Int("rate_limit_rpm", opts.RateLimitRPM),
+		"read_timeout", opts.ReadTimeout,
+		"write_timeout", opts.WriteTimeout,
+		"idle_timeout", opts.IdleTimeout,
+		"deduplication_ttl", opts.DeduplicationTTL,
+		"storm_rate_threshold", opts.StormRateThreshold,
+		"rate_limit_rpm", opts.RateLimitRPM,
 	)
 
 	// Create isolated Prometheus registry for this test
