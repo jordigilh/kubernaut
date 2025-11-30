@@ -178,7 +178,7 @@ type SignalProcessingStatus struct {
 }
 
 // EnrichmentResults from context gathering
-// Updated v1.3: Added DetectedLabels (V1.0) and CustomLabels (V1.1)
+// Updated v1.4: Added DetectedLabels (V1.0) and CustomLabels (V1.0)
 type EnrichmentResults struct {
     // Kubernetes resource context (from cluster API queries)
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
@@ -497,7 +497,7 @@ func init() {
 
 ### Label Detection (HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0)
 - Added: `DetectedLabels` struct - auto-detected cluster characteristics (V1.0 priority)
-- Added: `CustomLabels` field - user-defined via Rego policies (V1.1)
+- Added: `CustomLabels` field - user-defined via Rego policies (V1.0)
 - Reference: DD-WORKFLOW-001 v1.4 (5 mandatory labels), DD-WORKFLOW-004 v2.1
 
 #### Label Taxonomy (DD-WORKFLOW-001 v1.4)
@@ -523,10 +523,22 @@ func init() {
 | `PodSecurityLevel` | Namespace PSS label | Security posture |
 | `ServiceMesh` | Istio/Linkerd sidecar | Traffic management |
 
-#### CustomLabels (V1.1)
+#### CustomLabels (V1.0)
 
-- **Keys**: Defined by customer in Rego policies (e.g., `business_category`, `team`, `region`)
+- **Keys**: Defined by customer in Rego policies (e.g., `risk_tolerance`, `team`, `region`)
 - **Values**: Derived from K8s labels/annotations via Rego policies
 - **Matching**: Customer's Rego labels matched against workflow labels
 - **Reference**: `signal-processing-policies` ConfigMap in `kubernaut-system` namespace
+
+**Label Naming Convention** (per HANDOFF v3.0):
+
+| Prefix | Purpose | Example |
+|--------|---------|---------|
+| `kubernaut.io/*` | Standard custom labels | `kubernaut.io/team`, `kubernaut.io/risk-tolerance` |
+| `constraint.kubernaut.io/*` | Workflow constraints | `constraint.kubernaut.io/cost-constrained` |
+| `custom.kubernaut.io/*` | Explicit customer-defined | `custom.kubernaut.io/business-unit` |
+
+**Security**: Rego security wrapper strips system labels (5 mandatory) from customer policy output.
+
+**Data Storage Integration**: CustomLabels passed as separate `custom_labels` field in search API (not merged with mandatory labels).
 

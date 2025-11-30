@@ -86,7 +86,7 @@ if signalDataValid {
   - Workload protection (PDB, HPA queries)
   - Workload characteristics (StatefulSet, Helm)
   - Security posture (NetworkPolicy, PSS, ServiceMesh)
-- **CustomLabels (V1.1)**: Extract user-defined labels via Rego policies
+- **CustomLabels (V1.0)**: Extract user-defined labels via Rego policies
   - Query ConfigMap `signal-processing-policies` in `kubernaut-system`
   - Evaluate Rego policy with K8s context as input
   - Output: user-defined labels (e.g., `business_category`, `team`, `region`)
@@ -99,7 +99,7 @@ if signalDataValid {
 
 **Note**: Context API is DEPRECATED per [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md). Recovery context is now embedded by Remediation Orchestrator.
 
-**Note**: Label detection follows [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0. DetectedLabels are V1.0 priority (no config), CustomLabels are V1.1 (requires Rego ConfigMap).
+**Note**: Label detection follows [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0. Both DetectedLabels and CustomLabels are V1.0. CustomLabels requires Rego ConfigMap.
 
 **Timeout**: 5 seconds
 
@@ -153,7 +153,7 @@ status:
       networkIsolated: true
       podSecurityLevel: "restricted"
       serviceMesh: "istio"
-    # CustomLabels (V1.1) - Extracted via Rego policies
+    # CustomLabels (V1.0) - Extracted via Rego policies
     customLabels:
       team: "platform"
       region: "us-east-1"
