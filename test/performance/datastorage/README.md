@@ -202,7 +202,7 @@ SELECT
     -- ... (boost/penalty calculations) ...
 FROM remediation_workflow_catalog
 WHERE status = 'active'
-  AND labels->>'signal-type' = 'OOMKilled'
+  AND labels->>'signal_type' = 'OOMKilled'
   AND labels->>'severity' = 'critical'
 ORDER BY final_score DESC
 LIMIT 10;
