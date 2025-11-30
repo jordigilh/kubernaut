@@ -18,10 +18,12 @@ limitations under the License.
 Recovery Analysis Models
 
 Business Requirements: BR-HAPI-001 to 050 (Recovery Analysis)
+Business Requirement: BR-AUDIT-001 (Unified audit trail - remediation_id)
+Design Decision: DD-WORKFLOW-002 v2.2 (remediation_id mandatory)
 """
 
 from typing import Dict, Any, List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class RecoveryStrategy(BaseModel):
@@ -37,9 +39,24 @@ class RecoveryRequest(BaseModel):
     """
     Request model for recovery analysis endpoint
 
-    Business Requirement: BR-HAPI-001 (Recovery request schema)
+    Business Requirements:
+    - BR-HAPI-001: Recovery request schema
+    - BR-AUDIT-001: Unified audit trail (remediation_id)
+
+    Design Decision: DD-WORKFLOW-002 v2.2
+    - remediation_id is MANDATORY for audit trail correlation
+    - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
     """
     incident_id: str = Field(..., description="Unique incident identifier")
+    remediation_id: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Remediation request ID for audit correlation (e.g., 'req-2025-11-27-abc123'). "
+            "MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY - "
+            "do NOT use for RCA analysis or workflow matching."
+        )
+    )
     failed_action: Dict[str, Any] = Field(..., description="Details of the failed action")
     failure_context: Dict[str, Any] = Field(..., description="Context at time of failure")
     investigation_result: Optional[Dict[str, Any]] = Field(None, description="AI investigation results")
@@ -50,6 +67,7 @@ class RecoveryRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "incident_id": "inc-001",
+                "remediation_id": "req-2025-11-27-abc123",
                 "failed_action": {
                     "type": "scale_deployment",
                     "target": "nginx",

@@ -21,6 +21,12 @@ Tests internal helper functions and logic for recovery analysis.
 Target: Increase recovery.py coverage from 31% to 80%
 
 Business Requirements: BR-HAPI-001 to 050
+
+NOTE: TestCreateInvestigationPrompt and prompt-related edge cases were REMOVED
+because the prompt format was refactored from "Recovery Analysis Request" to
+ADR-041 v3.3 "Incident Analysis" format. The old tests were testing the obsolete
+prompt structure. New prompt tests should be created if needed to test the
+current ADR-041 v3.3 format.
 """
 
 import pytest
@@ -29,7 +35,6 @@ from unittest.mock import Mock, patch, AsyncMock
 from src.extensions.recovery import (
     MinimalDAL,
     _get_holmes_config,
-    _create_investigation_prompt,
     _extract_strategies_from_analysis,
     _extract_warnings_from_analysis,
     _stub_recovery_analysis
@@ -109,189 +114,32 @@ class TestGetHolmesConfig:
             assert config is not None
             # Config object exists
 
-    @pytest.mark.skip(reason="Config behavior depends on Holmes SDK implementation")
-    def test_get_holmes_config_production_without_model(self):
-        """Test config creation without LLM_MODEL"""
+    def test_get_holmes_config_production_without_model_raises_error(self):
+        """
+        Test that config creation without LLM_MODEL raises HTTPException
+
+        BR-HAPI-001: LLM_MODEL is required for production mode
+        BEHAVIOR: Missing LLM_MODEL should raise HTTPException with 500 status
+        """
+        from fastapi import HTTPException
+
         with patch.dict('os.environ', {'DEV_MODE': 'false'}, clear=True):
-            # Remove LLM_MODEL if it exists
+            # Ensure LLM_MODEL is not set
             import os
             if 'LLM_MODEL' in os.environ:
                 del os.environ['LLM_MODEL']
 
-            config = _get_holmes_config()
+            # Should raise HTTPException because LLM_MODEL is required
+            with pytest.raises(HTTPException) as exc_info:
+                _get_holmes_config()
 
-            # Implementation may return None or default config
-            # Behavior depends on Holmes SDK
-            assert config is None or config is not None
-
-
-# ========================================
-# TEST SUITE 3: Investigation Prompt Creation
-# ========================================
-
-class TestCreateInvestigationPrompt:
-    """Test investigation prompt generation"""
-
-    def test_create_prompt_with_minimal_data(self):
-        """Test prompt creation with minimal request data"""
-        request_data = {
-            "failed_action": {
-                "type": "scale-deployment",
-                "target": "deployment/api-server"
-            },
-            "failure_context": {
-                "error": "timeout",
-                "error_message": "Operation timed out after 60s"
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert "Recovery Analysis Request" in prompt
-        assert "Failed Action" in prompt
-        assert "scale-deployment" in prompt
-        assert "deployment/api-server" in prompt
-        assert "timeout" in prompt
-
-    def test_create_prompt_includes_investigation_results(self):
-        """Test prompt includes investigation results when available"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"},
-            "investigation_result": {
-                "root_cause": "Memory leak",
-                "symptoms": ["OOMKilled", "Pod restart loop"]
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert "Investigation Results" in prompt
-        assert "Memory leak" in prompt
-        assert "OOMKilled" in prompt
-        assert "Pod restart loop" in prompt
-
-    def test_create_prompt_includes_context(self):
-        """Test prompt includes context information"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"},
-            "context": {
-                "cluster": "production-us-east",
-                "namespace": "payment-service",
-                "priority": "high",
-                "recovery_attempts": 2
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert "Context" in prompt
-        assert "production-us-east" in prompt
-        assert "payment-service" in prompt
-        assert "high" in prompt
-        assert "2" in prompt
-
-    def test_create_prompt_includes_constraints(self):
-        """Test prompt includes constraints"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"},
-            "constraints": {
-                "max_attempts": 3,
-                "timeout": "5m",
-                "allowed_actions": ["scale-deployment", "increase-memory"]
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert "Constraints" in prompt
-        assert "Max Attempts: 3" in prompt
-        assert "Timeout: 5m" in prompt
-        assert "scale-deployment, increase-memory" in prompt
-
-    def test_create_prompt_includes_historical_context(self):
-        """Test prompt includes historical context from Context API"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"},
-            "historical_context": {
-                "available": True,
-                "success_rates": {
-                    "scale-deployment": {
-                        "success_rate": 89.4,
-                        "total_attempts": 47
-                    }
-                },
-                "similar_incidents": [
-                    {
-                        "remediation_action": "increase-memory",
-                        "outcome": "success",
-                        "similarity_score": 0.95
-                    }
-                ],
-                "environment_patterns": {
-                    "production": "High memory usage typical"
-                }
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert "Historical Context" in prompt
-        assert "Past Remediation Success Rates" in prompt
-        assert "scale-deployment: 89.4% success (47 attempts)" in prompt
-        assert "Similar Past Incidents" in prompt
-        assert "increase-memory → success (similarity: 0.95)" in prompt
-        assert "Environment-Specific Patterns" in prompt
-        assert "High memory usage typical" in prompt
-
-    def test_create_prompt_without_historical_context(self):
-        """Test prompt works without historical context"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"}
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        # Should not crash, historical context is optional
-        assert "Recovery Analysis Request" in prompt
-        assert "Historical Context" not in prompt
-
-    def test_create_prompt_with_unavailable_historical_context(self):
-        """Test prompt when historical context is marked unavailable"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"},
-            "historical_context": {
-                "available": False
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        # Should not include historical context section
-        assert "Historical Context" not in prompt
-
-    def test_create_prompt_includes_output_format(self):
-        """Test prompt includes required output format"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"}
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert "OUTPUT FORMAT" in prompt
-        assert "```json" in prompt
-        assert "strategies" in prompt
-        assert "confidence" in prompt
+            # Validate the exception details
+            assert exc_info.value.status_code == 500
+            assert "LLM_MODEL" in str(exc_info.value.detail) or "model" in str(exc_info.value.detail).lower()
 
 
 # ========================================
-# TEST SUITE 4: Strategy Extraction
+# TEST SUITE 3: Strategy Extraction
 # ========================================
 
 class TestExtractStrategiesFromAnalysis:
@@ -385,7 +233,7 @@ Recommended strategies:
 
 
 # ========================================
-# TEST SUITE 5: Warning Extraction
+# TEST SUITE 4: Warning Extraction
 # ========================================
 
 class TestExtractWarningsFromAnalysis:
@@ -445,7 +293,7 @@ Everything looks good. Proceed with the remediation.
 
 
 # ========================================
-# TEST SUITE 6: Stub Recovery Analysis
+# TEST SUITE 5: Stub Recovery Analysis
 # ========================================
 
 class TestStubRecoveryAnalysis:
@@ -521,64 +369,11 @@ class TestStubRecoveryAnalysis:
 
 
 # ========================================
-# TEST SUITE 7: Edge Cases
+# TEST SUITE 6: Edge Cases
 # ========================================
 
 class TestRecoveryAnalysisEdgeCases:
-    """Test edge cases and boundary conditions"""
-
-    def test_prompt_with_empty_allowed_actions(self):
-        """Test prompt creation with empty allowed_actions list"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"},
-            "constraints": {
-                "allowed_actions": []
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert "Allowed Actions: Any" in prompt
-
-    def test_prompt_with_zero_recovery_attempts(self):
-        """Test prompt with zero recovery attempts"""
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"},
-            "context": {
-                "recovery_attempts": 0
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        assert "Recovery Attempts: 0" in prompt
-
-    def test_prompt_with_many_similar_incidents(self):
-        """Test prompt only includes top 5 similar incidents"""
-        similar_incidents = [
-            {"remediation_action": f"action-{i}", "outcome": "success", "similarity_score": 0.9 - i*0.01}
-            for i in range(20)
-        ]
-
-        request_data = {
-            "failed_action": {"type": "test"},
-            "failure_context": {"error": "test"},
-            "historical_context": {
-                "available": True,
-                "success_rates": {},
-                "similar_incidents": similar_incidents,
-                "environment_patterns": {}
-            }
-        }
-
-        prompt = _create_investigation_prompt(request_data)
-
-        # Should only include first 5
-        assert "action-0" in prompt
-        assert "action-4" in prompt
-        assert "action-5" not in prompt  # 6th should not be included
+    """Test edge cases and boundary conditions for non-prompt functions"""
 
     def test_extract_strategies_with_negative_confidence(self):
         """Test strategy extraction handles negative confidence"""
@@ -623,4 +418,3 @@ NOTE: Maintenance window
 
         # Implementation extracts based on keyword patterns
         assert len(warnings) >= 1
-

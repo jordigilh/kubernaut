@@ -49,10 +49,10 @@ Reference: tests/unit/test_recovery_analysis.py (test structure)
 
 import pytest
 import json
+from unittest.mock import Mock, patch, MagicMock
 from src.toolsets.workflow_catalog import (
     SearchWorkflowCatalogTool,
-    WorkflowCatalogToolset,
-    MOCK_WORKFLOWS
+    WorkflowCatalogToolset
 )
 from holmes.core.tools import StructuredToolResultStatus
 
@@ -126,165 +126,23 @@ class TestWorkflowCatalogToolset:
 
 class TestSearchWorkflowCatalogTool:
     """
-    BR-HAPI-250: Workflow Search Functionality
+    BR-HAPI-250: Workflow Search Tool Unit Tests
 
-    BEHAVIOR: Tool must find workflows based on query and filters
-    CORRECTNESS: Results match DD-WORKFLOW-002 format and business rules
+    SCOPE: Unit tests for tool behavior (non-HTTP functionality)
 
-    ⚠️ MVP SCOPE: Tests expect MOCK_WORKFLOWS data
-    TODO: Refactor when PostgreSQL + pgvector backend is ready
+    ⚠️ DEPRECATED MVP TESTS REMOVED:
+    - test_search_with_query_only_br_hapi_250 → Covered by TestWorkflowCatalogDataStorageIntegration
+    - test_search_with_signal_types_filter_br_hapi_250 → Covered by test_query_transformation_dd_llm_001
+    - test_search_with_top_k_parameter_br_hapi_250 → Covered by test_http_client_integration_br_storage_013
+    - test_search_with_no_results_br_hapi_250 → Should be integration test with real DB
+    - test_result_format_compliance_dd_workflow_002 → Covered by test_response_transformation_dd_workflow_004
+
+    📋 TODO: Create integration tests in tests/integration/test_workflow_catalog_integration.py:
+    - End-to-end workflow search with real Data Storage Service
+    - Empty results handling with real database
+    - Filter validation with real database
+    - Top-k limiting with real database
     """
-
-    def test_search_with_query_only_br_hapi_250(self):
-        """
-        BR-HAPI-250: Tool must search workflows using natural language query
-
-        BEHAVIOR: Tool finds workflows matching query keywords
-        CORRECTNESS: Results contain workflows with matching signal_types
-
-        ⚠️ MVP: Expects MOCK_WORKFLOWS with "OOMKilled" signal_types
-        TODO: Refactor to test PostgreSQL semantic search when backend is ready
-        """
-        toolset = WorkflowCatalogToolset()
-        tool = toolset.tools[0]
-
-        result = tool.invoke(params={"query": "OOMKilled pod recovery"})
-
-        # BEHAVIOR VALIDATION: Successful search
-        assert result.status == StructuredToolResultStatus.SUCCESS, \
-            "BR-HAPI-250: Tool must return SUCCESS status for valid query"
-
-        # CORRECTNESS VALIDATION: Result format
-        data = json.loads(result.data)
-        assert "workflows" in data, \
-            "DD-WORKFLOW-002: Response must contain 'workflows' array"
-
-        # MVP VALIDATION: Expects MOCK_WORKFLOWS data
-        assert len(data["workflows"]) > 0, \
-            "BR-HAPI-250: Tool must find at least 1 OOMKilled workflow in MOCK_WORKFLOWS"
-
-        # CORRECTNESS VALIDATION: Business rule - matching workflows
-        assert any("OOMKilled" in w["signal_types"] for w in data["workflows"]), \
-            "BR-HAPI-250: Results must include workflows matching query signal type"
-
-    def test_search_with_signal_types_filter_br_hapi_250(self):
-        """
-        BR-HAPI-250: Tool must filter workflows by signal_types
-
-        BEHAVIOR: Tool respects signal_types filter
-        CORRECTNESS: All results match filter criteria
-
-        ⚠️ MVP: Expects MOCK_WORKFLOWS filtering
-        TODO: Refactor to test PostgreSQL filtering when backend is ready
-        """
-        toolset = WorkflowCatalogToolset()
-        tool = toolset.tools[0]
-
-        result = tool.invoke(params={
-            "query": "pod issue",
-            "filters": {"signal_types": ["CrashLoopBackOff"]}
-        })
-
-        # BEHAVIOR VALIDATION: Filter applied
-        assert result.status == StructuredToolResultStatus.SUCCESS, \
-            "BR-HAPI-250: Tool must handle filtered searches"
-
-        # CORRECTNESS VALIDATION: Filter enforcement
-        data = json.loads(result.data)
-        for workflow in data["workflows"]:
-            assert "CrashLoopBackOff" in workflow["signal_types"], \
-                "BR-HAPI-250: All results must match signal_types filter"
-
-    def test_search_with_top_k_parameter_br_hapi_250(self):
-        """
-        BR-HAPI-250: Tool must respect top_k parameter
-
-        BEHAVIOR: Tool limits results to top_k count
-        CORRECTNESS: Result count <= top_k
-
-        ⚠️ MVP: Tests with MOCK_WORKFLOWS
-        TODO: Refactor to test PostgreSQL LIMIT clause when backend is ready
-        """
-        toolset = WorkflowCatalogToolset()
-        tool = toolset.tools[0]
-
-        result = tool.invoke(params={
-            "query": "OOMKilled",
-            "top_k": 1
-        })
-
-        # CORRECTNESS VALIDATION: Result count limit
-        assert result.status == StructuredToolResultStatus.SUCCESS
-        data = json.loads(result.data)
-        assert len(data["workflows"]) <= 1, \
-            "BR-HAPI-250: Tool must return at most top_k results"
-
-    def test_search_with_no_results_br_hapi_250(self):
-        """
-        BR-HAPI-250: Tool must handle queries with no matching workflows
-
-        BEHAVIOR: Tool returns empty results (not error) for no matches
-        CORRECTNESS: Response format is valid with empty workflows array
-
-        ⚠️ MVP: Tests with MOCK_WORKFLOWS (limited dataset)
-        TODO: Refactor to test PostgreSQL empty result handling when backend is ready
-        """
-        toolset = WorkflowCatalogToolset()
-        tool = toolset.tools[0]
-
-        result = tool.invoke(params={
-            "query": "nonexistent_signal_type_xyz"
-        })
-
-        # BEHAVIOR VALIDATION: Graceful handling
-        assert result.status == StructuredToolResultStatus.SUCCESS, \
-            "BR-HAPI-250: No matches is not an error condition"
-
-        # CORRECTNESS VALIDATION: Empty result format
-        data = json.loads(result.data)
-        assert data["workflows"] == [], \
-            "BR-HAPI-250: Empty results must return empty array, not null"
-
-    def test_result_format_compliance_dd_workflow_002(self):
-        """
-        DD-WORKFLOW-002: Results must comply with MCP Workflow Catalog format
-
-        BEHAVIOR: Tool returns workflows with all required fields
-        CORRECTNESS: Each workflow has workflow_id, title, description, etc.
-
-        ⚠️ MVP: Validates MOCK_WORKFLOWS structure
-        TODO: Refactor to validate PostgreSQL result structure when backend is ready
-        """
-        toolset = WorkflowCatalogToolset()
-        tool = toolset.tools[0]
-
-        result = tool.invoke(params={"query": "OOMKilled"})
-        data = json.loads(result.data)
-
-        # CORRECTNESS VALIDATION: Response structure
-        assert "workflows" in data, \
-            "DD-WORKFLOW-002: Response must have 'workflows' key"
-
-        # CORRECTNESS VALIDATION: Workflow structure (DD-WORKFLOW-002)
-        required_fields = [
-            "workflow_id", "title", "description", "signal_types",
-            "estimated_duration", "success_rate", "similarity_score"
-        ]
-
-        for workflow in data["workflows"]:
-            for field in required_fields:
-                assert field in workflow, \
-                    f"DD-WORKFLOW-002: Workflow must have '{field}' field"
-
-            # CORRECTNESS VALIDATION: Field types
-            assert isinstance(workflow["signal_types"], list), \
-                "DD-WORKFLOW-002: signal_types must be array"
-            assert isinstance(workflow["success_rate"], (int, float)), \
-                "DD-WORKFLOW-002: success_rate must be numeric"
-            assert isinstance(workflow["similarity_score"], (int, float)), \
-                "DD-WORKFLOW-002: similarity_score must be numeric"
-            assert 0.0 <= workflow["similarity_score"] <= 1.0, \
-                "DD-WORKFLOW-002: similarity_score must be between 0.0 and 1.0"
 
     def test_get_parameterized_one_liner_br_hapi_250(self):
         """
@@ -327,4 +185,250 @@ class TestSearchWorkflowCatalogTool:
         assert result is not None, \
             "BR-HAPI-250: Tool must not crash on invalid input"
         # Note: SDK may validate parameters before invoke(), so we just ensure no crash
+
+
+class TestWorkflowCatalogDataStorageIntegration:
+    """
+    BR-STORAGE-013: Data Storage Service Integration Tests
+
+    BEHAVIOR: Tool must call Data Storage Service REST API
+    CORRECTNESS: HTTP requests match API contract, responses parsed correctly
+
+    🔄 PRODUCTION INTEGRATION - REPLACES MOCK_WORKFLOWS
+
+    Test Coverage (4 tests):
+    1. HTTP client calls Data Storage Service with correct request format
+    2. Query transformation: LLM query → WorkflowSearchRequest JSON
+    3. Response transformation: WorkflowSearchResponse → Tool result
+    4. Error handling: HTTP failures, timeouts, invalid responses
+    """
+
+    @patch('src.toolsets.workflow_catalog.requests.post')
+    def test_http_client_integration_br_storage_013(self, mock_post):
+        """
+        BR-STORAGE-013: Tool must call Data Storage Service REST API
+
+        BEHAVIOR: Tool sends HTTP POST to /api/v1/workflows/search
+        CORRECTNESS: Request includes query, filters, top_k, min_similarity
+
+        🔄 PRODUCTION: Replaces MOCK_WORKFLOWS with real API call
+        """
+        # Setup mock response (Data Storage API format per DD-STORAGE-008)
+        mock_search_response = Mock()
+        mock_search_response.status_code = 200
+        mock_search_response.elapsed.total_seconds.return_value = 0.05
+        # DD-WORKFLOW-002 v3.0: Flat response structure (no nested 'workflow' object)
+        mock_search_response.json.return_value = {
+            "workflows": [
+                {
+                    "workflow_id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+                    "title": "OOMKill Remediation - Increase Memory Limits",
+                    "description": "Increases memory limits for pods experiencing OOMKilled.",
+                    "signal_type": "OOMKilled",
+                    "confidence": 0.95
+                }
+            ],
+            "total_results": 1,
+            "query": "OOMKilled critical"
+        }
+        mock_search_response.raise_for_status = Mock()
+
+        # Mock audit response
+        mock_audit_response = Mock()
+        mock_audit_response.status_code = 201
+        mock_audit_response.json.return_value = {"event_id": "uuid-123"}
+
+        mock_post.side_effect = [mock_search_response, mock_audit_response]
+
+        # Execute tool with Data Storage Service URL configured
+        toolset = WorkflowCatalogToolset()
+        tool = toolset.tools[0]
+
+        # Set Data Storage Service URL (will be from config in production)
+        tool.data_storage_url = "http://data-storage:8080"
+
+        result = tool.invoke(params={
+            "query": "OOMKilled critical",
+            "top_k": 3
+        })
+
+        # BEHAVIOR VALIDATION: HTTP POST called (search + audit)
+        assert mock_post.call_count >= 1, "Should call search API at least once"
+        call_args = mock_post.call_args_list[0]  # First call is search
+
+        # CORRECTNESS VALIDATION: Correct endpoint
+        assert call_args[0][0] == "http://data-storage:8080/api/v1/workflows/search", \
+            "BR-STORAGE-013: Must call correct Data Storage API endpoint"
+
+        # CORRECTNESS VALIDATION: Request format (per DD-STORAGE-008)
+        request_json = call_args[1]['json']
+        assert "query" in request_json, \
+            "BR-STORAGE-013: Request must include query field"
+        assert request_json["query"] == "OOMKilled critical", \
+            "BR-STORAGE-013: Query must match input"
+        assert "filters" in request_json, \
+            "BR-STORAGE-013: Request must include filters field"
+        assert "top_k" in request_json, \
+            "BR-STORAGE-013: Request must include top_k field"
+        assert request_json["top_k"] == 3, \
+            "BR-STORAGE-013: top_k must match input"
+        assert "min_similarity" in request_json, \
+            "BR-STORAGE-013: Request must include min_similarity field"
+
+        # CORRECTNESS VALIDATION: Timeout configured
+        assert "timeout" in call_args[1], \
+            "BR-STORAGE-013: HTTP request must have timeout"
+
+        # BEHAVIOR VALIDATION: Successful result
+        assert result.status == StructuredToolResultStatus.SUCCESS, \
+            "BR-STORAGE-013: Tool must return SUCCESS for valid API response"
+
+    @patch('src.toolsets.workflow_catalog.requests.post')
+    def test_query_transformation_dd_llm_001(self, mock_post):
+        """
+        DD-LLM-001: Transform LLM query into WorkflowSearchRequest format
+
+        BEHAVIOR: Parse structured query "signal_type severity [keywords]"
+        CORRECTNESS: Extract signal-type and severity into filters
+
+        🔄 PRODUCTION: Implements DD-LLM-001 query transformation
+        """
+        # Setup mock response
+        mock_search_response = Mock()
+        mock_search_response.status_code = 200
+        mock_search_response.elapsed.total_seconds.return_value = 0.05
+        mock_search_response.raise_for_status = Mock()
+        mock_search_response.json.return_value = {
+            "workflows": [],
+            "total_results": 0,
+            "query": "OOMKilled critical"
+        }
+
+        # Mock audit response
+        mock_audit_response = Mock()
+        mock_audit_response.status_code = 201
+        mock_audit_response.json.return_value = {"event_id": "uuid-123"}
+
+        mock_post.side_effect = [mock_search_response, mock_audit_response]
+
+        toolset = WorkflowCatalogToolset()
+        tool = toolset.tools[0]
+        tool.data_storage_url = "http://data-storage:8080"
+
+        # Execute with structured query per DD-LLM-001
+        tool.invoke(params={
+            "query": "OOMKilled critical",
+            "top_k": 3
+        })
+
+        # CORRECTNESS VALIDATION: Query transformation (first call is search)
+        request_json = mock_post.call_args_list[0][1]['json']
+        filters = request_json["filters"]
+
+        assert "signal-type" in filters, \
+            "DD-LLM-001: Must extract signal-type from query"
+        assert filters["signal-type"] == "OOMKilled", \
+            "DD-LLM-001: signal-type must be first word of query"
+
+        assert "severity" in filters, \
+            "DD-LLM-001: Must extract severity from query"
+        assert filters["severity"] == "critical", \
+            "DD-LLM-001: severity must be second word of query"
+
+    @patch('src.toolsets.workflow_catalog.requests.post')
+    def test_response_transformation_dd_workflow_004(self, mock_post):
+        """
+        DD-WORKFLOW-004: Transform WorkflowSearchResponse into tool result
+
+        BEHAVIOR: Parse hybrid scoring fields from API response
+        CORRECTNESS: Map final_score to 'confidence' for LLM response
+
+        NOTE: Per DD-WORKFLOW-002 v2.2 and user decision:
+        - 'similarity_score' was renamed to 'confidence'
+        - 'base_similarity' and 'label_boost' are internal fields (not exposed to LLM)
+        - Only 'confidence' is exposed to the LLM response
+
+        🔄 PRODUCTION: Implements DD-WORKFLOW-004 hybrid scoring display
+        """
+        # Setup mock response with DD-WORKFLOW-002 v3.0 flat format
+        mock_search_response = Mock()
+        mock_search_response.status_code = 200
+        mock_search_response.elapsed.total_seconds.return_value = 0.05
+        mock_search_response.raise_for_status = Mock()
+        mock_search_response.json.return_value = {
+            "workflows": [
+                {
+                    # DD-WORKFLOW-002 v3.0: Flat structure (no nested 'workflow' object)
+                    "workflow_id": "2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+                    "title": "OOMKill Remediation",
+                    "description": "Increases memory limits",
+                    "signal_type": "OOMKilled",
+                    "container_image": "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+                    "container_digest": "sha256:abc123def456789012345678901234567890123456789012345678901234abcd",
+                    "confidence": 0.95
+                }
+            ],
+            "total_results": 1,
+            "query": "OOMKilled critical"
+        }
+
+        # DD-WORKFLOW-014 v2.0: Audit generation moved to Data Storage Service
+        # HolmesGPT API only makes ONE HTTP call (search), not two (search + audit)
+        mock_post.return_value = mock_search_response
+
+        toolset = WorkflowCatalogToolset()
+        tool = toolset.tools[0]
+        tool.data_storage_url = "http://data-storage:8080"
+
+        result = tool.invoke(params={"query": "OOMKilled critical"})
+
+        # CORRECTNESS VALIDATION: Response transformation
+        data = json.loads(result.data)
+        workflow = data["workflows"][0]
+
+        # DD-WORKFLOW-002 v2.4: Must include confidence and container_image
+        assert "confidence" in workflow, \
+            "DD-WORKFLOW-002 v2.4: Must include 'confidence' (final_score)"
+        assert workflow["confidence"] == 0.95, \
+            "DD-WORKFLOW-002 v2.4: confidence must be final_score from API"
+        assert "container_image" in workflow, \
+            "DD-WORKFLOW-002 v2.4: Must include container_image"
+        assert workflow["container_image"] == "quay.io/kubernaut/workflow-oomkill:v1.0.0", \
+            "DD-WORKFLOW-002 v2.4: container_image must match API response"
+
+        # Per user decision: base_similarity and label_boost are internal fields
+        # They are NOT exposed to the LLM response (only used for audit trail)
+        assert "base_similarity" not in workflow, \
+            "DD-WORKFLOW-002 v2.2: base_similarity is internal, not exposed to LLM"
+        assert "label_boost" not in workflow, \
+            "DD-WORKFLOW-002 v2.2: label_boost is internal, not exposed to LLM"
+
+    @patch('src.toolsets.workflow_catalog.requests.post')
+    def test_http_error_handling_br_storage_013(self, mock_post):
+        """
+        BR-STORAGE-013: Handle Data Storage Service errors gracefully
+
+        BEHAVIOR: Tool handles HTTP failures without crashing
+        CORRECTNESS: Returns ERROR status with meaningful message
+
+        🔄 PRODUCTION: Robust error handling for API integration
+        """
+        # Setup mock to raise HTTP error
+        mock_post.side_effect = Exception("Connection refused")
+
+        toolset = WorkflowCatalogToolset()
+        tool = toolset.tools[0]
+        tool.data_storage_url = "http://data-storage:8080"
+
+        result = tool.invoke(params={"query": "OOMKilled critical"})
+
+        # BEHAVIOR VALIDATION: Graceful error handling
+        assert result.status == StructuredToolResultStatus.ERROR, \
+            "BR-STORAGE-013: Must return ERROR status on HTTP failure"
+
+        # CORRECTNESS VALIDATION: Error message
+        assert result.error is not None, \
+            "BR-STORAGE-013: Must include error message"
+        assert "Connection refused" in result.error or "data storage" in result.error.lower(), \
+            "BR-STORAGE-013: Error message must be meaningful"
 

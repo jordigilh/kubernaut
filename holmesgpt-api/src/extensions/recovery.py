@@ -29,11 +29,41 @@ import re
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, status
 
-from src.clients.mcp_client import MCPClient
 from src.models.recovery_models import RecoveryRequest, RecoveryResponse, RecoveryStrategy
-from src.toolsets.workflow_catalog import WorkflowCatalogToolset
+# NOTE: WorkflowCatalogToolset is registered via register_workflow_catalog_toolset()
+# and used by the LLM during investigation - no direct import needed here
+
+# Audit imports (BR-AUDIT-005, ADR-038, DD-AUDIT-002)
+from src.audit import (
+    BufferedAuditStore,
+    AuditConfig,
+    create_llm_request_event,
+    create_llm_response_event,
+    create_tool_call_event,
+)
 
 logger = logging.getLogger(__name__)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# AUDIT STORE INITIALIZATION (BR-AUDIT-005, ADR-038)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_audit_store: Optional[BufferedAuditStore] = None
+
+
+def get_audit_store() -> Optional[BufferedAuditStore]:
+    """Get or initialize the audit store singleton (ADR-038)"""
+    global _audit_store
+    if _audit_store is None:
+        data_storage_url = os.getenv("DATA_STORAGE_URL", "http://data-storage:8080")
+        try:
+            _audit_store = BufferedAuditStore(
+                data_storage_url=data_storage_url,
+                config=AuditConfig(buffer_size=10000, batch_size=50, flush_interval_seconds=5.0)
+            )
+            logger.info(f"BR-AUDIT-005: Initialized audit store - url={data_storage_url}")
+        except Exception as e:
+            logger.warning(f"BR-AUDIT-005: Failed to initialize audit store: {e}")
+    return _audit_store
 
 # HolmesGPT SDK imports
 from holmes.config import Config
@@ -102,9 +132,15 @@ class MinimalDAL:
 router = APIRouter()
 
 
-def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
+def _get_holmes_config(app_config: Dict[str, Any] = None, remediation_id: Optional[str] = None) -> Config:
     """
     Initialize HolmesGPT SDK Config from environment variables and app config
+
+    Args:
+        app_config: Application configuration dictionary
+        remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-002 v2.2)
+                       MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY -
+                       do NOT use for RCA analysis or workflow matching.
 
     Required environment variables:
     - LLM_MODEL: Full litellm-compatible model identifier (e.g., "provider/model-name")
@@ -157,7 +193,8 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
         config = Config(**config_data)
 
         # BR-HAPI-250: Register workflow catalog toolset programmatically
-        config = register_workflow_catalog_toolset(config, app_config)
+        # BR-AUDIT-001: Pass remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
+        config = register_workflow_catalog_toolset(config, app_config, remediation_id=remediation_id)
 
         logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys())}")
         return config
@@ -690,79 +727,21 @@ def _extract_warnings_from_analysis(analysis_text: str) -> List[str]:
     return warnings
 
 
-async def _get_workflow_recommendations(request_data: Dict[str, Any], mcp_client: MCPClient) -> List[Dict[str, Any]]:
-    """
-    Get workflow recommendations from MCP Workflow Catalog
-
-    BR-WORKFLOW-001: Workflow Catalog Integration
-
-    Args:
-        request_data: Recovery request data containing:
-            - failed_action.type: Type of failed action
-            - failure_context.error: Error type
-            - context.priority: Priority level
-            - context.cluster: Cluster name
-
-    Returns:
-        List of recommended workflows from MCP catalog
-    """
-    try:
-        # Extract failure information
-        failed_action = request_data.get("failed_action", {})
-        failure_context = request_data.get("failure_context", {})
-        context = request_data.get("context", {})
-
-        # Extract ALL 7 mandatory labels per DD-WORKFLOW-001
-        signal_type = failure_context.get("error", "unknown")
-        severity = context.get("severity", "medium")
-        component = context.get("component", "pod")
-        environment = context.get("environment", "production")
-        priority = context.get("priority", "P2")
-        risk_tolerance = context.get("risk_tolerance", "medium")
-        business_category = context.get("business_category", "*")
-
-        # Search for workflows using all 7 fields
-        workflows = await mcp_client.search_workflows(
-            signal_type=signal_type,
-            severity=severity,
-            component=component,
-            environment=environment,
-            priority=priority,
-            risk_tolerance=risk_tolerance,
-            business_category=business_category,
-            limit=5
-        )
-
-        logger.info({
-            "event": "workflow_recommendations_retrieved",
-            "workflows_found": len(workflows),
-            "signal_type": signal_type,
-            "severity": severity,
-            "component": component,
-            "environment": environment,
-            "priority": priority,
-            "risk_tolerance": risk_tolerance,
-            "business_category": business_category
-        })
-
-        return workflows
-
-    except Exception as e:
-        logger.error({
-            "event": "mcp_workflow_integration_error",
-            "error": str(e)
-        })
-        # Graceful degradation - return empty list
-        return []
+# NOTE: _get_workflow_recommendations() function REMOVED per DD-WORKFLOW-002 v2.4
+# Workflow search is now handled by WorkflowCatalogToolset registered via
+# register_workflow_catalog_toolset() - the LLM calls the tool during investigation.
+# The old mcp_client-based workflow fetch was dead code (results stored but never used).
 
 
-async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Dict[str, Any]] = None, app_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Core recovery analysis logic
 
-    Business Requirements: BR-HAPI-001 to 050, BR-WORKFLOW-001 (MCP Workflow Integration)
+    Business Requirements: BR-HAPI-001 to 050
+    Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
 
-    Uses HolmesGPT SDK for AI-powered recovery analysis with workflow recommendations
+    Uses HolmesGPT SDK for AI-powered recovery analysis.
+    Workflow search is handled by WorkflowCatalogToolset registered with the SDK.
     Falls back to stub implementation in DEV_MODE
     """
     incident_id = request_data.get("incident_id")
@@ -776,29 +755,26 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
     })
 
     # Check if we should use SDK or stub
-    config = _get_holmes_config(app_config)
+    # BR-AUDIT-001: Extract remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
+    remediation_id = request_data.get("remediation_id")
+    if not remediation_id:
+        logger.warning({
+            "event": "missing_remediation_id",
+            "incident_id": incident_id,
+            "message": "remediation_id not provided - audit trail will be incomplete"
+        })
+    config = _get_holmes_config(app_config, remediation_id=remediation_id)
 
     if config is None:
         # DEV_MODE: Use stub implementation
         logger.info("Using stub implementation (DEV_MODE=true)")
         return _stub_recovery_analysis(request_data)
 
-    # Production mode: Use HolmesGPT SDK with enhanced error handling and workflow recommendations
+    # Production mode: Use HolmesGPT SDK with enhanced error handling
+    # NOTE: Workflow search is handled by WorkflowCatalogToolset registered via
+    # register_workflow_catalog_toolset() - the LLM calls the tool during investigation
+    # per DD-WORKFLOW-002 v2.4
     try:
-        # BR-WORKFLOW-001: Get workflow recommendations from MCP Catalog
-        workflow_recommendations = []
-        if mcp_config:
-            mcp_client = MCPClient(mcp_config)
-            workflow_recommendations = await _get_workflow_recommendations(request_data, mcp_client)
-
-        # Add workflow recommendations to request_data for prompt generation
-        if workflow_recommendations:
-            request_data["workflow_recommendations"] = workflow_recommendations
-            logger.info({
-                "event": "workflow_recommendations_retrieved",
-                "workflows_found": len(workflow_recommendations)
-            })
-
         # Create investigation prompt (now includes historical context if available)
         investigation_prompt = _create_investigation_prompt(request_data)
 
@@ -834,18 +810,31 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
             "event": "calling_holmesgpt_sdk",
             "incident_id": incident_id,
             "prompt_length": len(investigation_prompt),
-            "workflow_count": len(request_data.get("workflow_recommendations", [])),
             "toolsets_enabled": config.toolsets if config else None,
             "prompt_preview": investigation_prompt[:300] + "..." if len(investigation_prompt) > 300 else investigation_prompt
         })
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # LLM INTERACTION AUDIT LOGGING (Placeholder for future audit traces)
+        # LLM INTERACTION AUDIT (BR-AUDIT-005, ADR-038, DD-AUDIT-002)
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # TODO: Convert these logs to structured audit traces in future iteration
-        # These logs capture LLM toolset interactions for monitoring and debugging
+        # Store structured audit events via BufferedAuditStore (fire-and-forget)
 
-        # Log LLM request (prompt sent to model)
+        # Get remediation_id from request context (for audit correlation)
+        remediation_id = request_data.get("context", {}).get("remediation_request_id", "")
+
+        # Audit: LLM request (prompt sent to model)
+        audit_store = get_audit_store()
+        if audit_store:
+            audit_store.store_audit(create_llm_request_event(
+                incident_id=incident_id,
+                remediation_id=remediation_id,
+                model=config.model if config else "unknown",
+                prompt=investigation_prompt,
+                toolsets_enabled=list(config.toolsets.keys()) if config and config.toolsets else [],
+                mcp_servers=list(config.mcp_servers.keys()) if config and hasattr(config, 'mcp_servers') and config.mcp_servers else []
+            ))
+
+        # Debug log (kept for backwards compatibility)
         logger.info({
             "event": "llm_request",
             "incident_id": incident_id,
@@ -854,7 +843,6 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
             "prompt_preview": investigation_prompt[:500] + "..." if len(investigation_prompt) > 500 else investigation_prompt,
             "toolsets_enabled": config.toolsets if config else [],
             "mcp_servers": list(config.mcp_servers.keys()) if config and hasattr(config, 'mcp_servers') and config.mcp_servers else [],
-            "audit_trace_placeholder": "TODO: Convert to structured audit trace"
         })
 
         # Call HolmesGPT SDK
@@ -865,29 +853,58 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
             config=config
         )
 
-        # Log LLM response and tool interactions
+        # Audit: LLM response
+        has_analysis = bool(investigation_result and investigation_result.analysis)
+        analysis_length = len(investigation_result.analysis) if investigation_result and investigation_result.analysis else 0
+        analysis_preview = investigation_result.analysis[:500] + "..." if investigation_result and investigation_result.analysis and len(investigation_result.analysis) > 500 else (investigation_result.analysis if investigation_result and investigation_result.analysis else "")
+        tool_call_count = len(investigation_result.tool_calls) if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls else 0
+
+        if audit_store:
+            audit_store.store_audit(create_llm_response_event(
+                incident_id=incident_id,
+                remediation_id=remediation_id,
+                has_analysis=has_analysis,
+                analysis_length=analysis_length,
+                analysis_preview=analysis_preview,
+                tool_call_count=tool_call_count
+            ))
+
+        # Debug log (kept for backwards compatibility)
         logger.info({
             "event": "llm_response",
             "incident_id": incident_id,
-            "has_analysis": bool(investigation_result and investigation_result.analysis),
-            "analysis_length": len(investigation_result.analysis) if investigation_result and investigation_result.analysis else 0,
-            "analysis_preview": investigation_result.analysis[:500] + "..." if investigation_result and investigation_result.analysis and len(investigation_result.analysis) > 500 else (investigation_result.analysis if investigation_result and investigation_result.analysis else ""),
+            "has_analysis": has_analysis,
+            "analysis_length": analysis_length,
+            "analysis_preview": analysis_preview,
             "has_tool_calls": hasattr(investigation_result, 'tool_calls') and bool(investigation_result.tool_calls) if investigation_result else False,
-            "tool_call_count": len(investigation_result.tool_calls) if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls else 0,
-            "audit_trace_placeholder": "TODO: Convert to structured audit trace"
+            "tool_call_count": tool_call_count,
         })
 
-        # Log tool call details if available (SDK-dependent)
+        # Audit: Tool call details (SDK-dependent)
         if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls:
             for idx, tool_call in enumerate(investigation_result.tool_calls):
+                tool_name = getattr(tool_call, 'name', 'unknown')
+                tool_arguments = getattr(tool_call, 'arguments', {})
+                tool_result = getattr(tool_call, 'result', None)
+
+                if audit_store:
+                    audit_store.store_audit(create_tool_call_event(
+                        incident_id=incident_id,
+                        remediation_id=remediation_id,
+                        tool_call_index=idx,
+                        tool_name=tool_name,
+                        tool_arguments=tool_arguments,
+                        tool_result=tool_result
+                    ))
+
+                # Debug log (kept for backwards compatibility)
                 logger.info({
                     "event": "llm_tool_call",
                     "incident_id": incident_id,
                     "tool_call_index": idx,
-                    "tool_name": getattr(tool_call, 'name', 'unknown'),
-                    "tool_arguments": getattr(tool_call, 'arguments', {}),
-                    "tool_result": getattr(tool_call, 'result', None),
-                    "audit_trace_placeholder": "TODO: Convert to structured audit trace with full request/response"
+                    "tool_name": tool_name,
+                    "tool_arguments": tool_arguments,
+                    "tool_result": tool_result,
                 })
 
         # Log the raw LLM response (for debugging)
@@ -1045,30 +1062,19 @@ async def recovery_analyze_endpoint(request: RecoveryRequest):
     Analyze failed action and provide recovery strategies
 
     Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
-    Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
+    Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
 
     Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
     """
     try:
         request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
 
-        # Get MCP config and app config from router config
-        mcp_config = None
-        app_config = None
-        if hasattr(router, 'config'):
-            # Extract the specific MCP server config (workflow_catalog_mcp)
-            # MCPClient expects config with base_url/timeout, not the entire mcp_servers dict
-            mcp_servers = router.config.get("mcp_servers", {})
-            if mcp_servers and "workflow_catalog_mcp" in mcp_servers:
-                workflow_mcp = mcp_servers["workflow_catalog_mcp"]
-                # Convert 'url' to 'base_url' for MCPClient compatibility
-                mcp_config = {
-                    "base_url": workflow_mcp.get("url"),
-                    "timeout": workflow_mcp.get("timeout", 30)
-                }
-            app_config = router.config
+        # Get app config from router config
+        # NOTE: Workflow search is handled by WorkflowCatalogToolset registered via
+        # register_workflow_catalog_toolset() - no mcp_config needed
+        app_config = router.config if hasattr(router, 'config') else None
 
-        result = await analyze_recovery(request_data, mcp_config=mcp_config, app_config=app_config)
+        result = await analyze_recovery(request_data, app_config=app_config)
         return result
     except Exception as e:
         logger.error({

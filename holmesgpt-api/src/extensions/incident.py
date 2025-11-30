@@ -30,7 +30,6 @@ from fastapi import APIRouter, HTTPException, status
 from datetime import datetime
 
 from src.models.incident_models import IncidentRequest, IncidentResponse
-from src.clients.mcp_client import MCPClient
 from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 
 # HolmesGPT SDK imports
@@ -508,7 +507,16 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
         )
 
         # BR-HAPI-250: Register workflow catalog toolset programmatically
-        config = register_workflow_catalog_toolset(config, app_config)
+        # BR-AUDIT-001: Pass remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
+        # remediation_id is MANDATORY per DD-WORKFLOW-002 v2.2 - used for CORRELATION ONLY
+        remediation_id = request_data.get("remediation_id")
+        if not remediation_id:
+            logger.warning({
+                "event": "missing_remediation_id",
+                "incident_id": incident_id,
+                "message": "remediation_id not provided - audit trail will be incomplete"
+            })
+        config = register_workflow_catalog_toolset(config, app_config, remediation_id=remediation_id)
 
         # Call HolmesGPT SDK
         logger.info("Calling HolmesGPT SDK for incident analysis")
