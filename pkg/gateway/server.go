@@ -48,6 +48,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware" // BR-109: Request ID middleware
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
+	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors" // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
@@ -381,6 +382,20 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 // - Middleware per route group
 func (s *Server) setupRoutes() chi.Router {
 	r := chi.NewRouter()
+
+	// BR-HTTP-015: CORS configuration using shared library
+	// Configuration is read from environment variables:
+	// - CORS_ALLOWED_ORIGINS: Comma-separated list of allowed origins (default: "*" for dev)
+	// - CORS_ALLOWED_METHODS: Comma-separated list of allowed methods
+	// - CORS_ALLOWED_HEADERS: Comma-separated list of allowed headers
+	// - CORS_ALLOW_CREDENTIALS: "true" or "false"
+	// - CORS_MAX_AGE: Preflight cache duration in seconds
+	corsOpts := kubecors.FromEnvironment()
+	if !corsOpts.IsProduction() {
+		s.logger.Info("CORS configuration allows all origins - not recommended for production",
+			"allowed_origins", corsOpts.AllowedOrigins)
+	}
+	r.Use(kubecors.Handler(corsOpts))
 
 	// Global middleware
 	r.Use(chimiddleware.RequestID) // Chi's built-in request ID
