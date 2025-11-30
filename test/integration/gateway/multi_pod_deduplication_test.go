@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -110,8 +112,8 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 		k8sWrapper1 := k8s.NewClient(k8sClient1.Client)
 		k8sWrapper2 := k8s.NewClient(k8sClient2.Client)
 
-		// Create noop logger for tests
-		noopLogger := zap.NewNop()
+		// Create noop logger for tests (DD-005: logr.Logger)
+		var noopLogger logr.Logger = zapr.NewLogger(zap.NewNop())
 
 		// Wrap Redis client in rediscache.Client for DeduplicationService
 		rediscacheClient := rediscache.NewClient(&redis.Options{
@@ -123,7 +125,7 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 			rediscacheClient,
 			k8sWrapper1,
 			5*time.Minute, // ttl
-			noopLogger,    // logger
+			noopLogger,    // logger (DD-005: logr.Logger)
 			nil,           // metrics (nil for tests)
 		)
 
@@ -131,7 +133,7 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 			rediscacheClient,
 			k8sWrapper2,
 			5*time.Minute, // ttl
-			noopLogger,    // logger
+			noopLogger,    // logger (DD-005: logr.Logger)
 			nil,           // metrics (nil for tests)
 		)
 	})

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"os"
 
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
@@ -86,9 +87,10 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 		// Wrap failing client in k8s.Client
 		wrappedK8sClient := k8s.NewClient(failingK8sClient)
 
-		// Create CRD creator with failing client
+		// Create CRD creator with failing client (DD-005: logr.Logger)
+		logrLogger := zapr.NewLogger(logger)
 		retryConfig := config.DefaultRetrySettings()
-		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, nil, "default", &retryConfig)
+		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logrLogger, nil, "default", &retryConfig)
 
 		// Test signal
 		testSignal = &types.NormalizedSignal{

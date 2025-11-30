@@ -132,10 +132,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// 2. Start Redis container
 	suiteLogger.Info("📦 Starting Redis container...")
-	_ = infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
+	_ = infrastructure.StopRedisContainer("gateway-redis-integration", GinkgoWriter)
 	time.Sleep(500 * time.Millisecond) // Wait for port to be released
 
-	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 16380, GinkgoWriter) // DD-TEST-001: Gateway integration Redis port
+	redisPort, err := infrastructure.StartRedisContainer("gateway-redis-integration", 16380, GinkgoWriter) // DD-TEST-001: Gateway integration Redis port
 	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests")
 	suiteRedisPort = redisPort
 	suiteLogger.Info(fmt.Sprintf("   ✅ Redis started (port: %d)", redisPort))
@@ -249,7 +249,7 @@ var _ = SynchronizedAfterSuite(func() {
 
 	// Stop Redis container
 	suiteLogger.Info("Stopping Redis container...")
-	err := infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
+	err := infrastructure.StopRedisContainer("gateway-redis-integration", GinkgoWriter)
 	if err != nil {
 		suiteLogger.Warn("Failed to stop Redis container", zap.Error(err))
 	}

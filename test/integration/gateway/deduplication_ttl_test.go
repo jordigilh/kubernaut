@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
@@ -85,12 +86,13 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 			Fingerprint: "integration-test-ttl-" + time.Now().Format("20060102150405"),
 		}
 
+		logrLogger := zapr.NewLogger(logger)
 		rediscacheClient := rediscache.NewClient(&redis.Options{
 			Addr:     redisAddr,
 			Password: "",
 			DB:       redisDB,
-		}, logger)
-		dedupService = processing.NewDeduplicationServiceWithTTL(rediscacheClient, nil, 5*time.Second, logger, nil)
+		}, logrLogger)
+		dedupService = processing.NewDeduplicationServiceWithTTL(rediscacheClient, nil, 5*time.Second, logrLogger, nil)
 	})
 
 	AfterEach(func() {

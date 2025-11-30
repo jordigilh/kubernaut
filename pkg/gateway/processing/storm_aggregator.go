@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 )
 
 // StormAggregator aggregates alerts during storm windows
@@ -61,7 +61,7 @@ import (
 // - alert:storm:metadata:<window-id> (first signal metadata for CRD creation)
 type StormAggregator struct {
 	redisClient        *redis.Client
-	logger             *zap.Logger    // Logger for operational visibility
+	logger             logr.Logger    // Logger for operational visibility
 	windowDuration     time.Duration  // Default: 1 minute (inactivity timeout)
 	bufferThreshold    int            // Alerts before creating window (default: 5)
 	maxWindowDuration  time.Duration  // Max window duration (default: 5 minutes)
@@ -110,7 +110,7 @@ type StormAggregator struct {
 //	aggregator := NewStormAggregatorWithConfig(redisClient, logger, 3, 5*time.Second, 30*time.Second, 100, 500, nil, 0.95, 0.5)
 func NewStormAggregatorWithConfig(
 	redisClient *redis.Client,
-	logger *zap.Logger,
+	logger logr.Logger,
 	bufferThreshold int,
 	inactivityTimeout time.Duration,
 	maxWindowDuration time.Duration,
@@ -146,14 +146,9 @@ func NewStormAggregatorWithConfig(
 		perNamespaceLimits = make(map[string]int)
 	}
 
-	// Use nop logger if none provided (for testing)
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &StormAggregator{
 		redisClient:        redisClient,
-		logger:             logger,
+		logger:             logger.WithName("storm-aggregator"),
 		windowDuration:     inactivityTimeout,
 		bufferThreshold:    bufferThreshold,
 		maxWindowDuration:  maxWindowDuration,
@@ -352,9 +347,9 @@ func (a *StormAggregator) AddResource(ctx context.Context, windowID string, sign
 	if extendErr != nil {
 		// Non-fatal: log warning but don't fail the operation
 		// Window will still expire based on original TTL
-		a.logger.Warn("Failed to extend storm window timer",
-			zap.String("window_id", windowID),
-			zap.Error(extendErr))
+		a.logger.Info("Failed to extend storm window timer",
+			"window_id", windowID,
+			"error", extendErr)
 	}
 
 	// Set TTL on resources (2x window duration to allow retrieval after window closes)
@@ -572,10 +567,10 @@ func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.No
 	shouldSample, utilization, err := a.ShouldEnableSampling(ctx, signal.Namespace)
 	if err != nil {
 		// Non-fatal: log warning but continue (don't block on sampling check)
-		a.logger.Warn("Failed to check sampling status, continuing without sampling",
-			zap.String("namespace", signal.Namespace),
-			zap.Float64("utilization", utilization),
-			zap.Error(err))
+		a.logger.Info("Failed to check sampling status, continuing without sampling",
+			"namespace", signal.Namespace,
+			"utilization", utilization,
+			"error", err)
 	}
 
 	if shouldSample {

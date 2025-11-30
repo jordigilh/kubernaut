@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // AdapterRegistry manages signal adapter registration
@@ -57,7 +57,7 @@ type AdapterRegistry struct {
 	mu sync.RWMutex
 
 	// log is used for adapter registration logging
-	log *zap.Logger
+	log logr.Logger
 }
 
 // NewAdapterRegistry creates an empty adapter registry
@@ -65,10 +65,10 @@ type AdapterRegistry struct {
 // Adapters must be registered explicitly using Register() before
 // the HTTP server starts. This allows configuration-driven adapter
 // enablement (enable/disable adapters via config files).
-func NewAdapterRegistry(log *zap.Logger) *AdapterRegistry {
+func NewAdapterRegistry(log logr.Logger) *AdapterRegistry {
 	return &AdapterRegistry{
 		adapters: make(map[string]RoutableAdapter),
-		log:      log,
+		log:      log.WithName("adapter-registry"),
 	}
 }
 
@@ -98,10 +98,10 @@ func (r *AdapterRegistry) Register(adapter RoutableAdapter) error {
 	// Log registration for debugging
 	metadata := adapter.GetMetadata()
 	r.log.Info("Adapter registered",
-		zap.Any("adapter", name),
-		zap.Any("route", adapter.GetRoute()),
-		zap.Any("version", metadata.Version),
-		zap.Any("description", metadata.Description),
+		"adapter", name,
+		"route", adapter.GetRoute(),
+		"version", metadata.Version,
+		"description", metadata.Description,
 	)
 
 	return nil

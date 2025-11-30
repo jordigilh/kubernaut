@@ -33,6 +33,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/go-logr/logr"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -76,13 +77,13 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 		// Production default is 5, but tests expect windowID on first alert
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
-			nil,            // logger (nil = use nop logger for tests)
+			logr.Discard(),            // logger (DD-005: logr.Logger)
 			1,              // bufferThreshold: 1 alert triggers window creation (test optimization)
 			60*time.Second, // inactivityTimeout: 1 minute
 			5*time.Minute,  // maxWindowDuration: 5 minutes
 			1000,           // defaultMaxSize: 1000 alerts per namespace
 			5000,           // globalMaxSize: 5000 alerts total
-			nil,            // perNamespaceLimits: none
+			nil,            // perNamespaceLimits: none (map[string]int)
 			0.95,           // samplingThreshold: 95% utilization
 			0.5,            // samplingRate: 50% when sampling enabled
 		)

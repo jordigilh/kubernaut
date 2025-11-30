@@ -20,8 +20,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/patrickmn/go-cache"
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,7 +52,7 @@ import (
 // - Cache is shared across all Gateway replicas (stored in Redis in future enhancement)
 type EnvironmentClassifier struct {
 	k8sClient client.Client
-	logger    *zap.Logger
+	logger    logr.Logger
 
 	// cache stores namespace → environment mapping with TTL
 	// Key: namespace name
@@ -69,7 +69,7 @@ type EnvironmentClassifier struct {
 // - logger: Structured logger for debugging classification decisions
 //
 // For custom TTL, use NewEnvironmentClassifierWithTTL.
-func NewEnvironmentClassifier(k8sClient client.Client, logger *zap.Logger) *EnvironmentClassifier {
+func NewEnvironmentClassifier(k8sClient client.Client, logger logr.Logger) *EnvironmentClassifier {
 	return NewEnvironmentClassifierWithTTL(k8sClient, logger, 30*time.Second)
 }
 
@@ -87,7 +87,7 @@ func NewEnvironmentClassifier(k8sClient client.Client, logger *zap.Logger) *Envi
 // - Shorter TTL (5-10s): More responsive to environment changes, more API calls
 // - Longer TTL (60-300s): Fewer API calls, slower to reflect changes
 // - Default 30s: Good balance for most use cases
-func NewEnvironmentClassifierWithTTL(k8sClient client.Client, logger *zap.Logger, cacheTTL time.Duration) *EnvironmentClassifier {
+func NewEnvironmentClassifierWithTTL(k8sClient client.Client, logger logr.Logger, cacheTTL time.Duration) *EnvironmentClassifier {
 	// Create TTL cache with cleanup interval = 2x TTL
 	// This ensures expired entries are cleaned up efficiently
 	cleanupInterval := 2 * cacheTTL
@@ -140,11 +140,10 @@ func NewEnvironmentClassifierWithTTL(k8sClient client.Client, logger *zap.Logger
 func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) string {
 	// 1. Check cache first (fast path)
 	if env := c.getFromCache(namespace); env != "" {
-		c.logger.Debug("Environment classification from cache",
-			zap.Any("namespace", namespace),
-			zap.Any("environment", env),
-			zap.String("source", "cache"),
-		)
+		c.logger.V(1).Info("Environment classification from cache",
+			"namespace", namespace,
+			"environment", env,
+			"source", "cache")
 		return env
 	}
 
@@ -155,19 +154,17 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
 			// Accept any non-empty environment string for dynamic configuration
 			// Organizations define their own environment taxonomy
 			c.setCache(namespace, env)
-			c.logger.Debug("Environment classification from namespace label",
-				zap.Any("namespace", namespace),
-				zap.Any("environment", env),
-				zap.String("source", "namespace_label"),
-			)
+			c.logger.V(1).Info("Environment classification from namespace label",
+				"namespace", namespace,
+				"environment", env,
+				"source", "namespace_label")
 			return env
 		}
 	} else {
 		// Log error but continue to fallback (namespace might not exist yet)
-		c.logger.Debug("Failed to get namespace for environment classification",
-			zap.Any("namespace", namespace),
-			zap.Error(err),
-		)
+		c.logger.V(1).Info("Failed to get namespace for environment classification",
+			"namespace", namespace,
+			"error", err)
 	}
 
 	// 3. Check ConfigMap override (fallback)
@@ -179,25 +176,22 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
 		if env, ok := cm.Data[namespace]; ok && env != "" {
 			// Accept any non-empty environment string for dynamic configuration
 			c.setCache(namespace, env)
-			c.logger.Debug("Environment classification from ConfigMap override",
-				zap.Any("namespace", namespace),
-				zap.Any("environment", env),
-				zap.String("source", "configmap_override"),
-			)
+			c.logger.V(1).Info("Environment classification from ConfigMap override",
+				"namespace", namespace,
+				"environment", env,
+				"source", "configmap_override")
 			return env
 		}
 	} else {
 		// Log error but continue to default fallback
-		c.logger.Debug("Failed to get ConfigMap for environment classification",
-			zap.Any("namespace", namespace),
-			zap.Error(err),
-		)
+		c.logger.V(1).Info("Failed to get ConfigMap for environment classification",
+			"namespace", namespace,
+			"error", err)
 	}
 
 	// 4. Default fallback (last resort)
-	c.logger.Warn("No environment label or ConfigMap override found, defaulting to 'unknown'",
-		zap.Any("namespace", namespace),
-	)
+	c.logger.Info("No environment label or ConfigMap override found, defaulting to 'unknown'",
+		"namespace", namespace)
 
 	defaultEnv := "unknown"
 	c.setCache(namespace, defaultEnv)
@@ -233,11 +227,10 @@ func (c *EnvironmentClassifier) setCache(namespace, environment string) {
 	// Use cache.DefaultExpiration to inherit TTL from cache constructor
 	c.cache.Set(namespace, environment, cache.DefaultExpiration)
 
-	c.logger.Debug("Cached environment classification with TTL",
-		zap.Any("namespace", namespace),
-		zap.Any("environment", environment),
-		zap.Any("ttl", c.cacheTTL),
-	)
+	c.logger.V(1).Info("Cached environment classification with TTL",
+		"namespace", namespace,
+		"environment", environment,
+		"ttl", c.cacheTTL)
 }
 
 // ClearCache clears the entire cache
