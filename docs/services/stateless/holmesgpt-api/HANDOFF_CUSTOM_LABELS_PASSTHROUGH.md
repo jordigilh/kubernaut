@@ -55,7 +55,7 @@ When calling the workflow catalog search tool, include `custom_labels` in filter
 # WorkflowCatalogTool._invoke()
 def _invoke(self, query: str, **kwargs) -> ToolResult:
     filters = {
-        "signal-type": self.signal_type,
+        "signal_type": self.signal_type,  # snake_case per DD-WORKFLOW-001 v1.6
         "severity": self.severity,
         # ... other mandatory labels ...
 
@@ -164,18 +164,72 @@ If you have questions about:
 ## References
 
 - **HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md**: Full extraction design
-- **DD-WORKFLOW-001 v1.5**: Label schema
+- **DD-WORKFLOW-001 v1.6**: Label schema (snake_case field names)
 - **DD-WORKFLOW-004 v2.2**: Scoring (custom labels = filters only)
+- **DD-HAPI-001**: Custom Labels Auto-Append Architecture (⭐ **NEW** - authoritative for implementation)
 
 ---
 
 ## Action Items
 
-| # | Action | Owner | Priority |
-|---|--------|-------|----------|
-| 1 | Update `SearchWorkflowCatalogTool` to pass `custom_labels` | HolmesGPT-API | P2 |
-| 2 | Update type hints for `CustomLabels` | HolmesGPT-API | P3 |
-| 3 | (Optional) Include custom labels in LLM context prompt | HolmesGPT-API | P3 |
+| # | Action | Owner | Priority | Status |
+|---|--------|-------|----------|--------|
+| 1 | Update `SearchWorkflowCatalogTool` to pass `custom_labels` | HolmesGPT-API | P2 | ✅ **COMPLETED** |
+| 2 | Update type hints for `CustomLabels` | HolmesGPT-API | P3 | ✅ **COMPLETED** |
+| 3 | ~~(Optional) Include custom labels in LLM context prompt~~ | HolmesGPT-API | P3 | ❌ **CANCELLED** - Using auto-append instead (DD-HAPI-001) |
+
+---
+
+## Implementation Status
+
+**Status**: ✅ **COMPLETED**
+**Date**: 2025-11-30
+**Implemented By**: HolmesGPT-API Team
+
+### Architecture Decision
+
+Per **DD-HAPI-001: Custom Labels Auto-Append Architecture**, custom labels are now **auto-appended** to workflow search calls instead of being passed through LLM prompts.
+
+**Rationale**:
+- 100% reliable (vs ~80-90% with LLM-prompted approach)
+- Simpler LLM contract (no custom_labels in prompt)
+- Custom labels are operational metadata, not investigation context
+
+### Modified Files
+
+| File | Changes |
+|------|---------|
+| `src/models/incident_models.py` | Added `CustomLabels` type alias, fixed `customLabels` type to `Dict[str, List[str]]` |
+| `src/toolsets/workflow_catalog.py` | Added `custom_labels` to `SearchWorkflowCatalogTool` and `WorkflowCatalogToolset` constructors, auto-append in `_search_workflows()` |
+| `src/extensions/llm_config.py` | Added `custom_labels` parameter to `register_workflow_catalog_toolset()` |
+| `src/extensions/incident.py` | Extract and pass `custom_labels` from `enrichment_results.customLabels` |
+| `src/extensions/recovery.py` | Extract and pass `custom_labels` from `enrichment_results.customLabels` |
+
+### Test Coverage
+
+| Test Type | File | Tests | Status |
+|-----------|------|-------|--------|
+| Unit | `tests/unit/test_custom_labels_auto_append_dd_hapi_001.py` | 17 | ✅ All passing |
+| Integration | `tests/integration/test_custom_labels_integration_dd_hapi_001.py` | 8 | ✅ All passing |
+
+### Data Storage Dependency
+
+⏳ **Awaiting Data Storage implementation**
+
+The custom_labels are now correctly passed to Data Storage in the search request:
+```json
+{
+  "filters": {
+    "signal_type": "OOMKilled",
+    "custom_labels": {
+      "constraint": ["cost-constrained"],
+      "team": ["name=payments"]
+    }
+  }
+}
+```
+
+Data Storage will silently ignore the `custom_labels` field until their implementation is complete.
 
 ---
 
@@ -250,7 +304,7 @@ Data Storage team has received their handoff document:
 ```json
 {
   "filters": {
-    "signal-type": "OOMKilled",
+    "signal_type": "OOMKilled",
     "custom_labels": {
       "constraint": ["cost-constrained"],
       "team": ["name=payments"]
@@ -304,6 +358,8 @@ class EnrichmentResults(BaseModel):
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.0 | 2025-11-30 | **IMPLEMENTATION COMPLETE**: Auto-append architecture (DD-HAPI-001), 25 tests passing |
+| 1.3 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case field names) |
 | 1.2 | 2025-11-30 | Answered Q1-Q4 from HolmesGPT-API team |
 | 1.1 | 2025-11-30 | Added questions from HolmesGPT-API team |
 | 1.0 | 2025-11-30 | Initial handoff - pass-through design |
