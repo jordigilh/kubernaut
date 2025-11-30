@@ -44,7 +44,7 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.WithValues("test", "rate-limiting"))
+		testLogger = logger.WithValues("test", "rate-limiting")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -71,7 +71,7 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
@@ -163,9 +163,9 @@ var _ = Describe("Test 15: Rate Limiting Under Load (BR-GATEWAY-038, BR-GATEWAY-
 			wg.Wait()
 
 			testLogger.Info("Step 2: Analyze results",
-				zap.Int64("success", successCount),
-				zap.Int64("rateLimited", rateLimitedCount),
-				zap.Int64("errors", errorCount))
+				"success", successCount,
+				"rateLimited", rateLimitedCount,
+				"errors", errorCount)
 
 			// Verify rate limiting behavior
 			// Note: Rate limiting may or may not trigger depending on Gateway configuration

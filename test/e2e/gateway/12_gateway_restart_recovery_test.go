@@ -45,7 +45,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute) // Longer timeout for restart test
-		testLogger = logger.WithValues("test", "gateway-restart"))
+		testLogger = logger.WithValues("test", "gateway-restart")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -73,7 +73,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
@@ -169,7 +169,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 			err = k8sClient.Delete(testCtx, pod)
 			Expect(err).ToNot(HaveOccurred(), "Should delete Gateway pod")
 		} else {
-			testLogger.Warn("No Gateway pods found - skipping restart")
+			testLogger.Info("No Gateway pods found - skipping restart")
 		}
 
 		testLogger.Info("Step 3: Wait for Gateway to recover")
@@ -240,14 +240,14 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 			k8sClient := getKubernetesClientSafe()
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to get K8s client", "error", err)
+					testLogger.V(1).Info("Failed to get K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to get K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to get K8s client (unknown error)")
 				}
 				return -1
 			}
 			if err := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			return len(crdList.Items)

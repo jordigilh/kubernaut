@@ -52,7 +52,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.WithValues("test", "k8s-event-ingestion"))
+		testLogger = logger.WithValues("test", "k8s-event-ingestion")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		// Unique namespace for parallel execution
@@ -72,7 +72,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 	AfterAll(func() {
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -136,7 +136,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
 				acceptedCount++
 			}
-			testLogger.Debug(fmt.Sprintf("  Event %d for pod %s: HTTP %d", i+1, podName, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  Event %d for pod %s: HTTP %d", i+1, podName, resp.StatusCode))
 		}
 
 		// BEHAVIOR: At least some events should be accepted
@@ -154,13 +154,13 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", "error", err)
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList = &remediationv1alpha1.RemediationRequestList{}
 			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			return len(crdList.Items)

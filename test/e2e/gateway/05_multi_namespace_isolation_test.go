@@ -56,7 +56,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.WithValues("test", "multi-namespace"))
+		testLogger = logger.WithValues("test", "multi-namespace")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -96,7 +96,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespaces for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespaces for debugging",
 				"namespace1", testNamespace1,
 				"namespace2", testNamespace2)
 			if testCancel != nil {
@@ -141,7 +141,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			)
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
-			testLogger.Debug(fmt.Sprintf("  NS1 Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  NS1 Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 10 alerts to namespace 1")
 
@@ -158,7 +158,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			)
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
-			testLogger.Debug(fmt.Sprintf("  NS2 Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  NS2 Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 10 alerts to namespace 2")
 
@@ -172,16 +172,16 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", "error", err)
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to create K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to create K8s client (unknown error)")
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace1))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs in NS1", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs in NS1", "error", err)
 				return -1
 			}
 			crdCountNS1 = len(crdList.Items)
@@ -201,16 +201,16 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", "error", err)
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to create K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to create K8s client (unknown error)")
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace2))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs in NS2", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs in NS2", "error", err)
 				return -1
 			}
 			crdCountNS2 = len(crdList.Items)

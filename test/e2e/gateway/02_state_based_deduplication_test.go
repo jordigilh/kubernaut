@@ -55,7 +55,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.WithValues("test", "deduplication"))
+		testLogger = logger.WithValues("test", "deduplication")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -83,7 +83,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
@@ -126,7 +126,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 			)
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
-			testLogger.Debug(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 5 alerts to trigger storm threshold")
 
@@ -175,7 +175,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 			)
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
-			testLogger.Debug(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 5 alerts with different alertname")
 
@@ -189,16 +189,16 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", "error", err)
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to create K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to create K8s client (unknown error)")
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs", "error", err)
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			crdCount = len(crdList.Items)
