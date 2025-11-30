@@ -30,7 +30,7 @@ import (
 //
 // Business Requirements:
 // - BR-STORAGE-031-01: Incident-type success rate aggregation
-// - BR-STORAGE-031-02: Playbook success rate aggregation
+// - BR-STORAGE-031-02: Workflow success rate aggregation
 // - BR-STORAGE-031-04: AI execution mode tracking
 // - BR-STORAGE-031-05: Multi-dimensional success rate aggregation
 //
@@ -97,10 +97,10 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 	insertActionTrace := func(
 		incidentType string,
 		status string,
-		playbookID string,
-		playbookVersion string,
-		aiSelectedPlaybook bool,
-		aiChainedPlaybooks bool,
+		workflowID string,
+		workflowVersion string,
+		aiSelectedWorkflow bool,
+		aiChainedWorkflows bool,
 	) {
 		historyID := ensureParentRecords()
 
@@ -109,8 +109,8 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				action_history_id, action_id, action_type, action_timestamp, execution_status,
 				signal_name, signal_severity,
 				model_used, model_confidence,
-				incident_type, playbook_id, playbook_version,
-				ai_selected_playbook, ai_chained_playbooks
+				incident_type, workflow_id, workflow_version,
+				ai_selected_workflow, ai_chained_workflows
 			) VALUES (
 				$1, gen_random_uuid()::text, 'increase_memory', NOW(), $2,
 				'test-signal', 'critical',
@@ -120,8 +120,8 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 			)
 		`
 		_, err := db.ExecContext(testCtx, query,
-			historyID, status, incidentType, playbookID, playbookVersion,
-			aiSelectedPlaybook, aiChainedPlaybooks,
+			historyID, status, incidentType, workflowID, workflowVersion,
+			aiSelectedWorkflow, aiChainedWorkflows,
 		)
 		Expect(err).ToNot(HaveOccurred())
 	}
@@ -164,10 +164,10 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.MinSamplesMet).To(BeTrue())  // 10 >= 5
 				Expect(result.Confidence).To(Equal("low")) // 10 < 20 = low
 
-				// CORRECTNESS: Playbook breakdown data
+				// CORRECTNESS: Workflow breakdown data
 				Expect(result.BreakdownByWorkflow).To(HaveLen(1))
-				Expect(result.BreakdownByWorkflow[0].PlaybookID).To(Equal("pod-oom-recovery"))
-				Expect(result.BreakdownByWorkflow[0].PlaybookVersion).To(Equal("v1.0"))
+				Expect(result.BreakdownByWorkflow[0].WorkflowID).To(Equal("pod-oom-recovery"))
+				Expect(result.BreakdownByWorkflow[0].WorkflowVersion).To(Equal("v1.0"))
 				Expect(result.BreakdownByWorkflow[0].Executions).To(Equal(10))
 				Expect(result.BreakdownByWorkflow[0].SuccessRate).To(BeNumerically("~", 0.8, 0.01))
 
@@ -177,11 +177,11 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.AIExecutionMode.Chained).To(Equal(0))          // None chained
 			})
 
-			It("should handle multiple playbooks for same incident type (TC-ADR033-02)", func() {
+			It("should handle multiple workflows for same incident type (TC-ADR033-02)", func() {
 				incidentType := fmt.Sprintf("test-node-pressure-%s", testID)
 
-				// Setup: 2 different playbooks for same incident
-				// Playbook 1: 60% success (6/10)
+				// Setup: 2 different workflows for same incident
+				// Workflow 1: 60% success (6/10)
 				for i := 0; i < 6; i++ {
 					insertActionTrace(incidentType, "completed", "node-pressure-evict", "v1.0", true, false)
 				}
@@ -189,7 +189,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 					insertActionTrace(incidentType, "failed", "node-pressure-evict", "v1.0", true, false)
 				}
 
-				// Playbook 2: 90% success (9/10)
+				// Workflow 2: 90% success (9/10)
 				for i := 0; i < 9; i++ {
 					insertActionTrace(incidentType, "completed", "node-pressure-scale", "v2.0", true, false)
 				}
@@ -200,11 +200,11 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				// Execute
 				result, err := actionTraceRepo.GetSuccessRateByIncidentType(testCtx, incidentType, 7*24*time.Hour, 5)
 
-				// BEHAVIOR: Aggregates across all playbooks for incident type
+				// BEHAVIOR: Aggregates across all workflows for incident type
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result.IncidentType).To(Equal(incidentType))
 
-				// CORRECTNESS: Total counts across both playbooks (15 successes, 5 failures)
+				// CORRECTNESS: Total counts across both workflows (15 successes, 5 failures)
 				Expect(result.TotalExecutions).To(Equal(20))
 				Expect(result.SuccessfulExecutions).To(Equal(15))
 				Expect(result.FailedExecutions).To(Equal(5))
@@ -213,20 +213,20 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				// CORRECTNESS: Confidence level (20 executions = medium)
 				Expect(result.Confidence).To(Equal("medium"))
 
-				// CORRECTNESS: Playbook breakdown shows both playbooks
+				// CORRECTNESS: Workflow breakdown shows both workflows
 				Expect(result.BreakdownByWorkflow).To(HaveLen(2))
 
-				// Verify playbook 1 breakdown
-				playbook1 := findPlaybookBreakdown(result.BreakdownByWorkflow, "node-pressure-evict", "v1.0")
-				Expect(playbook1).ToNot(BeNil())
-				Expect(playbook1.Executions).To(Equal(10))
-				Expect(playbook1.SuccessRate).To(BeNumerically("~", 0.6, 0.01)) // 6/10
+				// Verify workflow 1 breakdown
+				workflow1 := findWorkflowBreakdown(result.BreakdownByWorkflow, "node-pressure-evict", "v1.0")
+				Expect(workflow1).ToNot(BeNil())
+				Expect(workflow1.Executions).To(Equal(10))
+				Expect(workflow1.SuccessRate).To(BeNumerically("~", 0.6, 0.01)) // 6/10
 
-				// Verify playbook 2 breakdown
-				playbook2 := findPlaybookBreakdown(result.BreakdownByWorkflow, "node-pressure-scale", "v2.0")
-				Expect(playbook2).ToNot(BeNil())
-				Expect(playbook2.Executions).To(Equal(10))
-				Expect(playbook2.SuccessRate).To(BeNumerically("~", 0.9, 0.01)) // 9/10
+				// Verify workflow 2 breakdown
+				workflow2 := findWorkflowBreakdown(result.BreakdownByWorkflow, "node-pressure-scale", "v2.0")
+				Expect(workflow2).ToNot(BeNil())
+				Expect(workflow2.Executions).To(Equal(10))
+				Expect(workflow2.SuccessRate).To(BeNumerically("~", 0.9, 0.01)) // 9/10
 			})
 		})
 
@@ -261,10 +261,10 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 
 				// Setup: 10 catalog-selected, 5 chained, 2 manual escalation
 				for i := 0; i < 10; i++ {
-					insertActionTrace(incidentType, "completed", fmt.Sprintf("playbook-1-%s", testID), "v1.0", true, false)
+					insertActionTrace(incidentType, "completed", fmt.Sprintf("workflow-1-%s", testID), "v1.0", true, false)
 				}
 				for i := 0; i < 5; i++ {
-					insertActionTrace(incidentType, "completed", fmt.Sprintf("playbook-2-%s", testID), "v1.0", true, true)
+					insertActionTrace(incidentType, "completed", fmt.Sprintf("workflow-2-%s", testID), "v1.0", true, true)
 				}
 				// Manual escalation: no AI selection or chaining
 				for i := 0; i < 2; i++ {
@@ -287,27 +287,27 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 	})
 
 	Describe("GetSuccessRateByWorkflow - Integration", func() {
-		Context("when playbook has sufficient data", func() {
-			It("should calculate playbook success rate correctly (TC-ADR033-05)", func() {
-				playbookID := "test-memory-increase"
-				playbookVersion := "v1.0"
+		Context("when workflow has sufficient data", func() {
+			It("should calculate workflow success rate correctly (TC-ADR033-05)", func() {
+				workflowID := "test-memory-increase"
+				workflowVersion := "v1.0"
 
 				// Setup: 7 successes, 3 failures = 70% success rate
 				for i := 0; i < 7; i++ {
-					insertActionTrace("test-pod-oom", "completed", playbookID, playbookVersion, true, false)
+					insertActionTrace("test-pod-oom", "completed", workflowID, workflowVersion, true, false)
 				}
 				for i := 0; i < 3; i++ {
-					insertActionTrace("test-pod-oom", "failed", playbookID, playbookVersion, true, false)
+					insertActionTrace("test-pod-oom", "failed", workflowID, workflowVersion, true, false)
 				}
 
 				// Execute
-				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
+				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, workflowID, workflowVersion, 7*24*time.Hour, 5)
 
-				// BEHAVIOR: Repository returns playbook success rate response
+				// BEHAVIOR: Repository returns workflow success rate response
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).ToNot(BeNil())
-				Expect(result.PlaybookID).To(Equal(playbookID))
-				Expect(result.PlaybookVersion).To(Equal(playbookVersion))
+				Expect(result.WorkflowID).To(Equal(workflowID))
+				Expect(result.WorkflowVersion).To(Equal(workflowVersion))
 
 				// CORRECTNESS: Exact count validation
 				Expect(result.TotalExecutions).To(Equal(10))
@@ -322,26 +322,26 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.Confidence).To(Equal("low")) // 10 < 20 = low
 			})
 
-			It("should track playbook usage across multiple incident types (TC-ADR033-06)", func() {
-				playbookID := "test-universal-recovery"
-				playbookVersion := "v1.0"
+			It("should track workflow usage across multiple incident types (TC-ADR033-06)", func() {
+				workflowID := "test-universal-recovery"
+				workflowVersion := "v1.0"
 
-				// Setup: Same playbook used for 3 different incident types
+				// Setup: Same workflow used for 3 different incident types
 				// Incident 1: 5 executions
 				for i := 0; i < 5; i++ {
-					insertActionTrace(fmt.Sprintf("test-incident-a-%s", testID), "completed", playbookID, playbookVersion, true, false)
+					insertActionTrace(fmt.Sprintf("test-incident-a-%s", testID), "completed", workflowID, workflowVersion, true, false)
 				}
 				// Incident 2: 3 executions
 				for i := 0; i < 3; i++ {
-					insertActionTrace(fmt.Sprintf("test-incident-b-%s", testID), "completed", playbookID, playbookVersion, true, false)
+					insertActionTrace(fmt.Sprintf("test-incident-b-%s", testID), "completed", workflowID, workflowVersion, true, false)
 				}
 				// Incident 3: 2 executions
 				for i := 0; i < 2; i++ {
-					insertActionTrace(fmt.Sprintf("test-incident-c-%s", testID), "completed", playbookID, playbookVersion, true, false)
+					insertActionTrace(fmt.Sprintf("test-incident-c-%s", testID), "completed", workflowID, workflowVersion, true, false)
 				}
 
 				// Execute
-				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
+				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, workflowID, workflowVersion, 7*24*time.Hour, 5)
 
 				// BEHAVIOR: Aggregates across all incident types
 				Expect(err).ToNot(HaveOccurred())
@@ -366,13 +366,13 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 			})
 		})
 
-		Context("when playbook has no data", func() {
+		Context("when workflow has no data", func() {
 			It("should return zero values with insufficient_data confidence (TC-ADR033-07)", func() {
-				playbookID := "test-nonexistent-playbook"
-				playbookVersion := "v999.0"
+				workflowID := "test-nonexistent-workflow"
+				workflowVersion := "v999.0"
 
 				// Execute without any test data
-				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
+				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, workflowID, workflowVersion, 7*24*time.Hour, 5)
 
 				// BEHAVIOR: Returns response even with no data
 				Expect(err).ToNot(HaveOccurred())
@@ -423,10 +423,10 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 	})
 })
 
-// Helper function to find playbook breakdown by ID and version
-func findPlaybookBreakdown(breakdown []models.WorkflowBreakdownItem, id, version string) *models.WorkflowBreakdownItem {
+// Helper function to find workflow breakdown by ID and version
+func findWorkflowBreakdown(breakdown []models.WorkflowBreakdownItem, id, version string) *models.WorkflowBreakdownItem {
 	for i := range breakdown {
-		if breakdown[i].PlaybookID == id && breakdown[i].PlaybookVersion == version {
+		if breakdown[i].WorkflowID == id && breakdown[i].WorkflowVersion == version {
 			return &breakdown[i]
 		}
 	}

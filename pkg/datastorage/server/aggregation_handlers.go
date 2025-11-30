@@ -44,7 +44,7 @@ import (
 //
 // Business Requirements:
 // - BR-STORAGE-031-01: Incident-Type Success Rate API
-// - BR-STORAGE-031-02: Playbook Success Rate API
+// - BR-STORAGE-031-02: Workflow Success Rate API
 //
 // ========================================
 
@@ -173,11 +173,11 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 }
 
 // HandleGetSuccessRateByWorkflow handles GET /api/v1/success-rate/workflow
-// BR-STORAGE-031-02: Calculate success rate by playbook
+// BR-STORAGE-031-02: Calculate success rate by workflow
 //
 // Query Parameters:
-//   - playbook_id (required): The playbook identifier to query (e.g., "restart-pod-v1")
-//   - playbook_version (optional): Specific playbook version (e.g., "1.2.3")
+//   - workflow_id (required): The workflow identifier to query (e.g., "restart-pod-v1")
+//   - workflow_version (optional): Specific workflow version (e.g., "1.2.3")
 //   - time_range (optional): Time window for analysis (default: "7d")
 //     Valid formats: "1h", "24h", "7d", "30d"
 //   - min_samples (optional): Minimum sample size for confidence (default: 5)
@@ -187,18 +187,18 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 // Errors: 400 Bad Request (validation), 500 Internal Server Error (repository)
 func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.Request) {
 	// 1. Parse and validate query parameters
-	playbookID := r.URL.Query().Get("playbook_id")
-	if playbookID == "" {
+	workflowID := r.URL.Query().Get("workflow_id")
+	if workflowID == "" {
 		h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
 			Type:   "https://api.kubernaut.io/problems/validation-error",
 			Title:  "Validation Error",
 			Status: http.StatusBadRequest,
-			Detail: "playbook_id query parameter is required",
+			Detail: "workflow_id query parameter is required",
 		})
 		return
 	}
 
-	playbookVersion := r.URL.Query().Get("playbook_version") // Optional
+	workflowVersion := r.URL.Query().Get("workflow_version") // Optional
 
 	timeRange := r.URL.Query().Get("time_range")
 	if timeRange == "" {
@@ -252,8 +252,8 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 		// Production: Use real repository
 		response, err = h.actionTraceRepository.GetSuccessRateByWorkflow(
 			r.Context(),
-			playbookID,
-			playbookVersion,
+			workflowID,
+			workflowVersion,
 			duration,
 			minSamples,
 		)
@@ -265,15 +265,15 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 				Detail: "Failed to retrieve success rate data",
 			})
 			h.logger.Error(err, "repository error",
-				"playbook_id", playbookID,
-				"playbook_version", playbookVersion)
+				"workflow_id", workflowID,
+				"workflow_version", workflowVersion)
 			return
 		}
 	} else {
 		// Test mode: Return minimal response (for unit tests without repository)
 		response = &models.WorkflowSuccessRateResponse{
-			PlaybookID:           playbookID,
-			PlaybookVersion:      playbookVersion,
+			WorkflowID:           workflowID,
+			WorkflowVersion:      workflowVersion,
 			TimeRange:            timeRange,
 			TotalExecutions:      0,
 			SuccessfulExecutions: 0,
@@ -292,9 +292,9 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 	}
 
 	// Log for observability
-	h.logger.V(1).Info("playbook success rate query",
-		"playbook_id", playbookID,
-		"playbook_version", playbookVersion,
+	h.logger.V(1).Info("workflow success rate query",
+		"workflow_id", workflowID,
+		"workflow_version", workflowVersion,
 		"time_range", timeRange,
 		"min_samples", minSamples,
 		"success_rate", response.SuccessRate,
@@ -348,9 +348,9 @@ func (h *Handler) respondWithRFC7807(w http.ResponseWriter, statusCode int, prob
 // HandleGetSuccessRateMultiDimensional handles GET /api/v1/success-rate/multi-dimensional
 //
 // BR-STORAGE-031-05: Multi-Dimensional Success Rate API
-// ADR-033: Remediation Playbook Catalog - Cross-dimensional aggregation
+// ADR-033: Remediation Workflow Catalog - Cross-dimensional aggregation
 //
-// Supports any combination of: incident_type, playbook_id + playbook_version, action_type
+// Supports any combination of: incident_type, workflow_id + workflow_version, action_type
 func (h *Handler) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r *http.Request) {
 	// Parse and validate query parameters (REFACTOR: Extracted to helper)
 	params, err := h.parseMultiDimensionalParams(r)
@@ -391,13 +391,13 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 
 	// Extract dimension filters
 	incidentType := query.Get("incident_type")
-	playbookID := query.Get("playbook_id")
-	playbookVersion := query.Get("playbook_version")
+	workflowID := query.Get("workflow_id")
+	workflowVersion := query.Get("workflow_version")
 	actionType := query.Get("action_type")
 
 	// Validate at least one dimension is provided
-	if incidentType == "" && playbookID == "" && actionType == "" {
-		return nil, fmt.Errorf("at least one dimension filter (incident_type, playbook_id, or action_type) must be specified")
+	if incidentType == "" && workflowID == "" && actionType == "" {
+		return nil, fmt.Errorf("at least one dimension filter (incident_type, workflow_id, or action_type) must be specified")
 	}
 
 	// Parse time_range with default
@@ -424,15 +424,15 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 		}
 	}
 
-	// Validate playbook_version requires playbook_id
-	if playbookVersion != "" && playbookID == "" {
-		return nil, fmt.Errorf("playbook_version requires playbook_id to be specified")
+	// Validate workflow_version requires workflow_id
+	if workflowVersion != "" && workflowID == "" {
+		return nil, fmt.Errorf("workflow_version requires workflow_id to be specified")
 	}
 
 	return &models.MultiDimensionalQuery{
 		IncidentType:    incidentType,
-		PlaybookID:      playbookID,
-		PlaybookVersion: playbookVersion,
+		WorkflowID:      workflowID,
+		WorkflowVersion: workflowVersion,
 		ActionType:      actionType,
 		TimeRange:       timeRangeStr,
 		MinSamples:      minSamples,
@@ -444,8 +444,8 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 func (h *Handler) logMultiDimensionalError(params *models.MultiDimensionalQuery, err error) {
 	h.logger.Error(err, "failed to get multi-dimensional success rate",
 		"incident_type", params.IncidentType,
-		"playbook_id", params.PlaybookID,
-		"playbook_version", params.PlaybookVersion,
+		"workflow_id", params.WorkflowID,
+		"workflow_version", params.WorkflowVersion,
 		"action_type", params.ActionType,
 		"time_range", params.TimeRange,
 		"min_samples", params.MinSamples)
@@ -456,8 +456,8 @@ func (h *Handler) logMultiDimensionalError(params *models.MultiDimensionalQuery,
 func (h *Handler) logMultiDimensionalSuccess(params *models.MultiDimensionalQuery, result *models.MultiDimensionalSuccessRateResponse) {
 	h.logger.V(1).Info("multi-dimensional success rate query completed",
 		"incident_type", params.IncidentType,
-		"playbook_id", params.PlaybookID,
-		"playbook_version", params.PlaybookVersion,
+		"workflow_id", params.WorkflowID,
+		"workflow_version", params.WorkflowVersion,
 		"action_type", params.ActionType,
 		"total_executions", result.TotalExecutions,
 		"success_rate", result.SuccessRate,
@@ -486,6 +486,6 @@ func (h *Handler) respondWithJSON(w http.ResponseWriter, statusCode int, data in
 //
 // ✅ All 14 integration tests passing (Day 15 GREEN phase)
 // ✅ BR-STORAGE-031-01: Incident-Type Success Rate API
-// ✅ BR-STORAGE-031-02: Playbook Success Rate API
+// ✅ BR-STORAGE-031-02: Workflow Success Rate API
 //
 // ========================================
