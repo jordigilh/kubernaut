@@ -170,6 +170,13 @@ func main() {
 
 	setupLog.Info("Audit store initialized", "bufferSize", auditConfig.BufferSize, "batchSize", auditConfig.BatchSize)
 
+	// Initialize metrics with zero values to ensure they appear in Prometheus immediately
+	// This is critical for E2E metrics validation tests
+	notification.UpdatePhaseCount("default", "Pending", 0)
+	notification.RecordDeliveryAttempt("default", "console", "success")
+	notification.RecordDeliveryDuration("default", "console", 0)
+	setupLog.Info("Notification metrics initialized")
+
 	// Setup controller with delivery services + sanitization + audit + E2E file service
 	if err = (&notification.NotificationRequestReconciler{
 		Client:         mgr.GetClient(),

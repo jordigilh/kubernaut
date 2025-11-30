@@ -6,9 +6,15 @@ nodes:
   # This eliminates kubectl port-forward instability for E2E tests
   # Using 8081 on host (gateway uses 8080) - proven port pattern
   extraPortMappings:
-  - containerPort: 30081  # Notification metrics NodePort in cluster
-    hostPort: 8081        # Port on host machine (localhost:8081) - matches gateway pattern
+  - containerPort: 30090  # Notification metrics NodePort in cluster
+    hostPort: 9090        # Port on host machine (localhost:9090) - controller-runtime default
     protocol: TCP
+  # Mount host directory for E2E file delivery validation
+  # This allows tests to directly read files written by FileService
+  # Note: hostPath is set dynamically by CreateNotificationCluster:
+  #   - Linux/CI: /tmp/kubernaut-e2e-notifications (direct access)
+  #   - macOS: $HOME/.kubernaut/e2e-notifications (Podman VM limitation)
+  # extraMounts is added programmatically in infrastructure/notification.go
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration

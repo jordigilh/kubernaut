@@ -40,10 +40,10 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 	)
 
 	BeforeEach(func() {
-		// BR-NOT-054: Controller metrics exposed via NodePort (localhost:8081)
-		// Kind extraPortMappings: containerPort 30081 → hostPort 8081
-		// Using same port pattern as gateway (8xxx) for consistency
-		metricsEndpoint = "http://localhost:8081/metrics"
+		// BR-NOT-054: Controller metrics exposed via NodePort (localhost:9090)
+		// Kind extraPortMappings: containerPort 30090 → hostPort 9090
+		// Using controller-runtime's default metrics port
+		metricsEndpoint = "http://localhost:9090/metrics"
 	})
 
 	Context("Metrics Endpoint Availability", func() {
@@ -88,25 +88,38 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Waiting for notification to be processed")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				fetchedNotification := &notificationv1alpha1.NotificationRequest{}
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), fetchedNotification)
-				return fetchedNotification.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+		By("Waiting for notification to be processed")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			fetchedNotification := &notificationv1alpha1.NotificationRequest{}
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), fetchedNotification)
+			return fetchedNotification.Status.Phase
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Querying metrics endpoint")
+		By("Waiting for metrics to be recorded and appear in endpoint")
+		var metricsOutput string
+		Eventually(func() string {
 			resp, err := http.Get(metricsEndpoint)
-			Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				return ""
+			}
 			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			return string(body)
+		}, 15*time.Second, 1*time.Second).Should(ContainSubstring("notification_phase"),
+			"Metrics endpoint should contain notification_phase gauge after notification is processed")
 
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).ToNot(HaveOccurred())
-			metricsOutput := string(body)
+		// Get final metrics output for validation
+		By("Querying metrics endpoint for detailed validation")
+		resp, err := http.Get(metricsEndpoint)
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).ToNot(HaveOccurred())
+		metricsOutput = string(body)
 
-			By("Validating notification_phase metric exists")
-			Expect(metricsOutput).To(ContainSubstring("notification_phase"),
-				"Metrics should contain notification_phase gauge")
+		By("Validating notification_phase metric exists")
+		Expect(metricsOutput).To(ContainSubstring("notification_phase"),
+			"Metrics should contain notification_phase gauge")
 
 			By("Validating metric has correct labels")
 			// Expect metrics with namespace and phase labels
@@ -139,25 +152,38 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			}
 			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
 
-			By("Waiting for notification to be delivered")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				fetchedNotification := &notificationv1alpha1.NotificationRequest{}
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), fetchedNotification)
-				return fetchedNotification.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+		By("Waiting for notification to be delivered")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			fetchedNotification := &notificationv1alpha1.NotificationRequest{}
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), fetchedNotification)
+			return fetchedNotification.Status.Phase
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Querying metrics endpoint")
+		By("Waiting for metrics to be recorded and appear in endpoint")
+		var metricsOutput string
+		Eventually(func() string {
 			resp, err := http.Get(metricsEndpoint)
-			Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				return ""
+			}
 			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			return string(body)
+		}, 15*time.Second, 1*time.Second).Should(ContainSubstring("notification_deliveries_total"),
+			"Metrics endpoint should contain notification_deliveries_total counter after notification is delivered")
 
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).ToNot(HaveOccurred())
-			metricsOutput := string(body)
+		// Get final metrics output for validation
+		By("Querying metrics endpoint for detailed validation")
+		resp, err := http.Get(metricsEndpoint)
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).ToNot(HaveOccurred())
+		metricsOutput = string(body)
 
-			By("Validating notification_deliveries_total metric exists")
-			Expect(metricsOutput).To(ContainSubstring("notification_deliveries_total"),
-				"Metrics should contain notification_deliveries_total counter")
+		By("Validating notification_deliveries_total metric exists")
+		Expect(metricsOutput).To(ContainSubstring("notification_deliveries_total"),
+			"Metrics should contain notification_deliveries_total counter")
 
 			By("Validating metric has correct labels")
 			// Expect metrics with namespace, status, channel labels
@@ -192,25 +218,38 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			}
 			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
 
-			By("Waiting for notification to be delivered")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				fetchedNotification := &notificationv1alpha1.NotificationRequest{}
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), fetchedNotification)
-				return fetchedNotification.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+		By("Waiting for notification to be delivered")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			fetchedNotification := &notificationv1alpha1.NotificationRequest{}
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), fetchedNotification)
+			return fetchedNotification.Status.Phase
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Querying metrics endpoint")
+		By("Waiting for metrics to be recorded and appear in endpoint")
+		var metricsOutput string
+		Eventually(func() string {
 			resp, err := http.Get(metricsEndpoint)
-			Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				return ""
+			}
 			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			return string(body)
+		}, 15*time.Second, 1*time.Second).Should(ContainSubstring("notification_delivery_duration_seconds"),
+			"Metrics endpoint should contain notification_delivery_duration_seconds histogram after notification is delivered")
 
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).ToNot(HaveOccurred())
-			metricsOutput := string(body)
+		// Get final metrics output for validation
+		By("Querying metrics endpoint for detailed validation")
+		resp, err := http.Get(metricsEndpoint)
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).ToNot(HaveOccurred())
+		metricsOutput = string(body)
 
-			By("Validating notification_delivery_duration_seconds metric exists")
-			Expect(metricsOutput).To(ContainSubstring("notification_delivery_duration_seconds"),
-				"Metrics should contain notification_delivery_duration_seconds histogram")
+		By("Validating notification_delivery_duration_seconds metric exists")
+		Expect(metricsOutput).To(ContainSubstring("notification_delivery_duration_seconds"),
+			"Metrics should contain notification_delivery_duration_seconds histogram")
 
 			By("Validating metric has histogram buckets")
 			// Histogram metrics include _bucket, _sum, _count suffixes
@@ -249,34 +288,53 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Waiting for notification to be processed")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				fetchedNotification := &notificationv1alpha1.NotificationRequest{}
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), fetchedNotification)
-				return fetchedNotification.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+		By("Waiting for notification to be processed")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			fetchedNotification := &notificationv1alpha1.NotificationRequest{}
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), fetchedNotification)
+			return fetchedNotification.Status.Phase
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Querying metrics endpoint")
+		By("Waiting for all core metrics to be recorded and appear in endpoint")
+		var metricsOutput string
+		Eventually(func() bool {
 			resp, err := http.Get(metricsEndpoint)
-			Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				return false
+			}
 			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			metricsOutput = string(body)
 
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).ToNot(HaveOccurred())
-			metricsOutput := string(body)
+			// Check if all core metrics are present
+			return metricsOutput != "" &&
+				strings.Contains(metricsOutput, "notification_deliveries_total") &&
+				strings.Contains(metricsOutput, "notification_delivery_duration_seconds") &&
+				strings.Contains(metricsOutput, "notification_phase")
+		}, 15*time.Second, 1*time.Second).Should(BeTrue(),
+			"All core notification metrics should appear in endpoint after notification is processed")
 
-			By("Validating core notification metrics are present and being recorded")
-			// These are the metrics that are actually being recorded by the controller
-			coreMetrics := []string{
-				"notification_deliveries_total",          // RecordDeliveryAttempt - recorded
-				"notification_delivery_duration_seconds", // RecordDeliveryDuration - recorded
-				"notification_phase",                     // UpdatePhaseCount - recorded
-			}
+		// Get final metrics output for validation
+		By("Querying metrics endpoint for detailed validation")
+		resp, err := http.Get(metricsEndpoint)
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).ToNot(HaveOccurred())
+		metricsOutput = string(body)
 
-			for _, metric := range coreMetrics {
-				Expect(metricsOutput).To(ContainSubstring(metric),
-					"Core metric %s should be present and recorded", metric)
-			}
+		By("Validating core notification metrics are present and being recorded")
+		// These are the metrics that are actually being recorded by the controller
+		coreMetrics := []string{
+			"notification_deliveries_total",          // RecordDeliveryAttempt - recorded
+			"notification_delivery_duration_seconds", // RecordDeliveryDuration - recorded
+			"notification_phase",                     // UpdatePhaseCount - recorded
+		}
+
+		for _, metric := range coreMetrics {
+			Expect(metricsOutput).To(ContainSubstring(metric),
+				"Core metric %s should be present and recorded", metric)
+		}
 
 			By("Validating additional registered metrics are present")
 			// These metrics are registered in the controller package

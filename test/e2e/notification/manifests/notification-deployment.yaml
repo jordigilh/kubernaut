@@ -34,19 +34,17 @@ spec:
         args:
         - --leader-elect=false
         - --health-probe-bind-address=:8081
-        - --metrics-bind-address=:8080
+        - --metrics-bind-address=:9090
         - --zap-log-level=info
         env:
         - name: NOTIFICATION_SLACK_WEBHOOK_URL
           value: "http://mock-slack:8080/webhook"  # Mock Slack for testing
         - name: NOTIFICATION_CONSOLE_ENABLED
           value: "true"
-        - name: NOTIFICATION_FILE_ENABLED
-          value: "false"  # Disabled: Pod filesystem not accessible from host tests
-        - name: NOTIFICATION_FILE_OUTPUT_DIR
-          value: "/tmp/notifications"
+        - name: E2E_FILE_OUTPUT
+          value: "/tmp/notifications"  # DD-NOT-002: E2E file delivery (HostPath volume)
         ports:
-        - containerPort: 8080
+        - containerPort: 9090
           name: metrics
           protocol: TCP
         - containerPort: 8081
@@ -76,6 +74,8 @@ spec:
           mountPath: /tmp/notifications
       volumes:
       - name: notification-output
-        emptyDir: {}
+        hostPath:
+          path: /tmp/e2e-notifications  # Mounted from host via Kind extraMounts
+          type: DirectoryOrCreate
       terminationGracePeriodSeconds: 10
 
