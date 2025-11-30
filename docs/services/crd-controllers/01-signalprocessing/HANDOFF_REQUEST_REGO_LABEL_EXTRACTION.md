@@ -5,7 +5,7 @@
 **Date**: November 30, 2025
 **Priority**: P1 (Required for workflow matching)
 **Status**: 🔴 PENDING
-**Scope**: V1.0 (DetectedLabels) + V1.1 (CustomLabels)
+**Scope**: V1.0 (DetectedLabels + CustomLabels)
 
 ---
 
@@ -13,71 +13,50 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| **2.1** | Nov 30, 2025 | AIAnalysis Team | Added 7 Rego transformation examples |
+| **3.0** | Nov 30, 2025 | AIAnalysis Team | **MAJOR**: CustomLabels (Rego) pulled into V1.0, unified naming |
+| 2.1 | Nov 30, 2025 | AIAnalysis Team | Added 7 Rego transformation examples |
 | 2.0 | Nov 30, 2025 | AIAnalysis Team | Added DetectedLabels (V1.0), restructured document |
 | 1.0 | Nov 29, 2025 | AIAnalysis Team | Initial Rego policy label extraction (CustomLabels) |
 
 ---
 
-## 📢 Changelog (v2.1)
+## 📢 Changelog (v3.0)
 
-### ✨ New in v2.1
+### ⚠️ SCOPE CHANGE
 
-| Addition | Description |
-|----------|-------------|
-| **Rego Capabilities Table** | Overview of extraction, transformation, validation |
-| **Example 2: business-owner** | Derive from namespace patterns + lookup tables |
-| **Example 3: escalation-path** | Multi-factor derivation (team + env + severity) |
-| **Example 4: cost-center** | Priority chain with fallbacks |
-| **Example 5: workflow-constraints** | Safety constraints (no-delete, max-replicas) |
-| **Example 6: Validation** | Security allowlists and deny lists |
-| **Example 7: External Data** | OPA bundle data for org structure lookup |
-| **Extended Input Schema** | Full input including signal, cluster, detected_labels |
+**CustomLabels (Rego) is now V1.0**, not V1.1.
 
-### 🎯 Key Message
+Rationale: Customers need to define their own environment interpretation (e.g., what "uat" means for risk). DetectedLabels alone cannot provide this business context.
 
-**Rego is NOT just a filter** - it's a full transformation engine that can:
-- Derive new labels from multiple inputs
-- Use lookup tables for organizational mappings
-- Apply conditional business logic
-- Validate and constrain values for security
-- Load external data for complex derivations
+### ✨ Key Changes in v3.0
 
----
-
-## 📢 Changelog (v2.0)
-
-### ⚠️ BREAKING CHANGES
-
-1. **Document Restructured** - Now split into Part 1 (V1.0) and Part 2 (V1.1)
-2. **New V1.0 Requirement** - `DetectedLabels` auto-detection is now **V1.0 priority**
-3. **CustomLabels Deferred** - Rego policy extraction moved to V1.1
-
-### ✨ New in v2.0
-
-| Addition | Description |
-|----------|-------------|
-| `DetectedLabels` struct | Strongly-typed, auto-detected cluster characteristics |
-| Detection logic | Complete Go implementation for 9 label types |
-| K8s API queries | PDB, HPA, NetworkPolicy detection via API |
-| Kubebuilder validation | Enum validation for `GitOpsTool`, `PodSecurityLevel`, `ServiceMesh` |
-| Label taxonomy table | Clarifies relationship to 6 mandatory labels |
-
-### 🔄 What's Required for V1.0
-
-**SignalProcessing must now implement**:
-- `DetectedLabels` auto-detection (NO config required)
-- K8s API queries for PDB, HPA, NetworkPolicy
-- Integration with existing enrichment flow
-
-**CustomLabels (Rego)** remains in scope for **V1.1** (unchanged from v1.0).
+| Change | Description |
+|--------|-------------|
+| **Rego in V1.0** | CustomLabels pulled from V1.1 into V1.0 |
+| **Unified naming** | `*.kubernaut.io/*` convention from V1.0 (no migration needed) |
+| **Empty default policy** | No shipped policy - customers define their own |
+| **Security via Rego** | Deny list enforced via Rego wrapper, not Go code |
+| **Simplified examples** | Focus on risk-tolerance, team, region, constraints |
+| **V1.0 input schema** | namespace, pod, deployment, node, signal, detected_labels |
 
 ### 📊 Updated Timeline
 
-| Scope | Estimate |
-|-------|----------|
-| **V1.0 DetectedLabels** | 4-5 days |
-| V1.1 CustomLabels | 5-7 days |
+| Component | Estimate |
+|-----------|----------|
+| DetectedLabels (auto-detect) | 4-5 days |
+| CustomLabels (Rego) | 3-4 days |
+| Security wrapper + docs | 1 day |
+| **Total V1.0** | **8-10 days** |
+
+### 🏷️ Unified Label Naming (V1.0 = V1.1)
+
+All labels use the same naming convention from V1.0 to avoid migration:
+
+| Subdomain | Purpose | Example |
+|-----------|---------|---------|
+| `kubernaut.io/*` | Standard labels | `kubernaut.io/team`, `kubernaut.io/risk-tolerance` |
+| `constraint.kubernaut.io/*` | Workflow constraints | `constraint.kubernaut.io/cost-constrained` |
+| `custom.kubernaut.io/*` | Customer-defined | `custom.kubernaut.io/business-unit` |
 
 ---
 
@@ -88,9 +67,279 @@ SignalProcessing must provide two types of labels for workflow filtering:
 | Label Type | Source | Config Required | V1.0 |
 |------------|--------|-----------------|------|
 | **DetectedLabels** | Auto-detection from K8s resources | ❌ No config | ✅ V1.0 |
-| **CustomLabels** | Customer Rego policies | ✅ Requires config | V1.1 |
+| **CustomLabels** | Customer Rego policies | ✅ Requires config | ✅ V1.0 |
 
 Both are passed to AIAnalysis → HolmesGPT-API → LLM prompt + MCP workflow filter.
+
+---
+
+## 🏗️ **Core Design Principle: Abstraction Over Infrastructure**
+
+> **📋 ACTION REQUIRED**: SignalProcessing team must create an ADR documenting this design principle.
+
+### The Abstraction Layer
+
+Rego policies define **abstract categories** based on characteristics, NOT per-namespace rules.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    ONE Rego Policy (Cluster-wide)                       │
+│                                                                         │
+│  Defines CATEGORIES based on characteristics, NOT per-namespace rules   │
+│                                                                         │
+│  Input: Namespace labels, pod/deployment details, detected labels       │
+│  Output: Abstract categories (risk-tolerance, constraints)              │
+└─────────────────────────────────────────────────────────────────────────┘
+                              │
+          ┌───────────────────┼───────────────────┐
+          ▼                   ▼                   ▼
+    ┌──────────┐        ┌──────────┐        ┌──────────┐
+    │ ns: foo  │        │ ns: bar  │        │ ns: baz  │
+    │ env=prod │        │ env=uat  │        │ env=dev  │
+    └──────────┘        └──────────┘        └──────────┘
+          │                   │                   │
+          ▼                   ▼                   ▼
+    risk=critical       risk=high            risk=low
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Single cluster-wide policy** | One source of truth for categorization logic |
+| **Characteristic-based rules** | Policy operates on labels/characteristics, never hardcoded namespace names |
+| **Auto-categorization** | New namespaces automatically categorized by existing rules |
+| **Infrastructure agnostic** | Same policy works across clusters with consistent labeling |
+
+### What This Means
+
+```rego
+# ✅ CORRECT: Characteristic-based (abstract)
+labels["kubernaut.io/risk-tolerance"] = "critical" {
+    input.namespace.labels["environment"] == "production"
+}
+
+# ❌ WRONG: Hardcoded namespace names (infrastructure-specific)
+labels["kubernaut.io/risk-tolerance"] = "critical" {
+    input.namespace.name == "payments-prod"
+}
+```
+
+### Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Scalability** | Adding namespaces requires zero policy changes |
+| **Maintainability** | Single policy to audit, update, version control |
+| **Portability** | Policy works across environments with consistent labeling conventions |
+| **Separation of concerns** | Platform team defines categories; app teams label namespaces |
+
+### ADR Requirements
+
+The SignalProcessing team ADR should document:
+
+1. **Title**: "Characteristic-Based Label Categorization"
+2. **Context**: Why abstraction over infrastructure
+3. **Decision**: Single cluster-wide Rego policy, characteristic-based rules
+4. **Consequences**: Auto-categorization, policy portability, labeling conventions required
+
+---
+
+## 🎯 V1.0 Rego: Focused Scope
+
+### V1.0 CustomLabels Examples (Documented)
+
+| Label | Purpose | Use Case |
+|-------|---------|----------|
+| `kubernaut.io/risk-tolerance` | Customer defines environment meaning | "uat" → "high" vs "low" |
+| `kubernaut.io/team` | Extract from namespace | Workflow filtering |
+| `kubernaut.io/region` | Extract from namespace | Workflow filtering |
+| `constraint.kubernaut.io/cost-constrained` | Budget-limited namespace | Prefer cost-efficient workflows |
+| `constraint.kubernaut.io/high-availability` | HA-required workload | Maintain availability during remediation |
+
+### V1.0 Default Policy
+
+**No default policy shipped**. Customers must define their own. Documentation provides examples.
+
+### V1.0 Input Schema
+
+```json
+{
+  "namespace": {
+    "name": "payments-uat",
+    "labels": { "environment": "uat", "kubernaut.io/team": "payments" },
+    "annotations": {}
+  },
+  "pod": {
+    "name": "api-server-xyz",
+    "labels": { "app": "payment-api" },
+    "annotations": {}
+  },
+  "deployment": {
+    "name": "api-server",
+    "labels": {},
+    "annotations": {},
+    "replicas": 3
+  },
+  "node": {
+    "name": "node-1",
+    "labels": {
+      "topology.kubernetes.io/zone": "us-east-1a",
+      "node.kubernetes.io/instance-type": "m5.xlarge"
+    }
+  },
+  "signal": {
+    "type": "OOMKilled",
+    "severity": "critical",
+    "source": "prometheus"
+  },
+  "detected_labels": {
+    // Only include boolean fields when TRUE (omit when false)
+    "gitOpsManaged": true,
+    "gitOpsTool": "argocd",
+    "hpaEnabled": true
+    // pdbProtected: omitted (false)
+    // stateful: omitted (false)
+    // String fields include if detected: podSecurityLevel, serviceMesh
+  }
+}
+```
+
+**V1.1**: Add `cluster` (name, region)
+
+### DetectedLabels Convention: Only Include When True
+
+**Boolean fields**: Only include in `detected_labels` when `true`. Omit when `false`.
+
+```go
+// In detection logic
+if gitOpsManaged {
+    detectedLabels["gitOpsManaged"] = true
+    detectedLabels["gitOpsTool"] = gitOpsTool
+}
+// Don't add: detectedLabels["gitOpsManaged"] = false
+```
+
+**Rego usage**:
+```rego
+# Positive check: field exists and is true
+labels["constraint.kubernaut.io/gitops-only"] = "true" {
+    input.detected_labels.gitOpsManaged
+}
+
+# Negative check: field absent or false
+labels["kubernaut.io/safe-to-restart"] = "true" {
+    not input.detected_labels.stateful
+    not input.detected_labels.pdbProtected
+}
+```
+
+**String fields**: Include if detected (non-empty value).
+
+---
+
+## 🔐 Security: Rego Wrapper Policy
+
+SignalProcessing enforces a security wrapper that strips system labels from customer policy output:
+
+```rego
+package signalprocessing.security
+
+import data.signalprocessing.labels as customer_labels
+
+# System labels that cannot be overridden by customer policies
+# These are the 6 mandatory labels controlled by the system
+system_labels := {
+    "kubernaut.io/priority",
+    "kubernaut.io/severity",
+    "kubernaut.io/signal_type",
+    "kubernaut.io/component",
+    "kubernaut.io/environment",
+    "kubernaut.io/risk_tolerance"  # Note: risk-tolerance (with hyphen) IS allowed
+}
+
+# Final output: customer labels minus system labels
+labels[key] = value {
+    customer_labels.labels[key] = value
+    not startswith_any(key, system_labels)
+}
+
+# Helper: check if key starts with any system label
+startswith_any(key, prefixes) {
+    some prefix
+    prefixes[prefix]
+    startswith(key, prefix)
+}
+```
+
+**Implementation**: SignalProcessing loads customer policy, wraps with security policy, evaluates combined.
+
+---
+
+## 📝 V1.0 Customer Policy Example
+
+```rego
+package signalprocessing.labels
+
+# ============================================
+# RISK TOLERANCE
+# Customers define what their environments mean
+# ============================================
+
+labels["kubernaut.io/risk-tolerance"] = "critical" {
+    input.namespace.labels["environment"] == "production"
+}
+
+labels["kubernaut.io/risk-tolerance"] = "high" {
+    input.namespace.labels["environment"] == "staging"
+}
+
+# ACME Corp: Our UAT is customer-facing demos, treat as high risk
+labels["kubernaut.io/risk-tolerance"] = "high" {
+    input.namespace.labels["environment"] == "uat"
+}
+
+labels["kubernaut.io/risk-tolerance"] = "low" {
+    input.namespace.labels["environment"] == "dev"
+}
+
+# Fallback
+labels["kubernaut.io/risk-tolerance"] = "medium" {
+    not labels["kubernaut.io/risk-tolerance"]
+}
+
+# ============================================
+# SIMPLE EXTRACTION
+# ============================================
+
+labels["kubernaut.io/team"] = team {
+    team := input.namespace.labels["kubernaut.io/team"]
+    team != ""
+}
+
+labels["kubernaut.io/region"] = region {
+    region := input.namespace.labels["kubernaut.io/region"]
+    region != ""
+}
+
+# ============================================
+# CONSTRAINTS
+# ============================================
+
+# Cost-constrained: namespace has budget limits
+labels["constraint.kubernaut.io/cost-constrained"] = "true" {
+    input.namespace.labels["kubernaut.io/budget-tier"] == "limited"
+}
+
+# High-availability: workload requires HA-aware remediation
+labels["constraint.kubernaut.io/high-availability"] = "true" {
+    input.deployment.replicas >= 3
+}
+
+labels["constraint.kubernaut.io/high-availability"] = "true" {
+    input.namespace.labels["kubernaut.io/sla-tier"] == "gold"
+}
+```
 
 ---
 
@@ -435,22 +684,28 @@ type EnrichmentResults struct {
 
 ---
 
+---
+
+# V1.1+ Advanced Examples (Reference Only)
+
+The following examples demonstrate advanced Rego capabilities. These are **documented for reference** but not the focus of V1.0 implementation.
+
 ## Rego Capabilities: Beyond Simple Extraction
 
 Rego is a **full policy language**, not just a label filter. It supports:
 
-| Capability | Description | Use Case |
-|------------|-------------|----------|
-| **Extraction** | Copy labels/annotations | `team` from namespace label |
-| **Transformation** | Derive new labels from multiple inputs | `business-owner` from namespace pattern |
-| **Lookup Tables** | Map values to other values | `cost-center` from team |
-| **Conditional Logic** | Complex business rules | `escalation-path` based on env + severity |
-| **Validation** | Constrain/sanitize values | Only allow known team names |
-| **External Data** | Load org structure from bundles | VP owner lookup |
+| Capability | Description | Use Case | V1.0? |
+|------------|-------------|----------|-------|
+| **Extraction** | Copy labels/annotations | `team` from namespace label | ✅ |
+| **Transformation** | Derive new labels from multiple inputs | `business-owner` from namespace pattern | V1.1+ |
+| **Lookup Tables** | Map values to other values | `cost-center` from team | V1.1+ |
+| **Conditional Logic** | Complex business rules | `escalation-path` based on env + severity | V1.1+ |
+| **Validation** | Constrain/sanitize values | Only allow known team names | V1.1+ |
+| **External Data** | Load org structure from bundles | VP owner lookup | V2.0+ |
 
 ---
 
-## Example 1: Simple Label Extraction
+## Example 1: Simple Label Extraction (V1.0)
 
 ```rego
 # signal-processing-policies ConfigMap
@@ -488,7 +743,7 @@ labels["cost-tier"] = tier {
 
 ---
 
-## Example 2: Derive `business-owner` from Namespace (Transformation)
+## Example 2: Derive `business-owner` from Namespace (V1.1+ - Transformation)
 
 ```rego
 package signalprocessing.labels
@@ -538,7 +793,7 @@ labels["business-owner"] = "platform-oncall@company.com" {
 
 ---
 
-## Example 3: Derive `escalation-path` from Multiple Factors
+## Example 3: Derive `escalation-path` from Multiple Factors (V1.1+)
 
 ```rego
 package signalprocessing.labels
@@ -591,7 +846,7 @@ labels["escalation-path"] = path {
 
 ---
 
-## Example 4: Derive `cost-center` with Priority Chain
+## Example 4: Derive `cost-center` with Priority Chain (V1.1+)
 
 ```rego
 package signalprocessing.labels
@@ -642,7 +897,7 @@ labels["cost-center"] = "CC-9999-UNALLOCATED" {
 
 ---
 
-## Example 5: Derive `workflow-constraints` for Safety
+## Example 5: Derive `workflow-constraints` for Safety (V1.1+)
 
 ```rego
 package signalprocessing.labels
@@ -689,7 +944,7 @@ labels["constraint-read-only"] = "true" {
 
 ---
 
-## Example 6: Validation + Allowlist (Security)
+## Example 6: Validation + Allowlist (V1.1+ - Security)
 
 ```rego
 package signalprocessing.labels
@@ -729,7 +984,7 @@ labels[key] = value {
 
 ---
 
-## Example 7: External Data Lookup (Advanced)
+## Example 7: External Data Lookup (V2.0+ - Advanced)
 
 ```rego
 package signalprocessing.labels
@@ -806,25 +1061,24 @@ To enable powerful transformations, the Rego input includes:
       "node.kubernetes.io/instance-type": "m5.xlarge"
     }
   },
-  "cluster": {
-    "name": "prod-us-east-1",
-    "region": "us-east-1"
-  },
+  // "cluster": { ... } - DEFERRED TO V1.1
   "signal": {
     "type": "OOMKilled",
     "severity": "critical",
     "source": "prometheus"
   },
   "detected_labels": {
+    // CONVENTION: Only include boolean fields when TRUE
+    // Omit when false - Rego uses `not input.detected_labels.X` for negative checks
     "gitOpsManaged": true,
     "gitOpsTool": "argocd",
     "pdbProtected": true,
-    "hpaEnabled": false,
-    "stateful": false,
     "helmManaged": true,
     "networkIsolated": true,
     "podSecurityLevel": "restricted",
     "serviceMesh": "istio"
+    // hpaEnabled: omitted (false)
+    // stateful: omitted (false)
   }
 }
 ```
@@ -1030,18 +1284,21 @@ var _ = Describe("Rego Label Extraction", func() {
 |------|--------|----------|
 | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | ✅ DONE - `DetectedLabels` + `CustomLabels` added | ✅ Done |
 | `pkg/signalprocessing/detection/labels.go` | NEW - Auto-detection logic | **V1.0** |
-| `pkg/signalprocessing/controller/reconciler.go` | Add `DetectLabels()` call | **V1.0** |
-| `pkg/signalprocessing/rego/engine.go` | NEW - Rego evaluation engine | V1.1 |
-| `config/configmap/signal-processing-policies.yaml` | NEW - Default Rego policy | V1.1 |
-| `deploy/charts/signalprocessing/templates/configmap.yaml` | Include policy ConfigMap | V1.1 |
+| `pkg/signalprocessing/rego/engine.go` | NEW - Rego evaluation engine | **V1.0** |
+| `pkg/signalprocessing/rego/security.go` | NEW - Security wrapper policy | **V1.0** |
+| `pkg/signalprocessing/controller/reconciler.go` | Add `DetectLabels()` + `EvaluateRego()` calls | **V1.0** |
+| `config/configmap/signal-processing-policies.yaml` | Customer policy ConfigMap (empty default) | **V1.0** |
+| `deploy/charts/signalprocessing/templates/configmap.yaml` | Include policy ConfigMap | **V1.0** |
 
 ---
 
 ## Verification Checklist
 
-### V1.0 - DetectedLabels (PRIORITY)
+### V1.0 - DetectedLabels
 
 - [ ] `DetectedLabels` populated in `EnrichmentResults`
+- [ ] **Convention**: Boolean fields only included when `true` (omit when `false`)
+- [ ] **Convention**: String fields included if non-empty
 - [ ] GitOps detection works (ArgoCD annotations, Flux labels)
 - [ ] PDB detection queries PDBs in namespace
 - [ ] HPA detection queries HPAs targeting workload
@@ -1053,15 +1310,21 @@ var _ = Describe("Rego Label Extraction", func() {
 - [ ] No errors when resources don't exist (graceful defaults)
 - [ ] Unit tests pass
 
-### V1.1 - CustomLabels
+### V1.0 - CustomLabels (Rego)
 
 - [ ] `CustomLabels` populated in `EnrichmentResults`
 - [ ] Rego engine initialized at controller startup
-- [ ] Policy loaded from ConfigMap
-- [ ] Default policy extracts `kubernaut.io/*` labels
-- [ ] Empty map returned when no labels match (not nil)
-- [ ] Policy evaluation failure doesn't block enrichment
+- [ ] Customer policy loaded from ConfigMap
+- [ ] Security wrapper strips system labels
+- [ ] Empty map returned when no policy or no labels match (not nil)
+- [ ] Policy evaluation failure doesn't block enrichment (log warning)
+- [ ] Input schema includes: namespace, pod, deployment, node, signal, detected_labels
 - [ ] Unit tests pass
+
+### V1.0 - Documentation
+
+- [ ] **ADR created**: "Characteristic-Based Label Categorization" (see Core Design Principle section)
+- [ ] ADR documents: single cluster-wide policy, characteristic-based rules, auto-categorization
 
 ---
 
@@ -1077,25 +1340,24 @@ var _ = Describe("Rego Label Extraction", func() {
 
 ## Timeline
 
-### V1.0 - DetectedLabels (PRIORITY)
+### V1.0 - Complete (DetectedLabels + CustomLabels)
 
 | Milestone | Target |
 |-----------|--------|
-| Detection logic implementation | 2 days |
-| K8s API queries (PDB, HPA, NP) | 1 day |
-| Controller integration | 0.5 day |
-| Testing | 1 day |
-| **Total V1.0** | **4-5 days** |
-
-### V1.1 - CustomLabels
-
-| Milestone | Target |
-|-----------|--------|
-| Rego engine implementation | 2-3 days |
-| Default policy + ConfigMap | 1 day |
-| Integration with enrichment | 1 day |
+| DetectedLabels: Detection logic | 2 days |
+| DetectedLabels: K8s API queries (PDB, HPA, NP) | 1 day |
+| CustomLabels: Rego engine + security wrapper | 3 days |
+| Controller integration (both) | 1 day |
 | Testing | 1-2 days |
-| **Total V1.1** | **5-7 days** |
+| **Total V1.0** | **8-10 days** |
+
+### V1.1 - Extended Features
+
+| Milestone | Target |
+|-----------|--------|
+| Add `cluster` to input schema | 0.5 day |
+| Complex transformation examples | Documentation |
+| Validation/allowlist examples | Documentation |
 
 ---
 
@@ -1104,121 +1366,274 @@ var _ = Describe("Rego Label Extraction", func() {
 
 ---
 
-## ❓ Questions from SignalProcessing Team (Pending AI Analysis Review)
+## ❓ Questions from SignalProcessing Team - ANSWERED
 
 **Date**: November 30, 2025
-**Status**: 🟡 AWAITING RESPONSE
+**Status**: ✅ ANSWERED
+
+---
 
 ### Q1: Extended Input Schema - Data Availability
 
-The new input schema (v2.1) includes:
+**Question**: Are `node`, `cluster`, and `signal` fields available?
 
-```json
-{
-  "node": { "name": "...", "labels": {...} },
-  "cluster": { "name": "...", "region": "..." },
-  "signal": { "type": "...", "severity": "...", "source": "..." },
-  "detected_labels": { "gitOpsManaged": true, ... }
-}
-```
+**✅ ANSWER**:
 
-**Question**: Are `node`, `cluster`, and `signal` fields currently available in `KubernetesContext`, or does SignalProcessing need to add new enrichment logic?
+| Field | V1.0 | Source |
+|-------|------|--------|
+| `namespace` | ✅ | `KubernetesContext` |
+| `pod` | ✅ | `KubernetesContext.PodDetails` |
+| `deployment` | ✅ | `KubernetesContext.DeploymentDetails` |
+| `node` | ✅ | `KubernetesContext.NodeDetails` |
+| `signal` | ✅ | `SignalProcessingSpec` fields |
+| `detected_labels` | ✅ | V1.0 DetectedLabels output |
+| `cluster` | ❌ V1.1 | Defer - derive from env var |
 
-**Current State**:
-- ✅ `NodeDetails` - partial (name, labels, capacity)
-- ❓ `cluster` - **NOT** in current `KubernetesContext` struct
-- ❓ `signal` - Available in `SignalProcessingSpec.Signal`, but not in `KubernetesContext`
-
-**Proposal**: Should SignalProcessing build a new "RegoInput" struct that combines `KubernetesContext`, `Signal`, `DetectedLabels`, and a new `ClusterInfo`?
+**Action**: Yes, build a `RegoInput` struct that combines these sources.
 
 ---
 
 ### Q2: Example 7 (External Data) - Infrastructure Scope
 
+**Question**: Is external data (OPA bundles) V1.1 or V2.0+?
+
+**✅ ANSWER**: **V2.0+**
+
+External data lookup is deferred to V2.0. For V1.0/V1.1, use inline lookup tables in Rego:
+
 ```rego
-labels["vp-owner"] = vp {
-    vp := data.org_structure.teams[team].vp
+# V1.0: Inline lookup (no external data)
+team_owners := {
+    "payments": "payments-team@company.com",
+    "platform": "platform-sre@company.com",
 }
 ```
-
-**Question**: OPA bundles require either:
-- A bundle server
-- File mounting in the controller pod
-
-Is this expected in **V1.1**, or is it a **V2.0+** feature?
-
-**Impact**: Significant increase in implementation complexity if V1.1.
-
-**Proposal**: Mark external data lookup as V2.0+ and document it as an advanced use case for enterprises with existing OPA infrastructure.
 
 ---
 
 ### Q3: Example 5 (Workflow Constraints) - Downstream Consumption
 
-The constraint labels are powerful:
-- `constraint-no-delete: "true"`
-- `constraint-approval-required: "true"`
-- `constraint-max-replicas: "50"`
-- `constraint-read-only: "true"`
+**Question**: How are constraint labels consumed?
 
-**Question**: How are these consumed downstream?
+**✅ ANSWER**: Keep constraints in `CustomLabels` with naming convention.
 
-| Option | Description |
-|--------|-------------|
-| **A** | HolmesGPT-API uses them to filter workflows (exclude workflows that delete if `constraint-no-delete=true`) |
-| **B** | HolmesGPT-API passes them to the LLM prompt as context (LLM respects constraints) |
-| **C** | Workflow Execution validates constraints before running |
+| Stage | Consumption |
+|-------|-------------|
+| **Data Storage** | LLM passes labels in MCP call, Data Storage filters workflows |
+| **LLM Prompt** | Natural language context for investigation |
+| **Workflow Execution** | ❌ Not V1.0 |
 
-**Impact**: This affects whether constraints should be `CustomLabels` or a separate field (e.g., `EnrichmentResults.WorkflowConstraints`).
+**Naming convention**: `constraint.kubernaut.io/*` prefix identifies constraints.
 
 ---
 
 ### Q4: Example 6 (Security) - Intent Clarification
 
-```rego
-# SECURITY: Never extract these system labels
-deny_labels := {
-    "kubernaut.io/priority",      # System-controlled
-    "kubernaut.io/severity",      # System-controlled
-    "kubernaut.io/risk-tolerance" # System-controlled
-}
-```
+**Question**: Programmatic enforcement or documentation only?
 
-**Question**: Is the intent to:
-- **A)** Prevent users from accidentally overriding system-controlled mandatory labels via Rego?
-- **B)** Document the separation between system labels (6 mandatory) and user labels (CustomLabels)?
+**✅ ANSWER**: **Programmatic enforcement via Rego security wrapper**
 
-**Clarification needed**: Should SignalProcessing enforce this deny list programmatically, or is it purely documentation for Rego policy authors?
+SignalProcessing loads customer policy, wraps with security policy, evaluates combined. See "🔐 Security: Rego Wrapper Policy" section above.
+
+The wrapper strips system labels from output - defense in depth.
 
 ---
 
 ### Q5: DetectedLabels as Rego Input - Ordering Dependency
 
-The extended input schema shows `detected_labels` being passed to Rego.
-
-**Question**: This implies CustomLabels (V1.1) Rego policies can reference DetectedLabels (V1.0) output:
+**Question**: Is this ordering correct?
 
 ```
-V1.0: K8s Context → DetectedLabels (auto)
-V1.1: K8s Context + DetectedLabels → CustomLabels (Rego)
+K8s Context → DetectedLabels (auto)
+K8s Context + DetectedLabels → CustomLabels (Rego)
 ```
 
-**Confirmation needed**: Is this ordering correct? V1.1 depends on V1.0 being complete first.
+**✅ ANSWER**: **Confirmed**
+
+DetectedLabels must be computed BEFORE Rego evaluation. Both are V1.0.
+
+```go
+func (r *Reconciler) enrichContext(ctx context.Context, sp *v1alpha1.SignalProcessing) error {
+    // Step 1: K8s context
+    k8sCtx := r.enrichKubernetesContext(ctx, sp)
+
+    // Step 2: DetectedLabels (auto-detect)
+    detectedLabels := r.detector.DetectLabels(ctx, k8sCtx)
+
+    // Step 3: CustomLabels (Rego) - receives DetectedLabels as input
+    customLabels := r.evaluateRegoPolicy(ctx, k8sCtx, sp.Spec, detectedLabels)
+
+    // Step 4: Populate results
+    sp.Status.EnrichmentResults = v1alpha1.EnrichmentResults{
+        KubernetesContext: k8sCtx,
+        DetectedLabels:    detectedLabels,
+        CustomLabels:      customLabels,
+    }
+    return nil
+}
+```
 
 ---
 
-### Question Summary
+### Question Summary - RESOLVED
 
-| # | Question | Impact | Blocking? |
-|---|----------|--------|-----------|
-| Q1 | Extended input data availability | Implementation scope | ⚠️ Medium |
-| Q2 | External data (OPA bundles) scope | V1.1 vs V2.0 decision | 🔴 High |
-| Q3 | Workflow constraints consumption | Architecture decision | ⚠️ Medium |
-| Q4 | Security deny list enforcement | Implementation detail | 🟢 Low |
-| Q5 | V1.0 → V1.1 ordering | Confirmation | 🟢 Low |
+| # | Question | Answer | Status |
+|---|----------|--------|--------|
+| Q1 | Input data availability | Build RegoInput struct, defer cluster to V1.1 | ✅ |
+| Q2 | External data scope | V2.0+ (use inline tables for V1.0) | ✅ |
+| Q3 | Constraints consumption | CustomLabels with `constraint.kubernaut.io/*` prefix | ✅ |
+| Q4 | Security enforcement | Rego wrapper policy (programmatic) | ✅ |
+| Q5 | Ordering dependency | Confirmed: DetectedLabels → then Rego | ✅ |
 
 ---
 
-**Response requested by**: AI Analysis Team
-**Deadline**: Before V1.1 implementation begins
+## ❓ Follow-up Questions from SignalProcessing Team (v3.0)
+
+**Date**: November 30, 2025
+**Status**: 🟡 AWAITING RESPONSE
+
+---
+
+### F1: `risk_tolerance` vs `risk-tolerance` Naming
+
+**To**: AI Analysis Team
+**Blocking**: ⚠️ Medium
+
+The security wrapper shows:
+
+```rego
+system_labels := {
+    "kubernaut.io/risk_tolerance"  # Note: risk-tolerance (with hyphen) IS allowed
+}
+```
+
+**Current understanding**:
+
+| Label | Status | Who sets it? |
+|-------|--------|--------------|
+| `kubernaut.io/risk_tolerance` (underscore) | BLOCKED | System (mandatory) |
+| `kubernaut.io/risk-tolerance` (hyphen) | ALLOWED | Customer Rego |
+
+**Question**: Is this intentional dual-naming? The customer's Rego-derived `risk-tolerance` (hyphen) is supplementary to the system's `risk_tolerance` (underscore)?
+
+**Concern**: This could confuse users. Which approach should we take?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Document clearly that these are different labels with different purposes |
+| **B** | Rename customer label to `kubernaut.io/custom-risk-tolerance` to avoid confusion |
+| **C** | Keep as-is with clear documentation |
+
+---
+
+### F2: Constraint Flow to Data Storage
+
+**To**: Data Storage Team / Gateway Team
+**Blocking**: ⚠️ Medium
+
+The answer to Q3 states:
+> **Data Storage**: LLM passes labels in MCP call, Data Storage filters workflows
+
+**Current understanding of flow**:
+```
+SignalProcessing → AIAnalysis → HolmesGPT-API → MCP Tool Call → Data Storage API
+                                      ↓
+                               LLM decides which
+                               constraint labels to
+                               include in search
+```
+
+**Questions for Data Storage Team**:
+
+1. Does the Data Storage workflow search API support filtering by `constraint.kubernaut.io/*` prefixed labels?
+2. Are constraint labels stored as workflow metadata in Data Storage?
+3. Does the search API support arbitrary label filtering (not just the 6 mandatory)?
+4. Or does HolmesGPT-API handle constraint filtering locally after search results return?
+
+**Impact**: Need to understand if constraints are:
+- **A)** Pre-filter (Data Storage filters workflows by constraints before returning)
+- **B)** Post-filter (HolmesGPT-API filters results after search)
+- **C)** LLM context only (constraints inform LLM reasoning, not explicit filtering)
+
+---
+
+### F3: Core Design Principle ADR
+
+**To**: SignalProcessing Team (Self)
+**Blocking**: 🟢 Low (Acknowledgment)
+
+**Acknowledgment**: Will create ADR for "Characteristic-Based Label Categorization" covering:
+
+1. Single cluster-wide policy (not per-namespace)
+2. Characteristic-based rules (not hardcoded namespace names)
+3. Auto-categorization of new namespaces
+4. Policy portability across clusters
+
+**No question** - confirming this is understood and will be created as part of V1.0.
+
+---
+
+### F4: DetectedLabels Convention Verification
+
+**To**: AI Analysis Team
+**Blocking**: 🟢 Low
+
+The convention states:
+> Boolean fields only included when `true`. Omit when `false`.
+
+**Verification Question**: Is this the correct Go implementation?
+
+```go
+func buildDetectedLabelsForRego(dl *v1alpha1.DetectedLabels) map[string]interface{} {
+    result := make(map[string]interface{})
+    
+    // Only include booleans when true
+    if dl.GitOpsManaged {
+        result["gitOpsManaged"] = true
+        result["gitOpsTool"] = dl.GitOpsTool
+    }
+    if dl.PDBProtected {
+        result["pdbProtected"] = true
+    }
+    if dl.HPAEnabled {
+        result["hpaEnabled"] = true
+    }
+    if dl.Stateful {
+        result["stateful"] = true
+    }
+    if dl.HelmManaged {
+        result["helmManaged"] = true
+    }
+    if dl.NetworkIsolated {
+        result["networkIsolated"] = true
+    }
+    
+    // Always include non-empty strings
+    if dl.PodSecurityLevel != "" {
+        result["podSecurityLevel"] = dl.PodSecurityLevel
+    }
+    if dl.ServiceMesh != "" {
+        result["serviceMesh"] = dl.ServiceMesh
+    }
+    
+    return result
+}
+```
+
+**Specific Question**: If `GitOpsManaged` is `false`, should `GitOpsTool` also be omitted?
+
+Current implementation: Yes, both omitted together.
+
+Please confirm this is correct behavior.
+
+---
+
+### Follow-up Summary
+
+| # | Question | To Team | Blocking? | Status |
+|---|----------|---------|-----------|--------|
+| F1 | `risk_tolerance` vs `risk-tolerance` naming | AI Analysis | ⚠️ Medium | 🟡 Pending |
+| F2 | Constraint flow to Data Storage | Data Storage / Gateway | ⚠️ Medium | 🟡 Pending |
+| F3 | ADR creation acknowledgment | Self (SP Team) | 🟢 Low | ✅ Acknowledged |
+| F4 | DetectedLabels convention verification | AI Analysis | 🟢 Low | 🟡 Pending |
 
