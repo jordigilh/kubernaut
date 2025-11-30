@@ -140,7 +140,7 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 			testLogger.Info("📦 Seeding workflow catalog with test workflows...")
 
 			// Test workflows with all 7 mandatory labels per DD-WORKFLOW-001
-			// JSON labels use hyphenated keys (signal-type, risk-tolerance)
+			// JSON labels use hyphenated keys (signal_type, risk_tolerance)
 			// YAML content uses underscored keys (signal_type, risk_tolerance)
 			workflows := []struct {
 				workflowID  string
@@ -154,14 +154,14 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "OOM Recovery with GitOps (ArgoCD)",
 					description: "Recover from OOMKilled using GitOps with ArgoCD",
 					labels: map[string]interface{}{
-						"signal-type":         "OOMKilled",
+						"signal_type":         "OOMKilled",
 						"severity":            "critical",
-						"resource-management": "gitops",
-						"gitops-tool":         "argocd",
+						"resource_management": "gitops",
+						"gitops_tool":         "argocd",
 						"environment":         "production",
-						"business-category":   "revenue-critical",
+						"business_category":   "revenue-critical",
 						"priority":            "P0",
-						"risk-tolerance":      "low",
+						"risk_tolerance":      "low",
 						"component":           "deployment",
 					},
 					embedding: generateTestEmbedding("OOMKilled critical gitops argocd production"),
@@ -171,14 +171,14 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "OOM Recovery with GitOps (Flux)",
 					description: "Recover from OOMKilled using GitOps with Flux",
 					labels: map[string]interface{}{
-						"signal-type":         "OOMKilled",
+						"signal_type":         "OOMKilled",
 						"severity":            "critical",
-						"resource-management": "gitops",
-						"gitops-tool":         "flux",
+						"resource_management": "gitops",
+						"gitops_tool":         "flux",
 						"environment":         "production",
-						"business-category":   "revenue-critical",
+						"business_category":   "revenue-critical",
 						"priority":            "P0",
-						"risk-tolerance":      "low",
+						"risk_tolerance":      "low",
 						"component":           "deployment",
 					},
 					embedding: generateTestEmbedding("OOMKilled critical gitops flux production"),
@@ -188,13 +188,13 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "OOM Recovery with Manual Intervention",
 					description: "Recover from OOMKilled using manual kubectl commands",
 					labels: map[string]interface{}{
-						"signal-type":         "OOMKilled",
+						"signal_type":         "OOMKilled",
 						"severity":            "critical",
-						"resource-management": "manual",
+						"resource_management": "manual",
 						"environment":         "production",
-						"business-category":   "revenue-critical",
+						"business_category":   "revenue-critical",
 						"priority":            "P0",
-						"risk-tolerance":      "low",
+						"risk_tolerance":      "low",
 						"component":           "deployment",
 					},
 					embedding: generateTestEmbedding("OOMKilled critical manual kubectl production"),
@@ -204,12 +204,12 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "OOM Recovery (Generic)",
 					description: "Generic OOM recovery workflow",
 					labels: map[string]interface{}{
-						"signal-type":       "OOMKilled",
+						"signal_type":       "OOMKilled",
 						"severity":          "critical",
 						"environment":       "production",
 						"priority":          "P1",
-						"risk-tolerance":    "medium",
-						"business-category": "availability",
+						"risk_tolerance":    "medium",
+						"business_category": "availability",
 						"component":         "pod",
 					},
 					embedding: generateTestEmbedding("OOMKilled critical generic recovery"),
@@ -219,12 +219,12 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "CrashLoopBackOff Recovery",
 					description: "Recover from CrashLoopBackOff",
 					labels: map[string]interface{}{
-						"signal-type":       "CrashLoopBackOff",
+						"signal_type":       "CrashLoopBackOff",
 						"severity":          "high",
 						"environment":       "staging",
 						"priority":          "P2",
-						"risk-tolerance":    "high",
-						"business-category": "performance",
+						"risk_tolerance":    "high",
+						"business_category": "performance",
 						"component":         "pod",
 					},
 					embedding: generateTestEmbedding("CrashLoopBackOff high recovery"),
@@ -234,10 +234,10 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 			// Create workflows via API with ADR-043 compliant content
 			for i, wf := range workflows {
 				// Get risk_tolerance for YAML content (convert from hyphenated JSON key)
-				riskTolerance := wf.labels["risk-tolerance"]
+				riskTolerance := wf.labels["risk_tolerance"]
 				environment := wf.labels["environment"]
 				priority := wf.labels["priority"]
-				businessCategory := wf.labels["business-category"]
+				businessCategory := wf.labels["business_category"]
 				component := wf.labels["component"]
 
 				// Generate ADR-043 compliant workflow-schema.yaml content
@@ -268,7 +268,7 @@ parameters:
 execution:
   engine: tekton
   bundle: ghcr.io/kubernaut/workflows/test:v1.0.0
-`, wf.workflowID, wf.description, wf.labels["signal-type"], wf.labels["severity"],
+`, wf.workflowID, wf.description, wf.labels["signal_type"], wf.labels["severity"],
 					riskTolerance, environment, priority, businessCategory, component)
 
 				// DD-WORKFLOW-002 v2.4: container_image is MANDATORY with digest

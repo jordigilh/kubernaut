@@ -248,12 +248,13 @@ func NewServer(
 	// Create database adapter for READ API handlers
 	dbAdapter := adapter.NewDBAdapter(db, logger)
 
-	// Create READ API handler with logger, ADR-033 repository, and workflow catalog
+	// Create READ API handler with logger, ADR-033 repository, workflow catalog, and audit store
 	handler := NewHandler(dbAdapter,
 		WithLogger(logger),
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
-		WithEmbeddingService(embeddingService))
+		WithEmbeddingService(embeddingService),
+		WithAuditStore(auditStore))
 
 	return &Server{
 		handler: handler,
@@ -342,10 +343,18 @@ func (s *Server) Handler() http.Handler {
 		// BR-STORAGE-014: Workflow catalog management
 		// DD-STORAGE-008: Workflow catalog schema
 		// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
+		// DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
 		s.logger.V(1).Info("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
 		r.Post("/workflows", s.handler.HandleCreateWorkflow)
 		r.Post("/workflows/search", s.handler.HandleWorkflowSearch)
 		r.Get("/workflows", s.handler.HandleListWorkflows)
+		r.Get("/workflows/{workflowID}", s.handler.HandleGetWorkflowByID)
+		// DD-WORKFLOW-012: Update mutable fields (status, metrics) - immutable fields require new version
+		r.Patch("/workflows/{workflowID}", s.handler.HandleUpdateWorkflow)
+		// DD-WORKFLOW-012: Convenience endpoint for disabling workflows
+		r.Patch("/workflows/{workflowID}/disable", s.handler.HandleDisableWorkflow)
+		// DD-WORKFLOW-002 v3.0: List all versions by workflow_name
+		r.Get("/workflows/by-name/{workflowName}/versions", s.handler.HandleListWorkflowVersions)
 	})
 
 	s.logger.V(1).Info("API v1 routes configured successfully")

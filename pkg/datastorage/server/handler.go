@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
@@ -61,6 +62,7 @@ type Handler struct {
 	actionTraceRepository *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
 	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog
 	embeddingService      embedding.Service                 // BR-STORAGE-013: Embedding generation
+	auditStore            audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -95,6 +97,14 @@ func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
 func WithEmbeddingService(service embedding.Service) HandlerOption {
 	return func(h *Handler) {
 		h.embeddingService = service
+	}
+}
+
+// WithAuditStore sets the audit store for workflow search audit events
+// BR-AUDIT-023: Workflow search audit event generation
+func WithAuditStore(store audit.AuditStore) HandlerOption {
+	return func(h *Handler) {
+		h.auditStore = store
 	}
 }
 
