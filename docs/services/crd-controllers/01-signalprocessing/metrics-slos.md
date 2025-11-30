@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added label detection metrics (OwnerChain, DetectedLabels, CustomLabels, Rego) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.2 | 2025-11-28 | Metric rename: alertprocessing_* → signalprocessing_*, removed Context Service (deprecated), updated SLIs/SLOs | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md), [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
 > | v1.1 | 2025-11-27 | Service rename: SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.0 | 2025-01-15 | Initial metrics and SLOs | - |

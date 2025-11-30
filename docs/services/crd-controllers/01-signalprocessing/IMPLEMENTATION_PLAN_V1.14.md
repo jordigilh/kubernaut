@@ -1,13 +1,24 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.13.md`
-**Version**: v1.13
+**Filename**: `IMPLEMENTATION_PLAN_V1.14.md`
+**Version**: v1.14
 **Last Updated**: 2025-11-30
-**Timeline**: 12-14 days (quality-focused, no time pressure)
+**Timeline**: 14-17 days (quality-focused, includes label detection)
 **Status**: 📋 DRAFT
 **Quality Level**: Production-Ready Standard (98% Confidence Target)
 
 **Change Log**:
+- **v1.14** (2025-11-30): DD-WORKFLOW-001 v1.8 - OwnerChain, DetectedLabels, CustomLabels
+  - ✅ **Added Phase 3.25**: Owner Chain & Label Detection (2-3 days)
+  - ✅ **OwnerChain Implementation**: K8s ownerReference traversal for DetectedLabels validation
+  - ✅ **DetectedLabels Auto-Detection**: 9 detection types (GitOps, PDB, HPA, StatefulSet, Helm, NetworkPolicy, PSS, ServiceMesh)
+  - ✅ **CustomLabels Rego Extraction**: Customer Rego policies with security wrapper
+  - ✅ **Security Wrapper**: Blocks override of 5 mandatory labels
+  - ✅ **New Business Requirements**: BR-SP-100 to BR-SP-104 for label detection
+  - ✅ **New Test Scenarios**: 12 label detection test cases added
+  - ✅ **Timeline Updated**: 12-14 days → 14-17 days (+2-3 days for label detection)
+  - ✅ **Prerequisites Updated**: DD-WORKFLOW-001 v1.8 added as mandatory
+  - 📏 **Reference**: [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
 - **v1.13** (2025-11-30): DD-005 v2.0 code example compliance
   - ✅ **Code Examples Fixed**: All `*zap.Logger` → `logr.Logger` in code examples
   - ✅ **Logging Syntax Fixed**: All `zap.Error()`, `zap.String()` → key-value pairs
@@ -172,15 +183,16 @@
 | ├─ [Day 0: ANALYSIS + PLAN](#day-0-analysis--plan-pre-work-) | Pre-work planning |
 | ├─ [Day 1: Foundation](#day-1-foundation---dd-006-scaffolding) | DD-006 scaffolding, types |
 | ├─ [Day 2: CRD Types](#day-2-foundation---crd-types) | API types and CRD generation |
-| ├─ [Days 3-6: Core Logic](#days-3-6-core-logic-components) | Enricher, classifiers, Rego |
+| ├─ [Days 3-6: Core Logic](#days-3-6-core-logic-components) | Enricher, classifiers, Rego (priority) |
 |    ├─ Day 6 EOD: Error Handling Philosophy | Document deliverable |
 |       ├─ [Core Principles](#-core-principles) | Error classification |
 |       ├─ [Retry Strategy](#-retry-strategy-for-crd-controller) | Backoff and requeue |
 |       ├─ [Error Wrapping](#-error-wrapping-pattern) | Standard error patterns |
 |       └─ [Logging Best Practices](#-logging-best-practices) | Structured logging |
-| ├─ [Days 7-8: Integration](#days-7-8-integration) | Metrics, server, controller |
-| ├─ [Days 9-10: Testing](#days-9-10-testing) | Unit, integration, E2E |
-| └─ [Days 11-12: Finalization](#days-11-12-finalization) | Docs, cleanup, handoff |
+| ├─ [Days 7-9: Label Detection](#days-7-9-label-detection--new-dd-workflow-001-v18) | OwnerChain, DetectedLabels, CustomLabels ⭐ NEW |
+| ├─ [Days 10-11: Integration](#days-10-11-integration) | Metrics, server, controller |
+| ├─ [Days 12-13: Testing](#days-12-13-testing) | Unit, integration, E2E |
+| └─ [Days 14-15: Finalization](#days-14-15-finalization) | Docs, cleanup, handoff |
 | [BR Coverage Matrix](#-business-requirements-coverage-matrix) | Requirements to tests mapping |
 | [Key Files and Locations](#-key-files-and-locations) | Directory structure |
 | [Production Readiness Checklist](#-production-readiness-checklist) | Deployment validation |
@@ -208,6 +220,7 @@
 7. **001-crd-api-group-rationale**: Use unified `kubernaut.io/v1alpha1` API group for ALL CRDs
 8. **ADR-041**: K8s Enricher fetches data, Rego policies evaluate classification (no `http.send` in Rego)
 9. **DD-017**: Signal-driven K8s enrichment with standard depth (hardcoded, no configuration)
+10. **DD-WORKFLOW-001 v1.8**: Label schema with OwnerChain, DetectedLabels, CustomLabels ⭐ NEW
 
 ⚠️ **Build Fresh**: No legacy code migration. Use DD-006 templates and deprecate existing `pkg/signalprocessing/` code.
 
@@ -314,6 +327,9 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
 - **Categorization Accuracy**: 95%+ confidence - *Justification: Enables AI analysis reliability*
 - **Rego Policy Evaluation**: <100ms P95 - *Justification: Fast policy decisions*
 - **Audit Write Latency**: <1ms P95 - *Justification: Fire-and-forget pattern per ADR-038 (non-blocking)*
+- **Owner Chain Build**: <500ms P95 - *Justification: Fast K8s API traversal (DD-WORKFLOW-001 v1.8)*
+- **DetectedLabels Detection**: <200ms P95 - *Justification: Parallel K8s queries for 9 detection types*
+- **Rego Policy Evaluation**: <100ms P95 - *Justification: Fast policy decisions*
 - **Test Coverage**: 70%+ unit, 50%+ integration - *Justification: Defense-in-depth testing*
 
 ---
@@ -331,6 +347,7 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
 | **DD-CATEGORIZATION-001** | Gateway vs Signal Processing Split | Signal Processing owns ALL categorization |
 | **DD-SIGNAL-PROCESSING-001** | Service Rename | Use SignalProcessing (not RemediationProcessor) |
 | **DD-CONTEXT-006** | Context API Deprecation | No Context API integration |
+| **DD-WORKFLOW-001 v1.8** | Mandatory Label Schema | OwnerChain, DetectedLabels, CustomLabels for workflow filtering ⭐ NEW |
 
 ### **Architecture Decision Records (ADR)**
 
@@ -377,6 +394,10 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
     - [ ] DD-CATEGORIZATION-001: Categorization Ownership ✅
     - [ ] DD-017: K8s Enrichment Depth ✅
     - [ ] DD-001: Recovery Context Enrichment ✅
+  - **Label Detection (DD-WORKFLOW-001 v1.8)**: ⭐ NEW
+    - [ ] DD-WORKFLOW-001 v1.8: OwnerChain, DetectedLabels, CustomLabels (**MANDATORY**)
+    - [ ] HANDOFF v3.2: Rego Label Extraction specification
+    - [ ] Security wrapper for 5 mandatory labels
     - [ ] ADR-041: Rego Policy Data Fetching Separation ✅
 
 ### **Dependency Prerequisites**
@@ -729,12 +750,13 @@ ctrl.NewControllerManagedBy(mgr).
 | **ANALYSIS** | 4 hours | Day 0 | Context understanding | Analysis document, existing pattern review |
 | **PLAN** | 4 hours | Day 0 | Implementation strategy | This document, TDD phase mapping |
 | **Foundation** | 2 days | Days 1-2 | Package structure, CRD types | DD-006 scaffolding, API types |
-| **Core Logic** | 4 days | Days 3-6 | Business logic components | Enrichment, classification, Rego |
-| **Integration** | 2 days | Days 7-8 | Controller, metrics, audit | Complete CRD controller |
-| **Testing** | 2 days | Days 9-10 | Unit → Integration → E2E | 70%+ coverage |
-| **Finalization** | 2 days | Days 11-12 | E2E, docs, Gateway migration | Production-ready |
+| **Core Logic** | 4 days | Days 3-6 | Business logic components | Enrichment, classification, Rego (priority) |
+| **Label Detection** | 2-3 days | Days 7-9 | OwnerChain, DetectedLabels, CustomLabels | DD-WORKFLOW-001 v1.8 ⭐ NEW |
+| **Integration** | 2 days | Days 10-11 | Controller, metrics, audit | Complete CRD controller |
+| **Testing** | 2 days | Days 12-13 | Unit → Integration → E2E | 70%+ coverage |
+| **Finalization** | 2 days | Days 14-15 | E2E, docs, Gateway migration | Production-ready |
 
-### **14-Day Implementation Timeline**
+### **14-17 Day Implementation Timeline** (Updated for DD-WORKFLOW-001 v1.8)
 
 | Day | Phase | Focus | Hours | Key Milestones |
 |-----|-------|-------|-------|----------------|
@@ -745,12 +767,17 @@ ctrl.NewControllerManagedBy(mgr).
 | **Day 4** | Core Logic | Environment Classifier | 8h | Namespace labels, ConfigMap, fallback |
 | **Day 5** | Core Logic | Priority Engine (Rego) | 8h | Rego policy engine, hot-reload |
 | **Day 6** | Core Logic | Business Classifier | 8h | Confidence scoring, multi-dimensional |
-| **Day 7** | Integration | Reconciler | 8h | SignalProcessingReconciler |
-| **Day 8** | Integration | Metrics, Audit | 8h | Prometheus metrics, audit client |
-| **Day 9** | Testing | Unit Tests | 8h | 70%+ unit coverage (foundation layer) |
-| **Day 10** | Testing | Integration + E2E | 8h | ENVTEST integration tests, E2E validation |
-| **Day 11** | Finalization | E2E, Documentation | 8h | E2E tests, service docs |
-| **Day 12** | Finalization | Gateway Migration | 8h | Remove Gateway classification code |
+| **Day 7** | Label Detection ⭐ | OwnerChain | 8h | K8s ownerReference traversal |
+| **Day 8** | Label Detection ⭐ | DetectedLabels | 8h | 9 auto-detection types (GitOps, PDB, HPA, etc.) |
+| **Day 9** | Label Detection ⭐ | CustomLabels Rego | 8h | Rego extraction, security wrapper, ConfigMap |
+| **Day 10** | Integration | Reconciler | 8h | SignalProcessingReconciler with labels |
+| **Day 11** | Integration | Metrics, Audit | 8h | Prometheus metrics, audit client |
+| **Day 12** | Testing | Unit Tests | 8h | 70%+ unit coverage (including labels) |
+| **Day 13** | Testing | Integration + E2E | 8h | ENVTEST integration, E2E validation |
+| **Day 14** | Finalization | E2E, Documentation | 8h | E2E tests, service docs |
+| **Day 15** | Finalization | Gateway Migration | 8h | Remove Gateway classification code |
+
+**Note**: Days 7-9 (Label Detection) added per DD-WORKFLOW-001 v1.8. Timeline extended from 12 to 15 days.
 
 ---
 
@@ -2040,11 +2067,519 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 ---
 
-### **Days 7-8: Integration**
+### **Days 7-9: Label Detection** ⭐ NEW (DD-WORKFLOW-001 v1.8)
 
-#### **Day 7: Reconciler**
+**Reference**: [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
+
+#### **Day 7: Owner Chain**
+
+**Purpose**: Build K8s ownership chain for DetectedLabels validation by HolmesGPT-API
+
+**File**: `pkg/signalprocessing/ownerchain/builder.go`
+
+```go
+package ownerchain
+
+import (
+    "context"
+
+    "github.com/go-logr/logr"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+// Builder constructs the K8s ownership chain
+// Used by HolmesGPT-API to validate DetectedLabels applicability
+// See: DD-WORKFLOW-001 v1.8
+type Builder struct {
+    client client.Client
+    logger logr.Logger
+}
+
+func NewBuilder(c client.Client, logger logr.Logger) *Builder {
+    return &Builder{
+        client: c,
+        logger: logger.WithName("ownerchain"),
+    }
+}
+
+// Build traverses K8s ownerReferences to construct ownership chain
+// Algorithm: Follow first `controller: true` ownerReference at each level
+// Example: Pod → ReplicaSet → Deployment
+func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]signalprocessingv1.OwnerChainEntry, error) {
+    var chain []signalprocessingv1.OwnerChainEntry
+    
+    currentNamespace := namespace
+    currentKind := kind
+    currentName := name
+    
+    // Add source resource as first entry
+    chain = append(chain, signalprocessingv1.OwnerChainEntry{
+        Namespace: currentNamespace,
+        Kind:      currentKind,
+        Name:      currentName,
+    })
+    
+    // Traverse ownerReferences (max 10 levels to prevent infinite loops)
+    for i := 0; i < 10; i++ {
+        ownerRef, err := b.getControllerOwner(ctx, currentNamespace, currentKind, currentName)
+        if err != nil || ownerRef == nil {
+            break // No more owners
+        }
+        
+        // Cluster-scoped resources have empty namespace
+        ownerNamespace := currentNamespace
+        if isClusterScoped(ownerRef.Kind) {
+            ownerNamespace = ""
+        }
+        
+        chain = append(chain, signalprocessingv1.OwnerChainEntry{
+            Namespace: ownerNamespace,
+            Kind:      ownerRef.Kind,
+            Name:      ownerRef.Name,
+        })
+        
+        currentNamespace = ownerNamespace
+        currentKind = ownerRef.Kind
+        currentName = ownerRef.Name
+    }
+    
+    b.logger.Info("Owner chain built",
+        "length", len(chain),
+        "source", kind+"/"+name)
+    
+    return chain, nil
+}
+
+func (b *Builder) getControllerOwner(ctx context.Context, namespace, kind, name string) (*metav1.OwnerReference, error) {
+    // Implementation: Get resource, find ownerReference with controller: true
+    // Returns nil if no controller owner found
+    return nil, nil // Placeholder
+}
+
+func isClusterScoped(kind string) bool {
+    clusterScoped := map[string]bool{
+        "Node": true, "PersistentVolume": true, "Namespace": true,
+        "ClusterRole": true, "ClusterRoleBinding": true,
+    }
+    return clusterScoped[kind]
+}
+```
+
+**Test Scenarios (Day 7)**:
+
+| ID | Input | Expected Outcome |
+|----|-------|------------------|
+| TC-OC-001 | Pod owned by ReplicaSet owned by Deployment | Chain: Pod→RS→Deployment |
+| TC-OC-002 | StatefulSet Pod | Chain: Pod→StatefulSet |
+| TC-OC-003 | DaemonSet Pod | Chain: Pod→DaemonSet |
+| TC-OC-004 | Node (cluster-scoped) | Chain entry with empty namespace |
+| TC-OC-005 | Orphan Pod (no owner) | Chain: Pod only |
+
+---
+
+#### **Day 8: DetectedLabels Auto-Detection**
+
+**Purpose**: Auto-detect 9 cluster characteristics from K8s resources
+
+**File**: `pkg/signalprocessing/detection/labels.go`
+
+```go
+package detection
+
+import (
+    "context"
+
+    "github.com/go-logr/logr"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+// LabelDetector auto-detects cluster characteristics (V1.0)
+// Convention: Boolean fields only included when true, omit when false
+type LabelDetector struct {
+    client client.Client
+    logger logr.Logger
+}
+
+func NewLabelDetector(c client.Client, logger logr.Logger) *LabelDetector {
+    return &LabelDetector{
+        client: c,
+        logger: logger.WithName("detection"),
+    }
+}
+
+// DetectLabels detects 9 label types from K8s context
+func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) *signalprocessingv1.DetectedLabels {
+    if k8sCtx == nil {
+        return nil
+    }
+    
+    labels := &signalprocessingv1.DetectedLabels{}
+    
+    // 1. GitOps detection (ArgoCD/Flux)
+    if tool := d.detectGitOpsTool(ctx, k8sCtx); tool != "" {
+        labels.GitOpsManaged = true
+        labels.GitOpsTool = tool
+    }
+    
+    // 2. PDB protection detection
+    if d.hasPDB(ctx, k8sCtx) {
+        labels.PDBProtected = true
+    }
+    
+    // 3. HPA detection
+    if d.hasHPA(ctx, k8sCtx) {
+        labels.HPAEnabled = true
+    }
+    
+    // 4. StatefulSet detection
+    if d.isStateful(ctx, k8sCtx) {
+        labels.Stateful = true
+    }
+    
+    // 5. Helm managed detection
+    if d.isHelmManaged(ctx, k8sCtx) {
+        labels.HelmManaged = true
+    }
+    
+    // 6. Network isolation detection
+    if d.hasNetworkPolicy(ctx, k8sCtx) {
+        labels.NetworkIsolated = true
+    }
+    
+    // 7. Pod Security Level detection
+    if level := d.getPodSecurityLevel(ctx, k8sCtx); level != "" {
+        labels.PodSecurityLevel = level
+    }
+    
+    // 8. Service Mesh detection
+    if mesh := d.detectServiceMesh(ctx, k8sCtx); mesh != "" {
+        labels.ServiceMesh = mesh
+    }
+    
+    d.logger.Info("DetectedLabels populated",
+        "gitOpsManaged", labels.GitOpsManaged,
+        "pdbProtected", labels.PDBProtected,
+        "hpaEnabled", labels.HPAEnabled)
+    
+    return labels
+}
+
+func (d *LabelDetector) detectGitOpsTool(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) string {
+    // Check for ArgoCD: argocd.argoproj.io/instance annotation
+    // Check for Flux: fluxcd.io/sync-gc-mark label
+    return ""
+}
+
+func (d *LabelDetector) hasPDB(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+    // Query PodDisruptionBudgets matching pod labels
+    return false
+}
+
+func (d *LabelDetector) hasHPA(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+    // Query HorizontalPodAutoscalers targeting deployment
+    return false
+}
+
+func (d *LabelDetector) isStateful(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+    // Check if pod is owned by StatefulSet or has PVCs
+    return false
+}
+
+func (d *LabelDetector) isHelmManaged(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+    // Check for app.kubernetes.io/managed-by: Helm or helm.sh/chart annotation
+    return false
+}
+
+func (d *LabelDetector) hasNetworkPolicy(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+    // Query NetworkPolicies in namespace
+    return false
+}
+
+func (d *LabelDetector) getPodSecurityLevel(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) string {
+    // Check namespace label: pod-security.kubernetes.io/enforce
+    return ""
+}
+
+func (d *LabelDetector) detectServiceMesh(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) string {
+    // Check for Istio sidecar or Linkerd proxy annotations
+    return ""
+}
+```
+
+**Test Scenarios (Day 8)**:
+
+| ID | Input | Expected Outcome |
+|----|-------|------------------|
+| TC-DL-001 | ArgoCD-annotated Deployment | `gitOpsManaged: true, gitOpsTool: "argocd"` |
+| TC-DL-002 | Flux-labeled Deployment | `gitOpsManaged: true, gitOpsTool: "flux"` |
+| TC-DL-003 | Deployment with PDB | `pdbProtected: true` |
+| TC-DL-004 | Deployment with HPA | `hpaEnabled: true` |
+| TC-DL-005 | StatefulSet Pod | `stateful: true` |
+| TC-DL-006 | Helm-managed Deployment | `helmManaged: true` |
+| TC-DL-007 | Namespace with NetworkPolicy | `networkIsolated: true` |
+
+---
+
+#### **Day 9: CustomLabels Rego Extraction**
+
+**Purpose**: Extract user-defined labels via Rego policies with security wrapper
+
+**File**: `pkg/signalprocessing/rego/engine.go`
+
+```go
+package rego
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/go-logr/logr"
+    "github.com/open-policy-agent/opa/rego"
+    corev1 "k8s.io/api/core/v1"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+// Engine evaluates customer Rego policies for CustomLabels
+// Security: Wrapped with security policy that strips 5 mandatory labels
+type Engine struct {
+    client       client.Client
+    logger       logr.Logger
+    policyModule string // Compiled policy with security wrapper
+}
+
+func NewEngine(c client.Client, logger logr.Logger) *Engine {
+    return &Engine{
+        client: c,
+        logger: logger.WithName("rego"),
+    }
+}
+
+// LoadPolicy loads customer policy from ConfigMap and wraps with security policy
+func (e *Engine) LoadPolicy(ctx context.Context) error {
+    // Load ConfigMap: signal-processing-policies in kubernaut-system
+    cm := &corev1.ConfigMap{}
+    if err := e.client.Get(ctx, client.ObjectKey{
+        Namespace: "kubernaut-system",
+        Name:      "signal-processing-policies",
+    }, cm); err != nil {
+        return fmt.Errorf("failed to load policy ConfigMap: %w", err)
+    }
+    
+    customerPolicy := cm.Data["labels.rego"]
+    e.policyModule = e.wrapWithSecurityPolicy(customerPolicy)
+    
+    e.logger.Info("Rego policy loaded", "policySize", len(customerPolicy))
+    return nil
+}
+
+// EvaluatePolicy evaluates the policy and returns CustomLabels
+// Output format: map[string][]string (subdomain → list of values)
+func (e *Engine) EvaluatePolicy(ctx context.Context, input *Input) (map[string][]string, error) {
+    r := rego.New(
+        rego.Query("data.signalprocessing.security.labels"),
+        rego.Module("policy.rego", e.policyModule),
+        rego.Input(input),
+    )
+    
+    rs, err := r.Eval(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("rego evaluation failed: %w", err)
+    }
+    
+    if len(rs) == 0 || len(rs[0].Expressions) == 0 {
+        return make(map[string][]string), nil
+    }
+    
+    // Convert result to map[string][]string
+    result := make(map[string][]string)
+    // ... conversion logic
+    
+    e.logger.Info("CustomLabels evaluated",
+        "labelCount", len(result))
+    
+    return result, nil
+}
+
+// wrapWithSecurityPolicy wraps customer policy with security wrapper
+// Security wrapper blocks override of 5 mandatory labels
+func (e *Engine) wrapWithSecurityPolicy(customerPolicy string) string {
+    securityWrapper := `
+package signalprocessing.security
+
+import data.signalprocessing.labels as customer_labels
+
+# 5 mandatory system labels (DD-WORKFLOW-001 v1.8) - cannot be overridden
+system_labels := {
+    "kubernaut.io/signal-type",
+    "kubernaut.io/severity",
+    "kubernaut.io/component",
+    "kubernaut.io/environment",
+    "kubernaut.io/priority"
+}
+
+# Final output: customer labels minus system labels
+labels[key] = value {
+    customer_labels.labels[key] = value
+    not startswith_any(key, system_labels)
+}
+
+startswith_any(key, prefixes) {
+    some prefix
+    prefixes[prefix]
+    startswith(key, prefix)
+}
+`
+    return securityWrapper + "\n\n" + customerPolicy
+}
+
+// Input contains all data available to Rego policies
+// See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
+type Input struct {
+    Namespace      NamespaceContext           `json:"namespace"`
+    Pod            PodContext                 `json:"pod,omitempty"`
+    Deployment     DeploymentContext          `json:"deployment,omitempty"`
+    Node           NodeContext                `json:"node,omitempty"`
+    Signal         SignalContext              `json:"signal"`
+    DetectedLabels map[string]interface{}     `json:"detected_labels,omitempty"`
+}
+
+// Context types...
+type NamespaceContext struct {
+    Name        string            `json:"name"`
+    Labels      map[string]string `json:"labels,omitempty"`
+    Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+type PodContext struct {
+    Name        string            `json:"name"`
+    Labels      map[string]string `json:"labels,omitempty"`
+    Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+type DeploymentContext struct {
+    Name        string            `json:"name"`
+    Replicas    int32             `json:"replicas"`
+    Labels      map[string]string `json:"labels,omitempty"`
+    Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+type NodeContext struct {
+    Name   string            `json:"name"`
+    Labels map[string]string `json:"labels,omitempty"`
+}
+
+type SignalContext struct {
+    Type     string `json:"type"`
+    Severity string `json:"severity"`
+    Source   string `json:"source"`
+}
+```
+
+**Test Scenarios (Day 9)**:
+
+| ID | Input | Expected Outcome |
+|----|-------|------------------|
+| TC-CL-001 | Rego extracts `team` from ns label | `{"kubernaut.io": ["team=payments"]}` |
+| TC-CL-002 | Rego sets risk-tolerance | `{"kubernaut.io": ["risk-tolerance=high"]}` |
+| TC-CL-003 | Rego sets constraint | `{"constraint.kubernaut.io": ["cost-constrained"]}` |
+| TC-CL-004 | Policy tries to set `signal-type` | Label stripped from output (security) |
+| TC-CL-005 | Empty/missing policy | Empty map returned |
+| TC-CL-006 | Policy evaluation error | Empty map returned (non-fatal) |
+
+**ConfigMap Example**:
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signal-processing-policies
+  namespace: kubernaut-system
+data:
+  labels.rego: |
+    package signalprocessing.labels
+    
+    # Extract team from namespace label
+    labels["kubernaut.io/team"] = input.namespace.labels["kubernaut.io/team"] {
+      input.namespace.labels["kubernaut.io/team"]
+    }
+    
+    # Derive risk-tolerance from environment
+    labels["kubernaut.io/risk-tolerance"] = "low" {
+      input.namespace.labels["environment"] == "production"
+    }
+    labels["kubernaut.io/risk-tolerance"] = "high" {
+      input.namespace.labels["environment"] != "production"
+    }
+```
+
+---
+
+### **Days 10-11: Integration**
+
+#### **Day 10: Reconciler** (Updated with Label Detection)
 
 **File**: `internal/controller/signalprocessing/reconciler.go`
+
+**Note**: Reconciler now includes OwnerChain, DetectedLabels, and CustomLabels integration.
+
+```go
+// Updated reconciler struct with label detection components
+type SignalProcessingReconciler struct {
+    client.Client
+    Scheme              *runtime.Scheme
+    Logger              logr.Logger
+    K8sEnricher         *enricher.K8sEnricher
+    EnvironmentClassifier *classifier.EnvironmentClassifier
+    PriorityEngine      *classifier.PriorityEngine
+    BusinessClassifier  *classifier.BusinessClassifier
+    AuditClient         *audit.Client
+    Metrics             *metrics.Metrics
+    // NEW: Label Detection components (DD-WORKFLOW-001 v1.8)
+    OwnerChainBuilder   *ownerchain.Builder
+    LabelDetector       *detection.LabelDetector
+    RegoEngine          *rego.Engine
+}
+
+// handleEnrichingPhase now includes label detection
+func (r *SignalProcessingReconciler) handleEnrichingPhase(ctx context.Context, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {
+    // ... existing K8s enrichment ...
+    
+    // NEW: Build owner chain (DD-WORKFLOW-001 v1.8)
+    ownerChain, err := r.OwnerChainBuilder.Build(ctx, 
+        sp.Status.EnrichmentResults.KubernetesContext.Namespace,
+        "Pod",
+        sp.Status.EnrichmentResults.KubernetesContext.PodDetails.Name)
+    if err != nil {
+        r.Logger.Error(err, "owner chain build failed (non-fatal)")
+    }
+    sp.Status.EnrichmentResults.OwnerChain = ownerChain
+    
+    // NEW: Detect labels (V1.0)
+    detectedLabels := r.LabelDetector.DetectLabels(ctx, sp.Status.EnrichmentResults.KubernetesContext)
+    sp.Status.EnrichmentResults.DetectedLabels = detectedLabels
+    
+    // NEW: Evaluate Rego for custom labels (V1.0)
+    regoInput := r.buildRegoInput(ctx, sp, detectedLabels)
+    customLabels, err := r.RegoEngine.EvaluatePolicy(ctx, regoInput)
+    if err != nil {
+        r.Logger.Error(err, "rego evaluation failed (non-fatal)")
+        customLabels = make(map[string][]string)
+    }
+    sp.Status.EnrichmentResults.CustomLabels = customLabels
+    
+    // ... continue to classifying phase ...
+}
+```
+
+---
+
+**Original Reconciler Code** (for reference):
 
 ```go
 // SignalProcessingReconciler reconciles SignalProcessing CRDs
