@@ -7,17 +7,24 @@
 -- Authority: DD-STORAGE-008 v2.0 (Workflow Catalog Schema)
 -- Business Requirement: BR-STORAGE-012 (Workflow Semantic Search)
 -- Design Decision: DD-NAMING-001 (Remediation Workflow Terminology)
+-- Immutability: DD-WORKFLOW-012 (Workflow Immutability Constraints)
 -- ========================================
 --
 -- Purpose: Create remediation_workflow_catalog table for semantic search
 --
 -- Key Features:
--- 1. Composite primary key (workflow_id, version) for immutability
+-- 1. Composite primary key (workflow_id, version) for immutability (DD-WORKFLOW-012)
 -- 2. pgvector embedding column for semantic search
 -- 3. JSONB labels for flexible filtering
 -- 4. Lifecycle management (active/disabled/deprecated/archived)
 -- 5. Version management with history tracking
 -- 6. Success metrics tracking
+--
+-- IMMUTABILITY (DD-WORKFLOW-012):
+-- - PRIMARY KEY (workflow_id, version) enforces immutability
+-- - Content fields (description, content, labels, embedding) CANNOT be updated
+-- - Lifecycle fields (status, metrics) CAN be updated
+-- - To change content, create a new version
 --
 -- ========================================
 
@@ -112,7 +119,11 @@ CREATE TABLE remediation_workflow_catalog (
     -- ========================================
     -- CONSTRAINTS
     -- ========================================
-    PRIMARY KEY (workflow_id, version),      -- IMMUTABILITY: Cannot overwrite existing version
+    -- IMMUTABILITY ENFORCEMENT (DD-WORKFLOW-012)
+    -- This PRIMARY KEY constraint is the database-level enforcement mechanism
+    -- for workflow immutability. Once a (workflow_id, version) pair is created,
+    -- it cannot be overwritten. To change workflow content, create a new version.
+    PRIMARY KEY (workflow_id, version),      -- IMMUTABILITY: Cannot overwrite existing version (DD-WORKFLOW-012)
     CHECK (status IN ('active', 'disabled', 'deprecated', 'archived')),
     CHECK (expected_success_rate IS NULL OR (expected_success_rate >= 0 AND expected_success_rate <= 1)),
     CHECK (actual_success_rate IS NULL OR (actual_success_rate >= 0 AND actual_success_rate <= 1)),

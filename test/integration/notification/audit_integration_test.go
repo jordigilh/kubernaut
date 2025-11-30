@@ -26,8 +26,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -83,7 +83,7 @@ var _ = Describe("Notification Audit Integration Tests", func() {
 			MaxRetries:    3,
 		}
 
-		logger, _ := zap.NewDevelopment()
+		logger := crzap.New(crzap.UseDevMode(true))
 		auditStore, _ = audit.NewBufferedStore(dataStorageClient, config, "notification", logger)
 	})
 

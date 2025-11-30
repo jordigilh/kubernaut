@@ -17,6 +17,7 @@ limitations under the License.
 package notification
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -36,8 +37,10 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 	)
 
 	BeforeEach(func() {
-		// Controller metrics server runs on :8080 by default (from suite setup)
-		metricsEndpoint = "http://localhost:8080/metrics"
+		// BR-NOT-054: Controller metrics server runs on unique port per parallel process
+		// Base port 8080 + Ginkgo parallel process number (1-4) = 8081-8084
+		metricsPort := 8080 + GinkgoParallelProcess()
+		metricsEndpoint = fmt.Sprintf("http://localhost:%d/metrics", metricsPort)
 	})
 
 	Context("Metrics Endpoint Availability", func() {

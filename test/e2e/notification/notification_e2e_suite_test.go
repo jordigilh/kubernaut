@@ -18,13 +18,16 @@ package notification
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	notificationcontroller "github.com/jordigilh/kubernaut/internal/controller/notification"
@@ -100,8 +104,17 @@ var _ = BeforeSuite(func() {
 	sanitizer := sanitization.NewSanitizer()
 
 	// Start controller manager for E2E tests
+	// BR-NOT-054: Configure unique metrics port for each parallel process
+	// Base port 8080 + Ginkgo parallel process number (1-4) = 8081-8084
+	metricsPort := 8080 + GinkgoParallelProcess()
+	metricsAddr := fmt.Sprintf(":%d", metricsPort)
+	logger.Info("Starting manager", zap.Int("process", GinkgoParallelProcess()), zap.String("metricsAddr", metricsAddr))
+
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
 	})
 	Expect(err).ToNot(HaveOccurred())
 
@@ -125,6 +138,40 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
+
+	// BR-NOT-054: Wait for manager to be ready before running tests
+	// This ensures metrics endpoint is available and controller is operational
+	By("Waiting for manager to be ready")
+	Eventually(func() error {
+		// Test manager readiness by creating a simple test notification
+		testNotif := &notificationv1alpha1.NotificationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "manager-readiness-check",
+				Namespace: "default",
+			},
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Type:     notificationv1alpha1.NotificationTypeSimple,
+				Subject:  "Manager Readiness Check",
+				Body:     "Testing manager startup",
+				Priority: notificationv1alpha1.NotificationPriorityMedium, // Required field
+				Channels: []notificationv1alpha1.Channel{
+					notificationv1alpha1.ChannelConsole,
+				},
+				Recipients: []notificationv1alpha1.Recipient{
+					{Slack: "#test"},
+				},
+			},
+		}
+
+		// Try to create and immediately delete (we just need to verify manager responds)
+		if err := k8sClient.Create(ctx, testNotif); err != nil {
+			return err
+		}
+		_ = k8sClient.Delete(ctx, testNotif)
+		return nil
+	}, 30*time.Second, 500*time.Millisecond).Should(Succeed(), "Manager should be ready to accept requests")
+
+	logger.Info("E2E test environment ready", zap.String("fileOutputDir", e2eFileOutputDir))
 })
 
 var _ = AfterSuite(func() {
