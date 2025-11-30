@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -35,7 +35,7 @@ import (
 // Client provides Dead Letter Queue functionality using Redis Streams.
 type Client struct {
 	redisClient *redis.Client
-	logger      *zap.Logger
+	logger      logr.Logger
 }
 
 // AuditMessage represents a message in the DLQ.
@@ -48,12 +48,9 @@ type AuditMessage struct {
 }
 
 // NewClient creates a new DLQ client.
-func NewClient(redisClient *redis.Client, logger *zap.Logger) (*Client, error) {
+func NewClient(redisClient *redis.Client, logger logr.Logger) (*Client, error) {
 	if redisClient == nil {
 		return nil, fmt.Errorf("redis client cannot be nil")
-	}
-	if logger == nil {
-		return nil, fmt.Errorf("logger cannot be nil")
 	}
 	return &Client{
 		redisClient: redisClient,
@@ -101,9 +98,9 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	}
 
 	c.logger.Info("Audit record added to DLQ",
-		zap.String("type", "notification_audit"),
-		zap.String("notification_id", audit.NotificationID),
-		zap.String("error", originalError.Error()),
+		"type", "notification_audit",
+		"notification_id", audit.NotificationID,
+		"error", originalError.Error(),
 	)
 
 	return nil
@@ -149,10 +146,10 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 	}
 
 	c.logger.Info("Audit event added to DLQ",
-		zap.String("type", "audit_event"),
-		zap.String("event_id", audit.EventID.String()),
-		zap.String("correlation_id", audit.CorrelationID),
-		zap.String("error", originalError.Error()),
+		"type", "audit_event",
+		"event_id", audit.EventID.String(),
+		"correlation_id", audit.CorrelationID,
+		"error", originalError.Error(),
 	)
 
 	return nil

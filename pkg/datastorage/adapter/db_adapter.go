@@ -20,7 +20,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 )
@@ -29,11 +29,11 @@ import (
 // Day 3: Real database implementation using query builder
 type DBAdapter struct {
 	db     *sql.DB
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewDBAdapter creates a new database adapter
-func NewDBAdapter(db *sql.DB, logger *zap.Logger) *DBAdapter {
+func NewDBAdapter(db *sql.DB, logger logr.Logger) *DBAdapter {
 	return &DBAdapter{
 		db:     db,
 		logger: logger,
@@ -45,10 +45,10 @@ func NewDBAdapter(db *sql.DB, logger *zap.Logger) *DBAdapter {
 // BR-STORAGE-022: Apply dynamic filters
 // BR-STORAGE-023: Pagination support
 func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[string]interface{}, error) {
-	d.logger.Debug("DBAdapter.Query called",
-		zap.Any("filters", filters),
-		zap.Int("limit", limit),
-		zap.Int("offset", offset),
+	d.logger.V(1).Info("DBAdapter.Query called",
+		"filters", filters,
+		"limit", limit,
+		"offset", offset,
 	)
 
 	// Build query using query builder
@@ -81,8 +81,8 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 	sqlQuery, args, err := builder.Build()
 	if err != nil {
 		d.logger.Error("Failed to build SQL query",
-			zap.Error(err),
-			zap.Any("filters", filters),
+			"error", err,
+			"filters", filters,
 		)
 		return nil, fmt.Errorf("query builder error: %w", err)
 	}
@@ -91,17 +91,17 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 	// (query builder uses ? for test compatibility, but PostgreSQL needs $N)
 	pgQuery := convertPlaceholdersToPostgreSQL(sqlQuery, len(args))
 
-	d.logger.Debug("Executing SQL query",
-		zap.String("sql", pgQuery),
-		zap.Int("arg_count", len(args)),
+	d.logger.V(1).Info("Executing SQL query",
+		"sql", pgQuery,
+		"arg_count", len(args),
 	)
 
 	// Execute query
 	rows, err := d.db.Query(pgQuery, args...)
 	if err != nil {
 		d.logger.Error("Failed to execute SQL query",
-			zap.Error(err),
-			zap.String("sql", pgQuery),
+			"error", err,
+			"sql", pgQuery,
 		)
 		return nil, fmt.Errorf("database query error: %w", err)
 	}
@@ -111,7 +111,7 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 	columns, err := rows.Columns()
 	if err != nil {
 		d.logger.Error("Failed to get column names",
-			zap.Error(err),
+			"error", err,
 		)
 		return nil, fmt.Errorf("column retrieval error: %w", err)
 	}
@@ -129,7 +129,7 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 		// Scan row
 		if err := rows.Scan(valuePtrs...); err != nil {
 			d.logger.Error("Failed to scan row",
-				zap.Error(err),
+				"error", err,
 			)
 			return nil, fmt.Errorf("row scan error: %w", err)
 		}
@@ -145,15 +145,15 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 	// Check for iteration errors
 	if err := rows.Err(); err != nil {
 		d.logger.Error("Row iteration error",
-			zap.Error(err),
+			"error", err,
 		)
 		return nil, fmt.Errorf("row iteration error: %w", err)
 	}
 
 	d.logger.Info("Query executed successfully",
-		zap.Int("result_count", len(results)),
-		zap.Int("limit", limit),
-		zap.Int("offset", offset),
+		"result_count", len(results),
+		"limit", limit,
+		"offset", offset,
 	)
 
 	return results, nil
@@ -164,8 +164,8 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 // This fixes the critical bug where pagination.total was set to len(array) instead of database count
 // See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-INTEGRATION-TEST-TRIAGE.md
 func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
-	d.logger.Debug("DBAdapter.CountTotal called",
-		zap.Any("filters", filters),
+	d.logger.V(1).Info("DBAdapter.CountTotal called",
+		"filters", filters,
 	)
 
 	// Build count query using query builder
@@ -195,8 +195,8 @@ func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
 	sqlQuery, args, err := builder.BuildCount()
 	if err != nil {
 		d.logger.Error("Failed to build COUNT query",
-			zap.Error(err),
-			zap.Any("filters", filters),
+			"error", err,
+			"filters", filters,
 		)
 		return 0, fmt.Errorf("count query builder error: %w", err)
 	}
@@ -204,9 +204,9 @@ func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
 	// Convert ? placeholders to PostgreSQL $1, $2, etc.
 	pgQuery := convertPlaceholdersToPostgreSQL(sqlQuery, len(args))
 
-	d.logger.Debug("Executing COUNT query",
-		zap.String("sql", pgQuery),
-		zap.Int("arg_count", len(args)),
+	d.logger.V(1).Info("Executing COUNT query",
+		"sql", pgQuery,
+		"arg_count", len(args),
 	)
 
 	// Execute count query
@@ -214,14 +214,14 @@ func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
 	err = d.db.QueryRow(pgQuery, args...).Scan(&count)
 	if err != nil {
 		d.logger.Error("Failed to execute COUNT query",
-			zap.Error(err),
-			zap.String("sql", pgQuery),
+			"error", err,
+			"sql", pgQuery,
 		)
 		return 0, fmt.Errorf("count query error: %w", err)
 	}
 
 	d.logger.Info("COUNT query executed successfully",
-		zap.Int64("total_count", count),
+		"total_count", count,
 	)
 
 	return count, nil
@@ -230,8 +230,8 @@ func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
 // Get retrieves a single incident by ID
 // BR-STORAGE-021: Get incident by ID
 func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
-	d.logger.Debug("DBAdapter.Get called",
-		zap.Int("id", id),
+	d.logger.V(1).Info("DBAdapter.Get called",
+		"id", id,
 	)
 
 	// Query for specific ID
@@ -246,8 +246,8 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 	rows, err := d.db.Query(sqlQuery, id)
 	if err != nil {
 		d.logger.Error("Failed to execute Get query",
-			zap.Error(err),
-			zap.Int("id", id),
+			"error", err,
+			"id", id,
 		)
 		return nil, fmt.Errorf("database query error: %w", err)
 	}
@@ -255,8 +255,8 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 
 	// Check if any rows returned
 	if !rows.Next() {
-		d.logger.Debug("No incident found with ID",
-			zap.Int("id", id),
+		d.logger.V(1).Info("No incident found with ID",
+			"id", id,
 		)
 		return nil, nil // Not found
 	}
@@ -265,7 +265,7 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		d.logger.Error("Failed to get column names",
-			zap.Error(err),
+			"error", err,
 		)
 		return nil, fmt.Errorf("column retrieval error: %w", err)
 	}
@@ -280,8 +280,8 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 	// Scan row
 	if err := rows.Scan(valuePtrs...); err != nil {
 		d.logger.Error("Failed to scan row",
-			zap.Error(err),
-			zap.Int("id", id),
+			"error", err,
+			"id", id,
 		)
 		return nil, fmt.Errorf("row scan error: %w", err)
 	}
@@ -293,7 +293,7 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 	}
 
 	d.logger.Info("Incident retrieved successfully",
-		zap.Int("id", id),
+		"id", id,
 	)
 
 	return result, nil

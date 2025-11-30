@@ -23,18 +23,18 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // Validator handles input validation and sanitization
 // BR-STORAGE-010: Input validation
 // BR-STORAGE-011: Input sanitization
 type Validator struct {
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewValidator creates a new validator
-func NewValidator(logger *zap.Logger) *Validator {
+func NewValidator(logger logr.Logger) *Validator {
 	return &Validator{
 		logger: logger,
 	}
@@ -83,10 +83,10 @@ func (v *Validator) ValidateRemediationAudit(audit *models.RemediationAudit) err
 		return fmt.Errorf("action_type exceeds maximum length of 100")
 	}
 
-	v.logger.Debug("Validation passed",
-		zap.String("name", audit.Name),
-		zap.String("namespace", audit.Namespace),
-		zap.String("phase", audit.Phase))
+	v.logger.V(1).Info("Validation passed",
+		"name", audit.Name,
+		"namespace", audit.Namespace,
+		"phase", audit.Phase)
 
 	return nil
 }

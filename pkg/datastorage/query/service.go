@@ -24,7 +24,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // ListOptions defines filtering and pagination options
@@ -78,12 +78,12 @@ type DBQuerier interface {
 // BR-STORAGE-005: Query service implementation
 type Service struct {
 	db     DBQuerier
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewService creates a new query service
 // BR-STORAGE-005: Service initialization
-func NewService(db DBQuerier, logger *zap.Logger) *Service {
+func NewService(db DBQuerier, logger logr.Logger) *Service {
 	return &Service{
 		db:     db,
 		logger: logger,
@@ -137,9 +137,9 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 		args = append(args, opts.Offset)
 	}
 
-	s.logger.Debug("executing query",
-		zap.String("query", query),
-		zap.Int("arg_count", len(args)))
+	s.logger.V(1).Info("executing query",
+		"query", query,
+		"arg_count", len(args))
 
 	// Execute query and scan results into intermediate type
 	// We use RemediationAuditResult because it has query.Vector which implements sql.Scanner
@@ -147,8 +147,8 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 	if err := s.db.SelectContext(ctx, &results, query, args...); err != nil {
 		metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusFailure).Inc()
 		s.logger.Error("query failed",
-			zap.Error(err),
-			zap.String("query", query))
+			"error", err,
+			"query", query)
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
 
@@ -160,7 +160,7 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 
 	metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusSuccess).Inc()
 	s.logger.Info("query successful",
-		zap.Int("result_count", len(audits)))
+		"result_count", len(audits))
 
 	return audits, nil
 }
@@ -200,9 +200,9 @@ func (s *Service) PaginatedList(ctx context.Context, opts *ListOptions) (*Pagina
 	}
 
 	s.logger.Info("pagination successful",
-		zap.Int64("total_count", totalCount),
-		zap.Int("page", page),
-		zap.Int("total_pages", totalPages))
+		"total_count", totalCount,
+		"page", page,
+		"total_pages", totalPages)
 
 	return result, nil
 }
@@ -242,12 +242,12 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 	if _, err := s.db.ExecContext(ctx, plannerHints); err != nil {
 		// Log warning but don't fail the query
 		// Planner hints are an optimization, not a requirement
-		s.logger.Warn("failed to set query planner hints for HNSW optimization",
-			zap.Error(err),
-			zap.String("impact", "query may not use HNSW index optimally, performance could be degraded"))
+		s.logger.Info("failed to set query planner hints for HNSW optimization",
+			"error", err,
+			"impact", "query may not use HNSW index optimally, performance could be degraded")
 	} else {
-		s.logger.Debug("query planner hints set successfully",
-			zap.String("hint", "enable_seqscan=off, enable_indexscan=on"))
+		s.logger.V(1).Info("query planner hints set successfully",
+			"hint", "enable_seqscan=off, enable_indexscan=on")
 	}
 
 	// Perform vector similarity search using pgvector
@@ -274,8 +274,8 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 	if err := s.db.SelectContext(ctx, &rows, sqlQuery, queryEmbeddingStr); err != nil {
 		metrics.QueryTotal.WithLabelValues(metrics.OperationSemanticSearch, metrics.StatusFailure).Inc()
 		s.logger.Error("semantic search failed",
-			zap.Error(err),
-			zap.String("query", queryText))
+			"error", err,
+			"query", queryText)
 		return nil, fmt.Errorf("semantic search failed: %w", err)
 	}
 
@@ -288,8 +288,8 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 	}
 
 	s.logger.Info("semantic search successful",
-		zap.String("query", queryText),
-		zap.Int("result_count", len(results)))
+		"query", queryText,
+		"result_count", len(results))
 
 	return results, nil
 }
@@ -321,8 +321,8 @@ func (s *Service) countRemediationAudits(ctx context.Context, opts *ListOptions)
 	var count int64
 	if err := s.db.GetContext(ctx, &count, query, args...); err != nil {
 		s.logger.Error("count query failed",
-			zap.Error(err),
-			zap.String("query", query))
+			"error", err,
+			"query", query)
 		return 0, fmt.Errorf("count query failed: %w", err)
 	}
 
