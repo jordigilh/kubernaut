@@ -179,9 +179,132 @@ If you have questions about:
 
 ---
 
+---
+
+## Questions from HolmesGPT-API Team
+
+**Date**: 2025-11-30
+**Status**: ✅ ANSWERED
+
+### Q1: Field Location in Request Payload
+
+The handoff shows custom labels in `signalContext.customLabels`, but our current implementation receives enrichment data in `enrichment_results.customLabels`.
+
+**Which is the source of truth?**
+- A) `request.signalContext.customLabels` (as shown in handoff example)
+- B) `request.enrichment_results.customLabels` (current model structure)
+
+**Answer**: ✅ **B) `enrichment_results.customLabels`**
+
+The handoff example was simplified. The actual data flow is:
+
+```
+SignalProcessing CRD                    AIAnalysis                         HolmesGPT-API
+─────────────────────                   ──────────                         ─────────────
+status:                                 passes to API:                     receives:
+  enrichmentResults:            →         enrichment_results:        →       enrichment_results:
+    customLabels:                           customLabels:                      customLabels:
+      constraint: [...]                       constraint: [...]                  constraint: [...]
+```
+
+**Source**: `api/signalprocessing/v1alpha1/signalprocessing_types.go` - `EnrichmentResults.CustomLabels`
+
+---
+
+### Q2: Empty Custom Labels Behavior
+
+When no custom labels are present, what should HolmesGPT-API receive?
+- A) `null` / `None`
+- B) Empty object `{}`
+- C) Field omitted entirely
+
+**Answer**: ✅ **C) Field omitted entirely**
+
+This follows Go's `omitempty` JSON serialization and Kubernetes conventions:
+
+```go
+CustomLabels map[string][]string `json:"customLabels,omitempty"`
+//                                                    ^^^^^^^^^
+```
+
+**Behavior**:
+- If no Rego labels extracted → field is **not present** in JSON
+- HolmesGPT-API should check: `if custom_labels := enrichment_results.get('customLabels'):`
+- Treat missing/None as "no custom label filtering"
+
+---
+
+### Q3: Data Storage API Contract
+
+Has the Data Storage team confirmed their `/api/v1/workflows/search` endpoint accepts `custom_labels` as `Dict[str, List[str]]` in the filters payload?
+
+The handoff shows this format but doesn't confirm Data Storage is ready to receive it.
+
+**Answer**: ✅ **Handoff sent, awaiting implementation**
+
+Data Storage team has received their handoff document:
+- **Document**: `docs/services/stateless/datastorage/HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md`
+- **Status**: Implementation required (P1 priority in their action items)
+
+**Contract from our side is confirmed**:
+```json
+{
+  "filters": {
+    "signal-type": "OOMKilled",
+    "custom_labels": {
+      "constraint": ["cost-constrained"],
+      "team": ["name=payments"]
+    }
+  }
+}
+```
+
+**Recommendation**: Coordinate with Data Storage team on implementation timeline. HolmesGPT-API can prepare the pass-through logic now; Data Storage will implement the query handling.
+
+---
+
+### Q4: Field Naming Convention
+
+What casing does the CRD/API use?
+- A) `customLabels` (camelCase - JSON convention)
+- B) `custom_labels` (snake_case - Python convention)
+
+This affects serialization between services.
+
+**Answer**: ✅ **Both, at different layers**
+
+| Layer | Convention | Field Name | Rationale |
+|-------|------------|------------|-----------|
+| **CRD (Go/K8s JSON)** | camelCase | `customLabels` | Kubernetes API convention |
+| **Python internal** | snake_case | `custom_labels` | PEP 8 convention |
+| **Data Storage REST API** | snake_case | `custom_labels` | REST API convention |
+
+**Serialization Guidance**:
+
+```python
+# Receiving from AIAnalysis (camelCase from K8s)
+enrichment_results = request.enrichment_results
+custom_labels = enrichment_results.get('customLabels')  # camelCase
+
+# Sending to Data Storage (snake_case REST convention)
+filters = {
+    "custom_labels": custom_labels  # snake_case
+}
+```
+
+**Note**: If using Pydantic models with `alias`, you can handle this automatically:
+```python
+class EnrichmentResults(BaseModel):
+    custom_labels: Optional[Dict[str, List[str]]] = Field(None, alias='customLabels')
+```
+
+---
+
 ## Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2025-11-30 | Answered Q1-Q4 from HolmesGPT-API team |
+| 1.1 | 2025-11-30 | Added questions from HolmesGPT-API team |
 | 1.0 | 2025-11-30 | Initial handoff - pass-through design |
 
