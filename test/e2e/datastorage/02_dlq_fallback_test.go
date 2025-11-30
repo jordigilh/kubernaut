@@ -23,12 +23,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 2: DLQ Fallback - Service Outage Response (P0)
@@ -61,7 +62,7 @@ import (
 var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2e", "dlq", "p0"), Ordered, func() {
 	var (
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		httpClient    *http.Client
 		testNamespace string
 		serviceURL    string
@@ -71,7 +72,7 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
-		testLogger = logger.With(zap.String("test", "dlq-fallback"))
+		testLogger = logger.WithValues("test", "dlq-fallback")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -82,7 +83,7 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
 		testNamespace = sharedNamespace
 		serviceURL = dataStorageURL
-		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
+		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
@@ -93,7 +94,7 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 			}
 			defer func() {
 				if err := resp.Body.Close(); err != nil {
-					testLogger.Error("failed to close response body", zap.Error(err))
+					testLogger.Error(err, "failed to close response body")
 				}
 			}()
 			if resp.StatusCode != http.StatusOK {
@@ -118,7 +119,7 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 		// Generate unique correlation ID for this test
 		correlationID = fmt.Sprintf("dlq-test-%s", testNamespace)
 
-		testLogger.Info("✅ Test services ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test services ready", "namespace", testNamespace)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -130,9 +131,8 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 		// shared infrastructure, we MUST restore it for subsequent tests.
 		testLogger.Info("🔄 Restoring PostgreSQL to 1 replica (shared infrastructure)...")
 		if err := scalePod(testNamespace, "postgresql", kubeconfigPath, 1); err != nil {
-			testLogger.Error("Failed to restore PostgreSQL - subsequent tests may fail!",
-				zap.Error(err),
-				zap.String("namespace", testNamespace))
+			testLogger.Error(err, "Failed to restore PostgreSQL - subsequent tests may fail!",
+				"namespace", testNamespace)
 		} else {
 			testLogger.Info("✅ PostgreSQL restored to 1 replica")
 
@@ -149,12 +149,21 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 				return testDB.Ping()
 			}, 60*time.Second, 2*time.Second).Should(Succeed(), "PostgreSQL should be ready after restore")
 			testLogger.Info("✅ PostgreSQL is ready")
+
+			// CRITICAL: Re-apply migrations after PostgreSQL restart
+			// PostgreSQL uses EmptyDir volume, so data is lost when pod restarts
+			testLogger.Info("📋 Re-applying migrations after PostgreSQL restart...")
+			if err := infrastructure.ApplyMigrations(ctx, testNamespace, kubeconfigPath, GinkgoWriter); err != nil {
+				testLogger.Error(err, "Failed to re-apply migrations - subsequent tests may fail!")
+			} else {
+				testLogger.Info("✅ Migrations re-applied successfully")
+			}
 		}
 
 		// Close database connection
 		if db != nil {
 			if err := db.Close(); err != nil {
-				testLogger.Warn("failed to close database connection", zap.Error(err))
+				testLogger.Info("warning: failed to close database connection", "error", err)
 			}
 		}
 		if testCancel != nil {
@@ -193,7 +202,7 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 		resp := postAuditEvent(httpClient, serviceURL, baselineEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Baseline event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Baseline event written successfully")
 
@@ -240,7 +249,7 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2
 		Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 			"Event should be accepted during outage (DLQ fallback)")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Event accepted during outage (DLQ fallback)")
 

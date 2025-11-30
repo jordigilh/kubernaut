@@ -25,10 +25,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 )
 
 // Scenario 6: Workflow Search Audit Trail (P0)
@@ -65,22 +65,22 @@ import (
 
 var _ = Describe("Scenario 6: Workflow Search Audit Trail", Label("e2e", "workflow-search-audit", "p0"), Ordered, func() {
 	var (
-		testLogger *zap.Logger
+		testLogger logr.Logger
 		httpClient *http.Client
 		db         *sql.DB
 		testID     string
 	)
 
 	BeforeAll(func() {
-		testLogger = logger.With(zap.String("test", "workflow-search-audit"))
+		testLogger = logger.WithValues("test", "workflow-search-audit")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 6: Workflow Search Audit Trail - Using SHARED Services")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Using SHARED services (deployed in SynchronizedBeforeSuite)",
-			zap.String("dataStorageURL", dataStorageURL),
-			zap.String("postgresURL", postgresURL))
+			"dataStorageURL", dataStorageURL,
+			"postgresURL", postgresURL)
 
 		// Generate unique test ID for workflow isolation within shared namespace
 		testID = fmt.Sprintf("audit-e2e-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
@@ -104,7 +104,7 @@ var _ = Describe("Scenario 6: Workflow Search Audit Trail", Label("e2e", "workfl
 		// Close database connection
 		if db != nil {
 			if err := db.Close(); err != nil {
-				testLogger.Warn("failed to close database connection", zap.Error(err))
+				testLogger.Info("warning: failed to close database connection", "error", err)
 			}
 		}
 
@@ -157,13 +157,13 @@ execution:
 			containerImage := fmt.Sprintf("ghcr.io/kubernaut/workflows/oom-recovery:v1.0.0@sha256:%064d", 1)
 
 			workflow := map[string]interface{}{
-				"workflow_id": workflowID,
-				"version":     "1.0.0",
-				"name":        "OOM Recovery Workflow",
-				"description": "Recover from OOMKilled using kubectl rollout restart",
-				"owner":       "platform-team",
-				"maintainer":  "oncall@example.com",
-				"content":     workflowSchemaContent,
+				"workflow_name": workflowID, // DD-WORKFLOW-002 v3.0: workflow_name is the human identifier
+				"version":       "1.0.0",
+				"name":          "OOM Recovery Workflow",
+				"description":   "Recover from OOMKilled using kubectl rollout restart",
+				"owner":         "platform-team",
+				"maintainer":    "oncall@example.com",
+				"content":       workflowSchemaContent,
 				// JSON labels use hyphenated keys (signal-type, risk-tolerance)
 				"labels": map[string]interface{}{
 					"signal-type":       "OOMKilled",
@@ -191,14 +191,14 @@ execution:
 
 			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 				body, _ := io.ReadAll(resp.Body)
-				testLogger.Error("Failed to create workflow",
-					zap.Int("status", resp.StatusCode),
-					zap.String("body", string(body)))
+				testLogger.Info("Failed to create workflow",
+					"status", resp.StatusCode,
+					"body", string(body))
 			}
 			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusOK)),
 				"Workflow creation should succeed")
 
-			testLogger.Info("✅ Test workflow created", zap.String("workflow_id", workflowID))
+			testLogger.Info("✅ Test workflow created", "workflow_id", workflowID)
 
 			// ACT: Perform workflow search with remediation_id
 			testLogger.Info("🔍 Performing workflow search with remediation_id...")
@@ -234,8 +234,8 @@ execution:
 				fmt.Sprintf("Search should succeed, got: %s", string(body)))
 
 			testLogger.Info("✅ Workflow search completed",
-				zap.Duration("duration", searchDuration),
-				zap.String("remediation_id", remediationID))
+				"duration", searchDuration,
+				"remediation_id", remediationID)
 
 			// Wait for async audit buffer to flush (ADR-038)
 			// The buffered audit store flushes every 100ms or on buffer full
@@ -295,9 +295,9 @@ execution:
 			}, "5s", "500ms").Should(Succeed(), "Audit event should be created within 5 seconds")
 
 			testLogger.Info("✅ Audit event found",
-				zap.String("event_id", eventID),
-				zap.String("event_type", eventType),
-				zap.String("correlation_id", correlationID))
+				"event_id", eventID,
+				"event_type", eventType,
+				"correlation_id", correlationID)
 
 			// Assertion 1: Verify event classification (BR-AUDIT-023)
 			Expect(eventType).To(Equal("workflow.catalog.search_completed"),
@@ -416,7 +416,7 @@ execution:
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 				testLogger.Info(fmt.Sprintf("  Search %d completed", i+1),
-					zap.Duration("duration", duration))
+					"duration", duration)
 			}
 
 			avgDuration := totalDuration / time.Duration(numSearches)
@@ -427,8 +427,8 @@ execution:
 				"Average search latency should be <200ms (async audit should not block)")
 
 			testLogger.Info("✅ Async audit behavior validated",
-				zap.Duration("avg_latency", avgDuration),
-				zap.Int("num_searches", numSearches))
+				"avg_latency", avgDuration,
+				"num_searches", numSearches)
 		})
 	})
 })

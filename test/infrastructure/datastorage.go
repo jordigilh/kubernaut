@@ -531,6 +531,12 @@ func deployRedisInNamespace(ctx context.Context, namespace, kubeconfigPath strin
 	return nil
 }
 
+// ApplyMigrations is an exported wrapper for applying migrations to a namespace.
+// This is useful for re-applying migrations after PostgreSQL restarts (e.g., in DLQ tests).
+func ApplyMigrations(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	return applyMigrationsInNamespace(ctx, namespace, kubeconfigPath, writer)
+}
+
 func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	// Apply migrations by connecting directly to PostgreSQL
 	clientset, err := getKubernetesClient(kubeconfigPath)
@@ -599,6 +605,7 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 		"016_update_embedding_dimensions.sql",
 		"017_add_workflow_schema_fields.sql",
 		"018_rename_execution_bundle_to_container_image.sql",
+		"019_uuid_primary_key.sql",
 		"999_add_nov_2025_partition.sql",
 		"1000_create_audit_events_partitions.sql",
 	}
@@ -658,6 +665,32 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 	grantCmd.Stdin = strings.NewReader(grantSQL)
 	grantCmd.Run()
 
+	// Verify critical tables exist with Eventually() retry logic
+	fmt.Fprintf(writer, "   🔍 Verifying critical tables exist...\n")
+	criticalTables := []string{
+		"remediation_workflow_catalog",
+		"audit_events",
+		"notification_audit",
+	}
+
+	Eventually(func() error {
+		for _, table := range criticalTables {
+			checkSQL := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1;", table)
+			checkCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-i", "-n", namespace, podName, "--",
+				"psql", "-U", "slm_user", "-d", "action_history", "-c", checkSQL)
+			output, err := checkCmd.CombinedOutput()
+			if err != nil {
+				outputStr := string(output)
+				if strings.Contains(outputStr, "does not exist") {
+					return fmt.Errorf("table %s does not exist", table)
+				}
+				// Table exists but might be empty - that's OK
+			}
+		}
+		return nil
+	}, 30*time.Second, 2*time.Second).Should(Succeed(), "Critical tables should exist after migrations")
+
+	fmt.Fprintf(writer, "   ✅ All critical tables verified\n")
 	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n")
 	_ = service // Use service to avoid unused variable warning
 	_ = connStr // Use connStr to avoid unused variable warning
@@ -1340,6 +1373,7 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 		"016_update_embedding_dimensions.sql",
 		"017_add_workflow_schema_fields.sql",
 		"018_rename_execution_bundle_to_container_image.sql",
+		"019_uuid_primary_key.sql",
 		"999_add_nov_2025_partition.sql",
 		"1000_create_audit_events_partitions.sql",
 	}

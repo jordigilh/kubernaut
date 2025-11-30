@@ -1,8 +1,120 @@
-# Handoff Request: HolmesGPT-API Recovery Prompt Implementation
+# Handoff Request: HolmesGPT-API Prompt Enhancements
+
+---
+
+## Document Version
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| **3.0** | Nov 30, 2025 | HolmesGPT-API Team | **MAJOR**: Removed DEV_MODE anti-pattern, added mock LLM server, removed legacy backward compatibility |
+| 2.0 | Nov 30, 2025 | AIAnalysis Team | Added DetectedLabels for workflow filtering |
+| 1.0 | Nov 29, 2025 | AIAnalysis Team | Initial recovery prompt design |
+
+---
+
+## 📢 Changelog
+
+### ✨ v3.0 (Nov 30, 2025) - Architecture Cleanup
+
+| Change | Description |
+|--------|-------------|
+| **DEV_MODE Removed** | Eliminated anti-pattern - tests use same code path as production |
+| **Mock LLM Server** | New `tests/mock_llm_server.py` - Ollama-compatible mock for integration tests |
+| **Legacy Fields Removed** | `failed_action` and `failure_context` removed - use `PreviousExecution` format |
+| **router.config Removed** | All configuration via environment variables |
+| **Stub Functions Removed** | `_stub_recovery_analysis()` and `_stub_incident_analysis()` deleted |
+
+### ✨ v2.0 (Nov 30, 2025) - DetectedLabels
+
+| Addition | Description |
+|----------|-------------|
+| **Section 4: DetectedLabels** | Auto-detected cluster characteristics for workflow filtering |
+| `DetectedLabels` Pydantic model | Strongly-typed model matching Go struct |
+| `_build_cluster_context_section()` | Convert labels to natural language for LLM |
+| MCP filter instructions | LLM instructed to include labels in workflow search |
+| Updated testing requirements | Tests for DetectedLabels handling |
+
+### 🔄 What's New for HolmesGPT-API
+
+1. **Receive** `DetectedLabels` from AIAnalysis via `enrichment_results`
+2. **Express** labels as natural language in prompt (e.g., "This namespace is GitOps-managed...")
+3. **Instruct** LLM to include labels in MCP `search_workflow_catalog` request
+
+---
+
+## ✅ **IMPLEMENTATION STATUS: COMPLETED (v3.0)**
+
+**Date**: 2025-11-30
+**Implemented by**: HolmesGPT-API Team
+**Tests**: 57 passing (47 unit + 10 integration)
+
+### v3.0 Architecture Changes (Nov 30, 2025)
+
+| Change | Description |
+|--------|-------------|
+| **DEV_MODE Removed** | Eliminated DEV_MODE anti-pattern - tests now use same code path as production |
+| **Mock LLM Server** | Created `tests/mock_llm_server.py` - inline Ollama-compatible mock server for integration tests |
+| **Backward Compatibility Removed** | Legacy `failed_action` and `failure_context` fields removed per architecture decision |
+| **router.config Removed** | Configuration now exclusively via environment variables |
+| **Stub Functions Removed** | Removed `_stub_recovery_analysis()` and `_stub_incident_analysis()` |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/models/recovery_models.py` | Added `OriginalRCA`, `SelectedWorkflowSummary`, `ExecutionFailure`, `PreviousExecution` models; `RecoveryRequest` now requires `PreviousExecution` for recovery attempts |
+| `src/models/incident_models.py` | Added `DetectedLabels`, `EnrichmentResults` models; Updated `IncidentRequest` with `enrichment_results` field |
+| `src/extensions/recovery.py` | **v3.0**: Removed DEV_MODE check, removed `_stub_recovery_analysis()`, proper HTTP error handling instead of stub fallback; Added recovery prompt generation with DetectedLabels |
+| `src/extensions/incident.py` | **v3.0**: Removed DEV_MODE check, removed `_stub_incident_analysis()`; Added `_build_cluster_context_section()`, `_build_mcp_filter_instructions()` |
+| `src/main.py` | **v3.0**: Removed all `router.config` assignments - configuration via env vars only |
+| `tests/mock_llm_server.py` | **NEW**: Mock Ollama/OpenAI-compatible HTTP server for integration tests |
+| `tests/conftest.py` | **v3.0**: Session-scoped mock LLM server fixture; Updated fixtures to use new `PreviousExecution` format |
+
+### Tests
+
+| Test File | Tests | Purpose |
+|-----------|-------|---------|
+| `tests/unit/test_recovery_models_dd003.py` | 22 | Model validation (OriginalRCA, SelectedWorkflowSummary, ExecutionFailure, PreviousExecution, DetectedLabels, EnrichmentResults) |
+| `tests/unit/test_recovery_prompt_dd003.py` | 17 | Prompt generation, failure reason guidance, cluster context, MCP filter instructions |
+| `tests/unit/test_incident_detected_labels.py` | 9 | DetectedLabels integration in incident prompts |
+| `tests/integration/test_recovery_dd003_integration.py` | 9 | End-to-end recovery and incident endpoint tests with mock LLM |
+
+### Answers to Questions
+
+1. **Model Location**: New models added to `recovery_models.py` for recovery-specific types and `incident_models.py` for shared types (DetectedLabels, EnrichmentResults).
+
+2. **Backward Compatibility**: ❌ **NOT maintained** - Legacy `failed_action` and `failure_context` fields were **removed** per architecture decision. All callers must use the new `PreviousExecution` format.
+
+3. **Test Coverage**: ✅ Complete - 57 tests covering all requirements using mock LLM server (same code path as production).
+
+### Test Architecture (v3.0)
+
+```
+Integration Tests
+       │
+       ▼
+┌──────────────────┐
+│  FastAPI Client  │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐     ┌─────────────────────┐
+│  HolmesGPT API   │────▶│  Mock LLM Server    │
+│  (Same as Prod)  │     │  (tests/mock_llm_   │
+└──────────────────┘     │   server.py)        │
+                         └─────────────────────┘
+```
+
+**Key benefit**: Tests exercise the exact same code path as production. No DEV_MODE branches, no stub functions.
+
+---
 
 ## Summary
 
-The AIAnalysis service team has finalized the recovery flow design. This document details the required changes to HolmesGPT-API to support the new recovery prompt structure.
+The AIAnalysis service team has finalized several design decisions that require HolmesGPT-API updates:
+
+1. **Recovery Prompt Design** - Structured prompts for recovery attempts (DD-RECOVERY-002, DD-RECOVERY-003)
+2. **DetectedLabels Integration** - Auto-detected cluster characteristics for workflow filtering
 
 **Reference Design Decisions**:
 - [DD-RECOVERY-002: Direct AIAnalysis Recovery Flow](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md)
@@ -566,6 +678,185 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
 
 ---
 
+### 4. Handle DetectedLabels for Workflow Filtering
+
+**NEW REQUIREMENT**: SignalProcessing now auto-detects cluster characteristics and passes them to AIAnalysis. HolmesGPT-API must use these for both LLM context AND MCP workflow filtering.
+
+**File**: `src/extensions/incident.py` and `src/extensions/recovery.py`
+
+**Data Flow**:
+```
+SignalProcessing → AIAnalysis → HolmesGPT-API → LLM prompt (natural language)
+                                                      ↓
+                                                LLM calls MCP tool
+                                                      ↓
+                                               Data Storage (filters)
+```
+
+**DetectedLabels Structure** (from AIAnalysis enrichment_results):
+```python
+{
+    "detectedLabels": {
+        # GitOps Management
+        "gitOpsManaged": true,          # bool
+        "gitOpsTool": "argocd",         # "argocd" | "flux" | ""
+
+        # Workload Protection
+        "pdbProtected": true,           # bool
+        "hpaEnabled": false,            # bool
+
+        # Workload Characteristics
+        "stateful": false,              # bool
+        "helmManaged": true,            # bool
+
+        # Security Posture
+        "networkIsolated": true,        # bool
+        "podSecurityLevel": "restricted", # "privileged" | "baseline" | "restricted" | ""
+        "serviceMesh": "istio"          # "istio" | "linkerd" | ""
+    }
+}
+```
+
+**HolmesGPT-API MUST**:
+
+1. **Express as Natural Language** in the prompt:
+```python
+def _build_cluster_context_section(detected_labels: Dict[str, Any]) -> str:
+    """Convert DetectedLabels to natural language for LLM context."""
+    sections = []
+
+    # GitOps
+    if detected_labels.get("gitOpsManaged"):
+        tool = detected_labels.get("gitOpsTool", "unknown")
+        sections.append(f"This namespace is managed by GitOps ({tool}). "
+                       "DO NOT make direct changes - recommend GitOps-aware workflows.")
+
+    # Protection
+    if detected_labels.get("pdbProtected"):
+        sections.append("A PodDisruptionBudget protects this workload. "
+                       "Workflows must respect PDB constraints.")
+
+    if detected_labels.get("hpaEnabled"):
+        sections.append("HorizontalPodAutoscaler is active. "
+                       "Manual scaling may conflict with HPA - prefer HPA-aware workflows.")
+
+    # Workload type
+    if detected_labels.get("stateful"):
+        sections.append("This is a STATEFUL workload (StatefulSet or has PVCs). "
+                       "Use stateful-aware remediation workflows.")
+
+    if detected_labels.get("helmManaged"):
+        sections.append("This resource is managed by Helm. "
+                       "Consider Helm-compatible workflows.")
+
+    # Security
+    if detected_labels.get("networkIsolated"):
+        sections.append("NetworkPolicy restricts traffic in this namespace. "
+                       "Workflows may need network exceptions.")
+
+    pss = detected_labels.get("podSecurityLevel", "")
+    if pss == "restricted":
+        sections.append("Pod Security Standard is RESTRICTED. "
+                       "Workflows must not require privileged access.")
+
+    mesh = detected_labels.get("serviceMesh", "")
+    if mesh:
+        sections.append(f"Service mesh ({mesh}) is present. "
+                       "Consider service mesh-aware workflows.")
+
+    return "\n".join(sections) if sections else "No special cluster characteristics detected."
+```
+
+2. **Instruct LLM to Include in MCP Request**:
+
+Add to the prompt (in both incident and recovery modes):
+
+```python
+# Add to prompt generation
+prompt += f"""
+## Cluster Environment Characteristics (AUTO-DETECTED)
+
+The following characteristics were automatically detected for the target resource.
+**YOU MUST include these as filters in your MCP workflow search request.**
+
+{_build_cluster_context_section(detected_labels)}
+
+### MCP Workflow Search Instructions
+
+When calling the `search_workflow_catalog` MCP tool, include detected labels as filters:
+
+```json
+{{
+  "query": "<signal_type> <severity>",
+  "filters": {{
+    "gitops_managed": {str(detected_labels.get('gitOpsManaged', False)).lower()},
+    "pdb_protected": {str(detected_labels.get('pdbProtected', False)).lower()},
+    "stateful": {str(detected_labels.get('stateful', False)).lower()},
+    "helm_managed": {str(detected_labels.get('helmManaged', False)).lower()},
+    "gitops_tool": "{detected_labels.get('gitOpsTool', '')}",
+    "service_mesh": "{detected_labels.get('serviceMesh', '')}",
+    "pod_security_level": "{detected_labels.get('podSecurityLevel', '')}"
+  }},
+  "custom_labels": {json.dumps(custom_labels)}
+}}
+```
+
+The Data Storage service will use these filters to return only workflows that are compatible
+with the detected cluster environment.
+
+**IMPORTANT**: If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.
+"""
+```
+
+3. **Update Request Models** to accept DetectedLabels:
+
+```python
+# src/models/incident_models.py
+
+class DetectedLabels(BaseModel):
+    """Auto-detected cluster characteristics from SignalProcessing"""
+    # GitOps
+    gitOpsManaged: bool = Field(default=False)
+    gitOpsTool: str = Field(default="")  # "argocd", "flux", ""
+
+    # Protection
+    pdbProtected: bool = Field(default=False)
+    hpaEnabled: bool = Field(default=False)
+
+    # Workload type
+    stateful: bool = Field(default=False)
+    helmManaged: bool = Field(default=False)
+
+    # Security
+    networkIsolated: bool = Field(default=False)
+    podSecurityLevel: str = Field(default="")  # "privileged", "baseline", "restricted"
+    serviceMesh: str = Field(default="")  # "istio", "linkerd", ""
+
+
+class EnrichmentResults(BaseModel):
+    """Enrichment results from SignalProcessing"""
+    kubernetesContext: Optional[Dict[str, Any]] = None
+    detectedLabels: Optional[DetectedLabels] = None
+    customLabels: Optional[Dict[str, str]] = None
+    enrichmentQuality: float = Field(default=0.0)
+
+
+class IncidentRequest(BaseModel):
+    # ... existing fields ...
+    enrichment_results: EnrichmentResults = Field(..., description="Enriched context from SignalProcessing")
+```
+
+**Files to Modify**:
+
+| File | Change |
+|------|--------|
+| `src/models/incident_models.py` | Add `DetectedLabels`, `EnrichmentResults` models |
+| `src/extensions/incident.py` | Add `_build_cluster_context_section()`, update prompt |
+| `src/extensions/recovery.py` | Same updates for recovery prompts |
+| `tests/unit/test_detected_labels.py` | Test natural language generation |
+
+---
+
 ## Testing Requirements
 
 ### Unit Tests
@@ -586,6 +877,19 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
    - Test all canonical Kubernetes reason codes
    - Test unknown reason code fallback
 
+4. **Test `DetectedLabels` handling** (NEW):
+   - Valid DetectedLabels with all fields
+   - Empty/null DetectedLabels (graceful handling)
+   - Natural language generation for each label type
+   - MCP filter JSON generation
+
+5. **Test `_build_cluster_context_section`** (NEW):
+   - GitOps-managed namespace → includes GitOps warning
+   - PDB-protected workload → includes PDB guidance
+   - Stateful workload → includes stateful guidance
+   - Multiple labels → combines all guidance
+   - No labels → returns "No special characteristics"
+
 ### Integration Tests
 
 1. **Test recovery endpoint with structured request**:
@@ -597,6 +901,11 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
    - Same signal, different endpoint behavior
    - Recovery includes previous attempt context
 
+3. **Test DetectedLabels in MCP workflow search** (NEW):
+   - Verify LLM receives DetectedLabels in natural language
+   - Verify MCP search request includes filters from DetectedLabels
+   - Verify GitOps-managed namespace prioritizes gitops_aware workflows
+
 ---
 
 ## Files to Modify
@@ -604,33 +913,39 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
 | File | Change |
 |------|--------|
 | `src/models/recovery_models.py` | Add `PreviousExecution`, `OriginalRCA`, `SelectedWorkflowSummary`, `ExecutionFailure` models |
-| `src/extensions/recovery.py` | Update prompt generation and response parsing |
+| `src/models/incident_models.py` | Add `DetectedLabels`, `EnrichmentResults` models |
+| `src/extensions/incident.py` | Add `_build_cluster_context_section()`, update prompt with DetectedLabels |
+| `src/extensions/recovery.py` | Update prompt generation, response parsing, and add DetectedLabels handling |
 | `tests/unit/test_recovery_models.py` | Add model validation tests |
 | `tests/unit/test_recovery_prompt.py` | Add prompt generation tests |
+| `tests/unit/test_detected_labels.py` | Add DetectedLabels natural language and filtering tests |
 | `tests/integration/test_recovery_endpoint.py` | Add integration tests |
+| `tests/integration/test_workflow_filtering.py` | Add MCP workflow filter integration tests |
 
 ---
 
 ## Timeline
 
-**Estimated Effort**: 2-3 days
+**Estimated Effort**: 3-4 days
 
 | Task | Estimate |
 |------|----------|
-| Model updates | 0.5 day |
-| Prompt generation | 1 day |
+| Recovery model updates | 0.5 day |
+| DetectedLabels model updates | 0.5 day |
+| Prompt generation (recovery) | 1 day |
+| Prompt generation (DetectedLabels/filtering) | 0.5 day |
 | Response parsing | 0.5 day |
 | Tests | 1 day |
 
 ---
 
-## Questions for HolmesGPT-API Team
+## Questions for HolmesGPT-API Team (ANSWERED)
 
-1. **Model Location**: Should the new models go in `recovery_models.py` or a separate `recovery_context_models.py`?
+1. **Model Location**: ✅ **ANSWERED** - New models added to `recovery_models.py` for recovery-specific types and `incident_models.py` for shared types.
 
-2. **Backward Compatibility**: Do we need to maintain backward compatibility with existing `RecoveryRequest` format, or can we make breaking changes?
+2. **Backward Compatibility**: ✅ **ANSWERED** - No backward compatibility maintained. Legacy fields removed. AIAnalysis team confirmed this is acceptable.
 
-3. **Test Coverage**: Are there existing recovery endpoint tests that need updating?
+3. **Test Coverage**: ✅ **ANSWERED** - All tests updated to use new `PreviousExecution` format and mock LLM server.
 
 ---
 
@@ -641,4 +956,16 @@ For questions about this handoff, contact the AIAnalysis service team.
 **Reference Design Decisions**:
 - DD-RECOVERY-002: Direct AIAnalysis Recovery Flow
 - DD-RECOVERY-003: Recovery Prompt Design
+
+---
+
+## Implementation Review Checklist
+
+For AIAnalysis team review:
+
+- [ ] New `PreviousExecution` format matches expected API contract
+- [ ] `DetectedLabels` integration generates correct MCP filter instructions
+- [ ] Mock LLM server responses are sufficient for integration testing
+- [ ] Legacy field removal is acceptable (no backward compatibility)
+- [ ] All 57 tests pass with production code path (no DEV_MODE)
 

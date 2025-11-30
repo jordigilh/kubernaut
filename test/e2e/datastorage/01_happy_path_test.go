@@ -27,10 +27,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
@@ -65,7 +65,7 @@ import (
 var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", Label("e2e", "happy-path", "p0"), Ordered, func() {
 	var (
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		httpClient    *http.Client
 		testNamespace string
 		serviceURL    string
@@ -75,7 +75,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
-		testLogger = logger.With(zap.String("test", "happy-path"))
+		testLogger = logger.WithValues("test", "happy-path")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -86,19 +86,19 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
 		testNamespace = sharedNamespace
 		serviceURL = dataStorageURL
-		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
+		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
 		Eventually(func() error {
 			resp, err := httpClient.Get(serviceURL + "/health")
 			if err != nil {
-				testLogger.Debug("Health check failed, retrying...", zap.Error(err))
+				testLogger.V(1).Info("Health check failed, retrying...", "error", err)
 				return err
 			}
 			defer func() {
 				if err := resp.Body.Close(); err != nil {
-					testLogger.Error("failed to close response body", zap.Error(err))
+					testLogger.Error(err, "failed to close response body")
 				}
 			}()
 			if resp.StatusCode != http.StatusOK {
@@ -123,7 +123,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		// Generate unique correlation ID for this test
 		correlationID = fmt.Sprintf("remediation-%s", testNamespace)
 
-		testLogger.Info("✅ Test services ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test services ready", "namespace", testNamespace)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -131,7 +131,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		testLogger.Info("🧹 Cleaning up test resources...")
 		if db != nil {
 			if err := db.Close(); err != nil {
-				testLogger.Warn("failed to close database connection", zap.Error(err))
+				testLogger.Info("warning: failed to close database connection", "error", err)
 			}
 		}
 		if testCancel != nil {
@@ -167,7 +167,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		resp := postAuditEvent(httpClient, serviceURL, gatewayEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Gateway audit event created")
 
@@ -192,7 +192,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		resp = postAuditEvent(httpClient, serviceURL, aiEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "AIAnalysis audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ AIAnalysis audit event created")
 
@@ -217,7 +217,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		resp = postAuditEvent(httpClient, serviceURL, workflowEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Workflow audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Workflow audit event created")
 
@@ -237,7 +237,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		resp = postAuditEvent(httpClient, serviceURL, orchestratorEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Orchestrator audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Orchestrator audit event created")
 
@@ -257,7 +257,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		resp = postAuditEvent(httpClient, serviceURL, monitorEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Monitor audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Monitor audit event created")
 

@@ -22,13 +22,14 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
@@ -62,7 +63,7 @@ func TestDataStoragePerformance(t *testing.T) {
 var (
 	ctx    context.Context
 	cancel context.CancelFunc
-	logger *zap.Logger
+	logger logr.Logger
 
 	// Database connection (reuses integration test infrastructure)
 	db *sqlx.DB
@@ -75,9 +76,7 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.Background())
 
 	// Initialize logger
-	var err error
-	logger, err = zap.NewDevelopment()
-	Expect(err).ToNot(HaveOccurred())
+	logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	logger.Info("Data Storage Performance Test Suite - Setup")
@@ -99,9 +98,10 @@ var _ = BeforeSuite(func() {
 	pgPort := os.Getenv("PERF_TEST_PG_PORT")
 	if pgPort == "" {
 		pgPort = "5433" // Default fallback
-		logger.Warn("PERF_TEST_PG_PORT not set, using default port 5433 (may conflict with integration tests)")
+		logger.Info("warning: PERF_TEST_PG_PORT not set, using default port 5433 (may conflict with integration tests)")
 	}
 	postgresURL := fmt.Sprintf("postgresql://slm_user:test_password@localhost:%s/action_history?sslmode=disable", pgPort)
+	var err error
 	db, err = sqlx.Connect("postgres", postgresURL)
 	if err != nil {
 		Skip(fmt.Sprintf("PostgreSQL not available (integration test infrastructure not running): %v", err))
@@ -130,7 +130,7 @@ var _ = AfterSuite(func() {
 	// Close database connection
 	if db != nil {
 		if err := db.Close(); err != nil {
-			logger.Warn("failed to close database connection", zap.Error(err))
+			logger.Info("warning: failed to close database connection", "error", err)
 		}
 	}
 

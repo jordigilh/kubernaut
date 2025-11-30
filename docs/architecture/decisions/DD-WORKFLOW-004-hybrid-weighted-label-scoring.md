@@ -4,7 +4,7 @@
 **Status**: ✅ **APPROVED**
 **Confidence**: 95%
 **Purpose**: Define the hybrid weighted scoring strategy for workflow catalog semantic search that combines strict filtering for mandatory labels with semantic similarity ranking.
-**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.3 (Mandatory Label Schema)
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.4 (Mandatory Label Schema)
 **Version**: 2.1
 
 ---
@@ -12,7 +12,7 @@
 ## 📝 **Changelog**
 
 ### Version 2.1 (2025-11-30)
-**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.3 (6 mandatory labels).
+**ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived).
 
 **Changes**:
 - ✅ **6 Mandatory Labels**: Reduced from 7 to 6 (removed `business_category` from mandatory)
@@ -82,11 +82,11 @@
 ### V2.0+ (Future - Configurable Label Weights)
 3. **Configurable Boost/Penalty** for customer-defined labels - weights defined per customer environment
 
-**Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only **6 mandatory labels** (DD-WORKFLOW-001 v1.3). Additionally, **DetectedLabels** are auto-populated (V1.0) and **CustomLabels** are user-defined via Rego (V1.1). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
+**Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only **5 mandatory labels** (DD-WORKFLOW-001 v1.4). Additionally, **DetectedLabels** are auto-populated (V1.0) and **CustomLabels** (including `risk_tolerance`) are user-defined via Rego (V1.0). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
 
 ---
 
-## 🏗️ **Label Architecture (DD-WORKFLOW-001 v1.3)**
+## 🏗️ **Label Architecture (DD-WORKFLOW-001 v1.4)**
 
 ### Label Taxonomy Overview
 
@@ -96,9 +96,9 @@
 | **DetectedLabels** | Auto-detection from K8s | ❌ No config | `GitOpsManaged`, `PDBProtected`, `HPAEnabled` |
 | **CustomLabels** | Rego policies | ✅ User-defined | `business_category`, `team`, `region` |
 
-### Kubernaut-Enforced Labels (6 Mandatory)
+### Kubernaut-Enforced Labels (5 Mandatory)
 
-Per **DD-WORKFLOW-001 v1.3**, these labels are Kubernaut-defined with fixed keys:
+Per **DD-WORKFLOW-001 v1.4**, these labels are Kubernaut-defined with fixed keys:
 
 #### Group A: Auto-Populated (from K8s/Prometheus)
 
@@ -171,7 +171,7 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 - `team`: "platform" (from Rego) - **CustomLabels**
 
 **Key Insight**:
-- The **6 mandatory labels** are Kubernaut-enforced (DD-WORKFLOW-001 v1.3)
+- The **5 mandatory labels** are Kubernaut-enforced (DD-WORKFLOW-001 v1.4)
 - **DetectedLabels** are auto-detected from K8s without configuration (V1.0 priority)
 - **CustomLabels** like `business-category`, `region`, `team` are **user-defined** via Rego (V1.1)
 - Both label **keys** and **values** for CustomLabels are customer-controlled

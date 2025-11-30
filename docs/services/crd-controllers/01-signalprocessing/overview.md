@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.1) for workflow filtering | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0, [DD-WORKFLOW-001 v1.3](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.4 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.0) for workflow filtering | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0 |
 > | v1.2 | 2025-11-28 | Performance targets updated (<5s), graceful shutdown, parallel testing, retry strategy | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
 > | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Context API deprecated: Recovery context embedded by Remediation Orchestrator | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
@@ -26,11 +27,11 @@
 > **Gateway Behavior**: Sets placeholder values; Signal Processing performs final categorization
 > **See**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
 
-> **📋 Design Decision: Label Detection Architecture (v1.3)**
-> **Impact**: Signal Processing now populates DetectedLabels (V1.0) and CustomLabels (V1.1)
+> **📋 Design Decision: Label Detection Architecture (v1.4)**
+> **Impact**: Signal Processing now populates DetectedLabels (V1.0) and CustomLabels (V1.0)
 > **Purpose**: Provide structured labels for workflow filtering via HolmesGPT-API
-> **Label Taxonomy**: 6 mandatory labels (DD-WORKFLOW-001 v1.3) + DetectedLabels + CustomLabels
-> **See**: [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0, [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)
+> **Label Taxonomy**: 5 mandatory labels (DD-WORKFLOW-001 v1.4) + Customer-Derived Labels (Rego) + DetectedLabels
+> **See**: [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)
 
 ---
 

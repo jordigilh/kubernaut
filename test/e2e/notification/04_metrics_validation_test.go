@@ -17,7 +17,6 @@ limitations under the License.
 package notification
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -31,16 +30,20 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 )
 
+// Metrics E2E Validation using Kind NodePort
+// NodePort 30081 (in cluster) → localhost:9091 (on host via Kind extraPortMappings)
+// This follows the same pattern as Gateway service (NodePort 30080 → localhost:8080)
 var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
+
 	var (
 		metricsEndpoint string
 	)
 
 	BeforeEach(func() {
-		// BR-NOT-054: Controller metrics server runs on unique port per parallel process
-		// Base port 8080 + Ginkgo parallel process number (1-4) = 8081-8084
-		metricsPort := 8080 + GinkgoParallelProcess()
-		metricsEndpoint = fmt.Sprintf("http://localhost:%d/metrics", metricsPort)
+		// BR-NOT-054: Controller metrics exposed via NodePort (localhost:8081)
+		// Kind extraPortMappings: containerPort 30081 → hostPort 8081
+		// Using same port pattern as gateway (8xxx) for consistency
+		metricsEndpoint = "http://localhost:8081/metrics"
 	})
 
 	Context("Metrics Endpoint Availability", func() {

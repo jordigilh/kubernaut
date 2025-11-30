@@ -238,15 +238,12 @@ add_rfc7807_exception_handlers(app)
 logger.info("RFC 7807 exception handlers enabled (BR-HAPI-200)")
 
 # Register extension routers
+# All configuration is now via environment variables (LLM_ENDPOINT, LLM_MODEL, LLM_PROVIDER)
+# No router.config anti-pattern - tests use mock LLM server instead
 app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])
 app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
 app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
 app.include_router(health.router, tags=["Health"])
-
-# Pass config to extensions
-recovery.router.config = config
-postexec.router.config = config
-health.router.config = config
 
 
 # ========================================

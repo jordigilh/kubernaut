@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.1) to EnrichmentResults | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0, [DD-WORKFLOW-001 v1.3](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.4 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.0) to EnrichmentResults | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0 |
 > | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, file location updated | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
 > | v1.1 | 2025-11-27 | Type rename: RemediationProcessing* → SignalProcessing* | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Terminology: Alert → Signal | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
@@ -181,14 +182,14 @@ type SignalProcessingStatus struct {
 type EnrichmentResults struct {
     // Kubernetes resource context (from cluster API queries)
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
-    
+
     // Historical context (past signals, resource usage)
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
 
     // ========================================
     // LABEL DETECTION (HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0)
     // ========================================
-    
+
     // Auto-detected cluster characteristics - NO CONFIG NEEDED (V1.0)
     // SignalProcessing auto-detects these from K8s resources
     // Flow: SignalProcessing → AIAnalysis → HolmesGPT-API → LLM prompt + MCP workflow filter
@@ -497,13 +498,14 @@ func init() {
 ### Label Detection (HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0)
 - Added: `DetectedLabels` struct - auto-detected cluster characteristics (V1.0 priority)
 - Added: `CustomLabels` field - user-defined via Rego policies (V1.1)
-- Reference: DD-WORKFLOW-001 v1.3 (6 mandatory labels), DD-WORKFLOW-004 v2.1
+- Reference: DD-WORKFLOW-001 v1.4 (5 mandatory labels), DD-WORKFLOW-004 v2.1
 
-#### Label Taxonomy (DD-WORKFLOW-001 v1.3)
+#### Label Taxonomy (DD-WORKFLOW-001 v1.4)
 
 | Category | Source | Config Required | Examples |
 |----------|--------|-----------------|----------|
-| **6 Mandatory Labels** | Signal Processing | No (auto/Rego) | `signal_type`, `severity`, `environment` |
+| **5 Mandatory Labels** | Signal Processing | No (auto/system) | `signal_type`, `severity`, `component`, `environment`, `priority` |
+| **Customer-Derived** | Rego policies | Yes | `risk_tolerance`, `business_category`, `team`, `region` |
 | **DetectedLabels** | Auto-detection from K8s | ❌ No config | `GitOpsManaged`, `PDBProtected`, `HPAEnabled` |
 | **CustomLabels** | Rego policies | ✅ User-defined | `business_category`, `team`, `region` |
 

@@ -62,22 +62,29 @@ var _ = Describe("Workflow Search Audit Integration", func() {
 
 			// ARRANGE: Create search request and response
 			searchRequest := &models.WorkflowSearchRequest{
-				Query:         "OOMKilled critical memory increase",
-				RemediationID: "integration-test-rr-001",
-				TopK:          3,
+				Query: "OOMKilled critical memory increase",
+				TopK:  3,
 			}
 
-			// DD-WORKFLOW-002 v3.0: Flat response structure with UUID workflow_id
+			// DD-WORKFLOW-002 v3.0: WorkflowSearchResult has nested Workflow field
 			searchResponse := &models.WorkflowSearchResponse{
 				Workflows: []models.WorkflowSearchResult{
 					{
-						WorkflowID:      "550e8400-e29b-41d4-a716-446655440000",
-						Title:           "Pod OOM GitOps Recovery",
-						Description:     "OOMKilled critical: Increases memory via GitOps PR",
-						SignalType:      "OOMKilled",
-						ContainerImage:  "quay.io/kubernaut/workflow-oom:v1.0.0",
-						ContainerDigest: "sha256:abc123",
-						Confidence:      0.92,
+						Workflow: models.RemediationWorkflow{
+							WorkflowID:  "550e8400-e29b-41d4-a716-446655440000",
+							Version:     "v1.0.0",
+							Name:        "Pod OOM GitOps Recovery",
+							Description: "OOMKilled critical: Increases memory via GitOps PR",
+							Content:     "apiVersion: tekton.dev/v1beta1",
+							ContentHash: "test-hash",
+							Labels:      json.RawMessage(`{"signal-type":"OOMKilled","severity":"critical"}`),
+							Status:      "active",
+						},
+						BaseSimilarity: 0.92,
+						LabelBoost:     0.0,
+						LabelPenalty:   0.0,
+						FinalScore:     0.92,
+						Rank:           1,
 					},
 				},
 				TotalResults: 1,
@@ -102,7 +109,8 @@ var _ = Describe("Workflow Search Audit Integration", func() {
 			Expect(auditEvent.EventCategory).To(Equal("workflow"))
 			Expect(auditEvent.EventAction).To(Equal("search_completed"))
 			Expect(auditEvent.EventOutcome).To(Equal("success"))
-			Expect(auditEvent.CorrelationID).To(Equal("integration-test-rr-001"))
+			// CorrelationID is now a query hash (16-char hex string)
+			Expect(auditEvent.CorrelationID).To(MatchRegexp(`^[0-9a-f]{16}$`))
 
 			// Unmarshal to STRUCTURED type (compile-time safe)
 			var eventData audit.WorkflowSearchEventData
@@ -140,9 +148,8 @@ var _ = Describe("Workflow Search Audit Integration", func() {
 
 			// ARRANGE: Create valid search request and response
 			searchRequest := &models.WorkflowSearchRequest{
-				Query:         "CrashLoopBackOff high",
-				RemediationID: "integration-test-rr-002",
-				TopK:          5,
+				Query: "CrashLoopBackOff high",
+				TopK:  5,
 			}
 
 			searchResponse := &models.WorkflowSearchResponse{
@@ -185,22 +192,29 @@ var _ = Describe("Workflow Search Audit Integration", func() {
 			// DD-WORKFLOW-004 v2.0: V1.0 = confidence only
 
 			searchRequest := &models.WorkflowSearchRequest{
-				Query:         "NodeNotReady critical",
-				RemediationID: "validation-test-rr-001",
-				TopK:          3,
+				Query: "NodeNotReady critical",
+				TopK:  3,
 			}
 
-			// DD-WORKFLOW-002 v3.0: Flat response structure with UUID workflow_id
+			// DD-WORKFLOW-002 v3.0: WorkflowSearchResult has nested Workflow field
 			searchResponse := &models.WorkflowSearchResponse{
 				Workflows: []models.WorkflowSearchResult{
 					{
-						WorkflowID:      "660f9500-f30c-52e5-b827-557766551111",
-						Title:           "Node Recovery",
-						Description:     "Recovers nodes that are not ready",
-						SignalType:      "NodeNotReady",
-						ContainerImage:  "quay.io/kubernaut/workflow-node:v1.0.0",
-						ContainerDigest: "sha256:def456",
-						Confidence:      0.88,
+						Workflow: models.RemediationWorkflow{
+							WorkflowID:  "660f9500-f30c-52e5-b827-557766551111",
+							Version:     "v1.0.0",
+							Name:        "Node Recovery",
+							Description: "Recovers nodes that are not ready",
+							Content:     "apiVersion: tekton.dev/v1beta1",
+							ContentHash: "test-hash",
+							Labels:      json.RawMessage(`{"signal-type":"NodeNotReady","severity":"critical"}`),
+							Status:      "active",
+						},
+						BaseSimilarity: 0.88,
+						LabelBoost:     0.0,
+						LabelPenalty:   0.0,
+						FinalScore:     0.88,
+						Rank:           1,
 					},
 				},
 				TotalResults: 1,

@@ -4,8 +4,9 @@
 **To**: Data Storage Service Team
 **Date**: November 30, 2025
 **Priority**: P2 (Required for V1.0 label integration)
-**Status**: 🟡 AWAITING RESPONSE
+**Status**: ✅ RESPONSE PROVIDED
 **Context**: Follow-up from [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, Question F2
+**Response**: [RESPONSE_CONSTRAINT_FILTERING.md](../../stateless/datastorage/RESPONSE_CONSTRAINT_FILTERING.md)
 
 ---
 
@@ -212,10 +213,11 @@ Please provide answers to Q1-Q4 above.
 
 | Document | Relevance |
 |----------|-----------|
+| **[RESPONSE_CONSTRAINT_FILTERING.md](../../stateless/datastorage/RESPONSE_CONSTRAINT_FILTERING.md)** | **✅ Data Storage Team Response** |
 | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) | Source of this handoff (F2) |
 | [DD-WORKFLOW-001 v1.3](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | 6 mandatory labels |
 | [DD-WORKFLOW-002](../../../architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md) | Workflow catalog API contract |
-| [HANDOFF_REQUEST_LABEL_SCHEMA_V1.3.md](../../stateless/datastorage/HANDOFF_REQUEST_LABEL_SCHEMA_V1.3.md) | Previous label schema handoff |
+| [HANDOFF_REQUEST_LABEL_SCHEMA_V1.4.md](../../stateless/datastorage/HANDOFF_REQUEST_LABEL_SCHEMA_V1.4.md) | Label schema handoff (5 mandatory + customer-derived) |
 
 ---
 

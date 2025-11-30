@@ -18,53 +18,89 @@ limitations under the License.
 Pytest Configuration and Shared Fixtures
 
 Provides reusable test fixtures for HolmesGPT API Service testing.
+Uses mock LLM server for integration tests - no DEV_MODE anti-pattern.
 """
 
 import pytest
+import os
 from fastapi.testclient import TestClient
 from typing import Dict, Any
 
+from tests.mock_llm_server import MockLLMServer
+
+
+@pytest.fixture(scope="session")
+def mock_llm_server():
+    """
+    Session-scoped mock LLM server.
+
+    Provides a mock Ollama-compatible endpoint for integration tests.
+    The server returns predictable responses based on prompt content.
+    """
+    with MockLLMServer() as server:
+        yield server
+
 
 @pytest.fixture
-def test_config() -> Dict[str, Any]:
+def test_config(mock_llm_server) -> Dict[str, Any]:
     """
-    Test configuration
+    Test configuration with mock LLM endpoint.
+
+    No DEV_MODE - tests use actual code paths with mock LLM server.
+    Uses "openai" provider with custom endpoint (Ollama-compatible).
     """
     return {
         "service_name": "holmesgpt-api",
         "version": "1.0.0",
         "environment": "test",
-        "dev_mode": True,
         "auth_enabled": False,
         "llm": {
-            "provider": "mock",
-            "model": "test-model",
-            "endpoint": "http://localhost:11434",
+            "provider": "openai",  # Ollama uses OpenAI-compatible API
+            "model": "mock-model",
+            "endpoint": mock_llm_server.url,
         },
     }
 
 
 @pytest.fixture
-def client(test_config):
+def client(mock_llm_server):
     """
-    FastAPI test client
+    FastAPI test client with mock LLM endpoint configured.
+
+    Uses the same code path as production - no DEV_MODE branching.
+    The mock server is Ollama-compatible, so we use the openai provider
+    with a custom endpoint (which triggers the openai/model format).
     """
-    import os
-    os.environ["DEV_MODE"] = "true"
+    # Configure LLM to use mock server
+    # Using plain model name - format_model_name_for_litellm will add openai/ prefix
+    # because we have a custom endpoint (non-official OpenAI)
+    os.environ["LLM_ENDPOINT"] = mock_llm_server.url
+    os.environ["LLM_MODEL"] = "mock-model"
     os.environ["AUTH_ENABLED"] = "false"
+    # Dummy API key for litellm (not used with custom endpoint but required)
+    os.environ["OPENAI_API_KEY"] = "sk-mock-test-key-not-used"
+
+    # Remove DEV_MODE if set
+    os.environ.pop("DEV_MODE", None)
 
     from src.main import app
     return TestClient(app)
 
 
 @pytest.fixture
-def auth_client(test_config):
+def auth_client(mock_llm_server):
     """
     FastAPI test client with authentication enabled
     """
-    import os
-    os.environ["DEV_MODE"] = "true"
+    # Configure LLM to use mock server
+    os.environ["LLM_ENDPOINT"] = mock_llm_server.url
+    os.environ["LLM_MODEL"] = "mock-model"
     os.environ["AUTH_ENABLED"] = "true"
+    # Dummy API key for litellm (not used with custom endpoint but required)
+    os.environ["OPENAI_API_KEY"] = "sk-mock-test-key-not-used"
+
+    # Remove DEV_MODE if set
+    os.environ.pop("DEV_MODE", None)
 
     from src.main import app
     return TestClient(app)
@@ -102,32 +138,149 @@ def expired_jwt_token() -> str:
 @pytest.fixture
 def sample_recovery_request() -> Dict[str, Any]:
     """
-    Sample recovery request for testing
+    Sample recovery request for testing (new DD-RECOVERY-003 format)
 
     Updated: DD-WORKFLOW-002 v2.2 - remediation_id is now mandatory
+    Updated: DD-RECOVERY-003 - Uses PreviousExecution format (no legacy fields)
     """
     return {
         "incident_id": "test-inc-001",
         "remediation_id": "req-test-2025-11-27-001",  # DD-WORKFLOW-002 v2.2: mandatory
-        "failed_action": {
-            "type": "scale_deployment",
-            "target": "nginx",
-            "desired_replicas": 5
+        "is_recovery_attempt": True,
+        "recovery_attempt_number": 1,
+        "previous_execution": {
+            "workflow_execution_ref": "req-test-2025-11-27-001-we-1",
+            "original_rca": {
+                "summary": "Resource exhaustion causing scaling issue",
+                "signal_type": "ResourcePressure",
+                "severity": "medium",
+                "contributing_factors": ["insufficient_resources"]
+            },
+            "selected_workflow": {
+                "workflow_id": "scale-horizontal-v1",
+                "version": "1.0.0",
+                "container_image": "kubernaut/workflow-scale:v1.0.0",
+                "parameters": {"TARGET_REPLICAS": "5"},
+                "rationale": "Scaling out to handle resource pressure"
+            },
+            "failure": {
+                "failed_step_index": 1,
+                "failed_step_name": "scale_deployment",
+                "reason": "InsufficientResources",
+                "message": "Not enough resources to scale",
+                "failed_at": "2025-11-27T10:30:00Z",
+                "execution_time": "30s"
+            }
         },
-        "failure_context": {
-            "error": "insufficient_resources",
-            "cluster_state": "normal"
+        "enrichment_results": {
+            "detectedLabels": {
+                "gitOpsManaged": False,
+                "pdbProtected": False
+            }
         },
-        "investigation_result": {
-            "root_cause": "resource_exhaustion"
+        "signal_type": "ResourcePressure",
+        "severity": "medium",
+        "resource_namespace": "test",
+        "resource_kind": "Deployment",
+        "resource_name": "nginx"
+    }
+
+
+@pytest.fixture
+def sample_recovery_request_with_previous_execution() -> Dict[str, Any]:
+    """
+    Sample recovery request with PreviousExecution context for testing
+
+    Design Decision: DD-RECOVERY-002, DD-RECOVERY-003
+    Business Outcome: Test recovery flow with complete failure context
+    """
+    return {
+        "incident_id": "test-inc-002",
+        "remediation_id": "req-test-2025-11-29-002",
+        "is_recovery_attempt": True,
+        "recovery_attempt_number": 2,
+        "previous_execution": {
+            "workflow_execution_ref": "req-test-2025-11-29-001-we-1",
+            "original_rca": {
+                "summary": "Memory exhaustion causing OOMKilled in test pod",
+                "signal_type": "OOMKilled",
+                "severity": "high",
+                "contributing_factors": ["memory leak", "insufficient limits"]
+            },
+            "selected_workflow": {
+                "workflow_id": "scale-horizontal-v1",
+                "version": "1.0.0",
+                "container_image": "kubernaut/workflow-scale:v1.0.0",
+                "parameters": {"TARGET_REPLICAS": "5"},
+                "rationale": "Scaling out to distribute memory load"
+            },
+            "failure": {
+                "failed_step_index": 2,
+                "failed_step_name": "scale_deployment",
+                "reason": "OOMKilled",
+                "message": "Container exceeded memory limit during scale operation",
+                "exit_code": 137,
+                "failed_at": "2025-11-29T10:30:00Z",
+                "execution_time": "2m34s"
+            }
         },
-        "context": {
-            "namespace": "test",
-            "cluster": "test-cluster"
+        "enrichment_results": {
+            "detectedLabels": {
+                "gitOpsManaged": True,
+                "gitOpsTool": "argocd",
+                "pdbProtected": True,
+                "stateful": False
+            }
         },
-        "constraints": {
-            "max_attempts": 3,
-            "timeout": "5m"
+        "signal_type": "OOMKilled",
+        "severity": "high",
+        "resource_namespace": "test",
+        "resource_kind": "Deployment",
+        "resource_name": "test-api",
+        "environment": "test",
+        "priority": "P1",
+        "risk_tolerance": "medium",
+        "business_category": "critical",
+        "cluster_name": "test-cluster"
+    }
+
+
+@pytest.fixture
+def sample_incident_request_with_detected_labels() -> Dict[str, Any]:
+    """
+    Sample incident request with DetectedLabels for testing
+
+    Design Decision: DD-RECOVERY-003
+    Business Outcome: Test incident flow with cluster context
+    """
+    return {
+        "incident_id": "test-inc-003",
+        "remediation_id": "req-test-2025-11-29-003",
+        "signal_type": "OOMKilled",
+        "severity": "high",
+        "signal_source": "prometheus",
+        "resource_namespace": "production",
+        "resource_kind": "Deployment",
+        "resource_name": "api-server",
+        "error_message": "Container exceeded memory limit",
+        "environment": "production",
+        "priority": "P1",
+        "risk_tolerance": "medium",
+        "business_category": "critical",
+        "cluster_name": "prod-us-west-2",
+        "enrichment_results": {
+            "detectedLabels": {
+                "gitOpsManaged": True,
+                "gitOpsTool": "argocd",
+                "pdbProtected": True,
+                "hpaEnabled": False,
+                "stateful": False,
+                "helmManaged": True,
+                "networkIsolated": True,
+                "podSecurityLevel": "restricted",
+                "serviceMesh": "istio"
+            },
+            "enrichmentQuality": 0.95
         }
     }
 

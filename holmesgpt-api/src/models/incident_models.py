@@ -20,10 +20,58 @@ Incident Analysis Models
 Business Requirement: BR-HAPI-002 (Incident analysis request schema)
 Business Requirement: BR-AUDIT-001 (Unified audit trail - remediation_id)
 Design Decision: DD-WORKFLOW-002 v2.2 (remediation_id mandatory)
+Design Decision: DD-RECOVERY-003 (DetectedLabels for workflow filtering)
 """
 
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field, field_validator
+
+
+# ========================================
+# DETECTED LABELS MODELS (DD-RECOVERY-003)
+# ========================================
+
+class DetectedLabels(BaseModel):
+    """
+    Auto-detected cluster characteristics from SignalProcessing.
+
+    These labels are used for:
+    1. LLM context (natural language) - help LLM understand cluster environment
+    2. MCP workflow filtering - filter workflows to only compatible ones
+
+    Design Decision: DD-RECOVERY-003
+    """
+    # GitOps Management
+    gitOpsManaged: bool = Field(default=False, description="Whether namespace is managed by GitOps")
+    gitOpsTool: str = Field(default="", description="GitOps tool: 'argocd', 'flux', or ''")
+
+    # Workload Protection
+    pdbProtected: bool = Field(default=False, description="Whether PodDisruptionBudget protects this workload")
+    hpaEnabled: bool = Field(default=False, description="Whether HorizontalPodAutoscaler is active")
+
+    # Workload Characteristics
+    stateful: bool = Field(default=False, description="Whether this is a stateful workload (StatefulSet or has PVCs)")
+    helmManaged: bool = Field(default=False, description="Whether resource is managed by Helm")
+
+    # Security Posture
+    networkIsolated: bool = Field(default=False, description="Whether NetworkPolicy restricts traffic")
+    podSecurityLevel: str = Field(default="", description="Pod Security Standard: 'privileged', 'baseline', 'restricted', ''")
+    serviceMesh: str = Field(default="", description="Service mesh: 'istio', 'linkerd', ''")
+
+
+class EnrichmentResults(BaseModel):
+    """
+    Enrichment results from SignalProcessing.
+
+    Contains Kubernetes context, auto-detected labels, and custom labels
+    that are used for workflow filtering and LLM context.
+
+    Design Decision: DD-RECOVERY-003
+    """
+    kubernetesContext: Optional[Dict[str, Any]] = Field(None, description="Kubernetes resource context")
+    detectedLabels: Optional[DetectedLabels] = Field(None, description="Auto-detected cluster characteristics")
+    customLabels: Optional[Dict[str, str]] = Field(None, description="Custom labels from resource annotations")
+    enrichmentQuality: float = Field(default=0.0, ge=0.0, le=1.0, description="Quality score of enrichment (0-1)")
 
 
 class IncidentRequest(BaseModel):
@@ -37,6 +85,9 @@ class IncidentRequest(BaseModel):
     Design Decision: DD-WORKFLOW-002 v2.2
     - remediation_id is MANDATORY for audit trail correlation
     - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
+
+    Design Decision: DD-RECOVERY-003
+    - enrichment_results contains DetectedLabels for workflow filtering
     """
     incident_id: str = Field(..., description="Unique incident identifier")
     remediation_id: str = Field(
@@ -74,6 +125,9 @@ class IncidentRequest(BaseModel):
     first_seen: Optional[str] = Field(None, description="First seen")
     last_seen: Optional[str] = Field(None, description="Last seen")
     signal_labels: Optional[Dict[str, str]] = Field(default_factory=dict, description="Signal labels")
+
+    # Enrichment results with DetectedLabels (DD-RECOVERY-003)
+    enrichment_results: Optional[EnrichmentResults] = Field(None, description="Enriched context from SignalProcessing")
 
 
 class IncidentResponse(BaseModel):

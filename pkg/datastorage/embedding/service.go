@@ -12,7 +12,7 @@ import (
 // EMBEDDING SERVICE
 // ========================================
 // BR-STORAGE-013: Generate vector embeddings for semantic search
-// Model: sentence-transformers/all-MiniLM-L6-v2 (384 dimensions)
+// Model: sentence-transformers/all-mpnet-base-v2 (768 dimensions per migration 016)
 //
 // This service generates vector embeddings from text for semantic search.
 // The embeddings are used by pgvector for similarity search in PostgreSQL.
@@ -51,9 +51,9 @@ func (s *PlaceholderService) GenerateEmbedding(ctx context.Context, text string)
 		"text_preview", truncateText(text, 50),
 	)
 
-	// Generate a simple placeholder embedding (384 dimensions, all zeros)
+	// Generate a simple placeholder embedding (768 dimensions per migration 016)
 	// In production, this would call a real embedding model
-	embedding := make([]float32, 384)
+	embedding := make([]float32, 768)
 
 	// Add some variation based on text length (just for testing)
 	textLen := float32(len(text))

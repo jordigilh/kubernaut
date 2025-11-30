@@ -102,7 +102,7 @@ jobs:
       timeout: 20
       infrastructure: kind
 
-  # Slow Lane: Notification Service (5-15 min)
+  # Medium Lane: Notification Service (~45s - envtest only, no E2E)
   integration-notification:
     name: integration (notification)
     needs: unit
@@ -115,8 +115,8 @@ jobs:
     uses: ./.github/workflows/integration-test-template.yml
     with:
       service: notification
-      timeout: 20
-      infrastructure: kind
+      timeout: 10
+      infrastructure: none
 
   # Slow Lane: Dynamic Toolset (5-15 min)
   integration-toolset:

@@ -49,7 +49,7 @@ type Cache interface {
 
 // EmbeddingResult represents the result of embedding generation.
 type EmbeddingResult struct {
-	// Embedding is the generated vector (384 dimensions)
+	// Embedding is the generated vector (768 dimensions per migration 016)
 	Embedding []float32
 
 	// Dimension is the embedding vector size

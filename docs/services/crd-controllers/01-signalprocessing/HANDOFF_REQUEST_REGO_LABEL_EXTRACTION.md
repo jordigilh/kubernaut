@@ -377,13 +377,13 @@ labels["constraint.kubernaut.io/high-availability"] = "true" {
 
 ---
 
-## 📋 **Label Taxonomy Clarification (DD-WORKFLOW-001 v1.3)**
+## 📋 **Label Taxonomy Clarification (DD-WORKFLOW-001 v1.4)**
 
 | Label Category | Source | Examples | Purpose |
 |----------------|--------|----------|---------|
-| **6 Mandatory Labels** (DD-WORKFLOW-001 v1.3) | Signal Processing core | `signal_type`, `severity`, `component`, `environment`, `priority`, `risk_tolerance` | Required for workflow matching |
+| **5 Mandatory Labels** (DD-WORKFLOW-001 v1.4) | Signal Processing core | `signal_type`, `severity`, `component`, `environment`, `priority` | Required for workflow matching |
+| **Customer-Derived Labels** (Rego) | Rego policies | `risk_tolerance`, `business_category`, `team`, `region` | Customer-defined via Rego |
 | **DetectedLabels** (this handoff) | Auto-detection from K8s | `GitOpsManaged`, `PDBProtected`, `HPAEnabled`, `Stateful` | Additional context for LLM |
-| **CustomLabels** (this handoff) | Rego policies | `team`, `region`, `business_category` | User-defined workflow filters |
 
 **Key Point**: `DetectedLabels` and `CustomLabels` are **supplementary** to the 5 mandatory labels, not replacements.
 
@@ -667,7 +667,7 @@ Without extracted labels, HolmesGPT-API cannot filter workflows by customer-spec
 type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
 
-    // Custom labels for workflow catalog filtering (DD-WORKFLOW-001 v1.3)
+    // Custom labels for workflow catalog filtering (DD-WORKFLOW-001 v1.4)
     // These are user-defined labels extracted via Rego policies
     CustomLabels map[string]string `json:"customLabels,omitempty"`
 
