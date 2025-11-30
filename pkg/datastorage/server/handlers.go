@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // Health check handlers
@@ -31,8 +31,7 @@ import (
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// Check database connectivity
 	if err := s.db.Ping(); err != nil {
-		s.logger.Error("Health check failed - database unreachable",
-			zap.Error(err))
+		s.logger.Error(err, "Health check failed - database unreachable")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = fmt.Fprintf(w, `{"status":"unhealthy","database":"unreachable","error":"%s"}`, err.Error())
 		return
@@ -47,7 +46,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	// DD-007: Check shutdown flag first
 	if s.isShuttingDown.Load() {
-		s.logger.Debug("Readiness probe returning 503 - shutdown in progress")
+		s.logger.V(1).Info("Readiness probe returning 503 - shutdown in progress")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = fmt.Fprint(w, `{"status":"not_ready","reason":"shutting_down"}`)
 		return
@@ -55,8 +54,8 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 
 	// Check database connectivity
 	if err := s.db.Ping(); err != nil {
-		s.logger.Warn("Readiness probe failed - database unreachable",
-			zap.Error(err))
+		s.logger.Info("Readiness probe failed - database unreachable",
+			"error", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = fmt.Fprintf(w, `{"status":"not_ready","reason":"database_unreachable","error":"%s"}`, err.Error())
 		return
@@ -85,11 +84,11 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 
 				// Log the panic with full details
 				s.logger.Error("🚨 PANIC RECOVERED",
-					zap.String("request_id", requestID),
-					zap.String("method", r.Method),
-					zap.String("path", r.URL.Path),
-					zap.String("remote_addr", r.RemoteAddr),
-					zap.Any("panic", err),
+					"request_id", requestID,
+					"method", r.Method,
+					"path", r.URL.Path,
+					"remote_addr", r.RemoteAddr,
+					"panic", err,
 					zap.Stack("stack_trace"),
 				)
 
@@ -119,13 +118,13 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		// Log request with timing
 		duration := time.Since(start)
 		s.logger.Info("HTTP request",
-			zap.String("request_id", requestID),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-			zap.String("remote_addr", r.RemoteAddr),
-			zap.Int("status", ww.Status()),
-			zap.Int("bytes", ww.BytesWritten()),
-			zap.Duration("duration", duration),
+			"request_id", requestID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"remote_addr", r.RemoteAddr,
+			"status", ww.Status(),
+			"bytes", ww.BytesWritten(),
+			"duration", duration,
 		)
 	})
 }

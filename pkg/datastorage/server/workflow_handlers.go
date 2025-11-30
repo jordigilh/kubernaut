@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"go.uber.org/zap"
-
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -31,7 +29,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 	var searchReq models.WorkflowSearchRequest
 	if err := json.NewDecoder(r.Body).Decode(&searchReq); err != nil {
 		h.logger.Error("Failed to decode workflow search request",
-			zap.Error(err),
+			"error", err,
 		)
 		h.writeRFC7807Error(w, http.StatusBadRequest,
 			"https://kubernaut.dev/problems/bad-request",
@@ -44,8 +42,8 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 	// Validate request
 	if err := h.validateWorkflowSearchRequest(&searchReq); err != nil {
 		h.logger.Error("Invalid workflow search request",
-			zap.Error(err),
-			zap.String("query", searchReq.Query),
+			"error", err,
+			"query", searchReq.Query,
 		)
 		h.writeRFC7807Error(w, http.StatusBadRequest,
 			"https://kubernaut.dev/problems/bad-request",
@@ -59,7 +57,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 	if searchReq.Embedding == nil {
 		if h.embeddingService == nil {
 			h.logger.Error("Embedding service not configured",
-				zap.String("query", searchReq.Query),
+				"query", searchReq.Query,
 			)
 			h.writeRFC7807Error(w, http.StatusInternalServerError,
 				"https://kubernaut.dev/problems/internal-error",
@@ -72,8 +70,8 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 		embedding, err := h.embeddingService.GenerateEmbedding(r.Context(), searchReq.Query)
 		if err != nil {
 			h.logger.Error("Failed to generate embedding",
-				zap.Error(err),
-				zap.String("query", searchReq.Query),
+				"error", err,
+				"query", searchReq.Query,
 			)
 			h.writeRFC7807Error(w, http.StatusInternalServerError,
 				"https://kubernaut.dev/problems/internal-error",
@@ -89,9 +87,9 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 	response, err := h.workflowRepo.SearchByEmbedding(r.Context(), &searchReq)
 	if err != nil {
 		h.logger.Error("Failed to search workflows",
-			zap.Error(err),
-			zap.String("query", searchReq.Query),
-			zap.Int("top_k", searchReq.TopK),
+			"error", err,
+			"query", searchReq.Query,
+			"top_k", searchReq.TopK,
 		)
 		h.writeRFC7807Error(w, http.StatusInternalServerError,
 			"https://kubernaut.dev/problems/internal-error",
@@ -103,16 +101,16 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 
 	// Log success
 	h.logger.Info("Workflow search completed",
-		zap.String("query", searchReq.Query),
-		zap.Int("results_count", len(response.Workflows)),
-		zap.Int("top_k", searchReq.TopK),
+		"query", searchReq.Query,
+		"results_count", len(response.Workflows),
+		"top_k", searchReq.TopK,
 	)
 
 	// Return results
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("Failed to encode workflow search response", zap.Error(err))
+		h.logger.Error(err, "Failed to encode workflow search response")
 	}
 }
 
@@ -160,10 +158,10 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	workflows, total, err := h.workflowRepo.List(r.Context(), filters, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list workflows",
-			zap.Error(err),
-			zap.Any("filters", filters),
-			zap.Int("limit", limit),
-			zap.Int("offset", offset),
+			"error", err,
+			"filters", filters,
+			"limit", limit,
+			"offset", offset,
 		)
 		h.writeRFC7807Error(w, http.StatusInternalServerError,
 			"https://kubernaut.dev/problems/internal-error",
@@ -175,10 +173,10 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 
 	// Log success
 	h.logger.Info("Workflows listed",
-		zap.Int("count", len(workflows)),
-		zap.Any("filters", filters),
-		zap.Int("limit", limit),
-		zap.Int("offset", offset),
+		"count", len(workflows),
+		"filters", filters,
+		"limit", limit,
+		"offset", offset,
 	)
 
 	// Convert to pointer slice for response
@@ -198,7 +196,7 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("Failed to encode workflow list response", zap.Error(err))
+		h.logger.Error(err, "Failed to encode workflow list response")
 	}
 }
 
@@ -223,4 +221,3 @@ func (h *Handler) validateWorkflowSearchRequest(req *models.WorkflowSearchReques
 
 	return nil
 }
-

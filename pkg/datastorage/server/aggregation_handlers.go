@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -141,9 +141,7 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 				Status: http.StatusInternalServerError,
 				Detail: "Failed to retrieve success rate data",
 			})
-			h.logger.Error("repository error",
-				zap.String("incident_type", incidentType),
-				zap.Error(err))
+			h.logger.Error(err, "repository error", "incident_type", incidentType)
 			return
 		}
 	} else {
@@ -164,17 +162,16 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("failed to encode response",
-			zap.Error(err))
+		h.logger.Error(err, "failed to encode response")
 	}
 
 	// Log for observability
-	h.logger.Debug("incident-type success rate query",
-		zap.String("incident_type", incidentType),
-		zap.String("time_range", timeRange),
-		zap.Int("min_samples", minSamples),
-		zap.Float64("success_rate", response.SuccessRate),
-		zap.String("confidence", response.Confidence))
+	h.logger.V(1).Info("incident-type success rate query",
+		"incident_type", incidentType,
+		"time_range", timeRange,
+		"min_samples", minSamples,
+		"success_rate", response.SuccessRate,
+		"confidence", response.Confidence)
 }
 
 // HandleGetSuccessRateByWorkflow handles GET /api/v1/success-rate/workflow
@@ -270,9 +267,9 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 				Detail: "Failed to retrieve success rate data",
 			})
 			h.logger.Error("repository error",
-				zap.String("playbook_id", playbookID),
-				zap.String("playbook_version", playbookVersion),
-				zap.Error(err))
+				"playbook_id", playbookID,
+				"playbook_version", playbookVersion,
+				"error", err)
 			return
 		}
 	} else {
@@ -294,18 +291,17 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("failed to encode response",
-			zap.Error(err))
+		h.logger.Error(err, "failed to encode response")
 	}
 
 	// Log for observability
-	h.logger.Debug("playbook success rate query",
-		zap.String("playbook_id", playbookID),
-		zap.String("playbook_version", playbookVersion),
-		zap.String("time_range", timeRange),
-		zap.Int("min_samples", minSamples),
-		zap.Float64("success_rate", response.SuccessRate),
-		zap.String("confidence", response.Confidence))
+	h.logger.V(1).Info("playbook success rate query",
+		"playbook_id", playbookID,
+		"playbook_version", playbookVersion,
+		"time_range", timeRange,
+		"min_samples", minSamples,
+		"success_rate", response.SuccessRate,
+		"confidence", response.Confidence)
 }
 
 // parseTimeRange converts time range string to time.Duration
@@ -450,26 +446,26 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 // REFACTOR: Extracted for consistent error logging
 func (h *Handler) logMultiDimensionalError(params *models.MultiDimensionalQuery, err error) {
 	h.logger.Error("failed to get multi-dimensional success rate",
-		zap.String("incident_type", params.IncidentType),
-		zap.String("playbook_id", params.PlaybookID),
-		zap.String("playbook_version", params.PlaybookVersion),
-		zap.String("action_type", params.ActionType),
-		zap.String("time_range", params.TimeRange),
-		zap.Int("min_samples", params.MinSamples),
-		zap.Error(err))
+		"incident_type", params.IncidentType,
+		"playbook_id", params.PlaybookID,
+		"playbook_version", params.PlaybookVersion,
+		"action_type", params.ActionType,
+		"time_range", params.TimeRange,
+		"min_samples", params.MinSamples,
+		"error", err)
 }
 
 // logMultiDimensionalSuccess logs successful multi-dimensional queries
 // REFACTOR: Extracted for consistent success logging
 func (h *Handler) logMultiDimensionalSuccess(params *models.MultiDimensionalQuery, result *models.MultiDimensionalSuccessRateResponse) {
-	h.logger.Debug("multi-dimensional success rate query completed",
-		zap.String("incident_type", params.IncidentType),
-		zap.String("playbook_id", params.PlaybookID),
-		zap.String("playbook_version", params.PlaybookVersion),
-		zap.String("action_type", params.ActionType),
-		zap.Int("total_executions", result.TotalExecutions),
-		zap.Float64("success_rate", result.SuccessRate),
-		zap.String("confidence", result.Confidence))
+	h.logger.V(1).Info("multi-dimensional success rate query completed",
+		"incident_type", params.IncidentType,
+		"playbook_id", params.PlaybookID,
+		"playbook_version", params.PlaybookVersion,
+		"action_type", params.ActionType,
+		"total_executions", result.TotalExecutions,
+		"success_rate", result.SuccessRate,
+		"confidence", result.Confidence)
 }
 
 // respondWithJSON is a helper to send JSON responses
@@ -478,7 +474,7 @@ func (h *Handler) respondWithJSON(w http.ResponseWriter, statusCode int, data in
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		h.logger.Error("failed to encode JSON response", zap.Error(err))
+		h.logger.Error(err, "failed to encode JSON response")
 	}
 }
 

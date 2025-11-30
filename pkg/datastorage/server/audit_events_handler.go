@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
@@ -87,22 +87,22 @@ type AuditEventsQueryResponse struct {
 // Success Response: 201 Created with event_id (UUID) and created_at
 // Error Responses: 400 Bad Request, 500 Internal Server Error (RFC 7807)
 func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) {
-	s.logger.Debug("handleCreateAuditEvent called",
-		zap.String("method", r.Method),
-		zap.String("path", r.URL.Path),
-		zap.String("remote_addr", r.RemoteAddr))
+	s.logger.V(1).Info("handleCreateAuditEvent called",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr)
 
 	// Create context with timeout for database operations
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	// 1. Parse request body (JSON payload with all fields)
-	s.logger.Debug("Parsing request body...")
+	s.logger.V(1).Info("Parsing request body...")
 	var payload map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		s.logger.Warn("Invalid JSON in request body",
-			zap.Error(err),
-			zap.String("remote_addr", r.RemoteAddr))
+		s.logger.Info("Invalid JSON in request body",
+			"error", err,
+			"remote_addr", r.RemoteAddr)
 
 		// Record validation failure metric (BR-STORAGE-019)
 		if s.metrics != nil && s.metrics.ValidationFailures != nil {
@@ -128,8 +128,8 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	// Check simple required fields
 	for _, field := range requiredFields {
 		if _, ok := payload[field]; !ok {
-			s.logger.Warn("Missing required field in request body",
-				zap.String("field", field))
+			s.logger.Info("Missing required field in request body",
+				"field", field)
 
 			// Record validation failure metric (BR-STORAGE-019)
 			if s.metrics != nil && s.metrics.ValidationFailures != nil {
@@ -154,9 +154,9 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		if !found {
-			s.logger.Warn("Missing required field in request body",
-				zap.String("field", canonical),
-				zap.Strings("accepted_aliases", aliases))
+			s.logger.Info("Missing required field in request body",
+				"field", canonical,
+				"accepted_aliases", aliases)
 
 			// Record validation failure metric (BR-STORAGE-019)
 			if s.metrics != nil && s.metrics.ValidationFailures != nil {
@@ -201,9 +201,9 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		// Try RFC3339 without nanoseconds
 		eventTimestamp, err = time.Parse(time.RFC3339, eventTimestampStr)
 		if err != nil {
-			s.logger.Warn("Invalid event_timestamp format",
-				zap.Error(err),
-				zap.String("event_timestamp", eventTimestampStr))
+			s.logger.Info("Invalid event_timestamp format",
+				"error", err,
+				"event_timestamp", eventTimestampStr)
 
 			// Record validation failure metric (BR-STORAGE-019)
 			if s.metrics != nil && s.metrics.ValidationFailures != nil {
@@ -257,9 +257,9 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	if parentEventIDStr, ok := payload["parent_event_id"].(string); ok && parentEventIDStr != "" {
 		parsedParentID, err := uuid.Parse(parentEventIDStr)
 		if err != nil {
-			s.logger.Warn("Invalid parent_event_id format",
-				zap.Error(err),
-				zap.String("parent_event_id", parentEventIDStr))
+			s.logger.Info("Invalid parent_event_id format",
+				"error", err,
+				"parent_event_id", parentEventIDStr)
 
 			// Record validation failure metric (BR-STORAGE-019)
 			if s.metrics != nil && s.metrics.ValidationFailures != nil {
@@ -280,9 +280,9 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			"SELECT event_date FROM audit_events WHERE event_id = $1",
 			parentEventID).Scan(&parentDate)
 		if err != nil {
-			s.logger.Warn("Parent event not found",
-				zap.Error(err),
-				zap.String("parent_event_id", parentEventID.String()))
+			s.logger.Info("Parent event not found",
+				"error", err,
+				"parent_event_id", parentEventID.String())
 
 			// Record validation failure metric (BR-STORAGE-019)
 			if s.metrics != nil && s.metrics.ValidationFailures != nil {
@@ -301,7 +301,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	// Extract event_data (nested JSONB)
 	eventData, ok := payload["event_data"].(map[string]interface{})
 	if !ok {
-		s.logger.Warn("event_data must be a JSON object")
+		s.logger.Info("event_data must be a JSON object")
 		writeRFC7807Error(w, validation.NewValidationErrorProblem(
 			"audit_event",
 			map[string]string{"event_data": "must be a JSON object"},
@@ -309,10 +309,10 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.logger.Debug("Request body parsed and validated successfully",
-		zap.String("event_type", eventType),
-		zap.String("event_category", eventCategory),
-		zap.String("correlation_id", correlationID))
+	s.logger.V(1).Info("Request body parsed and validated successfully",
+		"event_type", eventType,
+		"event_category", eventCategory,
+		"correlation_id", correlationID)
 
 	// 4. Build AuditEvent domain model (ADR-034 schema)
 	auditEvent := &repository.AuditEvent{
@@ -335,7 +335,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 5. Persist to database via repository
-	s.logger.Debug("Writing audit event to database...")
+	s.logger.V(1).Info("Writing audit event to database...")
 
 	// Record write duration metric (BR-STORAGE-019)
 	start := time.Now()
@@ -349,10 +349,10 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 
 	if err != nil {
 		s.logger.Error("Database write failed",
-			zap.Error(err),
-			zap.String("event_type", eventType),
-			zap.String("correlation_id", correlationID),
-			zap.Float64("duration_seconds", duration))
+			"error", err,
+			"event_type", eventType,
+			"correlation_id", correlationID,
+			"duration_seconds", duration)
 
 		// BR-STORAGE-012: Audit Point 2 - Write failure (before DLQ fallback)
 		// Note: No event_id yet since DB write failed
@@ -360,9 +360,9 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 
 		// DD-009: DLQ fallback on database errors
 		s.logger.Info("Attempting DLQ fallback for audit event",
-			zap.String("event_type", eventType),
-			zap.String("correlation_id", correlationID),
-			zap.String("db_error", err.Error()))
+			"event_type", eventType,
+			"correlation_id", correlationID,
+			"db_error", err.Error())
 
 		// Create a FRESH context for DLQ write (not tied to original request timeout)
 		// DD-009: DLQ fallback must succeed even if DB operation timed out
@@ -374,8 +374,8 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		eventDataJSON, marshalErr := json.Marshal(eventData)
 		if marshalErr != nil {
 			s.logger.Error("Failed to marshal event_data for DLQ",
-				zap.Error(marshalErr),
-				zap.String("event_type", eventType))
+				"error", marshalErr,
+				"event_type", eventType)
 			eventDataJSON = []byte("{}")
 		}
 
@@ -402,10 +402,10 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		// Attempt to enqueue to DLQ (use original database error, not marshalErr)
 		if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, dlqAuditEvent, err); dlqErr != nil {
 			s.logger.Error("DLQ fallback also failed - data loss risk",
-				zap.Error(dlqErr),
-				zap.String("event_type", eventType),
-				zap.String("correlation_id", correlationID),
-				zap.String("original_error", err.Error()))
+				"error", dlqErr,
+				"event_type", eventType,
+				"correlation_id", correlationID,
+				"original_error", err.Error())
 
 			// Both database and DLQ failed - return 500
 			writeRFC7807Error(w, &validation.RFC7807Problem{
@@ -419,8 +419,8 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		}
 
 		s.logger.Info("DLQ fallback succeeded",
-			zap.String("event_type", eventType),
-			zap.String("correlation_id", correlationID))
+			"event_type", eventType,
+			"correlation_id", correlationID)
 
 		// BR-STORAGE-012: Audit Point 3 - DLQ fallback success
 		s.auditDLQFallback(ctx, dlqAuditEvent.EventID.String(), eventType, correlationID, eventCategory)
@@ -438,7 +438,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			Message: "audit event queued for async processing",
 		}
 		if err := json.NewEncoder(w).Encode(response); err != nil {
-			s.logger.Error("failed to encode DLQ response", zap.Error(err))
+			s.logger.Error(err, "failed to encode DLQ response")
 		}
 		return
 	}
@@ -460,11 +460,11 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 
 	// 7. Success - return 201 Created with event_id and created_at
 	s.logger.Info("Audit event created successfully",
-		zap.String("event_id", created.EventID.String()),
-		zap.String("event_type", created.EventType),
-		zap.String("event_category", created.EventCategory),
-		zap.String("correlation_id", created.CorrelationID),
-		zap.Float64("duration_seconds", duration))
+		"event_id", created.EventID.String(),
+		"event_type", created.EventType,
+		"event_category", created.EventCategory,
+		"correlation_id", created.CorrelationID,
+		"duration_seconds", duration)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -474,7 +474,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		Message:        "Audit event created successfully",
 	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		s.logger.Error("failed to encode success response", zap.Error(err))
+		s.logger.Error(err, "failed to encode success response")
 	}
 }
 
@@ -510,11 +510,11 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 // BR-STORAGE-023: Pagination Validation
 // DD-STORAGE-010: Offset-based pagination
 func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) {
-	s.logger.Debug("handleQueryAuditEvents called",
-		zap.String("method", r.Method),
-		zap.String("path", r.URL.Path),
-		zap.String("query", r.URL.RawQuery),
-		zap.String("remote_addr", r.RemoteAddr))
+	s.logger.V(1).Info("handleQueryAuditEvents called",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"query", r.URL.RawQuery,
+		"remote_addr", r.RemoteAddr)
 
 	// Create context with timeout for database operations
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -523,9 +523,9 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 	// 1. Parse and validate query parameters
 	filters, err := s.parseQueryFilters(r)
 	if err != nil {
-		s.logger.Warn("Invalid query parameters",
-			zap.Error(err),
-			zap.String("query", r.URL.RawQuery))
+		s.logger.Info("Invalid query parameters",
+			"error", err,
+			"query", r.URL.RawQuery)
 		writeRFC7807Error(w, validation.NewValidationErrorProblem("query parameters", map[string]string{
 			"query": err.Error(),
 		}))
@@ -536,8 +536,8 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 	builder := s.buildQueryFromFilters(filters)
 	querySQL, args, err := builder.Build()
 	if err != nil {
-		s.logger.Warn("Failed to build query",
-			zap.Error(err))
+		s.logger.Info("Failed to build query",
+			"error", err)
 		writeRFC7807Error(w, validation.NewValidationErrorProblem("query parameters", map[string]string{
 			"pagination": err.Error(),
 		}))
@@ -547,8 +547,8 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 	// Build count query
 	countSQL, _, err := builder.BuildCount()
 	if err != nil {
-		s.logger.Warn("Failed to build count query",
-			zap.Error(err))
+		s.logger.Info("Failed to build count query",
+			"error", err)
 		writeRFC7807Error(w, &validation.RFC7807Problem{
 			Type:     "https://kubernaut.io/errors/internal-error",
 			Title:    "Internal Server Error",
@@ -562,8 +562,7 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 	// 3. Execute query via repository
 	events, pagination, err := s.auditEventsRepo.Query(ctx, querySQL, countSQL, args)
 	if err != nil {
-		s.logger.Error("Failed to query audit events",
-			zap.Error(err))
+		s.logger.Error(err, "Failed to query audit events")
 		writeRFC7807Error(w, &validation.RFC7807Problem{
 			Type:     "https://kubernaut.io/errors/database-error",
 			Title:    "Database Error",
@@ -576,10 +575,10 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 
 	// 4. Success - return 200 OK with data and pagination metadata
 	s.logger.Info("Audit events queried successfully",
-		zap.Int("count", len(events)),
-		zap.Int("total", pagination.Total),
-		zap.Int("limit", pagination.Limit),
-		zap.Int("offset", pagination.Offset))
+		"count", len(events),
+		"total", pagination.Total,
+		"limit", pagination.Limit,
+		"offset", pagination.Offset)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -588,7 +587,7 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 		Pagination: pagination,
 	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		s.logger.Error("failed to encode query response", zap.Error(err))
+		s.logger.Error(err, "failed to encode query response")
 	}
 }
 
@@ -747,10 +746,10 @@ func (s *Server) auditWriteSuccess(ctx context.Context, eventID, eventType, corr
 
 	// Non-blocking audit (async buffered)
 	if err := s.auditStore.StoreAudit(ctx, auditEvent); err != nil {
-		s.logger.Warn("Failed to audit write success",
-			zap.Error(err),
-			zap.String("event_id", eventID),
-			zap.String("correlation_id", correlationID))
+		s.logger.Info("Failed to audit write success",
+			"error", err,
+			"event_id", eventID,
+			"correlation_id", correlationID)
 
 		// Record audit failure metric for visibility (Concern 3)
 		if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
@@ -802,10 +801,10 @@ func (s *Server) auditWriteFailure(ctx context.Context, eventID, eventType, corr
 
 	// Non-blocking audit (async buffered)
 	if err := s.auditStore.StoreAudit(ctx, auditEvent); err != nil {
-		s.logger.Warn("Failed to audit write failure",
-			zap.Error(err),
-			zap.String("event_id", eventID),
-			zap.String("correlation_id", correlationID))
+		s.logger.Info("Failed to audit write failure",
+			"error", err,
+			"event_id", eventID,
+			"correlation_id", correlationID)
 
 		// Record audit failure metric for visibility (Concern 3)
 		if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
@@ -848,10 +847,10 @@ func (s *Server) auditDLQFallback(ctx context.Context, eventID, eventType, corre
 
 	// Non-blocking audit (async buffered)
 	if err := s.auditStore.StoreAudit(ctx, auditEvent); err != nil {
-		s.logger.Warn("Failed to audit DLQ fallback",
-			zap.Error(err),
-			zap.String("event_id", eventID),
-			zap.String("correlation_id", correlationID))
+		s.logger.Info("Failed to audit DLQ fallback",
+			"error", err,
+			"event_id", eventID,
+			"correlation_id", correlationID)
 
 		// Record audit failure metric for visibility (Concern 3)
 		if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
