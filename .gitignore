@@ -114,6 +114,11 @@ TDD-*.md
 [A-Z][A-Z-]*-*-FIX*.md
 [A-Z][A-Z-]*-*-BUG*.md
 [A-Z][A-Z-]*-*-RECOVERY*.md
+
+# EXCEPTIONS: Allow Design Decision documents (DD-*.md, ADR-*.md) in architecture/decisions
+!docs/architecture/decisions/DD-*.md
+!docs/architecture/decisions/ADR-*.md
+
 # Pattern with underscores (e.g., CONTEXT_API_*) - GLOBAL
 [A-Z][A-Z_]*_*_SUMMARY.md
 [A-Z][A-Z_]*_*_COMPLETE.md
