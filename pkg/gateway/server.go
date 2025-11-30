@@ -31,7 +31,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	goredis "github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
@@ -1443,7 +1442,7 @@ func (s *Server) monitorWindowExpiration(ctx context.Context, windowID string) {
 	time.Sleep(windowDuration)
 
 	s.logger.Info("Storm aggregation window expired, cleaning up",
-		zap.String("windowID", windowID))
+		"windowID", windowID)
 
 	// Cleanup: Window resources are already in CRD, just remove Redis keys
 	// Note: Resources have 2x TTL for retrieval, will auto-expire
