@@ -17,6 +17,7 @@ limitations under the License.
 package gateway
 
 import (
+	"github.com/go-logr/logr"
 	"context"
 	"time"
 
@@ -24,7 +25,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,7 +57,7 @@ var _ = Describe("DD-GATEWAY-009: CRD Phase-Based Deduplication", func() {
 		redisServer     *miniredis.Miniredis
 		redisClient     *redis.Client
 		k8sClient       *k8s.Client
-		logger          *zap.Logger
+		logger          logr.Logger
 		testSignal      *types.NormalizedSignal
 		testFingerprint string
 		scheme          *runtime.Scheme
@@ -65,7 +65,7 @@ var _ = Describe("DD-GATEWAY-009: CRD Phase-Based Deduplication", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard()
 
 		// Setup miniredis server (required for deduplication service)
 		var err error

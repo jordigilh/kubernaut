@@ -17,6 +17,7 @@ limitations under the License.
 package gateway
 
 import (
+	"github.com/go-logr/logr"
 	"context"
 	"fmt"
 	"strings"
@@ -26,7 +27,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
@@ -44,14 +44,14 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 		dedupService    *processing.DeduplicationService
 		redisServer     *miniredis.Miniredis
 		redisClient     *redis.Client
-		logger          *zap.Logger
+		logger          logr.Logger
 		testSignal      *types.NormalizedSignal
 		testFingerprint string
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard()
 
 		// Setup miniredis server
 		var err error

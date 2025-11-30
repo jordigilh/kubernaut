@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
@@ -72,7 +73,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Aggregation First-Alert Handling", func(
 		// DD-GATEWAY-008: Use buffer_threshold: 2 for testing
 		stormAggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
-			nil,            // logger (nil = use nop logger for tests)
+			logr.Discard(), // logger
 			2,              // bufferThreshold: 2 alerts
 			5*time.Second,  // inactivityTimeout: 5s
 			30*time.Second, // maxWindowDuration: 30s

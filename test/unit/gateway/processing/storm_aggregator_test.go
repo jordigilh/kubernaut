@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
@@ -62,7 +63,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation", func() {
 		// TDD GREEN: Create real StormAggregator with default config
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
-			nil,            // logger (nil = use nop logger for tests)
+			logr.Discard(), // logger
 			5,              // bufferThreshold (5 alerts before creating window)
 			60*time.Second, // inactivityTimeout (1 minute sliding window)
 			5*time.Minute,  // maxWindowDuration (5 minute safety limit)
@@ -210,7 +211,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation", func() {
 				// Create aggregator with namespace-specific overrides
 				aggregatorWithOverrides := processing.NewStormAggregatorWithConfig(
 					redisClient,
-					nil,            // logger
+					logr.Discard(), // logger
 					5,              // bufferThreshold
 					60*time.Second, // inactivityTimeout
 					5*time.Minute,  // maxWindowDuration
@@ -384,7 +385,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation", func() {
 				// Create system with limited capacity per namespace
 				aggregatorLowCap := processing.NewStormAggregatorWithConfig(
 					redisClient,
-					nil,            // logger
+					logr.Discard(), // logger
 					5,              // bufferThreshold
 					60*time.Second, // inactivityTimeout
 					5*time.Minute,  // maxWindowDuration
@@ -420,7 +421,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation", func() {
 				// Create aggregator with low capacity and sampling enabled
 				aggregatorSampling := processing.NewStormAggregatorWithConfig(
 					redisClient,
-					nil,            // logger
+					logr.Discard(), // logger
 					5,              // bufferThreshold
 					60*time.Second, // inactivityTimeout
 					5*time.Minute,  // maxWindowDuration

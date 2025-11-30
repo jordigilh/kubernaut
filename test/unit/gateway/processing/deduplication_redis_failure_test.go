@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
@@ -110,11 +110,11 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				}, zap.NewNop())
+				}, logr.Discard())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
-				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, zap.NewNop(), nil)
+				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, logr.Discard(), nil)
 
 				// Check() should return error (not panic)
 				isDup, metadata, err := failingDedupService.Check(ctx, testSignal)
@@ -147,11 +147,11 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				}, zap.NewNop())
+				}, logr.Discard())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
-				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, zap.NewNop(), nil)
+				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, logr.Discard(), nil)
 
 				// Check() should gracefully degrade (not panic)
 				isDup, _, err := failingDedupService.Check(ctx, testSignal)
@@ -182,11 +182,11 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				}, zap.NewNop())
+				}, logr.Discard())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
-				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, zap.NewNop(), nil)
+				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, logr.Discard(), nil)
 
 				// Store() should gracefully degrade (return nil, not error)
 				err := failingDedupService.Store(ctx, testSignal, "test-crd-1")
@@ -216,10 +216,10 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				}, zap.NewNop())
+				}, logr.Discard())
 
 				// Create deduplication service with failing Redis client
-				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, zap.NewNop(), nil)
+				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, logr.Discard(), nil)
 
 				// Step 2: Check() should fail
 				_, _, err := failingDedupService.Check(ctx, testSignal)
@@ -231,10 +231,10 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 				// Step 4: Create new service with working Redis (simulate recovery)
 				workingRedisClient := rediscache.NewClient(&redis.Options{
 					Addr: redisServer.Addr(), // Working miniredis
-				}, zap.NewNop())
+				}, logr.Discard())
 				defer workingRedisClient.Close()
 
-				workingDedupService := processing.NewDeduplicationService(workingRedisClient, nil, zap.NewNop(), nil)
+				workingDedupService := processing.NewDeduplicationService(workingRedisClient, nil, logr.Discard(), nil)
 
 				// Step 5: Check() should succeed after recovery
 				isDup, _, err := workingDedupService.Check(ctx, testSignal)
@@ -262,11 +262,11 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				}, zap.NewNop())
+				}, logr.Discard())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
-				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, zap.NewNop(), nil)
+				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, logr.Discard(), nil)
 
 				// Step 1: First check fails (Redis down)
 				_, _, err := failingDedupService.Check(ctx, testSignal)
@@ -302,11 +302,11 @@ var _ = Describe("BR-GATEWAY-013: Redis Failure Recovery (Unit)", func() {
 					DialTimeout:  100 * time.Millisecond,
 					ReadTimeout:  100 * time.Millisecond,
 					WriteTimeout: 100 * time.Millisecond,
-				}, zap.NewNop())
+				}, logr.Discard())
 				defer failingRedisClient.Close()
 
 				// Create deduplication service with failing Redis client
-				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, zap.NewNop(), nil)
+				failingDedupService := processing.NewDeduplicationService(failingRedisClient, nil, logr.Discard(), nil)
 
 				// Check() should return descriptive error
 				_, _, err := failingDedupService.Check(ctx, testSignal)

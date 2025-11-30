@@ -17,13 +17,13 @@ limitations under the License.
 package gateway
 
 import (
+	"github.com/go-logr/logr"
 	"context"
 	"encoding/json"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -40,12 +40,12 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 	var (
 		crdCreator    *processing.CRDCreator
 		ctx           context.Context
-		logger        *zap.Logger
+		logger        logr.Logger
 		fakeK8sClient *k8s.Client
 	)
 
 	BeforeEach(func() {
-		logger = zap.NewNop() // No-op logger for tests (no output)
+		logger = logr.Discard() // No-op logger for tests (no output)
 		ctx = context.Background()
 
 		// Create fake K8s client per ADR-004: Fake Kubernetes Client for Unit Testing

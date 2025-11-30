@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -58,7 +58,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 		scheme      *runtime.Scheme
 		metricsReg  *prometheus.Registry
 		metricsInst *metrics.Metrics
-		logger      *zap.Logger
+		logger      logr.Logger
 		retryConfig *config.RetrySettings
 		ctx         context.Context
 		cancel      context.CancelFunc
@@ -75,7 +75,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 		metricsInst = metrics.NewMetricsWithRegistry(metricsReg)
 
 		// Create logger
-		logger = zap.NewNop()
+		logger = logr.Discard()
 
 		// Setup scheme for fake client (ADR-004)
 		scheme = runtime.NewScheme()
