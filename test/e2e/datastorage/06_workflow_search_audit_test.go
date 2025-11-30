@@ -164,14 +164,14 @@ execution:
 				"owner":         "platform-team",
 				"maintainer":    "oncall@example.com",
 				"content":       workflowSchemaContent,
-				// JSON labels use hyphenated keys (signal-type, risk-tolerance)
+				// JSON labels use hyphenated keys (signal_type, risk_tolerance)
 				"labels": map[string]interface{}{
-					"signal-type":       "OOMKilled",
+					"signal_type":       "OOMKilled",
 					"severity":          "critical",
 					"environment":       "production",
 					"priority":          "P0",
-					"risk-tolerance":    "low",
-					"business-category": "revenue-critical",
+					"risk_tolerance":    "low",
+					"business_category": "revenue-critical",
 					"component":         "deployment",
 				},
 				"container_image": containerImage,
@@ -360,8 +360,10 @@ execution:
 			// Verify search metadata (BR-AUDIT-028)
 			searchMetadata, ok := eventDataMap["search_metadata"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "event_data should contain 'search_metadata' object")
-			Expect(searchMetadata["duration_ms"]).To(BeNumerically(">", 0),
-				"Search duration should be recorded")
+			// Note: duration_ms may be 0 for sub-millisecond searches (Milliseconds() truncates)
+			// The important thing is that the field exists and is a valid number >= 0
+			Expect(searchMetadata["duration_ms"]).To(BeNumerically(">=", 0),
+				"Search duration should be recorded (may be 0 for sub-millisecond searches)")
 
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			testLogger.Info("✅ Workflow Search Audit Trail Validation Complete")

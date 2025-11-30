@@ -191,13 +191,13 @@ execution:
 				"description":   "Recover from OOMKilled events using automated remediation with automatic embedding generation",
 				"content":       workflowSchemaContent,
 				"labels": map[string]interface{}{
-					// JSON labels use hyphenated keys (signal-type, risk-tolerance)
-					"signal-type":       "OOMKilled",
+					// JSON labels use hyphenated keys (signal_type, risk_tolerance)
+					"signal_type":       "OOMKilled",
 					"severity":          "critical",
-					"risk-tolerance":    "low",
+					"risk_tolerance":    "low",
 					"environment":       "production",
 					"priority":          "P0",
-					"business-category": "availability",
+					"business_category": "availability",
 					"component":         "deployment",
 				},
 				"container_image": containerImage,
@@ -403,13 +403,13 @@ execution:
 				"description":   "Recover from OOMKilled events - UPDATED with improved memory handling",
 				"content":       workflowSchemaContentV2,
 				"labels": map[string]interface{}{
-					// JSON labels use hyphenated keys (signal-type, risk-tolerance)
-					"signal-type":       "OOMKilled",
+					// JSON labels use hyphenated keys (signal_type, risk_tolerance)
+					"signal_type":       "OOMKilled",
 					"severity":          "critical",
-					"risk-tolerance":    "low",
+					"risk_tolerance":    "low",
 					"environment":       "production",
 					"priority":          "P0",
-					"business-category": "availability",
+					"business_category": "availability",
 					"component":         "deployment",
 				},
 				"container_image": containerImageV2,
