@@ -75,7 +75,8 @@ var _ DeliveryService = (*FileDeliveryService)(nil)
 // Files are named: notification-{name}-{timestamp}.json
 //
 // Example:
-//   service := NewFileDeliveryService("/tmp/kubernaut-e2e-notifications")
+//
+//	service := NewFileDeliveryService("/tmp/kubernaut-e2e-notifications")
 func NewFileDeliveryService(outputDir string) *FileDeliveryService {
 	return &FileDeliveryService{
 		outputDir: outputDir,
@@ -160,4 +161,3 @@ func (s *FileDeliveryService) generateFilename(notification *notificationv1alpha
 	timestamp := time.Now().Format("20060102-150405.000000")
 	return fmt.Sprintf("notification-%s-%s.json", notification.Name, timestamp)
 }
-

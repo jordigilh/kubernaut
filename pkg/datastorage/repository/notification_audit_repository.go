@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn" // DD-010: Migrated from lib/pq
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -34,12 +34,12 @@ import (
 // NotificationAuditRepository handles PostgreSQL operations for notification_audit table.
 type NotificationAuditRepository struct {
 	db        *sql.DB
-	logger    *zap.Logger
+	logger    logr.Logger
 	validator *validation.NotificationAuditValidator
 }
 
 // NewNotificationAuditRepository creates a new repository instance.
-func NewNotificationAuditRepository(db *sql.DB, logger *zap.Logger) *NotificationAuditRepository {
+func NewNotificationAuditRepository(db *sql.DB, logger logr.Logger) *NotificationAuditRepository {
 	return &NotificationAuditRepository{
 		db:        db,
 		logger:    logger,

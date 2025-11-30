@@ -130,6 +130,19 @@ type ActionLink struct {
 }
 
 // NotificationRequestSpec defines the desired state of NotificationRequest
+//
+// DD-NOT-005: Spec Immutability
+// ALL spec fields are immutable after CRD creation. Users cannot update
+// notification content once created. To change a notification, delete
+// and recreate the CRD.
+//
+// Rationale: Notifications are immutable events, not mutable resources.
+// This prevents race conditions, simplifies controller logic, and provides
+// perfect audit trail.
+//
+// Cancellation: Delete the NotificationRequest CRD to cancel delivery.
+//
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (DD-NOT-005)"
 type NotificationRequestSpec struct {
 	// Type of notification (escalation, simple, status-update)
 	// +kubebuilder:validation:Required

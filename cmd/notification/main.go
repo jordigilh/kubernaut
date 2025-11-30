@@ -22,6 +22,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -149,13 +150,14 @@ func main() {
 		MaxRetries:    3,               // Max retry attempts for failed writes
 	}
 
-	// Create zap logger for audit store (requires *zap.Logger, not logr.Logger)
+	// Create zap logger for audit store, then convert to logr.Logger via zapr adapter
+	// DD-005 v2.0: pkg/audit uses logr.Logger for unified logging interface
 	zapLogger, err := zaplog.NewProduction()
 	if err != nil {
 		setupLog.Error(err, "Failed to create zap logger for audit store")
 		os.Exit(1)
 	}
-	auditLogger := zapLogger.Named("audit")
+	auditLogger := zapr.NewLogger(zapLogger.Named("audit"))
 
 	auditStore, err := audit.NewBufferedStore(dataStorageClient, auditConfig, "notification-controller", auditLogger)
 	if err != nil {
@@ -174,7 +176,7 @@ func main() {
 		Scheme:         mgr.GetScheme(),
 		ConsoleService: consoleService,
 		SlackService:   slackService,
-		FileService:    fileService,  // NEW - E2E file delivery (DD-NOT-002)
+		FileService:    fileService, // NEW - E2E file delivery (DD-NOT-002)
 		Sanitizer:      sanitizer,
 		AuditStore:     auditStore,   // Audit store
 		AuditHelpers:   auditHelpers, // Audit helpers
