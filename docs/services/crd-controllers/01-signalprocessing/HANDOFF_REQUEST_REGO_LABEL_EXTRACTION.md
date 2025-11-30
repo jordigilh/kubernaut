@@ -13,6 +13,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| **3.1** | Nov 30, 2025 | SignalProcessing Team | DD-WORKFLOW-001 v1.6 alignment: naming convention, risk_tolerance now customer-defined |
 | **3.0** | Nov 30, 2025 | AIAnalysis Team | **MAJOR**: CustomLabels (Rego) pulled into V1.0, unified naming |
 | 2.1 | Nov 30, 2025 | AIAnalysis Team | Added 7 Rego transformation examples |
 | 2.0 | Nov 30, 2025 | AIAnalysis Team | Added DetectedLabels (V1.0), restructured document |
@@ -57,6 +58,38 @@ All labels use the same naming convention from V1.0 to avoid migration:
 | `kubernaut.io/*` | Standard labels | `kubernaut.io/team`, `kubernaut.io/risk-tolerance` |
 | `constraint.kubernaut.io/*` | Workflow constraints | `constraint.kubernaut.io/cost-constrained` |
 | `custom.kubernaut.io/*` | Customer-defined | `custom.kubernaut.io/business-unit` |
+
+### 📛 Naming Convention (DD-WORKFLOW-001 v1.6)
+
+| Context | Convention | Example |
+|---------|------------|---------|
+| **K8s Labels/Annotations** | kebab-case | `kubernaut.io/signal-type`, `kubernaut.io/risk-tolerance` |
+| **API Fields** | snake_case | `signal_type`, `risk_tolerance`, `custom_labels` |
+| **DB Columns** | snake_case | `signal_type`, `severity`, `custom_labels` |
+| **Rego Output Keys** | kebab-case (K8s label keys) | `"kubernaut.io/risk-tolerance"` |
+
+**Key Points**:
+- K8s labels use kebab-case (Kubernetes convention)
+- API/DB fields use snake_case (REST/SQL convention)
+- Rego policies output K8s label keys (kebab-case)
+- SignalProcessing extracts subdomain, HolmesGPT-API passes to Data Storage
+
+### 📋 DetectedLabels Wildcard Support (NEW)
+
+Workflow blueprints can use wildcards for DetectedLabels:
+
+```yaml
+# Workflow matches ANY GitOps tool
+detectedLabels:
+  gitOpsTool: "*"  # Matches argocd, flux, helm, etc.
+  gitOpsManaged: true
+
+# Workflow for non-GitOps workloads
+detectedLabels:
+  gitOpsManaged: false  # Or omit field (same meaning)
+```
+
+**Boolean Normalization**: DetectedLabels booleans are only included when `true`, omitted when `false`.
 
 ---
 
@@ -280,17 +313,18 @@ package signalprocessing.security
 import data.signalprocessing.labels as customer_labels
 
 # System labels that cannot be overridden by customer policies
-# These are the 5 mandatory labels from DD-WORKFLOW-001
+# These are the 5 mandatory labels from DD-WORKFLOW-001 v1.6
+# K8s label keys use kebab-case; API/DB fields use snake_case
 system_labels := {
-    "kubernaut.io/signal_type",
-    "kubernaut.io/severity",
-    "kubernaut.io/component",
-    "kubernaut.io/environment",
-    "kubernaut.io/priority"
+    "kubernaut.io/signal-type",   # API: signal_type
+    "kubernaut.io/severity",      # API: severity
+    "kubernaut.io/component",     # API: component
+    "kubernaut.io/environment",   # API: environment
+    "kubernaut.io/priority"       # API: priority
 }
-# NOTE: The following are ALLOWED (customer-defined via Rego):
-#   - kubernaut.io/risk-tolerance
-#   - kubernaut.io/business-category (optional, not all workloads have one)
+# NOTE: The following are ALLOWED (customer-defined via Rego, per DD-WORKFLOW-001 v1.6):
+#   - kubernaut.io/risk-tolerance  → stored in custom_labels JSONB
+#   - kubernaut.io/business-category → stored in custom_labels JSONB (optional)
 
 # Final output: customer labels minus system labels
 labels[key] = value {
@@ -1002,8 +1036,8 @@ labels["region"] = region {
 # SECURITY: Never extract these system labels
 deny_labels := {
     "kubernaut.io/priority",      # System-controlled
-    "kubernaut.io/severity",      # System-controlled
-    "kubernaut.io/risk-tolerance" # System-controlled
+    "kubernaut.io/severity"       # System-controlled
+    # NOTE: risk_tolerance is now CUSTOMER-DEFINED (DD-WORKFLOW-001 v1.6)
 }
 
 # Allow custom- prefixed labels (user-safe)
