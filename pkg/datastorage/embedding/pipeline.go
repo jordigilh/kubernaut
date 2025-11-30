@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -39,11 +39,11 @@ const (
 type Pipeline struct {
 	apiClient Client
 	cache     Cache
-	logger    *zap.Logger
+	logger    logr.Logger
 }
 
 // NewPipeline creates a new embedding pipeline.
-func NewPipeline(apiClient Client, cache Cache, logger *zap.Logger) *Pipeline {
+func NewPipeline(apiClient Client, cache Cache, logger logr.Logger) *Pipeline {
 	return &Pipeline{
 		apiClient: apiClient,
 		cache:     cache,
@@ -67,9 +67,9 @@ func (p *Pipeline) Generate(ctx context.Context, audit *models.RemediationAudit)
 
 	// Check cache first
 	if cached, err := p.cache.Get(ctx, cacheKey); err == nil {
-		p.logger.Debug("cache hit for embedding",
-			zap.String("cache_key", cacheKey),
-			zap.Int("dimension", len(cached)))
+		p.logger.V(1).Info("cache hit for embedding",
+			"cache_key", cacheKey,
+			"dimension", len(cached))
 
 		return &EmbeddingResult{
 			Embedding: cached,
@@ -79,23 +79,23 @@ func (p *Pipeline) Generate(ctx context.Context, audit *models.RemediationAudit)
 	}
 
 	// Cache miss - generate embedding via API
-	p.logger.Debug("cache miss for embedding, calling API",
-		zap.String("cache_key", cacheKey))
+	p.logger.V(1).Info("cache miss for embedding, calling API",
+		"cache_key", cacheKey)
 
 	embedding, err := p.apiClient.Embed(ctx, text)
 	if err != nil {
 		p.logger.Error("failed to generate embedding",
-			zap.Error(err),
-			zap.String("cache_key", cacheKey))
+			"error", err,
+			"cache_key", cacheKey)
 		return nil, fmt.Errorf("embedding API error: %w", err)
 	}
 
 	// Store in cache
 	if err := p.cache.Set(ctx, cacheKey, embedding, CacheTTL); err != nil {
 		// Log cache failure but don't fail the request
-		p.logger.Warn("failed to cache embedding",
-			zap.Error(err),
-			zap.String("cache_key", cacheKey))
+		p.logger.Info("failed to cache embedding",
+			"error", err,
+			"cache_key", cacheKey)
 	}
 
 	return &EmbeddingResult{

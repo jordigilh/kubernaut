@@ -23,18 +23,18 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // RedisCache implements the Cache interface using Redis.
 // Business Requirement: BR-STORAGE-013 (Caching for performance)
 type RedisCache struct {
 	client *redis.Client
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewRedisCache creates a new Redis cache client.
-func NewRedisCache(client *redis.Client, logger *zap.Logger) *RedisCache {
+func NewRedisCache(client *redis.Client, logger logr.Logger) *RedisCache {
 	return &RedisCache{
 		client: client,
 		logger: logger,
@@ -49,22 +49,22 @@ func (r *RedisCache) Get(ctx context.Context, key string) ([]float32, error) {
 			return nil, fmt.Errorf("cache miss")
 		}
 		r.logger.Error("failed to get from cache",
-			zap.Error(err),
-			zap.String("key", key))
+			"error", err,
+			"key", key)
 		return nil, fmt.Errorf("cache get error: %w", err)
 	}
 
 	var embedding []float32
 	if err := json.Unmarshal(data, &embedding); err != nil {
 		r.logger.Error("failed to unmarshal cached embedding",
-			zap.Error(err),
-			zap.String("key", key))
+			"error", err,
+			"key", key)
 		return nil, fmt.Errorf("unmarshal error: %w", err)
 	}
 
-	r.logger.Debug("cache hit",
-		zap.String("key", key),
-		zap.Int("dimension", len(embedding)))
+	r.logger.V(1).Info("cache hit",
+		"key", key,
+		"dimension", len(embedding))
 
 	return embedding, nil
 }
@@ -74,23 +74,23 @@ func (r *RedisCache) Set(ctx context.Context, key string, embedding []float32, t
 	data, err := json.Marshal(embedding)
 	if err != nil {
 		r.logger.Error("failed to marshal embedding",
-			zap.Error(err),
-			zap.String("key", key))
+			"error", err,
+			"key", key)
 		return fmt.Errorf("marshal error: %w", err)
 	}
 
 	if err := r.client.Set(ctx, key, data, ttl).Err(); err != nil {
 		r.logger.Error("failed to set cache",
-			zap.Error(err),
-			zap.String("key", key),
-			zap.Duration("ttl", ttl))
+			"error", err,
+			"key", key,
+			"ttl", ttl)
 		return fmt.Errorf("cache set error: %w", err)
 	}
 
-	r.logger.Debug("cached embedding",
-		zap.String("key", key),
-		zap.Int("dimension", len(embedding)),
-		zap.Duration("ttl", ttl))
+	r.logger.V(1).Info("cached embedding",
+		"key", key,
+		"dimension", len(embedding),
+		"ttl", ttl)
 
 	return nil
 }
