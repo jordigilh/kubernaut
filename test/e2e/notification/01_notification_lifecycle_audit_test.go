@@ -26,9 +26,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	notificationcontroller "github.com/jordigilh/kubernaut/internal/controller/notification"
@@ -118,7 +118,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 			MaxRetries:    3,
 		}
 
-		testLogger, _ := zap.NewDevelopment()
+		testLogger := crzap.New(crzap.UseDevMode(true))
 		auditStore, _ = audit.NewBufferedStore(dataStorageClient, config, "notification", testLogger)
 
 		// Create audit helpers

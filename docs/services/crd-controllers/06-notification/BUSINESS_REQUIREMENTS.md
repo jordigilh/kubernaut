@@ -461,6 +461,126 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ---
 
+### Category 9: Channel Routing (V1.1+)
+
+#### BR-NOT-065: Channel Routing Based on Labels
+
+**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification labels (type, environment, severity, namespace) using configurable routing rules.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Different notification types require different delivery channels. Approval requests may need PagerDuty for immediate attention, while completion notifications may only need Slack. Label-based routing enables flexible, configurable channel selection without code changes.
+
+**Implementation**:
+- Routing based on notification labels: `type`, `environment`, `severity`, `namespace`
+- Configurable routing rules in ConfigMap
+- First matching rule wins (ordered evaluation)
+- Default fallback channel if no rules match
+
+**Acceptance Criteria**:
+- ✅ Notifications routed based on label matching
+- ✅ Multiple routing rules supported with priority ordering
+- ✅ Default fallback channel configured
+- ✅ Routing decision logged for audit
+
+**Test Coverage**:
+- Unit: Label matching and routing decision logic
+- Integration: Multi-rule routing with various label combinations
+- E2E: End-to-end routing validation
+
+**Related BRs**: BR-NOT-066 (Config Format), BR-NOT-067 (Hot-Reload)
+**Related DDs**: DD-NOTIFICATION-001 (Alertmanager Routing Reuse)
+
+---
+
+#### BR-NOT-066: Alertmanager-Compatible Configuration Format
+
+**Description**: The Notification Service MUST support Alertmanager-compatible routing configuration format, enabling SREs to use familiar syntax for channel selection rules.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Alertmanager's routing configuration is the industry standard for Kubernetes notification routing. Using the same format reduces learning curve and enables reuse of existing configurations. Per DD-NOTIFICATION-001, we reuse Alertmanager's routing library directly.
+
+**Implementation**:
+- Configuration format matches Alertmanager `route` and `receivers` structure
+- Import `github.com/prometheus/alertmanager/config` for parsing
+- Import `github.com/prometheus/alertmanager/dispatch` for routing logic
+- Zero custom routing implementation - reuse battle-tested Alertmanager code
+
+**Acceptance Criteria**:
+- ✅ Alertmanager config format parsed correctly
+- ✅ Matchers support: exact match (`=`), regex (`=~`), negative (`!=`)
+- ✅ Receivers with Slack, PagerDuty, Email, Webhook configs
+- ✅ Config validation on load
+
+**Test Coverage**:
+- Unit: Config parsing and validation
+- Integration: Routing with Alertmanager-style config
+- E2E: End-to-end delivery with complex routing rules
+
+**Related BRs**: BR-NOT-065 (Channel Routing)
+**Related DDs**: DD-NOTIFICATION-001 (Alertmanager Routing Reuse)
+
+---
+
+#### BR-NOT-067: Routing Configuration Hot-Reload
+
+**Description**: The Notification Service MUST reload routing configuration without restart when the ConfigMap changes, enabling dynamic routing updates without service disruption.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Production routing changes should not require controller restart. Hot-reload enables immediate configuration updates and reduces operational risk.
+
+**Implementation**:
+- Watch ConfigMap for changes via controller-runtime
+- Rebuild routing table on ConfigMap update
+- Graceful transition: in-flight notifications complete with old config
+- New notifications use updated config immediately
+
+**Acceptance Criteria**:
+- ✅ ConfigMap changes detected within 30 seconds
+- ✅ Routing table updated without restart
+- ✅ In-flight notifications not affected
+- ✅ Config reload logged with before/after diff
+
+**Test Coverage**:
+- Unit: Config reload logic
+- Integration: ConfigMap update triggers reload
+- E2E: Dynamic routing change validation
+
+**Related BRs**: BR-NOT-065 (Channel Routing), BR-NOT-066 (Config Format)
+
+---
+
+#### BR-NOT-068: Multi-Channel Fanout
+
+**Description**: The Notification Service MUST support delivering a single notification to multiple channels simultaneously when routing rules specify multiple receivers.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Critical notifications may need to reach operators via multiple channels (e.g., both PagerDuty and Slack) for redundancy and visibility.
+
+**Implementation**:
+- Routing rules can specify multiple receivers via `continue: true` (Alertmanager pattern)
+- Parallel delivery to all matched channels
+- Partial success: CRD status tracks per-channel delivery status
+- All channels attempted even if some fail
+
+**Acceptance Criteria**:
+- ✅ Single notification delivered to multiple channels
+- ✅ Per-channel delivery status tracked
+- ✅ Partial success handled (some channels succeed, some fail)
+- ✅ All channels attempted in parallel
+
+**Test Coverage**:
+- Unit: Multi-receiver routing logic
+- Integration: Fanout delivery with mixed success/failure
+- E2E: End-to-end multi-channel delivery
+
+**Related BRs**: BR-NOT-065 (Channel Routing), BR-NOT-055 (Graceful Degradation)
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
