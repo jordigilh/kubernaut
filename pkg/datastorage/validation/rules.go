@@ -16,7 +16,7 @@ limitations under the License.
 
 package validation
 
-import "go.uber.org/zap"
+import "github.com/go-logr/logr"
 
 // ValidationRules defines configurable validation rules for audit fields
 // BR-STORAGE-010: Configurable validation rules
@@ -40,7 +40,7 @@ func DefaultRules() *ValidationRules {
 }
 
 // NewValidatorWithRules creates a validator with custom rules
-func NewValidatorWithRules(logger *zap.Logger, rules *ValidationRules) *Validator {
+func NewValidatorWithRules(logger logr.Logger, rules *ValidationRules) *Validator {
 	// For now, we use default rules internally
 	// This allows future extension without breaking existing code
 	_ = rules // Will be used in future enhancement

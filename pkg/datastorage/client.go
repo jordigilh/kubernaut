@@ -30,7 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // Client defines the Data Storage service interface
@@ -57,7 +57,7 @@ type Client interface {
 // ClientImpl implements the Client interface
 type ClientImpl struct {
 	db                *sql.DB
-	logger            *zap.Logger
+	logger            logr.Logger
 	validator         *validation.Validator
 	embeddingPipeline *embedding.Pipeline
 	coordinator       *dualwrite.Coordinator
@@ -67,7 +67,7 @@ type ClientImpl struct {
 // NewClient creates a new Data Storage client
 // BR-STORAGE-006: Client initialization
 // BR-STORAGE-012: Vector similarity search with PostgreSQL 16+ and pgvector 0.5.1+ validation
-func NewClient(ctx context.Context, db *sql.DB, logger *zap.Logger) (Client, error) {
+func NewClient(ctx context.Context, db *sql.DB, logger logr.Logger) (Client, error) {
 	// CRITICAL: Validate PostgreSQL 16+ and pgvector 0.5.1+ support
 	// This ensures HNSW index compatibility before any operations
 	versionValidator := schema.NewVersionValidator(db, logger)
@@ -81,9 +81,9 @@ func NewClient(ctx context.Context, db *sql.DB, logger *zap.Logger) (Client, err
 	// Step 2: Validate memory configuration (warns if suboptimal, but doesn't block)
 	if err := versionValidator.ValidateMemoryConfiguration(ctx); err != nil {
 		// Log error but continue - memory validation is non-blocking
-		logger.Warn("memory configuration validation failed",
-			zap.Error(err),
-			zap.String("impact", "unable to validate shared_buffers"))
+		logger.Info("memory configuration validation failed",
+			"error", err,
+			"impact", "unable to validate shared_buffers")
 	}
 
 	logger.Info("PostgreSQL and pgvector validation complete - HNSW support confirmed")
@@ -127,8 +127,8 @@ func (c *ClientImpl) CreateRemediationAudit(ctx context.Context, audit *models.R
 	// BR-STORAGE-010: Validate input
 	if err := c.validator.ValidateRemediationAudit(audit); err != nil {
 		c.logger.Error("validation failed",
-			zap.Error(err),
-			zap.String("name", audit.Name))
+			"error", err,
+			"name", audit.Name)
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
@@ -148,8 +148,8 @@ func (c *ClientImpl) CreateRemediationAudit(ctx context.Context, audit *models.R
 	embeddingResult, err := c.embeddingPipeline.Generate(ctx, audit)
 	if err != nil {
 		c.logger.Error("embedding generation failed",
-			zap.Error(err),
-			zap.String("name", audit.Name))
+			"error", err,
+			"name", audit.Name)
 		return fmt.Errorf("embedding generation failed: %w", err)
 	}
 
@@ -166,15 +166,15 @@ func (c *ClientImpl) CreateRemediationAudit(ctx context.Context, audit *models.R
 	writeResult, err := c.coordinator.Write(ctx, audit, embeddingResult.Embedding)
 	if err != nil {
 		c.logger.Error("dual-write failed",
-			zap.Error(err),
-			zap.String("name", audit.Name))
+			"error", err,
+			"name", audit.Name)
 		return fmt.Errorf("dual-write failed: %w", err)
 	}
 
 	c.logger.Info("remediation audit created",
-		zap.Int64("postgresql_id", writeResult.PostgreSQLID),
-		zap.Bool("vector_db_success", writeResult.VectorDBSuccess),
-		zap.String("name", audit.Name))
+		"postgresql_id", writeResult.PostgreSQLID,
+		"vector_db_success", writeResult.VectorDBSuccess,
+		"name", audit.Name)
 
 	return nil
 }
@@ -182,7 +182,7 @@ func (c *ClientImpl) CreateRemediationAudit(ctx context.Context, audit *models.R
 // UpdateRemediationAudit updates an existing remediation audit record
 func (c *ClientImpl) UpdateRemediationAudit(ctx context.Context, audit *models.RemediationAudit) error {
 	// TODO: Implement during Day 5-6
-	c.logger.Info("UpdateRemediationAudit called", zap.Int64("id", audit.ID))
+	c.logger.Info("UpdateRemediationAudit called", "id", audit.ID)
 	return nil
 }
 
@@ -195,14 +195,14 @@ func (c *ClientImpl) GetRemediationAudit(ctx context.Context, id int64) (*models
 	sqlxDB := sqlx.NewDb(c.db, "postgres")
 	if err := sqlxDB.GetContext(ctx, &audit, query, id); err != nil {
 		if err == sql.ErrNoRows {
-			c.logger.Warn("audit not found", zap.Int64("id", id))
+			c.logger.Info("audit not found", "id", id)
 			return nil, fmt.Errorf("audit not found: %d", id)
 		}
-		c.logger.Error("query failed", zap.Error(err), zap.Int64("id", id))
+		c.logger.Error("query failed", "error", err, "id", id)
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
 
-	c.logger.Info("audit retrieved", zap.Int64("id", id))
+	c.logger.Info("audit retrieved", "id", id)
 	return &audit, nil
 }
 
@@ -215,28 +215,28 @@ func (c *ClientImpl) ListRemediationAudits(ctx context.Context, opts *query.List
 // CreateAIAnalysisAudit stores a new AI analysis audit record
 func (c *ClientImpl) CreateAIAnalysisAudit(ctx context.Context, audit *models.AIAnalysisAudit) error {
 	// TODO: Implement during Day 5
-	c.logger.Info("CreateAIAnalysisAudit called", zap.String("analysis_id", audit.AnalysisID))
+	c.logger.Info("CreateAIAnalysisAudit called", "analysis_id", audit.AnalysisID)
 	return nil
 }
 
 // CreateWorkflowAudit stores a new workflow audit record
 func (c *ClientImpl) CreateWorkflowAudit(ctx context.Context, audit *models.WorkflowAudit) error {
 	// TODO: Implement during Day 5
-	c.logger.Info("CreateWorkflowAudit called", zap.String("workflow_id", audit.WorkflowID))
+	c.logger.Info("CreateWorkflowAudit called", "workflow_id", audit.WorkflowID)
 	return nil
 }
 
 // CreateExecutionAudit stores a new execution audit record
 func (c *ClientImpl) CreateExecutionAudit(ctx context.Context, audit *models.ExecutionAudit) error {
 	// TODO: Implement during Day 5
-	c.logger.Info("CreateExecutionAudit called", zap.String("execution_id", audit.ExecutionID))
+	c.logger.Info("CreateExecutionAudit called", "execution_id", audit.ExecutionID)
 	return nil
 }
 
 // SemanticSearch performs vector similarity search on remediation audits
 func (c *ClientImpl) SemanticSearch(ctx context.Context, embedding []float32, limit int) ([]*models.RemediationAudit, error) {
 	// TODO: Implement during Day 6
-	c.logger.Info("SemanticSearch called", zap.Int("limit", limit))
+	c.logger.Info("SemanticSearch called", "limit", limit)
 	return nil, nil
 }
 
