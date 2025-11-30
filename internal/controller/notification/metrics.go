@@ -101,6 +101,10 @@ func init() {
 		notificationSlackRetryCount,
 		notificationSlackBackoffDuration,
 	)
+
+	// NOTE: NOT initializing with zero values in init()
+	// Let metrics appear naturally when first recorded by controller
+	// This matches standard Prometheus behavior
 }
 
 // Metrics helper functions for use in controller

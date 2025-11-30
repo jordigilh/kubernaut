@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -118,6 +117,9 @@ var _ = SynchronizedBeforeSuite(
 			logger.Info("Failed to delete existing cluster (may not exist)", "error", err)
 		}
 
+		// E2E file delivery directory is created by infrastructure.CreateNotificationCluster
+		// No need to create it here - it's done before Kind cluster creation
+
 		// Create Kind cluster (ONCE for all tests)
 		err = infrastructure.CreateNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
@@ -191,20 +193,24 @@ var _ = SynchronizedBeforeSuite(
 		Expect(k8sClient).ToNot(BeNil())
 
 	// Set up E2E file output directory for FileService validation
-	e2eFileOutputDir = filepath.Join(os.TempDir(), fmt.Sprintf("kubernaut-e2e-notifications-process-%d", GinkgoParallelProcess()))
-	err = os.MkdirAll(e2eFileOutputDir, 0755)
+	// Use platform-appropriate HostPath directory (created by infrastructure.CreateNotificationCluster)
+	e2eFileOutputDir, err = infrastructure.GetE2EFileOutputDir()
 	Expect(err).ToNot(HaveOccurred())
+	// Directory already created in SynchronizedBeforeSuite before Kind cluster creation
+	// No need to create here - just verify it exists
+	_, err = os.Stat(e2eFileOutputDir)
+	Expect(err).ToNot(HaveOccurred(), "HostPath directory should exist")
 
 	// Wait for Notification Controller metrics NodePort to be responsive
-	// NodePort 30081 (in cluster) → localhost:8081 (on host via Kind extraPortMappings)
-	// Using same port pattern as gateway (8xxx) for consistency
+	// NodePort 30090 (in cluster) → localhost:9090 (on host via Kind extraPortMappings)
+	// Using controller-runtime's default metrics port :9090
 	logger.Info("⏳ Waiting for Notification Controller metrics NodePort to be responsive...")
 
 	// Give Kind a moment to set up port forwarding after deployment
 	logger.Info("Waiting 5 seconds for Kind port mapping to stabilize...")
 	time.Sleep(5 * time.Second)
 
-	metricsURL := "http://localhost:8081/metrics"  // Port 8081 (gateway uses 8080)
+	metricsURL := "http://localhost:9090/metrics"  // controller-runtime default metrics port
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 
 	attemptCount := 0

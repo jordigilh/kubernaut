@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -30,6 +31,22 @@ import (
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Notification E2E Infrastructure: Kind Cluster + Controller Deployment
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// GetE2EFileOutputDir returns the platform-appropriate directory for E2E file delivery tests
+// - Linux/CI: /tmp/kubernaut-e2e-notifications (direct access)
+// - macOS: $HOME/.kubernaut/e2e-notifications (Podman VM only mounts home directory)
+func GetE2EFileOutputDir() (string, error) {
+	if runtime.GOOS == "darwin" {
+		// macOS: Podman VM limitation - use home directory
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		return filepath.Join(homeDir, ".kubernaut", "e2e-notifications"), nil
+	}
+	// Linux/CI: Direct /tmp access works
+	return "/tmp/kubernaut-e2e-notifications", nil
+}
 
 // CreateNotificationCluster creates a Kind cluster for Notification E2E testing
 // This is called ONCE in SynchronizedBeforeSuite (first parallel process only)
@@ -46,9 +63,19 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	fmt.Fprintln(writer, "Notification E2E Cluster Setup (ONCE)")
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// 1. Create Kind cluster
+	// 0. Create E2E file output directory (platform-specific)
+	e2eDir, err := GetE2EFileOutputDir()
+	if err != nil {
+		return fmt.Errorf("failed to get E2E file output directory: %w", err)
+	}
+	fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
+	if err := os.MkdirAll(e2eDir, 0755); err != nil {
+		return fmt.Errorf("failed to create E2E file output directory: %w", err)
+	}
+
+	// 1. Create Kind cluster with extraMounts for E2E file delivery
 	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
-	if err := createKindClusterOnly(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createNotificationKindCluster(clusterName, kubeconfigPath, e2eDir, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -72,6 +99,61 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 
 	fmt.Fprintln(writer, "✅ Cluster ready - tests can now deploy controller per-namespace")
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// createNotificationKindCluster creates a Kind cluster with dynamically added extraMounts for E2E file delivery
+func createNotificationKindCluster(clusterName, kubeconfigPath, hostPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	// Read base Kind config
+	baseConfigPath := filepath.Join(workspaceRoot, "test", "infrastructure", "kind-notification-config.yaml")
+	configData, err := os.ReadFile(baseConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to read Kind config: %w", err)
+	}
+
+	// Add extraMounts dynamically (append to control-plane node)
+	extraMountsYAML := fmt.Sprintf(`
+  extraMounts:
+  - hostPath: %s
+    containerPath: /tmp/e2e-notifications
+    readOnly: false`, hostPath)
+
+	// Insert extraMounts after "extraPortMappings:" section
+	configStr := string(configData)
+	updatedConfig := strings.Replace(configStr, "  kubeadmConfigPatches:", extraMountsYAML+"\n  kubeadmConfigPatches:", 1)
+
+	// Write temporary config file
+	tmpConfig, err := os.CreateTemp("", "kind-notification-*.yaml")
+	if err != nil {
+		return fmt.Errorf("failed to create temp config: %w", err)
+	}
+	defer os.Remove(tmpConfig.Name())
+
+	if _, err := tmpConfig.WriteString(updatedConfig); err != nil {
+		return fmt.Errorf("failed to write temp config: %w", err)
+	}
+	if err := tmpConfig.Close(); err != nil {
+		return fmt.Errorf("failed to close temp config: %w", err)
+	}
+
+	// Create Kind cluster with temporary config
+	fmt.Fprintf(writer, "   Using HostPath: %s → /tmp/e2e-notifications\n", hostPath)
+	cmd := exec.Command("kind", "create", "cluster",
+		"--name", clusterName,
+		"--config", tmpConfig.Name(),
+		"--kubeconfig", kubeconfigPath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kind create cluster failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -130,11 +212,21 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		return fmt.Errorf("failed to deploy Notification Controller: %w", err)
 	}
 
-	// 5. Wait for controller pod ready
+	// 5. Wait for controller pod ready (use kubectl wait like gateway does)
 	fmt.Fprintf(writer, "⏳ Waiting for controller pod ready...\n")
-	if err := waitForNotificationControllerReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+	waitCmd := exec.CommandContext(ctx, "kubectl", "wait",
+		"-n", namespace,
+		"--for=condition=ready",
+		"pod",
+		"-l", "app=notification-controller",
+		"--timeout=120s")
+	waitCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
 		return fmt.Errorf("controller pod did not become ready: %w", err)
 	}
+	fmt.Fprintf(writer, "   ✅ Controller pod ready\n")
 
 	fmt.Fprintf(writer, "✅ Notification Controller deployed and ready in namespace: %s\n", namespace)
 	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")

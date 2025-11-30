@@ -41,7 +41,7 @@ import (
 // BR-NOT-060: Concurrent Delivery Safety - Handle 10+ simultaneous notifications
 // BR-NOT-063: Graceful Degradation - System continues operating under resource pressure
 
-var _ = Describe("Category 11: Resource Management", Label("integration", "resource-management"), func() {
+var _ = Describe("Category 11: Resource Management", Label("integration", "resource_management"), func() {
 	var (
 		testNamespace string
 		uniqueSuffix  string
