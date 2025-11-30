@@ -24,11 +24,11 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"github.com/go-logr/logr"
-	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
