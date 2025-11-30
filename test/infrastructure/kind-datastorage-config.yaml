@@ -1,0 +1,34 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  # Expose Data Storage NodePort to host machine
+  # This eliminates kubectl port-forward instability
+  extraPortMappings:
+  - containerPort: 30081  # Data Storage NodePort in cluster
+    hostPort: 8081        # Port on host machine (localhost:8081)
+    protocol: TCP
+  - containerPort: 30432  # PostgreSQL NodePort in cluster
+    hostPort: 5432        # Port on host machine (localhost:5432)
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel integration testing
+        # Default max-requests-inflight: 400
+        # Default max-mutating-requests-inflight: 200
+        # With 4 parallel test processes × 100 concurrent requests = 400 QPS
+        # These limits provide 2x headroom for test stability
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        # Default kube-api-qps: 20, kube-api-burst: 30
+        # Higher limits prevent CRD creation delays during parallel testing
+        kube-api-qps: "100"
+        kube-api-burst: "200"
+- role: worker
+
