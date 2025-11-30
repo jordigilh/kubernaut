@@ -1,4 +1,4 @@
-# RemediationProcessor Controller - Build Guide
+# SignalProcessor Controller - Build Guide
 
 **Version**: 1.0.0
 **Last Updated**: October 21, 2025
@@ -22,10 +22,10 @@
 
 ## Overview
 
-The RemediationProcessor controller is a Kubernetes CRD controller responsible for:
+The SignalProcessor controller is a Kubernetes CRD controller responsible for:
 
 - **Purpose**: Processing and enriching remediation requests with historical context, semantic classification, and deduplication
-- **CRD**: `RemediationProcessing.remediation.kubernaut.io/v1alpha1`
+- **CRD**: `SignalProcessing.signalprocessing.kubernaut.io/v1alpha1`
 - **Language**: Go 1.24+
 - **Framework**: controller-runtime
 - **Dependencies**: PostgreSQL (Data Storage), Context API (Historical Intelligence)
@@ -116,7 +116,7 @@ go mod verify
 ```bash
 # Using Docker/Podman
 podman run -d \
-  --name remediationprocessor-postgres \
+  --name signalprocessor-postgres \
   -e POSTGRES_USER=remediation_user \
   -e POSTGRES_PASSWORD=changeme \
   -e POSTGRES_DATABASE=kubernaut_remediation \
@@ -152,19 +152,19 @@ psql --version     # should show 14+
 
 ```bash
 # Build for current platform
-make build-remediationprocessor
+make build-signalprocessor
 ```
 
-This creates `bin/remediationprocessor` with default settings.
+This creates `bin/signalprocessor` with default settings.
 
 ### Custom Build
 
 ```bash
 # Build with specific Go flags
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-  -o bin/remediationprocessor \
+  -o bin/signalprocessor \
   -ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=v0.1.0" \
-  ./cmd/remediationprocessor
+  ./cmd/signalprocessor
 ```
 
 ### Build Options
@@ -179,11 +179,11 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 
 ```bash
 # Check binary
-ls -lh bin/remediationprocessor
-file bin/remediationprocessor
+ls -lh bin/signalprocessor
+file bin/signalprocessor
 
 # Run version check
-./bin/remediationprocessor --version
+./bin/signalprocessor --version
 ```
 
 ---
@@ -199,9 +199,9 @@ file bin/remediationprocessor
 
 ```bash
 # Build for current platform
-make docker-build-remediationprocessor-single
+make docker-build-signalprocessor-single
 
-# This creates: quay.io/jordigilh/remediationprocessor:v0.1.0-$(uname -m)
+# This creates: quay.io/jordigilh/signalprocessor:v0.1.0-$(uname -m)
 ```
 
 ### Custom Build
@@ -209,8 +209,8 @@ make docker-build-remediationprocessor-single
 ```bash
 # Build with specific tag
 podman build \
-  -f docker/remediationprocessor.Dockerfile \
-  -t myregistry/remediationprocessor:custom \
+  -f docker/signalprocessor.Dockerfile \
+  -t myregistry/signalprocessor:custom \
   --build-arg VERSION=v0.1.0 \
   --build-arg COMMIT=$(git rev-parse HEAD) \
   --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
@@ -221,10 +221,10 @@ podman build \
 
 ```bash
 # Check image details
-podman inspect quay.io/jordigilh/remediationprocessor:v0.1.0-$(uname -m)
+podman inspect quay.io/jordigilh/signalprocessor:v0.1.0-$(uname -m)
 
 # Check image size
-podman images | grep remediationprocessor
+podman images | grep signalprocessor
 
 # Expected size: ~150-200MB
 ```
@@ -233,11 +233,11 @@ podman images | grep remediationprocessor
 
 ```bash
 # Run container with environment variables
-make docker-run-remediationprocessor
+make docker-run-signalprocessor
 
 # Or manually:
 podman run -d --rm \
-  --name remediationprocessor-test \
+  --name signalprocessor-test \
   -p 8080:8080 \
   -p 8081:8081 \
   -e POSTGRES_HOST=host.containers.internal \
@@ -246,17 +246,17 @@ podman run -d --rm \
   -e POSTGRES_PASSWORD=changeme \
   -e POSTGRES_DATABASE=kubernaut_remediation \
   -e CONTEXT_API_ENDPOINT=http://context-api:8080 \
-  quay.io/jordigilh/remediationprocessor:v0.1.0-$(uname -m)
+  quay.io/jordigilh/signalprocessor:v0.1.0-$(uname -m)
 
 # Check health
 curl http://localhost:8081/healthz
 curl http://localhost:8081/readyz
 
 # Check metrics
-curl http://localhost:8080/metrics | grep remediationprocessor
+curl http://localhost:8080/metrics | grep signalprocessor
 
 # Stop container
-make docker-stop-remediationprocessor
+make docker-stop-signalprocessor
 ```
 
 ---
@@ -272,7 +272,7 @@ make docker-stop-remediationprocessor
 
 ```bash
 # Build for linux/amd64 and linux/arm64
-make docker-build-remediationprocessor-multiarch
+make docker-build-signalprocessor-multiarch
 
 # This creates a manifest list supporting both architectures
 ```
@@ -282,13 +282,13 @@ make docker-build-remediationprocessor-multiarch
 ```bash
 # Using Podman
 podman build --platform linux/amd64,linux/arm64 \
-  -f docker/remediationprocessor.Dockerfile \
-  -t quay.io/jordigilh/remediationprocessor:v0.1.0 \
+  -f docker/signalprocessor.Dockerfile \
+  -t quay.io/jordigilh/signalprocessor:v0.1.0 \
   --build-arg VERSION=v0.1.0 \
   .
 
 # Inspect manifest
-podman manifest inspect quay.io/jordigilh/remediationprocessor:v0.1.0
+podman manifest inspect quay.io/jordigilh/signalprocessor:v0.1.0
 ```
 
 ### Push to Registry
@@ -298,19 +298,19 @@ podman manifest inspect quay.io/jordigilh/remediationprocessor:v0.1.0
 podman login quay.io
 
 # Push multi-arch image
-make docker-push-remediationprocessor
+make docker-push-signalprocessor
 
 # Or manually:
 podman manifest push \
-  quay.io/jordigilh/remediationprocessor:v0.1.0 \
-  docker://quay.io/jordigilh/remediationprocessor:v0.1.0
+  quay.io/jordigilh/signalprocessor:v0.1.0 \
+  docker://quay.io/jordigilh/signalprocessor:v0.1.0
 ```
 
 ### Verify Multi-Arch
 
 ```bash
 # Check manifest
-podman manifest inspect quay.io/jordigilh/remediationprocessor:v0.1.0
+podman manifest inspect quay.io/jordigilh/signalprocessor:v0.1.0
 
 # Expected output should show:
 # - linux/amd64
@@ -325,7 +325,7 @@ podman manifest inspect quay.io/jordigilh/remediationprocessor:v0.1.0
 
 ```bash
 # Create local config
-cat > /tmp/remediationprocessor-config.yaml <<EOF
+cat > /tmp/signalprocessor-config.yaml <<EOF
 namespace: kubernaut-system
 metrics_address: ":8080"
 health_address: ":8081"
@@ -358,12 +358,12 @@ classification:
 EOF
 
 # Run controller
-./bin/remediationprocessor \
-  --config=/tmp/remediationprocessor-config.yaml \
+./bin/signalprocessor \
+  --config=/tmp/signalprocessor-config.yaml \
   --leader-elect=false
 
 # Expected output:
-# INFO starting remediationprocessor controller
+# INFO starting signalprocessor controller
 # INFO starting manager
 ```
 
@@ -371,13 +371,13 @@ EOF
 
 ```bash
 # Run using Makefile target
-make docker-run-remediationprocessor
+make docker-run-signalprocessor
 
 # View logs
-make docker-logs-remediationprocessor
+make docker-logs-signalprocessor
 
 # Stop container
-make docker-stop-remediationprocessor
+make docker-stop-signalprocessor
 ```
 
 ### Health Checks
@@ -404,7 +404,7 @@ curl http://localhost:8080/metrics
 
 ```bash
 # Run all unit tests
-make test-remediationprocessor-unit
+make test-signalprocessor-unit
 
 # Or manually:
 go test -v -race -coverprofile=coverage.out \
@@ -418,12 +418,12 @@ go tool cover -html=coverage.out
 
 ```bash
 # Prerequisites: Kind cluster, PostgreSQL, Context API
-make test-remediationprocessor-integration
+make test-signalprocessor-integration
 
 # Or manually:
 go test -v -race \
   -tags=integration \
-  ./test/integration/remediationprocessor/...
+  ./test/integration/signalprocessor/...
 ```
 
 ### Test Coverage Targets
@@ -457,7 +457,7 @@ podman version
 
 # Use correct working directory (UBI9)
 # Dockerfile should use /opt/app-root/src
-grep WORKDIR docker/remediationprocessor.Dockerfile
+grep WORKDIR docker/signalprocessor.Dockerfile
 ```
 
 #### Issue: Binary won't compile on macOS for linux/amd64
@@ -465,8 +465,8 @@ grep WORKDIR docker/remediationprocessor.Dockerfile
 ```bash
 # Explicitly set target platform
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-  -o bin/remediationprocessor-linux-amd64 \
-  ./cmd/remediationprocessor
+  -o bin/signalprocessor-linux-amd64 \
+  ./cmd/signalprocessor
 ```
 
 ### Runtime Issues
@@ -475,10 +475,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 **Solution**:
 ```bash
 # Check config file exists and is readable
-ls -l /etc/remediationprocessor/config.yaml
+ls -l /etc/signalprocessor/config.yaml
 
 # Verify YAML syntax
-yamllint /etc/remediationprocessor/config.yaml
+yamllint /etc/signalprocessor/config.yaml
 
 # Check environment variable overrides
 env | grep -E '(POSTGRES|CONTEXT|SEMANTIC)'
@@ -497,7 +497,7 @@ psql -h localhost -U remediation_user -d kubernaut_remediation -c "SELECT 1;"
 sudo firewall-cmd --list-ports | grep 5432
 
 # Verify config
-grep postgres_host /etc/remediationprocessor/config.yaml
+grep postgres_host /etc/signalprocessor/config.yaml
 ```
 
 #### Issue: "Context API unreachable"
@@ -521,19 +521,19 @@ kubectl run -it --rm debug --image=busybox --restart=Never -- \
 **Solution**:
 ```bash
 # Check max_concurrency setting
-grep max_concurrency /etc/remediationprocessor/config.yaml
+grep max_concurrency /etc/signalprocessor/config.yaml
 
 # Reduce concurrency
 export MAX_CONCURRENCY=5
 
 # Check batch_size for classification
-grep batch_size /etc/remediationprocessor/config.yaml
+grep batch_size /etc/signalprocessor/config.yaml
 
 # Reduce batch size
 export CLASSIFICATION_BATCH_SIZE=50
 
 # Monitor memory
-kubectl top pod -n kubernaut-system -l app=remediationprocessor
+kubectl top pod -n kubernaut-system -l app=signalprocessor
 ```
 
 ### Test Issues
@@ -554,7 +554,7 @@ grep -r "postgres_password" pkg/signalprocessing/config/config_test.go
 # Increase timeout
 go test -v -timeout=10m \
   -tags=integration \
-  ./test/integration/remediationprocessor/...
+  ./test/integration/signalprocessor/...
 
 # Check dependencies are running
 kubectl get pods -n kubernaut-system
@@ -572,25 +572,25 @@ LOG_LEVEL=debug go test -v ...
 
 ```bash
 # Build
-make build-remediationprocessor
+make build-signalprocessor
 
 # Test
-make test-remediationprocessor-unit
+make test-signalprocessor-unit
 
 # Container
-make docker-build-remediationprocessor
-make docker-run-remediationprocessor
-make docker-stop-remediationprocessor
+make docker-build-signalprocessor
+make docker-run-signalprocessor
+make docker-stop-signalprocessor
 
 # Deploy
-make deploy-remediationprocessor
+make deploy-signalprocessor
 
 # Status
-make status-remediationprocessor
-make logs-remediationprocessor
+make status-signalprocessor
+make logs-signalprocessor
 
 # Clean
-make clean-remediationprocessor
+make clean-signalprocessor
 ```
 
 ### Environment Variables

@@ -12,7 +12,7 @@
   - Added note about DD-HOLMESGPT-009: Ultra-Compact JSON Format
   - Enriched context enables 60% token reduction in downstream AI analysis
   - Indirect cost savings: $1,980/year (via AIAnalysis service)
-  - No implementation changes required in RemediationProcessor
+  - No implementation changes required in SignalProcessor
 
 - **v1.0** (2025-10-13): ✅ **Initial production-ready plan** (~5,200 lines, 95% confidence)
   - Complete APDC phases for Days 1-9
@@ -35,15 +35,15 @@
 - ✅ **Owner references** (owned by RemediationRequest)
 
 **Downstream Format Optimization (DD-HOLMESGPT-009)**: ℹ️
-- **Context Role**: Enriched context from RemediationProcessor is formatted as ultra-compact JSON by AIAnalysis
+- **Context Role**: Enriched context from SignalProcessor is formatted as ultra-compact JSON by AIAnalysis
 - **Indirect Benefit**: Enables 60% token reduction in downstream AI analysis (~730 → ~180 tokens)
 - **Cost Impact**: Contributes to $1,980/year savings in AIAnalysis LLM API calls
-- **No Changes Required**: RemediationProcessor implementation unchanged
+- **No Changes Required**: SignalProcessor implementation unchanged
 - **Decision Document**: `docs/architecture/decisions/DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md`
 
 **Design References**:
 - [CRD_CONTROLLER_DESIGN.md](../CRD_CONTROLLER_DESIGN.md)
-- [RemediationProcessing API Types](../../../../api/remediationprocessing/v1alpha1/remediationprocessing_types.go)
+- [SignalProcessing API Types](../../../../api/signalprocessing/v1alpha1/signalprocessing_types.go)
 - [Context API Integration](../../../services/stateless/context-api/implementation/IMPLEMENTATION_PLAN_V1.0.md)
 
 ---
@@ -100,7 +100,7 @@ Before starting Day 1, ensure:
 - [ ] **Context API completed** (BR-CONTEXT-* implemented and tested)
 - [ ] **Data Storage Service operational** (PostgreSQL with pgvector, `remediation_audit` table ready)
 - [ ] **Kind cluster available** (`make kind-setup` completed)
-- [ ] SignalProcessing CRD API defined (`api/remediationprocessing/v1alpha1/remediationprocessing_types.go`)
+- [ ] SignalProcessing CRD API defined (`api/signalprocessing/v1alpha1/signalprocessing_types.go`)
 - [ ] Template patterns understood ([IMPLEMENTATION_PLAN_V3.0.md](../../06-notification/implementation/IMPLEMENTATION_PLAN_V3.0.md))
 - [ ] **Critical Decisions Approved**:
   - Context source: Data Storage Service (PostgreSQL + pgvector)
@@ -130,7 +130,7 @@ codebase_search "pgvector semantic search query patterns"
 grep -r "vector.*similarity" pkg/ --include="*.go"
 
 # Check SignalProcessing CRD
-ls -la api/remediationprocessing/v1alpha1/
+ls -la api/signalprocessing/v1alpha1/
 ```
 
 **Map business requirements:**
@@ -170,18 +170,18 @@ ls -la api/remediationprocessing/v1alpha1/
   - CRD creation validation (owner references, data snapshot)
 
 - **E2E tests** (<10% coverage target):
-  - End-to-end remediation flow (RemediationRequest → RemediationProcessing → AIAnalysis/WorkflowExecution)
+  - End-to-end remediation flow (RemediationRequest → SignalProcessing → AIAnalysis/WorkflowExecution)
   - Multi-service coordination (Gateway → Remediation Processor → AI Analysis)
 
 **Integration points:**
-- CRD API: `api/remediationprocessing/v1alpha1/remediationprocessing_types.go`
-- Controller: `internal/controller/remediationprocessing/remediationprocessing_controller.go`
-- Enrichment: `pkg/remediationprocessing/enrichment/enricher.go`
-- Classification: `pkg/remediationprocessing/classification/classifier.go`
-- Deduplication: `pkg/remediationprocessing/deduplication/fingerprinter.go`
-- Storage Client: `pkg/remediationprocessing/storage/client.go`
-- Tests: `test/integration/remediationprocessing/`
-- Main: `cmd/remediationprocessor/main.go`
+- CRD API: `api/signalprocessing/v1alpha1/signalprocessing_types.go`
+- Controller: `internal/controller/signalprocessing/signalprocessing_controller.go`
+- Enrichment: `pkg/signalprocessing/enrichment/enricher.go`
+- Classification: `pkg/signalprocessing/classification/classifier.go`
+- Deduplication: `pkg/signalprocessing/deduplication/fingerprinter.go`
+- Storage Client: `pkg/signalprocessing/storage/client.go`
+- Tests: `test/integration/signalprocessing/`
+- Main: `cmd/signalprocessor/main.go`
 
 **Success criteria:**
 - Controller reconciles SignalProcessing CRDs
@@ -198,18 +198,18 @@ ls -la api/remediationprocessing/v1alpha1/
 **Create package structure:**
 ```bash
 # Controller
-mkdir -p internal/controller/remediationprocessing
+mkdir -p internal/controller/signalprocessing
 
 # Business logic
-mkdir -p pkg/remediationprocessing/enrichment
-mkdir -p pkg/remediationprocessing/classification
-mkdir -p pkg/remediationprocessing/deduplication
-mkdir -p pkg/remediationprocessing/storage
+mkdir -p pkg/signalprocessing/enrichment
+mkdir -p pkg/signalprocessing/classification
+mkdir -p pkg/signalprocessing/deduplication
+mkdir -p pkg/signalprocessing/storage
 
 # Tests
-mkdir -p test/unit/remediationprocessing
-mkdir -p test/integration/remediationprocessing
-mkdir -p test/e2e/remediationprocessing
+mkdir -p test/unit/signalprocessing
+mkdir -p test/integration/signalprocessing
+mkdir -p test/e2e/signalprocessing
 
 # Documentation
 mkdir -p docs/services/crd-controllers/02-signalprocessing/implementation/{phase0,testing,design}
@@ -217,9 +217,9 @@ mkdir -p docs/services/crd-controllers/02-signalprocessing/implementation/{phase
 
 **Create foundational files:**
 
-1. **internal/controller/remediationprocessing/remediationprocessing_controller.go** - Main reconciler
+1. **internal/controller/signalprocessing/signalprocessing_controller.go** - Main reconciler
 ```go
-package remediationprocessing
+package signalprocessing
 
 import (
 	"context"
@@ -230,14 +230,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/enrichment"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/classification"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/storage"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enrichment"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classification"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/storage"
 )
 
-// RemediationProcessingReconciler reconciles a RemediationProcessing object
-type RemediationProcessingReconciler struct {
+// SignalProcessingReconciler reconciles a SignalProcessing object
+type SignalProcessingReconciler struct {
 	client.Client
 	Scheme          *runtime.Scheme
 	StorageClient   storage.Client
@@ -245,16 +245,16 @@ type RemediationProcessingReconciler struct {
 	Classifier      *classification.Classifier
 }
 
-//+kubebuilder:rbac:groups=remediationprocessing.kubernaut.ai,resources=remediationprocessings,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=remediationprocessing.kubernaut.ai,resources=remediationprocessings/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=remediationprocessing.kubernaut.ai,resources=remediationprocessings/finalizers,verbs=update
+//+kubebuilder:rbac:groups=signalprocessing.kubernaut.ai,resources=signalprocessings,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=signalprocessing.kubernaut.ai,resources=signalprocessings/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=signalprocessing.kubernaut.ai,resources=signalprocessings/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop
-func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	// Fetch the RemediationProcessing instance
-	var rp remediationprocessingv1alpha1.RemediationProcessing
+	// Fetch the SignalProcessing instance
+	var rp signalprocessingv1alpha1.SignalProcessing
 	if err := r.Get(ctx, req.NamespacedName, &rp); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -280,7 +280,7 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
 }
 
 // handlePending transitions from Pending to Enriching
-func (r *RemediationProcessingReconciler) handlePending(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) handlePending(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	log.Info("Transitioning from Pending to Enriching", "name", rp.Name)
 
@@ -295,7 +295,7 @@ func (r *RemediationProcessingReconciler) handlePending(ctx context.Context, rp 
 }
 
 // handleEnriching performs context enrichment from Data Storage Service
-func (r *RemediationProcessingReconciler) handleEnriching(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) handleEnriching(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	log.Info("Enriching context from Data Storage Service", "name", rp.Name)
 
@@ -323,7 +323,7 @@ func (r *RemediationProcessingReconciler) handleEnriching(ctx context.Context, r
 }
 
 // handleClassifying determines if AI analysis is required
-func (r *RemediationProcessingReconciler) handleClassifying(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) handleClassifying(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	log.Info("Classifying remediation requirement", "name", rp.Name)
 
@@ -353,14 +353,14 @@ func (r *RemediationProcessingReconciler) handleClassifying(ctx context.Context,
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *RemediationProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *SignalProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&remediationprocessingv1alpha1.RemediationProcessing{}).
+		For(&signalprocessingv1alpha1.SignalProcessing{}).
 		Complete(r)
 }
 ```
 
-2. **pkg/remediationprocessing/enrichment/enricher.go** - Context enrichment service
+2. **pkg/signalprocessing/enrichment/enricher.go** - Context enrichment service
 ```go
 package enrichment
 
@@ -369,11 +369,11 @@ import (
 	"fmt"
 
 	"github.com/sirupsen/logrus"
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/storage"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/storage"
 )
 
-// Enricher enriches RemediationProcessing with historical context
+// Enricher enriches SignalProcessing with historical context
 type Enricher struct {
 	storageClient storage.Client
 	logger        *logrus.Logger
@@ -388,7 +388,7 @@ func NewEnricher(storageClient storage.Client, logger *logrus.Logger) *Enricher 
 }
 
 // EnrichContext queries Data Storage Service for similar historical alerts
-func (e *Enricher) EnrichContext(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing) (*remediationprocessingv1alpha1.EnrichmentContext, error) {
+func (e *Enricher) EnrichContext(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing) (*signalprocessingv1alpha1.EnrichmentContext, error) {
 	e.logger.WithFields(logrus.Fields{
 		"name":      rp.Name,
 		"namespace": rp.Namespace,
@@ -409,7 +409,7 @@ func (e *Enricher) EnrichContext(ctx context.Context, rp *remediationprocessingv
 	}
 
 	// Aggregate enrichment context
-	enrichmentContext := &remediationprocessingv1alpha1.EnrichmentContext{
+	enrichmentContext := &signalprocessingv1alpha1.EnrichmentContext{
 		SimilarRemediationsCount: len(historicalData.Remediations),
 		HistoricalSuccessRate:    historicalData.SuccessRate,
 		AverageResolutionTime:    historicalData.AvgResolutionTime,
@@ -427,7 +427,7 @@ func (e *Enricher) EnrichContext(ctx context.Context, rp *remediationprocessingv
 }
 ```
 
-3. **pkg/remediationprocessing/classification/classifier.go** - Classification engine
+3. **pkg/signalprocessing/classification/classifier.go** - Classification engine
 ```go
 package classification
 
@@ -435,7 +435,7 @@ import (
 	"context"
 
 	"github.com/sirupsen/logrus"
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 // Classifier determines if remediation requires AI analysis
@@ -451,7 +451,7 @@ func NewClassifier(logger *logrus.Logger) *Classifier {
 }
 
 // Classify determines remediation approach based on context
-func (c *Classifier) Classify(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing) (*remediationprocessingv1alpha1.Classification, error) {
+func (c *Classifier) Classify(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing) (*signalprocessingv1alpha1.Classification, error) {
 	c.logger.WithFields(logrus.Fields{
 		"name":      rp.Name,
 		"namespace": rp.Namespace,
@@ -462,7 +462,7 @@ func (c *Classifier) Classify(ctx context.Context, rp *remediationprocessingv1al
 	requiresAI := c.shouldRequireAI(rp)
 	confidence := c.calculateConfidence(rp)
 
-	classification := &remediationprocessingv1alpha1.Classification{
+	classification := &signalprocessingv1alpha1.Classification{
 		RequiresAIAnalysis:  requiresAI,
 		ConfidenceScore:     confidence,
 		RecommendedApproach: c.determineApproach(requiresAI, confidence),
@@ -479,7 +479,7 @@ func (c *Classifier) Classify(ctx context.Context, rp *remediationprocessingv1al
 }
 
 // shouldRequireAI determines if AI analysis is required
-func (c *Classifier) shouldRequireAI(rp *remediationprocessingv1alpha1.RemediationProcessing) bool {
+func (c *Classifier) shouldRequireAI(rp *signalprocessingv1alpha1.SignalProcessing) bool {
 	// Require AI if:
 	// 1. Low historical success rate (<50%)
 	// 2. New/unseen signal type (no similar remediations)
@@ -509,7 +509,7 @@ func (c *Classifier) shouldRequireAI(rp *remediationprocessingv1alpha1.Remediati
 }
 
 // calculateConfidence calculates classification confidence score
-func (c *Classifier) calculateConfidence(rp *remediationprocessingv1alpha1.RemediationProcessing) float64 {
+func (c *Classifier) calculateConfidence(rp *signalprocessingv1alpha1.SignalProcessing) float64 {
 	// Confidence based on:
 	// 1. Historical data availability
 	// 2. Success rate consistency
@@ -553,7 +553,7 @@ func (c *Classifier) determineApproach(requiresAI bool, confidence float64) stri
 }
 
 // generateReason generates human-readable classification reason
-func (c *Classifier) generateReason(rp *remediationprocessingv1alpha1.RemediationProcessing, requiresAI bool) string {
+func (c *Classifier) generateReason(rp *signalprocessingv1alpha1.SignalProcessing, requiresAI bool) string {
 	if requiresAI {
 		if rp.Status.EnrichmentContext == nil {
 			return "No historical context available - AI analysis required"
@@ -571,7 +571,7 @@ func (c *Classifier) generateReason(rp *remediationprocessingv1alpha1.Remediatio
 }
 ```
 
-4. **pkg/remediationprocessing/storage/client.go** - Data Storage Service client
+4. **pkg/signalprocessing/storage/client.go** - Data Storage Service client
 ```go
 package storage
 
@@ -756,7 +756,7 @@ func (c *PostgreSQLClient) Close() error {
 }
 ```
 
-5. **pkg/remediationprocessing/deduplication/fingerprinter.go** - Deduplication system
+5. **pkg/signalprocessing/deduplication/fingerprinter.go** - Deduplication system
 ```go
 package deduplication
 
@@ -764,7 +764,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 // Fingerprinter generates signal fingerprints for deduplication
@@ -776,7 +776,7 @@ func NewFingerprinter() *Fingerprinter {
 }
 
 // GenerateFingerprint generates a unique fingerprint for a signal
-func (f *Fingerprinter) GenerateFingerprint(rp *remediationprocessingv1alpha1.RemediationProcessing) string {
+func (f *Fingerprinter) GenerateFingerprint(rp *signalprocessingv1alpha1.SignalProcessing) string {
 	// Combine signal characteristics for fingerprint
 	// Uses signal name, target resource, and severity
 	input := fmt.Sprintf("%s:%s:%s:%s:%s",
@@ -802,7 +802,7 @@ func (f *Fingerprinter) IsDuplicate(fingerprint string, existingFingerprints []s
 }
 ```
 
-6. **cmd/remediationprocessor/main.go** - Main application entry point
+6. **cmd/signalprocessor/main.go** - Main application entry point
 ```go
 package main
 
@@ -819,11 +819,11 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/controller/remediationprocessing"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/enrichment"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/classification"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/storage"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enrichment"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classification"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/storage"
 )
 
 var (
@@ -833,7 +833,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(remediationprocessingv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(signalprocessingv1alpha1.AddToScheme(scheme))
 }
 
 func main() {
@@ -877,21 +877,21 @@ func main() {
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "remediationprocessing.kubernaut.ai",
+		LeaderElectionID:       "signalprocessing.kubernaut.ai",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
-	if err = (&remediationprocessing.RemediationProcessingReconciler{
+	if err = (&signalprocessing.SignalProcessingReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		StorageClient: storageClient,
 		Enricher:      enricher,
 		Classifier:    classifier,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RemediationProcessing")
+		setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")
 		os.Exit(1)
 	}
 
@@ -918,7 +918,7 @@ func main() {
 make manifests
 
 # Verify CRD generated
-ls -la config/crd/bases/remediationprocessing.kubernaut.ai_remediationprocessings.yaml
+ls -la config/crd/bases/signalprocessing.kubernaut.ai_signalprocessings.yaml
 ```
 
 **Validation**:
@@ -969,9 +969,9 @@ grep -r "sql.*DB.*Ping" pkg/ --include="*.go"
 
 **Write failing tests first:**
 
-**File**: `test/unit/remediationprocessing/reconciliation_test.go`
+**File**: `test/unit/signalprocessing/reconciliation_test.go`
 ```go
-package remediationprocessing
+package signalprocessing
 
 import (
 	"context"
@@ -982,11 +982,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
-var _ = Describe("RemediationProcessing Reconciliation", func() {
-	Context("When reconciling a RemediationProcessing resource", func() {
+var _ = Describe("SignalProcessing Reconciliation", func() {
+	Context("When reconciling a SignalProcessing resource", func() {
 		const (
 			timeout  = time.Second * 10
 			interval = time.Millisecond * 250
@@ -995,12 +995,12 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 		It("should transition from Pending to Enriching", func() {
 			ctx := context.Background()
 
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-remediation-pending",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "test-fingerprint-001",
 					SignalName:        "PodCrashLooping",
 					Severity:          "high",
@@ -1011,7 +1011,7 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			// Eventually status should transition to Enriching
 			Eventually(func() string {
@@ -1026,12 +1026,12 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 		It("should enrich context from Data Storage Service", func() {
 			ctx := context.Background()
 
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-remediation-enrich",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "test-fingerprint-002",
 					SignalName:        "HighMemoryUsage",
 					Severity:          "medium",
@@ -1042,7 +1042,7 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			// Eventually status should have enrichment context
 			Eventually(func() bool {
@@ -1062,12 +1062,12 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 		It("should classify remediation requirements", func() {
 			ctx := context.Background()
 
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-remediation-classify",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "test-fingerprint-003",
 					SignalName:        "DiskSpaceLow",
 					Severity:          "low",
@@ -1078,7 +1078,7 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			// Eventually status should have classification
 			Eventually(func() bool {
@@ -1097,12 +1097,12 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 		It("should reach Ready phase for automated remediation", func() {
 			ctx := context.Background()
 
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-remediation-automated",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "test-fingerprint-004",
 					SignalName:        "PodRestartRequired",
 					Severity:          "low",
@@ -1113,7 +1113,7 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			// Eventually should reach Ready phase
 			Eventually(func() string {
@@ -1132,12 +1132,12 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 		It("should require AI analysis for critical severity", func() {
 			ctx := context.Background()
 
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-remediation-critical",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "test-fingerprint-005",
 					SignalName:        "DatabaseConnectionFailure",
 					Severity:          "critical",
@@ -1148,7 +1148,7 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			// Eventually should reach Ready phase
 			Eventually(func() string {
@@ -1169,7 +1169,7 @@ var _ = Describe("RemediationProcessing Reconciliation", func() {
 
 **Run tests (expect failures):**
 ```bash
-cd test/unit/remediationprocessing
+cd test/unit/signalprocessing
 go test -v
 # EXPECTED: All tests fail (no implementation yet)
 ```
@@ -1184,7 +1184,7 @@ go test -v
 
 **Run tests again:**
 ```bash
-cd test/unit/remediationprocessing
+cd test/unit/signalprocessing
 go test -v
 # EXPECTED: All tests pass (GREEN)
 ```
@@ -1304,9 +1304,9 @@ THEN AI-required = true, confidence = 0.80
 
 **Write failing tests first:**
 
-**File**: `test/unit/remediationprocessing/classification_test.go`
+**File**: `test/unit/signalprocessing/classification_test.go`
 ```go
-package remediationprocessing
+package signalprocessing
 
 import (
 	"context"
@@ -1314,8 +1314,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/classification"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/storage"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classification"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/storage"
 	"github.com/sirupsen/logrus"
 )
 
@@ -1644,7 +1644,7 @@ FAIL: Classification Engine > Confidence Scoring > When calculating confidence s
 
 **Minimal implementation to pass tests:**
 
-**File**: `pkg/remediationprocessing/classification/engine.go`
+**File**: `pkg/signalprocessing/classification/engine.go`
 ```go
 package classification
 
@@ -1653,7 +1653,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/storage"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/storage"
 	"github.com/sirupsen/logrus"
 )
 
@@ -1860,7 +1860,7 @@ func (e *Engine) applyClassificationRules(
 
 **Run tests:**
 ```bash
-cd test/unit/remediationprocessing/
+cd test/unit/signalprocessing/
 go test -v -run="Classification Engine" ./...
 # Expected: All tests pass
 ```
@@ -1980,7 +1980,7 @@ e.logger.WithFields(logrus.Fields{
 **Integration validation (Day 8):**
 ```bash
 # Will test classification with real PostgreSQL historical data
-cd test/integration/remediationprocessing/
+cd test/integration/signalprocessing/
 go test -v -run="Classification Integration" ./...
 ```
 
@@ -2081,9 +2081,9 @@ Pending → Enriching → Classifying → Creating → Complete → Failed
 
 **Write failing tests first:**
 
-**File**: `test/unit/remediationprocessing/status_test.go`
+**File**: `test/unit/signalprocessing/status_test.go`
 ```go
-package remediationprocessing
+package signalprocessing
 
 import (
 	"context"
@@ -2093,8 +2093,8 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/status"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/sirupsen/logrus"
 )
 
@@ -2114,15 +2114,15 @@ var _ = Describe("Status Management", func() {
 	})
 
 	Describe("Phase Transitions", func() {
-		var rp *remediationprocessingv1alpha1.RemediationProcessing
+		var rp *signalprocessingv1alpha1.SignalProcessing
 
 		BeforeEach(func() {
-			rp = &remediationprocessingv1alpha1.RemediationProcessing{
+			rp = &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-rp",
 					Namespace: "default",
 				},
-				Status: remediationprocessingv1alpha1.RemediationProcessingStatus{
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
 					Phase: "Pending",
 				},
 			}
@@ -2189,10 +2189,10 @@ var _ = Describe("Status Management", func() {
 	})
 
 	Describe("Condition Management", func() {
-		var rp *remediationprocessingv1alpha1.RemediationProcessing
+		var rp *signalprocessingv1alpha1.SignalProcessing
 
 		BeforeEach(func() {
-			rp = &remediationprocessingv1alpha1.RemediationProcessing{
+			rp = &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-rp",
 					Namespace: "default",
@@ -2309,7 +2309,7 @@ FAIL: Status Management > Condition Management > When setting conditions > shoul
 
 **Minimal implementation to pass tests:**
 
-**File**: `pkg/remediationprocessing/status/manager.go`
+**File**: `pkg/signalprocessing/status/manager.go`
 ```go
 package status
 
@@ -2321,7 +2321,7 @@ import (
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 // Phase represents a remediation processing phase
@@ -2349,7 +2349,7 @@ func NewManager(logger *logrus.Logger) *Manager {
 }
 
 // TransitionPhase transitions the CRD to a new phase
-func (m *Manager) TransitionPhase(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing, newPhase Phase) error {
+func (m *Manager) TransitionPhase(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing, newPhase Phase) error {
 	oldPhase := rp.Status.Phase
 
 	rp.Status.Phase = string(newPhase)
@@ -2370,13 +2370,13 @@ func (m *Manager) TransitionPhase(ctx context.Context, rp *remediationprocessing
 }
 
 // TransitionPhaseWithError transitions to Failed phase with error message
-func (m *Manager) TransitionPhaseWithError(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing, newPhase Phase, errorMsg string) error {
+func (m *Manager) TransitionPhaseWithError(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing, newPhase Phase, errorMsg string) error {
 	rp.Status.ErrorMessage = errorMsg
 	return m.TransitionPhase(ctx, rp, newPhase)
 }
 
 // SetCondition sets or updates a condition on the CRD
-func (m *Manager) SetCondition(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing, condition metav1.Condition) error {
+func (m *Manager) SetCondition(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing, condition metav1.Condition) error {
 	// Set LastTransitionTime
 	condition.LastTransitionTime = metav1.Now()
 
@@ -2409,7 +2409,7 @@ func (m *Manager) SetCondition(ctx context.Context, rp *remediationprocessingv1a
 }
 
 // GetCondition retrieves a condition by type
-func (m *Manager) GetCondition(rp *remediationprocessingv1alpha1.RemediationProcessing, conditionType string) *metav1.Condition {
+func (m *Manager) GetCondition(rp *signalprocessingv1alpha1.SignalProcessing, conditionType string) *metav1.Condition {
 	for _, condition := range rp.Status.Conditions {
 		if condition.Type == conditionType {
 			return &condition
@@ -2484,7 +2484,7 @@ func init() {
 
 **Run tests:**
 ```bash
-cd test/unit/remediationprocessing/
+cd test/unit/signalprocessing/
 go test -v -run="Status Management" ./...
 # Expected: All tests pass
 ```
@@ -2515,7 +2515,7 @@ func NewManager(logger *logrus.Logger, eventRecorder record.EventRecorder) *Mana
 }
 
 // TransitionPhase with event recording
-func (m *Manager) TransitionPhase(ctx context.Context, rp *remediationprocessingv1alpha1.RemediationProcessing, newPhase Phase) error {
+func (m *Manager) TransitionPhase(ctx context.Context, rp *signalprocessingv1alpha1.SignalProcessing, newPhase Phase) error {
 	oldPhase := rp.Status.Phase
 
 	rp.Status.Phase = string(newPhase)
@@ -2545,7 +2545,7 @@ func (m *Manager) TransitionPhase(ctx context.Context, rp *remediationprocessing
 2. **Add observedGeneration tracking:**
 ```go
 // SetObservedGeneration updates the observed generation
-func (m *Manager) SetObservedGeneration(rp *remediationprocessingv1alpha1.RemediationProcessing) {
+func (m *Manager) SetObservedGeneration(rp *signalprocessingv1alpha1.SignalProcessing) {
 	rp.Status.ObservedGeneration = rp.Generation
 }
 ```
@@ -2553,7 +2553,7 @@ func (m *Manager) SetObservedGeneration(rp *remediationprocessingv1alpha1.Remedi
 3. **Add status summary helper:**
 ```go
 // GetStatusSummary returns a human-readable status summary
-func (m *Manager) GetStatusSummary(rp *remediationprocessingv1alpha1.RemediationProcessing) string {
+func (m *Manager) GetStatusSummary(rp *signalprocessingv1alpha1.SignalProcessing) string {
 	if rp.Status.Phase == string(PhaseComplete) {
 		return fmt.Sprintf("Complete (Created: %s)", rp.Status.CreatedCRDName)
 	}
@@ -2585,7 +2585,7 @@ func (m *Manager) GetStatusSummary(rp *remediationprocessingv1alpha1.Remediation
 **Integration validation (Day 8):**
 ```bash
 # Will test full lifecycle with status tracking
-cd test/integration/remediationprocessing/
+cd test/integration/signalprocessing/
 go test -v -run="Complete Lifecycle" ./...
 ```
 
@@ -2597,9 +2597,9 @@ go test -v -run="Complete Lifecycle" ./...
 
 ### Integration Test Suite
 
-**File**: `test/integration/remediationprocessing/suite_test.go`
+**File**: `test/integration/signalprocessing/suite_test.go`
 ```go
-package remediationprocessing
+package signalprocessing
 
 import (
 	"context"
@@ -2621,11 +2621,11 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
-	remediationprocessingctrl "github.com/jordigilh/kubernaut/internal/controller/remediationprocessing"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/enrichment"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/classification"
-	"github.com/jordigilh/kubernaut/pkg/remediationprocessing/storage"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	signalprocessingctrl "github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enrichment"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classification"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/storage"
 )
 
 var (
@@ -2638,9 +2638,9 @@ var (
 	db                 *sql.DB
 )
 
-func TestRemediationProcessingIntegration(t *testing.T) {
+func TestSignalProcessingIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "RemediationProcessing Integration Suite")
+	RunSpecs(t, "SignalProcessing Integration Suite")
 }
 
 var _ = BeforeSuite(func() {
@@ -2718,7 +2718,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = remediationprocessingv1alpha1.AddToScheme(scheme.Scheme)
+	err = signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
@@ -2734,7 +2734,7 @@ var _ = BeforeSuite(func() {
 	enricher := enrichment.NewEnricher(storageClient, logger)
 	classifier := classification.NewClassifier(logger)
 
-	err = (&remediationprocessingctrl.RemediationProcessingReconciler{
+	err = (&signalprocessingctrl.SignalProcessingReconciler{
 		Client:        k8sManager.GetClient(),
 		Scheme:        k8sManager.GetScheme(),
 		StorageClient: storageClient,
@@ -2783,9 +2783,9 @@ var _ = AfterSuite(func() {
 
 ### Integration Test 1: Complete CRD Lifecycle with Context Enrichment
 
-**File**: `test/integration/remediationprocessing/lifecycle_test.go`
+**File**: `test/integration/signalprocessing/lifecycle_test.go`
 ```go
-package remediationprocessing
+package signalprocessing
 
 import (
 	"context"
@@ -2797,7 +2797,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 var _ = Describe("Complete CRD Lifecycle", func() {
@@ -2806,10 +2806,10 @@ var _ = Describe("Complete CRD Lifecycle", func() {
 		interval = time.Millisecond * 250
 	)
 
-	Context("When creating a RemediationProcessing resource", func() {
+	Context("When creating a SignalProcessing resource", func() {
 		It("should complete full lifecycle from Pending to Complete", func() {
 			By("Creating SignalProcessing CRD")
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-lifecycle-complete",
 					Namespace: "default",
@@ -2817,7 +2817,7 @@ var _ = Describe("Complete CRD Lifecycle", func() {
 						"test": "lifecycle",
 					},
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "sha256-podcrash-prod-001",
 					SignalName:        "PodCrashLooping",
 					Severity:          "high",
@@ -2842,7 +2842,7 @@ var _ = Describe("Complete CRD Lifecycle", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			By("Verifying CRD was created")
 			Eventually(func() error {
@@ -2944,13 +2944,13 @@ var _ = Describe("Complete CRD Lifecycle", func() {
 		})
 
 		It("should handle failure scenario gracefully", func() {
-			By("Creating RemediationProcessing with invalid configuration")
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			By("Creating SignalProcessing with invalid configuration")
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-lifecycle-failure",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "", // Invalid: empty fingerprint
 					SignalName:        "InvalidSignal",
 					Severity:          "unknown", // Invalid severity
@@ -2961,7 +2961,7 @@ var _ = Describe("Complete CRD Lifecycle", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			By("Waiting for phase transition to Failed")
 			Eventually(func() string {
@@ -2998,9 +2998,9 @@ var _ = Describe("Complete CRD Lifecycle", func() {
 
 ### Integration Test 2: Context Enrichment with Real PostgreSQL
 
-**File**: `test/integration/remediationprocessing/enrichment_test.go`
+**File**: `test/integration/signalprocessing/enrichment_test.go`
 ```go
-package remediationprocessing
+package signalprocessing
 
 import (
 	"context"
@@ -3013,7 +3013,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 var _ = Describe("Context Enrichment with PostgreSQL", func() {
@@ -3101,13 +3101,13 @@ var _ = Describe("Context Enrichment with PostgreSQL", func() {
 
 	Context("When enriching a PodCrashLooping signal", func() {
 		It("should find similar historical remediations", func() {
-			By("Creating RemediationProcessing for PodCrashLooping")
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			By("Creating SignalProcessing for PodCrashLooping")
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-enrichment-similar",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "sha256-podcrash-prod-new",
 					SignalName:        "PodCrashLooping",
 					Severity:          "high",
@@ -3123,7 +3123,7 @@ var _ = Describe("Context Enrichment with PostgreSQL", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			By("Waiting for enrichment to complete")
 			Eventually(func() bool {
@@ -3157,13 +3157,13 @@ var _ = Describe("Context Enrichment with PostgreSQL", func() {
 		})
 
 		It("should handle novel signals with no historical data", func() {
-			By("Creating RemediationProcessing for novel signal")
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			By("Creating SignalProcessing for novel signal")
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-enrichment-novel",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "sha256-novel-signal-001",
 					SignalName:        "CompletelyNovelError",
 					Severity:          "critical",
@@ -3178,7 +3178,7 @@ var _ = Describe("Context Enrichment with PostgreSQL", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			By("Waiting for enrichment to complete")
 			Eventually(func() bool {
@@ -3209,13 +3209,13 @@ var _ = Describe("Context Enrichment with PostgreSQL", func() {
 		})
 
 		It("should filter by similarity threshold", func() {
-			By("Creating RemediationProcessing with high similarity threshold")
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			By("Creating SignalProcessing with high similarity threshold")
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-enrichment-threshold",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "sha256-podcrash-prod-threshold",
 					SignalName:        "PodCrashLooping",
 					Severity:          "high",
@@ -3231,7 +3231,7 @@ var _ = Describe("Context Enrichment with PostgreSQL", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			By("Waiting for enrichment to complete")
 			Eventually(func() bool {
@@ -3284,9 +3284,9 @@ func joinFloats(floats []float32) string {
 
 ### Integration Test 3: Classification with Historical Data
 
-**File**: `test/integration/remediationprocessing/classification_test.go`
+**File**: `test/integration/signalprocessing/classification_test.go`
 ```go
-package remediationprocessing
+package signalprocessing
 
 import (
 	"context"
@@ -3299,7 +3299,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
@@ -3344,13 +3344,13 @@ var _ = Describe("Classification with Historical Data", func() {
 		})
 
 		It("should classify as Automated when success rate is high", func() {
-			By("Creating RemediationProcessing with high historical success rate")
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			By("Creating SignalProcessing with high historical success rate")
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-classification-automated",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "sha256-db-conn-new",
 					SignalName:        "DatabaseConnectionTimeout",
 					Severity:          "high",
@@ -3365,7 +3365,7 @@ var _ = Describe("Classification with Historical Data", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			By("Waiting for classification decision")
 			Eventually(func() string {
@@ -3443,13 +3443,13 @@ var _ = Describe("Classification with Historical Data", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			By("Creating RemediationProcessing with low historical success rate")
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			By("Creating SignalProcessing with low historical success rate")
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-classification-ai-required",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "sha256-complex-new",
 					SignalName:        "ComplexDeadlock",
 					Severity:          "critical",
@@ -3464,7 +3464,7 @@ var _ = Describe("Classification with Historical Data", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			By("Waiting for classification decision")
 			Eventually(func() string {
@@ -3511,13 +3511,13 @@ var _ = Describe("Classification with Historical Data", func() {
 		})
 
 		It("should respect environment-based classification rules", func() {
-			By("Creating RemediationProcessing for staging environment")
-			rp := &remediationprocessingv1alpha1.RemediationProcessing{
+			By("Creating SignalProcessing for staging environment")
+			rp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-classification-staging",
 					Namespace: "default",
 				},
-				Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					SignalFingerprint: "sha256-db-conn-staging",
 					SignalName:        "DatabaseConnectionTimeout",
 					Severity:          "high",
@@ -3532,7 +3532,7 @@ var _ = Describe("Classification with Historical Data", func() {
 			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
 
 			rpLookupKey := types.NamespacedName{Name: rp.Name, Namespace: rp.Namespace}
-			createdRP := &remediationprocessingv1alpha1.RemediationProcessing{}
+			createdRP := &signalprocessingv1alpha1.SignalProcessing{}
 
 			By("Waiting for classification decision")
 			Eventually(func() string {
@@ -3565,8 +3565,8 @@ var _ = Describe("Classification with Historical Data", func() {
 
 **Test full remediation pipeline:**
 - Gateway Service creates RemediationRequest
-- RemediationRequest controller creates RemediationProcessing
-- RemediationProcessing controller enriches and classifies
+- RemediationRequest controller creates SignalProcessing
+- SignalProcessing controller enriches and classifies
 - Creates AIAnalysis or WorkflowExecution CRD based on classification
 
 ### Documentation
@@ -3598,11 +3598,11 @@ Foundation and CRD controller skeleton completed. Core reconciliation loop estab
 ### 1. Package Structure
 Created clean package organization:
 ```
-internal/controller/remediationprocessing/
-  ├── remediationprocessing_controller.go  # Main reconciler
+internal/controller/signalprocessing/
+  ├── signalprocessing_controller.go  # Main reconciler
   └── suite_test.go                        # Test suite setup
 
-pkg/remediationprocessing/
+pkg/signalprocessing/
   ├── enrichment/                          # Context enrichment
   │   └── enricher.go
   ├── classification/                      # Classification engine
@@ -3614,7 +3614,7 @@ pkg/remediationprocessing/
 ```
 
 ### 2. Controller Reconciler Skeleton
-**File**: `internal/controller/remediationprocessing/remediationprocessing_controller.go`
+**File**: `internal/controller/signalprocessing/signalprocessing_controller.go`
 
 **Reconciliation Loop**:
 - Phase transitions: Pending → Enriching → Classifying → Creating → Complete
@@ -3629,7 +3629,7 @@ pkg/remediationprocessing/
 - Proper error wrapping
 
 ### 3. Data Storage Client Integration
-**File**: `pkg/remediationprocessing/storage/client.go`
+**File**: `pkg/signalprocessing/storage/client.go`
 
 **PostgreSQL Connection**:
 - Connection pooling (max 10 connections)
@@ -4062,7 +4062,7 @@ childCRD.Spec.ClassificationDecision = rp.Status.ClassificationDecision
 
 **Status Fields**:
 ```go
-type RemediationProcessingStatus struct {
+type SignalProcessingStatus struct {
     Phase                   string                // Current phase
     Conditions              []metav1.Condition    // Ready, Enriched, Classified, etc.
     LastTransitionTime      *metav1.Time          // Last phase change
@@ -4349,7 +4349,7 @@ var RetryConfigs = map[string]PhaseRetryConfig{
 
 func (r *Reconciler) handleRetryableError(
     ctx context.Context,
-    rp *remediationprocessingv1alpha1.RemediationProcessing,
+    rp *signalprocessingv1alpha1.SignalProcessing,
     phase string,
     err error,
 ) (ctrl.Result, error) {
@@ -4619,7 +4619,7 @@ It("should retry after transient PostgreSQL error", func() {
     // Stop PostgreSQL container
     Expect(postgresContainer.Stop(ctx)).To(Succeed())
 
-    rp := createTestRemediationProcessing("test-retry")
+    rp := createTestSignalProcessing("test-retry")
     Expect(k8sClient.Create(ctx, rp)).To(Succeed())
 
     // Verify enters retry loop
@@ -4728,19 +4728,19 @@ groups:
 **Requirement**: System must enrich incoming remediation alerts with historical context from similar past incidents.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/enrichment_test.go::SimilarityScoring`
-- ✅ `test/unit/remediationprocessing/enrichment_test.go::HistoricalAggregation`
-- ✅ `test/unit/remediationprocessing/enrichment_test.go::EmptyHistoricalData`
+- ✅ `test/unit/signalprocessing/enrichment_test.go::SimilarityScoring`
+- ✅ `test/unit/signalprocessing/enrichment_test.go::HistoricalAggregation`
+- ✅ `test/unit/signalprocessing/enrichment_test.go::EmptyHistoricalData`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/enrichment_test.go::FindSimilarHistoricalRemediations`
-- ✅ `test/integration/remediationprocessing/enrichment_test.go::NovelSignalsWithNoHistoricalData`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::CompleteCRDLifecycle`
+- ✅ `test/integration/signalprocessing/enrichment_test.go::FindSimilarHistoricalRemediations`
+- ✅ `test/integration/signalprocessing/enrichment_test.go::NovelSignalsWithNoHistoricalData`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::CompleteCRDLifecycle`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::CompleteRemediationFlow`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::CompleteRemediationFlow`
 
-**Implementation**: `pkg/remediationprocessing/enrichment/enricher.go`
+**Implementation**: `pkg/signalprocessing/enrichment/enricher.go`
 
 **Edge Cases Covered**:
 - Novel signals (zero historical data)
@@ -4757,22 +4757,22 @@ groups:
 **Requirement**: System must classify remediation requests as either automated or AI-required based on historical success rates and environmental factors.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/classification_test.go::HighSuccessRateAutomated`
-- ✅ `test/unit/remediationprocessing/classification_test.go::NovelSignalAIRequired`
-- ✅ `test/unit/remediationprocessing/classification_test.go::LowSuccessRateAIRequired`
-- ✅ `test/unit/remediationprocessing/classification_test.go::ProductionEnvironmentThreshold`
-- ✅ `test/unit/remediationprocessing/classification_test.go::StagingEnvironmentThreshold`
+- ✅ `test/unit/signalprocessing/classification_test.go::HighSuccessRateAutomated`
+- ✅ `test/unit/signalprocessing/classification_test.go::NovelSignalAIRequired`
+- ✅ `test/unit/signalprocessing/classification_test.go::LowSuccessRateAIRequired`
+- ✅ `test/unit/signalprocessing/classification_test.go::ProductionEnvironmentThreshold`
+- ✅ `test/unit/signalprocessing/classification_test.go::StagingEnvironmentThreshold`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/classification_test.go::AutomatedWhenSuccessRateHigh`
-- ✅ `test/integration/remediationprocessing/classification_test.go::AIRequiredWhenSuccessRateLow`
-- ✅ `test/integration/remediationprocessing/classification_test.go::EnvironmentBasedRules`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::CompleteCRDLifecycle`
+- ✅ `test/integration/signalprocessing/classification_test.go::AutomatedWhenSuccessRateHigh`
+- ✅ `test/integration/signalprocessing/classification_test.go::AIRequiredWhenSuccessRateLow`
+- ✅ `test/integration/signalprocessing/classification_test.go::EnvironmentBasedRules`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::CompleteCRDLifecycle`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::AutomatedRemediationFlow`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::AutomatedRemediationFlow`
 
-**Implementation**: `pkg/remediationprocessing/classification/classifier.go`
+**Implementation**: `pkg/signalprocessing/classification/classifier.go`
 
 **Edge Cases Covered**:
 - Zero historical count → AI-required
@@ -4789,19 +4789,19 @@ groups:
 **Requirement**: System must provide confidence scores (0.0-1.0) for classification decisions based on multiple factors.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/classification_test.go::ConfidenceScoringSuccessRate`
-- ✅ `test/unit/remediationprocessing/classification_test.go::ConfidenceSimilarityImpact`
-- ✅ `test/unit/remediationprocessing/classification_test.go::ConfidenceSampleSizePenalty`
-- ✅ `test/unit/remediationprocessing/classification_test.go::EnvironmentPenaltyCalculation`
+- ✅ `test/unit/signalprocessing/classification_test.go::ConfidenceScoringSuccessRate`
+- ✅ `test/unit/signalprocessing/classification_test.go::ConfidenceSimilarityImpact`
+- ✅ `test/unit/signalprocessing/classification_test.go::ConfidenceSampleSizePenalty`
+- ✅ `test/unit/signalprocessing/classification_test.go::EnvironmentPenaltyCalculation`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/classification_test.go::ConfidenceScoreReflectsSuccessRate`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::ConfidenceScoreInRange`
+- ✅ `test/integration/signalprocessing/classification_test.go::ConfidenceScoreReflectsSuccessRate`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::ConfidenceScoreInRange`
 
 **E2E Test Coverage**:
 - (Implicitly covered by BR-SP-005 E2E tests)
 
-**Implementation**: `pkg/remediationprocessing/classification/classifier.go::calculateConfidence()`
+**Implementation**: `pkg/signalprocessing/classification/classifier.go::calculateConfidence()`
 
 **Edge Cases Covered**:
 - Zero success rate → confidence = 0.0
@@ -4817,18 +4817,18 @@ groups:
 **Requirement**: System must aggregate context from multiple historical sources and rank by relevance.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/enrichment_test.go::ContextAggregation`
-- ✅ `test/unit/remediationprocessing/enrichment_test.go::RelevanceRanking`
-- ✅ `test/unit/remediationprocessing/enrichment_test.go::SuccessRateCalculation`
+- ✅ `test/unit/signalprocessing/enrichment_test.go::ContextAggregation`
+- ✅ `test/unit/signalprocessing/enrichment_test.go::RelevanceRanking`
+- ✅ `test/unit/signalprocessing/enrichment_test.go::SuccessRateCalculation`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/enrichment_test.go::SimilarSignalsRankedBySimilarity`
-- ✅ `test/integration/remediationprocessing/enrichment_test.go::SuccessRateCalculation`
+- ✅ `test/integration/signalprocessing/enrichment_test.go::SimilarSignalsRankedBySimilarity`
+- ✅ `test/integration/signalprocessing/enrichment_test.go::SuccessRateCalculation`
 
 **E2E Test Coverage**:
 - (Covered by BR-SP-001 E2E tests)
 
-**Implementation**: `pkg/remediationprocessing/enrichment/enricher.go::aggregateContext()`
+**Implementation**: `pkg/signalprocessing/enrichment/enricher.go::aggregateContext()`
 
 **Edge Cases Covered**:
 - Multiple signals with identical similarity scores → sort by timestamp
@@ -4843,19 +4843,19 @@ groups:
 **Requirement**: System must automatically create WorkflowExecution CRDs for signals classified as automated.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::WorkflowExecutionCreation`
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::OwnerReferencesSet`
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::DataSnapshotCopied`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::WorkflowExecutionCreation`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::OwnerReferencesSet`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::DataSnapshotCopied`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/classification_test.go::WorkflowExecutionCRDCreated`
-- ✅ `test/integration/remediationprocessing/classification_test.go::OwnerReferenceValidation`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::CreatedCRDNameSet`
+- ✅ `test/integration/signalprocessing/classification_test.go::WorkflowExecutionCRDCreated`
+- ✅ `test/integration/signalprocessing/classification_test.go::OwnerReferenceValidation`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::CreatedCRDNameSet`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::AutomatedRemediationTrigger`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::AutomatedRemediationTrigger`
 
-**Implementation**: `pkg/remediationprocessing/crd_creator.go::createWorkflowExecution()`
+**Implementation**: `pkg/signalprocessing/crd_creator.go::createWorkflowExecution()`
 
 **Edge Cases Covered**:
 - Kubernetes API unavailable → retry with exponential backoff
@@ -4870,21 +4870,21 @@ groups:
 **Requirement**: System must identify signals requiring AI analysis and create AIAnalysis CRDs.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/classification_test.go::NovelSignalDetection`
-- ✅ `test/unit/remediationprocessing/classification_test.go::LowSuccessRateDetection`
-- ✅ `test/unit/remediationprocessing/classification_test.go::ProductionSafetyThreshold`
+- ✅ `test/unit/signalprocessing/classification_test.go::NovelSignalDetection`
+- ✅ `test/unit/signalprocessing/classification_test.go::LowSuccessRateDetection`
+- ✅ `test/unit/signalprocessing/classification_test.go::ProductionSafetyThreshold`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/classification_test.go::AIAnalysisCRDCreated`
-- ✅ `test/integration/remediationprocessing/enrichment_test.go::NovelSignalClassificationAIRequired`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::CreatedCRDTypeAIAnalysis`
+- ✅ `test/integration/signalprocessing/classification_test.go::AIAnalysisCRDCreated`
+- ✅ `test/integration/signalprocessing/enrichment_test.go::NovelSignalClassificationAIRequired`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::CreatedCRDTypeAIAnalysis`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::AIRequiredSignalFlow`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::AIRequiredSignalFlow`
 
 **Implementation**:
-- `pkg/remediationprocessing/classification/classifier.go::applyClassificationRules()`
-- `pkg/remediationprocessing/crd_creator.go::createAIAnalysis()`
+- `pkg/signalprocessing/classification/classifier.go::applyClassificationRules()`
+- `pkg/signalprocessing/crd_creator.go::createAIAnalysis()`
 
 **Edge Cases Covered**:
 - Zero historical data → AI-required
@@ -4899,19 +4899,19 @@ groups:
 **Requirement**: System must detect and suppress duplicate remediation attempts using SHA-256 fingerprints.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/deduplication_test.go::FingerprintGeneration`
-- ✅ `test/unit/remediationprocessing/deduplication_test.go::DuplicateDetection`
-- ✅ `test/unit/remediationprocessing/deduplication_test.go::SuppressionTimeWindow`
-- ✅ `test/unit/remediationprocessing/deduplication_test.go::CriticalAlertBypass`
+- ✅ `test/unit/signalprocessing/deduplication_test.go::FingerprintGeneration`
+- ✅ `test/unit/signalprocessing/deduplication_test.go::DuplicateDetection`
+- ✅ `test/unit/signalprocessing/deduplication_test.go::SuppressionTimeWindow`
+- ✅ `test/unit/signalprocessing/deduplication_test.go::CriticalAlertBypass`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/deduplication_test.go::DuplicateSignalSuppression`
-- ✅ `test/integration/remediationprocessing/deduplication_test.go::NonDuplicateSignalProcessing`
+- ✅ `test/integration/signalprocessing/deduplication_test.go::DuplicateSignalSuppression`
+- ✅ `test/integration/signalprocessing/deduplication_test.go::NonDuplicateSignalProcessing`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::DeduplicationScenario`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::DeduplicationScenario`
 
-**Implementation**: `pkg/remediationprocessing/deduplication/fingerprinter.go`
+**Implementation**: `pkg/signalprocessing/deduplication/fingerprinter.go`
 
 **Edge Cases Covered**:
 - Identical signals within suppression window (30m) → suppressed
@@ -4927,20 +4927,20 @@ groups:
 **Requirement**: System must export Prometheus metrics and emit Kubernetes events for all major state changes.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/status_test.go::MetricsRecordingPhaseTransitions`
-- ✅ `test/unit/remediationprocessing/status_test.go::MetricsRecordingEnrichmentDuration`
-- ✅ `test/unit/remediationprocessing/status_test.go::MetricsRecordingClassificationDecisions`
+- ✅ `test/unit/signalprocessing/status_test.go::MetricsRecordingPhaseTransitions`
+- ✅ `test/unit/signalprocessing/status_test.go::MetricsRecordingEnrichmentDuration`
+- ✅ `test/unit/signalprocessing/status_test.go::MetricsRecordingClassificationDecisions`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::PhaseTransitionEventsEmitted`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::MetricsIncremented`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::PhaseTransitionEventsEmitted`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::MetricsIncremented`
 
 **E2E Test Coverage**:
 - (Metrics validation through Prometheus queries in E2E environment)
 
 **Implementation**:
-- `pkg/remediationprocessing/status/manager.go` (Prometheus metrics)
-- `internal/controller/remediationprocessing/remediationprocessing_controller.go` (Events)
+- `pkg/signalprocessing/status/manager.go` (Prometheus metrics)
+- `internal/controller/signalprocessing/signalprocessing_controller.go` (Events)
 
 **Edge Cases Covered**:
 - Metrics labels correctly applied (namespace, environment, phase)
@@ -4955,17 +4955,17 @@ groups:
 **Requirement**: System must weight classification decisions based on historical success rates of similar remediations.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/classification_test.go::SuccessRateWeighting`
-- ✅ `test/unit/remediationprocessing/classification_test.go::SuccessRateCalculation`
+- ✅ `test/unit/signalprocessing/classification_test.go::SuccessRateWeighting`
+- ✅ `test/unit/signalprocessing/classification_test.go::SuccessRateCalculation`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/classification_test.go::SuccessRateImpactsClassification`
-- ✅ `test/integration/remediationprocessing/enrichment_test.go::SuccessRateCalculation`
+- ✅ `test/integration/signalprocessing/classification_test.go::SuccessRateImpactsClassification`
+- ✅ `test/integration/signalprocessing/enrichment_test.go::SuccessRateCalculation`
 
 **E2E Test Coverage**:
 - (Covered by BR-SP-005 E2E tests)
 
-**Implementation**: `pkg/remediationprocessing/classification/classifier.go::calculateSuccessRate()`
+**Implementation**: `pkg/signalprocessing/classification/classifier.go::calculateSuccessRate()`
 
 **Edge Cases Covered**:
 - Zero successful remediations (0% success rate)
@@ -4980,20 +4980,20 @@ groups:
 **Requirement**: System must maintain complete status tracking and audit trail in SignalProcessing CRD status.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/status_test.go::PhaseTransitions`
-- ✅ `test/unit/remediationprocessing/status_test.go::ConditionUpdates`
-- ✅ `test/unit/remediationprocessing/status_test.go::LastTransitionTimeUpdates`
-- ✅ `test/unit/remediationprocessing/status_test.go::ObservedGenerationTracking`
+- ✅ `test/unit/signalprocessing/status_test.go::PhaseTransitions`
+- ✅ `test/unit/signalprocessing/status_test.go::ConditionUpdates`
+- ✅ `test/unit/signalprocessing/status_test.go::LastTransitionTimeUpdates`
+- ✅ `test/unit/signalprocessing/status_test.go::ObservedGenerationTracking`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::CompleteStatusAuditTrail`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::ConditionsSetCorrectly`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::ErrorMessagePopulated`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::CompleteStatusAuditTrail`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::ConditionsSetCorrectly`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::ErrorMessagePopulated`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::StatusTrackingValidation`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::StatusTrackingValidation`
 
-**Implementation**: `pkg/remediationprocessing/status/manager.go`
+**Implementation**: `pkg/signalprocessing/status/manager.go`
 
 **Edge Cases Covered**:
 - Phase transitions tracked with timestamps
@@ -5009,17 +5009,17 @@ groups:
 **Requirement**: System must track all phase transitions (Pending → Enriching → Classifying → Creating → Complete) with timestamps.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/status_test.go::PhaseTransitionSequence`
-- ✅ `test/unit/remediationprocessing/status_test.go::TimestampUpdates`
+- ✅ `test/unit/signalprocessing/status_test.go::PhaseTransitionSequence`
+- ✅ `test/unit/signalprocessing/status_test.go::TimestampUpdates`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::PhaseTransitionSequence`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::LastTransitionTimeSet`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::PhaseTransitionSequence`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::LastTransitionTimeSet`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::PhaseTransitionValidation`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::PhaseTransitionValidation`
 
-**Implementation**: `pkg/remediationprocessing/status/manager.go::TransitionPhase()`
+**Implementation**: `pkg/signalprocessing/status/manager.go::TransitionPhase()`
 
 **Edge Cases Covered**:
 - All valid phase transitions (Pending → Complete)
@@ -5034,18 +5034,18 @@ groups:
 **Requirement**: System must track errors, retry transient failures with exponential backoff, and fail permanently on terminal errors.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/controller_test.go::RetryableErrorHandling`
-- ✅ `test/unit/remediationprocessing/controller_test.go::TerminalErrorHandling`
-- ✅ `test/unit/remediationprocessing/controller_test.go::ExponentialBackoffCalculation`
+- ✅ `test/unit/signalprocessing/controller_test.go::RetryableErrorHandling`
+- ✅ `test/unit/signalprocessing/controller_test.go::TerminalErrorHandling`
+- ✅ `test/unit/signalprocessing/controller_test.go::ExponentialBackoffCalculation`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::RetryAfterTransientError`
-- ✅ `test/integration/remediationprocessing/lifecycle_test.go::FailedPhaseOnTerminalError`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::RetryAfterTransientError`
+- ✅ `test/integration/signalprocessing/lifecycle_test.go::FailedPhaseOnTerminalError`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::ErrorRecoveryScenario`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::ErrorRecoveryScenario`
 
-**Implementation**: `internal/controller/remediationprocessing/remediationprocessing_controller.go::handleRetryableError()`
+**Implementation**: `internal/controller/signalprocessing/signalprocessing_controller.go::handleRetryableError()`
 
 **Edge Cases Covered**:
 - PostgreSQL connection failure → retry (5 attempts)
@@ -5061,21 +5061,21 @@ groups:
 **Requirement**: System must set owner references on created AIAnalysis and WorkflowExecution CRDs for cascade deletion.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::OwnerReferencesSet`
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::BlockOwnerDeletionTrue`
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::ControllerFieldTrue`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::OwnerReferencesSet`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::BlockOwnerDeletionTrue`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::ControllerFieldTrue`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/classification_test.go::OwnerReferenceValidationWorkflowExecution`
-- ✅ `test/integration/remediationprocessing/classification_test.go::OwnerReferenceValidationAIAnalysis`
+- ✅ `test/integration/signalprocessing/classification_test.go::OwnerReferenceValidationWorkflowExecution`
+- ✅ `test/integration/signalprocessing/classification_test.go::OwnerReferenceValidationAIAnalysis`
 
 **E2E Test Coverage**:
-- ✅ `test/e2e/remediationprocessing/complete_flow_test.go::CascadeDeletionValidation`
+- ✅ `test/e2e/signalprocessing/complete_flow_test.go::CascadeDeletionValidation`
 
-**Implementation**: `pkg/remediationprocessing/crd_creator.go::setOwnerReferences()`
+**Implementation**: `pkg/signalprocessing/crd_creator.go::setOwnerReferences()`
 
 **Edge Cases Covered**:
-- Parent RemediationProcessing deleted → child CRDs deleted
+- Parent SignalProcessing deleted → child CRDs deleted
 - Owner reference UID matches parent UID
 - BlockOwnerDeletion set to true
 - Controller field set to true
@@ -5087,18 +5087,18 @@ groups:
 **Requirement**: System must copy complete enrichment and classification data to child CRD specs for independence.
 
 **Unit Test Coverage**:
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::EnrichmentContextCopied`
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::ClassificationDecisionCopied`
-- ✅ `test/unit/remediationprocessing/crd_creator_test.go::DataSnapshotComplete`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::EnrichmentContextCopied`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::ClassificationDecisionCopied`
+- ✅ `test/unit/signalprocessing/crd_creator_test.go::DataSnapshotComplete`
 
 **Integration Test Coverage**:
-- ✅ `test/integration/remediationprocessing/classification_test.go::WorkflowExecutionContainsSnapshot`
-- ✅ `test/integration/remediationprocessing/classification_test.go::AIAnalysisContainsSnapshot`
+- ✅ `test/integration/signalprocessing/classification_test.go::WorkflowExecutionContainsSnapshot`
+- ✅ `test/integration/signalprocessing/classification_test.go::AIAnalysisContainsSnapshot`
 
 **E2E Test Coverage**:
 - (Covered by BR-SP-020 and BR-SP-025 E2E tests)
 
-**Implementation**: `pkg/remediationprocessing/crd_creator.go::createWithDataSnapshot()`
+**Implementation**: `pkg/signalprocessing/crd_creator.go::createWithDataSnapshot()`
 
 **Edge Cases Covered**:
 - EnrichmentResult copied completely (all fields)
@@ -5135,13 +5135,13 @@ groups:
 
 ## 🔑 Key Files
 
-- **Controller**: `internal/controller/remediationprocessing/remediationprocessing_controller.go`
-- **Enrichment**: `pkg/remediationprocessing/enrichment/enricher.go`
-- **Classification**: `pkg/remediationprocessing/classification/classifier.go`
-- **Storage Client**: `pkg/remediationprocessing/storage/client.go`
-- **Deduplication**: `pkg/remediationprocessing/deduplication/fingerprinter.go`
-- **Tests**: `test/integration/remediationprocessing/suite_test.go`
-- **Main**: `cmd/remediationprocessor/main.go`
+- **Controller**: `internal/controller/signalprocessing/signalprocessing_controller.go`
+- **Enrichment**: `pkg/signalprocessing/enrichment/enricher.go`
+- **Classification**: `pkg/signalprocessing/classification/classifier.go`
+- **Storage Client**: `pkg/signalprocessing/storage/client.go`
+- **Deduplication**: `pkg/signalprocessing/deduplication/fingerprinter.go`
+- **Tests**: `test/integration/signalprocessing/suite_test.go`
+- **Main**: `cmd/signalprocessor/main.go`
 
 ---
 
@@ -5181,7 +5181,7 @@ groups:
 ## 🔗 Integration Points
 
 **Upstream**:
-- RemediationRequest CRD (creates RemediationProcessing)
+- RemediationRequest CRD (creates SignalProcessing)
 
 **Downstream**:
 - AIAnalysis CRD (created for AI-required cases)

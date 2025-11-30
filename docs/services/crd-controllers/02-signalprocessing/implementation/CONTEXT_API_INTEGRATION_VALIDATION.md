@@ -88,7 +88,7 @@ CREATE INDEX idx_remediation_audit_environment ON remediation_audit(environment)
 | `TargetResource.Namespace` | `namespace` | ✅ Correct | Direct mapping |
 | `TargetResource.Name` | `target_resource` | ✅ Correct | Format: "kind/name" |
 | N/A | `cluster_name` | ⚠️ Missing in CRD | **Use default or infer from config** |
-| N/A | `remediation_request_id` | ⚠️ Missing in CRD | **Use RemediationProcessing.Name** |
+| N/A | `remediation_request_id` | ⚠️ Missing in CRD | **Use SignalProcessing.Name** |
 
 **⚠️ ACTION REQUIRED**: Add missing fields to query parameters
 
@@ -292,7 +292,7 @@ func (c *ContextAPIClient) transformToHistoricalData(apiResponse ContextAPIRespo
 
 **Step 1: Build Query Parameters**
 ```go
-func (e *Enricher) buildQueryParams(rp *RemediationProcessing) EnrichmentParams {
+func (e *Enricher) buildQueryParams(rp *SignalProcessing) EnrichmentParams {
     return EnrichmentParams{
         SignalName:       rp.Spec.SignalName,                    // ✅ Maps to remediation_audit.name
         SignalFingerprint: rp.Status.SignalFingerprint,          // ✅ Maps to remediation_audit.alert_fingerprint
@@ -308,7 +308,7 @@ func (e *Enricher) buildQueryParams(rp *RemediationProcessing) EnrichmentParams 
 
 **Step 2: Execute Query**
 ```go
-func (e *Enricher) EnrichContext(ctx context.Context, rp *RemediationProcessing) (*EnrichmentContext, error) {
+func (e *Enricher) EnrichContext(ctx context.Context, rp *SignalProcessing) (*EnrichmentContext, error) {
     // Build params
     params := e.buildQueryParams(rp)
 
@@ -348,7 +348,7 @@ func (e *Enricher) EnrichContext(ctx context.Context, rp *RemediationProcessing)
 - **Concurrent Queries**: Up to 100 QPS with connection pooling
 
 **Remediation Processor Enrichment Targets** (from Implementation Plan):
-- **Enrichment Phase**: <500ms per RemediationProcessing
+- **Enrichment Phase**: <500ms per SignalProcessing
   - Context API query: <50ms
   - Circuit breaker overhead: <5ms
   - Response parsing: <10ms
@@ -389,7 +389,7 @@ func NewContextAPIClient(baseURL string) *ContextAPIClient {
 
 ### Integration Test Requirements
 
-**Test File**: `test/integration/remediationprocessor/context_enrichment_test.go`
+**Test File**: `test/integration/signalprocessor/context_enrichment_test.go`
 
 **Required Test Cases**:
 ```go
@@ -397,7 +397,7 @@ var _ = Describe("Context API Integration", Label("BR-REMEDIATION-005", "BR-REME
     var (
         enricher      *Enricher
         contextClient *ContextAPIClient
-        rp            *RemediationProcessing
+        rp            *SignalProcessing
     )
 
     BeforeEach(func() {
@@ -405,8 +405,8 @@ var _ = Describe("Context API Integration", Label("BR-REMEDIATION-005", "BR-REME
         contextClient = NewContextAPIClient("http://localhost:8081")  // Test Context API
         enricher = NewEnricher(contextClient)
 
-        rp = &RemediationProcessing{
-            Spec: RemediationProcessingSpec{
+        rp = &SignalProcessing{
+            Spec: SignalProcessingSpec{
                 SignalName:  "high-cpu-usage",
                 Severity:    "warning",
                 Environment: "prod",
@@ -415,7 +415,7 @@ var _ = Describe("Context API Integration", Label("BR-REMEDIATION-005", "BR-REME
                     Name:      "deployment/api-server",
                 },
             },
-            Status: RemediationProcessingStatus{
+            Status: SignalProcessingStatus{
                 SignalFingerprint: "fp-12345",
                 Phase:             "Enriching",
             },
@@ -470,7 +470,7 @@ var _ = Describe("Context API Integration", Label("BR-REMEDIATION-005", "BR-REME
     })
 
     // Test Case 5: Query parameter validation
-    It("should build correct query parameters from RemediationProcessing", func() {
+    It("should build correct query parameters from SignalProcessing", func() {
         params := enricher.buildQueryParams(rp)
 
         Expect(params.SignalName).To(Equal("high-cpu-usage"))
@@ -498,7 +498,7 @@ var _ = Describe("Context API Integration", Label("BR-REMEDIATION-005", "BR-REME
 
 **Day 3 (Context Enrichment) - Updated Code**:
 ```go
-func (e *Enricher) buildQueryParams(rp *RemediationProcessing) EnrichmentParams {
+func (e *Enricher) buildQueryParams(rp *SignalProcessing) EnrichmentParams {
     return EnrichmentParams{
         SignalName:           rp.Spec.SignalName,
         SignalFingerprint:    rp.Status.SignalFingerprint,

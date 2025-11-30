@@ -29,7 +29,7 @@
 **Test Infrastructure Tools**:
 - **Anti-Flaky Patterns**: `pkg/testutil/timing/anti_flaky_patterns.go` for reliable concurrent testing
 - **Test Infrastructure Validator**: `test/scripts/validate_test_infrastructure.sh`
-- **Make Targets**: `make bootstrap-envtest-podman-remediationprocessor`, `make test-integration-envtest-remediationprocessor`
+- **Make Targets**: `make bootstrap-envtest-podman-signalprocessor`, `make test-integration-envtest-signalprocessor`
 - **External Dependencies**: PostgreSQL (pgvector) + Redis via Podman
 
 ---
@@ -53,14 +53,14 @@
 
 | BR | Requirement | Test Type | Test File | Test Name | Status |
 |----|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-001** | Alert enrichment with historical context | Integration | `test/integration/remediationprocessing/enrichment_test.go` | `It("should enrich alert with historical context")` | ✅ |
-| **BR-SP-003** | Semantic search for similar alerts | Integration | `test/integration/remediationprocessing/semantic_search_test.go` | `It("should find similar alerts using pgvector")` | ✅ |
-| **BR-SP-005** | Historical success rate calculation | Unit | `test/unit/remediationprocessing/enricher_test.go` | `Context("Success rate calculation")` | ✅ |
-| **BR-SP-007** | Average resolution time aggregation | Unit | `test/unit/remediationprocessing/enricher_test.go` | `It("should calculate average resolution time")` | ✅ |
-| **BR-SP-010** | Common action pattern identification | Unit | `test/unit/remediationprocessing/enricher_test.go` | `It("should identify common actions")` | ✅ |
-| **BR-SP-012** | Knowledge article linkage | Unit | `test/unit/remediationprocessing/enricher_test.go` | `It("should link relevant knowledge articles")` | ✅ |
-| **BR-SP-015** | Context aggregation from multiple sources | Unit | `test/unit/remediationprocessing/enricher_test.go` | `Describe("Multi-source aggregation")` | ✅ |
-| **BR-SP-018** | Similarity scoring algorithm | Unit | `test/unit/remediationprocessing/similarity_test.go` | `Describe("Similarity Scoring")` | ✅ |
+| **BR-SP-001** | Alert enrichment with historical context | Integration | `test/integration/signalprocessing/enrichment_test.go` | `It("should enrich alert with historical context")` | ✅ |
+| **BR-SP-003** | Semantic search for similar alerts | Integration | `test/integration/signalprocessing/semantic_search_test.go` | `It("should find similar alerts using pgvector")` | ✅ |
+| **BR-SP-005** | Historical success rate calculation | Unit | `test/unit/signalprocessing/enricher_test.go` | `Context("Success rate calculation")` | ✅ |
+| **BR-SP-007** | Average resolution time aggregation | Unit | `test/unit/signalprocessing/enricher_test.go` | `It("should calculate average resolution time")` | ✅ |
+| **BR-SP-010** | Common action pattern identification | Unit | `test/unit/signalprocessing/enricher_test.go` | `It("should identify common actions")` | ✅ |
+| **BR-SP-012** | Knowledge article linkage | Unit | `test/unit/signalprocessing/enricher_test.go` | `It("should link relevant knowledge articles")` | ✅ |
+| **BR-SP-015** | Context aggregation from multiple sources | Unit | `test/unit/signalprocessing/enricher_test.go` | `Describe("Multi-source aggregation")` | ✅ |
+| **BR-SP-018** | Similarity scoring algorithm | Unit | `test/unit/signalprocessing/similarity_test.go` | `Describe("Similarity Scoring")` | ✅ |
 
 ---
 
@@ -68,13 +68,13 @@
 
 | BR | Requirement | Test Type | Test File | Test Name | Status |
 |----|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-020** | Classification logic (automated vs AI-required) | Unit | `test/unit/remediationprocessing/classifier_test.go` | `Describe("Classification Engine")` | ✅ |
-| **BR-SP-022** | AI requirement detection | Unit | `test/unit/remediationprocessing/classifier_test.go` | `Context("AI requirement rules")` | ✅ |
-| **BR-SP-025** | Confidence score calculation | Unit | `test/unit/remediationprocessing/classifier_test.go` | `It("should calculate classification confidence")` | ✅ |
-| **BR-SP-028** | Rule-based classification engine | Unit | `test/unit/remediationprocessing/classifier_test.go` | `Context("Rule evaluation")` | ✅ |
-| **BR-SP-030** | Severity-based AI routing (critical → AI) | Unit | `test/unit/remediationprocessing/classifier_test.go` | `It("should route critical alerts to AI")` | ✅ |
-| **BR-SP-032** | Historical data influence on classification | Integration | `test/integration/remediationprocessing/classification_test.go` | `It("should use historical data for classification")` | ✅ |
-| **BR-SP-035** | Classification reason generation | Integration | `test/integration/remediationprocessing/classification_test.go` | `It("should generate human-readable reasons")` | ✅ |
+| **BR-SP-020** | Classification logic (automated vs AI-required) | Unit | `test/unit/signalprocessing/classifier_test.go` | `Describe("Classification Engine")` | ✅ |
+| **BR-SP-022** | AI requirement detection | Unit | `test/unit/signalprocessing/classifier_test.go` | `Context("AI requirement rules")` | ✅ |
+| **BR-SP-025** | Confidence score calculation | Unit | `test/unit/signalprocessing/classifier_test.go` | `It("should calculate classification confidence")` | ✅ |
+| **BR-SP-028** | Rule-based classification engine | Unit | `test/unit/signalprocessing/classifier_test.go` | `Context("Rule evaluation")` | ✅ |
+| **BR-SP-030** | Severity-based AI routing (critical → AI) | Unit | `test/unit/signalprocessing/classifier_test.go` | `It("should route critical alerts to AI")` | ✅ |
+| **BR-SP-032** | Historical data influence on classification | Integration | `test/integration/signalprocessing/classification_test.go` | `It("should use historical data for classification")` | ✅ |
+| **BR-SP-035** | Classification reason generation | Integration | `test/integration/signalprocessing/classification_test.go` | `It("should generate human-readable reasons")` | ✅ |
 
 ---
 
@@ -82,10 +82,10 @@
 
 | BR | Requirement | Test Type | Test File | Test Name | Status |
 |----|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-040** | Signal fingerprint generation (SHA-256) | Unit | `test/unit/remediationprocessing/fingerprinter_test.go` | `Describe("Fingerprint Generation")` | ✅ |
-| **BR-SP-042** | Duplicate detection using fingerprints | Unit | `test/unit/remediationprocessing/fingerprinter_test.go` | `It("should detect duplicate signals")` | ✅ |
-| **BR-SP-045** | Deduplication window (configurable TTL) | Unit | `test/unit/remediationprocessing/deduplication_test.go` | `Context("Deduplication window")` | ✅ |
-| **BR-SP-048** | Duplicate suppression logic | Integration | `test/integration/remediationprocessing/deduplication_test.go` | `It("should suppress duplicate alerts")` | ✅ |
+| **BR-SP-040** | Signal fingerprint generation (SHA-256) | Unit | `test/unit/signalprocessing/fingerprinter_test.go` | `Describe("Fingerprint Generation")` | ✅ |
+| **BR-SP-042** | Duplicate detection using fingerprints | Unit | `test/unit/signalprocessing/fingerprinter_test.go` | `It("should detect duplicate signals")` | ✅ |
+| **BR-SP-045** | Deduplication window (configurable TTL) | Unit | `test/unit/signalprocessing/deduplication_test.go` | `Context("Deduplication window")` | ✅ |
+| **BR-SP-048** | Duplicate suppression logic | Integration | `test/integration/signalprocessing/deduplication_test.go` | `It("should suppress duplicate alerts")` | ✅ |
 
 ---
 
@@ -93,11 +93,11 @@
 
 | BR | Requirement | Test Type | Test File | Test Name | Status |
 |----|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-051** | CRD reconciliation loop | Integration | `test/integration/remediationprocessing/lifecycle_test.go` | `Describe("CRD Reconciliation")` | ✅ |
-| **BR-SP-053** | Phase transitions (Pending → Enriching → Classifying → Ready) | Unit | `test/unit/remediationprocessing/reconciler_test.go` | `Context("Phase transitions")` | ✅ |
-| **BR-SP-055** | Status tracking and audit trail | Unit | `test/unit/remediationprocessing/status_test.go` | `Describe("Status Management")` | ✅ |
-| **BR-SP-057** | CRD creation (AIAnalysis/WorkflowExecution) | Integration | `test/integration/remediationprocessing/crd_creation_test.go` | `It("should create appropriate child CRDs")` | ✅ |
-| **BR-SP-060** | Owner reference management | E2E | `test/e2e/remediationprocessing/e2e_test.go` | `It("should set owner references correctly")` | ✅ |
+| **BR-SP-051** | CRD reconciliation loop | Integration | `test/integration/signalprocessing/lifecycle_test.go` | `Describe("CRD Reconciliation")` | ✅ |
+| **BR-SP-053** | Phase transitions (Pending → Enriching → Classifying → Ready) | Unit | `test/unit/signalprocessing/reconciler_test.go` | `Context("Phase transitions")` | ✅ |
+| **BR-SP-055** | Status tracking and audit trail | Unit | `test/unit/signalprocessing/status_test.go` | `Describe("Status Management")` | ✅ |
+| **BR-SP-057** | CRD creation (AIAnalysis/WorkflowExecution) | Integration | `test/integration/signalprocessing/crd_creation_test.go` | `It("should create appropriate child CRDs")` | ✅ |
+| **BR-SP-060** | Owner reference management | E2E | `test/e2e/signalprocessing/e2e_test.go` | `It("should set owner references correctly")` | ✅ |
 
 ---
 
@@ -105,9 +105,9 @@
 
 | BR | Requirement | Test Type | Test File | Test Name | Status |
 |----|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-061** | Data Storage Service integration | Integration | `test/integration/remediationprocessing/storage_integration_test.go` | `Describe("Data Storage Integration")` | ✅ |
-| **BR-SP-063** | PostgreSQL connection pooling | Integration | `test/integration/remediationprocessing/storage_integration_test.go` | `It("should use connection pooling efficiently")` | ✅ |
-| **BR-SP-067** | Observability (metrics, events) | E2E | `test/e2e/remediationprocessing/e2e_test.go` | `It("should expose Prometheus metrics")` | ✅ |
+| **BR-SP-061** | Data Storage Service integration | Integration | `test/integration/signalprocessing/storage_integration_test.go` | `Describe("Data Storage Integration")` | ✅ |
+| **BR-SP-063** | PostgreSQL connection pooling | Integration | `test/integration/signalprocessing/storage_integration_test.go` | `It("should use connection pooling efficiently")` | ✅ |
+| **BR-SP-067** | Observability (metrics, events) | E2E | `test/e2e/signalprocessing/e2e_test.go` | `It("should expose Prometheus metrics")` | ✅ |
 
 ---
 
@@ -119,38 +119,38 @@
 
 | Edge Case BR | Requirement | Test Type | Test File | Test Name | Status |
 |--------------|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-001-EC1** | Empty historical context (no similar alerts found) | Unit | `test/unit/remediationprocessing/enricher_edge_cases_test.go` | `Entry("empty context", ...)` | ✅ |
-| **BR-SP-001-EC2** | Malformed embedding vectors (dimension mismatch) | Unit | `test/unit/remediationprocessing/enricher_edge_cases_test.go` | `Entry("malformed embeddings", ...)` | ✅ |
-| **BR-SP-003-EC1** | pgvector query timeout (database slow response) | Integration | `test/integration/remediationprocessing/semantic_search_edge_cases_test.go` | `It("should handle query timeout")` | ✅ |
-| **BR-SP-005-EC1** | Zero historical attempts (divide-by-zero risk) | Unit | `test/unit/remediationprocessing/enricher_edge_cases_test.go` | `Entry("zero attempts", ...)` | ✅ |
+| **BR-SP-001-EC1** | Empty historical context (no similar alerts found) | Unit | `test/unit/signalprocessing/enricher_edge_cases_test.go` | `Entry("empty context", ...)` | ✅ |
+| **BR-SP-001-EC2** | Malformed embedding vectors (dimension mismatch) | Unit | `test/unit/signalprocessing/enricher_edge_cases_test.go` | `Entry("malformed embeddings", ...)` | ✅ |
+| **BR-SP-003-EC1** | pgvector query timeout (database slow response) | Integration | `test/integration/signalprocessing/semantic_search_edge_cases_test.go` | `It("should handle query timeout")` | ✅ |
+| **BR-SP-005-EC1** | Zero historical attempts (divide-by-zero risk) | Unit | `test/unit/signalprocessing/enricher_edge_cases_test.go` | `Entry("zero attempts", ...)` | ✅ |
 
 ### Classification Edge Cases (3 scenarios)
 
 | Edge Case BR | Requirement | Test Type | Test File | Test Name | Status |
 |--------------|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-020-EC1** | Ambiguous classification (exactly 50% confidence) | Unit | `test/unit/remediationprocessing/classifier_edge_cases_test.go` | `Entry("ambiguous class", ...)` | ✅ |
-| **BR-SP-022-EC1** | All classification rules fail (no match) | Unit | `test/unit/remediationprocessing/classifier_edge_cases_test.go` | `Entry("no rules match", ...)` | ✅ |
-| **BR-SP-030-EC1** | Critical alert with missing severity field | Unit | `test/unit/remediationprocessing/classifier_edge_cases_test.go` | `Entry("missing severity", ...)` | ✅ |
+| **BR-SP-020-EC1** | Ambiguous classification (exactly 50% confidence) | Unit | `test/unit/signalprocessing/classifier_edge_cases_test.go` | `Entry("ambiguous class", ...)` | ✅ |
+| **BR-SP-022-EC1** | All classification rules fail (no match) | Unit | `test/unit/signalprocessing/classifier_edge_cases_test.go` | `Entry("no rules match", ...)` | ✅ |
+| **BR-SP-030-EC1** | Critical alert with missing severity field | Unit | `test/unit/signalprocessing/classifier_edge_cases_test.go` | `Entry("missing severity", ...)` | ✅ |
 
 ### Deduplication Edge Cases (2 scenarios)
 
 | Edge Case BR | Requirement | Test Type | Test File | Test Name | Status |
 |--------------|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-040-EC1** | Fingerprint collision (hash conflict, extremely rare) | Unit | `test/unit/remediationprocessing/fingerprinter_edge_cases_test.go` | `It("should handle hash collision")` | ✅ |
-| **BR-SP-045-EC1** | Expired deduplication window boundary condition | Integration | `test/integration/remediationprocessing/deduplication_edge_cases_test.go` | `It("should handle window expiration")` | ✅ |
+| **BR-SP-040-EC1** | Fingerprint collision (hash conflict, extremely rare) | Unit | `test/unit/signalprocessing/fingerprinter_edge_cases_test.go` | `It("should handle hash collision")` | ✅ |
+| **BR-SP-045-EC1** | Expired deduplication window boundary condition | Integration | `test/integration/signalprocessing/deduplication_edge_cases_test.go` | `It("should handle window expiration")` | ✅ |
 
 ### CRD Lifecycle Edge Cases (2 scenarios)
 
 | Edge Case BR | Requirement | Test Type | Test File | Test Name | Status |
 |--------------|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-053-EC1** | Concurrent phase transition attempts (race condition) | Integration | `test/integration/remediationprocessing/lifecycle_edge_cases_test.go` | `It("should handle concurrent transitions")` | ✅ |
-| **BR-SP-057-EC1** | Child CRD creation failure (quota exceeded) | Integration | `test/integration/remediationprocessing/crd_creation_edge_cases_test.go` | `It("should handle quota exceeded")` | ✅ |
+| **BR-SP-053-EC1** | Concurrent phase transition attempts (race condition) | Integration | `test/integration/signalprocessing/lifecycle_edge_cases_test.go` | `It("should handle concurrent transitions")` | ✅ |
+| **BR-SP-057-EC1** | Child CRD creation failure (quota exceeded) | Integration | `test/integration/signalprocessing/crd_creation_edge_cases_test.go` | `It("should handle quota exceeded")` | ✅ |
 
 ### Integration Edge Cases (1 scenario)
 
 | Edge Case BR | Requirement | Test Type | Test File | Test Name | Status |
 |--------------|-------------|-----------|-----------|-----------|--------|
-| **BR-SP-061-EC1** | PostgreSQL connection pool exhaustion | Integration | `test/integration/remediationprocessing/storage_edge_cases_test.go` | `It("should handle pool exhaustion")` | ✅ |
+| **BR-SP-061-EC1** | PostgreSQL connection pool exhaustion | Integration | `test/integration/signalprocessing/storage_edge_cases_test.go` | `It("should handle pool exhaustion")` | ✅ |
 
 ---
 
@@ -169,8 +169,8 @@
 **Example: Context Enrichment Edge Cases**
 
 ```go
-// test/unit/remediationprocessing/enricher_edge_cases_test.go
-package remediationprocessing_test
+// test/unit/signalprocessing/enricher_edge_cases_test.go
+package signalprocessing_test
 
 import (
     . "github.com/onsi/ginkgo/v2"
@@ -252,16 +252,16 @@ var _ = Describe("BR-SP-020: Classification Engine Edge Cases", func() {
 **Example: Semantic Search with Envtest**
 
 ```go
-// test/integration/remediationprocessing/semantic_search_edge_cases_test.go
+// test/integration/signalprocessing/semantic_search_edge_cases_test.go
 var _ = Describe("BR-SP-003-EC1: pgvector Query Timeout", func() {
     It("should handle query timeout gracefully", func() {
         // Setup: Create SignalProcessing CRD
-        processing := &remediationprocessingv1.RemediationProcessing{
+        processing := &signalprocessingv1.SignalProcessing{
             ObjectMeta: metav1.ObjectMeta{
                 Name:      "test-timeout",
                 Namespace: testNamespace,
             },
-            Spec: remediationprocessingv1.RemediationProcessingSpec{
+            Spec: signalprocessingv1.SignalProcessingSpec{
                 SignalFingerprint: "test-fingerprint",
             },
         }
@@ -299,64 +299,64 @@ var _ = Describe("BR-SP-003-EC1: pgvector Query Timeout", func() {
 
 ### Unit Tests (16 tests covering 59.3% of BRs)
 
-1. **test/unit/remediationprocessing/enricher_test.go**
+1. **test/unit/signalprocessing/enricher_test.go**
    - BR-SP-005 (Success rate calculation)
    - BR-SP-007 (Resolution time aggregation)
    - BR-SP-010 (Common actions)
    - BR-SP-012 (Knowledge articles)
    - BR-SP-015 (Multi-source aggregation)
 
-2. **test/unit/remediationprocessing/similarity_test.go**
+2. **test/unit/signalprocessing/similarity_test.go**
    - BR-SP-018 (Similarity scoring)
 
-3. **test/unit/remediationprocessing/classifier_test.go**
+3. **test/unit/signalprocessing/classifier_test.go**
    - BR-SP-020 (Classification logic)
    - BR-SP-022 (AI requirement detection)
    - BR-SP-025 (Confidence scoring)
    - BR-SP-028 (Rule-based engine)
    - BR-SP-030 (Severity-based routing)
 
-4. **test/unit/remediationprocessing/fingerprinter_test.go**
+4. **test/unit/signalprocessing/fingerprinter_test.go**
    - BR-SP-040 (Fingerprint generation)
    - BR-SP-042 (Duplicate detection)
 
-5. **test/unit/remediationprocessing/deduplication_test.go**
+5. **test/unit/signalprocessing/deduplication_test.go**
    - BR-SP-045 (Deduplication window)
 
-6. **test/unit/remediationprocessing/reconciler_test.go**
+6. **test/unit/signalprocessing/reconciler_test.go**
    - BR-SP-053 (Phase transitions)
 
-7. **test/unit/remediationprocessing/status_test.go**
+7. **test/unit/signalprocessing/status_test.go**
    - BR-SP-055 (Status tracking)
 
 ### Integration Tests (9 tests covering 33.3% of BRs)
 
-1. **test/integration/remediationprocessing/enrichment_test.go**
+1. **test/integration/signalprocessing/enrichment_test.go**
    - BR-SP-001 (Historical context enrichment)
 
-2. **test/integration/remediationprocessing/semantic_search_test.go**
+2. **test/integration/signalprocessing/semantic_search_test.go**
    - BR-SP-003 (Semantic search with pgvector)
 
-3. **test/integration/remediationprocessing/classification_test.go**
+3. **test/integration/signalprocessing/classification_test.go**
    - BR-SP-032 (Historical data influence)
    - BR-SP-035 (Classification reasons)
 
-4. **test/integration/remediationprocessing/deduplication_test.go**
+4. **test/integration/signalprocessing/deduplication_test.go**
    - BR-SP-048 (Duplicate suppression)
 
-5. **test/integration/remediationprocessing/lifecycle_test.go**
+5. **test/integration/signalprocessing/lifecycle_test.go**
    - BR-SP-051 (CRD reconciliation)
 
-6. **test/integration/remediationprocessing/crd_creation_test.go**
+6. **test/integration/signalprocessing/crd_creation_test.go**
    - BR-SP-057 (Child CRD creation)
 
-7. **test/integration/remediationprocessing/storage_integration_test.go**
+7. **test/integration/signalprocessing/storage_integration_test.go**
    - BR-SP-061 (Data Storage integration)
    - BR-SP-063 (Connection pooling)
 
 ### E2E Tests (2 tests covering 7.4% of BRs)
 
-1. **test/e2e/remediationprocessing/e2e_test.go**
+1. **test/e2e/signalprocessing/e2e_test.go**
    - BR-SP-060 (Owner references)
    - BR-SP-067 (Observability)
 
@@ -387,14 +387,14 @@ var _ = Describe("BR-SP-003-EC1: pgvector Query Timeout", func() {
 ### Phase 1: Unit Tests (Days 8-9)
 Run all unit tests to validate core logic:
 ```bash
-cd test/unit/remediationprocessing
+cd test/unit/signalprocessing
 go test -v ./...
 ```
 
 ### Phase 2: Integration Tests (Days 8-9)
 Run integration tests with Envtest:
 ```bash
-cd test/integration/remediationprocessing
+cd test/integration/signalprocessing
 go test -v -timeout=30m ./...
 ```
 
@@ -413,7 +413,7 @@ go test -v -timeout=30m ./...
 ### Phase 3: E2E Tests (Day 10)
 Run E2E tests with complete environment:
 ```bash
-cd test/e2e/remediationprocessing
+cd test/e2e/signalprocessing
 go test -v -timeout=60m ./...
 ```
 
@@ -448,7 +448,7 @@ go test -v -timeout=60m ./...
 **Gap 2: E2E Test Coverage (7.4% actual vs 10% target)**
 - **Need**: 1 additional E2E test
 - **Recommendation**:
-  - Add E2E test for complete remediation flow (Gateway → RemediationProcessor → AIAnalysis)
+  - Add E2E test for complete remediation flow (Gateway → SignalProcessor → AIAnalysis)
 
 ---
 
@@ -459,8 +459,8 @@ go test -v -timeout=60m ./...
 **Per [ADR-016](../../../../../docs/architecture/decisions/ADR-016-SERVICE-SPECIFIC-INTEGRATION-TEST-INFRASTRUCTURE.md)**: CRD controllers use Envtest instead of Kind for integration tests.
 
 ```go
-// test/integration/remediationprocessing/suite_test.go
-package remediationprocessing_test
+// test/integration/signalprocessing/suite_test.go
+package signalprocessing_test
 
 import (
     "context"
@@ -474,7 +474,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/envtest"
 
-    remediationprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
     remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
@@ -504,7 +504,7 @@ var _ = BeforeSuite(func() {
     Expect(cfg).NotTo(BeNil())
 
     // Register CRD schemes
-    err = remediationprocessingv1.AddToScheme(scheme.Scheme)
+    err = signalprocessingv1.AddToScheme(scheme.Scheme)
     Expect(err).NotTo(HaveOccurred())
     err = remediationv1.AddToScheme(scheme.Scheme)
     Expect(err).NotTo(HaveOccurred())
@@ -535,7 +535,7 @@ var _ = AfterSuite(func() {
 For tests that require PostgreSQL with pgvector:
 
 ```go
-// test/integration/remediationprocessing/storage_suite_test.go
+// test/integration/signalprocessing/storage_suite_test.go
 var (
     postgresContainer testcontainers.Container
     db                *sql.DB
@@ -599,12 +599,12 @@ Before marking coverage complete:
 
 ### High Priority
 1. **Add 3 unit tests** to reach 70% unit coverage:
-   - `test/unit/remediationprocessing/semantic_search_algorithm_test.go`
-   - `test/unit/remediationprocessing/classification_decision_test.go`
-   - `test/unit/remediationprocessing/suppression_logic_test.go`
+   - `test/unit/signalprocessing/semantic_search_algorithm_test.go`
+   - `test/unit/signalprocessing/classification_decision_test.go`
+   - `test/unit/signalprocessing/suppression_logic_test.go`
 
 2. **Add 1 E2E test** to reach 10% E2E coverage:
-   - `test/e2e/remediationprocessing/complete_flow_test.go` (Gateway → RemediationProcessor → AIAnalysis)
+   - `test/e2e/signalprocessing/complete_flow_test.go` (Gateway → SignalProcessor → AIAnalysis)
 
 ### Medium Priority
 3. **Validate integration test infrastructure**:

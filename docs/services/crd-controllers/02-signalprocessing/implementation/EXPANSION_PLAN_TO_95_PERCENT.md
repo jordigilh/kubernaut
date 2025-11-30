@@ -48,7 +48,7 @@
 - Timeline: RED (2h) → GREEN (3h) → REFACTOR (2h)
 
 ### DO-RED: Context Enrichment Tests (2h)
-**File**: `test/unit/remediationprocessing/enricher_test.go`
+**File**: `test/unit/signalprocessing/enricher_test.go`
 **BR Coverage**: BR-REMEDIATION-002, BR-REMEDIATION-003
 
 [~300 lines of complete Ginkgo test code]
@@ -61,7 +61,7 @@
 **Expected Result**: Tests fail - ContextEnricher doesn't exist
 
 ### DO-GREEN: Minimal Context Enricher (3h)
-**File**: `pkg/remediationprocessing/enricher/context_enricher.go`
+**File**: `pkg/signalprocessing/enricher/context_enricher.go`
 **BR Coverage**: BR-REMEDIATION-002
 
 [~400 lines of complete implementation code]
@@ -111,7 +111,7 @@
 - Success criteria: 95%+ classification accuracy
 
 ### DO-RED: Classification Tests (2h)
-**File**: `test/unit/remediationprocessing/classifier_test.go`
+**File**: `test/unit/signalprocessing/classifier_test.go`
 **BR Coverage**: BR-REMEDIATION-004, BR-REMEDIATION-005
 
 [~350 lines of complete test code]
@@ -124,7 +124,7 @@
 - It("should provide confidence scores")
 
 ### DO-GREEN: Minimal Classifier (3h)
-**File**: `pkg/remediationprocessing/classifier/classifier.go`
+**File**: `pkg/signalprocessing/classifier/classifier.go`
 
 [~400 lines of implementation]
 - type Classifier struct with rule engine
@@ -154,7 +154,7 @@
 ## 📅 Day 7: Controller Integration + Metrics (8h)
 
 ### Morning: Manager Setup (3h)
-**File**: `cmd/remediationprocessor/main.go`
+**File**: `cmd/signalprocessor/main.go`
 
 [~300 lines of complete main.go]
 - Manager creation with scheme registration
@@ -164,7 +164,7 @@
 - Leader election configuration
 
 ### Afternoon: Prometheus Metrics (2h)
-**File**: `pkg/remediationprocessing/metrics/metrics.go`
+**File**: `pkg/signalprocessing/metrics/metrics.go`
 
 [~250 lines of metrics definitions]
 - 10+ metrics:
@@ -191,12 +191,12 @@
 
 ### Integration Test 1: Context Enrichment (~200 lines)
 
-**File**: `test/integration/remediationprocessing/context_enrichment_test.go`
+**File**: `test/integration/signalprocessing/context_enrichment_test.go`
 
 **Structure**:
 ```go
 var _ = Describe("Integration Test 1: Context Enrichment with pgvector", func() {
-    It("should enrich RemediationProcessing with historical context", func() {
+    It("should enrich SignalProcessing with historical context", func() {
         By("Creating SignalProcessing CRD")
         // [Full CRD creation code]
 
@@ -219,7 +219,7 @@ var _ = Describe("Integration Test 1: Context Enrichment with pgvector", func() 
 
 ### Integration Test 2: Classification and Priority (~200 lines)
 
-**File**: `test/integration/remediationprocessing/classification_test.go`
+**File**: `test/integration/signalprocessing/classification_test.go`
 
 **Structure**:
 ```go
@@ -239,13 +239,13 @@ var _ = Describe("Integration Test 2: Classification and Priority Assignment", f
 
 ### Integration Test 3: Deduplication (~200 lines)
 
-**File**: `test/integration/remediationprocessing/deduplication_test.go`
+**File**: `test/integration/signalprocessing/deduplication_test.go`
 
 **Structure**:
 ```go
 var _ = Describe("Integration Test 3: Deduplication with Window Detection", func() {
     It("should detect duplicate signals within time window", func() {
-        By("Creating first RemediationProcessing")
+        By("Creating first SignalProcessing")
         // [CRD 1 creation]
 
         By("Creating duplicate signal within 5-minute window")
