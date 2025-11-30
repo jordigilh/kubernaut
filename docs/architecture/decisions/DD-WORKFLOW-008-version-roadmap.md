@@ -2,6 +2,22 @@
 
 **Date**: 2025-11-15
 **Status**: Planning
+**Related**: DD-WORKFLOW-012 (Workflow Immutability)
+
+---
+
+## 🔗 **Workflow Immutability Reference**
+
+**CRITICAL**: All versioning strategies in this roadmap assume workflow immutability.
+
+**Authority**: **DD-WORKFLOW-012: Workflow Immutability Constraints**
+- Workflows are immutable at the (workflow_id, version) level
+- To change workflow content, create a new version
+- Version history is preserved for audit trail
+
+**Cross-Reference**: All version management features (v1.1, v1.2, v2.0) operate within DD-WORKFLOW-012 immutability constraints.
+
+---
 
 ---
 

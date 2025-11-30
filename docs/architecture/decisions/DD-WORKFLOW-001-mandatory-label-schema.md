@@ -5,8 +5,23 @@
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
-**Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract)
+**Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
 **Version**: 1.2
+
+---
+
+## 🔗 **Workflow Immutability Reference**
+
+**CRITICAL**: Workflow labels are immutable once created.
+
+**Authority**: **DD-WORKFLOW-012: Workflow Immutability Constraints**
+- Labels are immutable (cannot change after workflow creation)
+- Labels are used for semantic search embeddings
+- To change labels, create a new workflow version
+
+**Cross-Reference**: All label schema definitions in this DD are subject to DD-WORKFLOW-012 immutability constraints.
+
+---
 
 ---
 
