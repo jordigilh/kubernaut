@@ -14,7 +14,17 @@ alwaysApply: false
 ## Error Handling
 - Always wrap errors with context using `fmt.Errorf("operation description: %w", err)`
 - Use structured error types from [internal/errors/](mdc:internal/errors/) for consistent error categorization
-- Log errors at the appropriate level with structured fields using logrus
+- Log errors using `logr.Logger` interface per DD-005 v2.0
+
+## Logging Standards (DD-005 v2.0)
+- **Unified Interface**: Use `github.com/go-logr/logr` as the standard logging interface for ALL services
+- **Backend**: Use `go.uber.org/zap` via `github.com/go-logr/zapr` adapter for performance
+- **Stateless services** (Gateway, Data Storage): Create logger with `zapr.NewLogger(zapLogger)`
+- **CRD controllers** (Signal Processing, Notification): Use native `ctrl.Log.WithName("component")`
+- **Shared libraries** (`pkg/*`): MUST accept `logr.Logger` parameter (not `*zap.Logger`)
+- **Error logging**: `logger.Error(err, "message", "key", "value")` (error as first argument)
+- **Debug logging**: `logger.V(1).Info("message", "key", "value")` (verbosity levels)
+- **Key-value pairs**: Use alternating key-value pairs, not `zap.String()` helpers
 
 ## Context and Cancellation
 - Always accept `context.Context` as first parameter for operations that can be cancelled
