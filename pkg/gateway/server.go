@@ -1450,17 +1450,24 @@ func (s *Server) createAggregatedCRD(
 // monitorWindowExpiration monitors window expiration for cleanup (DD-GATEWAY-008)
 //
 // DD-GATEWAY-008: Window continues accepting alerts after CRD creation (sliding window)
-// This goroutine monitors the window and cleans up Redis keys after expiration
+// This goroutine monitors the window and cleans up Redis keys after expiration.
+// Respects context cancellation for graceful shutdown.
 func (s *Server) monitorWindowExpiration(ctx context.Context, windowID string) {
-	// Wait for window to expire
+	// Wait for window to expire, respecting context cancellation
 	windowDuration := s.stormAggregator.GetWindowDuration()
-	time.Sleep(windowDuration)
 
-	s.logger.Info("Storm aggregation window expired, cleaning up",
-		"windowID", windowID)
+	select {
+	case <-time.After(windowDuration):
+		s.logger.Info("Storm aggregation window expired, cleaning up",
+			"windowID", windowID)
+		// Cleanup: Window resources are already in CRD, just remove Redis keys
+		// Note: Resources have 2x TTL for retrieval, will auto-expire
 
-	// Cleanup: Window resources are already in CRD, just remove Redis keys
-	// Note: Resources have 2x TTL for retrieval, will auto-expire
+	case <-ctx.Done():
+		s.logger.Info("Window expiration monitor cancelled (shutdown)",
+			"windowID", windowID)
+		return
+	}
 }
 
 // TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication
