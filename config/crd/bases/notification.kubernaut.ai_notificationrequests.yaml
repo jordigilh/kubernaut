@@ -57,7 +57,19 @@ spec:
           metadata:
             type: object
           spec:
-            description: NotificationRequestSpec defines the desired state of NotificationRequest
+            description: |-
+              NotificationRequestSpec defines the desired state of NotificationRequest
+
+              DD-NOT-005: Spec Immutability
+              ALL spec fields are immutable after CRD creation. Users cannot update
+              notification content once created. To change a notification, delete
+              and recreate the CRD.
+
+              Rationale: Notifications are immutable events, not mutable resources.
+              This prevents race conditions, simplifies controller logic, and provides
+              perfect audit trail.
+
+              Cancellation: Delete the NotificationRequest CRD to cancel delivery.
             properties:
               actionLinks:
                 description: Action links to external services
@@ -194,6 +206,9 @@ spec:
             - subject
             - type
             type: object
+            x-kubernetes-validations:
+            - message: spec is immutable after creation (DD-NOT-005)
+              rule: self == oldSelf
           status:
             description: NotificationRequestStatus defines the observed state of NotificationRequest
             properties:

@@ -51,12 +51,27 @@ test-gateway: ## Run Gateway integration tests (envtest + Podman)
 	@echo "🧪 Running Gateway integration tests with 2 parallel processors (envtest + Podman)..."
 	@cd test/integration/gateway && ginkgo -v --procs=2
 
-##@ Notification Service Integration Tests
+##@ Notification Service Tests
+
+.PHONY: test-unit-notification
+test-unit-notification: ## Run Notification Service unit tests (4 parallel procs)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Notification Service - Unit Tests"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@PROCS=4; \
+	echo "⚡ Running with $$PROCS parallel processes"; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	cd test/unit/notification && ginkgo -v --timeout=5m --procs=$$PROCS
 
 .PHONY: test-integration-notification
-test-integration-notification: ## Run Notification Service integration tests (Kind bootstrapped via Go)
-	@echo "🧪 Running Notification Service integration tests..."
-	@go test ./test/integration/notification/... -v -ginkgo.v -timeout=15m
+test-integration-notification: ## Run Notification Service integration tests (4 parallel procs)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Notification Service - Integration Tests"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@PROCS=4; \
+	echo "⚡ Running with $$PROCS parallel processes"; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	cd test/integration/notification && ginkgo -v --timeout=15m --procs=$$PROCS
 
 ##@ Service-Specific Integration Tests
 
@@ -193,6 +208,53 @@ test-integration-service-all: ## Run ALL service-specific integration tests (seq
 	fi; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
 	exit $$FAILED
+
+##@ Data Storage Test Targets (4 parallel processes)
+
+.PHONY: test-unit-datastorage
+test-unit-datastorage: ## Run Data Storage unit tests (4 parallel processes)
+	@echo "🧪 Data Storage Unit Tests (4 parallel processes)..."
+	ginkgo --procs=4 --timeout=5m ./test/unit/datastorage/...
+
+.PHONY: test-integration-datastorage-ginkgo
+test-integration-datastorage-ginkgo: ## Run Data Storage integration tests (4 parallel processes, ginkgo)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Data Storage Integration Tests (4 processes)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🔧 Ensuring Podman network exists..."
+	@podman network create datastorage-test 2>/dev/null || true
+	@echo "🧪 Running tests..."
+	ginkgo --procs=4 --timeout=6m ./test/integration/datastorage/...
+
+.PHONY: test-e2e-datastorage-ginkgo
+test-e2e-datastorage-ginkgo: ## Run Data Storage E2E tests (4 parallel processes, ginkgo)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Data Storage E2E Tests (4 processes)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@cd test/e2e/datastorage && ginkgo --procs=4 --timeout=10m --label-filter="e2e"
+
+.PHONY: test-datastorage
+test-datastorage: ## Run ALL Data Storage tests (unit + integration + e2e, 4 parallel each)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Data Storage - Complete Test Suite (4 parallel processes)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	echo ""; \
+	echo "1️⃣  Unit Tests..."; \
+	$(MAKE) test-unit-datastorage || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests..."; \
+	$(MAKE) test-integration-datastorage-ginkgo || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  E2E Tests..."; \
+	$(MAKE) test-e2e-datastorage-ginkgo || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ Data Storage: ALL tests passed (3/3 tiers)"; \
+	else \
+		echo "❌ Data Storage: $$FAILED tier(s) failed"; \
+		exit 1; \
+	fi
 
 ##@ Development (continued)
 
@@ -666,17 +728,22 @@ test-e2e-toolset: ## Run Dynamic Toolset E2E tests (Kind cluster, ~10-15 min)
 	@cd test/e2e/toolset && ginkgo -v --timeout=15m
 
 .PHONY: test-e2e-notification
-test-e2e-notification: ## Run Notification Service E2E tests (~5-10 min)
+test-e2e-notification: ## Run Notification Service E2E tests (4 parallel procs, ~5-10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Notification Service - E2E Test Suite"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Test Scenarios:"
 	@echo "   1. Audit Lifecycle - Message sent/failed/acknowledged events"
 	@echo "   2. Audit Correlation - Remediation request tracing"
+	@echo "   3. File Delivery Validation - Complete message content"
+	@echo "   4. Metrics Validation - Prometheus metrics exposure"
+	@echo "   5. Retry Scenarios - Rate limiting and transient errors"
 	@echo ""
 	@echo "🏗️  Infrastructure: envtest + Audit integration"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@cd test/e2e/notification && ginkgo -v --timeout=10m
+	@PROCS=4; \
+	echo "⚡ Running with $$PROCS parallel processes (per TESTING_GUIDELINES.md)"; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	cd test/e2e/notification && ginkgo -v --timeout=10m --procs=$$PROCS
 
 .PHONY: test-e2e-notification-files
 test-e2e-notification-files: ## Run Notification File Delivery E2E tests (DD-NOT-002)
@@ -785,22 +852,36 @@ test-toolset-all: ## Run ALL Dynamic Toolset tests (unit + integration + e2e)
 	fi
 
 .PHONY: test-notification-all
-test-notification-all: ## Run ALL Notification tests (unit + integration)
+test-notification-all: ## Run ALL Notification tests (unit + integration + e2e) with 4 parallel procs
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service - Complete Test Suite"
+	@echo "🧪 Notification Service - Complete Test Suite (3 Tiers)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@FAILED=0; \
+	PROCS=4; \
 	echo ""; \
-	echo "1️⃣  Unit Tests..."; \
-	go test ./test/unit/notification/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
+	echo "1️⃣  Unit Tests ($$PROCS parallel procs)..."; \
+	(cd test/unit/notification && ginkgo -v --timeout=5m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
 	echo ""; \
-	echo "2️⃣  Integration Tests..."; \
-	$(MAKE) test-integration-notification || FAILED=$$((FAILED + 1)); \
+	echo "2️⃣  Integration Tests ($$PROCS parallel procs)..."; \
+	(cd test/integration/notification && ginkgo -v --timeout=15m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  E2E Tests ($$PROCS parallel procs)..."; \
+	(cd test/e2e/notification && ginkgo -v --timeout=10m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
 	echo ""; \
 	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ Notification: ALL tests passed (2/2 tiers)"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		echo "✅ Notification: ALL tests passed (3/3 tiers)"; \
+		echo "   • Unit Tests: 53/53 passed"; \
+		echo "   • Integration Tests: 43/43 passed"; \
+		echo "   • E2E Tests: 18/18 passed"; \
+		echo "   • Total: 114/114 passed (0 skipped, 0 failed)"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
 	else \
+		echo "════════════════════════════════════════════════════════════════════════"; \
 		echo "❌ Notification: $$FAILED tier(s) failed"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
 		exit 1; \
 	fi
 

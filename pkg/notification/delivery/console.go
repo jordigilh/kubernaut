@@ -34,7 +34,13 @@ func NewConsoleDeliveryService() *ConsoleDeliveryService {
 
 // Deliver delivers a notification to console (stdout)
 // BR-NOT-053: At-least-once delivery (console always succeeds)
+// BR-NOT-011: Delivery Error Handling - Input validation
 func (s *ConsoleDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+	// TDD GREEN: Validate input (nil-check)
+	if notification == nil {
+		return fmt.Errorf("notification cannot be nil")
+	}
+
 	// Format for console output
 	formattedMessage := fmt.Sprintf(
 		"[%s] [%s] %s\n%s\n",

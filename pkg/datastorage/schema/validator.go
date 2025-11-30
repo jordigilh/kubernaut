@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	"golang.org/x/mod/semver"
 )
 
@@ -62,11 +62,11 @@ const DefaultHNSWEfConstruction = 64
 // VersionValidator validates PostgreSQL and pgvector versions for HNSW support
 type VersionValidator struct {
 	db     *sql.DB
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewVersionValidator creates a new version validator
-func NewVersionValidator(db *sql.DB, logger *zap.Logger) *VersionValidator {
+func NewVersionValidator(db *sql.DB, logger logr.Logger) *VersionValidator {
 	return &VersionValidator{
 		db:     db,
 		logger: logger,
@@ -93,9 +93,9 @@ func (v *VersionValidator) ValidateHNSWSupport(ctx context.Context) error {
 	}
 
 	v.logger.Info("PostgreSQL version validated",
-		zap.String("version", pgVersion),
-		zap.Int("major", pgMajor),
-		zap.Bool("hnsw_supported", true))
+		"version", pgVersion,
+		"major", pgMajor,
+		"hnsw_supported", true)
 
 	// Step 2: Validate pgvector version (0.5.1+ only)
 	pgvectorVersion, err := v.getPgvectorVersion(ctx)
@@ -112,8 +112,8 @@ func (v *VersionValidator) ValidateHNSWSupport(ctx context.Context) error {
 	}
 
 	v.logger.Info("pgvector version validated",
-		zap.String("version", pgvectorVersion),
-		zap.Bool("hnsw_supported", true))
+		"version", pgvectorVersion,
+		"hnsw_supported", true)
 
 	// Step 3: Test HNSW index creation (dry-run)
 	err = v.testHNSWIndexCreation(ctx)
@@ -123,8 +123,8 @@ func (v *VersionValidator) ValidateHNSWSupport(ctx context.Context) error {
 	}
 
 	v.logger.Info("HNSW support validation complete - all checks passed",
-		zap.String("postgres_version", pgVersion),
-		zap.String("pgvector_version", pgvectorVersion))
+		"postgres_version", pgVersion,
+		"pgvector_version", pgvectorVersion)
 
 	return nil
 }
@@ -137,30 +137,30 @@ func (v *VersionValidator) ValidateMemoryConfiguration(ctx context.Context) erro
 	var sharedBuffers string
 	err := v.db.QueryRowContext(ctx, "SELECT current_setting('shared_buffers')").Scan(&sharedBuffers)
 	if err != nil {
-		v.logger.Warn("failed to read shared_buffers configuration",
-			zap.Error(err),
-			zap.String("impact", "unable to validate memory configuration"))
+		v.logger.Info("failed to read shared_buffers configuration",
+			"error", err,
+			"impact", "unable to validate memory configuration")
 		return nil // Don't block startup
 	}
 
 	bufferSize, err := v.parsePostgreSQLSize(sharedBuffers)
 	if err != nil {
-		v.logger.Warn("failed to parse shared_buffers",
-			zap.Error(err),
-			zap.String("value", sharedBuffers))
+		v.logger.Info("failed to parse shared_buffers",
+			"error", err,
+			"value", sharedBuffers)
 		return nil // Don't block startup
 	}
 
 	// DD-011: Use recommended buffer size constant
 	if bufferSize < RecommendedSharedBuffersBytes {
-		v.logger.Warn("shared_buffers below recommended size for optimal HNSW performance (DD-011)",
-			zap.String("current", sharedBuffers),
-			zap.String("recommended", "1GB+"),
-			zap.String("impact", "vector search may be slower than optimal due to disk I/O"),
-			zap.String("action", "consider increasing shared_buffers in postgresql.conf"))
+		v.logger.Info("shared_buffers below recommended size for optimal HNSW performance (DD-011)",
+			"current", sharedBuffers,
+			"recommended", "1GB+",
+			"impact", "vector search may be slower than optimal due to disk I/O",
+			"action", "consider increasing shared_buffers in postgresql.conf")
 	} else {
 		v.logger.Info("memory configuration optimal for HNSW (DD-011)",
-			zap.String("shared_buffers", sharedBuffers))
+			"shared_buffers", sharedBuffers)
 	}
 
 	return nil // Never block, only warn
@@ -179,8 +179,8 @@ func (v *VersionValidator) parsePostgreSQLMajorVersion(version string) int {
 	re := regexp.MustCompile(`PostgreSQL (\d+)\.`)
 	matches := re.FindStringSubmatch(version)
 	if len(matches) < 2 {
-		v.logger.Warn("failed to parse PostgreSQL major version",
-			zap.String("version", version))
+		v.logger.Info("failed to parse PostgreSQL major version",
+			"version", version)
 		return 0
 	}
 	major, _ := strconv.Atoi(matches[1])
@@ -214,8 +214,8 @@ func (v *VersionValidator) isPgvector051OrHigher(versionStr string) bool {
 
 	// Validate version format
 	if !semver.IsValid(versionStr) {
-		v.logger.Warn("invalid pgvector version format",
-			zap.String("version", versionStr))
+		v.logger.Info("invalid pgvector version format",
+			"version", versionStr)
 		return false
 	}
 
@@ -227,7 +227,7 @@ func (v *VersionValidator) isPgvector051OrHigher(versionStr string) bool {
 // testHNSWIndexCreation performs a dry-run test of HNSW index creation
 // Creates a temporary table and attempts to create an HNSW index
 func (v *VersionValidator) testHNSWIndexCreation(ctx context.Context) error {
-	v.logger.Debug("performing HNSW index creation test")
+	v.logger.V(1).Info("performing HNSW index creation test")
 
 	// Create temporary table with vector column
 	// NOTE: Use public.vector to ensure type is found when search_path is set to test schemas
@@ -257,7 +257,7 @@ func (v *VersionValidator) testHNSWIndexCreation(ctx context.Context) error {
 		return fmt.Errorf("HNSW index creation failed: %w", err)
 	}
 
-	v.logger.Debug("HNSW index creation test passed")
+	v.logger.V(1).Info("HNSW index creation test passed")
 	return nil
 }
 

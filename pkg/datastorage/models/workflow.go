@@ -100,19 +100,19 @@ type RemediationWorkflow struct {
 	// ========================================
 	// SUCCESS METRICS (ADR-033)
 	// ========================================
-	ExpectedSuccessRate    *float64 `json:"expected_success_rate,omitempty" db:"expected_success_rate" validate:"omitempty,min=0,max=1"`
+	ExpectedSuccessRate     *float64 `json:"expected_success_rate,omitempty" db:"expected_success_rate" validate:"omitempty,min=0,max=1"`
 	ExpectedDurationSeconds *int     `json:"expected_duration_seconds,omitempty" db:"expected_duration_seconds" validate:"omitempty,min=0"`
-	ActualSuccessRate      *float64 `json:"actual_success_rate,omitempty" db:"actual_success_rate" validate:"omitempty,min=0,max=1"`
-	TotalExecutions        int      `json:"total_executions" db:"total_executions" validate:"min=0"`
-	SuccessfulExecutions   int      `json:"successful_executions" db:"successful_executions" validate:"min=0"`
+	ActualSuccessRate       *float64 `json:"actual_success_rate,omitempty" db:"actual_success_rate" validate:"omitempty,min=0,max=1"`
+	TotalExecutions         int      `json:"total_executions" db:"total_executions" validate:"min=0"`
+	SuccessfulExecutions    int      `json:"successful_executions" db:"successful_executions" validate:"min=0"`
 
 	// ========================================
 	// AUDIT TRAIL
 	// ========================================
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
-	CreatedBy *string    `json:"created_by,omitempty" db:"created_by" validate:"omitempty,max=255"`
-	UpdatedBy *string    `json:"updated_by,omitempty" db:"updated_by" validate:"omitempty,max=255"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	CreatedBy *string   `json:"created_by,omitempty" db:"created_by" validate:"omitempty,max=255"`
+	UpdatedBy *string   `json:"updated_by,omitempty" db:"updated_by" validate:"omitempty,max=255"`
 }
 
 // ========================================
@@ -317,4 +317,3 @@ type WorkflowListResponse struct {
 	Offset    int                    `json:"offset"`
 	Total     int                    `json:"total"`
 }
-

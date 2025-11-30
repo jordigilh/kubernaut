@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -95,7 +96,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		notification.Status.Phase = notificationv1alpha1.NotificationPhasePending
 		notification.Status.Reason = "Initialized"
 		notification.Status.Message = "Notification request received"
-		notification.Status.ObservedGeneration = notification.Generation
+		// DD-NOT-005: observedGeneration removed (spec is immutable, no change detection needed)
 		notification.Status.DeliveryAttempts = []notificationv1alpha1.DeliveryAttempt{}
 		notification.Status.TotalAttempts = 0
 		notification.Status.SuccessfulDeliveries = 0
@@ -113,14 +114,21 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Skip processing if already in terminal state
-	if notification.Status.Phase == notificationv1alpha1.NotificationPhaseSent ||
-		notification.Status.Phase == notificationv1alpha1.NotificationPhaseFailed {
-		// Check if max retries reached
+	// BR-NOT-053: Idempotent delivery - skip if already in terminal state
+	// CRITICAL: Check phase BEFORE CompletionTime to prevent duplicate deliveries in parallel execution
+	if notification.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
+		// Sent is a true terminal state - never retry successful deliveries
+		log.Info("NotificationRequest already sent, skipping duplicate delivery", "phase", notification.Status.Phase)
+		return ctrl.Result{}, nil
+	}
+
+	if notification.Status.Phase == notificationv1alpha1.NotificationPhaseFailed {
+		// Failed state only terminal if CompletionTime set (max retries exhausted)
 		if notification.Status.CompletionTime != nil {
-			log.Info("NotificationRequest in terminal state, skipping", "phase", notification.Status.Phase)
+			log.Info("NotificationRequest permanently failed (max retries exhausted), skipping", "phase", notification.Status.Phase)
 			return ctrl.Result{}, nil
 		}
+		// Otherwise, allow retry
 	}
 
 	// Update phase to Sending
@@ -138,6 +146,34 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhaseSending), 1)
 	}
 
+	// BR-NOT-053: ALWAYS re-read before delivery to check if another reconcile completed
+	// CRITICAL: Prevents duplicate delivery - must be OUTSIDE the Pending check
+	// This catches both: concurrent reconciles AND queued reconciles after first one completes
+	if err := r.Get(ctx, req.NamespacedName, notification); err != nil {
+		log.Error(err, "Failed to refresh notification before delivery")
+		return ctrl.Result{}, err
+	}
+
+	// Check if another reconcile completed while we were updating phase
+	if notification.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
+		log.Info("NotificationRequest completed by concurrent reconcile, skipping duplicate delivery")
+		return ctrl.Result{}, nil
+	}
+
+	// BR-NOT-053: CRITICAL - Re-read notification RIGHT BEFORE delivery loop
+	// This prevents duplicate deliveries in parallel execution by ensuring we have
+	// the absolute latest delivery attempts from any concurrent reconcile
+	if err := r.Get(ctx, req.NamespacedName, notification); err != nil {
+		log.Error(err, "Failed to refresh notification before channel delivery loop")
+		return ctrl.Result{}, err
+	}
+
+	// Double-check phase after re-read (another reconcile might have just completed)
+	if notification.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
+		log.Info("NotificationRequest just completed, skipping duplicate delivery after re-read")
+		return ctrl.Result{}, nil
+	}
+
 	// Process deliveries for each channel
 	deliveryResults := make(map[string]error)
 	failureCount := 0
@@ -149,6 +185,14 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		// Skip if channel already succeeded (idempotent delivery)
 		if r.channelAlreadySucceeded(notification, string(channel)) {
 			log.Info("Channel already delivered successfully, skipping", "channel", channel)
+			continue
+		}
+
+		// BR-NOT-055: Check if channel has permanent error (skip retries for 4xx errors)
+		if r.hasChannelPermanentError(notification, string(channel)) {
+			log.Info("Channel has permanent error, skipping retries", "channel", channel)
+			deliveryResults[string(channel)] = fmt.Errorf("permanent error - not retryable")
+			failureCount++
 			continue
 		}
 
@@ -184,7 +228,19 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 			notification.Status.FailedDeliveries++
 			deliveryResults[string(channel)] = deliveryErr
 			failureCount++
-			log.Error(deliveryErr, "Delivery failed", "channel", channel)
+
+			// BR-NOT-055: Permanent Error Classification
+			// Check if error is retryable or permanent (4xx vs 5xx)
+			isPermanent := !delivery.IsRetryableError(deliveryErr)
+			if isPermanent {
+				// Permanent error (4xx) - mark channel as permanently failed
+				// Set attemptCount to max to prevent further retries
+				log.Error(deliveryErr, "Delivery failed with permanent error (will NOT retry)", "channel", channel)
+				attempt.Error = fmt.Sprintf("permanent failure: %s", deliveryErr.Error())
+			} else {
+				// Retryable error (5xx, network, etc.) - will retry with backoff
+				log.Error(deliveryErr, "Delivery failed with retryable error", "channel", channel)
+			}
 
 			// AUDIT INTEGRATION POINT 1: Audit failed delivery (BR-NOT-062)
 			r.auditMessageFailed(ctx, notification, string(channel), deliveryErr)
@@ -228,6 +284,14 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 
 		notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
 		notification.Status.TotalAttempts++
+
+		// BR-NOT-053: CRITICAL - Update status IMMEDIATELY after each channel delivery
+		// This makes the attempt visible to concurrent reconciles BEFORE they try to deliver
+		// to the same channel, preventing duplicate deliveries
+		if err := r.Status().Update(ctx, notification); err != nil {
+			log.Info("Failed to update status after channel delivery (non-fatal, will retry at end)", "channel", channel, "error", err)
+			// Continue - worst case is we'll update at the end of the loop
+		}
 	}
 
 	// Update final status based on delivery results
@@ -405,6 +469,7 @@ func (r *NotificationRequestReconciler) sanitizeNotification(notification *notif
 }
 
 // channelAlreadySucceeded checks if a channel has already succeeded
+// BR-NOT-053: Idempotent delivery - skip channels that already have successful delivery attempts
 func (r *NotificationRequestReconciler) channelAlreadySucceeded(notification *notificationv1alpha1.NotificationRequest, channel string) bool {
 	for _, attempt := range notification.Status.DeliveryAttempts {
 		if attempt.Channel == channel && attempt.Status == "success" {
@@ -423,6 +488,20 @@ func (r *NotificationRequestReconciler) getChannelAttemptCount(notification *not
 		}
 	}
 	return count
+}
+
+// hasChannelPermanentError checks if a channel has a permanent error (4xx) that should not be retried
+// BR-NOT-055: Permanent Error Classification
+func (r *NotificationRequestReconciler) hasChannelPermanentError(notification *notificationv1alpha1.NotificationRequest, channel string) bool {
+	for _, attempt := range notification.Status.DeliveryAttempts {
+		if attempt.Channel == channel && attempt.Status == "failed" {
+			// Check if error message indicates permanent failure
+			if strings.Contains(attempt.Error, "permanent failure") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // getMaxAttemptCount returns the maximum attempt count across all channels
