@@ -1,12 +1,12 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V1.3 - 6 Mandatory Labels + Optional Custom Labels)
+**Status**: ✅ **APPROVED** (V1.4 - 5 Mandatory Labels + Customer-Derived Labels via Rego)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
 **Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
-**Version**: 1.3
+**Version**: 1.4
 
 ---
 
@@ -35,33 +35,10 @@
 
 ## 📝 **Changelog**
 
-### Version 1.3 (2025-11-30)
-**Changes**:
-- ✅ **BREAKING**: Reduced from 7 to 6 mandatory labels
-- ✅ **Removed `business_category` from mandatory**: Moved to optional custom labels
-- ✅ **Added Label Grouping**: Auto-populated vs Rego-configurable vs Custom
-- ✅ **Simplified Signal Processing**: No longer requires namespace→category mapping
-- ✅ **Removed BR-SIGNAL-PROCESSING-003**: business_category no longer mandatory
-- ✅ **Added Custom Labels Section**: Examples for user-defined labels
-
-**Rationale**: `business_category` is organization-specific and not universally needed. Forcing users to configure namespace→category mappings creates unnecessary friction. Users who need business categorization can define it as a custom label via Rego policies.
-
-**Related**: User feedback on adoption friction
-
-### Version 1.2 (2025-11-16)
-**Changes**:
-- ✅ Clarified that `signal_type` and `severity` are used for MCP workflow search filtering (exact label matching)
-- ✅ Added requirement for workflow descriptions to include signal_type and severity keywords
-- ✅ Updated label matching rules to specify search vs storage usage
-- ✅ Added cross-references to DD-LLM-001 (MCP Search Taxonomy) and ADR-041 (LLM Prompt Contract)
-- ✅ Documented workflow description format: `"<signal_type> <severity>: <description>"`
-
-**Rationale**: DD-LLM-001 defines how LLM constructs MCP search queries using signal_type and severity. This update clarifies that these labels are used for BOTH exact filtering in search AND semantic matching via description keywords, optimizing confidence scores from 60-70% to 90-95%.
-
-**Related**: DD-LLM-001 v1.0, ADR-041 v2.7
-
-### Version 1.1 (2025-11-14)
-**Changes**: Initial approved version with 7 mandatory labels
+### Version 1.4 (2025-11-30)
+- 5 mandatory labels: `signal_type`, `severity`, `component`, `environment`, `priority`
+- Customer-derived labels via Rego: `risk_tolerance`, `business_category`, `team`, `region`, etc.
+- Rationale: Customers define environment meaning for risk (e.g., "uat" = high risk for one team, low for another)
 
 ---
 
@@ -69,7 +46,7 @@
 
 **This document is the single source of truth for workflow label schema.** All services MUST reference this document for label definitions.
 
-### **6 Mandatory Labels (V1.3)**
+### **5 Mandatory Labels (V1.4)**
 
 Labels are grouped by how they are populated:
 
@@ -83,20 +60,18 @@ Labels are grouped by how they are populated:
 
 **Derivation**: These labels are extracted directly from Kubernetes events, Prometheus alerts, or signal metadata. **No user configuration required.**
 
-#### **Group B: Rego-Configurable Labels** (Users can customize derivation logic via Rego policies)
+#### **Group B: System-Classified Labels** (Signal Processing derives with configurable defaults)
 
 | # | Label | Type | Source | Wildcard | Description |
 |---|---|---|---|---|---|
 | 4 | `environment` | ENUM | Namespace Labels | ✅ YES | Where (production, staging, development, test, '*') |
 | 5 | `priority` | ENUM | Derived | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
-| 6 | `risk_tolerance` | ENUM | Derived | ❌ NO | Remediation policy (low, medium, high) |
 
 **Derivation**: Signal Processing applies Rego policies to derive these labels from K8s context (namespace labels, annotations, resource metadata). Users can customize derivation logic via Rego policy ConfigMaps.
 
 **Default Logic** (if no custom Rego):
 - `environment`: From namespace label `environment` or annotation `kubernaut.io/environment`
 - `priority`: Derived from `severity` + `environment` (critical + production → P0)
-- `risk_tolerance`: Derived from `priority` + `environment` (P0 + production → low)
 
 ---
 

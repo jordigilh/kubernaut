@@ -1781,10 +1781,39 @@ labels["kubernaut.io/gitops-tool"] = tool {
 | # | Question | To Team | Blocking? | Status |
 |---|----------|---------|-----------|--------|
 | F1 | `risk_tolerance` vs `risk-tolerance` naming | AI Analysis | ⚠️ Medium | ✅ **Answered** - risk-tolerance is customer-defined, not system |
-| F2 | Constraint flow to Data Storage | Data Storage | ⚠️ Medium | ✅ **Answered** - Pre-filter + LLM context (DS team to confirm API) |
+| F2 | Constraint flow to Data Storage | Data Storage | ⚠️ Medium | ✅ **Answered** - See [RESPONSE_CONSTRAINT_FILTERING.md](../../stateless/datastorage/RESPONSE_CONSTRAINT_FILTERING.md) |
 | F2b | Gateway label passthrough | Gateway | 🟢 Low | ✅ **Answered** - See [RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md](RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md) |
 | F3 | ADR creation acknowledgment | Self (SP Team) | 🟢 Low | ✅ Acknowledged |
 | F4 | DetectedLabels convention verification | AI Analysis | 🟢 Low | ✅ **Answered** - Implementation is correct |
+
+---
+
+## ✅ Data Storage Team Response (F2) - Constraint Filtering
+
+**Response Document**: [RESPONSE_CONSTRAINT_FILTERING.md](../../stateless/datastorage/RESPONSE_CONSTRAINT_FILTERING.md)
+
+### Key Findings
+
+| Question | Answer |
+|----------|--------|
+| **Q1**: Constraint label filtering | ✅ YES - JSONB supports any key; needs `custom_labels` filter parameter |
+| **Q2**: Constraint labels stored | ✅ YES - JSONB column accepts any valid JSON object |
+| **Q3**: Arbitrary label filtering | 🟡 PARTIAL - needs `custom_labels` filter enhancement (~2-4h) |
+| **Q4**: Filtering strategy | ✅ Option A (Pre-filter) - GIN index already exists |
+
+### SignalProcessing Answers to Data Storage Questions
+
+| DS Question | SignalProcessing Answer |
+|-------------|------------------------|
+| **1. Validate `constraint.kubernaut.io/` prefix?** | ✅ YES - Validate prefix for security; reject arbitrary keys |
+| **2. Boost scoring for constraints?** | ❌ NO - Hard filters only (presence/absence match) |
+| **3. Absence handling?** | ✅ Option A - Absence = no constraint (workflow eligible) |
+
+### Impact on SignalProcessing V1.0
+
+- ✅ **Proceed**: Emit `constraint.kubernaut.io/*` labels in `CustomLabels`
+- ✅ **Convention**: Constraints only present when `"true"`, absence = no constraint
+- ⏳ **Dependency**: Data Storage adds `custom_labels` filter (~2-4h)
 
 ---
 
