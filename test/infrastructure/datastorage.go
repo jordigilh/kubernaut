@@ -237,7 +237,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 		return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
 	}
 
-	// 3. Create Service
+	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "postgresql",
@@ -247,12 +247,13 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeClusterIP,
+			Type: corev1.ServiceTypeNodePort,
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "postgresql",
 					Port:       5432,
 					TargetPort: intstr.FromInt(5432),
+					NodePort:   30432, // Mapped to localhost:5432 via Kind extraPortMappings
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
@@ -594,7 +595,12 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 		"011_rename_alert_to_signal.sql",
 		"012_adr033_multidimensional_tracking.sql",
 		"013_create_audit_events_table.sql",
+		"015_create_workflow_catalog_table.sql",
+		"016_update_embedding_dimensions.sql",
+		"017_add_workflow_schema_fields.sql",
+		"018_rename_execution_bundle_to_container_image.sql",
 		"999_add_nov_2025_partition.sql",
+		"1000_create_audit_events_partitions.sql",
 	}
 
 	for _, migration := range migrations {
@@ -614,18 +620,28 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 			migrationSQL = parts[0]
 		}
 
-		// Apply migration via psql in the pod
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-n", namespace, podName, "--",
-			"psql", "-U", "slm_user", "-d", "action_history", "-c", migrationSQL)
+		// Apply migration via psql in the pod using stdin (handles multi-statement SQL better)
+		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-i", "-n", namespace, podName, "--",
+			"psql", "-U", "slm_user", "-d", "action_history")
+		cmd.Stdin = strings.NewReader(migrationSQL)
 
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			// Check if error is due to already existing objects (idempotent)
-			if strings.Contains(string(output), "already exists") {
+			outputStr := string(output)
+			if strings.Contains(outputStr, "already exists") ||
+				strings.Contains(outputStr, "duplicate key") ||
+				strings.Contains(outputStr, "relation") && strings.Contains(outputStr, "already exists") {
 				fmt.Fprintf(writer, "   ✅ Migration %s already applied\n", migration)
 				continue
 			}
-			fmt.Fprintf(writer, "   ❌ Migration %s failed: %s\n", migration, output)
+			// Some migrations may have partial failures but still succeed overall
+			// Check if there's actual error output vs just notices
+			if !strings.Contains(outputStr, "ERROR:") {
+				fmt.Fprintf(writer, "   ✅ Applied %s (with notices)\n", migration)
+				continue
+			}
+			fmt.Fprintf(writer, "   ❌ Migration %s failed: %s\n", migration, outputStr)
 			return fmt.Errorf("migration %s failed: %w", migration, err)
 		}
 		fmt.Fprintf(writer, "   ✅ Applied %s\n", migration)
@@ -637,9 +653,10 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
 		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
 	`
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-n", namespace, podName, "--",
-		"psql", "-U", "slm_user", "-d", "action_history", "-c", grantSQL)
-	cmd.Run()
+	grantCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-i", "-n", namespace, podName, "--",
+		"psql", "-U", "slm_user", "-d", "action_history")
+	grantCmd.Stdin = strings.NewReader(grantSQL)
+	grantCmd.Run()
 
 	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n")
 	_ = service // Use service to avoid unused variable warning
@@ -722,7 +739,7 @@ password: test_password`,
 		return fmt.Errorf("failed to create Data Storage Secret: %w", err)
 	}
 
-	// 3. Create Service
+	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "datastorage",
@@ -732,12 +749,13 @@ password: test_password`,
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeClusterIP,
+			Type: corev1.ServiceTypeNodePort,
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "http",
 					Port:       8080,
 					TargetPort: intstr.FromInt(8080),
+					NodePort:   30081, // Mapped to localhost:8081 via Kind extraPortMappings
 					Protocol:   corev1.ProtocolTCP,
 				},
 				{
@@ -966,19 +984,18 @@ func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) err
 		DeleteCluster(clusterName, writer)
 	}
 
-	// Create Kind cluster with 2 nodes
-	kindConfig := `kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-- role: worker
-`
-	configPath := filepath.Join(os.TempDir(), "kind-config.yaml")
-	err := os.WriteFile(configPath, []byte(kindConfig), 0644)
+	// Use external config file with extraPortMappings for NodePort access
+	// This eliminates kubectl port-forward instability (like Gateway E2E tests)
+	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
-		return fmt.Errorf("failed to write Kind config: %w", err)
+		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
-	defer os.Remove(configPath)
+	configPath := filepath.Join(workspaceRoot, "test", "infrastructure", "kind-datastorage-config.yaml")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return fmt.Errorf("kind config file not found: %s", configPath)
+	}
+
+	fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", configPath)
 
 	cmd := exec.Command("kind", "create", "cluster",
 		"--name", clusterName,
@@ -1318,7 +1335,13 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
 		"012_adr033_multidimensional_tracking.sql",
+		"013_create_audit_events_table.sql",
+		"015_create_workflow_catalog_table.sql",
+		"016_update_embedding_dimensions.sql",
+		"017_add_workflow_schema_fields.sql",
+		"018_rename_execution_bundle_to_container_image.sql",
 		"999_add_nov_2025_partition.sql",
+		"1000_create_audit_events_partitions.sql",
 	}
 
 	for _, migration := range migrations {

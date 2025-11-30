@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
 // Performance Test Suite for Data Storage Service
@@ -114,8 +115,9 @@ var _ = BeforeSuite(func() {
 		Skip("pgvector extension not available")
 	}
 
-	// Initialize repository
-	workflowRepo = repository.NewWorkflowRepository(db, logger)
+	// Initialize repository with mock embedding client (not needed for query performance tests)
+	mockEmbeddingClient := testutil.NewMockEmbeddingClient()
+	workflowRepo = repository.NewWorkflowRepository(db, logger, mockEmbeddingClient)
 
 	logger.Info("✅ Performance test suite setup complete")
 })
@@ -138,4 +140,3 @@ var _ = AfterSuite(func() {
 
 	logger.Info("✅ Performance test suite cleanup complete")
 })
-
