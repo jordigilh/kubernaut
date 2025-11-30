@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added OwnerChain, DetectedLabels, CustomLabels per DD-WORKFLOW-001 v1.8 | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 > | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, RBAC updated | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
 > | v1.1 | 2025-11-27 | Rename: RemediationProcessing* → SignalProcessing* | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Context API deprecated: Recovery context from spec.failureData | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
@@ -53,6 +54,7 @@ const (
 
 // SignalProcessingReconciler reconciles a SignalProcessing object
 // Renamed from RemediationProcessingReconciler per DD-SIGNAL-PROCESSING-001
+// Updated per DD-WORKFLOW-001 v1.8: Added label detection and owner chain
 type SignalProcessingReconciler struct {
     client.Client
     Scheme             *runtime.Scheme
@@ -61,11 +63,52 @@ type SignalProcessingReconciler struct {
     Classifier         *EnvironmentClassifier       // In-process classification
     Categorizer        *PriorityCategorizer         // Priority assignment (DD-CATEGORIZATION-001)
     DataStorageClient  DataStorageClient            // Audit trail via REST API (ADR-032)
+    LabelDetector      *LabelDetector               // NEW: Auto-detect cluster characteristics (V1.0)
+    RegoEngine         *RegoEngine                  // NEW: Rego policy evaluation for CustomLabels (V1.0)
 }
 
 // EnrichmentService interface for Kubernetes context enrichment
 type EnrichmentService interface {
     GetContext(ctx context.Context, signal kubernautv1alpha1.Signal) (*kubernautv1alpha1.EnrichmentResults, error)
+}
+
+// ========================================
+// LABEL DETECTION INTERFACES (DD-WORKFLOW-001 v1.8)
+// ========================================
+
+// LabelDetector auto-detects cluster characteristics (V1.0)
+// Detects: GitOps, PDB, HPA, StatefulSet, Helm, NetworkPolicy, PSS, ServiceMesh
+type LabelDetector interface {
+    DetectLabels(ctx context.Context, k8sCtx *kubernautv1alpha1.KubernetesContext) *kubernautv1alpha1.DetectedLabels
+}
+
+// RegoEngine evaluates customer Rego policies for CustomLabels (V1.0)
+// Policy source: ConfigMap `signal-processing-policies` in `kubernaut-system`
+// Security: Wrapped with security policy that strips 5 mandatory labels
+type RegoEngine interface {
+    EvaluatePolicy(ctx context.Context, input *RegoInput) (map[string][]string, error)
+}
+
+// RegoInput contains all data available to customer Rego policies
+// See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
+type RegoInput struct {
+    Namespace         NamespaceContext           `json:"namespace"`
+    Pod               PodContext                 `json:"pod,omitempty"`
+    Deployment        DeploymentContext          `json:"deployment,omitempty"`
+    Node              NodeContext                `json:"node,omitempty"`
+    Signal            SignalContext              `json:"signal"`
+    SignalLabels      map[string]string          `json:"signal_labels,omitempty"`      // From RemediationRequest
+    SignalAnnotations map[string]string          `json:"signal_annotations,omitempty"` // From RemediationRequest
+    DetectedLabels    map[string]interface{}     `json:"detected_labels,omitempty"`    // Boolean fields only when true
+}
+
+// OwnerChainEntry represents a single entry in K8s ownership chain
+// Used by HolmesGPT-API for DetectedLabels validation
+// See: DD-WORKFLOW-001 v1.8
+type OwnerChainEntry struct {
+    Namespace string `json:"namespace,omitempty"` // Empty for cluster-scoped (e.g., Node)
+    Kind      string `json:"kind"`                // ReplicaSet, Deployment, StatefulSet, DaemonSet
+    Name      string `json:"name"`
 }
 
 // DataStorageClient interface for audit trail persistence
@@ -389,6 +432,53 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
     sp.Status.EnrichmentResults = *enrichmentResults
 
     // ========================================
+    // OWNER CHAIN (DD-WORKFLOW-001 v1.8)
+    // Traverse K8s ownerReferences for DetectedLabels validation
+    // HolmesGPT-API uses this to validate RCA resource relationship
+    // ========================================
+
+    ownerChain, err := r.buildOwnerChain(ctx, sp.Status.EnrichmentResults.KubernetesContext)
+    if err != nil {
+        log.Error(err, "Failed to build owner chain (non-fatal)")
+        // Continue - owner chain is used for validation, not blocking
+    } else {
+        sp.Status.EnrichmentResults.OwnerChain = ownerChain
+        log.Info("Owner chain built",
+            "length", len(ownerChain),
+            "chain", formatOwnerChain(ownerChain))
+    }
+
+    // ========================================
+    // LABEL DETECTION (DD-WORKFLOW-001 v1.8, HANDOFF v3.2)
+    // Step 1: DetectedLabels (auto-detection, no config needed)
+    // Step 2: CustomLabels (Rego policy evaluation)
+    // ========================================
+
+    // Step 1: Auto-detect cluster characteristics (V1.0)
+    detectedLabels := r.LabelDetector.DetectLabels(ctx, sp.Status.EnrichmentResults.KubernetesContext)
+    sp.Status.EnrichmentResults.DetectedLabels = detectedLabels
+    log.Info("DetectedLabels populated",
+        "gitOpsManaged", detectedLabels.GitOpsManaged,
+        "gitOpsTool", detectedLabels.GitOpsTool,
+        "pdbProtected", detectedLabels.PDBProtected)
+
+    // Step 2: Evaluate Rego policy for CustomLabels (V1.0)
+    // Requires ConfigMap `signal-processing-policies` in `kubernaut-system`
+    if r.RegoEngine != nil {
+        regoInput := r.buildRegoInput(ctx, sp, detectedLabels)
+        customLabels, err := r.RegoEngine.EvaluatePolicy(ctx, regoInput)
+        if err != nil {
+            log.Error(err, "Failed to evaluate Rego policy (non-fatal)")
+            // Continue - CustomLabels are optional, use empty map
+            customLabels = make(map[string][]string)
+        }
+        sp.Status.EnrichmentResults.CustomLabels = customLabels
+        log.Info("CustomLabels populated via Rego",
+            "labelCount", len(customLabels),
+            "subdomains", getSubdomains(customLabels))
+    }
+
+    // ========================================
     // RECOVERY CONTEXT FROM EMBEDDED DATA
     // 📋 Context API DEPRECATED per DD-CONTEXT-006
     // Recovery context is now embedded by Remediation Orchestrator in spec.failureData
@@ -426,6 +516,220 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 
     // Trigger immediate reconciliation for next phase
     return ctrl.Result{Requeue: true}, nil
+}
+
+// ========================================
+// OWNER CHAIN FUNCTIONS (DD-WORKFLOW-001 v1.8)
+// ========================================
+
+// buildOwnerChain traverses K8s ownerReferences to build the ownership chain
+// Algorithm: Follow first `controller: true` ownerReference at each level
+// Example: Pod → ReplicaSet → Deployment
+func (r *SignalProcessingReconciler) buildOwnerChain(
+    ctx context.Context,
+    k8sCtx *signalprocessingv1.KubernetesContext,
+) ([]OwnerChainEntry, error) {
+    if k8sCtx == nil || k8sCtx.PodDetails == nil {
+        return nil, nil
+    }
+
+    var chain []OwnerChainEntry
+    currentNamespace := k8sCtx.Namespace
+    currentKind := "Pod"
+    currentName := k8sCtx.PodDetails.Name
+
+    // Add the source resource as first entry
+    chain = append(chain, OwnerChainEntry{
+        Namespace: currentNamespace,
+        Kind:      currentKind,
+        Name:      currentName,
+    })
+
+    // Traverse ownerReferences (max 10 levels to prevent infinite loops)
+    for i := 0; i < 10; i++ {
+        ownerRef, err := r.getControllerOwner(ctx, currentNamespace, currentKind, currentName)
+        if err != nil || ownerRef == nil {
+            break // No more owners
+        }
+
+        // Determine namespace for owner
+        // Namespaced resources inherit namespace; cluster-scoped resources have empty namespace
+        ownerNamespace := currentNamespace
+        if isClusterScoped(ownerRef.Kind) {
+            ownerNamespace = ""
+        }
+
+        chain = append(chain, OwnerChainEntry{
+            Namespace: ownerNamespace,
+            Kind:      ownerRef.Kind,
+            Name:      ownerRef.Name,
+        })
+
+        // Move to next level
+        currentNamespace = ownerNamespace
+        currentKind = ownerRef.Kind
+        currentName = ownerRef.Name
+    }
+
+    return chain, nil
+}
+
+// getControllerOwner finds the first ownerReference with controller: true
+func (r *SignalProcessingReconciler) getControllerOwner(
+    ctx context.Context,
+    namespace, kind, name string,
+) (*metav1.OwnerReference, error) {
+    // Get the resource and extract its ownerReferences
+    // Implementation depends on resource kind
+    // Return the first ownerReference where controller == true
+    // ...
+    return nil, nil // Placeholder
+}
+
+// isClusterScoped returns true for cluster-scoped resource kinds
+func isClusterScoped(kind string) bool {
+    clusterScoped := map[string]bool{
+        "Node":                  true,
+        "PersistentVolume":      true,
+        "ClusterRole":           true,
+        "ClusterRoleBinding":    true,
+        "Namespace":             true,
+    }
+    return clusterScoped[kind]
+}
+
+// formatOwnerChain returns a human-readable chain representation
+func formatOwnerChain(chain []OwnerChainEntry) string {
+    if len(chain) == 0 {
+        return "(empty)"
+    }
+    parts := make([]string, len(chain))
+    for i, entry := range chain {
+        if entry.Namespace != "" {
+            parts[i] = fmt.Sprintf("%s/%s/%s", entry.Namespace, entry.Kind, entry.Name)
+        } else {
+            parts[i] = fmt.Sprintf("%s/%s", entry.Kind, entry.Name)
+        }
+    }
+    return strings.Join(parts, " → ")
+}
+
+// ========================================
+// REGO INPUT BUILDER (DD-WORKFLOW-001 v1.8)
+// ========================================
+
+// buildRegoInput constructs the input object for Rego policy evaluation
+// See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2 for input schema
+func (r *SignalProcessingReconciler) buildRegoInput(
+    ctx context.Context,
+    sp *signalprocessingv1.SignalProcessing,
+    detectedLabels *signalprocessingv1.DetectedLabels,
+) *RegoInput {
+    k8sCtx := sp.Status.EnrichmentResults.KubernetesContext
+
+    input := &RegoInput{
+        Signal: SignalContext{
+            Type:     sp.Spec.Signal.Type,
+            Severity: sp.Spec.Signal.Severity,
+            Source:   sp.Spec.Signal.Source,
+        },
+    }
+
+    // Namespace context
+    if k8sCtx != nil {
+        input.Namespace = NamespaceContext{
+            Name:        k8sCtx.Namespace,
+            Labels:      k8sCtx.NamespaceLabels,
+            Annotations: k8sCtx.NamespaceAnnotations,
+        }
+    }
+
+    // Pod context
+    if k8sCtx != nil && k8sCtx.PodDetails != nil {
+        input.Pod = PodContext{
+            Name:        k8sCtx.PodDetails.Name,
+            Labels:      k8sCtx.PodDetails.Labels,
+            Annotations: k8sCtx.PodDetails.Annotations,
+        }
+    }
+
+    // Deployment context
+    if k8sCtx != nil && k8sCtx.DeploymentDetails != nil {
+        input.Deployment = DeploymentContext{
+            Name:        k8sCtx.DeploymentDetails.Name,
+            Replicas:    k8sCtx.DeploymentDetails.Replicas,
+            Labels:      k8sCtx.DeploymentDetails.Labels,
+            Annotations: k8sCtx.DeploymentDetails.Annotations,
+        }
+    }
+
+    // Node context
+    if k8sCtx != nil && k8sCtx.NodeDetails != nil {
+        input.Node = NodeContext{
+            Name:   k8sCtx.NodeDetails.Name,
+            Labels: k8sCtx.NodeDetails.Labels,
+        }
+    }
+
+    // DetectedLabels - CONVENTION: Only include booleans when true
+    // See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
+    input.DetectedLabels = buildDetectedLabelsForRego(detectedLabels)
+
+    // Signal labels/annotations from RemediationRequest (via Gateway)
+    input.SignalLabels = sp.Spec.Signal.Labels
+    input.SignalAnnotations = sp.Spec.Signal.Annotations
+
+    return input
+}
+
+// buildDetectedLabelsForRego converts DetectedLabels to Rego input format
+// CONVENTION: Boolean fields only included when true, omit when false
+func buildDetectedLabelsForRego(dl *signalprocessingv1.DetectedLabels) map[string]interface{} {
+    if dl == nil {
+        return nil
+    }
+
+    result := make(map[string]interface{})
+
+    // Only include booleans when true
+    if dl.GitOpsManaged {
+        result["gitOpsManaged"] = true
+        result["gitOpsTool"] = dl.GitOpsTool
+    }
+    if dl.PDBProtected {
+        result["pdbProtected"] = true
+    }
+    if dl.HPAEnabled {
+        result["hpaEnabled"] = true
+    }
+    if dl.Stateful {
+        result["stateful"] = true
+    }
+    if dl.HelmManaged {
+        result["helmManaged"] = true
+    }
+    if dl.NetworkIsolated {
+        result["networkIsolated"] = true
+    }
+
+    // Always include non-empty strings
+    if dl.PodSecurityLevel != "" {
+        result["podSecurityLevel"] = dl.PodSecurityLevel
+    }
+    if dl.ServiceMesh != "" {
+        result["serviceMesh"] = dl.ServiceMesh
+    }
+
+    return result
+}
+
+// getSubdomains extracts subdomain keys from CustomLabels for logging
+func getSubdomains(customLabels map[string][]string) []string {
+    keys := make([]string, 0, len(customLabels))
+    for k := range customLabels {
+        keys = append(keys, k)
+    }
+    return keys
 }
 
 func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {

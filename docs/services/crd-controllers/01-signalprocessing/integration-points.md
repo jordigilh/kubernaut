@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added OwnerChain, DetectedLabels, CustomLabels to downstream flow (DD-WORKFLOW-001 v1.8) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 > | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, async audit (ADR-038) | [ADR-038](../../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md) |
 > | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Context API removed (deprecated) | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
@@ -118,6 +119,7 @@ func (r *RemediationRequestReconciler) reconcileRecoverySignalProcessing(
 **How RemediationRequest Responds to Completion**:
 ```go
 // In RemediationRequestReconciler (Remediation Orchestrator)
+// Updated per DD-WORKFLOW-001 v1.8: Includes OwnerChain, DetectedLabels, CustomLabels
 func (r *RemediationRequestReconciler) reconcileAIAnalysis(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
@@ -157,6 +159,24 @@ func (r *RemediationRequestReconciler) reconcileAIAnalysis(
 
                         // Recovery context if present
                         RecoveryContext: signalProcessing.Status.EnrichmentResults.RecoveryContext,
+
+                        // ========================================
+                        // LABEL DETECTION (DD-WORKFLOW-001 v1.8)
+                        // ========================================
+
+                        // Owner chain for DetectedLabels validation
+                        // HolmesGPT-API validates RCA resource is in this chain
+                        // If not in chain → DetectedLabels excluded from workflow filtering
+                        OwnerChain: signalProcessing.Status.EnrichmentResults.OwnerChain,
+
+                        // Auto-detected cluster characteristics (V1.0)
+                        // Dual-use: Always in LLM prompt, conditionally in workflow filter
+                        DetectedLabels: signalProcessing.Status.EnrichmentResults.DetectedLabels,
+
+                        // Custom labels from Rego policies (V1.0)
+                        // Format: map[string][]string (subdomain → list of values)
+                        // Passed to Data Storage for workflow filtering
+                        CustomLabels: signalProcessing.Status.EnrichmentResults.CustomLabels,
                     },
                 },
             },

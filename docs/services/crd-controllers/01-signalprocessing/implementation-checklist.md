@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added OwnerChain, DetectedLabels, CustomLabels tasks (DD-WORKFLOW-001 v1.8) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 > | v1.2 | 2025-11-28 | Gateway migration added, CRD location fixed (kubernaut.io/v1alpha1), parallel testing | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md) |
 > | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Context API removed (deprecated) | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
@@ -91,6 +92,147 @@
   - [ ] **REFACTOR**: Optimize priority scoring algorithm
 - [ ] **Audit Integration**: Integrate Data Storage Service REST API for audit persistence (ADR-032)
 - [ ] **Main App Integration**: Verify SignalProcessingReconciler instantiated in cmd/signalprocessing/ (MANDATORY)
+
+### Phase 3.25: Owner Chain & Label Detection (2-3 days) [DD-WORKFLOW-001 v1.8] ⭐ NEW
+
+**Reference**: [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
+
+#### A. Owner Chain Implementation (4-6 hours)
+
+- [ ] **OwnerChain RED**: Write tests for owner chain building
+  - [ ] Test Pod → ReplicaSet → Deployment traversal
+  - [ ] Test StatefulSet/DaemonSet ownership
+  - [ ] Test cluster-scoped resources (Node has empty namespace)
+  - [ ] Test max depth (10 levels) to prevent infinite loops
+- [ ] **OwnerChain GREEN**: Implement `buildOwnerChain()` in controller
+  - [ ] Create `pkg/signalprocessing/ownerchain/builder.go`
+  - [ ] Traverse K8s `ownerReferences` starting from source resource
+  - [ ] Use first `controller: true` ownerReference at each level
+  - [ ] Inherit namespace from current resource (namespaced) or empty (cluster-scoped)
+  - [ ] Stop when no more owners or owner not found
+  - [ ] Populate `status.enrichmentResults.ownerChain[]`
+- [ ] **OwnerChain REFACTOR**: Add caching, optimize API calls
+- [ ] **OwnerChainEntry Type**:
+  ```go
+  type OwnerChainEntry struct {
+      Namespace string `json:"namespace,omitempty"` // Empty for cluster-scoped
+      Kind      string `json:"kind"`                // ReplicaSet, Deployment, etc.
+      Name      string `json:"name"`
+  }
+  ```
+
+#### B. DetectedLabels Implementation (4-5 days)
+
+- [ ] **DetectedLabels RED**: Write tests for each detection type
+  - [ ] Test GitOps detection (ArgoCD annotation, Flux label)
+  - [ ] Test PDB detection (query PDBs matching pod labels)
+  - [ ] Test HPA detection (query HPAs targeting deployment)
+  - [ ] Test Stateful detection (StatefulSet or PVCs)
+  - [ ] Test Helm detection (managed-by label, helm.sh/chart)
+  - [ ] Test NetworkPolicy detection (any NP in namespace)
+  - [ ] Test PodSecurityLevel detection (namespace label)
+  - [ ] Test ServiceMesh detection (Istio/Linkerd sidecar annotations)
+- [ ] **DetectedLabels GREEN**: Implement detection logic
+  - [ ] Create `pkg/signalprocessing/detection/labels.go`
+  - [ ] Create `pkg/signalprocessing/detection/gitops.go`
+  - [ ] Create `pkg/signalprocessing/detection/protection.go` (PDB, HPA)
+  - [ ] Create `pkg/signalprocessing/detection/workload.go` (StatefulSet, Helm)
+  - [ ] Create `pkg/signalprocessing/detection/security.go` (NP, PSS, ServiceMesh)
+  - [ ] Implement `LabelDetector` interface in controller
+  - [ ] Populate `status.enrichmentResults.detectedLabels`
+- [ ] **DetectedLabels REFACTOR**: Parallelize K8s API queries, add caching
+- [ ] **DetectedLabels Convention**: Boolean fields only when `true`, omit when `false`
+  ```go
+  if dl.GitOpsManaged {
+      result["gitOpsManaged"] = true
+      result["gitOpsTool"] = dl.GitOpsTool
+  }
+  // Don't add: result["gitOpsManaged"] = false
+  ```
+
+#### C. CustomLabels Rego Evaluation (3-4 days)
+
+- [ ] **Rego RED**: Write tests for Rego evaluation
+  - [ ] Test simple label extraction (`team` from namespace label)
+  - [ ] Test risk-tolerance derivation (environment → risk mapping)
+  - [ ] Test constraint labels (`cost-constrained`, `high-availability`)
+  - [ ] Test security wrapper (cannot override 5 mandatory labels)
+  - [ ] Test empty policy returns empty map
+  - [ ] Test policy error is non-fatal (returns empty map)
+- [ ] **Rego GREEN**: Implement Rego engine
+  - [ ] Create `pkg/signalprocessing/rego/engine.go`
+    - [ ] Use OPA/Rego library (`github.com/open-policy-agent/opa/rego`)
+    - [ ] Load policy from ConfigMap `signal-processing-policies` in `kubernaut-system`
+    - [ ] PrepareForEval with security wrapper
+  - [ ] Create `pkg/signalprocessing/rego/security.go`
+    - [ ] Implement security wrapper policy that strips 5 mandatory labels
+    - [ ] Wrap customer policy with security policy before evaluation
+  - [ ] Create `pkg/signalprocessing/rego/input.go`
+    - [ ] Build `RegoInput` struct from K8s context + DetectedLabels
+    - [ ] Include: namespace, pod, deployment, node, signal, detected_labels
+- [ ] **Rego REFACTOR**: Policy hot-reload on ConfigMap change, caching
+- [ ] **Output Format**: `map[string][]string` (subdomain → list of values)
+  ```go
+  // Example output
+  customLabels := map[string][]string{
+      "kubernaut.io":           {"team=platform", "risk-tolerance=high"},
+      "constraint.kubernaut.io": {"cost-constrained"},
+  }
+  ```
+- [ ] **Security Wrapper** (5 mandatory labels blocked):
+  ```rego
+  system_labels := {
+      "kubernaut.io/signal-type",
+      "kubernaut.io/severity",
+      "kubernaut.io/component",
+      "kubernaut.io/environment",
+      "kubernaut.io/priority"
+  }
+  ```
+
+#### D. ConfigMap Setup
+
+- [ ] **Deploy Example Policy ConfigMap**:
+  ```yaml
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: signal-processing-policies
+    namespace: kubernaut-system
+  data:
+    labels.rego: |
+      package signalprocessing.labels
+      # Customer policy goes here
+      # See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
+  ```
+- [ ] **Document Policy Format**: Update operator documentation
+- [ ] **Add RBAC**: Controller needs read access to ConfigMaps in kubernaut-system
+
+#### E. Integration with Controller
+
+- [ ] Update `SignalProcessingReconciler` struct:
+  ```go
+  LabelDetector *LabelDetector  // V1.0
+  RegoEngine    *RegoEngine     // V1.0
+  ```
+- [ ] Update `reconcileEnriching()`:
+  1. Build owner chain (call `buildOwnerChain`)
+  2. Detect labels (call `LabelDetector.DetectLabels`)
+  3. Evaluate Rego (call `RegoEngine.EvaluatePolicy`)
+  4. Populate `status.enrichmentResults.ownerChain`
+  5. Populate `status.enrichmentResults.detectedLabels`
+  6. Populate `status.enrichmentResults.customLabels`
+
+#### F. Testing
+
+- [ ] **Unit Tests**: `test/unit/signalprocessing/detection/`
+- [ ] **Integration Tests**: `test/integration/signalprocessing/labels/`
+  - [ ] Real K8s cluster (KIND) with ArgoCD/Flux annotations
+  - [ ] Real PDB/HPA resources
+  - [ ] Real Rego policy evaluation
+- [ ] **E2E Tests**: `test/e2e/signalprocessing/`
+  - [ ] Full enrichment flow with labels
+  - [ ] Verify labels passed to AIAnalysis
 
 ### Phase 3.5: Gateway Code Migration (1 day) [DD-CATEGORIZATION-001]
 
