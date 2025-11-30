@@ -25,9 +25,9 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -55,14 +55,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		testServer    *httptest.Server
 		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
-		logger        *zap.Logger
-		testNamespace string // Unique namespace per test
-		testCounter   int    // Counter to ensure unique namespaces
+		logger        logr.Logger // DD-005: Use logr.Logger
+		testNamespace string      // Unique namespace per test
+		testCounter   int         // Counter to ensure unique namespaces
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
+		_ = logger              // Suppress unused variable warning
 
 		// Setup test infrastructure using helpers
 		redisClient = SetupRedisTestClient(ctx)
@@ -100,9 +101,9 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		Expect(testServer).ToNot(BeNil(), "Test server should be created")
 
 		logger.Info("Test setup complete",
-			zap.String("test_server_url", testServer.URL),
-			zap.String("test_namespace", testNamespace),
-			zap.String("redis_addr", redisClient.Client.Options().Addr),
+			"test_server_url", testServer.URL,
+			"test_namespace", testNamespace,
+			"redis_addr", redisClient.Client.Options().Addr,
 		)
 	})
 

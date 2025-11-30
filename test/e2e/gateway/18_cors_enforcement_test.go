@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 )
 
 // Test 18: CORS Enforcement
@@ -40,19 +40,19 @@ import (
 var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e", "gateway", "cors"), func() {
 	var (
 		testCancel context.CancelFunc
-		testLogger *zap.Logger
+		testLogger logr.Logger // DD-005: Use logr.Logger
 		httpClient *http.Client
 	)
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 3*time.Minute)
-		testLogger = logger.With(zap.String("test", "cors-enforcement"))
+		testLogger = logger.WithValues("test", "cors-enforcement") // DD-005: Use WithValues
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 18: CORS Enforcement (BR-HTTP-015) - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("")
 		testLogger.Info("PURPOSE: Validate CORS middleware is actually wired into")
 		testLogger.Info("         production Gateway (not just passing in httptest)")
@@ -90,8 +90,8 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 		req.Header.Set("Origin", "https://test-dashboard.kubernaut.io")
 
 		testLogger.Info("Request details",
-			zap.String("url", gatewayURL+"/health"),
-			zap.String("origin", "https://test-dashboard.kubernaut.io"))
+			"url", gatewayURL+"/health",
+			"origin", "https://test-dashboard.kubernaut.io")
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
@@ -103,8 +103,8 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 		allowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
 
 		testLogger.Info("CORS Response Headers",
-			zap.String("Access-Control-Allow-Origin", allowOrigin),
-			zap.Int("status", resp.StatusCode))
+			"Access-Control-Allow-Origin", allowOrigin,
+			"status", resp.StatusCode)
 
 		// CRITICAL ASSERTION: CORS headers are present
 		// If this fails, CORS middleware is NOT wired into Gateway startup
@@ -134,9 +134,9 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 		req.Header.Set("Access-Control-Request-Headers", "Content-Type,Authorization")
 
 		testLogger.Info("Preflight request details",
-			zap.String("url", gatewayURL+"/api/v1/signals/prometheus"),
-			zap.String("origin", "https://test-dashboard.kubernaut.io"),
-			zap.String("requested_method", "POST"))
+			"url", gatewayURL+"/api/v1/signals/prometheus",
+			"origin", "https://test-dashboard.kubernaut.io",
+			"requested_method", "POST")
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
@@ -149,9 +149,9 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 		allowMethods := resp.Header.Get("Access-Control-Allow-Methods")
 
 		testLogger.Info("Preflight Response",
-			zap.Int("status", resp.StatusCode),
-			zap.String("Access-Control-Allow-Origin", allowOrigin),
-			zap.String("Access-Control-Allow-Methods", allowMethods))
+			"status", resp.StatusCode,
+			"Access-Control-Allow-Origin", allowOrigin,
+			"Access-Control-Allow-Methods", allowMethods)
 
 		// Preflight should succeed (200 or 204)
 		Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)),
@@ -185,8 +185,8 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 		allowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
 
 		testLogger.Info("Readiness endpoint CORS",
-			zap.Int("status", resp.StatusCode),
-			zap.String("Access-Control-Allow-Origin", allowOrigin))
+			"status", resp.StatusCode,
+			"Access-Control-Allow-Origin", allowOrigin)
 
 		// Readiness should return OK with CORS headers
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))

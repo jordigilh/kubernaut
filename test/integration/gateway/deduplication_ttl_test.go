@@ -21,11 +21,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/zapr"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
@@ -42,13 +41,13 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 		ctx          context.Context
 		dedupService *processing.DeduplicationService
 		redisClient  *redis.Client
-		logger       *zap.Logger
+		logger       logr.Logger // DD-005: Use logr.Logger
 		testSignal   *types.NormalizedSignal
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
 
 		// Use suite's Redis client for test isolation in parallel execution
 		// This ensures tests use the same Redis instance as the Gateway server
@@ -86,13 +85,12 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 			Fingerprint: "integration-test-ttl-" + time.Now().Format("20060102150405"),
 		}
 
-		logrLogger := zapr.NewLogger(logger)
 		rediscacheClient := rediscache.NewClient(&redis.Options{
 			Addr:     redisAddr,
 			Password: "",
 			DB:       redisDB,
-		}, logrLogger)
-		dedupService = processing.NewDeduplicationServiceWithTTL(rediscacheClient, nil, 5*time.Second, logrLogger, nil)
+		}, logger)
+		dedupService = processing.NewDeduplicationServiceWithTTL(rediscacheClient, nil, 5*time.Second, logger, nil)
 	})
 
 	AfterEach(func() {

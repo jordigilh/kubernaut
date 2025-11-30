@@ -29,7 +29,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -42,7 +42,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 		k8sClient     client.Client
@@ -50,7 +50,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "crd-lifecycle"))
+		testLogger = logger.WithValues("test", "crd-lifecycle"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		// Unique namespace for parallel execution
@@ -65,12 +65,12 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace", zap.String("namespace", testNamespace))
+			testLogger.Warn("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -139,13 +139,13 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.Debug("Failed to create K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList = &remediationv1alpha1.RemediationRequestList{}
 			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.Debug("Failed to list CRDs", "error", err)
 				return -1
 			}
 			return len(crdList.Items)

@@ -26,9 +26,9 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	"github.com/go-logr/logr"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -73,7 +73,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering Edge Cases (Integration)", fun
 		// Using short timeouts for fast integration tests
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
-			logr.Discard(),              // logger (nil = use nop logger for tests)
+			logr.Discard(),   // logger (nil = use nop logger for tests)
 			5,                // bufferThreshold: 5 alerts
 			2*time.Second,    // inactivityTimeout: 2s for fast testing
 			5*time.Second,    // maxWindowDuration: 5s for fast testing

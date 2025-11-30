@@ -27,7 +27,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // Test 07: Health & Readiness Endpoints
@@ -41,19 +41,19 @@ import (
 var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Ordered, func() {
 	var (
 		testCancel context.CancelFunc
-		testLogger *zap.Logger
+		testLogger logr.Logger
 		httpClient *http.Client
 	)
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 3*time.Minute)
-		testLogger = logger.With(zap.String("test", "health-readiness"))
+		testLogger = logger.WithValues("test", "health-readiness"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018) - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 	})
 
 	AfterAll(func() {

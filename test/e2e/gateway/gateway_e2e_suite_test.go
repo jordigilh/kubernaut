@@ -25,10 +25,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -48,7 +49,7 @@ func TestGatewayE2E(t *testing.T) {
 var (
 	ctx    context.Context
 	cancel context.CancelFunc
-	logger *zap.Logger
+	logger logr.Logger // DD-005: Use logr.Logger
 
 	// Cluster configuration (shared across all tests)
 	clusterName    string
@@ -69,10 +70,12 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize context
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// Initialize logger
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		// DD-005: Initialize logger using shared logging library
+		logger = kubelog.NewLogger(kubelog.Options{
+			Development: true,
+			Level:       0, // INFO
+			ServiceName: "gateway-e2e-test",
+		})
 
 		// Initialize failure tracking
 		anyTestFailed = false
@@ -101,7 +104,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Checking for existing cluster...")
 		err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
 		if err != nil {
-			logger.Warn("Failed to delete existing cluster (may not exist)", zap.Error(err))
+			logger.Info("Failed to delete existing cluster (may not exist)", "error", err)
 		}
 
 		// Create Kind cluster (ONCE for all tests)
@@ -144,17 +147,19 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize context for this process
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// Initialize logger for this process
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		// DD-005: Initialize logger for this process using shared logging library
+		logger = kubelog.NewLogger(kubelog.Options{
+			Development: true,
+			Level:       0, // INFO
+			ServiceName: "gateway-e2e-test",
+		})
 
 		// Get kubeconfig from process 1
 		kubeconfigPath = string(data)
 		clusterName = "gateway-e2e"
 
 		// Set KUBECONFIG environment variable
-		err = os.Setenv("KUBECONFIG", kubeconfigPath)
+		err := os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
 		// All processes use the same NodePort URL (exposed via Kind extraPortMappings)
@@ -163,8 +168,8 @@ var _ = SynchronizedBeforeSuite(
 		gatewayURL = "http://localhost:8080" // NodePort 30080 mapped to localhost:8080
 
 		logger.Info("🔌 Using Gateway NodePort (no port-forward needed)",
-			zap.Int("process", processID),
-			zap.String("url", gatewayURL))
+			"process", processID,
+			"url", gatewayURL)
 
 		// Wait for Gateway HTTP endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for Gateway NodePort to be responsive...")
@@ -180,7 +185,7 @@ var _ = SynchronizedBeforeSuite(
 			}
 			return nil
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway NodePort did not become responsive")
-		logger.Info("✅ Gateway is ready via NodePort", zap.Int("process", processID))
+		logger.Info("✅ Gateway is ready via NodePort", "process", processID)
 	},
 )
 
@@ -197,31 +202,28 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		processID := GinkgoParallelProcess()
 		logger.Info("Process cleanup complete",
-			zap.Int("process", processID),
-			zap.Bool("hadFailures", anyTestFailed))
+			"process", processID,
+			"hadFailures", anyTestFailed)
 
 		// Cancel context for this process
 		if cancel != nil {
 			cancel()
 		}
 
-		// Sync logger for this process
-		if logger != nil {
-			_ = logger.Sync()
-		}
+		// DD-005: Sync logger using shared library
+		kubelog.Sync(logger)
 
 		// Return failure status to process 1 via the suite report
 		// (Ginkgo handles aggregating failure status across processes)
 	},
 	// This runs ONLY on process 1 AFTER all other processes complete
 	func() {
-		// Re-initialize logger for final cleanup (may have been synced)
-		var err error
-		logger, err = zap.NewDevelopment()
-		if err != nil {
-			fmt.Println("Failed to create logger for cleanup")
-			return
-		}
+		// DD-005: Re-initialize logger for final cleanup using shared logging library
+		logger = kubelog.NewLogger(kubelog.Options{
+			Development: true,
+			Level:       0,
+			ServiceName: "gateway-e2e-test",
+		})
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway E2E Test Suite - Cluster Teardown (Process 1 - Final)")
@@ -247,19 +249,17 @@ var _ = SynchronizedAfterSuite(
 
 		// All tests passed - cleanup cluster
 		logger.Info("✅ All tests passed - cleaning up cluster...")
-		err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
 		if err != nil {
-			logger.Warn("Failed to delete cluster", zap.Error(err))
+			logger.Info("Failed to delete cluster", "error", err)
 		}
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Teardown Complete")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Final logger sync
-		if logger != nil {
-			_ = logger.Sync()
-		}
+		// DD-005: Final logger sync using shared library
+		kubelog.Sync(logger)
 	},
 )
 

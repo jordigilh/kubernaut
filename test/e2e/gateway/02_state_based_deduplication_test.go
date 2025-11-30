@@ -29,7 +29,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -47,7 +47,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 		k8sClient     client.Client
@@ -55,7 +55,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "deduplication"))
+		testLogger = logger.WithValues("test", "deduplication"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -65,7 +65,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
 		testNamespace = fmt.Sprintf("dedup-%d-%d", processID, time.Now().UnixNano())
-		testLogger.Info("Creating test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
 		ns := &corev1.Namespace{
@@ -74,7 +74,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		k8sClient = getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
@@ -84,7 +84,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 
 		if CurrentSpecReport().Failed() {
 			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+				"namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -189,7 +189,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.Debug("Failed to create K8s client", "error", err)
 				} else {
 					testLogger.Debug("Failed to create K8s client (unknown error)")
 				}
@@ -198,7 +198,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.Debug("Failed to list CRDs", "error", err)
 				return -1
 			}
 			crdCount = len(crdList.Items)

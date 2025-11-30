@@ -26,15 +26,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -42,7 +43,7 @@ import (
 var (
 	suiteK8sClient   *K8sTestClient         // Shared K8s client for cleanup
 	suiteCtx         context.Context        // Suite context
-	suiteLogger      *zap.Logger            // Suite logger
+	suiteLogger      logr.Logger            // Suite logger (DD-005: logr.Logger)
 	testEnv          *envtest.Environment   // envtest environment (in-memory K8s)
 	suitePgClient    *PostgresTestClient    // PostgreSQL container
 	suiteDataStorage *DataStorageTestServer // Data Storage service
@@ -53,9 +54,12 @@ var (
 // envtest Migration: Replaces Kind cluster with in-memory K8s API server
 var _ = SynchronizedBeforeSuite(func() []byte {
 	// This runs ONCE on process 1 only - creates shared infrastructure
-	var err error
-	suiteLogger, err = zap.NewDevelopment()
-	Expect(err).ToNot(HaveOccurred())
+	// DD-005: Use shared logging library (logr.Logger interface)
+	suiteLogger = kubelog.NewLogger(kubelog.Options{
+		Development: true,
+		Level:       0, // INFO
+		ServiceName: "gateway-integration-test",
+	})
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Gateway Integration Test Suite - envtest Setup (Parallel)")
@@ -69,6 +73,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	suiteLogger.Info("  • Parallel Execution: 4 concurrent processors")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	var err error
 	ctx := context.Background()
 
 	// 1. Start envtest (in-memory K8s API server)
@@ -81,7 +86,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		cmd := exec.Command("go", "run", "sigs.k8s.io/controller-runtime/tools/setup-envtest@latest", "use", "-p", "path")
 		output, err := cmd.Output()
 		if err != nil {
-			suiteLogger.Error("Failed to get KUBEBUILDER_ASSETS path", zap.Error(err))
+			suiteLogger.Error(err, "Failed to get KUBEBUILDER_ASSETS path")
 			Expect(err).ToNot(HaveOccurred(), "Should get KUBEBUILDER_ASSETS path from setup-envtest")
 		}
 		assetsPath := strings.TrimSpace(string(output))
@@ -173,10 +178,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// This runs on ALL processes (including process 1) - initializes per-process state
 	suiteCtx = context.Background()
 
-	// Initialize logger for this process
-	var err error
-	suiteLogger, err = zap.NewDevelopment()
-	Expect(err).ToNot(HaveOccurred())
+	// DD-005: Initialize logger for this process using shared logging library
+	suiteLogger = kubelog.NewLogger(kubelog.Options{
+		Development: true,
+		Level:       0, // INFO
+		ServiceName: "gateway-integration-test",
+	})
 
 	// Deserialize shared config (kubeconfig + Redis port)
 	type SharedConfig struct {
@@ -184,6 +191,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		RedisPort  int
 	}
 	var sharedConfig SharedConfig
+	var err error
 	err = json.Unmarshal(data, &sharedConfig)
 	Expect(err).ToNot(HaveOccurred(), "Should deserialize shared config")
 
@@ -251,7 +259,7 @@ var _ = SynchronizedAfterSuite(func() {
 	suiteLogger.Info("Stopping Redis container...")
 	err := infrastructure.StopRedisContainer("gateway-redis-integration", GinkgoWriter)
 	if err != nil {
-		suiteLogger.Warn("Failed to stop Redis container", zap.Error(err))
+		suiteLogger.Info("Failed to stop Redis container", "error", err)
 	}
 
 	// Stop envtest
@@ -259,14 +267,12 @@ var _ = SynchronizedAfterSuite(func() {
 		suiteLogger.Info("Stopping envtest...")
 		err := testEnv.Stop()
 		if err != nil {
-			suiteLogger.Warn("Failed to stop envtest", zap.Error(err))
+			suiteLogger.Info("Failed to stop envtest", "error", err)
 		}
 	}
 
-	// Sync logger
-	if suiteLogger != nil {
-		_ = suiteLogger.Sync()
-	}
+	// DD-005: Sync logger using shared library
+	kubelog.Sync(suiteLogger)
 
 	suiteLogger.Info("   ✅ All services stopped")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
