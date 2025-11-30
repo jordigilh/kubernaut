@@ -6,26 +6,39 @@ This directory contains OpenAPI 3.0+ specifications for the Data Storage Service
 
 ## Current Version
 
-**v2** (`v2.yaml`): ADR-033 Multi-Dimensional Success Tracking
-- **Note**: "v2" refers to the OpenAPI spec version (2.0.0), NOT the API URL path
+**v3** (`v3.yaml`): DD-STORAGE-011 Workflow Catalog CRUD API
+- **Note**: "v3" refers to the OpenAPI spec version (3.0.0), NOT the API URL path
 - **API Path**: All endpoints use `/api/v1/` (we only support v1 API)
 - **Terminology**: Per DD-NAMING-001, using "Remediation Workflow" (not "Remediation Playbook")
-- Status: ✅ Production-ready (Day 15 complete)
-- Endpoints:
-  - `GET /api/v1/success-rate/incident-type` - **NEW**: Incident-type success rate (BR-STORAGE-031-01)
-  - `GET /api/v1/success-rate/workflow` - **NEW**: Workflow success rate (BR-STORAGE-031-02)
+- Status: ✅ Production-ready
+- **NEW in v3** (DD-STORAGE-011 Workflow CRUD):
+  - `POST /api/v1/workflows` - Create workflow with ADR-043 schema validation
+  - `GET /api/v1/workflows/{workflow_id}/{version}` - Get workflow by ID and version
+  - `GET /api/v1/workflows/{workflow_id}/versions` - List all versions of a workflow
+  - `PATCH /api/v1/workflows/{workflow_id}/{version}/disable` - Disable workflow (soft delete)
+  - `POST /api/v1/workflows/search` - Semantic search with hybrid scoring
+- **From v2** (ADR-033 Success Rate):
+  - `GET /api/v1/success-rate/incident-type` - Incident-type success rate
+  - `GET /api/v1/success-rate/workflow` - Workflow success rate
+- **From v1** (Incidents):
   - `GET /api/v1/incidents` - List incidents with filters
   - `GET /api/v1/incidents/{id}` - Get incident by ID
   - `GET /health`, `/health/ready`, `/health/live` - Health checks
 - Features:
-  - Multi-dimensional success tracking (incident-type, workflow, AI mode)
-  - Confidence-based recommendations (high/medium/low/insufficient_data)
-  - AI execution mode distribution (catalog/chained/manual)
-  - Workflow and incident-type breakdown analytics
+  - Workflow catalog CRUD with ADR-043 schema validation
+  - Synchronous embedding generation (DD-STORAGE-011)
+  - Workflow immutability (DD-WORKFLOW-012)
+  - Semantic search with hybrid weighted scoring (BR-STORAGE-013)
+  - Multi-dimensional success tracking (ADR-033)
 
 ---
 
 ## Previous Versions
+
+**v2** (`v2.yaml`): ADR-033 Multi-Dimensional Success Tracking
+- Status: ✅ Stable (superseded by v3)
+- Added success rate analytics endpoints
+- Does not include workflow CRUD endpoints
 
 **v1** (`v1.yaml`): Phase 1 Read API (Legacy)
 - Status: ✅ Stable (no longer actively developed)
@@ -33,19 +46,7 @@ This directory contains OpenAPI 3.0+ specifications for the Data Storage Service
   - `GET /api/v1/incidents` - List incidents with filters
   - `GET /api/v1/incidents/{id}` - Get incident by ID
   - `GET /health`, `/health/ready`, `/health/live` - Health checks
-- Note: v1 does not include ADR-033 success rate analytics
-
----
-
-## Future Versions
-
-**v3** (`v3.yaml`): Phase 2 Write API (Planned)
-- Status: 🚧 Not yet implemented
-- Additional endpoints:
-  - `POST /api/v2/incidents` - Create new incident
-  - `PUT /api/v2/incidents/{id}` - Update incident
-  - `DELETE /api/v2/incidents/{id}` - Delete incident
-  - Vector database integration
+- Note: v1 does not include ADR-033 success rate analytics or workflow CRUD
 
 ---
 
@@ -53,18 +54,18 @@ This directory contains OpenAPI 3.0+ specifications for the Data Storage Service
 
 ### ⚠️ Important: API vs Spec Versioning
 - **API URL Path**: `/api/v1/` (we only support v1 API)
-- **OpenAPI Spec Version**: `v2.yaml` refers to spec version 2.0.0 (with ADR-033 features)
-- **Clarification**: The file name `v2.yaml` does NOT mean we have a `/api/v2/` endpoint
+- **OpenAPI Spec Version**: `v3.yaml` refers to spec version 3.0.0 (with workflow CRUD features)
+- **Clarification**: The file name `v3.yaml` does NOT mean we have a `/api/v3/` endpoint
 
 ### URL Versioning
 - API versions are specified in the URL path: `/api/v{major}/resource`
-- **v1**: `/api/v1/incidents` (current and only supported version)
-- **v2**: `/api/v2/incidents` (future, breaking changes - not yet implemented)
+- **v1**: `/api/v1/workflows`, `/api/v1/incidents` (current and only supported version)
+- **v2**: `/api/v2/` (future, breaking changes - not yet implemented)
 
 ### File Versioning
 - OpenAPI spec files track feature evolution, not API URL versions
 - **Pattern**: `v{major}.yaml` (spec version, not API version)
-- **Current**: `v2.yaml` = spec version 2.0.0 with ADR-033 features, still serving `/api/v1/` endpoints
+- **Current**: `v3.yaml` = spec version 3.0.0 with workflow CRUD, still serving `/api/v1/` endpoints
 - **Reason**: Allows tracking spec evolution while maintaining stable API URLs
 
 ### Semantic Versioning
@@ -81,29 +82,32 @@ This directory contains OpenAPI 3.0+ specifications for the Data Storage Service
 go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
 ```
 
-### Generate Client (v2 - Current)
+### Generate Client (v3 - Current)
 ```bash
 # From repository root
 oapi-codegen \
   --package datastorage \
   --generate types,client \
-  docs/services/stateless/data-storage/openapi/v2.yaml \
+  docs/services/stateless/data-storage/openapi/v3.yaml \
   > pkg/datastorage/client/generated.go
 ```
 
-### Generated Code Includes (v2)
+### Generated Code Includes (v3)
+- ✅ `RemediationWorkflow` struct (NEW in v3)
+- ✅ `CreateWorkflowRequest` struct (NEW in v3)
+- ✅ `DisableWorkflowRequest` struct (NEW in v3)
+- ✅ `WorkflowVersionSummary` struct (NEW in v3)
+- ✅ `WorkflowSearchRequest` struct (NEW in v3)
+- ✅ `WorkflowSearchResponse` struct (NEW in v3)
+- ✅ `WorkflowSearchResult` struct (NEW in v3)
 - ✅ `Incident` struct
 - ✅ `IncidentListResponse` struct
-- ✅ `IncidentTypeSuccessRateResponse` struct (NEW in v2)
-- ✅ `WorkflowSuccessRateResponse` struct (NEW in v2)
-- ✅ `AIExecutionModeStats` struct (NEW in v2)
-- ✅ `WorkflowBreakdownItem` struct (NEW in v2)
-- ✅ `IncidentTypeBreakdownItem` struct (NEW in v2)
-- ✅ `Pagination` struct
+- ✅ `IncidentTypeSuccessRateResponse` struct
 - ✅ `RFC7807Error` struct
 - ✅ `Client` interface with all methods:
+  - `CreateWorkflow()`, `GetWorkflow()`, `ListWorkflowVersions()`, `DisableWorkflow()`, `SearchWorkflows()` (v3)
   - `ListIncidents()`, `GetIncidentByID()` (v1)
-  - `GetSuccessRateByIncidentType()`, `GetSuccessRateByWorkflow()` (v2)
+  - `GetSuccessRateByIncidentType()` (v2)
 - ✅ HTTP client implementation with request/response handling
 
 ### Generate Client (v1 - Legacy)
