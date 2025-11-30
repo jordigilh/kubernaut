@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | v1.5 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.8 (snake_case API fields) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.1, [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.6 | 2025-11-30 | Added OwnerChain, fixed CustomLabels format (map[string][]string), DD-WORKFLOW-001 v1.8 | [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md), [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.5 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case API fields) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.1, [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.4 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.3 | 2025-11-30 | Added label detection (DetectedLabels V1.0, CustomLabels V1.0) to enriching phase | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0 |
 > | v1.2 | 2025-11-28 | Performance target <5s, graceful shutdown, retry strategy | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
@@ -81,18 +82,33 @@ if signalDataValid {
   - Contact information
 - Update `status.enrichmentResults`
 
-**B. LABEL DETECTION (V1.3)**:
+**B. OWNER CHAIN (DD-WORKFLOW-001 v1.8)**:
+- Build ownership chain from K8s `ownerReferences`
+- Traverse: Pod → ReplicaSet → Deployment (or StatefulSet/DaemonSet)
+- Use first `controller: true` ownerReference at each level
+- Populate `status.enrichmentResults.ownerChain[]`
+- **Purpose**: HolmesGPT-API uses for DetectedLabels validation
+  - If RCA identifies resource NOT in owner chain → DetectedLabels excluded from filtering
+  - 100% safe default: EXCLUDE if relationship cannot be proven
+
+**C. LABEL DETECTION (V1.0, DD-WORKFLOW-001 v1.8)**:
 - **DetectedLabels (V1.0)**: Auto-detect cluster characteristics from K8s resources
   - GitOps management (ArgoCD/Flux annotations)
   - Workload protection (PDB, HPA queries)
   - Workload characteristics (StatefulSet, Helm)
   - Security posture (NetworkPolicy, PSS, ServiceMesh)
+  - **Convention**: Boolean fields only included when `true`, omit when `false`
+  - **Dual-use** (DD-WORKFLOW-001 v1.8):
+    - LLM Prompt Context: ALWAYS included
+    - Workflow Filtering: CONDITIONAL (only when owner chain validates relationship)
 - **CustomLabels (V1.0)**: Extract user-defined labels via Rego policies
   - Query ConfigMap `signal-processing-policies` in `kubernaut-system`
-  - Evaluate Rego policy with K8s context as input
-  - Output: user-defined labels (e.g., `business_category`, `team`, `region`)
+  - Evaluate Rego policy with K8s context + DetectedLabels as input
+  - **Output format**: `map[string][]string` (subdomain → list of values)
+    - Example: `{"constraint": ["cost-constrained"], "team": ["name=payments"]}`
+  - **Security**: Wrapped with security policy that strips 5 mandatory labels
 
-**C. IF RECOVERY ATTEMPT**:
+**D. IF RECOVERY ATTEMPT**:
 - Detect `spec.isRecoveryAttempt = true`
 - Read embedded failure data from `spec.failureData` (provided by Remediation Orchestrator)
 - Build `status.enrichmentResults.recoveryContext` from embedded data
@@ -125,7 +141,7 @@ if kubernetesContextRetrieved && businessContextRetrieved {
 }
 ```
 
-**Example CRD Update (Normal Enrichment with Label Detection)**:
+**Example CRD Update (Normal Enrichment with Label Detection - DD-WORKFLOW-001 v1.8)**:
 ```yaml
 status:
   phase: enriching
@@ -143,22 +159,47 @@ status:
     historicalContext:
       previousSignals: 5
       signalFrequency: 2.5
+
+    # OwnerChain (DD-WORKFLOW-001 v1.8) - K8s ownership traversal
+    # Used by HolmesGPT-API to validate DetectedLabels applicability
+    ownerChain:
+    - namespace: "production"
+      kind: "Pod"
+      name: "web-app-789"
+    - namespace: "production"
+      kind: "ReplicaSet"
+      name: "web-app-abc123"
+    - namespace: "production"
+      kind: "Deployment"
+      name: "web-app"
+
     # DetectedLabels (V1.0) - Auto-detected from K8s
+    # CONVENTION: Boolean fields only when TRUE, omit when false
     detectedLabels:
-      gitOpsManaged: true
-      gitOpsTool: "argocd"
-      pdbProtected: true
-      hpaEnabled: true
-      stateful: false
-      helmManaged: true
-      networkIsolated: true
+      gitOpsManaged: true      # Included (true)
+      gitOpsTool: "argocd"     # String, included if non-empty
+      pdbProtected: true       # Included (true)
+      hpaEnabled: true         # Included (true)
+      # stateful: omitted      # Would be here if true
+      helmManaged: true        # Included (true)
+      networkIsolated: true    # Included (true)
       podSecurityLevel: "restricted"
       serviceMesh: "istio"
+
     # CustomLabels (V1.0) - Extracted via Rego policies
+    # FORMAT: map[string][]string (subdomain → list of values)
+    # See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
     customLabels:
-      team: "platform"
-      region: "us-east-1"
-      business_category: "payment-service"
+      kubernaut.io:
+      - "team=platform"
+      - "region=us-east-1"
+      - "risk-tolerance=high"
+      constraint.kubernaut.io:
+      - "cost-constrained"     # Boolean true (no value)
+      - "stateful-safe"
+      custom.kubernaut.io:
+      - "business-category=payment-service"
+
     enrichmentQuality: 0.95
     enrichedAt: "2025-01-15T10:00:00Z"
 ```
