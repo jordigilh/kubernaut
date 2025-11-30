@@ -642,7 +642,77 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
                 "incident_id": incident_id,
                 "message": "remediation_id not provided - audit trail will be incomplete"
             })
-        config = register_workflow_catalog_toolset(config, app_config, remediation_id=remediation_id)
+
+        # DD-HAPI-001: Extract custom_labels from enrichment_results for auto-append
+        # Custom labels are passed to WorkflowCatalogToolset and auto-appended to all MCP calls
+        # The LLM does NOT see or provide these - they are operational metadata
+        enrichment_results = request_data.get("enrichment_results", {}) or {}
+        if hasattr(enrichment_results, 'customLabels'):
+            # Pydantic model - access attribute directly
+            custom_labels = enrichment_results.customLabels
+        elif isinstance(enrichment_results, dict):
+            # Dict - access via key (camelCase from K8s)
+            custom_labels = enrichment_results.get("customLabels")
+        else:
+            custom_labels = None
+
+        if custom_labels:
+            logger.info({
+                "event": "custom_labels_extracted",
+                "incident_id": incident_id,
+                "subdomains": list(custom_labels.keys()),
+                "message": f"DD-HAPI-001: {len(custom_labels)} custom label subdomains will be auto-appended to workflow search"
+            })
+
+        # DD-WORKFLOW-001 v1.7: Extract detected_labels for workflow matching (100% safe)
+        detected_labels_for_toolset = {}
+        if enrichment_results:
+            if hasattr(enrichment_results, 'detectedLabels') and enrichment_results.detectedLabels:
+                dl = enrichment_results.detectedLabels
+                detected_labels_for_toolset = dl.model_dump() if hasattr(dl, 'model_dump') else dl.dict() if hasattr(dl, 'dict') else dl
+            elif isinstance(enrichment_results, dict):
+                dl = enrichment_results.get('detectedLabels', {})
+                if dl:
+                    detected_labels_for_toolset = dl.model_dump() if hasattr(dl, 'model_dump') else dl.dict() if hasattr(dl, 'dict') else dl
+
+        # DD-WORKFLOW-001 v1.7: Extract source_resource for DetectedLabels validation
+        # This is the original signal's resource - compared against LLM's rca_resource
+        source_resource = {
+            "namespace": request_data.get("resource_namespace", ""),
+            "kind": request_data.get("resource_kind", ""),
+            "name": request_data.get("resource_name", "")
+        }
+
+        # DD-WORKFLOW-001 v1.7: Extract owner_chain from enrichment_results
+        # This is the K8s ownership chain from SignalProcessing (via ownerReferences)
+        # Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "..."}, {"kind": "Deployment", ...}]
+        # Used for PROVEN relationship validation (100% safe)
+        owner_chain = None
+        if enrichment_results:
+            if hasattr(enrichment_results, 'ownerChain'):
+                owner_chain = enrichment_results.ownerChain
+            elif isinstance(enrichment_results, dict):
+                owner_chain = enrichment_results.get('ownerChain')
+
+        if detected_labels_for_toolset:
+            logger.info({
+                "event": "detected_labels_extracted",
+                "incident_id": incident_id,
+                "fields": list(detected_labels_for_toolset.keys()),
+                "source_resource": f"{source_resource.get('kind')}/{source_resource.get('namespace') or 'cluster'}",
+                "owner_chain_length": len(owner_chain) if owner_chain else 0,
+                "message": f"DD-WORKFLOW-001 v1.7: {len(detected_labels_for_toolset)} detected labels (100% safe validation)"
+            })
+
+        config = register_workflow_catalog_toolset(
+            config,
+            app_config,
+            remediation_id=remediation_id,
+            custom_labels=custom_labels,
+            detected_labels=detected_labels_for_toolset,
+            source_resource=source_resource,
+            owner_chain=owner_chain
+        )
 
         # Call HolmesGPT SDK
         logger.info("Calling HolmesGPT SDK for incident analysis")

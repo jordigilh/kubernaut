@@ -599,7 +599,14 @@ Provide structured JSON with alternative workflow and updated parameters.
     return prompt
 
 
-def _get_holmes_config(app_config: Dict[str, Any] = None, remediation_id: Optional[str] = None) -> Config:
+def _get_holmes_config(
+    app_config: Dict[str, Any] = None,
+    remediation_id: Optional[str] = None,
+    custom_labels: Optional[Dict[str, List[str]]] = None,
+    detected_labels: Optional[Dict[str, Any]] = None,
+    source_resource: Optional[Dict[str, str]] = None,
+    owner_chain: Optional[List[Dict[str, str]]] = None
+) -> Config:
     """
     Initialize HolmesGPT SDK Config from environment variables and app config
 
@@ -608,6 +615,19 @@ def _get_holmes_config(app_config: Dict[str, Any] = None, remediation_id: Option
         remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-002 v2.2)
                        MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY -
                        do NOT use for RCA analysis or workflow matching.
+        custom_labels: Custom labels for auto-append to workflow search (DD-HAPI-001)
+                      Format: map[string][]string (subdomain → list of values)
+                      Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+                      Auto-appended to all MCP workflow search calls - invisible to LLM.
+        detected_labels: Auto-detected labels for workflow matching (DD-WORKFLOW-001 v1.7)
+                        Format: {"gitOpsManaged": true, "gitOpsTool": "argocd", ...}
+                        Only included when relationship to RCA resource is PROVEN.
+        source_resource: Original signal's resource for DetectedLabels validation
+                        Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
+                        Compared against LLM's rca_resource.
+        owner_chain: K8s ownership chain from SignalProcessing enrichment
+                    Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "..."}, ...]
+                    Used for PROVEN relationship validation (100% safe).
 
     Required environment variables:
     - LLM_MODEL: Full litellm-compatible model identifier (e.g., "provider/model-name")
@@ -656,9 +676,24 @@ def _get_holmes_config(app_config: Dict[str, Any] = None, remediation_id: Option
 
         # BR-HAPI-250: Register workflow catalog toolset programmatically
         # BR-AUDIT-001: Pass remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
-        config = register_workflow_catalog_toolset(config, app_config, remediation_id=remediation_id)
+        # DD-HAPI-001: Pass custom_labels for auto-append to workflow search
+        # DD-WORKFLOW-001 v1.7: Pass detected_labels with source_resource and owner_chain (100% safe)
+        config = register_workflow_catalog_toolset(
+            config,
+            app_config,
+            remediation_id=remediation_id,
+            custom_labels=custom_labels,
+            detected_labels=detected_labels,
+            source_resource=source_resource,
+            owner_chain=owner_chain
+        )
 
-        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys())}")
+        # Log labels count for debugging
+        custom_labels_info = f", custom_labels={len(custom_labels)} subdomains" if custom_labels else ""
+        detected_labels_info = f", detected_labels={len(detected_labels)} fields" if detected_labels else ""
+        source_info = f", source={source_resource.get('kind')}/{source_resource.get('namespace', 'cluster')}" if source_resource else ""
+        owner_info = f", owner_chain={len(owner_chain)} owners" if owner_chain else ""
+        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys())}{custom_labels_info}{detected_labels_info}{source_info}{owner_info}")
         return config
     except Exception as e:
         logger.error(f"Failed to initialize HolmesGPT config: {e}")
@@ -1312,7 +1347,6 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
         "is_recovery_attempt": is_recovery
     })
 
-    # Check if we should use SDK or stub
     # BR-AUDIT-001: Extract remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
     remediation_id = request_data.get("remediation_id")
     if not remediation_id:
@@ -1321,7 +1355,55 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
             "incident_id": incident_id,
             "message": "remediation_id not provided - audit trail will be incomplete"
         })
-    config = _get_holmes_config(app_config, remediation_id=remediation_id)
+
+    # DD-HAPI-001: Extract custom_labels from enrichment_results for auto-append
+    # Custom labels are passed to WorkflowCatalogToolset and auto-appended to all MCP calls
+    # The LLM does NOT see or provide these - they are operational metadata
+    enrichment_results = request_data.get("enrichment_results", {}) or {}
+    custom_labels = enrichment_results.get("customLabels")  # camelCase from K8s
+
+    if custom_labels:
+        logger.info({
+            "event": "custom_labels_extracted",
+            "incident_id": incident_id,
+            "subdomains": list(custom_labels.keys()),
+            "message": f"DD-HAPI-001: {len(custom_labels)} custom label subdomains will be auto-appended to workflow search"
+        })
+
+    # DD-WORKFLOW-001 v1.7: Extract detected_labels for workflow matching (100% safe)
+    detected_labels = enrichment_results.get("detectedLabels", {}) or {}
+
+    # DD-WORKFLOW-001 v1.7: Extract source_resource for DetectedLabels validation
+    # This is the original signal's resource - compared against LLM's rca_resource
+    source_resource = {
+        "namespace": request_data.get("resource_namespace", ""),
+        "kind": request_data.get("resource_kind", ""),
+        "name": request_data.get("resource_name", "")
+    }
+
+    # DD-WORKFLOW-001 v1.7: Extract owner_chain from enrichment_results
+    # K8s ownership chain from SignalProcessing (via ownerReferences)
+    # Used for PROVEN relationship validation (100% safe)
+    owner_chain = enrichment_results.get("ownerChain")
+
+    if detected_labels:
+        logger.info({
+            "event": "detected_labels_extracted",
+            "incident_id": incident_id,
+            "fields": list(detected_labels.keys()),
+            "source_resource": f"{source_resource.get('kind')}/{source_resource.get('namespace') or 'cluster'}",
+            "owner_chain_length": len(owner_chain) if owner_chain else 0,
+            "message": f"DD-WORKFLOW-001 v1.7: {len(detected_labels)} detected labels (100% safe validation)"
+        })
+
+    config = _get_holmes_config(
+        app_config,
+        remediation_id=remediation_id,
+        custom_labels=custom_labels,
+        detected_labels=detected_labels,
+        source_resource=source_resource,
+        owner_chain=owner_chain
+    )
 
     # Use HolmesGPT SDK with enhanced error handling
     # NOTE: Workflow search is handled by WorkflowCatalogToolset registered via

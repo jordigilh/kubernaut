@@ -50,7 +50,7 @@ SEARCH_RESPONSE=$(curl -s -X POST http://localhost:18090/api/v1/workflows/search
     -d '{
         "query": "OOMKilled critical",
         "filters": {
-            "signal-type": "OOMKilled",
+            "signal_type": "OOMKilled",
             "severity": "critical"
         },
         "top_k": 5,

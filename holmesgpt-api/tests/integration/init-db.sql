@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS remediation_workflow_catalog (
     content_hash VARCHAR(64) NOT NULL,
 
     labels JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- DD-WORKFLOW-001 v1.6: Customer-defined labels for hard filtering
+    custom_labels JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- DD-WORKFLOW-001 v1.6: Auto-detected labels from Kubernetes resources
+    detected_labels JSONB NOT NULL DEFAULT '{}'::jsonb,
     embedding vector(768),
 
     parameters JSONB,
@@ -63,6 +67,8 @@ CREATE TABLE IF NOT EXISTS remediation_workflow_catalog (
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_workflow_catalog_status ON remediation_workflow_catalog(status);
 CREATE INDEX IF NOT EXISTS idx_workflow_catalog_labels ON remediation_workflow_catalog USING GIN (labels);
+CREATE INDEX IF NOT EXISTS idx_workflow_catalog_custom_labels ON remediation_workflow_catalog USING GIN (custom_labels);
+CREATE INDEX IF NOT EXISTS idx_workflow_catalog_detected_labels ON remediation_workflow_catalog USING GIN (detected_labels);
 CREATE INDEX IF NOT EXISTS idx_workflow_catalog_embedding ON remediation_workflow_catalog USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 
 -- Trigger for updated_at
