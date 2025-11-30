@@ -87,6 +87,67 @@ priority = "P1" {
 
 ---
 
+### Label and Annotation Data Flow
+
+**Key Clarification**: Gateway passes through ALL source labels/annotations but does NOT query K8s API for resource labels.
+
+| Data Type | Gateway Responsibility | SignalProcessing Responsibility |
+|-----------|----------------------|--------------------------------|
+| **Alert Labels** (`alert.Labels`) | ✅ Passes through → `Spec.SignalLabels` | Reads from CRD |
+| **Common Labels** (`webhook.CommonLabels`) | ✅ Merged into `SignalLabels` | Reads from CRD |
+| **Alert Annotations** (`alert.Annotations`) | ✅ Passes through → `Spec.SignalAnnotations` | Reads from CRD |
+| **Common Annotations** (`webhook.CommonAnnotations`) | ✅ Merged into `SignalAnnotations` | Reads from CRD |
+| **Namespace Name** | ✅ Extracted → `Spec.Namespace` | Reads from CRD |
+| **Pod/Resource Name** | ✅ In `SignalLabels["pod"]` | Reads from CRD |
+| **Namespace Labels** | ❌ NOT queried | ✅ Queries K8s API |
+| **Pod Labels** | ❌ NOT queried | ✅ Queries K8s API |
+| **Node Labels** | ❌ NOT queried | ✅ Queries K8s API |
+| **Deployment Labels** | ❌ NOT queried | ✅ Queries K8s API |
+
+**Rationale**:
+- Gateway targets <50ms response time; K8s API queries would add 10-50ms latency per query
+- SignalProcessing already performs K8s context enrichment (~2s) where label queries are appropriate
+- Avoids duplicate K8s API calls across services
+- Labels/annotations from alert source are sufficient for Gateway's deduplication and storm detection
+
+**What Gateway Provides in RemediationRequest CRD**:
+```yaml
+spec:
+  # ALL alert labels passed through (truncated to 63 chars per K8s limits)
+  signalLabels:
+    alertname: "HighMemoryUsage"
+    namespace: "prod-payment"
+    pod: "payment-api-789"
+    severity: "critical"
+    cluster: "prod-us-west"
+    # ... ALL labels from alert + commonLabels
+  
+  # ALL alert annotations passed through
+  signalAnnotations:
+    summary: "Container memory usage > 90%"
+    description: "Pod payment-api-789 memory at 94%"
+    runbook_url: "https://..."
+    kubernaut.io/team: "payments"  # Custom annotations preserved
+    # ... ALL annotations from alert + commonAnnotations
+```
+
+**What SignalProcessing Must Query**:
+```go
+// SignalProcessing enrichment queries K8s API for resource labels
+namespace, _ := k8sClient.Get(ctx, nsName, &corev1.Namespace{})
+nsLabels := namespace.Labels  // e.g., {"environment": "prod", "team": "platform"}
+
+pod, _ := k8sClient.Get(ctx, podName, namespace, &corev1.Pod{})
+podLabels := pod.Labels  // e.g., {"app": "payment-api", "version": "v2.1"}
+```
+
+**Implementation References**:
+- `pkg/gateway/adapters/prometheus_adapter.go`: `MergeLabels()`, `MergeAnnotations()`
+- `pkg/gateway/processing/crd_creator.go`: `SignalLabels`, `SignalAnnotations` field population
+- `api/remediation/v1alpha1/remediationrequest_types.go`: CRD spec definition
+
+---
+
 ### Signal Processing Service Categorization (Enrichment Path - ~3s)
 
 **Environment Classification** (BR-SP-051 to 053):
