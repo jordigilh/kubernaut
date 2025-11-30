@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -34,20 +33,23 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 )
 
-func TestEmbeddingClientUnit(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Embedding Client Unit Suite")
-}
+// TestEmbeddingClientUnit is commented out because this file is part of the
+// datastorage_test package and uses the main suite in suite_test.go.
+// Having multiple RunSpecs calls in the same package causes Ginkgo to fail.
+// func TestEmbeddingClientUnit(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "Embedding Client Unit Suite")
+// }
 
 var _ = Describe("Embedding Client", func() {
 	var (
-		ctx        context.Context
-		logger     *zap.Logger
-		miniRedis  *miniredis.Miniredis
+		ctx         context.Context
+		logger      *zap.Logger
+		miniRedis   *miniredis.Miniredis
 		redisClient *rediscache.Client
-		cache      *rediscache.Cache[[]float32]
-		server     *httptest.Server
-		client     embedding.Client
+		cache       *rediscache.Cache[[]float32]
+		server      *httptest.Server
+		client      embedding.Client
 	)
 
 	BeforeEach(func() {
@@ -489,4 +491,3 @@ var _ = Describe("Embedding Client", func() {
 		})
 	})
 })
-
