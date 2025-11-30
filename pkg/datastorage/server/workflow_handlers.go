@@ -17,10 +17,117 @@ import (
 // - BR-STORAGE-014: Workflow catalog management
 //
 // API Endpoints:
+// - POST /api/v1/workflows - Create a new workflow
 // - POST /api/v1/workflows/search - Semantic search for workflows
 // - GET /api/v1/workflows - List workflows with filters
 // - GET /api/v1/workflows/{id}/{version} - Get specific workflow version
 // - GET /api/v1/workflows/{id}/latest - Get latest workflow version
+
+// HandleCreateWorkflow handles POST /api/v1/workflows
+// BR-STORAGE-014: Workflow catalog management
+// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
+func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
+	// Parse request body
+	var workflow models.RemediationWorkflow
+	if err := json.NewDecoder(r.Body).Decode(&workflow); err != nil {
+		h.logger.Error(err, "Failed to decode workflow create request")
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/bad-request",
+			"Bad Request",
+			fmt.Sprintf("Invalid request body: %v", err),
+		)
+		return
+	}
+
+	// Validate required fields
+	if err := h.validateCreateWorkflowRequest(&workflow); err != nil {
+		h.logger.Error(err, "Invalid workflow create request",
+			"workflow_name", workflow.WorkflowName,
+		)
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/bad-request",
+			"Bad Request",
+			err.Error(),
+		)
+		return
+	}
+
+	// Generate embedding if not provided and embedding service is available
+	if workflow.Embedding == nil && h.embeddingService != nil {
+		// Generate embedding from workflow description and name
+		embeddingText := workflow.Name + " " + workflow.Description
+		embedding, err := h.embeddingService.GenerateEmbedding(r.Context(), embeddingText)
+		if err != nil {
+			h.logger.Info("Failed to generate embedding for workflow, continuing without embedding",
+				"workflow_name", workflow.WorkflowName,
+				"error", err.Error(),
+			)
+			// Continue without embedding - it's optional
+		} else {
+			workflow.Embedding = embedding
+		}
+	}
+
+	// Set default status if not provided
+	if workflow.Status == "" {
+		workflow.Status = "active"
+	}
+
+	// DD-WORKFLOW-002 v3.0: New workflows are always the latest version
+	// The repository will handle marking previous versions as not latest
+	workflow.IsLatestVersion = true
+
+	// Create workflow in repository
+	if err := h.workflowRepo.Create(r.Context(), &workflow); err != nil {
+		h.logger.Error(err, "Failed to create workflow",
+			"workflow_name", workflow.WorkflowName,
+			"version", workflow.Version,
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError,
+			"https://kubernaut.dev/problems/internal-error",
+			"Internal Server Error",
+			"Failed to create workflow",
+		)
+		return
+	}
+
+	// Log success
+	h.logger.Info("Workflow created successfully",
+		"workflow_id", workflow.WorkflowID,
+		"workflow_name", workflow.WorkflowName,
+		"version", workflow.Version,
+	)
+
+	// Return created workflow
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		h.logger.Error(err, "Failed to encode workflow create response")
+	}
+}
+
+// validateCreateWorkflowRequest validates the workflow create request
+func (h *Handler) validateCreateWorkflowRequest(workflow *models.RemediationWorkflow) error {
+	if workflow.WorkflowName == "" {
+		return fmt.Errorf("workflow_name is required")
+	}
+	if workflow.Version == "" {
+		return fmt.Errorf("version is required")
+	}
+	if workflow.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if workflow.Description == "" {
+		return fmt.Errorf("description is required")
+	}
+	if workflow.Content == "" {
+		return fmt.Errorf("content is required")
+	}
+	if workflow.Labels == nil {
+		return fmt.Errorf("labels is required")
+	}
+	return nil
+}
 
 // HandleWorkflowSearch handles POST /api/v1/workflows/search
 // BR-STORAGE-013: Semantic search for remediation workflows

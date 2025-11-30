@@ -24,9 +24,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -60,7 +61,7 @@ func TestDataStorageE2E(t *testing.T) {
 var (
 	ctx    context.Context
 	cancel context.CancelFunc
-	logger *zap.Logger
+	logger logr.Logger
 
 	// Cluster configuration (shared across all tests)
 	clusterName    string
@@ -87,10 +88,8 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize context for process 1
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// Initialize logger for process 1
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		// Initialize logger for process 1 (DD-005 v2.0: logr.Logger migration)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Data Storage E2E Test Suite - Cluster Setup (ONCE - Process 1)")
@@ -142,10 +141,8 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
-		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
-		logger.Info(fmt.Sprintf("  • Data Storage URL: http://localhost:8081"))
-		logger.Info(fmt.Sprintf("  • PostgreSQL URL: localhost:5432"))
+		logger.Info("Cluster configuration", "cluster", clusterName, "kubeconfig", kubeconfigPath)
+		logger.Info("Service URLs", "dataStorage", "http://localhost:8081", "postgresql", "localhost:5432")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Return kubeconfig path to all processes
@@ -156,10 +153,8 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize context
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// Initialize logger for this process
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		// Initialize logger for this process (DD-005 v2.0: logr.Logger migration)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 		// Initialize failure tracking
 		anyTestFailed = false
@@ -170,18 +165,18 @@ var _ = SynchronizedBeforeSuite(
 
 		// Set shared URLs (NodePort - no port-forwarding needed)
 		// These are exposed via Kind extraPortMappings in kind-datastorage-config.yaml
-		dataStorageURL = "http://localhost:8081" // NodePort 30081 mapped to localhost:8081
-		postgresURL = "localhost:5432"           // NodePort 30432 mapped to localhost:5432
+		dataStorageURL = "http://localhost:8081"                                                                // NodePort 30081 mapped to localhost:8081
+		postgresURL = "postgresql://slm_user:test_password@localhost:5432/action_history?sslmode=disable" // NodePort 30432 mapped to localhost:5432
 
 		processID := GinkgoParallelProcess()
 		logger.Info("🔌 Using NodePort URLs (no port-forward needed)",
-			zap.Int("process", processID),
-			zap.String("dataStorageURL", dataStorageURL),
-			zap.String("postgresURL", postgresURL))
+			"process", processID,
+			"dataStorageURL", dataStorageURL,
+			"postgresURL", postgresURL)
 
 		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests
 		// All kubectl commands must use --kubeconfig flag explicitly
-		logger.Info(fmt.Sprintf("Process %d ready - Using kubeconfig: %s", processID, kubeconfigPath))
+		logger.Info("Process ready", "process", processID, "kubeconfig", kubeconfigPath)
 	},
 )
 
@@ -197,28 +192,21 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		processID := GinkgoParallelProcess()
 		logger.Info("Process cleanup complete",
-			zap.Int("process", processID),
-			zap.Bool("hadFailures", anyTestFailed))
+			"process", processID,
+			"hadFailures", anyTestFailed)
 
 		// Cancel context for this process
 		if cancel != nil {
 			cancel()
 		}
 
-		// Sync logger for this process
-		if logger != nil {
-			_ = logger.Sync()
-		}
+		// Sync logger for this process (DD-005 v2.0: use kubelog.Sync)
+		kubelog.Sync(logger)
 	},
 	// This function runs ONCE on process 1 only (cleanup shared resources)
 	func() {
-		// Re-initialize logger for final cleanup (may have been synced)
-		var err error
-		logger, err = zap.NewDevelopment()
-		if err != nil {
-			fmt.Println("Failed to create logger for cleanup")
-			return
-		}
+		// Re-initialize logger for final cleanup (DD-005 v2.0: logr.Logger migration)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Data Storage E2E Test Suite - Cleanup (Process 1)")
@@ -231,22 +219,20 @@ var _ = SynchronizedAfterSuite(
 
 		if suiteFailed {
 			logger.Info("⚠️  Keeping cluster for debugging (KEEP_CLUSTER=true or test failed)")
-			logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
-			logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
-			logger.Info(fmt.Sprintf("  • Data Storage URL: %s", dataStorageURL))
-			logger.Info(fmt.Sprintf("  • PostgreSQL URL: %s", postgresURL))
-			logger.Info("")
-			logger.Info("To delete the cluster manually:")
-			logger.Info(fmt.Sprintf("  kind delete cluster --name %s", clusterName))
+			logger.Info("Cluster details for debugging",
+				"cluster", clusterName,
+				"kubeconfig", kubeconfigPath,
+				"dataStorageURL", dataStorageURL,
+				"postgresURL", postgresURL)
+			logger.Info("To delete the cluster manually: kind delete cluster --name " + clusterName)
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			return
 		}
 
 		// Delete Kind cluster
 		logger.Info("🗑️  Deleting Kind cluster...")
-		err = infrastructure.DeleteCluster(clusterName, GinkgoWriter)
-		if err != nil {
-			logger.Error("Failed to delete cluster", zap.Error(err))
+		if err := infrastructure.DeleteCluster(clusterName, GinkgoWriter); err != nil {
+			logger.Error(err, "Failed to delete cluster")
 		} else {
 			logger.Info("✅ Cluster deleted successfully")
 		}

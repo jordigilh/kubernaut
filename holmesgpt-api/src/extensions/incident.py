@@ -18,6 +18,7 @@ limitations under the License.
 Incident Analysis Endpoint
 
 Business Requirements: BR-HAPI-002 (Incident Analysis)
+Design Decision: DD-RECOVERY-003 (DetectedLabels for workflow filtering)
 
 Provides AI-powered Root Cause Analysis (RCA) and workflow selection for initial incidents.
 Separate from recovery.py which handles failed remediation retry scenarios.
@@ -29,7 +30,7 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status
 from datetime import datetime
 
-from src.models.incident_models import IncidentRequest, IncidentResponse
+from src.models.incident_models import IncidentRequest, IncidentResponse, DetectedLabels, EnrichmentResults
 from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 
 # HolmesGPT SDK imports
@@ -40,6 +41,109 @@ from holmes.core.investigation import investigate_issues
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ========================================
+# CLUSTER CONTEXT SECTION (DD-RECOVERY-003)
+# ========================================
+
+def _build_cluster_context_section(detected_labels: Dict[str, Any]) -> str:
+    """
+    Convert DetectedLabels to natural language for LLM context.
+
+    This helps the LLM understand the cluster environment and make
+    appropriate workflow recommendations.
+
+    Design Decision: DD-RECOVERY-003
+    """
+    if not detected_labels:
+        return "No special cluster characteristics detected."
+
+    sections = []
+
+    # GitOps
+    if detected_labels.get("gitOpsManaged"):
+        tool = detected_labels.get("gitOpsTool", "unknown")
+        sections.append(f"This namespace is managed by GitOps ({tool}). "
+                       "DO NOT make direct changes - recommend GitOps-aware workflows.")
+
+    # Protection
+    if detected_labels.get("pdbProtected"):
+        sections.append("A PodDisruptionBudget protects this workload. "
+                       "Workflows must respect PDB constraints.")
+
+    if detected_labels.get("hpaEnabled"):
+        sections.append("HorizontalPodAutoscaler is active. "
+                       "Manual scaling may conflict with HPA - prefer HPA-aware workflows.")
+
+    # Workload type
+    if detected_labels.get("stateful"):
+        sections.append("This is a STATEFUL workload (StatefulSet or has PVCs). "
+                       "Use stateful-aware remediation workflows.")
+
+    if detected_labels.get("helmManaged"):
+        sections.append("This resource is managed by Helm. "
+                       "Consider Helm-compatible workflows.")
+
+    # Security
+    if detected_labels.get("networkIsolated"):
+        sections.append("NetworkPolicy restricts traffic in this namespace. "
+                       "Workflows may need network exceptions.")
+
+    pss = detected_labels.get("podSecurityLevel", "")
+    if pss == "restricted":
+        sections.append("Pod Security Standard is RESTRICTED. "
+                       "Workflows must not require privileged access.")
+
+    mesh = detected_labels.get("serviceMesh", "")
+    if mesh:
+        sections.append(f"Service mesh ({mesh}) is present. "
+                       "Consider service mesh-aware workflows.")
+
+    return "\n".join(sections) if sections else "No special cluster characteristics detected."
+
+
+def _build_mcp_filter_instructions(detected_labels: Dict[str, Any]) -> str:
+    """
+    Build MCP workflow search filter instructions based on DetectedLabels.
+
+    Design Decision: DD-RECOVERY-003
+    """
+    if not detected_labels:
+        return ""
+
+    import json
+
+    filters = {
+        "gitops_managed": str(detected_labels.get('gitOpsManaged', False)).lower(),
+        "pdb_protected": str(detected_labels.get('pdbProtected', False)).lower(),
+        "stateful": str(detected_labels.get('stateful', False)).lower(),
+        "helm_managed": str(detected_labels.get('helmManaged', False)).lower(),
+        "gitops_tool": detected_labels.get('gitOpsTool', ''),
+        "service_mesh": detected_labels.get('serviceMesh', ''),
+        "pod_security_level": detected_labels.get('podSecurityLevel', '')
+    }
+
+    # Remove empty string values
+    filters = {k: v for k, v in filters.items() if v}
+
+    return f"""
+### MCP Workflow Search Instructions
+
+When calling the `search_workflow_catalog` MCP tool, include detected labels as filters:
+
+```json
+{{
+  "query": "<signal_type> <severity>",
+  "filters": {json.dumps(filters, indent=4)}
+}}
+```
+
+The Data Storage service will use these filters to return only workflows that are compatible
+with the detected cluster environment.
+
+**IMPORTANT**: If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.
+"""
 
 
 # Minimal DAL for HolmesGPT SDK integration (no Robusta Platform)
@@ -128,6 +232,20 @@ def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
     cluster_name = request_data.get('cluster_name', 'unknown')
     signal_source = request_data.get('signal_source', 'unknown')
     signal_labels = request_data.get('signal_labels', {})
+
+    # DetectedLabels from enrichment_results (DD-RECOVERY-003)
+    enrichment_results = request_data.get('enrichment_results', {})
+    detected_labels = {}
+    if enrichment_results:
+        # Handle both dict and EnrichmentResults model
+        if hasattr(enrichment_results, 'detectedLabels'):
+            dl = enrichment_results.detectedLabels
+            if dl:
+                detected_labels = dl.model_dump() if hasattr(dl, 'model_dump') else dl.dict() if hasattr(dl, 'dict') else dl
+        elif isinstance(enrichment_results, dict):
+            dl = enrichment_results.get('detectedLabels', {})
+            if dl:
+                detected_labels = dl.model_dump() if hasattr(dl, 'model_dump') else dl.dict() if hasattr(dl, 'dict') else dl
 
     # Generate contextual descriptions
     priority_descriptions = {
@@ -222,6 +340,20 @@ def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
             if len(affected_resources) > 5:
                 prompt += f" (and {len(affected_resources) - 5} more)"
             prompt += "\n"
+
+    # Add Cluster Environment Characteristics if DetectedLabels are available (DD-RECOVERY-003)
+    if detected_labels:
+        prompt += f"""
+## Cluster Environment Characteristics (AUTO-DETECTED)
+
+The following characteristics were automatically detected for the target resource.
+**YOU MUST include these as filters in your MCP workflow search request.**
+
+{_build_cluster_context_section(detected_labels)}
+
+{_build_mcp_filter_instructions(detected_labels)}
+
+"""
 
     # Add Business Context section
     prompt += f"""
@@ -441,13 +573,7 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
         "signal_type": request_data.get("signal_type")
     })
 
-    # Check for dev mode stub
-    dev_mode = app_config.get("dev_mode", False) if app_config else False
-    if dev_mode:
-        logger.info({"event": "dev_mode_stub_response", "incident_id": incident_id})
-        return _stub_incident_analysis(request_data)
-
-    # Production mode: Use HolmesGPT SDK
+    # Use HolmesGPT SDK for AI-powered analysis
     try:
         # Create investigation prompt
         investigation_prompt = _create_incident_investigation_prompt(request_data)
@@ -583,24 +709,6 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
     }
 
 
-def _stub_incident_analysis(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Stub response for dev mode"""
-    incident_id = request_data.get("incident_id", "unknown")
-
-    return {
-        "incident_id": incident_id,
-        "analysis": "DEV MODE: Stub incident analysis response",
-        "root_cause_analysis": {
-            "summary": "Stub RCA",
-            "severity": "medium",
-            "contributing_factors": ["Dev mode enabled"]
-        },
-        "selected_workflow": None,
-        "confidence": 0.0,
-        "timestamp": datetime.utcnow().isoformat() + "Z"
-    }
-
-
 @router.post("/incident/analyze", status_code=status.HTTP_200_OK)
 async def incident_analyze_endpoint(request: IncidentRequest):
     """
@@ -611,31 +719,6 @@ async def incident_analyze_endpoint(request: IncidentRequest):
 
     Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
     """
-    try:
-        request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
-
-        # Get MCP config and app config from router config
-        mcp_config = None
-        app_config = None
-        if hasattr(router, 'config'):
-            mcp_servers = router.config.get("mcp_servers", {})
-            if mcp_servers and "workflow_catalog_mcp" in mcp_servers:
-                workflow_mcp = mcp_servers["workflow_catalog_mcp"]
-                mcp_config = {
-                    "base_url": workflow_mcp.get("url"),
-                    "timeout": workflow_mcp.get("timeout", 30)
-                }
-            app_config = router.config
-
-        result = await analyze_incident(request_data, mcp_config=mcp_config, app_config=app_config)
-        return result
-    except Exception as e:
-        logger.error({
-            "event": "incident_analysis_failed",
-            "incident_id": request.incident_id,
-            "error": str(e)
-        })
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Incident analysis failed: {str(e)}"
-        )
+    request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
+    result = await analyze_incident(request_data)
+    return result

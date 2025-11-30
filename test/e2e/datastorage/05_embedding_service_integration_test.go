@@ -26,10 +26,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 )
 
 // Scenario 5: Embedding Service Integration - Complete Journey (P0)
@@ -67,7 +67,7 @@ import (
 var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey", Label("e2e", "embedding-service", "p0"), Ordered, func() {
 	var (
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		httpClient    *http.Client
 		testNamespace string
 		serviceURL    string
@@ -77,7 +77,7 @@ var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey",
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 20*time.Minute)
-		testLogger = logger.With(zap.String("test", "embedding-service-integration"))
+		testLogger = logger.WithValues("test", "embedding-service-integration")
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -91,7 +91,7 @@ var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey",
 		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
 		testNamespace = sharedNamespace
 		serviceURL = dataStorageURL
-		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
+		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
 		// Wait for service to be ready
 		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
@@ -125,7 +125,7 @@ var _ = Describe("Scenario 5: Embedding Service Integration - Complete Journey",
 		testLogger.Info("🧹 Cleaning up test namespace...")
 		if db != nil {
 			if err := db.Close(); err != nil {
-				testLogger.Warn("failed to close database connection", zap.Error(err))
+				testLogger.Info("warning: failed to close database connection", "error", err)
 			}
 		}
 		if testCancel != nil {
@@ -234,9 +234,9 @@ execution:
 				"Created workflow_id should be UUID format")
 
 			testLogger.Info("✅ Workflow created successfully",
-				zap.Duration("duration", createDuration),
-				zap.String("workflow_name", workflowID),
-				zap.String("workflow_id_uuid", createdUUID))
+				"duration", createDuration,
+				"workflow_name", workflowID,
+				"workflow_id_uuid", createdUUID)
 
 			// Verify embedding was generated in database (768 dimensions)
 			// DD-WORKFLOW-002 v3.0: Use workflow_name for filtering (workflow_id is UUID)
@@ -255,7 +255,7 @@ execution:
 			Expect(embeddingDims).To(Equal(768), "Embedding should be 768 dimensions (sentence-transformers/all-mpnet-base-v2)")
 
 			testLogger.Info("✅ Embedding generated automatically",
-				zap.Int("dimensions", embeddingDims))
+				"dimensions", embeddingDims)
 
 			// ========================================
 			// PHASE 2: RETRIEVE - Verify Workflow with Embedding
@@ -288,7 +288,7 @@ execution:
 			Expect(len(retrievedWorkflow.Embedding)).To(Equal(768), "Embedding should be 768 dimensions")
 
 			testLogger.Info("✅ Workflow retrieved with embedding",
-				zap.Int("embedding_dimensions", len(retrievedWorkflow.Embedding)))
+				"embedding_dimensions", len(retrievedWorkflow.Embedding))
 
 			// ========================================
 			// PHASE 3: SEARCH - Semantic Search with Embedding
@@ -347,8 +347,8 @@ execution:
 			Expect(similarity).To(BeNumerically(">", 0.0), "Similarity score should be > 0.0")
 
 			testLogger.Info("✅ Semantic search found workflow",
-				zap.Duration("duration", searchDuration),
-				zap.Float64("similarity", similarity))
+				"duration", searchDuration,
+				"similarity", similarity)
 
 			// ========================================
 			// PHASE 4: NEW VERSION - Create New Version (DD-WORKFLOW-012: Immutability)
@@ -435,7 +435,7 @@ execution:
 				fmt.Sprintf("Failed to create workflow v2: %s", string(bodyBytes)))
 
 			testLogger.Info("✅ Workflow v2.0.0 created successfully",
-				zap.Duration("duration", createV2Duration))
+				"duration", createV2Duration)
 
 			// Verify new version has its own embedding
 			// DD-WORKFLOW-002 v3.0: Use workflow_name for filtering
@@ -450,7 +450,7 @@ execution:
 			Expect(newVersionEmbeddingDims).To(Equal(768), "New version embedding should be 768 dimensions")
 
 			testLogger.Info("✅ New version embedding generated automatically",
-				zap.Int("dimensions", newVersionEmbeddingDims))
+				"dimensions", newVersionEmbeddingDims)
 
 			// Verify we now have 2 versions
 			// DD-WORKFLOW-002 v3.0: Use workflow_name for filtering

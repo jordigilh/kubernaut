@@ -29,7 +29,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
@@ -66,7 +66,7 @@ import (
 var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)", Label("e2e", "workflow-version", "p0"), Ordered, func() {
 	var (
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		httpClient    *http.Client
 		testNamespace string
 		serviceURL    string
@@ -82,7 +82,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
-		testLogger = logger.With(zap.String("test", "workflow-version-management"))
+		testLogger = logger.WithValues("test", "workflow-version-management")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -96,7 +96,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		// Use shared deployment from SynchronizedBeforeSuite
 		testNamespace = sharedNamespace
 		serviceURL = dataStorageURL
-		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
+		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
 		// Wait for service to be ready
 		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
@@ -133,7 +133,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		if db != nil {
 			_, err := db.Exec("DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1", workflowName+"%")
 			if err != nil {
-				testLogger.Warn("Failed to cleanup test workflows", zap.Error(err))
+				testLogger.Info("warning: Failed to cleanup test workflows", "error", err)
 			}
 			db.Close()
 		}
@@ -168,7 +168,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			defer resp.Body.Close()
 
 			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("Create v1.0.0 response", zap.Int("status", resp.StatusCode), zap.String("body", string(body)))
+			testLogger.Info("Create v1.0.0 response", "status", resp.StatusCode, "body", string(body))
 
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Expected 201 Created, got %d: %s", resp.StatusCode, string(body))
 
@@ -180,7 +180,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID
 			workflowV1UUID = createResp["workflow_id"].(string)
 			Expect(workflowV1UUID).ToNot(BeEmpty())
-			testLogger.Info("✅ Workflow v1.0.0 created", zap.String("uuid", workflowV1UUID))
+			testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
 
 			// Verify UUID format (8-4-4-4-12)
 			Expect(workflowV1UUID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
@@ -190,7 +190,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			err = db.QueryRow("SELECT is_latest_version FROM remediation_workflow_catalog WHERE workflow_id = $1", workflowV1UUID).Scan(&isLatest)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isLatest).To(BeTrue(), "v1.0.0 should have is_latest_version=true")
-			testLogger.Info("✅ is_latest_version verified", zap.Bool("is_latest", isLatest))
+			testLogger.Info("✅ is_latest_version verified", "is_latest", isLatest)
 		})
 
 		It("should create workflow v1.1.0 and mark v1.0.0 as not latest", func() {
@@ -218,7 +218,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			defer resp.Body.Close()
 
 			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("Create v1.1.0 response", zap.Int("status", resp.StatusCode), zap.String("body", string(body)))
+			testLogger.Info("Create v1.1.0 response", "status", resp.StatusCode, "body", string(body))
 
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -229,7 +229,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			workflowV2UUID = createResp["workflow_id"].(string)
 			Expect(workflowV2UUID).ToNot(BeEmpty())
 			Expect(workflowV2UUID).ToNot(Equal(workflowV1UUID), "v1.1.0 should have different UUID than v1.0.0")
-			testLogger.Info("✅ Workflow v1.1.0 created", zap.String("uuid", workflowV2UUID))
+			testLogger.Info("✅ Workflow v1.1.0 created", "uuid", workflowV2UUID)
 
 			// DD-WORKFLOW-012 v2.0: Verify is_latest_version management
 			// v1.0.0 should now be is_latest_version=false
@@ -245,8 +245,8 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(v2IsLatest).To(BeTrue(), "v1.1.0 should have is_latest_version=true")
 
 			testLogger.Info("✅ is_latest_version management verified",
-				zap.Bool("v1.0.0_is_latest", v1IsLatest),
-				zap.Bool("v1.1.0_is_latest", v2IsLatest))
+				"v1.0.0_is_latest", v1IsLatest,
+				"v1.1.0_is_latest", v2IsLatest)
 		})
 
 		It("should create workflow v2.0.0 and only latest version is marked", func() {
@@ -281,7 +281,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(err).ToNot(HaveOccurred())
 
 			workflowV3UUID = createResp["workflow_id"].(string)
-			testLogger.Info("✅ Workflow v2.0.0 created", zap.String("uuid", workflowV3UUID))
+			testLogger.Info("✅ Workflow v2.0.0 created", "uuid", workflowV3UUID)
 
 			// Verify only v2.0.0 is latest
 			var latestCount int
@@ -295,7 +295,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(latestUUID).To(Equal(workflowV3UUID), "v2.0.0 should be the latest version")
 
-			testLogger.Info("✅ Only v2.0.0 is marked as latest", zap.Int("latest_count", latestCount))
+			testLogger.Info("✅ Only v2.0.0 is marked as latest", "latest_count", latestCount)
 		})
 
 		It("should return flat response structure in search (DD-WORKFLOW-002 v3.0)", func() {
@@ -318,7 +318,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			defer resp.Body.Close()
 
 			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("Search response", zap.Int("status", resp.StatusCode), zap.String("body", string(body)))
+			testLogger.Info("Search response", "status", resp.StatusCode, "body", string(body))
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -361,8 +361,8 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(hasNestedWorkflow).To(BeFalse(), "Response should NOT have nested 'workflow' object")
 
 			testLogger.Info("✅ Flat response structure verified",
-				zap.String("workflow_id", workflowID),
-				zap.Any("signal_type", signalType))
+				"workflow_id", workflowID,
+				"signal_type", signalType)
 		})
 
 		It("should retrieve workflow by UUID", func() {
@@ -374,7 +374,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			defer resp.Body.Close()
 
 			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("Get workflow response", zap.Int("status", resp.StatusCode), zap.String("body", string(body)))
+			testLogger.Info("Get workflow response", "status", resp.StatusCode, "body", string(body))
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -389,7 +389,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(workflow["workflow_name"]).To(Equal(workflowName))
 			Expect(workflow["version"]).To(Equal("v2.0.0"))
 
-			testLogger.Info("✅ Workflow retrieved by UUID", zap.String("uuid", workflowV3UUID))
+			testLogger.Info("✅ Workflow retrieved by UUID", "uuid", workflowV3UUID)
 		})
 
 		It("should list all versions by workflow_name", func() {
@@ -401,7 +401,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			defer resp.Body.Close()
 
 			body, _ := io.ReadAll(resp.Body)
-			testLogger.Info("List versions response", zap.Int("status", resp.StatusCode), zap.String("body", string(body)))
+			testLogger.Info("List versions response", "status", resp.StatusCode, "body", string(body))
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -413,7 +413,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(ok).To(BeTrue(), "Response should have 'versions' array")
 			Expect(len(versions)).To(Equal(3), "Should have 3 versions (v1.0.0, v1.1.0, v2.0.0)")
 
-			testLogger.Info("✅ All versions listed", zap.Int("count", len(versions)))
+			testLogger.Info("✅ All versions listed", "count", len(versions))
 		})
 	})
 })

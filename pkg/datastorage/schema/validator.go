@@ -232,10 +232,11 @@ func (v *VersionValidator) testHNSWIndexCreation(ctx context.Context) error {
 	// Create temporary table with vector column
 	// NOTE: Use public.vector to ensure type is found when search_path is set to test schemas
 	// NOTE: IF NOT EXISTS prevents collisions when multiple tests run in parallel
+	// NOTE: 768 dimensions per migration 016
 	_, err := v.db.ExecContext(ctx, `
 		CREATE TEMP TABLE IF NOT EXISTS hnsw_validation_test (
 			id SERIAL PRIMARY KEY,
-			embedding public.vector(384)
+			embedding public.vector(768)
 		)
 	`)
 	if err != nil {

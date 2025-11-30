@@ -14,7 +14,20 @@ spec:
     singular: aianalysis
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.selectedWorkflow.confidence
+      name: Confidence
+      type: number
+    - jsonPath: .status.approvalRequired
+      name: ApprovalRequired
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: AIAnalysis is the Schema for the aianalyses API.
@@ -39,55 +52,414 @@ spec:
           spec:
             description: AIAnalysisSpec defines the desired state of AIAnalysis.
             properties:
-              includeHistory:
+              analysisRequest:
+                description: |-
+                  ========================================
+                  ANALYSIS REQUEST (DD-CONTRACT-002)
+                  ========================================
+                  Complete analysis request with structured context
+                properties:
+                  analysisTypes:
+                    description: Analysis types to perform (e.g., "investigation",
+                      "root-cause", "workflow-selection")
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                  signalContext:
+                    description: Signal context from SignalProcessing enrichment
+                    properties:
+                      businessCategory:
+                        description: Business category
+                        type: string
+                      businessPriority:
+                        description: Business priority
+                        enum:
+                        - P0
+                        - P1
+                        - P2
+                        - P3
+                        type: string
+                      enrichmentResults:
+                        description: Complete enrichment results from SignalProcessing
+                        properties:
+                          customLabels:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              Custom labels from Rego policies - CUSTOMER DEFINED
+                              Only for labels we can't auto-detect (team, cost-center, region)
+                            type: object
+                          detectedLabels:
+                            description: |-
+                              Auto-detected cluster characteristics - NO CONFIG NEEDED
+                              SignalProcessing detects these from K8s resources automatically
+                              Used by HolmesGPT-API for: workflow filtering + LLM context
+                            properties:
+                              gitOpsManaged:
+                                description: |-
+                                  ========================================
+                                  GITOPS MANAGEMENT
+                                  ========================================
+                                  True if namespace/deployment is managed by GitOps controller
+                                  Detection: ArgoCD annotations, Flux labels
+                                type: boolean
+                              gitOpsTool:
+                                description: GitOps tool managing this resource
+                                enum:
+                                - argocd
+                                - flux
+                                - ""
+                                type: string
+                              helmManaged:
+                                description: True if managed by Helm (has helm.sh/chart
+                                  label)
+                                type: boolean
+                              hpaEnabled:
+                                description: True if HorizontalPodAutoscaler targets
+                                  this workload
+                                type: boolean
+                              networkIsolated:
+                                description: |-
+                                  ========================================
+                                  SECURITY POSTURE
+                                  ========================================
+                                  True if NetworkPolicy exists in namespace
+                                type: boolean
+                              pdbProtected:
+                                description: |-
+                                  ========================================
+                                  WORKLOAD PROTECTION
+                                  ========================================
+                                  True if PodDisruptionBudget exists for this workload
+                                type: boolean
+                              podSecurityLevel:
+                                description: Pod Security Standard level from namespace
+                                  label
+                                enum:
+                                - privileged
+                                - baseline
+                                - restricted
+                                - ""
+                                type: string
+                              serviceMesh:
+                                description: Service mesh if detected (from sidecar
+                                  or namespace labels)
+                                enum:
+                                - istio
+                                - linkerd
+                                - ""
+                                type: string
+                              stateful:
+                                description: |-
+                                  ========================================
+                                  WORKLOAD CHARACTERISTICS
+                                  ========================================
+                                  True if StatefulSet or has PVCs attached
+                                type: boolean
+                            required:
+                            - gitOpsManaged
+                            - helmManaged
+                            - hpaEnabled
+                            - networkIsolated
+                            - pdbProtected
+                            - stateful
+                            type: object
+                          enrichmentQuality:
+                            description: Overall enrichment quality score (0.0-1.0)
+                            maximum: 1
+                            minimum: 0
+                            type: number
+                          kubernetesContext:
+                            description: Kubernetes resource context (pod status,
+                              node conditions, etc.)
+                            properties:
+                              namespace:
+                                type: string
+                              namespaceLabels:
+                                additionalProperties:
+                                  type: string
+                                type: object
+                              nodeDetails:
+                                description: NodeDetails contains node-level context
+                                properties:
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  name:
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              podDetails:
+                                description: PodDetails contains pod-level context
+                                properties:
+                                  creationTimestamp:
+                                    type: string
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  name:
+                                    type: string
+                                  phase:
+                                    type: string
+                                  restartCount:
+                                    format: int32
+                                    type: integer
+                                required:
+                                - creationTimestamp
+                                - name
+                                - phase
+                                - restartCount
+                                type: object
+                            required:
+                            - namespace
+                            type: object
+                        type: object
+                      environment:
+                        description: Environment classification
+                        enum:
+                        - production
+                        - staging
+                        - development
+                        type: string
+                      fingerprint:
+                        description: Signal fingerprint for correlation
+                        maxLength: 64
+                        type: string
+                      riskTolerance:
+                        description: Risk tolerance for this signal
+                        enum:
+                        - low
+                        - medium
+                        - high
+                        type: string
+                      severity:
+                        description: 'Signal severity: critical, warning, info'
+                        enum:
+                        - critical
+                        - warning
+                        - info
+                        type: string
+                      signalType:
+                        description: Signal type (e.g., OOMKilled, CrashLoopBackOff)
+                        type: string
+                      targetResource:
+                        description: Target resource identification
+                        properties:
+                          kind:
+                            description: Resource kind (e.g., Pod, Deployment, StatefulSet)
+                            type: string
+                          name:
+                            description: Resource name
+                            type: string
+                          namespace:
+                            description: Resource namespace
+                            type: string
+                        required:
+                        - kind
+                        - name
+                        - namespace
+                        type: object
+                    required:
+                    - businessPriority
+                    - enrichmentResults
+                    - environment
+                    - fingerprint
+                    - severity
+                    - signalType
+                    - targetResource
+                    type: object
+                required:
+                - analysisTypes
+                - signalContext
+                type: object
+              isRecoveryAttempt:
+                description: |-
+                  ========================================
+                  RECOVERY FIELDS (DD-RECOVERY-002)
+                  Populated by RO when this is a recovery attempt
+                  ========================================
+                  True if this AIAnalysis is for a recovery attempt (not initial incident)
                 type: boolean
-              llmModel:
-                maxLength: 253
-                type: string
-              llmProvider:
-                description: Analysis configuration
-                enum:
-                - openai
-                - anthropic
-                - local
-                - holmesgpt
-                type: string
-              maxTokens:
-                maximum: 100000
+              previousExecutions:
+                description: |-
+                  Previous execution history (only set when IsRecoveryAttempt=true)
+                  Contains details about ALL previous attempts - allows LLM to:
+                  1. Avoid repeating failed approaches
+                  2. Learn from multiple failures
+                  3. Consider re-trying earlier approaches after later failures
+                  Ordered chronologically: index 0 = first attempt, last index = most recent
+                items:
+                  description: |-
+                    PreviousExecution contains context from a failed workflow execution
+                    DD-RECOVERY-002: Used when IsRecoveryAttempt=true
+                  properties:
+                    failure:
+                      description: Structured failure information with Kubernetes
+                        reason codes
+                      properties:
+                        executionTime:
+                          description: How long the execution ran before failing (e.g.,
+                            "2m34s")
+                          type: string
+                        exitCode:
+                          description: Exit code if applicable
+                          format: int32
+                          type: integer
+                        failedAt:
+                          description: When the failure occurred
+                          format: date-time
+                          type: string
+                        failedStepIndex:
+                          description: Which step failed (0-indexed)
+                          type: integer
+                        failedStepName:
+                          description: Name of the failed step
+                          type: string
+                        message:
+                          description: Human-readable error message (for logging/debugging)
+                          type: string
+                        reason:
+                          description: |-
+                            Kubernetes reason code (e.g., OOMKilled, DeadlineExceeded)
+                            NOT natural language - structured enum-like value
+                          type: string
+                      required:
+                      - executionTime
+                      - failedAt
+                      - failedStepIndex
+                      - failedStepName
+                      - message
+                      - reason
+                      type: object
+                    originalRCA:
+                      description: Original RCA from initial AIAnalysis
+                      properties:
+                        contributingFactors:
+                          description: Contributing factors
+                          items:
+                            type: string
+                          type: array
+                        severity:
+                          description: Severity determined by original RCA
+                          type: string
+                        signalType:
+                          description: Signal type determined by original RCA
+                          type: string
+                        summary:
+                          description: Brief RCA summary
+                          type: string
+                      required:
+                      - severity
+                      - signalType
+                      - summary
+                      type: object
+                    selectedWorkflow:
+                      description: Selected workflow that was executed and failed
+                      properties:
+                        containerImage:
+                          description: Container image used
+                          type: string
+                        parameters:
+                          additionalProperties:
+                            type: string
+                          description: Parameters passed to workflow
+                          type: object
+                        rationale:
+                          description: Why this workflow was selected
+                          type: string
+                        version:
+                          description: Workflow version
+                          type: string
+                        workflowId:
+                          description: Workflow identifier
+                          type: string
+                      required:
+                      - containerImage
+                      - rationale
+                      - version
+                      - workflowId
+                      type: object
+                    workflowExecutionRef:
+                      description: Reference to the failed WorkflowExecution CRD
+                      type: string
+                  required:
+                  - failure
+                  - originalRCA
+                  - selectedWorkflow
+                  - workflowExecutionRef
+                  type: object
+                type: array
+              recoveryAttemptNumber:
+                description: Recovery attempt number (1, 2, 3...) - only set when
+                  IsRecoveryAttempt=true
                 minimum: 1
                 type: integer
+              remediationId:
+                description: Remediation ID for audit correlation (DD-WORKFLOW-002
+                  v2.2)
+                minLength: 1
+                type: string
               remediationRequestRef:
-                description: Parent reference to RemediationRequest
-                type: string
-              signalContext:
-                additionalProperties:
-                  type: string
+                description: |-
+                  ========================================
+                  PARENT REFERENCE (Audit/Lineage)
+                  ========================================
+                  Reference to parent RemediationRequest CRD for audit trail
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
                 type: object
-              signalType:
-                description: Analysis input
-                type: string
-              temperature:
-                maximum: 1
-                minimum: 0
-                type: number
+                x-kubernetes-map-type: atomic
             required:
-            - includeHistory
-            - llmModel
-            - llmProvider
-            - maxTokens
+            - analysisRequest
+            - remediationId
             - remediationRequestRef
-            - signalContext
-            - signalType
-            - temperature
             type: object
-            x-kubernetes-validations:
-            - message: Temperature must be between 0.0 and 1.0
-              rule: self.temperature >= 0.0 && self.temperature <= 1.0
           status:
             description: AIAnalysisStatus defines the observed state of AIAnalysis.
             properties:
               approvalContext:
-                description: ApprovalContext contains rich context for notifications
+                description: Rich context for approval notification
                 properties:
                   alternativesConsidered:
                     description: AlternativesConsidered with pros/cons
@@ -126,6 +498,26 @@ spec:
                   investigationSummary:
                     description: InvestigationSummary from HolmesGPT analysis
                     type: string
+                  policyEvaluation:
+                    description: PolicyEvaluation contains Rego policy evaluation
+                      details (BR-AI-030)
+                    properties:
+                      decision:
+                        description: 'Decision: approved, manual_review_required,
+                          denied'
+                        type: string
+                      matchedRules:
+                        description: Rules that matched
+                        items:
+                          type: string
+                        type: array
+                      policyName:
+                        description: Policy name that was evaluated
+                        type: string
+                    required:
+                    - decision
+                    - policyName
+                    type: object
                   reason:
                     description: Reason why approval is required
                     type: string
@@ -136,7 +528,7 @@ spec:
                         with rationale
                       properties:
                         action:
-                          description: Action type (from 29 canonical actions)
+                          description: Action type
                           type: string
                         rationale:
                           description: Rationale explaining why this action is recommended
@@ -157,42 +549,16 @@ spec:
                 - recommendedActions
                 - whyApprovalRequired
                 type: object
-              approvalDuration:
-                description: 'ApprovalDuration: time from request to decision (e.g.,
-                  "2m15s")'
+              approvalReason:
+                description: Reason why approval is required (when ApprovalRequired=true)
                 type: string
-              approvalJustification:
-                description: 'ApprovalJustification: optional operator comment'
-                type: string
-              approvalMethod:
-                description: 'ApprovalMethod: "kubectl" | "dashboard" | "slack-button"
-                  | "email-link"'
-                type: string
-              approvalRequestName:
+              approvalRequired:
                 description: |-
-                  Approval fields (BR-AI-059, BR-AI-060)
-                  ApprovalRequestName links to AIApprovalRequest CRD
-                type: string
-              approvalRequestedAt:
-                description: ApprovalRequestedAt timestamp when approval was requested
-                format: date-time
-                type: string
-              approvalStatus:
-                description: |-
-                  Approval decision tracking (BR-AI-060)
-                  ApprovalStatus: "Approved" | "Rejected" | "Pending"
-                enum:
-                - Approved
-                - Rejected
-                - Pending
-                type: string
-              approvalTime:
-                description: 'ApprovalTime: timestamp of approval decision'
-                format: date-time
-                type: string
-              approvedBy:
-                description: 'ApprovedBy: email/username of approver'
-                type: string
+                  ========================================
+                  APPROVAL SIGNALING
+                  ========================================
+                  True if approval is required (confidence < 80% or policy requires)
+                type: boolean
               completedAt:
                 format: date-time
                 type: string
@@ -253,57 +619,149 @@ spec:
                   - type
                   type: object
                 type: array
-              confidence:
-                maximum: 1
-                minimum: 0
-                type: number
               investigationId:
-                description: Investigation details
+                description: |-
+                  ========================================
+                  INVESTIGATION DETAILS
+                  ========================================
+                  HolmesGPT investigation ID for correlation
                 maxLength: 253
                 type: string
               investigationTime:
+                description: Investigation duration in seconds
                 format: int64
                 minimum: 0
                 type: integer
               message:
                 type: string
               phase:
-                description: Phase tracking
+                description: Phase tracking (no "Approving" phase - RO orchestrates
+                  approval)
                 enum:
                 - Pending
                 - Investigating
                 - Analyzing
                 - Recommending
-                - Approving
                 - Completed
                 - Failed
-                - Rejected
                 type: string
               reason:
                 type: string
-              recommendedAction:
-                type: string
-              rejectedBy:
-                description: 'RejectedBy: email/username of rejecter'
-                type: string
-              rejectionReason:
-                description: 'RejectionReason: why approval was rejected'
-                type: string
-              requiresApproval:
-                type: boolean
+              recoveryStatus:
+                description: |-
+                  ========================================
+                  RECOVERY STATUS (DD-RECOVERY-002)
+                  ========================================
+                  Recovery-specific status fields (only populated for recovery attempts)
+                properties:
+                  currentSignalType:
+                    description: Current signal type (may differ from original after
+                      failed workflow)
+                    type: string
+                  previousAttemptAssessment:
+                    description: Assessment of why previous attempt failed
+                    properties:
+                      failureReasonAnalysis:
+                        description: Analysis of why the failure occurred
+                        type: string
+                      failureUnderstood:
+                        description: Whether the failure was understood
+                        type: boolean
+                    required:
+                    - failureReasonAnalysis
+                    - failureUnderstood
+                    type: object
+                  stateChanged:
+                    description: Whether the signal type changed due to the failed
+                      workflow
+                    type: boolean
+                required:
+                - stateChanged
+                type: object
               rootCause:
-                description: Analysis results
+                description: |-
+                  ========================================
+                  ROOT CAUSE ANALYSIS RESULTS
+                  ========================================
+                  Identified root cause
                 type: string
+              rootCauseAnalysis:
+                description: Root cause analysis details
+                properties:
+                  contributingFactors:
+                    description: Contributing factors
+                    items:
+                      type: string
+                    type: array
+                  severity:
+                    description: Severity determined by RCA
+                    enum:
+                    - critical
+                    - high
+                    - medium
+                    - low
+                    type: string
+                  signalType:
+                    description: Signal type determined by RCA (may differ from input)
+                    type: string
+                  summary:
+                    description: Brief summary of root cause
+                    type: string
+                required:
+                - severity
+                - signalType
+                - summary
+                type: object
+              selectedWorkflow:
+                description: |-
+                  ========================================
+                  SELECTED WORKFLOW (DD-CONTRACT-002)
+                  ========================================
+                  Selected workflow for execution (populated when phase=Completed)
+                properties:
+                  confidence:
+                    description: Confidence score (0.0-1.0)
+                    maximum: 1
+                    minimum: 0
+                    type: number
+                  containerDigest:
+                    description: Container digest for audit trail
+                    type: string
+                  containerImage:
+                    description: Container image (OCI bundle) - resolved by HolmesGPT-API
+                    type: string
+                  parameters:
+                    additionalProperties:
+                      type: string
+                    description: Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
+                    type: object
+                  rationale:
+                    description: Rationale explaining why this workflow was selected
+                    type: string
+                  version:
+                    description: Workflow version
+                    type: string
+                  workflowId:
+                    description: Workflow identifier (catalog lookup key)
+                    type: string
+                required:
+                - confidence
+                - containerImage
+                - rationale
+                - version
+                - workflowId
+                type: object
               startedAt:
                 description: Timestamps
                 format: date-time
                 type: string
               tokensUsed:
+                description: LLM tokens consumed
                 minimum: 0
                 type: integer
             required:
+            - approvalRequired
             - phase
-            - requiresApproval
             type: object
         type: object
     served: true

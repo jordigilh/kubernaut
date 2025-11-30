@@ -193,12 +193,64 @@ type EnrichmentResults struct {
 	// Kubernetes resource context (from cluster API queries)
 	KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
 
-	// Historical signal patterns and resource usage
-	HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
+	// Auto-detected cluster characteristics - NO CONFIG NEEDED
+	// SignalProcessing auto-detects these from K8s resources
+	// Flow: SignalProcessing → AIAnalysis → HolmesGPT-API → LLM prompt + MCP workflow filter
+	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
+
+	// Custom labels from Rego policies - CUSTOMER DEFINED
+	// Only for labels we can't auto-detect (team, cost-center, region)
+	// Extracted via Rego policies during enrichment
+	CustomLabels map[string]string `json:"customLabels,omitempty"`
 
 	// Overall enrichment quality score (0.0-1.0)
 	// 1.0 = all enrichments successful, 0.0 = all failed
 	EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
+}
+
+// DetectedLabels contains auto-detected cluster characteristics
+// SignalProcessing populates these automatically from K8s resources
+// HolmesGPT-API uses for:
+//   - Natural language in LLM prompt (context)
+//   - LLM instructs model to include in MCP workflow search request (filtering)
+type DetectedLabels struct {
+	// ========================================
+	// GITOPS MANAGEMENT
+	// ========================================
+	// True if namespace/deployment is managed by GitOps controller
+	// Detection: ArgoCD annotations, Flux labels
+	GitOpsManaged bool `json:"gitOpsManaged"`
+	// GitOps tool managing this resource
+	// +kubebuilder:validation:Enum=argocd;flux;""
+	GitOpsTool string `json:"gitOpsTool,omitempty"`
+
+	// ========================================
+	// WORKLOAD PROTECTION
+	// ========================================
+	// True if PodDisruptionBudget exists for this workload
+	PDBProtected bool `json:"pdbProtected"`
+	// True if HorizontalPodAutoscaler targets this workload
+	HPAEnabled bool `json:"hpaEnabled"`
+
+	// ========================================
+	// WORKLOAD CHARACTERISTICS
+	// ========================================
+	// True if StatefulSet or has PVCs attached
+	Stateful bool `json:"stateful"`
+	// True if managed by Helm (has helm.sh/chart label)
+	HelmManaged bool `json:"helmManaged"`
+
+	// ========================================
+	// SECURITY POSTURE
+	// ========================================
+	// True if NetworkPolicy exists in namespace
+	NetworkIsolated bool `json:"networkIsolated"`
+	// Pod Security Standard level from namespace label
+	// +kubebuilder:validation:Enum=privileged;baseline;restricted;""
+	PodSecurityLevel string `json:"podSecurityLevel,omitempty"`
+	// Service mesh if detected (from sidecar or namespace labels)
+	// +kubebuilder:validation:Enum=istio;linkerd;""
+	ServiceMesh string `json:"serviceMesh,omitempty"`
 }
 
 // KubernetesContext contains Kubernetes resource context (~8KB typical size)
@@ -309,23 +361,6 @@ type ConfigMapSummary struct {
 	Keys []string `json:"keys"` // ConfigMap key names (not full data)
 }
 
-// HistoricalContext contains historical signal patterns and resource usage
-// DD-CONTRACT-002: Structured historical data for AI analysis
-type HistoricalContext struct {
-	// Historical signal patterns
-	PreviousSignals     int     `json:"previousSignals"`
-	LastSignalTimestamp string  `json:"lastSignalTimestamp,omitempty"`
-	SignalFrequency     float64 `json:"signalFrequency"` // signals per hour
-
-	// Historical resource usage
-	AverageMemoryUsage string `json:"averageMemoryUsage,omitempty"` // e.g., "3.2Gi"
-	AverageCPUUsage    string `json:"averageCPUUsage,omitempty"`    // e.g., "1.5 cores"
-
-	// Historical success rate
-	LastSuccessfulResolution string  `json:"lastSuccessfulResolution,omitempty"`
-	ResolutionSuccessRate    float64 `json:"resolutionSuccessRate"` // 0.0-1.0
-}
-
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
@@ -351,4 +386,3 @@ type SignalProcessingList struct {
 func init() {
 	SchemeBuilder.Register(&SignalProcessing{}, &SignalProcessingList{})
 }
-

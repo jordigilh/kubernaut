@@ -1,47 +1,40 @@
 # HolmesGPT API Service - Documentation Hub
 
-**Version**: v3.1 (Pending Production Enhancements)
-**Last Updated**: 2025-11-01
+**Version**: v3.2 (Production Ready)
+**Last Updated**: 2025-11-30
 **Service Type**: Stateless HTTP API (Python)
-**Status**: 🟡 **INCOMPLETE** - 2 Production Blockers (See Pending Enhancements below)
+**Status**: ✅ **PRODUCTION READY** - All blockers resolved
 
 ---
 
-## 🚧 **PENDING PRODUCTION ENHANCEMENTS**
+## ✅ **PRODUCTION ENHANCEMENTS - COMPLETED**
 
-**Status**: 🟡 **2 Blockers** - Core functionality complete, production patterns pending
+**Status**: ✅ **All Blockers Resolved** - Service is production ready
 
-### **Blocker 1: RFC 7807 Error Response Standard**
-- **Requirement**: Implement RFC 7807 Problem Details for HTTP APIs
-- **Current State**: Service returns generic JSON error responses
-- **Target State**: Structured error responses following RFC 7807 standard
-- **Priority**: P0 (Production Standard)
+### **Blocker 1: RFC 7807 Error Response Standard** ✅ RESOLVED
+- **Implementation**: `src/middleware/rfc7807.py` + `src/errors.py`
+- **Features**:
+  - Full RFC 7807 Problem Details format with `application/problem+json` content type
+  - Error type URIs (`https://kubernaut.io/errors/*`)
+  - Prometheus metrics integration for error tracking
+  - Handles RequestValidationError, HTTPException, StarletteHTTPException
 - **Design Reference**: [DD-004: RFC 7807 Error Response Standard](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md)
-- **Estimated Effort**: 2-3 hours
-- **Dependencies**: None
-- **Impact**: Consistent error handling across all Kubernaut services
+- **Business Requirement**: BR-HAPI-200
 
-### **Blocker 2: Kubernetes-Aware Graceful Shutdown**
-- **Requirement**: Implement 4-step graceful shutdown pattern (DD-007)
-- **Current State**: Service stops immediately on SIGTERM
-- **Target State**: Graceful termination with connection draining
-- **Priority**: P0 (Production Reliability)
+### **Blocker 2: Kubernetes-Aware Graceful Shutdown** ✅ RESOLVED
+- **Implementation**: `src/main.py` (lines 52-96) + `src/extensions/health.py`
+- **Features**:
+  - SIGTERM/SIGINT signal handlers
+  - `is_shutting_down` global flag for readiness probe coordination
+  - Readiness probe returns 503 during shutdown (DD-007 pattern)
+  - Structured logging for shutdown events
 - **Design Reference**: [DD-007: Kubernetes-Aware Graceful Shutdown](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)
-- **Estimated Effort**: 3-4 hours
-- **Dependencies**: None
-- **Impact**: Zero-downtime deployments, reliable rolling updates
+- **Business Requirement**: BR-HAPI-201
 
-### **Blocker 3: Context API Integration (Dependency)**
-- **Requirement**: Integrate with Context API via LLM tool calls
-- **Current State**: Context API uses direct PostgreSQL queries (anti-pattern)
-- **Target State**: Context API exposed via OpenAPI, HolmesGPT consumes as tool
-- **Priority**: P0 (Architecture Compliance)
-- **Design Reference**: [DD-CONTEXT-003: LLM-Driven Tool Call Pattern](../../../architecture/decisions/DD-CONTEXT-003-Context-Enrichment-Placement.md)
-- **Estimated Effort**: 4-6 hours (after Context API migration complete)
-- **Dependencies**: ⏸️ **Context API Migration** (IN PROGRESS)
-- **Impact**: AI-driven historical context enrichment for investigations
-
-**Resume After**: Context API migration to Data Storage Service complete
+### **Blocker 3: Context API Integration** ✅ NO LONGER A BLOCKER
+- **Status**: Context API has been deprecated (DD-CONTEXT-006)
+- **Resolution**: Historical context functionality consolidated into Data Storage Service
+- **Impact**: No integration work required for v1.0
 
 ---
 
@@ -49,7 +42,7 @@
 
 ### **Request 1: Recovery Prompt Implementation** (From AIAnalysis Team)
 
-**Status**: 🟡 **PENDING** - Implementation required for AIAnalysis recovery flow
+**Status**: 🟢 **IN PROGRESS** - Implementation active
 
 **Handoff Document**: [HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md](../../crd-controllers/02-aianalysis/HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md)
 
@@ -62,14 +55,17 @@
 - Implement `_create_recovery_investigation_prompt()` with failure context
 - Add Kubernetes reason code guidance map
 - Update response parsing for recovery-specific fields
+- Handle DetectedLabels for workflow filtering
 
-**Estimated Effort**: 2-3 days
+**Estimated Effort**: 3-4 days
 
 **Files to Modify**:
-- `src/models/recovery_models.py`
-- `src/extensions/recovery.py`
-- `tests/unit/test_recovery_*.py`
-- `tests/integration/test_recovery_endpoint.py`
+- `src/models/recovery_models.py` - Add PreviousExecution, OriginalRCA, SelectedWorkflowSummary, ExecutionFailure
+- `src/models/incident_models.py` - Add DetectedLabels, EnrichmentResults
+- `src/extensions/recovery.py` - Recovery prompt generation with failure context
+- `src/extensions/incident.py` - Cluster context section for DetectedLabels
+- `tests/unit/test_recovery_*.py` - Unit tests
+- `tests/integration/test_recovery_endpoint.py` - Integration tests
 
 ---
 
@@ -446,38 +442,38 @@ spec:
 | **v2.0** | Oct 16, 2025 | Token optimization (290 tokens, $2.24M savings, 185 BRs) | ⚠️ Superseded |
 | **v2.1** | Oct 16, 2025 | Safety endpoint removal (185 BRs) | ⚠️ Superseded |
 | **v3.0** | Oct 17, 2025 | Minimal Internal Service (45 BRs, 104 tests, 100% passing) | ⚠️ Superseded |
-| **v3.1** | Nov 01, 2025 | **Production blockers identified: RFC7807 + Graceful Shutdown + Context API integration** | 🟡 **INCOMPLETE** |
+| **v3.1** | Nov 01, 2025 | Production blockers identified: RFC7807 + Graceful Shutdown + Context API | ⚠️ Superseded |
+| **v3.2** | Nov 30, 2025 | **All blockers resolved - Production Ready** | ✅ **CURRENT** |
 
 ---
 
-## 📝 Changelog (v3.1 - November 1, 2025)
+## 📝 Changelog (v3.2 - November 30, 2025)
 
-### **Pending Enhancements** (Blocking Production Deployment)
+### **Resolved Production Blockers**
 
-1. **RFC 7807 Error Response Standard** (P0)
-   - Implement structured error responses per DD-004
-   - Estimated: 2-3 hours
-   - No dependencies
+1. **RFC 7807 Error Response Standard** ✅ RESOLVED
+   - Implemented `src/middleware/rfc7807.py` with full RFC 7807 support
+   - Error types, Prometheus metrics, proper content-type headers
+   - BR-HAPI-200 satisfied
 
-2. **Kubernetes-Aware Graceful Shutdown** (P0)
-   - Implement 4-step shutdown pattern per DD-007
-   - Estimated: 3-4 hours
-   - No dependencies
+2. **Kubernetes-Aware Graceful Shutdown** ✅ RESOLVED
+   - Implemented in `src/main.py` with signal handlers
+   - Readiness probe coordination in `src/extensions/health.py`
+   - BR-HAPI-201 satisfied
 
-3. **Context API Integration** (P0 - Dependency)
-   - Wait for Context API migration to Data Storage Service
-   - Implement Context API OpenAPI client generation
-   - Expose Context API as LLM tool per DD-CONTEXT-003
-   - Estimated: 4-6 hours (after Context API ready)
-   - **Dependency**: ⏸️ Context API migration (IN PROGRESS)
+3. **Context API Integration** ✅ NO LONGER A BLOCKER
+   - Context API deprecated (DD-CONTEXT-006)
+   - Historical context consolidated into Data Storage Service
 
-**Total Estimated Effort**: 9-13 hours (6-7 hours immediate, 4-6 hours after Context API)
+### **In Progress: AIAnalysis Team Handoff**
 
-**Resume Trigger**: Context API migration complete → Generate OpenAPI client → Implement tool integration
+- Recovery prompt enhancements (DD-RECOVERY-002, DD-RECOVERY-003)
+- DetectedLabels integration for workflow filtering
+- See: `HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md`
 
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: 2025-11-01
-**Status**: 🟡 **INCOMPLETE** - 3 Production Blockers Identified
-**Confidence**: 92% (core functionality complete, patterns pending)
+**Last Updated**: 2025-11-30
+**Status**: ✅ **PRODUCTION READY** - All blockers resolved
+**Confidence**: 98% (production-ready with active feature development)

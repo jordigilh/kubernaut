@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
 	"github.com/jmoiron/sqlx"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
@@ -59,7 +60,7 @@ var (
 	redisClient       *redis.Client
 	repo              *repository.NotificationAuditRepository
 	dlqClient         *dlq.Client
-	logger            *zap.Logger
+	logger            logr.Logger
 	ctx               context.Context
 	cancel            context.CancelFunc
 	postgresContainer = "datastorage-postgres-test"
@@ -71,7 +72,7 @@ var (
 
 	// BR-STORAGE-014: Embedding service integration
 	embeddingServer *httptest.Server // Mock embedding service
-	embeddingClient embedding.Service
+	embeddingClient embedding.Client
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -415,10 +416,12 @@ var _ = SynchronizedBeforeSuite(
 
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// Setup logger
+		// Setup logger (DD-005 v2.0: logr.Logger migration)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
+
+		// Declare err for use in subsequent operations
 		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		_ = err // Suppress unused warning until used
 
 		// Parse service URL from process 1
 		datastorageURL = string(data)

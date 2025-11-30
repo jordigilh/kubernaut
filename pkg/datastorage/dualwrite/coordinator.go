@@ -30,7 +30,7 @@ import (
 
 const (
 	// RequiredEmbeddingDimension is the required embedding vector dimension
-	RequiredEmbeddingDimension = 384
+	RequiredEmbeddingDimension = 768 // Per migration 016
 )
 
 // Coordinator orchestrates dual-write operations to PostgreSQL and Vector DB.

@@ -297,36 +297,92 @@ spec:
                   Structured enrichment results (DD-CONTRACT-002)
                   Replaces ContextData map[string]string anti-pattern
                 properties:
+                  customLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Custom labels from Rego policies - CUSTOMER DEFINED
+                      Only for labels we can't auto-detect (team, cost-center, region)
+                      Extracted via Rego policies during enrichment
+                    type: object
+                  detectedLabels:
+                    description: |-
+                      Auto-detected cluster characteristics - NO CONFIG NEEDED
+                      SignalProcessing auto-detects these from K8s resources
+                      Flow: SignalProcessing → AIAnalysis → HolmesGPT-API → LLM prompt + MCP workflow filter
+                    properties:
+                      gitOpsManaged:
+                        description: |-
+                          ========================================
+                          GITOPS MANAGEMENT
+                          ========================================
+                          True if namespace/deployment is managed by GitOps controller
+                          Detection: ArgoCD annotations, Flux labels
+                        type: boolean
+                      gitOpsTool:
+                        description: GitOps tool managing this resource
+                        enum:
+                        - argocd
+                        - flux
+                        - ""
+                        type: string
+                      helmManaged:
+                        description: True if managed by Helm (has helm.sh/chart label)
+                        type: boolean
+                      hpaEnabled:
+                        description: True if HorizontalPodAutoscaler targets this
+                          workload
+                        type: boolean
+                      networkIsolated:
+                        description: |-
+                          ========================================
+                          SECURITY POSTURE
+                          ========================================
+                          True if NetworkPolicy exists in namespace
+                        type: boolean
+                      pdbProtected:
+                        description: |-
+                          ========================================
+                          WORKLOAD PROTECTION
+                          ========================================
+                          True if PodDisruptionBudget exists for this workload
+                        type: boolean
+                      podSecurityLevel:
+                        description: Pod Security Standard level from namespace label
+                        enum:
+                        - privileged
+                        - baseline
+                        - restricted
+                        - ""
+                        type: string
+                      serviceMesh:
+                        description: Service mesh if detected (from sidecar or namespace
+                          labels)
+                        enum:
+                        - istio
+                        - linkerd
+                        - ""
+                        type: string
+                      stateful:
+                        description: |-
+                          ========================================
+                          WORKLOAD CHARACTERISTICS
+                          ========================================
+                          True if StatefulSet or has PVCs attached
+                        type: boolean
+                    required:
+                    - gitOpsManaged
+                    - helmManaged
+                    - hpaEnabled
+                    - networkIsolated
+                    - pdbProtected
+                    - stateful
+                    type: object
                   enrichmentQuality:
                     description: |-
                       Overall enrichment quality score (0.0-1.0)
                       1.0 = all enrichments successful, 0.0 = all failed
                     type: number
-                  historicalContext:
-                    description: Historical signal patterns and resource usage
-                    properties:
-                      averageCPUUsage:
-                        type: string
-                      averageMemoryUsage:
-                        description: Historical resource usage
-                        type: string
-                      lastSignalTimestamp:
-                        type: string
-                      lastSuccessfulResolution:
-                        description: Historical success rate
-                        type: string
-                      previousSignals:
-                        description: Historical signal patterns
-                        type: integer
-                      resolutionSuccessRate:
-                        type: number
-                      signalFrequency:
-                        type: number
-                    required:
-                    - previousSignals
-                    - resolutionSuccessRate
-                    - signalFrequency
-                    type: object
                   kubernetesContext:
                     description: Kubernetes resource context (from cluster API queries)
                     properties:

@@ -26,9 +26,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
@@ -59,13 +59,13 @@ var _ = Describe("Server Wiring Integration Tests", Label("integration", "server
 	var (
 		testServer   *httptest.Server
 		httpClient   *http.Client
-		testLogger   *zap.Logger
+		testLogger   logr.Logger
 		testID       string
 		serverConfig server.Config
 	)
 
 	BeforeAll(func() {
-		testLogger = logger.With(zap.String("test", "server-wiring"))
+		testLogger = logger.WithValues("test", "server-wiring")
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 		testID = generateTestID()
 
@@ -114,9 +114,9 @@ var _ = Describe("Server Wiring Integration Tests", Label("integration", "server
 		os.Setenv("EMBEDDING_SERVICE_URL", embeddingURL)
 
 		testLogger.Info("Server configuration",
-			zap.String("db_conn", "***"),
-			zap.String("redis_addr", redisAddr),
-			zap.String("embedding_url", embeddingURL))
+			"db_conn", "***",
+			"redis_addr", redisAddr,
+			"embedding_url", embeddingURL)
 
 		// Create the real server using NewServer()
 		// This is the critical test - we're testing the wiring in server.go
@@ -126,7 +126,7 @@ var _ = Describe("Server Wiring Integration Tests", Label("integration", "server
 
 		// Create httptest server with the real handler
 		testServer = httptest.NewServer(realServer.Handler())
-		testLogger.Info("Test server started", zap.String("url", testServer.URL))
+		testLogger.Info("Test server started", "url", testServer.URL)
 	})
 
 	AfterAll(func() {
@@ -268,13 +268,13 @@ execution:
 					Expect(embeddingDims).To(Equal(768),
 						"Embedding should be 768 dimensions (real service)")
 					testLogger.Info("✅ Embedding dimensions correct - real embedding client is wired",
-						zap.Int("dimensions", embeddingDims))
+						"dimensions", embeddingDims)
 				}
 			}
 
 			testLogger.Info("Workflow creation response",
-				zap.Int("status", resp.StatusCode),
-				zap.String("body", string(bodyBytes)))
+				"status", resp.StatusCode,
+				"body", string(bodyBytes))
 		})
 
 		It("should generate embedding when searching workflows", func() {
@@ -320,8 +320,8 @@ execution:
 			}
 
 			testLogger.Info("Search response",
-				zap.Int("status", resp.StatusCode),
-				zap.String("body", string(bodyBytes)))
+				"status", resp.StatusCode,
+				"body", string(bodyBytes))
 		})
 	})
 

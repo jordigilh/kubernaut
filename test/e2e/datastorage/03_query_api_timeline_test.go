@@ -24,9 +24,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
@@ -64,7 +64,7 @@ import (
 var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Label("e2e", "query-api", "p0"), Ordered, func() {
 	var (
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		httpClient    *http.Client
 		testNamespace string
 		serviceURL    string
@@ -74,7 +74,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
-		testLogger = logger.With(zap.String("test", "query-api"))
+		testLogger = logger.WithValues("test", "query-api")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -85,7 +85,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
 		testNamespace = sharedNamespace
 		serviceURL = dataStorageURL
-		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
+		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
@@ -96,7 +96,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 			}
 			defer func() {
 				if err := resp.Body.Close(); err != nil {
-					testLogger.Error("failed to close response body", zap.Error(err))
+					testLogger.Error(err, "failed to close response body")
 				}
 			}()
 			if resp.StatusCode != http.StatusOK {
@@ -110,7 +110,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		correlationID = fmt.Sprintf("query-test-%s", testNamespace)
 		startTime = time.Now()
 
-		testLogger.Info("✅ Test services ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test services ready", "namespace", testNamespace)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -151,7 +151,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 			resp := postAuditEvent(httpClient, serviceURL, event)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 			time.Sleep(100 * time.Millisecond) // Small delay to ensure chronological order
 		}
@@ -177,7 +177,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 			resp := postAuditEvent(httpClient, serviceURL, event)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -203,7 +203,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 			resp := postAuditEvent(httpClient, serviceURL, event)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -216,7 +216,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 		}()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -230,7 +230,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		// Note: Self-auditing may add extra events (datastorage.audit.written)
 		// We expect at least 10 events (the ones we created), but may have more
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events")
-		testLogger.Info("✅ Query by correlation_id returned events", zap.Int("count", len(data)))
+		testLogger.Info("✅ Query by correlation_id returned events", "count", len(data))
 
 		// Step 3: Query by service=gateway → verify only Gateway events returned
 		testLogger.Info("🔍 Step 3: Query by service=gateway...")
@@ -238,7 +238,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 		}()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -263,7 +263,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 		}()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -290,7 +290,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 		}()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -301,7 +301,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		data, ok = queryResponse["data"].([]interface{})
 		Expect(ok).To(BeTrue())
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events within time range")
-		testLogger.Info("✅ Query by time_range returned events", zap.Int("count", len(data)))
+		testLogger.Info("✅ Query by time_range returned events", "count", len(data))
 
 		// Step 6: Query with pagination (limit=5, offset=0) → verify first 5 events
 		testLogger.Info("🔍 Step 6: Query with pagination (limit=5, offset=0)...")
@@ -309,7 +309,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 		}()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -331,7 +331,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 		}()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -354,7 +354,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				testLogger.Error("failed to close response body", zap.Error(err))
+				testLogger.Error(err, "failed to close response body")
 			}
 		}()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))

@@ -77,9 +77,13 @@ type AIAnalysisSpec struct {
     // ... existing fields ...
 
     // Recovery fields (populated by RO when IsRecoveryAttempt=true)
-    IsRecoveryAttempt     bool             `json:"isRecoveryAttempt,omitempty"`
-    RecoveryAttemptNumber int              `json:"recoveryAttemptNumber,omitempty"`
-    PreviousExecution     *PreviousExecution `json:"previousExecution,omitempty"`
+    IsRecoveryAttempt     bool               `json:"isRecoveryAttempt,omitempty"`
+    RecoveryAttemptNumber int                `json:"recoveryAttemptNumber,omitempty"`
+
+    // SLICE of ALL previous executions (allows LLM to see complete history)
+    // Ordered chronologically: index 0 = first attempt, last index = most recent
+    // LLM can: avoid repeating failures, learn from patterns, retry earlier approaches
+    PreviousExecutions    []PreviousExecution `json:"previousExecutions,omitempty"`
 
     // Enriched context (copied from original SignalProcessing)
     // Used for BOTH initial and recovery attempts
@@ -147,12 +151,12 @@ type ExecutionFailure struct {
 ```go
 func (r *AIAnalysisReconciler) callHolmesGPT(ctx context.Context, analysis *v1alpha1.AIAnalysis) (*HolmesGPTResponse, error) {
     if analysis.Spec.IsRecoveryAttempt {
-        // Recovery: Call /recovery/analyze with failure context
+        // Recovery: Call /recovery/analyze with ALL previous execution history
         return r.holmesGPTClient.RecoveryAnalyze(ctx, &RecoveryRequest{
-            IncidentID:        analysis.Spec.IncidentID,
-            RemediationID:     analysis.Spec.RemediationID,
-            EnrichmentResults: analysis.Spec.EnrichmentResults,
-            PreviousExecution: analysis.Spec.PreviousExecution,
+            IncidentID:            analysis.Spec.IncidentID,
+            RemediationID:         analysis.Spec.RemediationID,
+            EnrichmentResults:     analysis.Spec.EnrichmentResults,
+            PreviousExecutions:    analysis.Spec.PreviousExecutions, // Full history
             RecoveryAttemptNumber: analysis.Spec.RecoveryAttemptNumber,
         })
     }
@@ -202,28 +206,47 @@ func (r *RemediationOrchestratorReconciler) handleWorkflowFailure(
             // Reuse original enriched context
             EnrichmentResults: originalSP.Status.EnrichmentResults,
 
-            // Add failure context
-            PreviousExecution: &v1alpha1.PreviousExecution{
-                WorkflowExecutionRef: failedWE.Name,
-                OriginalRCA: v1alpha1.RCAResult{
-                    Summary:             originalAI.Status.RootCauseAnalysis.Summary,
-                    Severity:            originalAI.Status.RootCauseAnalysis.Severity,
-                    SignalType:          originalAI.Status.RootCauseAnalysis.SignalType,
-                    ContributingFactors: originalAI.Status.RootCauseAnalysis.ContributingFactors,
-                },
-                SelectedWorkflow: v1alpha1.SelectedWorkflowSummary{
-                    WorkflowID:     failedWE.Spec.WorkflowID,
-                    Version:        failedWE.Spec.Version,
-                    ContainerImage: failedWE.Spec.ContainerImage,
-                    Parameters:     failedWE.Spec.Parameters,
-                    Rationale:      originalAI.Status.SelectedWorkflow.Rationale,
-                },
-                Failure: extractFailureContext(failedWE),
-            },
+            // Build COMPLETE history of all previous executions
+            // This gives LLM full context to avoid repeating failures
+            PreviousExecutions: r.buildExecutionHistory(originalAI, failedWE),
         },
     }
 
     return r.Create(ctx, recoveryAI)
+}
+
+// buildExecutionHistory creates a chronologically ordered slice of all previous attempts
+// Index 0 = first attempt, last index = most recent failed attempt
+func (r *RemediationOrchestratorReconciler) buildExecutionHistory(
+    originalAI *v1alpha1.AIAnalysis,
+    failedWE *v1alpha1.WorkflowExecution,
+) []v1alpha1.PreviousExecution {
+    // Start with any existing history from previous recovery AIAnalysis
+    var history []v1alpha1.PreviousExecution
+    if originalAI.Spec.IsRecoveryAttempt && len(originalAI.Spec.PreviousExecutions) > 0 {
+        history = append(history, originalAI.Spec.PreviousExecutions...)
+    }
+
+    // Append the current failed execution
+    history = append(history, v1alpha1.PreviousExecution{
+        WorkflowExecutionRef: failedWE.Name,
+        OriginalRCA: v1alpha1.RCAResult{
+            Summary:             originalAI.Status.RootCauseAnalysis.Summary,
+            Severity:            originalAI.Status.RootCauseAnalysis.Severity,
+            SignalType:          originalAI.Status.RootCauseAnalysis.SignalType,
+            ContributingFactors: originalAI.Status.RootCauseAnalysis.ContributingFactors,
+        },
+        SelectedWorkflow: v1alpha1.SelectedWorkflowSummary{
+            WorkflowID:     failedWE.Spec.WorkflowID,
+            Version:        failedWE.Spec.Version,
+            ContainerImage: failedWE.Spec.ContainerImage,
+            Parameters:     failedWE.Spec.Parameters,
+            Rationale:      originalAI.Status.SelectedWorkflow.Rationale,
+        },
+        Failure: extractFailureContext(failedWE),
+    })
+
+    return history
 }
 
 func extractFailureContext(we *v1alpha1.WorkflowExecution) v1alpha1.ExecutionFailure {

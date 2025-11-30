@@ -110,7 +110,7 @@ func (p *Parser) Validate(schema *models.WorkflowSchema) error {
 		return models.NewSchemaValidationError("metadata.description", "description is required")
 	}
 
-	// Validate Labels (DD-WORKFLOW-001 mandatory labels)
+	// Validate Labels (DD-WORKFLOW-001 v1.3: 6 mandatory labels)
 	if err := schema.Labels.ValidateMandatoryLabels(); err != nil {
 		return err
 	}

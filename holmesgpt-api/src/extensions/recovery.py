@@ -29,7 +29,11 @@ import re
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, status
 
-from src.models.recovery_models import RecoveryRequest, RecoveryResponse, RecoveryStrategy
+from src.models.recovery_models import (
+    RecoveryRequest, RecoveryResponse, RecoveryStrategy,
+    PreviousExecution, OriginalRCA, SelectedWorkflowSummary, ExecutionFailure
+)
+from src.models.incident_models import DetectedLabels, EnrichmentResults
 # NOTE: WorkflowCatalogToolset is registered via register_workflow_catalog_toolset()
 # and used by the LLM during investigation - no direct import needed here
 
@@ -129,7 +133,470 @@ class MinimalDAL:
         """
         return None
 
+
+# ========================================
+# FAILURE REASON GUIDANCE (DD-RECOVERY-003)
+# ========================================
+
+def _get_failure_reason_guidance(reason: str) -> str:
+    """
+    Provide reason-specific recovery guidance based on Kubernetes reason codes.
+
+    These are canonical Kubernetes reason codes - the API contract between
+    WorkflowExecution status and AIAnalysis recovery.
+
+    Design Decision: DD-RECOVERY-003
+    """
+    guidance_map = {
+        # Resource-related failures
+        "OOMKilled": """
+  - Container exceeded memory limits during remediation
+  - Consider: Workflow with lower memory footprint, or scale resources first
+  - Alternative: Gradual remediation instead of aggressive action
+""",
+        "InsufficientCPU": """
+  - Not enough CPU available to execute remediation
+  - Consider: Wait for resources, or request resource increase first
+  - Alternative: Lower-priority workflow that uses less CPU
+""",
+        "InsufficientMemory": """
+  - Not enough memory available in cluster
+  - Consider: Evict lower-priority workloads first, or use smaller workflow
+  - Alternative: Remediation that doesn't require additional memory
+""",
+
+        # Scheduling failures
+        "FailedScheduling": """
+  - Kubernetes scheduler couldn't place the remediation pod
+  - Consider: Node affinity issues, resource constraints, or taints
+  - Alternative: Workflow that can run on different nodes
+""",
+        "Unschedulable": """
+  - Pod marked as unschedulable
+  - Consider: Check node conditions, tolerations, and affinity rules
+  - Alternative: Workflow that removes scheduling constraints
+""",
+
+        # Image-related failures
+        "ImagePullBackOff": """
+  - Could not pull workflow container image
+  - Consider: Image doesn't exist, registry auth, network issues
+  - Alternative: Workflow with different container image
+""",
+        "ErrImagePull": """
+  - Failed to pull container image
+  - Consider: Check image name, tag, and registry access
+  - Alternative: Use cached image or different workflow
+""",
+
+        # Execution failures
+        "DeadlineExceeded": """
+  - Workflow execution exceeded time limit
+  - Consider: Task taking longer than expected, or stuck
+  - Alternative: Workflow with longer timeout, or faster approach
+""",
+        "BackoffLimitExceeded": """
+  - Workflow exceeded retry attempts
+  - Consider: Persistent failure, requires different approach
+  - Alternative: Completely different remediation strategy
+""",
+        "Error": """
+  - Generic execution error
+  - Consider: Check logs for specific error details
+  - Alternative: Based on error message analysis
+""",
+
+        # Permission failures
+        "Unauthorized": """
+  - Workflow lacks required permissions
+  - Consider: RBAC configuration, service account permissions
+  - Alternative: Workflow that doesn't require elevated permissions
+""",
+        "Forbidden": """
+  - Action forbidden by security policy
+  - Consider: PodSecurityPolicy, NetworkPolicy, or admission controller
+  - Alternative: Workflow that complies with security policies
+""",
+
+        # Volume/Storage failures
+        "FailedMount": """
+  - Could not mount required volume
+  - Consider: PVC issues, storage class problems, or capacity
+  - Alternative: Workflow that doesn't require persistent storage
+""",
+        "FailedAttachVolume": """
+  - Could not attach volume to node
+  - Consider: Volume already attached elsewhere, or node issues
+  - Alternative: Workflow that uses different storage approach
+""",
+
+        # Network failures
+        "NetworkNotReady": """
+  - Network not available for pod
+  - Consider: CNI issues, network policy blocking
+  - Alternative: Workflow that can work with limited network
+""",
+
+        # Node failures
+        "NodeNotReady": """
+  - Node became unavailable during execution
+  - Consider: Node health issues, draining, or cordoning
+  - Alternative: Workflow that can run on different nodes
+""",
+        "Evicted": """
+  - Pod was evicted during execution
+  - Consider: Resource pressure on node
+  - Alternative: Workflow with resource requests/limits, or different node
+""",
+    }
+
+    return guidance_map.get(reason, f"""
+  - Kubernetes reason: `{reason}`
+  - Investigate the specific failure mode
+  - Search for workflows that handle this condition
+""")
+
+
+# ========================================
+# CLUSTER CONTEXT SECTION (DD-RECOVERY-003)
+# ========================================
+
+def _build_cluster_context_section(detected_labels: Dict[str, Any]) -> str:
+    """
+    Convert DetectedLabels to natural language for LLM context.
+
+    This helps the LLM understand the cluster environment and make
+    appropriate workflow recommendations.
+
+    Design Decision: DD-RECOVERY-003
+    """
+    if not detected_labels:
+        return "No special cluster characteristics detected."
+
+    sections = []
+
+    # GitOps
+    if detected_labels.get("gitOpsManaged"):
+        tool = detected_labels.get("gitOpsTool", "unknown")
+        sections.append(f"This namespace is managed by GitOps ({tool}). "
+                       "DO NOT make direct changes - recommend GitOps-aware workflows.")
+
+    # Protection
+    if detected_labels.get("pdbProtected"):
+        sections.append("A PodDisruptionBudget protects this workload. "
+                       "Workflows must respect PDB constraints.")
+
+    if detected_labels.get("hpaEnabled"):
+        sections.append("HorizontalPodAutoscaler is active. "
+                       "Manual scaling may conflict with HPA - prefer HPA-aware workflows.")
+
+    # Workload type
+    if detected_labels.get("stateful"):
+        sections.append("This is a STATEFUL workload (StatefulSet or has PVCs). "
+                       "Use stateful-aware remediation workflows.")
+
+    if detected_labels.get("helmManaged"):
+        sections.append("This resource is managed by Helm. "
+                       "Consider Helm-compatible workflows.")
+
+    # Security
+    if detected_labels.get("networkIsolated"):
+        sections.append("NetworkPolicy restricts traffic in this namespace. "
+                       "Workflows may need network exceptions.")
+
+    pss = detected_labels.get("podSecurityLevel", "")
+    if pss == "restricted":
+        sections.append("Pod Security Standard is RESTRICTED. "
+                       "Workflows must not require privileged access.")
+
+    mesh = detected_labels.get("serviceMesh", "")
+    if mesh:
+        sections.append(f"Service mesh ({mesh}) is present. "
+                       "Consider service mesh-aware workflows.")
+
+    return "\n".join(sections) if sections else "No special cluster characteristics detected."
+
+
+def _build_mcp_filter_instructions(detected_labels: Dict[str, Any]) -> str:
+    """
+    Build MCP workflow search filter instructions based on DetectedLabels.
+
+    Design Decision: DD-RECOVERY-003
+    """
+    if not detected_labels:
+        return ""
+
+    import json
+
+    filters = {
+        "gitops_managed": str(detected_labels.get('gitOpsManaged', False)).lower(),
+        "pdb_protected": str(detected_labels.get('pdbProtected', False)).lower(),
+        "stateful": str(detected_labels.get('stateful', False)).lower(),
+        "helm_managed": str(detected_labels.get('helmManaged', False)).lower(),
+        "gitops_tool": detected_labels.get('gitOpsTool', ''),
+        "service_mesh": detected_labels.get('serviceMesh', ''),
+        "pod_security_level": detected_labels.get('podSecurityLevel', '')
+    }
+
+    # Remove empty string values
+    filters = {k: v for k, v in filters.items() if v}
+
+    return f"""
+### MCP Workflow Search Instructions
+
+When calling the `search_workflow_catalog` MCP tool, include detected labels as filters:
+
+```json
+{{
+  "query": "<signal_type> <severity>",
+  "filters": {json.dumps(filters, indent=4)}
+}}
+```
+
+The Data Storage service will use these filters to return only workflows that are compatible
+with the detected cluster environment.
+
+**IMPORTANT**: If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.
+"""
+
+
 router = APIRouter()
+
+
+# ========================================
+# RECOVERY INVESTIGATION PROMPT (DD-RECOVERY-003)
+# ========================================
+
+def _create_recovery_investigation_prompt(request_data: Dict[str, Any]) -> str:
+    """
+    Create investigation prompt for recovery analysis.
+
+    Design Decision: DD-RECOVERY-003
+
+    Key Differences from Incident Prompt:
+    1. Adds "Previous Remediation Attempt" section at TOP
+    2. Includes Kubernetes reason code with specific guidance
+    3. Instructs LLM NOT to repeat failed workflow
+    4. Expects signal type may have CHANGED
+    """
+    # Extract previous execution context
+    previous = request_data.get("previous_execution", {})
+    original_rca = previous.get("original_rca", {})
+    selected_workflow = previous.get("selected_workflow", {})
+    failure = previous.get("failure", {})
+    attempt_number = request_data.get("recovery_attempt_number", 1)
+
+    # Get Kubernetes reason code
+    failure_reason = failure.get("reason", "Unknown")
+
+    # Extract standard fields
+    signal_type = request_data.get("signal_type", "Unknown")
+    severity = request_data.get("severity", "unknown")
+    namespace = request_data.get("resource_namespace", "unknown")
+    resource_kind = request_data.get("resource_kind", "unknown")
+    resource_name = request_data.get("resource_name", "unknown")
+    environment = request_data.get("environment", "unknown")
+    priority = request_data.get("priority", "P2")
+    risk_tolerance = request_data.get("risk_tolerance", "medium")
+    business_category = request_data.get("business_category", "standard")
+    error_message = request_data.get("error_message", "Unknown error")
+    cluster_name = request_data.get("cluster_name", "unknown")
+    signal_source = request_data.get("signal_source", "unknown")
+
+    # Get detected labels for cluster context
+    enrichment_results = request_data.get("enrichment_results", {})
+    detected_labels = enrichment_results.get("detectedLabels", {}) if enrichment_results else {}
+
+    # Build recovery context section (appears BEFORE standard sections)
+    prompt = f"""# Recovery Analysis Request (Attempt {attempt_number})
+
+## ⚠️ Previous Remediation Attempt - CRITICAL CONTEXT
+
+**This is a RECOVERY attempt**. A previous remediation was tried and FAILED.
+You must understand what was attempted and why it failed before recommending alternatives.
+
+---
+
+### What Was Originally Determined
+
+**Original Root Cause Analysis (from initial investigation)**:
+- **Summary**: {original_rca.get('summary', 'Unknown')}
+- **Signal Type** (RCA determination): `{original_rca.get('signal_type', 'Unknown')}`
+- **Severity**: {original_rca.get('severity', 'unknown')}
+- **Contributing Factors**: {', '.join(original_rca.get('contributing_factors', ['None recorded']))}
+
+**Workflow Selected Based on RCA**:
+- **Workflow ID**: `{selected_workflow.get('workflow_id', 'Unknown')}`
+- **Version**: {selected_workflow.get('version', 'Unknown')}
+- **Container Image**: `{selected_workflow.get('container_image', 'Unknown')}`
+- **Selection Rationale**: {selected_workflow.get('rationale', 'Not recorded')}
+"""
+
+    # Add parameters if present
+    params = selected_workflow.get('parameters', {})
+    if params:
+        prompt += "\n**Parameters Used**:\n"
+        for key, value in params.items():
+            prompt += f"- `{key}`: `{value}`\n"
+
+    # Add failure details with Kubernetes reason code
+    prompt += f"""
+---
+
+### What Failed During Execution
+
+**Execution Failure Details**:
+- **Failed Step**: Step {failure.get('failed_step_index', '?')} - `{failure.get('failed_step_name', 'Unknown')}`
+- **Kubernetes Reason**: **`{failure_reason}`**
+- **Error Message**: {failure.get('message', 'No message')}
+- **Exit Code**: {failure.get('exit_code', 'N/A')}
+- **Execution Duration**: {failure.get('execution_time', 'Unknown')} before failure
+- **Failed At**: {failure.get('failed_at', 'Unknown')}
+
+**Failure Reason Interpretation** (`{failure_reason}`):
+{_get_failure_reason_guidance(failure_reason)}
+
+---
+
+### Your Recovery Investigation Task
+
+**CRITICAL INSTRUCTIONS**:
+
+1. **DO NOT** select the same workflow (`{selected_workflow.get('workflow_id', 'Unknown')}`) with the same parameters
+   - The previous attempt already failed with this approach
+   - You must find an ALTERNATIVE solution
+
+2. **INVESTIGATE** the CURRENT cluster state:
+   - Start from the failure point, not the original signal
+   - Check if the failed step partially executed and changed state
+   - Determine if the resource is now in a different condition
+
+3. **DETERMINE** if the signal type has CHANGED:
+   - The workflow execution may have altered the cluster state
+   - Example: OOMKilled → workflow tried to scale → now "InsufficientCPU"
+   - Your workflow search should use the CURRENT signal type, not the original
+
+4. **CONSIDER** alternative approaches based on failure reason:
+   - `{failure_reason}` suggests specific recovery strategies (see guidance above)
+   - Search for workflows that handle this specific failure mode
+   - Consider less aggressive remediation if original was too aggressive
+
+5. **SEARCH** for alternative workflows using:
+   - Query: `"<CURRENT_SIGNAL_TYPE> <CURRENT_SEVERITY> recovery"`
+   - Include the failure reason in your search rationale
+
+---
+
+"""
+
+    # Add cluster context section if DetectedLabels are available
+    if detected_labels:
+        prompt += f"""## Cluster Environment Characteristics (AUTO-DETECTED)
+
+The following characteristics were automatically detected for the target resource.
+**YOU MUST include these as filters in your MCP workflow search request.**
+
+{_build_cluster_context_section(detected_labels)}
+
+{_build_mcp_filter_instructions(detected_labels)}
+
+---
+
+"""
+
+    # Add current signal context
+    prompt += f"""
+## Current Signal Context
+
+**Technical Details**:
+- Signal Type: {signal_type}
+- Severity: {severity}
+- Resource: {namespace}/{resource_kind}/{resource_name}
+- Error: {error_message}
+
+## Business Context (FOR MCP WORKFLOW SEARCH)
+
+- Environment: {environment}
+- Priority: {priority}
+- Business Category: {business_category}
+- Risk Tolerance: {risk_tolerance}
+
+## Your Investigation Workflow (Recovery Mode)
+
+### Phase 1: Assess Current State
+- Check the CURRENT state of the resource (may have changed due to failed workflow)
+- Determine if the failure left the system in a degraded state
+- Look for side effects from the partial execution
+
+### Phase 2: Re-evaluate Root Cause
+- The original RCA was: `{original_rca.get('signal_type', 'Unknown')}`
+- Determine if the signal type has CHANGED after the failed workflow
+- If changed, use the NEW signal type for workflow search
+
+### Phase 3: Search for Alternative Workflow (MANDATORY)
+**YOU MUST** call MCP `search_workflow_catalog` tool with:
+- **Query**: `"<CURRENT_SIGNAL_TYPE> <CURRENT_SEVERITY> recovery"`
+- **Constraint**: Do NOT select the previously failed workflow
+
+### Phase 4: Return Recovery Recommendation
+Provide structured JSON with alternative workflow and updated parameters.
+
+**If MCP search succeeds**:
+```json
+{{
+  "recovery_analysis": {{
+    "previous_attempt_assessment": {{
+      "failure_understood": true,
+      "failure_reason_analysis": "Explanation of why previous attempt failed",
+      "state_changed": true,
+      "current_signal_type": "Current signal type after failure"
+    }},
+    "current_rca": {{
+      "summary": "Updated RCA based on current state",
+      "severity": "current severity",
+      "signal_type": "current signal type",
+      "contributing_factors": ["factor1", "factor2"]
+    }}
+  }},
+  "selected_workflow": {{
+    "workflow_id": "alternative-workflow-id",
+    "version": "1.0.0",
+    "confidence": 0.85,
+    "rationale": "Why this alternative was selected and how it differs from failed attempt",
+    "parameters": {{
+      "PARAM_NAME": "value"
+    }}
+  }},
+  "recovery_strategy": {{
+    "approach": "description of recovery approach",
+    "differs_from_previous": true,
+    "why_different": "Explanation of why this approach is different"
+  }}
+}}
+```
+
+**If MCP search fails or returns no workflows**:
+```json
+{{
+  "recovery_analysis": {{
+    "previous_attempt_assessment": {{
+      "failure_understood": true,
+      "failure_reason_analysis": "Explanation of why previous attempt failed"
+    }},
+    "current_rca": {{
+      "summary": "Root cause from investigation",
+      "severity": "critical|high|medium|low",
+      "signal_type": "current signal type",
+      "contributing_factors": ["factor1", "factor2"]
+    }}
+  }},
+  "selected_workflow": null,
+  "rationale": "MCP search failed: [error details]. RCA completed but workflow selection unavailable."
+}}
+```
+"""
+
+    return prompt
 
 
 def _get_holmes_config(app_config: Dict[str, Any] = None, remediation_id: Optional[str] = None) -> Config:
@@ -151,11 +618,6 @@ def _get_holmes_config(app_config: Dict[str, Any] = None, remediation_id: Option
     - "gpt-4" (OpenAI - no prefix needed)
     - "provider_name/model-name" (other providers)
     """
-    # Check if running in dev mode (stub implementation)
-    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-    if dev_mode:
-        return None  # Signal to use stub implementation
-
     # Get formatted model name for litellm (supports Ollama, OpenAI, Claude, Vertex AI)
     from src.extensions.llm_config import (
         get_model_config_for_sdk,
@@ -223,9 +685,10 @@ def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
     risk_tolerance = request_data.get("risk_tolerance", "medium")
     business_category = request_data.get("business_category", "standard")
 
-    failed_action = request_data.get("failed_action", {})
-    failure_context = request_data.get("failure_context", {})
-    error_message = failure_context.get("error_message", "Unknown error")
+    # Support both legacy and new format (DD-RECOVERY-003)
+    failed_action = request_data.get("failed_action", {}) or {}
+    failure_context = request_data.get("failure_context", {}) or {}
+    error_message = request_data.get("error_message") or failure_context.get("error_message", "Unknown error")
     description = failure_context.get("description", "")
 
     # Timing information
@@ -580,16 +1043,25 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
     """
     Parse HolmesGPT InvestigationResult into RecoveryResponse format
 
-    Extracts recovery strategies from LLM analysis
+    Extracts recovery strategies from LLM analysis.
+    Handles both incident and recovery analysis modes.
+
+    Design Decision: DD-RECOVERY-003 - Recovery-specific parsing
     """
     incident_id = request_data.get("incident_id")
+    is_recovery = request_data.get("is_recovery_attempt", False)
 
     # Parse LLM analysis for recovery strategies
     analysis_text = investigation.analysis or ""
 
+    # If this is a recovery attempt, try to parse recovery-specific JSON first
+    if is_recovery:
+        recovery_result = _parse_recovery_specific_result(analysis_text, request_data)
+        if recovery_result:
+            return recovery_result
+
+    # Fall back to standard parsing
     # Extract strategies from analysis
-    # For GREEN phase, use simple parsing
-    # REFACTOR phase: Use structured output or more sophisticated parsing
     strategies = _extract_strategies_from_analysis(analysis_text)
 
     # Determine if recovery is possible
@@ -611,12 +1083,86 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
         warnings=warnings,
         metadata={
             "analysis_time_ms": 2000,  # GREEN phase: static value
-            "tool_calls": len(investigation.tool_calls),
-            "sdk_version": "holmesgpt-0.1.0"
+            "tool_calls": len(investigation.tool_calls) if hasattr(investigation, 'tool_calls') and investigation.tool_calls else 0,
+            "sdk_version": "holmesgpt-0.1.0",
+            "is_recovery_attempt": is_recovery
         }
     )
 
     return result.model_dump() if hasattr(result, 'model_dump') else result.dict()
+
+
+def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Parse HolmesGPT InvestigationResult into recovery response format.
+
+    Handles recovery-specific fields: recovery_analysis, recovery_strategy
+
+    Design Decision: DD-RECOVERY-003
+    """
+    incident_id = request_data.get("incident_id")
+    recovery_attempt_number = request_data.get("recovery_attempt_number", 1)
+
+    # Try to extract structured JSON from response
+    json_match = re.search(r'```json\s*(.*?)\s*```', analysis_text, re.DOTALL)
+    if not json_match:
+        # Try to find JSON object directly
+        json_match = re.search(r'\{.*"recovery_analysis".*\}', analysis_text, re.DOTALL)
+        if not json_match:
+            return None
+
+    try:
+        json_text = json_match.group(1) if hasattr(json_match, 'group') and json_match.lastindex else json_match.group(0)
+        structured = json.loads(json_text)
+
+        # Extract recovery-specific fields if present
+        recovery_analysis = structured.get("recovery_analysis", {})
+        recovery_strategy = structured.get("recovery_strategy", {})
+        selected_workflow = structured.get("selected_workflow")
+
+        # Build recovery response
+        can_recover = selected_workflow is not None
+        confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
+
+        # Convert to standard RecoveryResponse format
+        strategies = []
+        if selected_workflow:
+            strategies.append(RecoveryStrategy(
+                action_type=selected_workflow.get("workflow_id", "unknown_workflow"),
+                confidence=float(confidence),
+                rationale=selected_workflow.get("rationale", "Recovery workflow selected based on failure analysis"),
+                estimated_risk="medium",  # Default for recovery
+                prerequisites=[]
+            ))
+
+        result = {
+            "incident_id": incident_id,
+            "is_recovery_attempt": True,
+            "recovery_attempt_number": recovery_attempt_number,
+            "can_recover": can_recover,
+            "strategies": [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in strategies],
+            "primary_recommendation": strategies[0].action_type if strategies else None,
+            "analysis_confidence": confidence,
+            "warnings": [],
+            "metadata": {
+                "analysis_time_ms": 2000,
+                "sdk_version": "holmesgpt-0.1.0",
+                "is_recovery_attempt": True,
+                "recovery_attempt_number": recovery_attempt_number
+            },
+            # Recovery-specific fields
+            "recovery_analysis": recovery_analysis,
+            "recovery_strategy": recovery_strategy,
+            "selected_workflow": selected_workflow,
+            "raw_analysis": analysis_text,
+        }
+
+        logger.info(f"Successfully parsed recovery-specific response for incident {incident_id}")
+        return result
+
+    except (json.JSONDecodeError, AttributeError, KeyError, ValueError) as e:
+        logger.warning(f"Failed to parse recovery-specific JSON: {e}")
+        return None
 
 
 def _extract_strategies_from_analysis(analysis_text: str) -> List[RecoveryStrategy]:
@@ -742,16 +1288,28 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
 
     Uses HolmesGPT SDK for AI-powered recovery analysis.
     Workflow search is handled by WorkflowCatalogToolset registered with the SDK.
-    Falls back to stub implementation in DEV_MODE
+    LLM endpoint is configured via environment variables (LLM_ENDPOINT, LLM_MODEL, LLM_PROVIDER).
     """
     incident_id = request_data.get("incident_id")
-    failed_action = request_data.get("failed_action", {})
-    failure_context = request_data.get("failure_context", {})
+    is_recovery = request_data.get("is_recovery_attempt", False)
+
+    # Support both legacy and new format (DD-RECOVERY-003)
+    failed_action = request_data.get("failed_action", {}) or {}
+    failure_context = request_data.get("failure_context", {}) or {}
+    previous_execution = request_data.get("previous_execution", {}) or {}
+
+    # Determine action type for logging
+    if is_recovery and previous_execution:
+        failure = previous_execution.get("failure", {}) or {}
+        action_type = f"recovery_from_{failure.get('reason', 'unknown')}"
+    else:
+        action_type = failed_action.get("type", "unknown")
 
     logger.info({
         "event": "recovery_analysis_started",
         "incident_id": incident_id,
-        "action_type": failed_action.get("type")
+        "action_type": action_type,
+        "is_recovery_attempt": is_recovery
     })
 
     # Check if we should use SDK or stub
@@ -765,18 +1323,23 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
         })
     config = _get_holmes_config(app_config, remediation_id=remediation_id)
 
-    if config is None:
-        # DEV_MODE: Use stub implementation
-        logger.info("Using stub implementation (DEV_MODE=true)")
-        return _stub_recovery_analysis(request_data)
-
-    # Production mode: Use HolmesGPT SDK with enhanced error handling
+    # Use HolmesGPT SDK with enhanced error handling
     # NOTE: Workflow search is handled by WorkflowCatalogToolset registered via
     # register_workflow_catalog_toolset() - the LLM calls the tool during investigation
     # per DD-WORKFLOW-002 v2.4
     try:
-        # Create investigation prompt (now includes historical context if available)
-        investigation_prompt = _create_investigation_prompt(request_data)
+        # Create investigation prompt
+        # DD-RECOVERY-003: Use recovery-specific prompt for recovery attempts
+        is_recovery = request_data.get("is_recovery_attempt", False)
+        if is_recovery and request_data.get("previous_execution"):
+            investigation_prompt = _create_recovery_investigation_prompt(request_data)
+            logger.info({
+                "event": "using_recovery_prompt",
+                "incident_id": incident_id,
+                "recovery_attempt_number": request_data.get("recovery_attempt_number", 1)
+            })
+        else:
+            investigation_prompt = _create_investigation_prompt(request_data)
 
         # Log the prompt being sent to LLM
         print("\n" + "="*80)
@@ -928,12 +1491,15 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
 
         # Validate investigation result
         if not investigation_result or not investigation_result.analysis:
-            logger.warning({
+            logger.error({
                 "event": "sdk_empty_response",
                 "incident_id": incident_id,
                 "message": "SDK returned empty analysis"
             })
-            return _stub_recovery_analysis(request_data)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="LLM provider returned empty response"
+            )
 
         # Parse result into recovery response
         result = _parse_investigation_result(investigation_result, request_data)
@@ -941,7 +1507,6 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
         logger.info({
             "event": "recovery_analysis_completed",
             "incident_id": incident_id,
-            "sdk_used": True,
             "strategy_count": len(result.get("strategies", [])),
             "confidence": result.get("analysis_confidence"),
             "analysis_length": len(investigation_result.analysis) if investigation_result.analysis else 0
@@ -958,7 +1523,10 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
             "error": str(e),
             "failed_action": failed_action.get("type")
         })
-        return _stub_recovery_analysis(request_data)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Configuration error: {str(e)}"
+        )
 
     except (ConnectionError, TimeoutError) as e:
         # Network/LLM provider errors
@@ -969,7 +1537,10 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
             "error": str(e),
             "provider": os.getenv("LLM_MODEL", "unknown")
         })
-        return _stub_recovery_analysis(request_data)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"LLM provider unavailable: {str(e)}"
+        )
 
     except Exception as e:
         # Catch-all for unexpected errors
@@ -983,77 +1554,8 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
                 "cluster": request_data.get("context", {}).get("cluster"),
                 "namespace": failed_action.get("namespace")
             }
-        }, exc_info=True)  # Include stack trace for unexpected errors
-
-        # Fallback to stub on SDK failure
-        logger.warning(f"Falling back to stub implementation due to {type(e).__name__}")
-        return _stub_recovery_analysis(request_data)
-
-
-def _stub_recovery_analysis(request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Stub implementation for dev mode or SDK fallback
-
-    Provides deterministic responses for testing
-    """
-    incident_id = request_data.get("incident_id")
-    failed_action = request_data.get("failed_action", {})
-    failure_context = request_data.get("failure_context", {})
-
-    # Simulate recovery strategy analysis
-    strategies = []
-
-    # Example strategy 1: Rollback
-    if failed_action.get("type") == "scale_deployment":
-        strategies.append(RecoveryStrategy(
-            action_type="rollback_to_previous_state",
-            confidence=0.85,
-            rationale="Safe fallback to known-good state",
-            estimated_risk="low",
-            prerequisites=["verify_previous_state_available"]
-        ))
-
-    # Example strategy 2: Retry with modifications
-    strategies.append(RecoveryStrategy(
-        action_type="retry_with_reduced_scope",
-        confidence=0.70,
-        rationale="Attempt recovery with reduced resource requirements",
-        estimated_risk="medium",
-        prerequisites=["validate_cluster_resources"]
-    ))
-
-    # Determine if recovery is possible
-    can_recover = len(strategies) > 0
-    primary_recommendation = strategies[0].action_type if strategies else None
-
-    # Calculate overall confidence
-    analysis_confidence = max([s.confidence for s in strategies]) if strategies else 0.0
-
-    # Generate warnings
-    warnings = []
-    if failure_context.get("cluster_state") == "high_load":
-        warnings.append("Cluster is under high load - recovery may be slower")
-
-    result = RecoveryResponse(
-        incident_id=incident_id,
-        can_recover=can_recover,
-        strategies=strategies,
-        primary_recommendation=primary_recommendation,
-        analysis_confidence=analysis_confidence,
-        warnings=warnings,
-        metadata={"analysis_time_ms": 1500, "stub": True}
-    )
-
-    logger.info({
-        "event": "recovery_analysis_completed",
-        "incident_id": incident_id,
-        "stub_used": True,
-        "can_recover": can_recover,
-        "strategy_count": len(strategies),
-        "confidence": analysis_confidence
-    })
-
-    return result.model_dump() if hasattr(result, 'model_dump') else result.dict()
+        }, exc_info=True)
+        raise
 
 
 @router.post("/recovery/analyze", status_code=status.HTTP_200_OK)
@@ -1064,27 +1566,10 @@ async def recovery_analyze_endpoint(request: RecoveryRequest):
     Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
     Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
 
-    Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
+    Called by: AIAnalysis Controller (for recovery attempts after workflow failure)
     """
-    try:
-        request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
-
-        # Get app config from router config
-        # NOTE: Workflow search is handled by WorkflowCatalogToolset registered via
-        # register_workflow_catalog_toolset() - no mcp_config needed
-        app_config = router.config if hasattr(router, 'config') else None
-
-        result = await analyze_recovery(request_data, app_config=app_config)
-        return result
-    except Exception as e:
-        logger.error({
-            "event": "recovery_analysis_failed",
-            "incident_id": request.incident_id,
-            "error": str(e)
-        })
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Recovery analysis failed: {str(e)}"
-        )
+    request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
+    result = await analyze_recovery(request_data)
+    return result
 
 

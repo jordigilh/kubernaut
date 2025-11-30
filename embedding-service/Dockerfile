@@ -38,10 +38,10 @@ FROM registry.access.redhat.com/ubi9/python-311:latest
 
 # Metadata
 LABEL maintainer="Kubernaut Team" \
-      description="Text-to-vector embedding service using sentence-transformers" \
-      model="all-mpnet-base-v2" \
-      dimensions="768" \
-      version="1.0.0"
+    description="Text-to-vector embedding service using sentence-transformers" \
+    model="all-mpnet-base-v2" \
+    dimensions="768" \
+    version="1.0.0"
 
 # Set working directory
 WORKDIR /app

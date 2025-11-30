@@ -326,10 +326,10 @@ func (s *Service) countRemediationAudits(ctx context.Context, opts *ListOptions)
 	return count, nil
 }
 
-// generateMockEmbedding creates a mock 384-dimensional embedding for testing
+// generateMockEmbedding creates a mock 768-dimensional embedding for testing (per migration 016)
 // TODO: Replace with real embedding generation in integration with embedding pipeline
 func generateMockEmbedding(text string) []float32 {
-	embedding := make([]float32, 384)
+	embedding := make([]float32, 768)
 	// Simple hash-based mock embedding
 	for i := range embedding {
 		embedding[i] = float32((len(text)+i)%100) * 0.01

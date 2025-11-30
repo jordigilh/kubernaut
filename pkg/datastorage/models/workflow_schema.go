@@ -47,7 +47,7 @@ type WorkflowSchema struct {
 	Metadata WorkflowSchemaMetadata `yaml:"metadata" json:"metadata" validate:"required"`
 
 	// Labels contains discovery labels for MCP search
-	// DD-WORKFLOW-001: 7 mandatory labels
+	// DD-WORKFLOW-001 v1.3: 6 mandatory labels + optional custom labels
 	Labels WorkflowSchemaLabels `yaml:"labels" json:"labels" validate:"required"`
 
 	// Execution contains execution engine information (optional in V1.0)
@@ -101,8 +101,9 @@ type WorkflowSchemaLabels struct {
 	// Values: "low", "medium", "high"
 	RiskTolerance string `yaml:"risk_tolerance" json:"risk_tolerance" validate:"required,oneof=low medium high"`
 
-	// BusinessCategory is the business category for filtering (OPTIONAL)
-	// Values: "cost-management", "performance", "availability", "security"
+	// BusinessCategory is an optional custom label for business domain filtering
+	// Per DD-WORKFLOW-001 v1.3: Moved from mandatory to optional custom label
+	// Values: user-defined (e.g., "payment-service", "analytics", "infrastructure")
 	BusinessCategory string `yaml:"business_category,omitempty" json:"business_category,omitempty" validate:"omitempty"`
 
 	// Environment is the target environment (OPTIONAL)

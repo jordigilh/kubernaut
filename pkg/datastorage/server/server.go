@@ -341,7 +341,9 @@ func (s *Server) Handler() http.Handler {
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
 		// DD-STORAGE-008: Workflow catalog schema
+		// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
 		s.logger.V(1).Info("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
+		r.Post("/workflows", s.handler.HandleCreateWorkflow)
 		r.Post("/workflows/search", s.handler.HandleWorkflowSearch)
 		r.Get("/workflows", s.handler.HandleListWorkflows)
 	})

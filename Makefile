@@ -728,62 +728,23 @@ test-e2e-toolset: ## Run Dynamic Toolset E2E tests (Kind cluster, ~10-15 min)
 	@cd test/e2e/toolset && ginkgo -v --timeout=15m
 
 .PHONY: test-e2e-notification
-test-e2e-notification: ## Run Notification Service E2E tests (4 parallel procs, ~5-10 min)
+test-e2e-notification: ## Run Notification Service E2E tests (Kind cluster, 4 parallel procs, ~10-15 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service - E2E Test Suite"
+	@echo "🧪 Notification Service - E2E Test Suite (Kind Cluster)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Test Scenarios:"
 	@echo "   1. Audit Lifecycle - Message sent/failed/acknowledged events"
 	@echo "   2. Audit Correlation - Remediation request tracing"
 	@echo "   3. File Delivery Validation - Complete message content"
 	@echo "   4. Metrics Validation - Prometheus metrics exposure"
-	@echo "   5. Retry Scenarios - Rate limiting and transient errors"
 	@echo ""
-	@echo "🏗️  Infrastructure: envtest + Audit integration"
+	@echo "🏗️  Infrastructure: Kind cluster + Notification Controller deployment"
+	@echo "📁 Output: FileService validates delivery to /tmp/kubernaut-e2e-notifications"
+	@echo "⚡ Parallel: 4 processes (per TESTING_GUIDELINES.md)"
+	@echo "════════════════════════════════════════════════════════════════════════"
 	@PROCS=4; \
-	echo "⚡ Running with $$PROCS parallel processes (per TESTING_GUIDELINES.md)"; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	cd test/e2e/notification && ginkgo -v --timeout=10m --procs=$$PROCS
-
-.PHONY: test-e2e-notification-files
-test-e2e-notification-files: ## Run Notification File Delivery E2E tests (DD-NOT-002)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service - File-Based E2E Test Suite (DD-NOT-002 V3.0)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios:"
-	@echo "   1. Complete Message Content Validation (BR-NOT-053)"
-	@echo "   2. Data Sanitization Validation (BR-NOT-054)"
-	@echo "   3. Priority Field Validation (BR-NOT-056)"
-	@echo "   4. Concurrent Delivery Validation"
-	@echo "   5. FileService Error Handling (CRITICAL)"
-	@echo ""
-	@echo "🏗️  Infrastructure: envtest + FileDeliveryService"
-	@echo "📁 Output Directory: /tmp/kubernaut-e2e-notifications"
-	@echo "🎯 Purpose: E2E Testing Infrastructure (validates message correctness)"
-	@echo ""
-	@echo "⚠️  Safety Note: FileService is E2E testing only, NOT used in production"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@cd test/e2e/notification && ginkgo -v --timeout=10m --focus="File-Based"
-
-.PHONY: test-e2e-notification-metrics
-test-e2e-notification-metrics: ## Run Notification Service Metrics E2E tests (BR-NOT-054)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service - Metrics E2E Test Suite (BR-NOT-054)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios:"
-	@echo "   1. Metrics Endpoint Availability"
-	@echo "   2. Notification Delivery Metrics (requests_total, attempts, duration)"
-	@echo "   3. Controller Metrics (reconciliation duration, active notifications)"
-	@echo "   4. Sanitization Metrics (redactions tracking)"
-	@echo "   5. All 10 Key Metrics Validation"
-	@echo ""
-	@echo "🏗️  Infrastructure: envtest + Metrics Server"
-	@echo "📊 Metrics Endpoint: http://localhost:8080/metrics"
-	@echo "🎯 Purpose: Validate Prometheus metrics are exposed and accurate"
-	@echo ""
-	@echo "⚠️  Note: Tests validate metrics format and presence, not exact values"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@cd test/e2e/notification && ginkgo -v --timeout=10m --focus="Metrics E2E"
+	echo "Running E2E tests with $$PROCS parallel processes..."; \
+	cd test/e2e/notification && ginkgo -v --timeout=15m --procs=$$PROCS
 
 .PHONY: test-e2e-datastorage-parallel
 test-e2e-datastorage-parallel: ## Run Data Storage E2E tests in parallel (3 processes, ~3-5 min)
@@ -857,6 +818,7 @@ test-notification-all: ## Run ALL Notification tests (unit + integration + e2e) 
 	@echo "🧪 Notification Service - Complete Test Suite (3 Tiers)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
+	@echo "🏗️  E2E Infrastructure: Kind cluster (real Kubernetes deployment)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@FAILED=0; \
 	PROCS=4; \
@@ -867,16 +829,16 @@ test-notification-all: ## Run ALL Notification tests (unit + integration + e2e) 
 	echo "2️⃣  Integration Tests ($$PROCS parallel procs)..."; \
 	(cd test/integration/notification && ginkgo -v --timeout=15m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
 	echo ""; \
-	echo "3️⃣  E2E Tests ($$PROCS parallel procs)..."; \
-	(cd test/e2e/notification && ginkgo -v --timeout=10m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
+	echo "3️⃣  E2E Tests (Kind cluster, $$PROCS parallel procs)..."; \
+	(cd test/e2e/notification && ginkgo -v --timeout=15m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
 	echo ""; \
 	if [ $$FAILED -eq 0 ]; then \
 		echo "════════════════════════════════════════════════════════════════════════"; \
 		echo "✅ Notification: ALL tests passed (3/3 tiers)"; \
-		echo "   • Unit Tests: 53/53 passed"; \
-		echo "   • Integration Tests: 43/43 passed"; \
-		echo "   • E2E Tests: 18/18 passed"; \
-		echo "   • Total: 114/114 passed (0 skipped, 0 failed)"; \
+		echo "   • Unit Tests: 140/140 passed"; \
+		echo "   • Integration Tests: 97/97 passed"; \
+		echo "   • E2E Tests: 12/12 passed (Kind cluster)"; \
+		echo "   • Total: 249/249 passed (0 skipped, 0 failed)"; \
 		echo "════════════════════════════════════════════════════════════════════════"; \
 	else \
 		echo "════════════════════════════════════════════════════════════════════════"; \

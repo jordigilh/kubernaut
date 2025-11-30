@@ -19,192 +19,285 @@ package notification
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	notificationcontroller "github.com/jordigilh/kubernaut/internal/controller/notification"
-	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
-	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-// These tests are E2E tests that validate the complete notification lifecycle with audit integration
-// using envtest for Kubernetes infrastructure.
-
-var (
-	cfg              *rest.Config
-	k8sClient        client.Client
-	testEnv          *envtest.Environment
-	ctx              context.Context
-	cancel           context.CancelFunc
-	logger           *zap.Logger
-	e2eFileOutputDir string // DD-NOT-002: E2E file delivery output directory
-)
+// Test suite for Notification E2E tests
+// This suite sets up a complete production-like environment:
+// - Kind cluster (2 nodes: 1 control-plane + 1 worker)
+// - Notification Controller (deployed to Kind cluster)
+// - FileService for message validation
+//
+// NOTE: Tests validate complete notification lifecycle with real Kubernetes infrastructure
 
 func TestNotificationE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Notification E2E Suite")
 }
 
-var _ = BeforeSuite(func() {
-	logf.SetLogger(crzap.New(crzap.WriteTo(GinkgoWriter), crzap.UseDevMode(true)))
-	logger, _ = zap.NewDevelopment()
+var (
+	ctx    context.Context
+	cancel context.CancelFunc
+	logger logr.Logger
 
-	ctx, cancel = context.WithCancel(context.TODO())
+	// Cluster configuration (shared across all tests)
+	clusterName    string
+	kubeconfigPath string
+	cfg            *rest.Config
+	k8sClient      client.Client
 
-	By("Bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
-	}
+	// Shared Notification Controller configuration (deployed ONCE for all tests)
+	controllerNamespace string = "notification-e2e"
 
-	// Retrieve the first found binary directory to allow running tests from IDEs
-	if getFirstFoundEnvTestBinaryDir() != "" {
-		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
-	}
+	// E2E file output directory (for FileService validation)
+	e2eFileOutputDir string
 
-	var err error
-	cfg, err = testEnv.Start()
-	Expect(err).NotTo(HaveOccurred())
-	Expect(cfg).NotTo(BeNil())
+	// Track if any test failed (for cluster cleanup decision)
+	anyTestFailed bool
+)
 
-	err = notificationv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
+// SynchronizedBeforeSuite runs cluster setup ONCE on process 1, then each process connects
+var _ = SynchronizedBeforeSuite(
+	// This runs ONCE on process 1 only - sets up shared cluster
+	func() []byte {
+		// Initialize context
+		ctx, cancel = context.WithCancel(context.Background())
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
+		// Initialize logger
+		logger = kubelog.NewLogger(kubelog.Options{
+			Development: true,
+			Level:       0, // INFO
+			ServiceName: "notification-e2e-test",
+		})
 
-	// ========================================
-	// DD-NOT-002 V3.0: E2E Controller Setup with FileService
-	// ========================================
-	// Set up E2E_FILE_OUTPUT directory for file-based message validation
-	e2eFileOutputDir = filepath.Join(os.TempDir(), "kubernaut-e2e-notifications")
+		// Initialize failure tracking
+		anyTestFailed = false
+
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Notification E2E Test Suite - Cluster Setup (ONCE - Process 1)")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Creating Kind cluster and deploying Notification Controller...")
+		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
+		logger.Info("  • NotificationRequest CRD (cluster-wide)")
+		logger.Info("  • Notification Controller Docker image (build + load)")
+		logger.Info("  • Shared Notification Controller (notification-e2e namespace)")
+		logger.Info("  • Kubeconfig: ~/.kube/notification-kubeconfig")
+		logger.Info("")
+		logger.Info("Note: All tests share the same controller instance")
+		logger.Info("      Tests use FileService for message validation")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		// Set cluster configuration
+		clusterName = "notification-e2e"
+		homeDir, err := os.UserHomeDir()
+		Expect(err).ToNot(HaveOccurred())
+		kubeconfigPath = fmt.Sprintf("%s/.kube/notification-kubeconfig", homeDir)
+
+		// Delete any existing cluster first to ensure clean state
+		logger.Info("Checking for existing cluster...")
+		err = infrastructure.DeleteNotificationCluster(clusterName, GinkgoWriter)
+		if err != nil {
+			logger.Info("Failed to delete existing cluster (may not exist)", "error", err)
+		}
+
+		// Create Kind cluster (ONCE for all tests)
+		err = infrastructure.CreateNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Set KUBECONFIG environment variable
+		err = os.Setenv("KUBECONFIG", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Deploy shared Notification Controller (ONCE for all tests)
+		logger.Info("Deploying shared Notification Controller...")
+		err = infrastructure.DeployNotificationController(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Wait for controller pod to be ready
+		logger.Info("⏳ Waiting for Notification Controller pod to be ready...")
+		waitCmd := exec.Command("kubectl", "wait",
+			"-n", controllerNamespace,
+			"--for=condition=ready",
+			"pod",
+			"-l", "app=notification-controller",
+			"--timeout=120s",
+			"--kubeconfig", kubeconfigPath)
+		waitCmd.Stdout = GinkgoWriter
+		waitCmd.Stderr = GinkgoWriter
+		err = waitCmd.Run()
+		Expect(err).ToNot(HaveOccurred(), "Notification Controller pod did not become ready")
+		logger.Info("✅ Notification Controller pod is ready")
+
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Cluster Setup Complete - Ready for parallel processes")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		// Return kubeconfig path to all processes
+		return []byte(kubeconfigPath)
+	},
+	// This runs on ALL processes (including process 1) - connects to cluster
+	func(data []byte) {
+		// Initialize context for this process
+		ctx, cancel = context.WithCancel(context.Background())
+
+		// Initialize logger for this process
+		logger = kubelog.NewLogger(kubelog.Options{
+			Development: true,
+			Level:       0, // INFO
+			ServiceName: fmt.Sprintf("notification-e2e-test-process-%d", GinkgoParallelProcess()),
+		})
+
+		// Initialize failure tracking
+		anyTestFailed = false
+
+		// Get kubeconfig path from process 1
+		kubeconfigPath = string(data)
+
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+			"process", GinkgoParallelProcess())
+		logger.Info("Notification E2E Process Setup",
+			"process", GinkgoParallelProcess(),
+			"kubeconfig", kubeconfigPath)
+
+		// Load kubeconfig
+		config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred())
+		cfg = config
+
+		// Create Kubernetes client
+		err = notificationv1alpha1.AddToScheme(scheme.Scheme)
+		Expect(err).ToNot(HaveOccurred())
+
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(k8sClient).ToNot(BeNil())
+
+	// Set up E2E file output directory for FileService validation
+	e2eFileOutputDir = filepath.Join(os.TempDir(), fmt.Sprintf("kubernaut-e2e-notifications-process-%d", GinkgoParallelProcess()))
 	err = os.MkdirAll(e2eFileOutputDir, 0755)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Initialize delivery services
-	consoleService := delivery.NewConsoleDeliveryService()
-	fileService := delivery.NewFileDeliveryService(e2eFileOutputDir)
-	sanitizer := sanitization.NewSanitizer()
+	// Wait for Notification Controller metrics NodePort to be responsive
+	// NodePort 30081 (in cluster) → localhost:8081 (on host via Kind extraPortMappings)
+	// Using same port pattern as gateway (8xxx) for consistency
+	logger.Info("⏳ Waiting for Notification Controller metrics NodePort to be responsive...")
 
-	// Start controller manager for E2E tests
-	// BR-NOT-054: Configure unique metrics port for each parallel process
-	// Base port 8080 + Ginkgo parallel process number (1-4) = 8081-8084
-	metricsPort := 8080 + GinkgoParallelProcess()
-	metricsAddr := fmt.Sprintf(":%d", metricsPort)
-	logger.Info("Starting manager", zap.Int("process", GinkgoParallelProcess()), zap.String("metricsAddr", metricsAddr))
+	// Give Kind a moment to set up port forwarding after deployment
+	logger.Info("Waiting 5 seconds for Kind port mapping to stabilize...")
+	time.Sleep(5 * time.Second)
 
-	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: scheme.Scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
-		},
-	})
-	Expect(err).ToNot(HaveOccurred())
+	metricsURL := "http://localhost:8081/metrics"  // Port 8081 (gateway uses 8080)
+	httpClient := &http.Client{Timeout: 10 * time.Second}
 
-	// Set up NotificationRequest controller with FileService
-	// Note: AuditStore is nil in E2E tests (audit not required for file delivery validation)
-	err = (&notificationcontroller.NotificationRequestReconciler{
-		Client:         k8sManager.GetClient(),
-		Scheme:         k8sManager.GetScheme(),
-		ConsoleService: consoleService,
-		FileService:    fileService, // DD-NOT-002: E2E file delivery
-		Sanitizer:      sanitizer,
-		// SlackService: nil (not needed for file delivery E2E tests)
-		// AuditStore: nil (audit not required for file delivery validation)
-		// AuditHelpers: nil (audit not required for file delivery validation)
-	}).SetupWithManager(k8sManager)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Start the manager in a goroutine
-	go func() {
-		defer GinkgoRecover()
-		err = k8sManager.Start(ctx)
-		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
-	}()
-
-	// BR-NOT-054: Wait for manager to be ready before running tests
-	// This ensures metrics endpoint is available and controller is operational
-	By("Waiting for manager to be ready")
+	attemptCount := 0
 	Eventually(func() error {
-		// Test manager readiness by creating a simple test notification
-		testNotif := &notificationv1alpha1.NotificationRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "manager-readiness-check",
-				Namespace: "default",
-			},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Type:     notificationv1alpha1.NotificationTypeSimple,
-				Subject:  "Manager Readiness Check",
-				Body:     "Testing manager startup",
-				Priority: notificationv1alpha1.NotificationPriorityMedium, // Required field
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelConsole,
-				},
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#test"},
-				},
-			},
-		}
-
-		// Try to create and immediately delete (we just need to verify manager responds)
-		if err := k8sClient.Create(ctx, testNotif); err != nil {
+		attemptCount++
+		resp, err := httpClient.Get(metricsURL)
+		if err != nil {
+			if attemptCount%10 == 0 {  // Log every 10th attempt
+				logger.Info("Still waiting for metrics endpoint...",
+					"attempt", attemptCount,
+					"error", err.Error())
+			}
 			return err
 		}
-		_ = k8sClient.Delete(ctx, testNotif)
-		return nil
-	}, 30*time.Second, 500*time.Millisecond).Should(Succeed(), "Manager should be ready to accept requests")
-
-	logger.Info("E2E test environment ready", zap.String("fileOutputDir", e2eFileOutputDir))
-})
-
-var _ = AfterSuite(func() {
-	By("Tearing down the test environment")
-	cancel()
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
-
-	// Clean up E2E file output directory
-	if e2eFileOutputDir != "" {
-		os.RemoveAll(e2eFileOutputDir)
-	}
-})
-
-// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-// ENVTEST-based tests depend on specific binaries, usually located in paths set by
-// controller-runtime. When running tests directly (e.g., via an IDE) without using
-// Makefile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
-//
-// This function streamlines the process by finding the required binaries, similar to
-// setting the 'KUBEBUILDER_ASSETS' environment variable. To ensure the binaries are
-// properly set up, run 'make setup-envtest' beforehand.
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("metrics endpoint returned status %d", resp.StatusCode)
 		}
-	}
-	return ""
+		return nil
+	}, 90*time.Second, 2*time.Second).Should(Succeed(), "Notification Controller metrics NodePort did not become responsive")
+	logger.Info("✅ Notification Controller metrics accessible via NodePort",
+		"process", GinkgoParallelProcess(),
+		"url", metricsURL,
+		"attempts", attemptCount)
+
+	logger.Info("✅ Process ready",
+		"process", GinkgoParallelProcess(),
+		"fileOutputDir", e2eFileOutputDir)
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	},
+)
+
+// SynchronizedAfterSuite runs process cleanup then cluster cleanup
+var _ = SynchronizedAfterSuite(
+	// This runs on ALL processes - cleans up per-process resources
+	func() {
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+			"process", GinkgoParallelProcess())
+		logger.Info("Notification E2E Process Cleanup", "process", GinkgoParallelProcess())
+
+		// Clean up E2E file output directory
+		if e2eFileOutputDir != "" {
+			os.RemoveAll(e2eFileOutputDir)
+			logger.Info("Cleaned up file output directory",
+				"process", GinkgoParallelProcess(),
+				"dir", e2eFileOutputDir)
+		}
+
+		// Cancel context
+		if cancel != nil {
+			cancel()
+		}
+
+		logger.Info("✅ Process cleanup complete", "process", GinkgoParallelProcess())
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	},
+	// This runs ONCE on process 1 - cleans up shared cluster
+	func() {
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Notification E2E Cluster Cleanup (ONCE - Process 1)")
+
+		// Always clean up Kind cluster (no conditional logic based on test failures)
+		logger.Info("Deleting Kind cluster...")
+		err := infrastructure.DeleteNotificationCluster(clusterName, GinkgoWriter)
+		if err != nil {
+			logger.Error(err, "Failed to delete Kind cluster (non-fatal)")
+		} else {
+			logger.Info("✅ Kind cluster deleted")
+		}
+
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Notification E2E Cluster Cleanup Complete")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	},
+)
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Helper Functions
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// WaitForNotificationPhase waits for a NotificationRequest to reach a specific phase
+func WaitForNotificationPhase(ctx context.Context, client client.Client, namespace, name string, expectedPhase notificationv1alpha1.NotificationPhase, timeout time.Duration) {
+	notif := &notificationv1alpha1.NotificationRequest{}
+	Eventually(func() notificationv1alpha1.NotificationPhase {
+		err := client.Get(ctx, clientKey(namespace, name), notif)
+		if err != nil {
+			return ""
+		}
+		return notif.Status.Phase
+	}, timeout, 500*time.Millisecond).Should(Equal(expectedPhase))
+}
+
+// clientKey creates a types.NamespacedName for namespace/name lookups
+func clientKey(namespace, name string) types.NamespacedName {
+	return types.NamespacedName{Namespace: namespace, Name: name}
 }

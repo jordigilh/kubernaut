@@ -25,11 +25,8 @@ COPY --chown=1001:0 go.mod go.sum ./
 # Download dependencies
 RUN go mod download
 
-# Copy source code
-COPY --chown=1001:0 api/ api/
-COPY --chown=1001:0 cmd/notification/ cmd/notification/
-COPY --chown=1001:0 internal/controller/notification/ internal/controller/notification/
-COPY --chown=1001:0 pkg/notification/ pkg/notification/
+# Copy entire codebase (notification controller depends on multiple pkg/* packages)
+COPY --chown=1001:0 . .
 
 # Build the notification controller binary
 # CGO_ENABLED=0 for static linking (no C dependencies)

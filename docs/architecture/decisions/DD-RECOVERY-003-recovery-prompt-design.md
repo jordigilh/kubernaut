@@ -362,7 +362,14 @@ class RecoveryRequest(BaseModel):
     # Recovery-specific fields
     is_recovery_attempt: bool = Field(default=True)
     recovery_attempt_number: int = Field(..., ge=1)
-    previous_execution: PreviousExecution = Field(..., description="Previous attempt details")
+
+    # COMPLETE history of ALL previous attempts (allows LLM to see full context)
+    # Ordered chronologically: index 0 = first attempt, last index = most recent
+    # LLM can: avoid repeating failures, learn from patterns, retry earlier approaches
+    previous_executions: List[PreviousExecution] = Field(
+        ...,
+        description="Complete history of all previous attempts"
+    )
 
     # Original context (reused from SignalProcessing)
     enrichment_results: Dict[str, Any] = Field(..., description="Original enriched context")

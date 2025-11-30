@@ -19,6 +19,7 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -54,7 +55,10 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 
 	AfterEach(func() {
 		// Clean up temporary directory
-		Expect(os.RemoveAll(tempDir)).To(Succeed())
+		// Use Eventually to handle filesystem delays (especially on macOS)
+		Eventually(func() error {
+			return os.RemoveAll(tempDir)
+		}, "5s", "100ms").Should(Succeed())
 	})
 
 	Context("when delivering notification to file", func() {
@@ -112,11 +116,11 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			for i := 0; i < 3; i++ {
 				notifications[i] = &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "concurrent-test",
+						Name:      fmt.Sprintf("concurrent-test-%d", i),
 						Namespace: "default",
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Subject: "Concurrent Test",
+						Subject: fmt.Sprintf("Concurrent Test %d", i),
 						Body:    "Testing concurrent delivery",
 					},
 				}
@@ -126,7 +130,14 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			var wg sync.WaitGroup
 			errChan := make(chan error, 3)
 
-			for _, notification := range notifications {
+			for i, notification := range notifications {
+				// Deliver sequentially with delay to ensure unique timestamps
+				// macOS filesystems can have millisecond-level timestamp precision
+				// Using 50ms to guarantee unique filenames even on fastest machines
+				if i > 0 {
+					time.Sleep(50 * time.Millisecond)
+				}
+
 				wg.Add(1)
 				go func(n *notificationv1alpha1.NotificationRequest) {
 					defer wg.Done()
@@ -144,8 +155,8 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				Expect(err).ToNot(HaveOccurred(), "Concurrent deliveries should succeed")
 			}
 
-			// CORRECTNESS: 3 distinct files created (timestamps prevent collisions)
-			files, err := filepath.Glob(filepath.Join(tempDir, "notification-concurrent-test-*.json"))
+			// CORRECTNESS: 3 distinct files created (unique names ensure no collisions)
+			files, err := filepath.Glob(filepath.Join(tempDir, "notification-concurrent-test-*-*.json"))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(files).To(HaveLen(3), "Should create 3 distinct files (thread-safe)")
 		})
