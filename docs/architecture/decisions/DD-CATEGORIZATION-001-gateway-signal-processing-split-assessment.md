@@ -121,7 +121,7 @@ spec:
     severity: "critical"
     cluster: "prod-us-west"
     # ... ALL labels from alert + commonLabels
-  
+
   # ALL alert annotations passed through
   signalAnnotations:
     summary: "Container memory usage > 90%"

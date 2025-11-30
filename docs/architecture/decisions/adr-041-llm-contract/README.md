@@ -46,9 +46,9 @@ ADR-041 (LLM Prompt/Response Contract)
 │   ├── Severity Taxonomy (4 levels)
 │   └── Business/Policy Labels → DD-WORKFLOW-001
 │
-├── DD-WORKFLOW-001 (Label Schema)
-│   ├── 7 Mandatory Labels
-│   ├── Label Matching Rules
+├── DD-WORKFLOW-001 (Label Schema v1.4)
+│   ├── 5 Mandatory Labels + DetectedLabels + CustomLabels
+│   ├── Label Matching Rules (pass-through principle)
 │   └── Workflow Description Format
 │
 ├── DD-WORKFLOW-003 (Parameterized Actions)

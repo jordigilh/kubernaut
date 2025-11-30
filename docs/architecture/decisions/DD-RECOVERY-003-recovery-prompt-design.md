@@ -486,12 +486,19 @@ The following reason codes form the **structured API contract** between Workflow
 
 ## Validation Checklist
 
-- [ ] Recovery prompt template implemented in `recovery.py`
-- [ ] RecoveryRequest model updated with `PreviousExecution`
-- [ ] Reason code guidance map complete
-- [ ] Response parsing handles recovery-specific fields
-- [ ] Unit tests for recovery prompt generation
-- [ ] Integration tests for recovery analysis endpoint
+- [x] Recovery prompt template implemented in `recovery.py` *(2025-11-30: `_create_recovery_investigation_prompt()` implemented)*
+- [x] RecoveryRequest model updated with `PreviousExecution` *(2025-11-30: Full model hierarchy implemented)*
+- [x] Reason code guidance map complete *(2025-11-30: `_get_failure_reason_guidance()` with all K8s reason codes)*
+- [x] Response parsing handles recovery-specific fields *(2025-11-30: `_parse_recovery_specific_result()` implemented)*
+- [x] Unit tests for recovery prompt generation *(2025-11-30: 17 tests in `test_recovery_prompt_dd003.py`)*
+- [x] Integration tests for recovery analysis endpoint *(2025-11-30: 9 tests using mock LLM server)*
+
+**Implementation Notes** (2025-11-30):
+- All validation items completed
+- DetectedLabels integration added for workflow filtering
+- DEV_MODE anti-pattern removed - tests use mock LLM server (same code path as production)
+- Backward compatibility with legacy fields NOT maintained (per architecture decision)
+- See: [HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md](../../services/crd-controllers/02-aianalysis/HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md) v3.0
 
 ## Related Decisions
 

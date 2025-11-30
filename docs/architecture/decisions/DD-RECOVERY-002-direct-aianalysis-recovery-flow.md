@@ -305,11 +305,17 @@ See: [DD-RECOVERY-003-recovery-prompt-design.md](DD-RECOVERY-003-recovery-prompt
 ## Validation Checklist
 
 - [ ] AIAnalysis CRD schema updated with recovery fields
-- [ ] HolmesGPT-API RecoveryRequest model updated
-- [ ] Recovery prompt design implemented
+- [x] HolmesGPT-API RecoveryRequest model updated *(2025-11-30: Completed - PreviousExecution, OriginalRCA, SelectedWorkflowSummary, ExecutionFailure models added)*
+- [x] Recovery prompt design implemented *(2025-11-30: Completed - `_create_recovery_investigation_prompt()` with failure context)*
 - [ ] RO recovery logic implemented
-- [ ] Integration tests for recovery flow
+- [x] Integration tests for recovery flow *(2025-11-30: Completed - 9 integration tests with mock LLM server)*
 - [ ] E2E tests for recovery scenarios
+
+**Implementation Notes** (2025-11-30):
+- HolmesGPT-API implementation completed (v3.0)
+- DEV_MODE anti-pattern removed - tests use mock LLM server
+- Backward compatibility with legacy `failed_action`/`failure_context` NOT maintained (per architecture decision)
+- See: [HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md](../../services/crd-controllers/02-aianalysis/HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md) v3.0
 
 ## Review Triggers
 

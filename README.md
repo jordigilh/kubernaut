@@ -63,7 +63,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (100%) |
 | **Dynamic Toolset Service** | ✅ **v1.0 PRODUCTION-READY** | Service discovery & toolset generation | 8 BRs (100%, E2E complete) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | 12 BRs (100%) |
-| **HolmesGPT API** | ✅ **v3.0.1 PRODUCTION-READY** | AI investigation wrapper | 47 BRs (RFC 7807 + Graceful Shutdown, 100%) |
+| **HolmesGPT API** | ✅ **v3.2 PRODUCTION-READY** | AI investigation wrapper | 47 BRs (RFC 7807 + Graceful Shutdown + Recovery Prompt, 100%) |
 | **Signal Processing** | ⏸️ Phase 3 | Signal enrichment | - |
 | **AI Analysis** | ⏸️ Phase 4 | AI-powered analysis | - |
 | **Remediation Execution** | ⏸️ Phase 3 | Tekton workflow orchestration | - |
@@ -72,7 +72,9 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 **Timeline**: 13-week development plan (currently in Week 2-3)
 
-**Recent Updates** (November 13, 2025):
+**Recent Updates** (November 30, 2025):
+- ✅ **HolmesGPT API v3.2**: Recovery prompt implementation complete (DD-RECOVERY-002/003), DetectedLabels integration, mock LLM server for testing
+- ✅ **DEV_MODE Anti-Pattern Removed**: Tests now use mock LLM server with same code path as production
 - ✅ **Dynamic Toolset v1.0 Complete**: 245/245 tests (194 unit + 38 integration + 13 E2E), deployment manifests, operations runbook
 - ✅ **E2E Test Optimization**: Parallel execution enabled, 2m37s runtime (~40% improvement)
 - ✅ **Production Deployment Ready**: In-cluster deployment manifests with RBAC, NetworkPolicy, ServiceMonitor
@@ -254,7 +256,7 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 | **Data Storage** | 475 | ~60 | - | **~535** | **98%** |
 | **Dynamic Toolset v1.0** | 194 | 38 | 13 | **245** | **100%** |
 | **Notification Service** | 83 | ~10 | - | **~93** | **95%** |
-| **HolmesGPT API v3.0.1** | 153 | 19 | - | **172** | **98%** |
+| **HolmesGPT API v3.2** | 151 | 21 | - | **172** | **98%** |
 
 **Total**: ~1,010 unit specs + ~241 integration specs + 15 E2E specs = **~1,266 test specs**
 
