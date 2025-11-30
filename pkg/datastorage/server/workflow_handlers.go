@@ -1,11 +1,16 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
+	"github.com/go-chi/chi/v5"
+	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -131,7 +136,10 @@ func (h *Handler) validateCreateWorkflowRequest(workflow *models.RemediationWork
 
 // HandleWorkflowSearch handles POST /api/v1/workflows/search
 // BR-STORAGE-013: Semantic search for remediation workflows
+// BR-AUDIT-023: Audit event generation for workflow search
 func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
 	// Parse request body
 	var searchReq models.WorkflowSearchRequest
 	if err := json.NewDecoder(r.Body).Decode(&searchReq); err != nil {
@@ -201,11 +209,40 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Calculate search duration
+	duration := time.Since(startTime)
+
+	// BR-AUDIT-023: Generate and store audit event asynchronously (non-blocking per ADR-038)
+	// Use background context because the request context is cancelled when the response is sent
+	if h.auditStore != nil {
+		go func() {
+			auditEvent, err := dsaudit.NewWorkflowSearchAuditEvent(&searchReq, response, duration)
+			if err != nil {
+				h.logger.Error(err, "Failed to create workflow search audit event",
+					"query", searchReq.Query,
+				)
+				return
+			}
+
+			// Use a background context with a timeout for async audit storage
+			// The request context is cancelled when the response is sent
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+				h.logger.Error(err, "Failed to store workflow search audit event",
+					"query", searchReq.Query,
+				)
+			}
+		}()
+	}
+
 	// Log success
 	h.logger.Info("Workflow search completed",
 		"query", searchReq.Query,
 		"results_count", len(response.Workflows),
 		"top_k", searchReq.TopK,
+		"duration_ms", duration.Milliseconds(),
 	)
 
 	// Return results
@@ -227,19 +264,38 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		filters.Status = []string{status}
 	}
 
-	// Business category filter
-	if category := r.URL.Query().Get("business_category"); category != "" {
-		filters.BusinessCategory = &category
-	}
-
-	// Environment filter
+	// DD-WORKFLOW-001 v1.6: 5 mandatory labels (environment and priority are now mandatory)
+	// Environment filter (mandatory)
 	if env := r.URL.Query().Get("environment"); env != "" {
-		filters.Environment = &env
+		filters.Environment = env
 	}
 
-	// Risk tolerance filter
-	if risk := r.URL.Query().Get("risk_tolerance"); risk != "" {
-		filters.RiskTolerance = &risk
+	// Priority filter (mandatory)
+	if priority := r.URL.Query().Get("priority"); priority != "" {
+		filters.Priority = priority
+	}
+
+	// Component filter (mandatory)
+	if component := r.URL.Query().Get("component"); component != "" {
+		filters.Component = component
+	}
+
+	// DD-WORKFLOW-001 v1.5: Custom labels (subdomain-based)
+	// Format: custom_labels[subdomain]=value1,value2
+	// Example: custom_labels[constraint]=cost-constrained,stateful-safe
+	for key, values := range r.URL.Query() {
+		if strings.HasPrefix(key, "custom_labels[") && strings.HasSuffix(key, "]") {
+			subdomain := strings.TrimSuffix(strings.TrimPrefix(key, "custom_labels["), "]")
+			if subdomain != "" && len(values) > 0 {
+				if filters.CustomLabels == nil {
+					filters.CustomLabels = make(map[string][]string)
+				}
+				// Split comma-separated values
+				for _, v := range values {
+					filters.CustomLabels[subdomain] = append(filters.CustomLabels[subdomain], strings.Split(v, ",")...)
+				}
+			}
+		}
 	}
 
 	// Pagination
@@ -298,6 +354,296 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		h.logger.Error(err, "Failed to encode workflow list response")
+	}
+}
+
+// HandleGetWorkflowByID handles GET /api/v1/workflows/{workflowID}
+// BR-STORAGE-014: Workflow catalog management
+// DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
+func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) {
+	// Get workflow ID from URL path
+	workflowID := chi.URLParam(r, "workflowID")
+	if workflowID == "" {
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/bad-request",
+			"Bad Request",
+			"workflow_id is required",
+		)
+		return
+	}
+
+	// Get workflow from repository
+	workflow, err := h.workflowRepo.GetByID(r.Context(), workflowID)
+	if err != nil {
+		// Check if workflow not found
+		if err.Error() == fmt.Sprintf("workflow not found: %s", workflowID) {
+			h.writeRFC7807Error(w, http.StatusNotFound,
+				"https://kubernaut.dev/problems/not-found",
+				"Not Found",
+				fmt.Sprintf("Workflow not found: %s", workflowID),
+			)
+			return
+		}
+
+		h.logger.Error(err, "Failed to get workflow",
+			"workflow_id", workflowID,
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError,
+			"https://kubernaut.dev/problems/internal-error",
+			"Internal Server Error",
+			"Failed to get workflow",
+		)
+		return
+	}
+
+	// Log success
+	h.logger.Info("Workflow retrieved",
+		"workflow_id", workflowID,
+		"workflow_name", workflow.WorkflowName,
+		"version", workflow.Version,
+	)
+
+	// Return workflow
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		h.logger.Error(err, "Failed to encode workflow response")
+	}
+}
+
+// HandleListWorkflowVersions handles GET /api/v1/workflows/by-name/{workflowName}/versions
+// BR-STORAGE-014: Workflow catalog management
+// DD-WORKFLOW-002 v3.0: List all versions by workflow_name
+func (h *Handler) HandleListWorkflowVersions(w http.ResponseWriter, r *http.Request) {
+	// Get workflow name from URL path
+	workflowName := chi.URLParam(r, "workflowName")
+	if workflowName == "" {
+		h.logger.Error(fmt.Errorf("workflow_name is required"), "Missing workflow_name in request")
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/bad-request",
+			"Bad Request",
+			"workflow_name is required",
+		)
+		return
+	}
+
+	// Get all versions for this workflow
+	workflows, err := h.workflowRepo.GetVersionsByName(r.Context(), workflowName)
+	if err != nil {
+		h.logger.Error(err, "Failed to list workflow versions",
+			"workflow_name", workflowName,
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError,
+			"https://kubernaut.dev/problems/internal-error",
+			"Internal Server Error",
+			"Failed to list workflow versions",
+		)
+		return
+	}
+
+	// Log success
+	h.logger.Info("Workflow versions listed",
+		"workflow_name", workflowName,
+		"count", len(workflows),
+	)
+
+	// Return results
+	response := models.WorkflowVersionsResponse{
+		WorkflowName: workflowName,
+		Versions:     workflows,
+		Total:        len(workflows),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		h.logger.Error(err, "Failed to encode workflow versions response")
+	}
+}
+
+// HandleUpdateWorkflow handles PATCH /api/v1/workflows/{workflowID}
+// DD-WORKFLOW-012: Update ONLY mutable fields (status, metrics)
+// Immutable fields (description, content, labels) require creating a new version
+func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
+	// Get workflow ID from URL path
+	workflowID := chi.URLParam(r, "workflowID")
+	if workflowID == "" {
+		h.logger.Error(fmt.Errorf("workflow_id is required"), "Missing workflow_id in request")
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/bad-request",
+			"Bad Request",
+			"workflow_id is required",
+		)
+		return
+	}
+
+	// Parse request body
+	var updateReq models.WorkflowUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
+		h.logger.Error(err, "Failed to decode workflow update request")
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/bad-request",
+			"Bad Request",
+			fmt.Sprintf("Invalid request body: %v", err),
+		)
+		return
+	}
+
+	// DD-WORKFLOW-012: Validate that ONLY mutable fields are being updated
+	if updateReq.Description != nil || updateReq.Content != nil || updateReq.Labels != nil {
+		h.logger.Error(fmt.Errorf("immutable fields cannot be updated"), "Attempted to update immutable fields",
+			"workflow_id", workflowID,
+		)
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/immutable-field-violation",
+			"Bad Request",
+			"Cannot update immutable fields (description, content, labels). Create a new version instead. See DD-WORKFLOW-012.",
+		)
+		return
+	}
+
+	// Get existing workflow
+	workflow, err := h.workflowRepo.GetByID(r.Context(), workflowID)
+	if err != nil {
+		h.logger.Error(err, "Failed to get workflow for update",
+			"workflow_id", workflowID,
+		)
+		h.writeRFC7807Error(w, http.StatusNotFound,
+			"https://kubernaut.dev/problems/not-found",
+			"Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID),
+		)
+		return
+	}
+
+	// Apply mutable field updates
+	if updateReq.Status != nil {
+		workflow.Status = *updateReq.Status
+		if *updateReq.Status == "disabled" {
+			now := time.Now()
+			workflow.DisabledAt = &now
+			workflow.DisabledBy = updateReq.DisabledBy
+			workflow.DisabledReason = updateReq.DisabledReason
+		}
+	}
+
+	// Update the workflow
+	if err := h.workflowRepo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, workflow.Status, getStringValue(workflow.DisabledReason), getStringValue(workflow.DisabledBy)); err != nil {
+		h.logger.Error(err, "Failed to update workflow",
+			"workflow_id", workflowID,
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError,
+			"https://kubernaut.dev/problems/internal-error",
+			"Internal Server Error",
+			"Failed to update workflow",
+		)
+		return
+	}
+
+	// Log success
+	h.logger.Info("Workflow updated",
+		"workflow_id", workflowID,
+		"status", workflow.Status,
+	)
+
+	// Return updated workflow
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		h.logger.Error(err, "Failed to encode workflow response")
+	}
+}
+
+// getStringValue safely dereferences a string pointer
+func getStringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// HandleDisableWorkflow handles PATCH /api/v1/workflows/{workflowID}/disable
+// DD-WORKFLOW-012: Convenience endpoint for disabling workflows (soft delete)
+func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) {
+	// Get workflow ID from URL path
+	workflowID := chi.URLParam(r, "workflowID")
+	if workflowID == "" {
+		h.logger.Error(fmt.Errorf("workflow_id is required"), "Missing workflow_id in request")
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/bad-request",
+			"Bad Request",
+			"workflow_id is required",
+		)
+		return
+	}
+
+	// Parse request body
+	var disableReq models.WorkflowDisableRequest
+	if err := json.NewDecoder(r.Body).Decode(&disableReq); err != nil {
+		h.logger.Error(err, "Failed to decode workflow disable request")
+		h.writeRFC7807Error(w, http.StatusBadRequest,
+			"https://kubernaut.dev/problems/bad-request",
+			"Bad Request",
+			fmt.Sprintf("Invalid request body: %v", err),
+		)
+		return
+	}
+
+	// Get existing workflow
+	workflow, err := h.workflowRepo.GetByID(r.Context(), workflowID)
+	if err != nil {
+		h.logger.Error(err, "Failed to get workflow for disable",
+			"workflow_id", workflowID,
+		)
+		h.writeRFC7807Error(w, http.StatusNotFound,
+			"https://kubernaut.dev/problems/not-found",
+			"Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID),
+		)
+		return
+	}
+
+	// Update the workflow status to disabled
+	reason := ""
+	if disableReq.Reason != nil {
+		reason = *disableReq.Reason
+	}
+	updatedBy := ""
+	if disableReq.UpdatedBy != nil {
+		updatedBy = *disableReq.UpdatedBy
+	}
+
+	if err := h.workflowRepo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "disabled", reason, updatedBy); err != nil {
+		h.logger.Error(err, "Failed to disable workflow",
+			"workflow_id", workflowID,
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError,
+			"https://kubernaut.dev/problems/internal-error",
+			"Internal Server Error",
+			"Failed to disable workflow",
+		)
+		return
+	}
+
+	// Update workflow object for response
+	workflow.Status = "disabled"
+	now := time.Now()
+	workflow.DisabledAt = &now
+	workflow.DisabledBy = disableReq.UpdatedBy
+	workflow.DisabledReason = disableReq.Reason
+
+	// Log success
+	h.logger.Info("Workflow disabled",
+		"workflow_id", workflowID,
+		"reason", reason,
+		"disabled_by", updatedBy,
+	)
+
+	// Return updated workflow
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		h.logger.Error(err, "Failed to encode workflow response")
 	}
 }
 

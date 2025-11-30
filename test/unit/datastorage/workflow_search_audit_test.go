@@ -65,26 +65,26 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 				TopK:  3,
 			}
 
-			// DD-WORKFLOW-002 v3.0: Nested response structure with UUID workflow_id
+			// DD-WORKFLOW-002 v3.0: FLAT response structure with UUID workflow_id
 			searchResponse := &models.WorkflowSearchResponse{
 				Workflows: []models.WorkflowSearchResult{
 					{
-						Workflow: models.RemediationWorkflow{
-							WorkflowID:  "550e8400-e29b-41d4-a716-446655440000",
-							Name:        "Pod OOM GitOps Recovery",
-							Description: "OOMKilled critical: Increases memory via GitOps PR",
-						},
+						// DD-WORKFLOW-002 v3.0: Flat fields (no nested Workflow)
+						WorkflowID:     "550e8400-e29b-41d4-a716-446655440000",
+						Title:          "Pod OOM GitOps Recovery",
+						Description:    "OOMKilled critical: Increases memory via GitOps PR",
 						BaseSimilarity: 0.92,
+						Confidence:     0.92, // V1.0 scoring: confidence = BaseSimilarity
 						FinalScore:     0.92,
 						Rank:           1,
 					},
 					{
-						Workflow: models.RemediationWorkflow{
-							WorkflowID:  "660f9500-f30c-52e5-b827-557766551111",
-							Name:        "Pod OOM Manual Recovery",
-							Description: "OOMKilled critical: Increases memory via kubectl",
-						},
+						// DD-WORKFLOW-002 v3.0: Flat fields (no nested Workflow)
+						WorkflowID:     "660f9500-f30c-52e5-b827-557766551111",
+						Title:          "Pod OOM Manual Recovery",
+						Description:    "OOMKilled critical: Increases memory via kubectl",
 						BaseSimilarity: 0.88,
+						Confidence:     0.88, // V1.0 scoring: confidence = BaseSimilarity
 						FinalScore:     0.88,
 						Rank:           2,
 					},
@@ -269,15 +269,15 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 				TopK:  1,
 			}
 
-			// DD-WORKFLOW-002 v3.0: Nested response structure with UUID workflow_id
+			// DD-WORKFLOW-002 v3.0: Flat response structure with UUID workflow_id
 			searchResponse := &models.WorkflowSearchResponse{
 				Workflows: []models.WorkflowSearchResult{
 					{
-						Workflow: models.RemediationWorkflow{
-							WorkflowID:  "770e8400-e29b-41d4-a716-446655440002",
-							Name:        "Pod OOM Recovery",
-							Description: "OOMKilled critical: Comprehensive OOM recovery",
-						},
+						// DD-WORKFLOW-002 v3.0: Flat fields (Workflow field is json:"-")
+						WorkflowID:     "770e8400-e29b-41d4-a716-446655440002",
+						Title:          "Pod OOM Recovery",
+						Description:    "OOMKilled critical: Comprehensive OOM recovery",
+						Confidence:     0.95,
 						BaseSimilarity: 0.95,
 						FinalScore:     0.95,
 						Rank:           1,

@@ -58,7 +58,7 @@ var _ = Describe("Workflow Audit Event Validation", func() {
 				"query": map[string]interface{}{
 					"text": "OOMKilled critical",
 					"filters": map[string]interface{}{
-						"signal-type": "OOMKilled",
+						"signal_type": "OOMKilled",
 						"severity":    "critical",
 					},
 					"top_k":          3,
@@ -78,7 +78,7 @@ var _ = Describe("Workflow Audit Event Validation", func() {
 								"confidence": 0.92,
 							},
 							"labels": map[string]interface{}{
-								"signal-type": "OOMKilled",
+								"signal_type": "OOMKilled",
 								"severity":    "critical",
 							},
 						},
