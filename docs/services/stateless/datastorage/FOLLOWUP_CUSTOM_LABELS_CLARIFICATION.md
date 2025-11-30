@@ -48,7 +48,7 @@ We're looking for documentation that explains:
 
 | Document | Purpose |
 |----------|---------|
-| [DD-WORKFLOW-001 v1.7](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | 5 mandatory labels + customer-derived labels (snake_case) |
+| [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | 5 mandatory labels + customer-derived labels (snake_case) |
 | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0](../../crd-controllers/01-signalprocessing/HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) | **PRIMARY**: Rego-based label extraction architecture |
 | [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md) | Scoring strategy (custom labels = hard filter only) |
 
@@ -73,7 +73,7 @@ We're looking for documentation that explains:
 }
 ```
 
-**Example B**: Structured columns + separate custom_labels field (✅ CURRENT - DD-WORKFLOW-001 v1.7)
+**Example B**: Structured columns + separate custom_labels field (✅ CURRENT - DD-WORKFLOW-001 v1.8)
 ```json
 {
   "signal_type": "OOMKilled",
@@ -105,7 +105,7 @@ type EnrichmentResults struct {
 }
 ```
 
-**Data Flow to HolmesGPT-API → Data Storage** (per DD-WORKFLOW-001 v1.7):
+**Data Flow to HolmesGPT-API → Data Storage** (per DD-WORKFLOW-001 v1.8):
 
 The 5 mandatory labels (`signal_type`, `severity`, `component`, `environment`, `priority`) are passed as structured filter fields (snake_case). Custom labels are passed separately in `custom_labels` map using subdomain format.
 
@@ -137,7 +137,7 @@ The 5 mandatory labels (`signal_type`, `severity`, `component`, `environment`, `
 
 We need the complete list of label keys that are **reserved** and cannot be used as custom labels:
 
-**Our current understanding** (from DD-WORKFLOW-001 v1.7):
+**Our current understanding** (from DD-WORKFLOW-001 v1.8):
 
 | Reserved Label | Type | Storage | Notes |
 |----------------|------|---------|-------|
@@ -162,7 +162,7 @@ We need the complete list of label keys that are **reserved** and cannot be used
 
 **⚠️ UPDATE**: DD-WORKFLOW-001 is now **v1.6** (snake_case API standardization).
 
-**Complete Reserved Label List (DD-WORKFLOW-001 v1.7)**:
+**Complete Reserved Label List (DD-WORKFLOW-001 v1.8)**:
 
 | Reserved Label | Type | Who Sets | Notes |
 |----------------|------|----------|-------|
@@ -451,7 +451,7 @@ Once we have answers:
 |----------|-----------|
 | [HANDOFF_REQUEST_DATA_STORAGE_CONSTRAINT_FILTERING.md](../../crd-controllers/01-signalprocessing/HANDOFF_REQUEST_DATA_STORAGE_CONSTRAINT_FILTERING.md) | Original handoff |
 | [RESPONSE_CONSTRAINT_FILTERING.md](RESPONSE_CONSTRAINT_FILTERING.md) | Our initial response |
-| [DD-WORKFLOW-001 v1.7](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | **Mandatory label schema (5 labels, snake_case)** |
+| [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | **Mandatory label schema (5 labels, snake_case)** |
 | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0](../../crd-controllers/01-signalprocessing/HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) | **PRIMARY: Custom labels architecture** |
 | [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md) | Scoring strategy |
 

@@ -40,7 +40,7 @@
 - Label values can be **boolean** (`"cost-constrained"`) or **key-value** (`"name=payments"`)
 - Query logic: Multiple values within same subdomain are **ORed**, different subdomains are **ANDed**
 - SignalProcessing strips `*.kubernaut.io/` prefix - Data Storage receives clean subdomain keys
-- Cross-reference: DD-WORKFLOW-001 v1.7, DD-WORKFLOW-004 v2.2, HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md v1.1
+- Cross-reference: DD-WORKFLOW-001 v1.8, DD-WORKFLOW-004 v2.2, HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md v1.1
 - **Impact**: HolmesGPT-API and Data Storage must use new structure
 
 ### Version 3.1 (2025-11-30)
@@ -48,7 +48,7 @@
 - Custom labels are customer-defined via Rego policies (per HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0)
 - Custom labels use hard WHERE filter (not boost/penalty scoring) per DD-WORKFLOW-004 v2.1
 - Label prefixes: `kubernaut.io/*`, `constraint.kubernaut.io/*`, `custom.kubernaut.io/*`
-- Cross-reference: DD-WORKFLOW-001 v1.7 (5 mandatory labels + customer-derived, snake_case)
+- Cross-reference: DD-WORKFLOW-001 v1.8 (5 mandatory labels + customer-derived, snake_case)
 - **Impact**: Enables filtering by arbitrary customer-defined labels in workflow search
 - **SUPERSEDED BY v3.2**: Structure changed to `map[string][]string`
 
@@ -228,7 +228,7 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
     "custom_labels": {
       "type": "object",
       "required": false,
-      "description": "Customer-defined labels for exact match filtering (v3.2: subdomain-based structure). Keys are subdomains (e.g., 'constraint', 'team'), values are arrays of label strings. Labels are defined via Rego policies in Signal Processing. Uses hard WHERE filter (not scoring). Multiple values in same subdomain are ORed; different subdomains are ANDed. See DD-WORKFLOW-001 v1.7 and HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md.",
+      "description": "Customer-defined labels for exact match filtering (v3.2: subdomain-based structure). Keys are subdomains (e.g., 'constraint', 'team'), values are arrays of label strings. Labels are defined via Rego policies in Signal Processing. Uses hard WHERE filter (not scoring). Multiple values in same subdomain are ORed; different subdomains are ANDed. See DD-WORKFLOW-001 v1.8 and HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md.",
       "structure": "map[string][]string (subdomain → values)",
       "example": {
         "constraint": ["cost-constrained", "stateful-safe"],

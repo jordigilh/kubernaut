@@ -139,7 +139,7 @@ customLabels:            # Operator-defined via Rego
 
 - **HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md**: Full extraction design
 - **HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0**: Rego policy design
-- **DD-WORKFLOW-001 v1.7**: Label schema (snake_case API fields)
+- **DD-WORKFLOW-001 v1.8**: Label schema (snake_case API fields)
 
 ---
 

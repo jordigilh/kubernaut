@@ -13,8 +13,9 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| **3.1** | Nov 30, 2025 | SignalProcessing Team | DD-WORKFLOW-001 v1.7 alignment: naming convention, risk_tolerance now customer-defined |
-| **3.0** | Nov 30, 2025 | AIAnalysis Team | **MAJOR**: CustomLabels (Rego) pulled into V1.0, unified naming |
+| **3.2** | Nov 30, 2025 | AIAnalysis Team | **NEW**: Added `OwnerChain` requirement (DD-WORKFLOW-001 v1.8) for DetectedLabels validation |
+| 3.1 | Nov 30, 2025 | SignalProcessing Team | DD-WORKFLOW-001 v1.8 alignment: naming convention, risk_tolerance now customer-defined |
+| 3.0 | Nov 30, 2025 | AIAnalysis Team | **MAJOR**: CustomLabels (Rego) pulled into V1.0, unified naming |
 | 2.1 | Nov 30, 2025 | AIAnalysis Team | Added 7 Rego transformation examples |
 | 2.0 | Nov 30, 2025 | AIAnalysis Team | Added DetectedLabels (V1.0), restructured document |
 | 1.0 | Nov 29, 2025 | AIAnalysis Team | Initial Rego policy label extraction (CustomLabels) |
@@ -59,7 +60,7 @@ All labels use the same naming convention from V1.0 to avoid migration:
 | `constraint.kubernaut.io/*` | Workflow constraints | `constraint.kubernaut.io/cost-constrained` |
 | `custom.kubernaut.io/*` | Customer-defined | `custom.kubernaut.io/business-unit` |
 
-### 📛 Naming Convention (DD-WORKFLOW-001 v1.7)
+### 📛 Naming Convention (DD-WORKFLOW-001 v1.8)
 
 | Context | Convention | Example |
 |---------|------------|---------|
@@ -313,7 +314,7 @@ package signalprocessing.security
 import data.signalprocessing.labels as customer_labels
 
 # System labels that cannot be overridden by customer policies
-# These are the 5 mandatory labels from DD-WORKFLOW-001 v1.7
+# These are the 5 mandatory labels from DD-WORKFLOW-001 v1.8
 # K8s label keys use kebab-case; API/DB fields use snake_case
 system_labels := {
     "kubernaut.io/signal-type",   # API: signal_type
@@ -322,7 +323,7 @@ system_labels := {
     "kubernaut.io/environment",   # API: environment
     "kubernaut.io/priority"       # API: priority
 }
-# NOTE: The following are ALLOWED (customer-defined via Rego, per DD-WORKFLOW-001 v1.7):
+# NOTE: The following are ALLOWED (customer-defined via Rego, per DD-WORKFLOW-001 v1.8):
 #   - kubernaut.io/risk-tolerance  → stored in custom_labels JSONB
 #   - kubernaut.io/business-category → stored in custom_labels JSONB (optional)
 
@@ -411,11 +412,11 @@ labels["constraint.kubernaut.io/high-availability"] = "true" {
 
 ---
 
-## 📋 **Label Taxonomy Clarification (DD-WORKFLOW-001 v1.7)**
+## 📋 **Label Taxonomy Clarification (DD-WORKFLOW-001 v1.8)**
 
 | Label Category | Source | Examples | Purpose |
 |----------------|--------|----------|---------|
-| **5 Mandatory Labels** (DD-WORKFLOW-001 v1.7) | Signal Processing core | `signal_type`, `severity`, `component`, `environment`, `priority` | Required for workflow matching |
+| **5 Mandatory Labels** (DD-WORKFLOW-001 v1.8) | Signal Processing core | `signal_type`, `severity`, `component`, `environment`, `priority` | Required for workflow matching |
 | **Customer-Derived Labels** (Rego) | Rego policies | `risk_tolerance`, `business_category`, `team`, `region` | Customer-defined via Rego |
 | **DetectedLabels** (this handoff) | Auto-detection from K8s | `GitOpsManaged`, `PDBProtected`, `HPAEnabled`, `Stateful` | Additional context for LLM |
 
@@ -701,7 +702,7 @@ Without extracted labels, HolmesGPT-API cannot filter workflows by customer-spec
 type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
 
-    // Custom labels for workflow catalog filtering (DD-WORKFLOW-001 v1.7)
+    // Custom labels for workflow catalog filtering (DD-WORKFLOW-001 v1.8)
     // These are user-defined labels extracted via Rego policies
     CustomLabels map[string]string `json:"customLabels,omitempty"`
 
@@ -1037,7 +1038,7 @@ labels["region"] = region {
 deny_labels := {
     "kubernaut.io/priority",      # System-controlled
     "kubernaut.io/severity"       # System-controlled
-    # NOTE: risk_tolerance is now CUSTOMER-DEFINED (DD-WORKFLOW-001 v1.7)
+    # NOTE: risk_tolerance is now CUSTOMER-DEFINED (DD-WORKFLOW-001 v1.8)
 }
 
 # Allow custom- prefixed labels (user-safe)
@@ -1579,7 +1580,7 @@ system_labels := {
 
 | Label | Status | Who sets it? |
 |-------|--------|--------------|
-| `kubernaut.io/risk-tolerance` (hyphen) | ALLOWED | Customer Rego (DD-WORKFLOW-001 v1.7) |
+| `kubernaut.io/risk-tolerance` (hyphen) | ALLOWED | Customer Rego (DD-WORKFLOW-001 v1.8) |
 
 **Question**: Is this intentional dual-naming? The customer's Rego-derived `risk-tolerance` (hyphen) is supplementary to the system's `risk_tolerance` (underscore)?
 
@@ -1878,3 +1879,88 @@ SignalProcessing can skip redundant queries:
 - Pod/namespace **names** available from `SignalLabels` (no API call needed)
 - Pod/namespace **labels** require K8s API query (for Rego input)
 
+
+---
+
+## 🔧 ADDENDUM v3.2: OwnerChain Schema Correction
+
+**Date**: November 30, 2025
+**Reference**: DD-WORKFLOW-001 v1.8
+
+### ⚠️ Schema Correction Required
+
+Your `crd-schema.md` v1.6 has an incorrect `OwnerReference` type. Please update to match DD-WORKFLOW-001 v1.8.
+
+#### ❌ Current (Incorrect)
+
+```go
+// From crd-schema.md lines 228-239
+type OwnerReference struct {
+    APIVersion string `json:"apiVersion"`  // ❌ NOT NEEDED
+    Kind string `json:"kind"`
+    Name string `json:"name"`
+    UID string `json:"uid,omitempty"`      // ❌ NOT NEEDED
+    // ❌ MISSING: Namespace
+}
+```
+
+#### ✅ Correct (DD-WORKFLOW-001 v1.8)
+
+```go
+// OwnerChainEntry represents a single entry in the K8s ownership chain
+// HolmesGPT-API uses for DetectedLabels validation
+type OwnerChainEntry struct {
+    // Namespace of the owner resource
+    // Empty for cluster-scoped resources (e.g., Node)
+    // REQUIRED for namespaced resources
+    Namespace string `json:"namespace,omitempty"`
+
+    // Kind of the owner resource
+    // Examples: "ReplicaSet", "Deployment", "StatefulSet", "DaemonSet"
+    // REQUIRED
+    Kind string `json:"kind"`
+
+    // Name of the owner resource
+    // REQUIRED
+    Name string `json:"name"`
+}
+```
+
+### Why This Matters
+
+| Field | HolmesGPT-API Uses? | Why |
+|-------|---------------------|-----|
+| `namespace` | ✅ **YES** | Required for `same_namespace_and_kind()` validation |
+| `kind` | ✅ **YES** | Required for `resources_match()` |
+| `name` | ✅ **YES** | Required for `resources_match()` |
+| `apiVersion` | ❌ **NO** | Not used in validation logic |
+| `uid` | ❌ **NO** | Not used in validation logic |
+
+### Validation Logic (from DD-WORKFLOW-001 v1.8)
+
+```python
+def resources_match(a, b):
+    """Match by namespace + kind + name (NOT apiVersion or uid)"""
+    return (a.namespace == b.namespace and
+            a.kind == b.kind and
+            a.name == b.name)
+```
+
+### Action Required
+
+1. Update `crd-schema.md` type name: `OwnerReference` → `OwnerChainEntry`
+2. Add `Namespace` field
+3. Remove `APIVersion` field
+4. Remove `UID` field
+5. Update Go types in `api/signalprocessing/v1alpha1/signalprocessing_types.go`
+
+### Traversal Algorithm
+
+See DD-WORKFLOW-001 v1.8 for the complete Go pseudocode for traversing `ownerReferences`.
+
+**Key points**:
+- Use the first `controller: true` owner reference
+- Inherit namespace from current resource (for namespaced owners)
+- Stop when no more owners or owner not found
+
+---

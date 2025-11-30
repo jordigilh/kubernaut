@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | v1.6 | 2025-11-30 | Added ownerChain for DetectedLabels validation (DD-WORKFLOW-001 v1.7) | [DD-WORKFLOW-001 v1.7](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.7 | 2025-11-30 | Schema correction: OwnerReference → OwnerChainEntry, added Namespace, removed APIVersion/UID (DD-WORKFLOW-001 v1.8) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
+> | v1.6 | 2025-11-30 | Added ownerChain for DetectedLabels validation (DD-WORKFLOW-001 v1.8) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.5 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case API fields, DetectedLabels wildcard support) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.1, [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.4 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.0) to EnrichmentResults | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0 |
@@ -190,13 +191,14 @@ type EnrichmentResults struct {
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
 
     // ========================================
-    // OWNER CHAIN (DD-WORKFLOW-001 v1.7)
+    // OWNER CHAIN (DD-WORKFLOW-001 v1.8)
     // ========================================
     // K8s ownership traversal from original signal resource
     // Used by HolmesGPT-API to validate DetectedLabels applicability
     // Example: Pod → ReplicaSet → Deployment
     // If RCA identifies a resource NOT in this chain, DetectedLabels are excluded from filtering
-    OwnerChain []OwnerReference `json:"ownerChain,omitempty"`
+    // Traversal: Use first `controller: true` ownerReference, inherit namespace
+    OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
 
     // ========================================
     // LABEL DETECTION (HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0)
@@ -204,7 +206,7 @@ type EnrichmentResults struct {
 
     // Auto-detected cluster characteristics - NO CONFIG NEEDED (V1.0)
     // SignalProcessing auto-detects these from K8s resources
-    // Dual-use per DD-WORKFLOW-001 v1.7:
+    // Dual-use per DD-WORKFLOW-001 v1.8:
     //   - LLM Prompt Context: ALWAYS included (helps LLM understand environment)
     //   - Workflow Filtering: CONDITIONAL (only when owner chain validates relationship)
     // Default: EXCLUDE from filtering if relationship cannot be proven (100% safe)
@@ -225,22 +227,28 @@ type EnrichmentResults struct {
     RecoveryContext *RecoveryContext `json:"recoveryContext,omitempty"`
 }
 
-// OwnerReference represents a K8s owner reference in the ownership chain
-// Used for DetectedLabels validation per DD-WORKFLOW-001 v1.7
-type OwnerReference struct {
-    // API version of the referent (e.g., "apps/v1")
-    APIVersion string `json:"apiVersion"`
-    // Kind of the referent (e.g., "Deployment", "ReplicaSet", "StatefulSet")
+// OwnerChainEntry represents a single entry in the K8s ownership chain
+// Used for DetectedLabels validation per DD-WORKFLOW-001 v1.8
+// HolmesGPT-API uses resources_match(a, b) which compares namespace + kind + name
+type OwnerChainEntry struct {
+    // Namespace of the owner resource
+    // Empty for cluster-scoped resources (e.g., Node)
+    // REQUIRED for namespaced resources
+    Namespace string `json:"namespace,omitempty"`
+
+    // Kind of the owner resource
+    // Examples: "ReplicaSet", "Deployment", "StatefulSet", "DaemonSet"
+    // REQUIRED
     Kind string `json:"kind"`
-    // Name of the referent
+
+    // Name of the owner resource
+    // REQUIRED
     Name string `json:"name"`
-    // UID of the referent
-    UID string `json:"uid,omitempty"`
 }
 
 // DetectedLabels contains auto-detected cluster characteristics (V1.0)
 // SignalProcessing populates these automatically from K8s resources
-// HolmesGPT-API uses for (DD-WORKFLOW-001 v1.7 dual-use):
+// HolmesGPT-API uses for (DD-WORKFLOW-001 v1.8 dual-use):
 //   - LLM Prompt Context: ALWAYS included (helps LLM understand environment)
 //   - Workflow Filtering: CONDITIONAL (only when owner chain validates relationship)
 // Default: EXCLUDE from filtering if relationship cannot be proven (100% safe)
@@ -527,9 +535,9 @@ func init() {
 ### Label Detection (HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v2.0)
 - Added: `DetectedLabels` struct - auto-detected cluster characteristics (V1.0 priority)
 - Added: `CustomLabels` field - user-defined via Rego policies (V1.0)
-- Reference: DD-WORKFLOW-001 v1.7 (5 mandatory labels, snake_case), DD-WORKFLOW-004 v2.2
+- Reference: DD-WORKFLOW-001 v1.8 (5 mandatory labels, snake_case), DD-WORKFLOW-004 v2.2
 
-#### Label Taxonomy (DD-WORKFLOW-001 v1.7)
+#### Label Taxonomy (DD-WORKFLOW-001 v1.8)
 
 | Category | Source | Config Required | Examples |
 |----------|--------|-----------------|----------|

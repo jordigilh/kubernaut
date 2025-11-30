@@ -11,7 +11,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **1.2** | 2025-11-30 | Aligned with DD-WORKFLOW-001 v1.7: snake_case for all API fields; Updated input schema to use `git_ops_managed`, `pdb_protected`, etc. |
+| **1.2** | 2025-11-30 | Aligned with DD-WORKFLOW-001 v1.8: snake_case for all API fields; Updated input schema to use `git_ops_managed`, `pdb_protected`, etc. |
 | 1.1 | 2025-11-30 | Added `DetectedLabels` and `CustomLabels` to input schema; Added GitOps/constraint-aware policies |
 | 1.0 | 2025-11-29 | Initial draft with sample policies |
 
@@ -19,12 +19,12 @@
 
 ## Policy Input Schema
 
-> **Note**: Per DD-WORKFLOW-001 v1.7, all API field names use **snake_case**.
+> **Note**: Per DD-WORKFLOW-001 v1.8, all API field names use **snake_case**.
 > CRD fields (K8s resources) remain camelCase per K8s convention.
 
 ```go
 // ApprovalPolicyInput is passed to Rego policy for evaluation
-// All field names use snake_case per DD-WORKFLOW-001 v1.7
+// All field names use snake_case per DD-WORKFLOW-001 v1.8
 type ApprovalPolicyInput struct {
     // From AIAnalysis.status.selectedWorkflow
     Action     string  `json:"action"`     // e.g., "restart-pod", "scale-deployment"
@@ -64,7 +64,7 @@ type TargetResourceInput struct {
 }
 
 // DetectedLabelsInput contains auto-detected cluster characteristics
-// Field names use snake_case per DD-WORKFLOW-001 v1.7
+// Field names use snake_case per DD-WORKFLOW-001 v1.8
 type DetectedLabelsInput struct {
     // GitOps
     GitOpsManaged bool   `json:"git_ops_managed"` // ArgoCD/Flux detected
@@ -214,7 +214,7 @@ reason := sprintf("Auto-approved: safe %s action with %.0f%% confidence", [input
 
 **Purpose**: Demonstrates approval decisions based on detected_labels and custom_labels.
 
-> **Note**: Field names use snake_case per DD-WORKFLOW-001 v1.7
+> **Note**: Field names use snake_case per DD-WORKFLOW-001 v1.8
 
 ```rego
 package kubernaut.aianalysis.approval.gitops_constraints
@@ -714,7 +714,7 @@ For V1.0, we'll use a **single combined policy** that incorporates:
 5. `custom_labels`-based rules (constraints, risk tolerance, team)
 
 **V1.6 Updates**:
-- All API field names use **snake_case** (per DD-WORKFLOW-001 v1.7)
+- All API field names use **snake_case** (per DD-WORKFLOW-001 v1.8)
 - `detected_labels` supports **wildcard matching** (`"*"` = requires SOME value)
 - `custom_labels` auto-appended by HolmesGPT-API (per DD-HAPI-001)
 

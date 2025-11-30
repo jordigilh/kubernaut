@@ -166,11 +166,11 @@ for subdomain, values := range customLabels {
 **Can you confirm the document versions referenced?**
 
 The handoff references:
-- DD-WORKFLOW-001 v1.7
+- DD-WORKFLOW-001 v1.8
 - DD-WORKFLOW-004 v2.2
 
 Our current versions:
-- DD-WORKFLOW-001 v1.7 (current)
+- DD-WORKFLOW-001 v1.8 (current)
 - DD-WORKFLOW-004 v2.1
 
 **Question**: Are v1.5 and v2.2 upcoming versions, or should we use the current versions?
@@ -213,7 +213,7 @@ Please respond inline below each question or create a response document at:
 
 - [HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md](./HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md)
 - [FOLLOWUP_CUSTOM_LABELS_CLARIFICATION.md](./FOLLOWUP_CUSTOM_LABELS_CLARIFICATION.md)
-- [DD-WORKFLOW-001 v1.7](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md)
+- [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md)
 - [DD-WORKFLOW-002 v3.2](../../../architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md) - **UPDATED** with subdomain structure
 - [DD-WORKFLOW-004 v2.2](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)
 - [HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md](../../crd-controllers/01-signalprocessing/HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md)
