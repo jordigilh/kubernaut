@@ -132,7 +132,7 @@ type WorkflowExecution struct {
 
 	// Bundle is the container image or bundle reference
 	// For Tekton: OCI bundle URL
-	// For Ansible: Git repo or container with playbook
+	// For Ansible: Git repo or container with workflow
 	Bundle string `yaml:"bundle,omitempty" json:"bundle,omitempty" validate:"omitempty"`
 }
 

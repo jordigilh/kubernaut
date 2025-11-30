@@ -17,17 +17,17 @@ import (
 // ADR-033: Multi-Dimensional Success Tracking
 // Tracks remediation effectiveness across three dimensions:
 // 1. Incident Type (PRIMARY) - What problem was being solved
-// 2. Playbook (SECONDARY) - Which remediation pattern was used
+// 2. Workflow (SECONDARY) - Which remediation pattern was used
 // 3. Action Type (TERTIARY) - Specific action executed
 //
 // Business Requirements:
 // - BR-STORAGE-001 to BR-STORAGE-020: Complete signal audit trail
 // - BR-STORAGE-031-01: Incident-type success rate aggregation
-// - BR-STORAGE-031-02: Playbook success rate aggregation
+// - BR-STORAGE-031-02: Workflow success rate aggregation
 // - BR-STORAGE-031-04: AI execution mode tracking
 // - BR-STORAGE-031-05: Multi-dimensional success rate queries
 // - BR-REMEDIATION-015: Populate incident type during execution
-// - BR-REMEDIATION-016: Populate playbook metadata during execution
+// - BR-REMEDIATION-016: Populate workflow metadata during execution
 // - BR-REMEDIATION-017: Track AI execution mode flags
 //
 // ========================================
@@ -72,8 +72,8 @@ type ActionTrace struct {
 	// ========================================
 	// ADR-033: DIMENSION 1 - INCIDENT TYPE (PRIMARY)
 	// ========================================
-	// WHY PRIMARY? AI learns which playbooks work for specific problems
-	// Example: "pod-oom-killer" incident → "memory-increase-restart" playbook = 92% success
+	// WHY PRIMARY? AI learns which workflows work for specific problems
+	// Example: "pod-oom-killer" incident → "memory-increase-restart" workflow = 92% success
 
 	// IncidentType is the PRIMARY dimension for success tracking
 	// Examples: "pod-oom-killer", "high-cpu-usage", "disk-pressure", "network-timeout"
@@ -95,47 +95,47 @@ type ActionTrace struct {
 	// ADR-033: DIMENSION 2 - REMEDIATION PLAYBOOK (SECONDARY)
 	// ========================================
 	// WHY SECONDARY? Tracks which remediation patterns work best
-	// Example: "disk-cleanup-v2" playbook for "disk-pressure" = 88% success
+	// Example: "disk-cleanup-v2" workflow for "disk-pressure" = 88% success
 
-	// PlaybookID is the SECONDARY dimension for success tracking
+	// WorkflowID is the SECONDARY dimension for success tracking
 	// Examples: "pod-oom-recovery", "disk-cleanup", "network-retry"
-	// BR-STORAGE-031-02: Used for playbook success rate aggregation
+	// BR-STORAGE-031-02: Used for workflow success rate aggregation
 	// BR-REMEDIATION-016: Populated by RemediationExecutor during execution
-	PlaybookID string `json:"playbook_id" db:"playbook_id" validate:"max=64"`
+	WorkflowID string `json:"workflow_id" db:"workflow_id" validate:"max=64"`
 
-	// PlaybookVersion is the semantic version of the playbook
+	// WorkflowVersion is the semantic version of the workflow
 	// Examples: "v1.0", "v1.2", "v2.0"
 	// BR-STORAGE-031-02: Used for version-specific success rate tracking
-	// BR-REMEDIATION-016: Populated by Playbook Catalog during selection
-	PlaybookVersion string `json:"playbook_version" db:"playbook_version" validate:"max=20"`
+	// BR-REMEDIATION-016: Populated by Workflow Catalog during selection
+	WorkflowVersion string `json:"workflow_version" db:"workflow_version" validate:"max=20"`
 
-	// PlaybookStepNumber is the step position within a multi-step playbook
-	// Values: 1, 2, 3, ... (NULL for single-step playbooks)
-	// BR-REMEDIATION-016: Used to group all steps in a single playbook execution
-	PlaybookStepNumber *int `json:"playbook_step_number,omitempty" db:"playbook_step_number" validate:"omitempty,min=1"`
+	// WorkflowStepNumber is the step position within a multi-step workflow
+	// Values: 1, 2, 3, ... (NULL for single-step workflows)
+	// BR-REMEDIATION-016: Used to group all steps in a single workflow execution
+	WorkflowStepNumber *int `json:"workflow_step_number,omitempty" db:"workflow_step_number" validate:"omitempty,min=1"`
 
-	// PlaybookExecutionID groups all actions in a single playbook run
-	// Same ID is used across all steps in a multi-step playbook
-	// BR-REMEDIATION-016: Enables playbook-level success tracking (not step-level)
-	PlaybookExecutionID string `json:"playbook_execution_id" db:"playbook_execution_id" validate:"max=64"`
+	// WorkflowExecutionID groups all actions in a single workflow run
+	// Same ID is used across all steps in a multi-step workflow
+	// BR-REMEDIATION-016: Enables workflow-level success tracking (not step-level)
+	WorkflowExecutionID string `json:"workflow_execution_id" db:"workflow_execution_id" validate:"max=64"`
 
 	// ========================================
 	// ADR-033: AI EXECUTION MODE (HYBRID MODEL)
 	// ========================================
 	// WHY? Tracks how AI selected the remediation approach
-	// 90-95% catalog selection | 4-9% playbook chaining | <1% manual escalation
+	// 90-95% catalog selection | 4-9% workflow chaining | <1% manual escalation
 
-	// AISelectedPlaybook indicates AI selected a single playbook from the catalog
+	// AISelectedWorkflow indicates AI selected a single workflow from the catalog
 	// TRUE for 90-95% of cases (standard catalog-based remediation)
 	// BR-STORAGE-031-04: Used to track AI execution mode distribution
 	// BR-REMEDIATION-017: Populated by RemediationExecutor based on AI decision
-	AISelectedPlaybook bool `json:"ai_selected_playbook" db:"ai_selected_playbook"`
+	AISelectedWorkflow bool `json:"ai_selected_workflow" db:"ai_selected_workflow"`
 
-	// AIChainedPlaybooks indicates AI chained multiple catalog playbooks
+	// AIChainedWorkflows indicates AI chained multiple catalog workflows
 	// TRUE for 4-9% of cases (complex problems requiring multiple remediation steps)
 	// BR-STORAGE-031-04: Used to identify advanced AI composition scenarios
-	// BR-REMEDIATION-017: Populated when AI composes multi-playbook solution
-	AIChainedPlaybooks bool `json:"ai_chained_playbooks" db:"ai_chained_playbooks"`
+	// BR-REMEDIATION-017: Populated when AI composes multi-workflow solution
+	AIChainedWorkflows bool `json:"ai_chained_workflows" db:"ai_chained_workflows"`
 
 	// AIManualEscalation indicates AI escalated to human operator
 	// TRUE for <1% of cases (novel problems requiring human expertise)
@@ -143,12 +143,12 @@ type ActionTrace struct {
 	// BR-REMEDIATION-017: Populated when AI determines manual intervention needed
 	AIManualEscalation bool `json:"ai_manual_escalation" db:"ai_manual_escalation"`
 
-	// AIPlaybookCustomization stores parameters customized by AI for this specific incident
+	// AIWorkflowCustomization stores parameters customized by AI for this specific incident
 	// Format: JSON object with parameter overrides
 	// Example: {"timeout": "300s", "retry_count": 5, "resource_limits": {"memory": "2Gi"}}
 	// BR-STORAGE-031-04: Used to analyze AI parameter tuning effectiveness
-	// BR-REMEDIATION-017: Populated when AI customizes playbook parameters
-	AIPlaybookCustomization json.RawMessage `json:"ai_playbook_customization,omitempty" db:"ai_playbook_customization"`
+	// BR-REMEDIATION-017: Populated when AI customizes workflow parameters
+	AIWorkflowCustomization json.RawMessage `json:"ai_workflow_customization,omitempty" db:"ai_workflow_customization"`
 }
 
 // TableName returns the PostgreSQL table name for this model
@@ -185,10 +185,10 @@ func (a *ActionTrace) HasIncidentContext() bool {
 	return a.IncidentType != "" || a.AlertName != ""
 }
 
-// HasPlaybookContext returns true if playbook tracking fields are populated
-// BR-STORAGE-031-02: Determines if record can be used for playbook aggregation
-func (a *ActionTrace) HasPlaybookContext() bool {
-	return a.PlaybookID != "" && a.PlaybookVersion != ""
+// HasWorkflowContext returns true if workflow tracking fields are populated
+// BR-STORAGE-031-02: Determines if record can be used for workflow aggregation
+func (a *ActionTrace) HasWorkflowContext() bool {
+	return a.WorkflowID != "" && a.WorkflowVersion != ""
 }
 
 // GetAIExecutionMode returns a human-readable AI execution mode
@@ -197,10 +197,10 @@ func (a *ActionTrace) GetAIExecutionMode() string {
 	if a.AIManualEscalation {
 		return "manual_escalation"
 	}
-	if a.AIChainedPlaybooks {
-		return "chained_playbooks"
+	if a.AIChainedWorkflows {
+		return "chained_workflows"
 	}
-	if a.AISelectedPlaybook {
+	if a.AISelectedWorkflow {
 		return "catalog_selection"
 	}
 	return "unknown"
