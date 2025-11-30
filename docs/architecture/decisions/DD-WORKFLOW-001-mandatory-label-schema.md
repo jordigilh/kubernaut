@@ -308,21 +308,22 @@ CREATE TABLE workflow_catalog (
     title             TEXT NOT NULL,
     description       TEXT,
 
-    -- Mandatory structured labels (V1.0) - 1:1 matching with wildcard support
-    signal_type       TEXT NOT NULL,              -- pod-oomkilled, pod-crashloop, etc.
+    -- 6 Mandatory structured labels (V1.3) - 1:1 matching with wildcard support
+    -- Group A: Auto-populated from K8s/Prometheus
+    signal_type       TEXT NOT NULL,              -- OOMKilled, CrashLoopBackOff, NodeNotReady
     severity          severity_enum NOT NULL,     -- critical, high, medium, low
     component         TEXT NOT NULL,              -- pod, deployment, node, service, pvc
+    -- Group B: Rego-configurable
     environment       environment_enum NOT NULL,  -- production, staging, development, test, '*'
     priority          priority_enum NOT NULL,     -- P0, P1, P2, P3, '*'
     risk_tolerance    risk_tolerance_enum NOT NULL,  -- low, medium, high
-    business_category TEXT NOT NULL,              -- payment-service, analytics, infrastructure, '*'
 
     -- Validation constraints
-    CHECK (signal_type ~ '^[a-z0-9-]+$'),
+    CHECK (signal_type ~ '^[A-Za-z0-9-]+$'),  -- Exact K8s event reason (no transformation)
     CHECK (component ~ '^[a-z0-9-]+$'),
-    CHECK (business_category ~ '^[a-z0-9-]+$' OR business_category = '*'),
 
-    -- Optional custom labels (V1.1)
+    -- Custom labels (user-defined via Rego, stored in JSONB)
+    -- Examples: business_category, gitops_tool, region, team
     custom_labels     JSONB,
 
     embedding         vector(384),
@@ -331,32 +332,35 @@ CREATE TABLE workflow_catalog (
     PRIMARY KEY (workflow_id, version)
 );
 
--- Composite index for efficient label filtering
-CREATE INDEX idx_playbook_labels ON workflow_catalog (
-    signal_type, severity, component, environment, priority, risk_tolerance, business_category
+-- Composite index for efficient label filtering (6 mandatory labels)
+CREATE INDEX idx_workflow_labels ON workflow_catalog (
+    signal_type, severity, component, environment, priority, risk_tolerance
 );
+
+-- GIN index for custom label queries
+CREATE INDEX idx_workflow_custom_labels ON workflow_catalog USING GIN (custom_labels);
 ```
 
-**Rationale for 7 Fields (1:1 Matching with Wildcards)**:
-- ✅ **1:1 Label Matching**: ALL 7 fields must match between signal and workflow for successful filtering
-- ✅ **Wildcard Support**: Playbooks can use `'*'` for `environment`, `priority`, `business_category` to match any value
-- ✅ **Signal Processing Outputs All 7**: Rego policies populate all 7 labels before reaching LLM
-- ✅ **Playbook Authors Define All 7**: Workflow declares which signals it can remediate
-- ✅ **Deterministic Pre-Filtering**: Exact match on all 7 fields before semantic search
+**Rationale for 6 Mandatory Fields (V1.3)**:
+- ✅ **1:1 Label Matching**: ALL 6 mandatory fields must match between signal and workflow
+- ✅ **Wildcard Support**: Workflows can use `'*'` for `environment`, `priority` to match any value
+- ✅ **Auto-Populated Labels**: Group A labels require no user configuration
+- ✅ **Rego-Configurable Labels**: Group B labels can be customized via Rego policies
+- ✅ **Custom Labels Optional**: Additional labels stored in JSONB (no enforcement)
+- ✅ **Zero-Friction Default**: Works out-of-the-box without namespace→category mapping
 - ✅ **Type Safety**: PostgreSQL enums prevent invalid values
-- ✅ **Validation Constraints**: CHECK constraints ensure data integrity
 - ✅ **Dual-Source Semantics**:
   - **Signal**: `risk_tolerance: "low"` = "I require a low-risk remediation"
-  - **Playbook**: `risk_tolerance: "low"` = "I provide a low-risk remediation"
+  - **Workflow**: `risk_tolerance: "low"` = "I provide a low-risk remediation"
   - **Match**: Only when both agree (low matches low, high matches high)
 
 **Wildcard Matching Logic**:
 ```sql
--- Signal: {environment: "production", priority: "P0", business_category: "payment-service"}
--- Matches playbooks with:
---   1. Exact match: {environment: "production", priority: "P0", business_category: "payment-service"}
---   2. Wildcard match: {environment: "*", priority: "P0", business_category: "payment-service"}
---   3. Wildcard match: {environment: "production", priority: "*", business_category: "*"}
+-- Signal: {environment: "production", priority: "P0"}
+-- Matches workflows with:
+--   1. Exact match: {environment: "production", priority: "P0"}
+--   2. Wildcard match: {environment: "*", priority: "P0"}
+--   3. Wildcard match: {environment: "production", priority: "*"}
 
 WHERE signal_type = $1
   AND severity = $2
@@ -364,27 +368,26 @@ WHERE signal_type = $1
   AND (environment = $4 OR environment = '*')  -- Wildcard support
   AND (priority = $5 OR priority = '*')
   AND risk_tolerance = $6
-  AND (business_category = $7 OR business_category = '*')
+  -- Optional: Custom label matching via JSONB containment
+  -- AND (custom_labels @> $7 OR $7 IS NULL)
 ```
 
 **Match Scoring (for LLM ranking)**:
-- **Score 7**: All exact matches (most specific)
-- **Score 6**: 6 exact + 1 wildcard
-- **Score 5**: 5 exact + 2 wildcards
-- **Score 4**: 4 exact + 3 wildcards (least specific)
+- **Score 6**: All 6 mandatory labels exact match (most specific)
+- **Score 5**: 5 exact + 1 wildcard
+- **Score 4**: 4 exact + 2 wildcards (least specific)
+- **Bonus**: +1 for each custom label match (if custom labels used)
 
-Playbooks are ranked by: `(match_score * 10) + semantic_similarity_score`
+Workflows are ranked by: `(match_score * 10) + semantic_similarity_score`
 
 **Pros**:
 - ✅ **Type safety**: Database enforces NOT NULL constraints
-- ✅ **Query performance**: Direct column access (no JSONB extraction)
-- ✅ **Index efficiency**: Standard B-tree indexes on columns
-- ✅ **Schema clarity**: Explicit columns make schema self-documenting
-- ✅ **Validation simplicity**: Database-level constraints
-- ✅ **No prefix overhead**: Clean field names (signal_type vs kubernaut.io/signal-type)
-- ✅ **Comprehensive filtering**: Supports environment-specific playbooks
-- ✅ **Risk-aware**: Risk tolerance enables safe vs. aggressive playbooks
-- ✅ **Business context**: Business category enables domain-specific playbooks
+- ✅ **Query performance**: Direct column access for mandatory labels
+- ✅ **Index efficiency**: B-tree index on 6 mandatory labels
+- ✅ **Flexible custom labels**: JSONB with GIN index for user-defined labels
+- ✅ **Zero-friction adoption**: No mandatory business_category configuration
+- ✅ **Schema clarity**: Explicit columns for mandatory, JSONB for optional
+- ✅ **Risk-aware**: Risk tolerance enables safe vs. aggressive workflows
 - ✅ **Priority-based**: Priority enables P0 vs. P1 workflow selection
 - ✅ **Strong "Filter Before LLM"**: Fine-grained pre-filtering reduces LLM context
 
@@ -655,43 +658,37 @@ LIMIT 10;
 
 ### **V1.1 Extension: Custom Labels**
 
-**V1.1 will add support for custom labels (optional) in the `custom_labels` JSONB column**:
+**V1.3 Schema**: 6 mandatory structured columns + optional custom labels in JSONB:
 
 **Database Schema**:
 ```sql
--- V1.0: Structured columns for mandatory fields
-signal_type       TEXT NOT NULL,
-severity          TEXT NOT NULL,
-component         TEXT NOT NULL,
-environment       TEXT NOT NULL,
-priority          TEXT NOT NULL,
-risk_tolerance    TEXT NOT NULL,
-business_category TEXT NOT NULL,
+-- V1.3: 6 Mandatory structured columns
+signal_type       TEXT NOT NULL,      -- Group A: Auto-populated
+severity          TEXT NOT NULL,      -- Group A: Auto-populated
+component         TEXT NOT NULL,      -- Group A: Auto-populated
+environment       TEXT NOT NULL,      -- Group B: Rego-configurable
+priority          TEXT NOT NULL,      -- Group B: Rego-configurable
+risk_tolerance    TEXT NOT NULL,      -- Group B: Rego-configurable
 
--- V1.1: JSONB for optional custom labels
-custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
+-- V1.3: JSONB for optional custom labels (user-defined)
+custom_labels     JSONB  -- {"business_category": "payment-service", "team": "sre", ...}
 ```
 
-**Example Custom Labels (V1.1)**:
+**Example Custom Labels**:
 ```json
 {
-  "kubernaut.io/namespace": "cost-management",
-  "kubernaut.io/team": "platform-engineering",
-  "kubernaut.io/cost-center": "engineering-ops",
-  "kubernaut.io/region": "us-east-1",
-  "kubernaut.io/compliance": "pci-dss"
+  "business_category": "payment-service",
+  "team": "platform-engineering",
+  "gitops_tool": "argocd",
+  "region": "us-east-1"
 }
 ```
 
-**Why `kubernaut.io/` prefix for custom labels?**
-- ✅ **Namespace isolation**: Prevents conflicts with user-defined labels
-- ✅ **Clear ownership**: Distinguishes Kubernaut labels from external labels
-- ✅ **Kubernetes alignment**: Follows Kubernetes label convention
-- ✅ **Extensibility**: Users can add `custom.company.com/` labels
+**Custom Label Keys**: User-defined (no `kubernaut.io/` prefix required for simplicity)
 
-**V1.1 Filtering Strategy**: See DD-STORAGE-012 (Multi-Stage Filtering)
-- **Step 1**: Filter by mandatory structured columns (fast, deterministic)
-- **Step 2**: Filter by custom labels in JSONB (flexible, slower)
+**V1.3 Filtering Strategy**:
+- **Step 1**: Filter by 6 mandatory structured columns (fast, deterministic)
+- **Step 2**: Filter by custom labels in JSONB if provided (flexible, optional)
 - **Step 3**: Semantic search on pre-filtered subset
 
 ---
