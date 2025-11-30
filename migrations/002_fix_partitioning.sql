@@ -66,25 +66,38 @@ CREATE TABLE resource_action_traces (
 ) PARTITION BY RANGE (action_timestamp);
 
 -- Create initial partitions for resource_action_traces
--- Previous month
+-- Extended range: July 2025 - February 2026 (covers development period)
 CREATE TABLE resource_action_traces_y2025m07 
     PARTITION OF resource_action_traces
     FOR VALUES FROM ('2025-07-01') TO ('2025-08-01');
 
--- Current month
 CREATE TABLE resource_action_traces_y2025m08 
     PARTITION OF resource_action_traces
     FOR VALUES FROM ('2025-08-01') TO ('2025-09-01');
 
--- Next month
 CREATE TABLE resource_action_traces_y2025m09 
     PARTITION OF resource_action_traces
     FOR VALUES FROM ('2025-09-01') TO ('2025-10-01');
 
--- Future month (for testing edge cases)
 CREATE TABLE resource_action_traces_y2025m10 
     PARTITION OF resource_action_traces
     FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
+
+CREATE TABLE resource_action_traces_y2025m11 
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
+
+CREATE TABLE resource_action_traces_y2025m12 
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
+
+CREATE TABLE resource_action_traces_y2026m01 
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+
+CREATE TABLE resource_action_traces_y2026m02 
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
 
 -- Create indexes on the partitioned table (will be inherited by partitions)
 CREATE INDEX idx_rat_action_history ON resource_action_traces (action_history_id, action_timestamp);
