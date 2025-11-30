@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added label detection test scenarios (OwnerChain, DetectedLabels, CustomLabels) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 > | v1.2 | 2025-11-28 | Added ADR-004, DD-TEST-002 refs, fixed test paths, updated coverage targets | [ADR-004](../../../architecture/decisions/ADR-004-fake-kubernetes-client.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md) |
 > | v1.1 | 2025-11-27 | Service rename: SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Terminology: Alert → Signal | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
@@ -51,16 +52,153 @@ test/unit/signalprocessing/           # Signal Processing unit tests
 ├── classifier_test.go               # Environment classification tests
 ├── categorizer_test.go              # Priority categorization tests
 ├── retry_test.go                    # Retry strategy tests
+├── ownerchain_test.go               # ⭐ NEW: Owner chain builder tests
+├── detected_labels_test.go          # ⭐ NEW: DetectedLabels detection tests
+├── custom_labels_test.go            # ⭐ NEW: CustomLabels Rego tests
 └── suite_test.go                    # Ginkgo test suite setup
 
 test/integration/signalprocessing/    # Signal Processing integration tests
 ├── controller_integration_test.go   # CRD lifecycle tests
 ├── rego_policy_test.go              # Rego policy integration tests
+├── label_detection_integration_test.go  # ⭐ NEW: Label detection with real K8s
 └── suite_test.go                    # Integration test suite setup
 
 test/e2e/signalprocessing/            # Signal Processing E2E tests
 ├── e2e_test.go                      # Complete workflow tests
+├── labels_e2e_test.go               # ⭐ NEW: Label detection E2E
 └── suite_test.go                    # E2E test suite setup
+```
+
+### Label Detection Test Scenarios (DD-WORKFLOW-001 v1.8) ⭐ NEW
+
+**Reference**: [implementation-checklist.md](./implementation-checklist.md) Phase 3.25
+
+#### OwnerChain Unit Tests
+
+| TC ID | Input | Expected Outcome | BR |
+|-------|-------|------------------|-----|
+| TC-OC-001 | Pod owned by ReplicaSet owned by Deployment | Chain: Pod→RS→Deployment (3 entries) | BR-SP-100 |
+| TC-OC-002 | StatefulSet Pod | Chain: Pod→StatefulSet (2 entries) | BR-SP-100 |
+| TC-OC-003 | DaemonSet Pod | Chain: Pod→DaemonSet (2 entries) | BR-SP-100 |
+| TC-OC-004 | Node (cluster-scoped) | Chain entry with empty namespace | BR-SP-100 |
+| TC-OC-005 | Orphan Pod (no owner) | Chain: Pod only (1 entry) | BR-SP-100 |
+| TC-OC-006 | Max depth reached (10 levels) | Chain truncated at 10 | BR-SP-100 |
+
+```go
+// test/unit/signalprocessing/ownerchain_test.go
+var _ = Describe("OwnerChain Builder", func() {
+    Context("when pod has Deployment owner chain", func() {
+        It("should build Pod→RS→Deployment chain", func() {
+            // Given: Pod owned by ReplicaSet owned by Deployment
+            pod := createTestPod("web-app-xyz", "default",
+                withOwnerRef("ReplicaSet", "web-app-abc", true))
+            rs := createTestReplicaSet("web-app-abc", "default",
+                withOwnerRef("Deployment", "web-app", true))
+            deploy := createTestDeployment("web-app", "default")
+            
+            client := fake.NewClientBuilder().
+                WithObjects(pod, rs, deploy).
+                Build()
+            
+            builder := ownerchain.NewBuilder(client, logr.Discard())
+            
+            // When
+            chain, err := builder.Build(ctx, "default", "Pod", "web-app-xyz")
+            
+            // Then
+            Expect(err).ToNot(HaveOccurred())
+            Expect(chain).To(HaveLen(3))
+            Expect(chain[0].Kind).To(Equal("Pod"))
+            Expect(chain[1].Kind).To(Equal("ReplicaSet"))
+            Expect(chain[2].Kind).To(Equal("Deployment"))
+        })
+    })
+})
+```
+
+#### DetectedLabels Unit Tests
+
+| TC ID | Input | Expected Outcome | BR |
+|-------|-------|------------------|-----|
+| TC-DL-001 | ArgoCD-annotated Deployment | `gitOpsManaged: true, gitOpsTool: "argocd"` | BR-SP-101 |
+| TC-DL-002 | Flux-labeled Deployment | `gitOpsManaged: true, gitOpsTool: "flux"` | BR-SP-101 |
+| TC-DL-003 | Deployment with PDB | `pdbProtected: true` | BR-SP-101 |
+| TC-DL-004 | Deployment with HPA | `hpaEnabled: true` | BR-SP-101 |
+| TC-DL-005 | StatefulSet Pod | `stateful: true` | BR-SP-101 |
+| TC-DL-006 | Helm-managed Deployment | `helmManaged: true` | BR-SP-101 |
+| TC-DL-007 | Namespace with NetworkPolicy | `networkIsolated: true` | BR-SP-101 |
+| TC-DL-008 | PSS namespace (restricted) | `podSecurityLevel: "restricted"` | BR-SP-101 |
+| TC-DL-009 | Istio-injected Pod | `serviceMesh: "istio"` | BR-SP-101 |
+
+```go
+// test/unit/signalprocessing/detected_labels_test.go
+var _ = Describe("DetectedLabels", func() {
+    Context("GitOps detection", func() {
+        It("should detect ArgoCD from annotations", func() {
+            // Given: Deployment with ArgoCD annotation
+            deploy := createTestDeployment("web-app", "default",
+                withAnnotation("argocd.argoproj.io/instance", "my-app"))
+            
+            k8sCtx := &signalprocessingv1.KubernetesContext{
+                DeploymentDetails: &signalprocessingv1.DeploymentDetails{
+                    Annotations: deploy.Annotations,
+                },
+            }
+            
+            detector := detection.NewLabelDetector(fakeClient, logr.Discard())
+            
+            // When
+            labels := detector.DetectLabels(ctx, k8sCtx)
+            
+            // Then
+            Expect(labels.GitOpsManaged).To(BeTrue())
+            Expect(labels.GitOpsTool).To(Equal("argocd"))
+        })
+    })
+})
+```
+
+#### CustomLabels/Rego Unit Tests
+
+| TC ID | Input | Expected Outcome | BR |
+|-------|-------|------------------|-----|
+| TC-CL-001 | Rego extracts `team` from ns label | `{"kubernaut.io": ["team=payments"]}` | BR-SP-102 |
+| TC-CL-002 | Rego sets risk-tolerance | `{"kubernaut.io": ["risk-tolerance=high"]}` | BR-SP-102 |
+| TC-CL-003 | Rego sets constraint | `{"constraint.kubernaut.io": ["cost-constrained"]}` | BR-SP-102 |
+| TC-CL-004 | Policy tries to set `signal-type` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-005 | Policy tries to set `severity` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-006 | Empty policy | Empty map returned | BR-SP-102 |
+| TC-CL-007 | Policy evaluation error | Empty map returned (non-fatal) | BR-SP-102 |
+
+```go
+// test/unit/signalprocessing/custom_labels_test.go
+var _ = Describe("CustomLabels Rego", func() {
+    Context("security wrapper", func() {
+        It("should block customer override of mandatory labels", func() {
+            // Given: Policy that tries to set signal-type
+            policy := `
+                package signalprocessing.labels
+                labels["kubernaut.io/signal-type"] = "hacked"
+                labels["kubernaut.io/team"] = "payments"
+            `
+            
+            engine := rego.NewEngine(fakeClient, logr.Discard())
+            engine.SetTestPolicy(policy)
+            
+            input := &rego.Input{
+                Namespace: rego.NamespaceContext{Name: "default"},
+            }
+            
+            // When
+            customLabels, err := engine.EvaluatePolicy(ctx, input)
+            
+            // Then
+            Expect(err).ToNot(HaveOccurred())
+            Expect(customLabels).ToNot(HaveKey("kubernaut.io/signal-type")) // Blocked
+            Expect(customLabels["kubernaut.io"]).To(ContainElement("team=payments")) // Allowed
+        })
+    })
+})
 ```
 
 **K8s Client Mandate** (per [ADR-004](../../../architecture/decisions/ADR-004-fake-kubernetes-client.md)):

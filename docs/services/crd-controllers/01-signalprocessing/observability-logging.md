@@ -19,6 +19,69 @@
 | **INFO** | Normal operations, state transitions | Phase transitions, enrichment completion |
 | **DEBUG** | Detailed flow for troubleshooting | Kubernetes API queries, enrichment logic details |
 
+### Label Detection Logging Patterns (DD-WORKFLOW-001 v1.8) ⭐ NEW
+
+**OwnerChain Logging**:
+```go
+// Success
+logger.Info("Owner chain built",
+    "length", len(ownerChain),
+    "chain", formatOwnerChain(ownerChain),  // "ns/Pod/web-app-xyz → ns/ReplicaSet/web-app-abc → ns/Deployment/web-app"
+    "signalprocessing", req.NamespacedName.String(),
+)
+
+// Error (non-fatal)
+logger.Error(err, "Owner chain build failed",
+    "namespace", namespace,
+    "kind", kind,
+    "name", name,
+)
+```
+
+**DetectedLabels Logging**:
+```go
+// Summary
+logger.Info("DetectedLabels populated",
+    "signalprocessing", req.NamespacedName.String(),
+    "gitOpsManaged", detectedLabels.GitOpsManaged,
+    "gitOpsTool", detectedLabels.GitOpsTool,
+    "pdbProtected", detectedLabels.PDBProtected,
+    "hpaEnabled", detectedLabels.HPAEnabled,
+    "labelCount", countNonZeroLabels(detectedLabels),
+)
+
+// Debug: Individual detection
+logger.V(1).Info("GitOps detection",
+    "annotations", podAnnotations,
+    "detected", detectedLabels.GitOpsManaged,
+    "tool", detectedLabels.GitOpsTool,
+)
+```
+
+**CustomLabels Rego Logging**:
+```go
+// Success
+logger.Info("CustomLabels from Rego",
+    "signalprocessing", req.NamespacedName.String(),
+    "subdomains", getSubdomains(customLabels),  // ["kubernaut.io", "constraint.kubernaut.io"]
+    "totalValues", countTotalValues(customLabels),
+)
+
+// Security wrapper block
+logger.Warn("Rego policy attempted to override system label",
+    "signalprocessing", req.NamespacedName.String(),
+    "blockedLabel", "kubernaut.io/signal-type",
+    "policySource", "signal-processing-policies",
+)
+
+// Error (non-fatal)
+logger.Error(err, "Rego evaluation failed",
+    "signalprocessing", req.NamespacedName.String(),
+    "configMapName", "signal-processing-policies",
+    "namespace", "kubernaut-system",
+)
+```
+
 **Structured Logging Implementation**:
 
 ```go
