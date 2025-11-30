@@ -23,6 +23,9 @@ COPY src/ ./src/
 
 # Pre-download embedding model (cached in image)
 # This prevents cold-start latency in production
+# Set cache to known location that will be copied to runtime stage
+ENV TRANSFORMERS_CACHE=/opt/app-root/.cache
+ENV HF_HOME=/opt/app-root/.cache
 RUN python3 -c "from sentence_transformers import SentenceTransformer; \
     model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2'); \
     print('Model downloaded successfully')"
@@ -30,7 +33,8 @@ RUN python3 -c "from sentence_transformers import SentenceTransformer; \
 # ============================================
 # Stage 2: Runtime
 # ============================================
-FROM registry.access.redhat.com/ubi9/python-311-minimal:latest
+# NOTE: ubi9/python-311-minimal doesn't exist, use full python-311 or standard python
+FROM registry.access.redhat.com/ubi9/python-311:latest
 
 # Metadata
 LABEL maintainer="Kubernaut Team" \
