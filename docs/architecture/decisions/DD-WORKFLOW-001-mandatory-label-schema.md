@@ -1,12 +1,12 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V1.0 - 7 Mandatory Labels with Wildcards)
+**Status**: ✅ **APPROVED** (V1.3 - 6 Mandatory Labels + Optional Custom Labels)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
 **Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
-**Version**: 1.2
+**Version**: 1.3
 
 ---
 
@@ -35,6 +35,19 @@
 
 ## 📝 **Changelog**
 
+### Version 1.3 (2025-11-30)
+**Changes**:
+- ✅ **BREAKING**: Reduced from 7 to 6 mandatory labels
+- ✅ **Removed `business_category` from mandatory**: Moved to optional custom labels
+- ✅ **Added Label Grouping**: Auto-populated vs Rego-configurable vs Custom
+- ✅ **Simplified Signal Processing**: No longer requires namespace→category mapping
+- ✅ **Removed BR-SIGNAL-PROCESSING-003**: business_category no longer mandatory
+- ✅ **Added Custom Labels Section**: Examples for user-defined labels
+
+**Rationale**: `business_category` is organization-specific and not universally needed. Forcing users to configure namespace→category mappings creates unnecessary friction. Users who need business categorization can define it as a custom label via Rego policies.
+
+**Related**: User feedback on adoption friction
+
 ### Version 1.2 (2025-11-16)
 **Changes**:
 - ✅ Clarified that `signal_type` and `severity` are used for MCP workflow search filtering (exact label matching)
@@ -56,60 +69,73 @@
 
 **This document is the single source of truth for workflow label schema.** All services MUST reference this document for label definitions.
 
-### **7 Mandatory Labels (V1.0)**
+### **6 Mandatory Labels (V1.3)**
+
+Labels are grouped by how they are populated:
+
+#### **Group A: Auto-Populated Labels** (Signal Processing derives automatically from K8s/Prometheus)
 
 | # | Label | Type | Source | Wildcard | Description |
 |---|---|---|---|---|---|
-| 1 | `signal_type` | TEXT | Signal Processing | ❌ NO | What happened (pod-oomkilled, node-notready) |
-| 2 | `severity` | ENUM | Signal Processing | ❌ NO | How bad (critical, high, medium, low) |
-| 3 | `component` | TEXT | Signal Processing | ❌ NO | What resource (pod, deployment, node) |
-| 4 | `environment` | ENUM | Signal Processing | ✅ YES | Where (production, staging, development, test, '*') |
-| 5 | `priority` | ENUM | Signal Processing | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
-| 6 | `risk_tolerance` | ENUM | Signal Processing | ❌ NO | Remediation policy (low, medium, high) |
-| 7 | `business_category` | TEXT | Signal Processing | ✅ YES | Business domain (payment-service, analytics, '*') |
+| 1 | `signal_type` | TEXT | K8s Event Reason | ❌ NO | What happened (OOMKilled, CrashLoopBackOff, NodeNotReady) |
+| 2 | `severity` | ENUM | Alert/Event | ❌ NO | How bad (critical, high, medium, low) |
+| 3 | `component` | TEXT | K8s Resource | ❌ NO | What resource (pod, deployment, node) |
+
+**Derivation**: These labels are extracted directly from Kubernetes events, Prometheus alerts, or signal metadata. **No user configuration required.**
+
+#### **Group B: Rego-Configurable Labels** (Users can customize derivation logic via Rego policies)
+
+| # | Label | Type | Source | Wildcard | Description |
+|---|---|---|---|---|---|
+| 4 | `environment` | ENUM | Namespace Labels | ✅ YES | Where (production, staging, development, test, '*') |
+| 5 | `priority` | ENUM | Derived | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
+| 6 | `risk_tolerance` | ENUM | Derived | ❌ NO | Remediation policy (low, medium, high) |
+
+**Derivation**: Signal Processing applies Rego policies to derive these labels from K8s context (namespace labels, annotations, resource metadata). Users can customize derivation logic via Rego policy ConfigMaps.
+
+**Default Logic** (if no custom Rego):
+- `environment`: From namespace label `environment` or annotation `kubernaut.io/environment`
+- `priority`: Derived from `severity` + `environment` (critical + production → P0)
+- `risk_tolerance`: Derived from `priority` + `environment` (P0 + production → low)
+
+---
+
+### **Optional Custom Labels (V1.3)**
+
+Users can define additional labels via Rego policies. These are **NOT mandatory** and are only used if configured.
+
+| Label | Type | Example Values | Use Case |
+|---|---|---|---|
+| `business_category` | TEXT | payment-service, analytics, infrastructure | Business domain categorization |
+| `gitops_tool` | TEXT | argocd, flux, helm | GitOps tooling preferences |
+| `region` | TEXT | us-east-1, eu-west-1 | Geographic targeting |
+| `team` | TEXT | platform, sre, payments | Team ownership |
+
+**Configuration**: Define custom labels in Signal Processing Rego policies. Custom labels are stored in JSONB column and matched against workflow labels.
+
+---
 
 ### **Label Matching Rules**
 
 **For MCP Workflow Search** (DD-LLM-001):
-1. **Exact Match Filtering**: `signal_type`, `severity`, `environment`, `priority`, `risk_tolerance`, `business_category` are used as exact label filters in SQL WHERE clause
+1. **Exact Match Filtering**: `signal_type`, `severity`, `environment`, `priority`, `risk_tolerance` are used as exact label filters in SQL WHERE clause
 2. **Semantic Ranking**: Query string (`<signal_type> <severity>`) is used for semantic similarity ranking via pgvector embeddings
 3. **Component Storage Only**: `component` is stored but NOT used as search filter (workflows are generic, not resource-specific)
-4. **Wildcard Support**: `environment`, `priority`, `business_category` support `'*'` (matches any value)
-5. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
+4. **Wildcard Support**: `environment`, `priority` support `'*'` (matches any value)
+5. **Custom Label Matching**: If custom labels are provided, they are matched against workflow custom labels
+6. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
 
 **For Workflow Registration**:
-1. **All 7 Labels Required**: Every workflow must have all 7 mandatory labels
-2. **Description Format**: Must follow `"<signal_type> <severity>: <description>"` for optimal semantic matching
-3. **Validation**: Labels are validated against authoritative values in this document
+1. **6 Mandatory Labels Required**: Every workflow must have all 6 mandatory labels
+2. **Custom Labels Optional**: Workflows can include custom labels for more specific matching
+3. **Description Format**: Must follow `"<signal_type> <severity>: <description>"` for optimal semantic matching
+4. **Validation**: Labels are validated against authoritative values in this document
 
 ### **Valid Values (Authoritative)**
 
+#### **Group A: Auto-Populated Labels**
+
 ```yaml
-severity:
-  - critical
-  - high
-  - medium
-  - low
-
-environment:
-  - production
-  - staging
-  - development
-  - test
-  - '*'  # Wildcard: matches any environment
-
-priority:
-  - P0
-  - P1
-  - P2
-  - P3
-  - '*'  # Wildcard: matches any priority
-
-risk_tolerance:
-  - low      # Conservative remediation (e.g., 10% resource increase, no restart)
-  - medium   # Balanced remediation (e.g., 25% resource increase, rolling restart)
-  - high     # Aggressive remediation (e.g., 50% resource increase, immediate restart)
-
 signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   # CRITICAL PRINCIPLE: Use exact event reason strings from Kubernetes/Prometheus
   # WHY: LLM uses signal_type to query the same source system during investigation
@@ -130,22 +156,15 @@ signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   - Completed              # Container completed successfully
   #
   # RULE: Signal Processing MUST pass through domain-specific values unchanged
-  # RULE: NO normalization, NO kebab-case conversion, NO transformationAPI - kubectl describe pod → State.Reason field
-  # SOURCE: Prometheus - kube_pod_container_status_terminated_reason{reason="..."}
-  #
-  # Examples (exact K8s event reason strings):
-  - OOMKilled              # Container killed due to out-of-memory
-  - CrashLoopBackOff       # Container repeatedly crashing
-  - ImagePullBackOff       # Failed to pull container image
-  - ErrImagePull           # Image pull error
-  - NodeNotReady           # Node is not ready
-  - Evicted                # Pod evicted due to resource pressure
-  - Error                  # Generic container error
-  - Completed              # Container completed successfully
-  #
   # RULE: NO normalization, NO kebab-case conversion, NO transformation
 
-component:  # Kubernetes resource types
+severity:  # From alert/event metadata
+  - critical
+  - high
+  - medium
+  - low
+
+component:  # Kubernetes resource types (auto-detected from signal)
   - pod
   - deployment
   - statefulset
@@ -155,8 +174,38 @@ component:  # Kubernetes resource types
   - pvc
   - configmap
   - secret
+```
 
-business_category:  # User-defined (examples)
+#### **Group B: Rego-Configurable Labels**
+
+```yaml
+environment:  # Derived from namespace labels/annotations
+  - production
+  - staging
+  - development
+  - test
+  - '*'  # Wildcard: matches any environment
+
+priority:  # Derived from severity + environment via Rego
+  - P0   # Critical production issue (immediate response)
+  - P1   # High-priority issue (response within 1 hour)
+  - P2   # Medium-priority issue (response within 4 hours)
+  - P3   # Low-priority issue (response within 24 hours)
+  - '*'  # Wildcard: matches any priority
+
+risk_tolerance:  # Derived from priority + environment via Rego
+  - low      # Conservative remediation (e.g., 10% resource increase, no restart)
+  - medium   # Balanced remediation (e.g., 25% resource increase, rolling restart)
+  - high     # Aggressive remediation (e.g., 50% resource increase, immediate restart)
+```
+
+#### **Optional Custom Labels (User-Defined)**
+
+```yaml
+# These are EXAMPLES - users define their own custom labels via Rego policies
+# Custom labels are stored in JSONB and matched if present
+
+business_category:  # OPTIONAL - Business domain categorization
   - payment-service
   - analytics
   - api-gateway
@@ -164,6 +213,22 @@ business_category:  # User-defined (examples)
   - infrastructure
   - general
   - '*'  # Wildcard: matches any category
+
+gitops_tool:  # OPTIONAL - GitOps tooling preference
+  - argocd
+  - flux
+  - helm
+
+region:  # OPTIONAL - Geographic targeting
+  - us-east-1
+  - eu-west-1
+  - ap-southeast-1
+
+team:  # OPTIONAL - Team ownership
+  - platform
+  - sre
+  - payments
+  - infrastructure
 ```
 
 ---
@@ -748,23 +813,28 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
   - Return match score in API response for LLM decision-making
   - Unit tests validate scoring logic
 
-#### **BR-SIGNAL-PROCESSING-001: Signal Label Enrichment (7 Mandatory Labels)**
+#### **BR-SIGNAL-PROCESSING-001: Signal Label Enrichment (6 Mandatory Labels)**
 - **Category**: SIGNAL-PROCESSING
 - **Priority**: P0 (blocking for Signal Processing V1.0)
-- **Description**: MUST enrich signals with ALL 7 mandatory labels during categorization per DD-WORKFLOW-001
-- **Authority**: DD-WORKFLOW-001 (authoritative label definitions)
+- **Description**: MUST enrich signals with ALL 6 mandatory labels during categorization per DD-WORKFLOW-001 v1.3
+- **Authority**: DD-WORKFLOW-001 v1.3 (authoritative label definitions)
+- **Label Groups**:
+  - **Auto-Populated** (Group A): `signal_type`, `severity`, `component`
+  - **Rego-Configurable** (Group B): `environment`, `priority`, `risk_tolerance`
 - **Acceptance Criteria**:
-  - Signal categorization outputs: `signal_type`, `severity`, `component`, `environment`, `priority`, `risk_tolerance`, `business_category`
-  - Labels match DD-WORKFLOW-001 authoritative values
+  - Signal categorization outputs all 6 mandatory labels
+  - Group A labels extracted from K8s events/Prometheus alerts (no user config needed)
+  - Group B labels derived via Rego policies (customizable by user)
+  - Labels match DD-WORKFLOW-001 v1.3 authoritative values
   - Labels are stored in RemediationRequest CRD spec
   - Labels are passed to HolmesGPT API for workflow matching
-  - Rego policies have default/fallback values for all 7 labels
+  - Custom labels (if any) are stored in JSONB for optional matching
 
 #### **BR-SIGNAL-PROCESSING-002: risk_tolerance Categorization**
 - **Category**: SIGNAL-PROCESSING
 - **Priority**: P0 (blocking for Signal Processing V1.0)
 - **Description**: MUST output `risk_tolerance` (low, medium, high) based on priority and environment
-- **Authority**: DD-WORKFLOW-001 (authoritative label definitions)
+- **Authority**: DD-WORKFLOW-001 v1.3 (authoritative label definitions)
 - **Rego Policy Logic**:
   ```rego
   risk_tolerance = "low" {
@@ -795,65 +865,84 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
   - P2/P3 or non-production → `risk_tolerance: "high"`
   - Unit tests cover all combinations
 
-#### **BR-SIGNAL-PROCESSING-003: business_category Categorization**
+#### **BR-SIGNAL-PROCESSING-003: Custom Label Support (OPTIONAL)**
 - **Category**: SIGNAL-PROCESSING
-- **Priority**: P0 (blocking for Signal Processing V1.0)
-- **Description**: MUST output `business_category` based on namespace mapping
-- **Authority**: DD-WORKFLOW-001 (authoritative label definitions)
-- **Configuration**: ConfigMap with namespace → category mapping
-- **Rego Policy Logic**:
+- **Priority**: P2 (optional enhancement)
+- **Description**: MAY support custom labels defined by users via Rego policies
+- **Authority**: DD-WORKFLOW-001 v1.3 (optional custom labels section)
+- **Status**: ✅ **OPTIONAL** - Users configure if needed, no default required
+- **Example Custom Labels**: `business_category`, `gitops_tool`, `region`, `team`
+- **Rego Policy Logic** (user-defined):
   ```rego
-  business_category = data.namespace_categories[input.namespace]
+  # EXAMPLE: User-defined business_category (OPTIONAL)
+  custom_labels["business_category"] = data.namespace_categories[input.namespace] {
+      data.namespace_categories[input.namespace]
+  }
 
-  business_category = "infrastructure" {
+  custom_labels["business_category"] = "infrastructure" {
       input.resource.kind in ["Node", "PersistentVolume", "PersistentVolumeClaim"]
   }
 
-  business_category = "general" {  # Fallback
-      true
+  # EXAMPLE: User-defined gitops_tool (OPTIONAL)
+  custom_labels["gitops_tool"] = annotation {
+      annotation := input.deployment.annotations["argocd.argoproj.io/sync-wave"]
+      annotation != ""
   }
   ```
 - **Acceptance Criteria**:
-  - Namespace mapping loaded from ConfigMap
-  - Infrastructure resources (Node, PV, PVC) → `business_category: "infrastructure"`
-  - Unmapped namespaces → `business_category: "general"`
-  - ConfigMap updates reload Rego policies
-  - Unit tests cover mapped, unmapped, and infrastructure cases
+  - Custom labels stored in JSONB column
+  - Custom labels matched against workflow custom labels if present
+  - No mandatory configuration required (zero-friction default)
 
 ---
 
 ## 🚀 **Next Steps**
 
-1. ✅ **DD-WORKFLOW-001 Approved** (this document - authoritative label schema)
-2. 🚧 **Update DD-STORAGE-008**: Reference DD-WORKFLOW-001 for label schema
-3. 🚧 **Implement Label Validation**: `pkg/datastorage/validation/playbook_labels.go`
-4. 🚧 **Update Workflow Schema Migration**: Add enums, CHECK constraints, composite index
-5. 🚧 **Update Signal Processing Rego**: Add `risk_tolerance` and `business_category` policies
-6. 🚧 **Create Signal Processing ConfigMap**: Namespace → business_category mapping
-7. 🚧 **Integration Tests**: Validate label filtering, wildcard matching, and scoring
+1. ✅ **DD-WORKFLOW-001 v1.3 Approved** (this document - authoritative label schema)
+2. ✅ **Simplified to 6 Mandatory Labels**: Removed `business_category` from mandatory
+3. 🚧 **Update DD-STORAGE-008**: Reference DD-WORKFLOW-001 v1.3 for label schema
+4. 🚧 **Implement Label Validation**: `pkg/datastorage/validation/workflow_labels.go` (6 mandatory)
+5. 🚧 **Update Workflow Schema Migration**: Add enums, CHECK constraints for 6 labels
+6. 🚧 **Update Signal Processing Rego**: Implement Group A (auto-populate) + Group B (configurable)
+7. 🚧 **Optional Custom Label Support**: JSONB storage for user-defined custom labels
+8. 🚧 **Integration Tests**: Validate label filtering, wildcard matching, and custom label matching
 
 ---
 
 ## 📋 **Changelog**
 
+### **v1.3** (2025-11-30)
+- ✅ **BREAKING**: Reduced from 7 to 6 mandatory labels
+- ✅ **Removed `business_category` from mandatory**: Moved to optional custom labels
+- ✅ **Added Label Grouping**: Auto-populated (Group A) vs Rego-configurable (Group B)
+- ✅ **Added Custom Labels Section**: User-defined labels for organization-specific needs
+- ✅ **Updated BR-SIGNAL-PROCESSING-001**: Now references 6 mandatory labels
+- ✅ **Updated BR-SIGNAL-PROCESSING-003**: Changed to optional custom label support
+- ✅ **Simplified Adoption**: No namespace→category mapping required by default
+
+### **v1.2** (2025-11-16)
+- ✅ **Clarified MCP Search Usage**: signal_type and severity for filtering + semantic ranking
+- ✅ **Added Description Format**: `"<signal_type> <severity>: <description>"`
+- ✅ **Cross-References**: DD-LLM-001, ADR-041
+
 ### **v1.1** (2025-11-14)
-- ✅ **Added Wildcard Support**: `environment`, `priority`, `business_category` support `'*'`
-- ✅ **Added Match Scoring**: Rank playbooks by match specificity (exact > wildcard)
+- ✅ **Added Wildcard Support**: `environment`, `priority` support `'*'`
+- ✅ **Added Match Scoring**: Rank workflows by match specificity (exact > wildcard)
 - ✅ **Added Type Safety**: PostgreSQL enums for `severity`, `environment`, `priority`, `risk_tolerance`
-- ✅ **Added Validation Constraints**: CHECK constraints for `signal_type`, `component`, `business_category`
+- ✅ **Added Validation Constraints**: CHECK constraints for `signal_type`, `component`
 - ✅ **Added Authoritative Definitions**: Single source of truth for all label values
-- ✅ **Added Signal Processing BRs**: BR-SIGNAL-PROCESSING-001, 002, 003 with Rego policy logic
+- ✅ **Added Signal Processing BRs**: BR-SIGNAL-PROCESSING-001, 002 with Rego policy logic
 - ✅ **Added Data Storage BRs**: BR-STORAGE-013, 014, 015 for validation and filtering
 
-- Initial 7-field mandatory label schema
-- 1:1 signal-to-playbook matching
+- Initial mandatory label schema
+- 1:1 signal-to-workflow matching
 - Structured columns for mandatory labels
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: November 14, 2025
-**Status**: ✅ **APPROVED** (95% confidence, production-ready with wildcards and scoring)
+**Document Version**: 1.3
+**Last Updated**: November 30, 2025
+**Status**: ✅ **APPROVED** (95% confidence, simplified adoption with optional custom labels)
 **Authority**: ⭐ **AUTHORITATIVE** - Single source of truth for workflow label schema
-**Next Review**: After Signal Processing Rego implementation (validate label output)
+**Next Review**: After Signal Processing implementation (validate Group A/B label output)
 

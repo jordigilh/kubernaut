@@ -1,19 +1,36 @@
 # DD-PLAYBOOK-001: Mandatory Playbook Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V1.0 - 7 Mandatory Labels with Wildcards)
+**Status**: ✅ **APPROVED** (V1.2 - 6 Mandatory Labels + Optional Custom Labels)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for playbook label schema
 **Affects**: Data Storage Service V1.0, Playbook Catalog, Signal Processing, HolmesGPT API
-**Version**: 1.1
+**Version**: 1.2
 
 ---
 
 ## 📋 **Status**
 
-**✅ APPROVED** (2025-11-14)
-**Last Reviewed**: 2025-11-14
+**✅ APPROVED** (2025-11-30)
+**Last Reviewed**: 2025-11-30
 **Confidence**: 95%
+
+---
+
+## 📝 **Changelog**
+
+### Version 1.2 (2025-11-30)
+**Changes**:
+- ✅ **BREAKING**: Reduced from 7 to 6 mandatory labels
+- ✅ **Removed `business_category` from mandatory**: Moved to optional custom labels
+- ✅ **Added Label Grouping**: Auto-populated (Group A) vs Rego-configurable (Group B)
+- ✅ **Added Custom Labels Section**: User-defined labels for organization-specific needs
+- ✅ **Simplified Adoption**: No namespace→category mapping required by default
+
+**Rationale**: `business_category` is organization-specific and not universally needed. Users who need business categorization can define it as a custom label via Rego policies.
+
+### Version 1.1 (2025-11-14)
+**Changes**: Initial approved version with 7 mandatory labels
 
 ---
 
@@ -21,59 +38,56 @@
 
 **This document is the single source of truth for playbook label schema.** All services MUST reference this document for label definitions.
 
-### **7 Mandatory Labels (V1.0)**
+### **6 Mandatory Labels (V1.2)**
+
+Labels are grouped by how they are populated:
+
+#### **Group A: Auto-Populated Labels** (Signal Processing derives automatically from K8s/Prometheus)
 
 | # | Label | Type | Source | Wildcard | Description |
 |---|---|---|---|---|---|
-| 1 | `signal_type` | TEXT | Signal Processing | ❌ NO | What happened (pod-oomkilled, node-notready) |
-| 2 | `severity` | ENUM | Signal Processing | ❌ NO | How bad (critical, high, medium, low) |
-| 3 | `component` | TEXT | Signal Processing | ❌ NO | What resource (pod, deployment, node) |
-| 4 | `environment` | ENUM | Signal Processing | ✅ YES | Where (production, staging, development, test, '*') |
-| 5 | `priority` | ENUM | Signal Processing | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
-| 6 | `risk_tolerance` | ENUM | Signal Processing | ❌ NO | Remediation policy (low, medium, high) |
-| 7 | `business_category` | TEXT | Signal Processing | ✅ YES | Business domain (payment-service, analytics, '*') |
+| 1 | `signal_type` | TEXT | K8s Event Reason | ❌ NO | What happened (OOMKilled, CrashLoopBackOff) |
+| 2 | `severity` | ENUM | Alert/Event | ❌ NO | How bad (critical, high, medium, low) |
+| 3 | `component` | TEXT | K8s Resource | ❌ NO | What resource (pod, deployment, node) |
+
+#### **Group B: Rego-Configurable Labels** (Users can customize derivation logic via Rego policies)
+
+| # | Label | Type | Source | Wildcard | Description |
+|---|---|---|---|---|---|
+| 4 | `environment` | ENUM | Namespace Labels | ✅ YES | Where (production, staging, development, test, '*') |
+| 5 | `priority` | ENUM | Derived | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
+| 6 | `risk_tolerance` | ENUM | Derived | ❌ NO | Remediation policy (low, medium, high) |
+
+---
+
+### **Optional Custom Labels (V1.2)**
+
+Users can define additional labels via Rego policies. These are **NOT mandatory**.
+
+| Label | Type | Example Values | Use Case |
+|---|---|---|---|
+| `business_category` | TEXT | payment-service, analytics | Business domain categorization |
+| `gitops_tool` | TEXT | argocd, flux, helm | GitOps tooling preferences |
+| `region` | TEXT | us-east-1, eu-west-1 | Geographic targeting |
+| `team` | TEXT | platform, sre, payments | Team ownership |
+
+---
 
 ### **Label Matching Rules**
 
 1. **Exact Match Required**: `signal_type`, `severity`, `component`, `risk_tolerance` MUST match exactly
-2. **Wildcard Support**: `environment`, `priority`, `business_category` support `'*'` (matches any value)
+2. **Wildcard Support**: `environment`, `priority` support `'*'` (matches any value)
 3. **1:1 Matching**: Signal labels → Playbook labels (both populated before LLM)
-4. **Match Scoring**: Exact matches ranked higher than wildcard matches
+4. **Custom Label Matching**: If custom labels are provided, they are matched against playbook custom labels
+5. **Match Scoring**: Exact matches ranked higher than wildcard matches
 
 ### **Valid Values (Authoritative)**
 
+#### **Group A: Auto-Populated Labels**
+
 ```yaml
-severity:
-  - critical
-  - high
-  - medium
-  - low
-
-environment:
-  - production
-  - staging
-  - development
-  - test
-  - '*'  # Wildcard: matches any environment
-
-priority:
-  - P0
-  - P1
-  - P2
-  - P3
-  - '*'  # Wildcard: matches any priority
-
-risk_tolerance:
-  - low      # Conservative remediation (e.g., 10% resource increase, no restart)
-  - medium   # Balanced remediation (e.g., 25% resource increase, rolling restart)
-  - high     # Aggressive remediation (e.g., 50% resource increase, immediate restart)
-
 signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   # CRITICAL PRINCIPLE: Use exact event reason strings from Kubernetes/Prometheus
-  # WHY: LLM uses signal_type to query the same source system during investigation
-  #      Example: signal_type="OOMKilled" → LLM runs: kubectl get events | grep "OOMKilled"
-  #      If we transform "OOMKilled" → "pod-oomkilled", LLM queries will fail
-  #
   # SOURCE: Kubernetes API - kubectl describe pod → State.Reason field
   # SOURCE: Prometheus - kube_pod_container_status_terminated_reason{reason="..."}
   #
@@ -88,22 +102,15 @@ signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   - Completed              # Container completed successfully
   #
   # RULE: Signal Processing MUST pass through domain-specific values unchanged
-  # RULE: NO normalization, NO kebab-case conversion, NO transformationAPI - kubectl describe pod → State.Reason field
-  # SOURCE: Prometheus - kube_pod_container_status_terminated_reason{reason="..."}
-  #
-  # Examples (exact K8s event reason strings):
-  - OOMKilled              # Container killed due to out-of-memory
-  - CrashLoopBackOff       # Container repeatedly crashing
-  - ImagePullBackOff       # Failed to pull container image
-  - ErrImagePull           # Image pull error
-  - NodeNotReady           # Node is not ready
-  - Evicted                # Pod evicted due to resource pressure
-  - Error                  # Generic container error
-  - Completed              # Container completed successfully
-  #
   # RULE: NO normalization, NO kebab-case conversion, NO transformation
 
-component:  # Kubernetes resource types
+severity:  # From alert/event metadata
+  - critical
+  - high
+  - medium
+  - low
+
+component:  # Kubernetes resource types (auto-detected from signal)
   - pod
   - deployment
   - statefulset
@@ -113,8 +120,37 @@ component:  # Kubernetes resource types
   - pvc
   - configmap
   - secret
+```
 
-business_category:  # User-defined (examples)
+#### **Group B: Rego-Configurable Labels**
+
+```yaml
+environment:  # Derived from namespace labels/annotations
+  - production
+  - staging
+  - development
+  - test
+  - '*'  # Wildcard: matches any environment
+
+priority:  # Derived from severity + environment via Rego
+  - P0   # Critical production issue (immediate response)
+  - P1   # High-priority issue (response within 1 hour)
+  - P2   # Medium-priority issue (response within 4 hours)
+  - P3   # Low-priority issue (response within 24 hours)
+  - '*'  # Wildcard: matches any priority
+
+risk_tolerance:  # Derived from priority + environment via Rego
+  - low      # Conservative remediation (e.g., 10% resource increase, no restart)
+  - medium   # Balanced remediation (e.g., 25% resource increase, rolling restart)
+  - high     # Aggressive remediation (e.g., 50% resource increase, immediate restart)
+```
+
+#### **Optional Custom Labels (User-Defined)**
+
+```yaml
+# These are EXAMPLES - users define their own custom labels via Rego policies
+
+business_category:  # OPTIONAL - Business domain categorization
   - payment-service
   - analytics
   - api-gateway
@@ -122,6 +158,22 @@ business_category:  # User-defined (examples)
   - infrastructure
   - general
   - '*'  # Wildcard: matches any category
+
+gitops_tool:  # OPTIONAL - GitOps tooling preference
+  - argocd
+  - flux
+  - helm
+
+region:  # OPTIONAL - Geographic targeting
+  - us-east-1
+  - eu-west-1
+  - ap-southeast-1
+
+team:  # OPTIONAL - Team ownership
+  - platform
+  - sre
+  - payments
+  - infrastructure
 ```
 
 ---
@@ -675,13 +727,14 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 #### **BR-STORAGE-013: Mandatory Playbook Label Validation**
 - **Category**: STORAGE
 - **Priority**: P0 (blocking for Data Storage V1.0)
-- **Description**: MUST validate that all playbooks have 7 mandatory labels with valid values per DD-PLAYBOOK-001
+- **Description**: MUST validate that all playbooks have 6 mandatory labels with valid values per DD-PLAYBOOK-001 v1.2
 - **Acceptance Criteria**:
-  - Playbook creation fails if any mandatory label is missing
+  - Playbook creation fails if any of 6 mandatory labels is missing
   - Playbook creation fails if any label has invalid value (not in authoritative list)
-  - Wildcard validation: `environment`, `priority`, `business_category` accept `'*'`
+  - Wildcard validation: `environment`, `priority` accept `'*'`
   - PostgreSQL enums enforce `severity`, `environment`, `priority`, `risk_tolerance` values
-  - CHECK constraints enforce `signal_type`, `component`, `business_category` format
+  - CHECK constraints enforce `signal_type`, `component` format
+  - Custom labels stored in JSONB column (optional, no validation)
   - Validation errors include descriptive error messages
   - Unit tests cover all validation scenarios
 
@@ -690,9 +743,10 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 - **Priority**: P0 (blocking for Data Storage V1.0)
 - **Description**: MUST support SQL-based filtering by mandatory labels with wildcard matching before semantic search
 - **Acceptance Criteria**:
-  - GET /api/v1/playbooks/search accepts 7 label filter parameters
+  - GET /api/v1/playbooks/search accepts 6 mandatory label filter parameters + custom labels
   - SQL query supports wildcard matching: `(environment = $1 OR environment = '*')`
-  - Composite index on all 7 labels for efficient filtering
+  - Composite index on 6 mandatory labels for efficient filtering
+  - Custom label filtering via JSONB containment operators
   - p95 filtering latency < 5ms
   - Returns playbooks ranked by match score (exact > wildcard)
 
@@ -701,28 +755,34 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 - **Priority**: P0 (blocking for Data Storage V1.0)
 - **Description**: MUST rank playbooks by match specificity before semantic search
 - **Acceptance Criteria**:
-  - Calculate match score: 7 (all exact) → 4 (3 wildcards)
+  - Calculate match score: 6 (all exact) → 4 (2 wildcards)
+  - Custom label matches add bonus to score
   - Rank playbooks by: `(match_score * 10) + semantic_similarity`
   - Return match score in API response for LLM decision-making
   - Unit tests validate scoring logic
 
-#### **BR-SIGNAL-PROCESSING-001: Signal Label Enrichment (7 Mandatory Labels)**
+#### **BR-SIGNAL-PROCESSING-001: Signal Label Enrichment (6 Mandatory Labels)**
 - **Category**: SIGNAL-PROCESSING
 - **Priority**: P0 (blocking for Signal Processing V1.0)
-- **Description**: MUST enrich signals with ALL 7 mandatory labels during categorization per DD-PLAYBOOK-001
-- **Authority**: DD-PLAYBOOK-001 (authoritative label definitions)
+- **Description**: MUST enrich signals with ALL 6 mandatory labels during categorization per DD-PLAYBOOK-001 v1.2
+- **Authority**: DD-PLAYBOOK-001 v1.2 (authoritative label definitions)
+- **Label Groups**:
+  - **Auto-Populated** (Group A): `signal_type`, `severity`, `component`
+  - **Rego-Configurable** (Group B): `environment`, `priority`, `risk_tolerance`
 - **Acceptance Criteria**:
-  - Signal categorization outputs: `signal_type`, `severity`, `component`, `environment`, `priority`, `risk_tolerance`, `business_category`
-  - Labels match DD-PLAYBOOK-001 authoritative values
+  - Signal categorization outputs all 6 mandatory labels
+  - Group A labels extracted from K8s events/Prometheus alerts (no user config needed)
+  - Group B labels derived via Rego policies (customizable by user)
+  - Labels match DD-PLAYBOOK-001 v1.2 authoritative values
   - Labels are stored in RemediationRequest CRD spec
   - Labels are passed to HolmesGPT API for playbook matching
-  - Rego policies have default/fallback values for all 7 labels
+  - Custom labels (if any) are stored in JSONB for optional matching
 
 #### **BR-SIGNAL-PROCESSING-002: risk_tolerance Categorization**
 - **Category**: SIGNAL-PROCESSING
 - **Priority**: P0 (blocking for Signal Processing V1.0)
 - **Description**: MUST output `risk_tolerance` (low, medium, high) based on priority and environment
-- **Authority**: DD-PLAYBOOK-001 (authoritative label definitions)
+- **Authority**: DD-PLAYBOOK-001 v1.2 (authoritative label definitions)
 - **Rego Policy Logic**:
   ```rego
   risk_tolerance = "low" {
@@ -753,30 +813,29 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
   - P2/P3 or non-production → `risk_tolerance: "high"`
   - Unit tests cover all combinations
 
-#### **BR-SIGNAL-PROCESSING-003: business_category Categorization**
+#### **BR-SIGNAL-PROCESSING-003: Custom Label Support (OPTIONAL)**
 - **Category**: SIGNAL-PROCESSING
-- **Priority**: P0 (blocking for Signal Processing V1.0)
-- **Description**: MUST output `business_category` based on namespace mapping
-- **Authority**: DD-PLAYBOOK-001 (authoritative label definitions)
-- **Configuration**: ConfigMap with namespace → category mapping
-- **Rego Policy Logic**:
+- **Priority**: P2 (optional enhancement)
+- **Description**: MAY support custom labels defined by users via Rego policies
+- **Authority**: DD-PLAYBOOK-001 v1.2 (optional custom labels section)
+- **Status**: ✅ **OPTIONAL** - Users configure if needed, no default required
+- **Example Custom Labels**: `business_category`, `gitops_tool`, `region`, `team`
+- **Rego Policy Logic** (user-defined):
   ```rego
-  business_category = data.namespace_categories[input.namespace]
-
-  business_category = "infrastructure" {
-      input.resource.kind in ["Node", "PersistentVolume", "PersistentVolumeClaim"]
+  # EXAMPLE: User-defined business_category (OPTIONAL)
+  custom_labels["business_category"] = data.namespace_categories[input.namespace] {
+      data.namespace_categories[input.namespace]
   }
 
-  business_category = "general" {  # Fallback
-      true
+  # EXAMPLE: User-defined gitops_tool (OPTIONAL)
+  custom_labels["gitops_tool"] = "argocd" {
+      input.deployment.annotations["argocd.argoproj.io/sync-wave"]
   }
   ```
 - **Acceptance Criteria**:
-  - Namespace mapping loaded from ConfigMap
-  - Infrastructure resources (Node, PV, PVC) → `business_category: "infrastructure"`
-  - Unmapped namespaces → `business_category: "general"`
-  - ConfigMap updates reload Rego policies
-  - Unit tests cover mapped, unmapped, and infrastructure cases
+  - Custom labels stored in JSONB column
+  - Custom labels matched against playbook custom labels if present
+  - No mandatory configuration required (zero-friction default)
 
 ---
 
