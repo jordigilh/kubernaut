@@ -15,16 +15,17 @@
 **ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived).
 
 **Changes**:
-- ✅ **6 Mandatory Labels**: Reduced from 7 to 6 (removed `business_category` from mandatory)
-- ✅ **Label Taxonomy Clarified**: Group A (auto-populated) + Group B (Rego-configurable) + Custom
+- ✅ **5 Mandatory Labels**: Reduced from 6 to 5 (removed `risk_tolerance` from mandatory)
+- ✅ **Label Taxonomy Clarified**: Group A (auto-populated) + Group B (Rego-configurable)
 - ✅ **DetectedLabels (V1.0)**: Auto-detected cluster characteristics (GitOps, PDB, HPA, etc.)
-- ✅ **CustomLabels (V1.0)**: User-defined via Rego policies (includes `risk_tolerance`, `business_category`)
+- ✅ **CustomLabels (V1.0)**: Customer-defined via Rego policies (includes `risk_tolerance`, `business_category`)
+- ✅ **Pass-Through Principle**: Kubernaut doesn't validate DetectedLabels/CustomLabels values
 - ✅ **Cross-reference**: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0
 
 **Rationale**:
-- `business_category` is organization-specific, not universally needed
+- `risk_tolerance` and `business_category` are organization-specific, customer-derived via Rego
 - DetectedLabels provide auto-detected context without configuration
-- CustomLabels allow user flexibility via Rego policies
+- CustomLabels are examples only - customers define their own keys and values
 
 ### Version 2.0 (2025-11-27)
 **CRITICAL REVISION**: Removed hardcoded boost/penalty logic for optional labels.
@@ -92,9 +93,11 @@
 
 | Category | Source | Config Required | Examples |
 |----------|--------|-----------------|----------|
-| **6 Mandatory Labels** | Signal Processing | No (auto/Rego) | `signal_type`, `severity`, `environment` |
-| **DetectedLabels** | Auto-detection from K8s | ❌ No config | `GitOpsManaged`, `PDBProtected`, `HPAEnabled` |
-| **CustomLabels** | Rego policies | ✅ User-defined | `business_category`, `team`, `region` |
+| **5 Mandatory Labels** | Signal Processing | No (auto/Rego defaults) | `signal_type`, `severity`, `component`, `environment`, `priority` |
+| **DetectedLabels** | Auto-detection from K8s | ❌ No config | `GitOpsManaged`, `PDBProtected`, `HPAEnabled`, `ServiceMesh` |
+| **CustomLabels** | Customer Rego policies | ✅ User-defined | `risk_tolerance`, `business_category`, `team`, `region` |
+
+**Pass-Through Principle**: Kubernaut does NOT validate DetectedLabels or CustomLabels values - they are passed through to Data Storage for workflow matching. Workflow blueprints define which labels they accept.
 
 ### Kubernaut-Enforced Labels (5 Mandatory)
 
@@ -114,7 +117,6 @@ Per **DD-WORKFLOW-001 v1.4**, these labels are Kubernaut-defined with fixed keys
 |---|-------|------|----------|-------------|
 | 4 | `environment` | ENUM | ✅ YES | Where (production, staging, development, test, '*') |
 | 5 | `priority` | ENUM | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
-| 6 | `risk_tolerance` | ENUM | ❌ NO | Remediation policy (low, medium, high) |
 
 ### DetectedLabels (V1.0 - Auto-Detected)
 
@@ -132,12 +134,15 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 | `PodSecurityLevel` | Namespace PSS label | Security posture |
 | `ServiceMesh` | Istio/Linkerd sidecar | Traffic management |
 
-### CustomLabels (V1.0 - User-Defined)
+### CustomLabels (V1.0 - Subdomain-Based)
 
-- **Keys**: Defined by customer in Rego policies (e.g., `business_category`, `team`, `region`)
-- **Values**: Defined by customer in Rego policies (e.g., `payment-service`, `platform`, `us-east-1`)
-- **Matching**: Customer's Rego labels matched against customer's workflow labels
-- **Kubernaut Role**: Match labels; do NOT define label names or weights
+- **Format**: `<subdomain>.kubernaut.io/<key>[:<value>]`
+- **Extraction**: Subdomain becomes filter key; value is boolean key or `key=value`
+- **Storage**: `map[string][]string` (subdomain → list of values)
+- **Matching**: Each subdomain becomes a separate WHERE clause in Data Storage
+- **Kubernaut Role**: Pass-through conduit; do NOT define label names or weights
+
+**Reference**: [HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md](../../services/crd-controllers/01-signalprocessing/HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md)
 
 ### Why No Hardcoded Boost/Penalty in V1.0
 
@@ -162,9 +167,9 @@ SignalProcessing auto-detects these from K8s resources (NO config required):
 - `component`: "pod" (from K8s) - **Mandatory (Group A)**
 - `environment`: "production" (from Rego) - **Mandatory (Group B)**
 - `priority`: "P0" (from Rego) - **Mandatory (Group B)**
-- `risk-tolerance`: "low" (from Rego) - **Mandatory (Group B)**
 - `GitOpsManaged`: true (auto-detected) - **DetectedLabels**
 - `GitOpsTool`: "argocd" (auto-detected) - **DetectedLabels**
+- `risk_tolerance`: "low" (from Rego) - **CustomLabels (customer-derived)**
 - `PDBProtected`: true (auto-detected) - **DetectedLabels**
 - `business-category`: "payment-service" (from Rego) - **CustomLabels**
 - `region`: "us-east-1" (from Rego) - **CustomLabels**
@@ -666,7 +671,7 @@ func (r *WorkflowRepository) SearchWorkflows(ctx context.Context, filters *Workf
 **Confidence**: 95% (V1.0 Base Similarity Approach)
 
 **Evidence**:
-- ✅ Aligns with DD-WORKFLOW-001 (7 mandatory labels are Kubernaut-enforced)
+- ✅ Aligns with DD-WORKFLOW-001 v1.4 (5 mandatory labels + DetectedLabels + CustomLabels)
 - ✅ Aligns with DD-LLM-001 (structured query format with exact labels)
 - ✅ Respects customer-defined labels (no hardcoded assumptions)
 - ✅ Simple implementation (base similarity only)
