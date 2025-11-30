@@ -18,6 +18,7 @@ package datastorage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -97,13 +98,31 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 		usePublicSchema()
 
 		baseURL = datastorageURL + "/api/v1/audit/events"
+
+		// DD-TEST-001: Clean up any leftover audit events from previous test runs
+		// This ensures test isolation even if AfterEach failed
+		if db != nil {
+			_, err := db.ExecContext(context.Background(),
+				"DELETE FROM audit_events WHERE correlation_id LIKE 'test-' || $1 || '-%'",
+				GinkgoParallelProcess())
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to clean up stale audit events: %v\n", err)
+			}
+		}
 	})
 
 	AfterEach(func() {
 		// Clean up test data to prevent pollution between test runs
 		// This is critical for CI/CD where tests must be deterministic
-		// Note: We can't use correlation_id for cleanup since each test generates a unique one
-		// Instead, we rely on the test database being reset between full test suite runs
+		// DD-TEST-001: Clean up audit events created by this test process
+		if db != nil {
+			_, err := db.ExecContext(context.Background(),
+				"DELETE FROM audit_events WHERE correlation_id LIKE 'test-' || $1 || '-%'",
+				GinkgoParallelProcess())
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to clean up audit events: %v\n", err)
+			}
+		}
 	})
 
 	Context("Query by correlation_id", func() {

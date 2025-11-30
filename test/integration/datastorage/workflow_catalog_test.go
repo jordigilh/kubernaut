@@ -544,6 +544,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 	Context("when searching with optional labels", func() {
 		It("should return workflows with hybrid weighted scores", func() {
 			// ARRANGE: Create two workflows - one gitops, one manual
+			// DD-WORKFLOW-001 v1.6: Labels must include ALL mandatory fields for filtering to work
 			workflows := []struct {
 				id              string
 				name            string
@@ -568,12 +569,23 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			}
 
 			for _, wf := range workflows {
+				// DD-WORKFLOW-001 v1.6: Include ALL mandatory labels so workflows match search filters
 				labels := map[string]interface{}{
 					"signal_type":         "OOMKilled",
 					"severity":            "critical",
+					"component":           "pod",        // DD-WORKFLOW-001 v1.4: mandatory
+					"environment":         "production", // DD-WORKFLOW-001 v1.4: mandatory
+					"priority":            "P0",         // DD-WORKFLOW-001 v1.4: mandatory
 					"resource_management": wf.resourceMgmt,
 				}
 				labelsJSON, err := json.Marshal(labels)
+				Expect(err).ToNot(HaveOccurred())
+
+				// DD-WORKFLOW-001 v1.6: DetectedLabels for GitOps detection
+				detectedLabels := map[string]interface{}{
+					"git_ops_managed": wf.resourceMgmt == "gitops",
+				}
+				detectedLabelsJSON, err := json.Marshal(detectedLabels)
 				Expect(err).ToNot(HaveOccurred())
 
 				embedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
@@ -589,6 +601,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 					Content:              "apiVersion: tekton.dev/v1beta1",
 					ContentHash:          "hash-" + wf.id,
 					Labels:               labelsJSON,
+					DetectedLabels:       detectedLabelsJSON,
 					Embedding:            &embedding,
 					Status:               "active",
 					IsLatestVersion:      true,
@@ -615,9 +628,9 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 				Filters: &models.WorkflowSearchFilters{
 					SignalType:  "OOMKilled",
 					Severity:    "critical",
-					Component:   "pod",         // DD-WORKFLOW-001 v1.4: mandatory
-					Environment: "production",  // DD-WORKFLOW-001 v1.4: mandatory
-					Priority:    "P0",          // DD-WORKFLOW-001 v1.4: mandatory
+					Component:   "pod",        // DD-WORKFLOW-001 v1.4: mandatory
+					Environment: "production", // DD-WORKFLOW-001 v1.4: mandatory
+					Priority:    "P0",         // DD-WORKFLOW-001 v1.4: mandatory
 					DetectedLabels: &models.DetectedLabels{
 						GitOpsManaged: &gitOpsManaged,
 					},
