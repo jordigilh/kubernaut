@@ -43,7 +43,7 @@
 3. Classify environment tier (production, staging, development) with business criticality
 4. **Assign priority based on enriched K8s context** ([DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md))
 5. **Detect cluster characteristics** (GitOps, PDB, HPA, etc.) → `DetectedLabels` (V1.0)
-6. **Extract custom labels via Rego policies** (team, region, etc.) → `CustomLabels` (V1.1)
+6. **Extract custom labels via Rego policies** (team, region, etc.) → `CustomLabels` (V1.0)
 7. Validate signal completeness and readiness for AI analysis
 8. Update status for RemediationRequest controller to trigger next phase
 
@@ -53,7 +53,7 @@
 - **Environment Classification**: Classify environment with fallback heuristics
 - **Priority Assignment**: Categorize priority after K8s context enrichment ([DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md))
 - **DetectedLabels (V1.0)**: Auto-detect cluster characteristics (GitOps, PDB, HPA, etc.)
-- **CustomLabels (V1.1)**: Extract user-defined labels via Rego policies (team, region, etc.)
+- **CustomLabels (V1.0)**: Extract user-defined labels via Rego policies (team, region, etc.)
 - Basic signal validation
 - **Targeting data ONLY** (namespace, resource kind/name, Kubernetes context ~8KB)
 - **NO log/metric storage in CRD** (HolmesGPT fetches via toolsets dynamically)
