@@ -15,7 +15,7 @@ CREATE TABLE resource_references (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted_at TIMESTAMP WITH TIME ZONE, -- For soft deletion tracking
     last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
+
     -- Constraints
     UNIQUE(namespace, kind, name)
 );
@@ -30,26 +30,26 @@ CREATE INDEX idx_resource_uid ON resource_references (resource_uid);
 CREATE TABLE action_histories (
     id BIGSERIAL PRIMARY KEY,
     resource_id BIGINT NOT NULL REFERENCES resource_references(id) ON DELETE CASCADE,
-    
+
     -- Retention configuration
     max_actions INTEGER DEFAULT 1000,
     max_age_days INTEGER DEFAULT 30,
     compaction_strategy VARCHAR(20) DEFAULT 'pattern-aware', -- oldest-first, effectiveness-based, pattern-aware
-    
-    -- Analysis configuration  
+
+    -- Analysis configuration
     oscillation_window_minutes INTEGER DEFAULT 120,
     effectiveness_threshold DECIMAL(3,2) DEFAULT 0.70,
     pattern_min_occurrences INTEGER DEFAULT 3,
-    
+
     -- Status tracking
     total_actions INTEGER DEFAULT 0,
     last_action_at TIMESTAMP WITH TIME ZONE,
     last_analysis_at TIMESTAMP WITH TIME ZONE,
     next_analysis_at TIMESTAMP WITH TIME ZONE,
-    
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
+
     -- Constraints
     UNIQUE(resource_id)
 );
@@ -63,57 +63,57 @@ CREATE INDEX idx_ah_resource_id ON action_histories (resource_id);
 CREATE TABLE resource_action_traces (
     id BIGSERIAL,
     action_history_id BIGINT NOT NULL REFERENCES action_histories(id) ON DELETE CASCADE,
-    
+
     -- Action identification
     action_id VARCHAR(64) NOT NULL, -- UUID for this specific action
     correlation_id VARCHAR(64), -- For tracing across systems
-    
+
     -- Timing information
     action_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
     execution_start_time TIMESTAMP WITH TIME ZONE,
     execution_end_time TIMESTAMP WITH TIME ZONE,
     execution_duration_ms INTEGER,
-    
+
     -- Alert context
     alert_name VARCHAR(200) NOT NULL,
     alert_severity VARCHAR(20) NOT NULL, -- info, warning, critical
     alert_labels JSONB,
     alert_annotations JSONB,
     alert_firing_time TIMESTAMP WITH TIME ZONE,
-    
+
     -- AI model information
     model_used VARCHAR(100) NOT NULL,
     routing_tier VARCHAR(20), -- route1, route2, route3
     model_confidence DECIMAL(4,3) NOT NULL, -- 0.000-1.000
     model_reasoning TEXT,
     alternative_actions JSONB, -- [{"action": "scale_deployment", "confidence": 0.85}]
-    
+
     -- Action details
     action_type VARCHAR(50) NOT NULL,
     action_parameters JSONB, -- {"replicas": 5, "memory": "2Gi"}
-    
+
     -- Resource state capture
     resource_state_before JSONB,
     resource_state_after JSONB,
-    
+
     -- Execution tracking
     execution_status VARCHAR(20) DEFAULT 'pending', -- pending, executing, completed, failed, rolled-back
     execution_error TEXT,
     kubernetes_operations JSONB, -- [{"operation": "patch", "resource": "deployment/webapp", "result": "success"}]
-    
+
     -- Effectiveness assessment
     effectiveness_score DECIMAL(4,3), -- 0.000-1.000, calculated after execution
     effectiveness_criteria JSONB, -- {"alert_resolved": true, "target_metric_improved": true}
     effectiveness_assessed_at TIMESTAMP WITH TIME ZONE,
     effectiveness_assessment_method VARCHAR(20), -- automated, manual, ml-derived
     effectiveness_notes TEXT,
-    
+
     -- Follow-up tracking
     follow_up_actions JSONB, -- [{"action_id": "uuid", "relation": "correction"}]
-    
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
+
     -- Primary key includes timestamp for partitioning
     PRIMARY KEY (id, action_timestamp)
 ) PARTITION BY RANGE (action_timestamp);
@@ -138,60 +138,78 @@ CREATE INDEX idx_rat_action_parameters_gin ON resource_action_traces USING GIN (
 CREATE INDEX idx_rat_resource_state_gin ON resource_action_traces USING GIN (resource_state_before);
 
 -- Partial indexes for active data
-CREATE INDEX idx_rat_pending_actions ON resource_action_traces (action_timestamp) 
+CREATE INDEX idx_rat_pending_actions ON resource_action_traces (action_timestamp)
     WHERE execution_status IN ('pending', 'executing');
 
 -- 4. Create initial partitions for resource_action_traces
--- Current month
-CREATE TABLE resource_action_traces_y2025m08 
+-- Extended range: July 2025 - February 2026 (covers development period)
+CREATE TABLE resource_action_traces_y2025m07
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2025-07-01') TO ('2025-08-01');
+
+CREATE TABLE resource_action_traces_y2025m08
     PARTITION OF resource_action_traces
     FOR VALUES FROM ('2025-08-01') TO ('2025-09-01');
 
--- Next month
-CREATE TABLE resource_action_traces_y2025m09 
+CREATE TABLE resource_action_traces_y2025m09
     PARTITION OF resource_action_traces
     FOR VALUES FROM ('2025-09-01') TO ('2025-10-01');
 
--- Previous month (for testing)
-CREATE TABLE resource_action_traces_y2025m07 
+CREATE TABLE resource_action_traces_y2025m10
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-07-01') TO ('2025-08-01');
+    FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
+
+CREATE TABLE resource_action_traces_y2025m11
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
+
+CREATE TABLE resource_action_traces_y2025m12
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
+
+CREATE TABLE resource_action_traces_y2026m01
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+
+CREATE TABLE resource_action_traces_y2026m02
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
 
 -- 5. Oscillation Patterns Table
 CREATE TABLE oscillation_patterns (
     id BIGSERIAL PRIMARY KEY,
-    
+
     -- Pattern definition
     pattern_type VARCHAR(50) NOT NULL, -- scale-oscillation, resource-thrashing, ineffective-loop, cascading-failure
     pattern_name VARCHAR(200) NOT NULL,
     description TEXT,
-    
+
     -- Detection criteria
     min_occurrences INTEGER NOT NULL DEFAULT 3,
     time_window_minutes INTEGER NOT NULL DEFAULT 120,
     action_sequence JSONB, -- ["scale_deployment", "scale_deployment", "scale_deployment"]
     threshold_config JSONB, -- {"confidence_drop": 0.2, "effectiveness_threshold": 0.3}
-    
+
     -- Resource scope
     resource_types TEXT[], -- ["Deployment", "StatefulSet"]
-    namespaces TEXT[], -- ["production", "staging"] 
+    namespaces TEXT[], -- ["production", "staging"]
     label_selectors JSONB, -- {"app": "webapp", "tier": "frontend"}
-    
+
     -- Prevention strategy
     prevention_strategy VARCHAR(50) NOT NULL, -- block-action, escalate-human, alternative-action, cooling-period
     prevention_parameters JSONB, -- {"cooling_period_minutes": 30, "escalation_webhook": "..."}
-    
+
     -- Alerting configuration
     alerting_enabled BOOLEAN DEFAULT true,
     alert_severity VARCHAR(20) DEFAULT 'warning',
     alert_channels TEXT[], -- ["slack", "pagerduty"]
-    
+
     -- Pattern statistics
     total_detections INTEGER DEFAULT 0,
     prevention_success_rate DECIMAL(4,3),
     false_positive_rate DECIMAL(4,3),
     last_detection_at TIMESTAMP WITH TIME ZONE,
-    
+
     -- Lifecycle
     active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -208,28 +226,28 @@ CREATE TABLE oscillation_detections (
     id BIGSERIAL PRIMARY KEY,
     pattern_id BIGINT NOT NULL REFERENCES oscillation_patterns(id) ON DELETE CASCADE,
     resource_id BIGINT NOT NULL REFERENCES resource_references(id) ON DELETE CASCADE,
-    
+
     detected_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     confidence DECIMAL(4,3) NOT NULL, -- 0.000-1.000
     action_count INTEGER NOT NULL,
     time_span_minutes INTEGER NOT NULL,
-    
+
     -- Pattern evidence
     matching_actions BIGINT[], -- Array of action_trace IDs that matched the pattern
     pattern_evidence JSONB, -- Detailed evidence for the detection
-    
+
     -- Prevention outcome
     prevention_applied BOOLEAN DEFAULT false,
     prevention_action VARCHAR(50), -- blocked, escalated, alternative-suggested
     prevention_details JSONB,
     prevention_successful BOOLEAN,
-    
+
     -- Resolution tracking
     resolved BOOLEAN DEFAULT false,
     resolved_at TIMESTAMP WITH TIME ZONE,
     resolution_method VARCHAR(50), -- timeout, manual-intervention, automatic
     resolution_notes TEXT,
-    
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -241,16 +259,16 @@ CREATE INDEX idx_od_unresolved ON oscillation_detections (resolved) WHERE resolv
 -- 7. Action Effectiveness Metrics Table
 CREATE TABLE action_effectiveness_metrics (
     id BIGSERIAL PRIMARY KEY,
-    
+
     -- Scope definition
     scope_type VARCHAR(50) NOT NULL, -- global, namespace, resource-type, alert-type, model
     scope_value VARCHAR(200), -- specific value for the scope
     metric_period VARCHAR(20) NOT NULL, -- 1h, 24h, 7d, 30d
-    
+
     -- Time range for this metric
     period_start TIMESTAMP WITH TIME ZONE NOT NULL,
     period_end TIMESTAMP WITH TIME ZONE NOT NULL,
-    
+
     -- Effectiveness by action type
     action_type VARCHAR(50) NOT NULL,
     sample_size INTEGER NOT NULL,
@@ -259,17 +277,17 @@ CREATE TABLE action_effectiveness_metrics (
     std_deviation DECIMAL(4,3),
     confidence_interval_lower DECIMAL(4,3),
     confidence_interval_upper DECIMAL(4,3),
-    
+
     -- Trend analysis
     trend_direction VARCHAR(20), -- improving, stable, declining
     trend_confidence DECIMAL(4,3),
-    
+
     -- Statistical significance
     min_sample_size_met BOOLEAN,
     statistical_significance DECIMAL(4,3),
-    
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
+
     -- Ensure uniqueness and enable efficient queries
     UNIQUE(scope_type, scope_value, metric_period, period_start, action_type)
 );
@@ -283,26 +301,26 @@ CREATE INDEX idx_aem_action_effectiveness ON action_effectiveness_metrics (actio
 CREATE TABLE retention_operations (
     id BIGSERIAL PRIMARY KEY,
     action_history_id BIGINT NOT NULL REFERENCES action_histories(id) ON DELETE CASCADE,
-    
+
     operation_type VARCHAR(30) NOT NULL, -- cleanup, archive, compact
     strategy_used VARCHAR(30) NOT NULL, -- oldest-first, effectiveness-based, pattern-aware
-    
+
     -- Operation details
     records_before INTEGER NOT NULL,
     records_after INTEGER NOT NULL,
     records_deleted INTEGER NOT NULL,
     records_archived INTEGER,
-    
+
     -- Criteria used
     retention_criteria JSONB, -- {"max_age_days": 30, "min_effectiveness": 0.1}
     preserved_criteria JSONB, -- {"pattern_examples": 5, "high_effectiveness": 10}
-    
+
     operation_start TIMESTAMP WITH TIME ZONE NOT NULL,
     operation_end TIMESTAMP WITH TIME ZONE,
     operation_duration_ms INTEGER,
     operation_status VARCHAR(20) DEFAULT 'running', -- running, completed, failed
     error_message TEXT,
-    
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -314,7 +332,7 @@ CREATE INDEX idx_ro_operation_time ON retention_operations (operation_start);
 INSERT INTO oscillation_patterns (
     pattern_type, pattern_name, description, min_occurrences, time_window_minutes,
     threshold_config, prevention_strategy, prevention_parameters
-) VALUES 
+) VALUES
 (
     'scale-oscillation',
     'Scale Up/Down Oscillation',
@@ -367,15 +385,15 @@ BEGIN
     -- Create partition for next month
     start_date := date_trunc('month', CURRENT_DATE + interval '1 month');
     end_date := start_date + interval '1 month';
-    table_name := 'resource_action_traces_y' || 
-                  to_char(start_date, 'YYYY') || 'm' || 
+    table_name := 'resource_action_traces_y' ||
+                  to_char(start_date, 'YYYY') || 'm' ||
                   to_char(start_date, 'MM');
-    
-    EXECUTE format('CREATE TABLE IF NOT EXISTS %I 
+
+    EXECUTE format('CREATE TABLE IF NOT EXISTS %I
                    PARTITION OF resource_action_traces
                    FOR VALUES FROM (%L) TO (%L)',
                    table_name, start_date, end_date);
-                   
+
     RAISE NOTICE 'Created partition: %', table_name;
 END;
 $$ LANGUAGE plpgsql;
@@ -407,7 +425,7 @@ CREATE TRIGGER update_oscillation_patterns_updated_at
 
 -- 12. Create views for common queries
 CREATE VIEW action_history_summary AS
-SELECT 
+SELECT
     rr.namespace,
     rr.kind,
     rr.name,
@@ -418,13 +436,13 @@ SELECT
     COUNT(DISTINCT rat.action_type) as action_types_used
 FROM resource_references rr
 JOIN action_histories ah ON ah.resource_id = rr.id
-LEFT JOIN resource_action_traces rat ON rat.action_history_id = ah.id 
+LEFT JOIN resource_action_traces rat ON rat.action_history_id = ah.id
     AND rat.action_timestamp > NOW() - INTERVAL '24 hours'
 GROUP BY rr.id, rr.namespace, rr.kind, rr.name, ah.total_actions, ah.last_action_at;
 
 -- Summary statistics
 CREATE VIEW oscillation_detection_summary AS
-SELECT 
+SELECT
     pattern_type,
     COUNT(*) as total_detections,
     COUNT(*) FILTER (WHERE prevention_applied = true) as preventions_applied,
