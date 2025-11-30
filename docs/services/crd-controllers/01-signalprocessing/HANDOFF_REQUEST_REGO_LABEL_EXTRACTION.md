@@ -163,6 +163,10 @@ The SignalProcessing team ADR should document:
 
 ### V1.0 Input Schema
 
+> **📋 Updated per Gateway Team Response** ([RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md](RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md))
+> Gateway provides ALL alert labels/annotations via `SignalLabels` and `SignalAnnotations`.
+> K8s resource labels (namespace.labels, pod.labels) are fetched by SignalProcessing.
+
 ```json
 {
   "namespace": {
@@ -193,6 +197,20 @@ The SignalProcessing team ADR should document:
     "severity": "critical",
     "source": "prometheus"
   },
+  // NEW: Alert labels/annotations from Gateway (via RemediationRequest)
+  "signal_labels": {
+    "alertname": "HighMemoryUsage",
+    "namespace": "payments-uat",
+    "pod": "api-server-xyz",
+    "container": "api",
+    "severity": "critical",
+    "cluster": "prod-us-west"
+  },
+  "signal_annotations": {
+    "summary": "Container memory usage > 90%",
+    "description": "Pod api-server-xyz memory at 94%",
+    "runbook_url": "https://runbooks.company.com/oom"
+  },
   "detected_labels": {
     // Only include boolean fields when TRUE (omit when false)
     "gitOpsManaged": true,
@@ -204,6 +222,20 @@ The SignalProcessing team ADR should document:
   }
 }
 ```
+
+### Input Data Sources
+
+| Field | Source | Notes |
+|-------|--------|-------|
+| `namespace.*` | K8s API query | SignalProcessing fetches |
+| `pod.*` | K8s API query | SignalProcessing fetches |
+| `deployment.*` | K8s API query | SignalProcessing fetches |
+| `node.*` | K8s API query | SignalProcessing fetches |
+| `signal.*` | RemediationRequest.Spec | Gateway provides |
+| `signal_labels` | RemediationRequest.Spec.SignalLabels | Gateway provides (ALL alert labels) |
+| `signal_annotations` | RemediationRequest.Spec.SignalAnnotations | Gateway provides (ALL alert annotations) |
+| `detected_labels` | V1.0 DetectedLabels | SignalProcessing computes |
+| `cluster` | **V1.1** | Deferred |
 
 **V1.1**: Add `cluster` (name, region)
 
@@ -248,15 +280,17 @@ package signalprocessing.security
 import data.signalprocessing.labels as customer_labels
 
 # System labels that cannot be overridden by customer policies
-# These are the 6 mandatory labels controlled by the system
+# These are the 5 mandatory labels from DD-WORKFLOW-001
 system_labels := {
-    "kubernaut.io/priority",
-    "kubernaut.io/severity",
     "kubernaut.io/signal_type",
+    "kubernaut.io/severity",
     "kubernaut.io/component",
     "kubernaut.io/environment",
-    "kubernaut.io/risk_tolerance"  # Note: risk-tolerance (with hyphen) IS allowed
+    "kubernaut.io/priority"
 }
+# NOTE: The following are ALLOWED (customer-defined via Rego):
+#   - kubernaut.io/risk-tolerance
+#   - kubernaut.io/business-category (optional, not all workloads have one)
 
 # Final output: customer labels minus system labels
 labels[key] = value {
@@ -351,7 +385,7 @@ labels["constraint.kubernaut.io/high-availability"] = "true" {
 | **DetectedLabels** (this handoff) | Auto-detection from K8s | `GitOpsManaged`, `PDBProtected`, `HPAEnabled`, `Stateful` | Additional context for LLM |
 | **CustomLabels** (this handoff) | Rego policies | `team`, `region`, `business_category` | User-defined workflow filters |
 
-**Key Point**: `DetectedLabels` and `CustomLabels` are **supplementary** to the 6 mandatory labels, not replacements.
+**Key Point**: `DetectedLabels` and `CustomLabels` are **supplementary** to the 5 mandatory labels, not replacements.
 
 ---
 
@@ -616,7 +650,7 @@ Without extracted labels, HolmesGPT-API cannot filter workflows by customer-spec
 │                            HolmesGPT-API                                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Uses ExtractedLabels in workflow catalog search query                      │
-│  Filters by: 6 mandatory labels (DD-WORKFLOW-001 v1.3) + Custom Labels      │
+│  Filters by: 5 mandatory labels (DD-WORKFLOW-001) + Custom Labels           │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1526,6 +1560,50 @@ system_labels := {
 
 ---
 
+**✅ ANSWER FROM AI ANALYSIS TEAM**:
+
+Good catch! This was an error in the security wrapper example. Here's the clarification:
+
+**The 5 Mandatory Labels** (system-controlled) are:
+1. `signal_type`
+2. `severity`
+3. `component`
+4. `environment`
+5. `priority`
+
+**Customer-Derived Labels** (via Rego):
+- `kubernaut.io/risk-tolerance` - customer interprets environment risk
+- `kubernaut.io/business-category` - optional, not all workloads have one (e.g., infra pods)
+
+**Corrected Design**:
+
+| Label | Source | Blocked? |
+|-------|--------|----------|
+| 5 mandatory labels | System (Gateway/SignalProcessing) | ✅ Blocked |
+| `risk-tolerance` | Customer Rego | ❌ Allowed |
+| `business-category` | Customer Rego (optional) | ❌ Allowed |
+
+**Decision**: Use **consistent hyphen naming** for all CustomLabels (Kubernetes convention).
+
+**Updated Security Wrapper**:
+
+```rego
+system_labels := {
+    "kubernaut.io/signal_type",
+    "kubernaut.io/severity",
+    "kubernaut.io/component",
+    "kubernaut.io/environment",
+    "kubernaut.io/priority"
+}
+# ALLOWED (customer-defined):
+#   - kubernaut.io/risk-tolerance
+#   - kubernaut.io/business-category
+```
+
+**Action**: Update the security wrapper section in this document to reflect correct blocked labels.
+
+---
+
 ### F2: Constraint Flow to Data Storage
 
 **To**: Data Storage Team / Gateway Team
@@ -1547,13 +1625,51 @@ SignalProcessing → AIAnalysis → HolmesGPT-API → MCP Tool Call → Data Sto
 
 1. Does the Data Storage workflow search API support filtering by `constraint.kubernaut.io/*` prefixed labels?
 2. Are constraint labels stored as workflow metadata in Data Storage?
-3. Does the search API support arbitrary label filtering (not just the 6 mandatory)?
+3. Does the search API support arbitrary label filtering (not just the 5 mandatory)?
 4. Or does HolmesGPT-API handle constraint filtering locally after search results return?
 
 **Impact**: Need to understand if constraints are:
 - **A)** Pre-filter (Data Storage filters workflows by constraints before returning)
 - **B)** Post-filter (HolmesGPT-API filters results after search)
 - **C)** LLM context only (constraints inform LLM reasoning, not explicit filtering)
+
+---
+
+**✅ ANSWER FROM AI ANALYSIS TEAM**:
+
+This question is correctly directed to **Data Storage team** for definitive answer. However, here's the intended design:
+
+**Intended Flow**: **Option A (Pre-filter)** + **Option C (LLM context)**
+
+1. **LLM receives** constraint labels as natural language context (for investigation reasoning)
+2. **LLM includes** constraint labels in MCP `search_workflow_catalog` call
+3. **Data Storage filters** workflows by constraints BEFORE returning results
+4. **LLM selects** from pre-filtered results
+
+**Data Storage Requirements** (to be confirmed by DS team):
+
+| Requirement | Description |
+|-------------|-------------|
+| Arbitrary label filtering | Support filtering by any `*.kubernaut.io/*` label, not just 5 mandatory |
+| Workflow metadata | Workflows must have constraint-compatible tags (e.g., `gitops_aware: true`) |
+| Semantic matching | Match constraint labels to workflow capabilities |
+
+**Example MCP Call**:
+```json
+{
+  "query": "OOMKilled critical",
+  "labels": {
+    "kubernaut.io/risk-tolerance": "high",
+    "constraint.kubernaut.io/cost-constrained": "true"
+  }
+}
+```
+
+**Data Storage should**:
+- Return only workflows compatible with `cost-constrained=true`
+- Exclude expensive remediation workflows
+
+**Action**: Data Storage team to confirm API supports arbitrary label filtering.
 
 ---
 
@@ -1586,7 +1702,7 @@ The convention states:
 ```go
 func buildDetectedLabelsForRego(dl *v1alpha1.DetectedLabels) map[string]interface{} {
     result := make(map[string]interface{})
-    
+
     // Only include booleans when true
     if dl.GitOpsManaged {
         result["gitOpsManaged"] = true
@@ -1607,7 +1723,7 @@ func buildDetectedLabelsForRego(dl *v1alpha1.DetectedLabels) map[string]interfac
     if dl.NetworkIsolated {
         result["networkIsolated"] = true
     }
-    
+
     // Always include non-empty strings
     if dl.PodSecurityLevel != "" {
         result["podSecurityLevel"] = dl.PodSecurityLevel
@@ -1615,7 +1731,7 @@ func buildDetectedLabelsForRego(dl *v1alpha1.DetectedLabels) map[string]interfac
     if dl.ServiceMesh != "" {
         result["serviceMesh"] = dl.ServiceMesh
     }
-    
+
     return result
 }
 ```
@@ -1628,12 +1744,75 @@ Please confirm this is correct behavior.
 
 ---
 
+**✅ ANSWER FROM AI ANALYSIS TEAM**:
+
+**Confirmed: Implementation is correct.**
+
+| Condition | `gitOpsManaged` | `gitOpsTool` | Rationale |
+|-----------|-----------------|--------------|-----------|
+| GitOps detected | ✅ `true` | ✅ `"argocd"` | Both present - tool is meaningful |
+| GitOps not detected | ❌ omitted | ❌ omitted | Both omitted - no tool to report |
+
+**Why this is correct**:
+1. **Data consistency**: `gitOpsTool` only makes sense when `gitOpsManaged` is true
+2. **Rego simplicity**: Checking `input.detected_labels.gitOpsManaged` implicitly means tool is available
+3. **Payload cleanliness**: No misleading empty strings
+
+**Rego usage**:
+```rego
+# This works correctly with your implementation
+labels["constraint.kubernaut.io/gitops-only"] = "true" {
+    input.detected_labels.gitOpsManaged
+    # gitOpsTool is guaranteed to exist here
+}
+
+labels["kubernaut.io/gitops-tool"] = tool {
+    tool := input.detected_labels.gitOpsTool
+    # Only evaluates when gitOpsManaged is true (and thus gitOpsTool exists)
+}
+```
+
+**✅ Approved**: Your implementation is correct.
+
+---
+
 ### Follow-up Summary
 
 | # | Question | To Team | Blocking? | Status |
 |---|----------|---------|-----------|--------|
-| F1 | `risk_tolerance` vs `risk-tolerance` naming | AI Analysis | ⚠️ Medium | 🟡 Pending |
-| F2 | Constraint flow to Data Storage | Data Storage / Gateway | ⚠️ Medium | 🟡 Pending |
+| F1 | `risk_tolerance` vs `risk-tolerance` naming | AI Analysis | ⚠️ Medium | ✅ **Answered** - risk-tolerance is customer-defined, not system |
+| F2 | Constraint flow to Data Storage | Data Storage | ⚠️ Medium | ✅ **Answered** - Pre-filter + LLM context (DS team to confirm API) |
+| F2b | Gateway label passthrough | Gateway | 🟢 Low | ✅ **Answered** - See [RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md](RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md) |
 | F3 | ADR creation acknowledgment | Self (SP Team) | 🟢 Low | ✅ Acknowledged |
-| F4 | DetectedLabels convention verification | AI Analysis | 🟢 Low | 🟡 Pending |
+| F4 | DetectedLabels convention verification | AI Analysis | 🟢 Low | ✅ **Answered** - Implementation is correct |
+
+---
+
+## ✅ Gateway Team Response (F2b) - Additional Detail
+
+**Response Document**: [RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md](RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md)
+
+### Key Findings
+
+| Question | Answer |
+|----------|--------|
+| **Q1**: What labels does Gateway extract? | ✅ ALL alert labels + annotations passed through via `SignalLabels` and `SignalAnnotations` |
+| **Q2**: Does Gateway pass annotations? | ✅ YES - all annotations preserved |
+| **Q3**: Interface sufficient? | ✅ YES - SignalProcessing queries K8s API for resource labels |
+| **Q4**: Plans for Gateway label extraction? | ❌ NO - per DD-CATEGORIZATION-001 (fast ingestion layer) |
+
+### Impact on V1.0 Input Schema
+
+Gateway provides **MORE** data than originally assumed. V1.0 input schema now includes:
+
+| New Input Field | Source | Use Case |
+|-----------------|--------|----------|
+| `signal_labels` | `RemediationRequest.Spec.SignalLabels` | Alert labels (e.g., `cluster`, `container`) |
+| `signal_annotations` | `RemediationRequest.Spec.SignalAnnotations` | Alert annotations (e.g., `runbook_url`, `summary`) |
+
+### Optimization Opportunity
+
+SignalProcessing can skip redundant queries:
+- Pod/namespace **names** available from `SignalLabels` (no API call needed)
+- Pod/namespace **labels** require K8s API query (for Rego input)
 
