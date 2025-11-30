@@ -154,7 +154,14 @@ func (b *WorkflowSearchAuditEventBuilder) Build() (*pkgaudit.AuditEvent, error) 
 	event.ActorID = "datastorage"
 	event.ResourceType = "workflow_catalog"
 	event.ResourceID = resourceID
-	event.CorrelationID = resourceID // Use generated resource ID as correlation ID
+
+	// BR-AUDIT-023: Use remediation_id as correlation_id if provided, else use query hash
+	if b.request.RemediationID != "" {
+		event.CorrelationID = b.request.RemediationID
+	} else {
+		event.CorrelationID = resourceID
+	}
+
 	event.DurationMs = &durationMs
 	event.RetentionDays = 90 // Default retention per BR-AUDIT-029
 	event.IsSensitive = false
@@ -192,32 +199,71 @@ func (b *WorkflowSearchAuditEventBuilder) buildQueryMetadata() QueryMetadata {
 	}
 
 	// Add filters if present
+	// DD-WORKFLOW-001 v1.6: All API fields use snake_case
 	if b.request.Filters != nil {
 		filters := make(map[string]interface{})
 
+		// 5 Mandatory Labels (DD-WORKFLOW-001 v1.4)
 		if b.request.Filters.SignalType != "" {
-			filters["signal-type"] = b.request.Filters.SignalType
+			filters["signal_type"] = b.request.Filters.SignalType
 		}
 		if b.request.Filters.Severity != "" {
 			filters["severity"] = b.request.Filters.Severity
 		}
-		if b.request.Filters.Environment != nil {
-			filters["environment"] = *b.request.Filters.Environment
+		if b.request.Filters.Component != "" {
+			filters["component"] = b.request.Filters.Component
 		}
-		if b.request.Filters.BusinessCategory != nil {
-			filters["business-category"] = *b.request.Filters.BusinessCategory
+		if b.request.Filters.Environment != "" {
+			filters["environment"] = b.request.Filters.Environment
 		}
-		if b.request.Filters.Priority != nil {
-			filters["priority"] = *b.request.Filters.Priority
+		if b.request.Filters.Priority != "" {
+			filters["priority"] = b.request.Filters.Priority
 		}
-		if b.request.Filters.RiskTolerance != nil {
-			filters["risk-tolerance"] = *b.request.Filters.RiskTolerance
+
+		// DetectedLabels (DD-WORKFLOW-001 v1.6)
+		if b.request.Filters.DetectedLabels != nil {
+			detectedLabels := make(map[string]interface{})
+			dl := b.request.Filters.DetectedLabels
+
+			// Boolean fields (only include when true)
+			if dl.GitOpsManaged != nil && *dl.GitOpsManaged {
+				detectedLabels["git_ops_managed"] = true
+			}
+			if dl.PDBProtected != nil && *dl.PDBProtected {
+				detectedLabels["pdb_protected"] = true
+			}
+			if dl.HPAEnabled != nil && *dl.HPAEnabled {
+				detectedLabels["hpa_enabled"] = true
+			}
+			if dl.Stateful != nil && *dl.Stateful {
+				detectedLabels["stateful"] = true
+			}
+			if dl.HelmManaged != nil && *dl.HelmManaged {
+				detectedLabels["helm_managed"] = true
+			}
+			if dl.NetworkIsolated != nil && *dl.NetworkIsolated {
+				detectedLabels["network_isolated"] = true
+			}
+
+			// String fields (include value or "*" wildcard)
+			if dl.GitOpsTool != nil {
+				detectedLabels["git_ops_tool"] = *dl.GitOpsTool
+			}
+			if dl.PodSecurityLevel != nil {
+				detectedLabels["pod_security_level"] = *dl.PodSecurityLevel
+			}
+			if dl.ServiceMesh != nil {
+				detectedLabels["service_mesh"] = *dl.ServiceMesh
+			}
+
+			if len(detectedLabels) > 0 {
+				filters["detected_labels"] = detectedLabels
+			}
 		}
-		if b.request.Filters.ResourceManagement != nil {
-			filters["resource-management"] = *b.request.Filters.ResourceManagement
-		}
-		if b.request.Filters.GitOpsTool != nil {
-			filters["gitops-tool"] = *b.request.Filters.GitOpsTool
+
+		// CustomLabels (DD-WORKFLOW-001 v1.5)
+		if len(b.request.Filters.CustomLabels) > 0 {
+			filters["custom_labels"] = b.request.Filters.CustomLabels
 		}
 
 		if len(filters) > 0 {
@@ -249,28 +295,23 @@ func (b *WorkflowSearchAuditEventBuilder) buildResultsMetadata() ResultsMetadata
 // buildWorkflowMetadata constructs metadata for a single workflow result.
 // BR-AUDIT-027: Workflow metadata capture
 // BR-AUDIT-026: Scoring capture (hybrid scoring components)
-// Uses nested Workflow structure from models.WorkflowSearchResult
+// DD-WORKFLOW-002 v3.0: Uses flat fields from WorkflowSearchResult
 func (b *WorkflowSearchAuditEventBuilder) buildWorkflowMetadata(result models.WorkflowSearchResult, rank int) WorkflowResultAudit {
 	workflow := WorkflowResultAudit{
-		WorkflowID:  result.Workflow.WorkflowID,
-		Title:       result.Workflow.Name, // Name is used as Title in audit
-		Description: result.Workflow.Description,
+		WorkflowID:  result.WorkflowID,  // DD-WORKFLOW-002 v3.0: flat field
+		Title:       result.Title,       // DD-WORKFLOW-002 v3.0: flat field
+		Description: result.Description, // DD-WORKFLOW-002 v3.0: flat field
 		Rank:        rank,
 		// Hybrid scoring: use FinalScore as confidence
 		Scoring: ScoringV1{
-			Confidence: result.FinalScore,
+			Confidence: result.Confidence, // DD-WORKFLOW-002 v3.0: confidence field
 		},
 	}
 
-	// Add signal_type from labels for audit (Labels is json.RawMessage)
-	if result.Workflow.Labels != nil {
-		var labels map[string]interface{}
-		if err := json.Unmarshal(result.Workflow.Labels, &labels); err == nil {
-			if signalType, ok := labels["signal-type"].(string); ok && signalType != "" {
-				workflow.Labels = map[string]interface{}{
-					"signal_type": signalType,
-				}
-			}
+	// Add signal_type from flat field (DD-WORKFLOW-002 v3.0)
+	if result.SignalType != "" {
+		workflow.Labels = map[string]interface{}{
+			"signal_type": result.SignalType,
 		}
 	}
 

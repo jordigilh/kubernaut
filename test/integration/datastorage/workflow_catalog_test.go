@@ -131,7 +131,7 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 		It("should create workflow without business_category (optional per v1.3)", func() {
 			// ARRANGE: Create workflow WITHOUT business_category
 			// Per DD-WORKFLOW-001 v1.3: business_category moved from mandatory to optional
-			workflowName := "test-no-business-category-" + testID
+			workflowName := "test-no-business_category-" + testID
 			labels := map[string]interface{}{
 				"signal_types":   []string{"HighCPU"},
 				"risk_tolerance": "medium",
@@ -261,9 +261,9 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 
 			// The first result should be the memory leak workflow (most similar)
 			// Note: With placeholder embeddings, similarity is based on vector distance
-			// DD-WORKFLOW-002: Flat structure - use Title instead of Workflow.Name
+			// DD-WORKFLOW-002 v3.0: Flat structure - use Title field directly
 			firstResult := response.Workflows[0]
-			Expect(firstResult.Workflow.Name).To(ContainSubstring("Memory"), "First result should be memory-related")
+			Expect(firstResult.Title).To(ContainSubstring("Memory"), "First result should be memory-related")
 		})
 	})
 
@@ -302,8 +302,15 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 
 			// Create all workflows
 			for _, wf := range workflows {
+				// DD-WORKFLOW-001 v1.8: mandatory labels in Labels, business_category in custom_labels
 				labels, _ := json.Marshal(map[string]interface{}{
-					"business-category": wf.category, // CRITICAL: Use hyphen, not underscore (per DD-LLM-001)
+					"signal_type": "OOMKilled",
+					"severity":    "critical",
+				})
+
+				// DD-WORKFLOW-001 v1.6: business_category moved to custom_labels
+				customLabels, _ := json.Marshal(map[string][]string{
+					"business": {"category=" + wf.category},
 				})
 
 				embedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
@@ -315,6 +322,7 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 					Content:              "apiVersion: tekton.dev/v1beta1",
 					ContentHash:          "hash-" + wf.id,
 					Labels:               labels,
+					CustomLabels:         customLabels,
 					Embedding:            &embedding,
 					Status:               wf.status,
 					IsLatestVersion:      true,
@@ -355,10 +363,12 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 			}
 
 			// ACT: List active payments workflows only
-			category := "payments"
+			// DD-WORKFLOW-001 v1.6: business_category moved to custom_labels
 			paymentsFilters := &models.WorkflowSearchFilters{
-				BusinessCategory: &category,
-				Status:           []string{"active"}, // Filter out disabled workflows
+				CustomLabels: map[string][]string{
+					"business": {"category=payments"},
+				},
+				Status: []string{"active"}, // Filter out disabled workflows
 			}
 			allPaymentsWorkflows, _, err := workflowRepo.List(testCtx, paymentsFilters, 100, 0)
 
@@ -437,12 +447,12 @@ var _ = Describe("Workflow Search - Mandatory Label Validation", Serial, func() 
 	})
 
 	Context("when searching without mandatory labels", func() {
-		It("should accept search with both signal-type and severity", func() {
+		It("should accept search with both signal_type and severity", func() {
 			// ARRANGE: Create test workflow with new label schema
-			// Use unique signal-type to avoid interference with other tests
+			// Use unique signal_type to avoid interference with other tests
 			workflowID := "test-mandatory-labels-" + testID
 			labels := map[string]interface{}{
-				"signal-type": "MemoryLeak", // Different from other test (OOMKilled)
+				"signal_type": "MemoryLeak", // Different from other test (OOMKilled)
 				"severity":    "high",       // Different from other test (critical)
 			}
 			labelsJSON, err := json.Marshal(labels)
@@ -490,14 +500,14 @@ var _ = Describe("Workflow Search - Mandatory Label Validation", Serial, func() 
 			response, err := workflowRepo.SearchByEmbedding(testCtx, request)
 
 			// ASSERT: Search succeeds with mandatory labels
-			// DD-WORKFLOW-002 v3.0: Flat structure - WorkflowID is UUID (not workflow_name)
+			// DD-WORKFLOW-002 v3.0: Flat structure - WorkflowID is UUID at top level
 			Expect(err).ToNot(HaveOccurred(), "Search with mandatory labels should succeed")
 			Expect(response).ToNot(BeNil())
 			Expect(response.Workflows).ToNot(BeEmpty(), "Should return at least one workflow")
-			// DD-WORKFLOW-002 v3.0: WorkflowID is accessible via nested Workflow field
-			Expect(response.Workflows[0].Workflow.WorkflowName).ToNot(BeEmpty())
-			// Verify we got the right workflow by checking name
-			Expect(response.Workflows[0].Workflow.Name).To(Equal("Test Mandatory Labels"))
+			// DD-WORKFLOW-002 v3.0: WorkflowID is flat field (UUID)
+			Expect(response.Workflows[0].WorkflowID).ToNot(BeEmpty())
+			// DD-WORKFLOW-002 v3.0: Title is flat field (renamed from Name)
+			Expect(response.Workflows[0].Title).To(Equal("Test Mandatory Labels"))
 		})
 	})
 })
@@ -559,9 +569,9 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 
 			for _, wf := range workflows {
 				labels := map[string]interface{}{
-					"signal-type":         "OOMKilled",
+					"signal_type":         "OOMKilled",
 					"severity":            "critical",
-					"resource-management": wf.resourceMgmt,
+					"resource_management": wf.resourceMgmt,
 				}
 				labelsJSON, err := json.Marshal(labels)
 				Expect(err).ToNot(HaveOccurred())
@@ -596,15 +606,21 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 				queryEmbedding.Slice()[i] = 0.9
 			}
 
-			resourceMgmt := "gitops"
+			// DD-WORKFLOW-001 v1.6: GitOps is now detected via GitOpsManaged boolean
+			gitOpsManaged := true
 			request := &models.WorkflowSearchRequest{
 				Query:     "OOM recovery with gitops",
 				Embedding: &queryEmbedding,
 				TopK:      10,
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:         "OOMKilled",
-					Severity:           "critical",
-					ResourceManagement: &resourceMgmt,
+					SignalType:  "OOMKilled",
+					Severity:    "critical",
+					Component:   "pod",         // DD-WORKFLOW-001 v1.4: mandatory
+					Environment: "production",  // DD-WORKFLOW-001 v1.4: mandatory
+					Priority:    "P0",          // DD-WORKFLOW-001 v1.4: mandatory
+					DetectedLabels: &models.DetectedLabels{
+						GitOpsManaged: &gitOpsManaged,
+					},
 				},
 			}
 
@@ -643,14 +659,14 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			// ARRANGE: Create workflow WITHOUT embedding (should be auto-generated)
 			workflowID := "test-auto-embedding-" + testID
 			labels := map[string]interface{}{
-				"signal-type":         "OOMKilled",
+				"signal_type":         "OOMKilled",
 				"severity":            "critical",
-				"resource-management": "gitops",
-				"gitops-tool":         "argocd",
+				"resource_management": "gitops",
+				"gitops_tool":         "argocd",
 				"environment":         "production",
-				"business-category":   "payments",
+				"business_category":   "payments",
 				"priority":            "high",
-				"risk-tolerance":      "low",
+				"risk_tolerance":      "low",
 			}
 			labelsJSON, err := json.Marshal(labels)
 			Expect(err).ToNot(HaveOccurred())
@@ -710,7 +726,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			// ARRANGE: Create first workflow
 			workflowID1 := "test-cache-hit-1-" + testID
 			labels := map[string]interface{}{
-				"signal-type": "OOMKilled",
+				"signal_type": "OOMKilled",
 				"severity":    "critical",
 			}
 			labelsJSON, err := json.Marshal(labels)
@@ -771,7 +787,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			// ARRANGE: Create workflow
 			workflowID := "test-embedding-unavailable-" + testID
 			labels := map[string]interface{}{
-				"signal-type": "CrashLoopBackOff",
+				"signal_type": "CrashLoopBackOff",
 				"severity":    "high",
 			}
 			labelsJSON, err := json.Marshal(labels)
@@ -802,3 +818,9 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 		})
 	})
 })
+
+// stringPtr returns a pointer to the given string
+// Helper for optional string fields in test data
+func stringPtr(s string) *string {
+	return &s
+}

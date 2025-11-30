@@ -66,21 +66,17 @@ var _ = Describe("Workflow Search Audit Integration", func() {
 				TopK:  3,
 			}
 
-			// DD-WORKFLOW-002 v3.0: WorkflowSearchResult has nested Workflow field
+			// DD-WORKFLOW-002 v3.0: FLAT response structure (no nested Workflow)
 			searchResponse := &models.WorkflowSearchResponse{
 				Workflows: []models.WorkflowSearchResult{
 					{
-						Workflow: models.RemediationWorkflow{
-							WorkflowID:  "550e8400-e29b-41d4-a716-446655440000",
-							Version:     "v1.0.0",
-							Name:        "Pod OOM GitOps Recovery",
-							Description: "OOMKilled critical: Increases memory via GitOps PR",
-							Content:     "apiVersion: tekton.dev/v1beta1",
-							ContentHash: "test-hash",
-							Labels:      json.RawMessage(`{"signal-type":"OOMKilled","severity":"critical"}`),
-							Status:      "active",
-						},
+						// DD-WORKFLOW-002 v3.0: Flat fields
+						WorkflowID:     "550e8400-e29b-41d4-a716-446655440000",
+						Title:          "Pod OOM GitOps Recovery",
+						Description:    "OOMKilled critical: Increases memory via GitOps PR",
+						SignalType:     "OOMKilled",
 						BaseSimilarity: 0.92,
+						Confidence:     0.92, // V1.0 scoring: confidence = BaseSimilarity
 						LabelBoost:     0.0,
 						LabelPenalty:   0.0,
 						FinalScore:     0.92,
@@ -207,7 +203,7 @@ var _ = Describe("Workflow Search Audit Integration", func() {
 							Description: "Recovers nodes that are not ready",
 							Content:     "apiVersion: tekton.dev/v1beta1",
 							ContentHash: "test-hash",
-							Labels:      json.RawMessage(`{"signal-type":"NodeNotReady","severity":"critical"}`),
+							Labels:      json.RawMessage(`{"signal_type":"NodeNotReady","severity":"critical"}`),
 							Status:      "active",
 						},
 						BaseSimilarity: 0.88,
