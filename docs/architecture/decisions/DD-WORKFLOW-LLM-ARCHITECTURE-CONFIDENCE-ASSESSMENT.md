@@ -108,9 +108,10 @@ The LLM architecture (AIAnalysis → HolmesGPT API → Embedding Service MCP →
 ### 4. Workflow Label Schema (93%)
 
 **Why High Confidence**:
-- ✅ Simple, well-defined schema (7 mandatory labels)
+- ✅ Simple, well-defined schema (5 mandatory labels + DetectedLabels + CustomLabels)
 - ✅ Clear contract between Signal Processing and Workflow Catalog
 - ✅ Wildcard support for flexible matching
+- ✅ Pass-through principle for DetectedLabels/CustomLabels
 - ✅ PostgreSQL validation (enums, CHECK constraints)
 
 **Evidence**:
@@ -158,7 +159,7 @@ The LLM architecture (AIAnalysis → HolmesGPT API → Embedding Service MCP →
 - HolmesGPT SDK already proven for Kubernetes investigation
 
 **Questions Requiring Testing**:
-- Q1: Does the LLM understand the 7 mandatory labels and their hints?
+- Q1: Does the LLM understand the 5 mandatory labels + DetectedLabels context?
 - Q2: Does the LLM correctly use MCP tools without explicit examples?
 - Q3: Does the LLM provide clear reasoning for workflow selection?
 - Q4: Does the LLM handle edge cases (false positives, ambiguous alerts)?
@@ -219,7 +220,7 @@ All components have ≥85% confidence, indicating a solid architecture with mana
 
 ### Category 1: Prompt Effectiveness (Priority: P0)
 
-**Q1: Does the LLM understand the 7 mandatory labels and their hints?**
+**Q1: Does the LLM understand the 5 mandatory labels + DetectedLabels context?**
 - **Impact**: If NO, LLM may ignore context and make poor decisions
 - **Test**: Provide alerts with different labels, verify LLM references them in reasoning
 - **Mitigation**: Refine context hints, add few-shot examples

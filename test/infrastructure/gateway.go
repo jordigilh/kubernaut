@@ -261,13 +261,19 @@ func createKindClusterOnly(clusterName, kubeconfigPath string, writer io.Writer)
 	_ = os.Remove(lockFile) // Ignore errors - file may not exist
 
 	// Create Kind cluster with API tuning for parallel integration tests
-	// Use kind-gateway-config.yaml which increases API server rate limits:
-	// - max-requests-inflight: 800 (default: 400)
-	// - max-mutating-requests-inflight: 400 (default: 200)
-	// - kube-api-qps: 100 (default: 20)
-	// - kube-api-burst: 200 (default: 30)
-	// This prevents K8s API throttling during 4 parallel test processes
-	kindConfigPath := filepath.Join(workspaceRoot, "test", "infrastructure", "kind-gateway-config.yaml")
+	// Detect which config file to use based on cluster name
+	// Each service has its own Kind config with specific port mappings
+	var kindConfigFile string
+	if strings.Contains(clusterName, "gateway") {
+		kindConfigFile = "kind-gateway-config.yaml"
+	} else if strings.Contains(clusterName, "notification") {
+		kindConfigFile = "kind-notification-config.yaml"
+	} else if strings.Contains(clusterName, "datastorage") {
+		kindConfigFile = "kind-datastorage-config.yaml"
+	} else {
+		kindConfigFile = "kind-gateway-config.yaml" // default fallback
+	}
+	kindConfigPath := filepath.Join(workspaceRoot, "test", "infrastructure", kindConfigFile)
 	createCmd := exec.Command("kind", "create", "cluster",
 		"--name", clusterName,
 		"--config", kindConfigPath,
