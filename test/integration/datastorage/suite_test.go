@@ -71,7 +71,7 @@ var (
 
 	// BR-STORAGE-014: Embedding service integration
 	embeddingServer *httptest.Server // Mock embedding service
-	embeddingClient embedding.Client
+	embeddingClient embedding.Service
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -818,12 +818,15 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 		"008_context_api_compatibility.sql",
 		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
-		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
-		"013_create_audit_events_table.sql",        // ADR-034: Unified audit events table
-		"015_create_workflow_catalog_table.sql",    // BR-STORAGE-012/013/014: Workflow catalog with semantic search
-		"016_update_embedding_dimensions.sql",      // BR-STORAGE-014: Update to 768 dimensions (all-mpnet-base-v2)
-		"999_add_nov_2025_partition.sql",           // Legacy partition for resource_action_traces
-		"1000_create_audit_events_partitions.sql",  // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
+		"012_adr033_multidimensional_tracking.sql",           // ADR-033: Multi-dimensional success tracking
+		"013_create_audit_events_table.sql",                  // ADR-034: Unified audit events table
+		"015_create_workflow_catalog_table.sql",              // BR-STORAGE-012/013/014: Workflow catalog with semantic search
+		"016_update_embedding_dimensions.sql",                // BR-STORAGE-014: Update to 768 dimensions (all-mpnet-base-v2)
+		"017_add_workflow_schema_fields.sql",                 // ADR-043: Add parameters, execution_engine, execution_bundle
+		"018_rename_execution_bundle_to_container_image.sql", // DD-WORKFLOW-002 v2.4: Rename to container_image, add container_digest
+		"019_uuid_primary_key.sql",                           // DD-WORKFLOW-002 v3.0: UUID primary key, workflow_name field
+		"999_add_nov_2025_partition.sql",                     // Legacy partition for resource_action_traces
+		"1000_create_audit_events_partitions.sql",            // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 
 	for _, migration := range migrations {
@@ -890,10 +893,15 @@ func applyMigrationsWithPropagation() {
 		"008_context_api_compatibility.sql",
 		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
-		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
-		"013_create_audit_events_table.sql",        // ADR-034: Unified audit events table
-		"999_add_nov_2025_partition.sql",           // Legacy partition for resource_action_traces
-		"1000_create_audit_events_partitions.sql",  // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
+		"012_adr033_multidimensional_tracking.sql",           // ADR-033: Multi-dimensional success tracking
+		"013_create_audit_events_table.sql",                  // ADR-034: Unified audit events table
+		"015_create_workflow_catalog_table.sql",              // BR-STORAGE-012/013/014: Workflow catalog with semantic search
+		"016_update_embedding_dimensions.sql",                // BR-STORAGE-014: Update to 768 dimensions (all-mpnet-base-v2)
+		"017_add_workflow_schema_fields.sql",                 // ADR-043: Add parameters, execution_engine, execution_bundle
+		"018_rename_execution_bundle_to_container_image.sql", // DD-WORKFLOW-002 v2.4: Rename to container_image, add container_digest
+		"019_uuid_primary_key.sql",                           // DD-WORKFLOW-002 v3.0: UUID primary key, workflow_name field
+		"999_add_nov_2025_partition.sql",                     // Legacy partition for resource_action_traces
+		"1000_create_audit_events_partitions.sql",            // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 
 	for _, migration := range migrations {

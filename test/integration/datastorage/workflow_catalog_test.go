@@ -54,7 +54,8 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 	Context("when creating and retrieving workflows", func() {
 		It("should persist workflow and retrieve it by ID", func() {
 			// ARRANGE: Create test workflow
-			workflowID := "test-pod-oom-recovery-" + testID
+			// DD-WORKFLOW-002 v3.0: WorkflowName is the human-readable identifier
+			workflowName := "test-pod-oom-recovery-" + testID
 			labels := map[string]interface{}{
 				"signal_types":      []string{"MemoryLeak", "OOMKilled"},
 				"business_category": "payments",
@@ -69,7 +70,7 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 			}
 
 			workflow := &models.RemediationWorkflow{
-				WorkflowID:           workflowID,
+				WorkflowName:         workflowName, // DD-WORKFLOW-002 v3.0: Use WorkflowName
 				Version:              "v1.0.0",
 				Name:                 "Test Pod OOM Recovery",
 				Description:          "Integration test workflow for OOM recovery",
@@ -84,18 +85,22 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 			}
 
 			// ACT: Create workflow
-			err = workflowRepo.Create(testCtx, workflow)
+			// DD-WORKFLOW-002 v3.0: Create returns generated UUID
+			workflowID, err := workflowRepo.Create(testCtx, workflow)
 
 			// ASSERT: Workflow created successfully
 			Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed")
+			Expect(workflowID).ToNot(BeEmpty(), "Should return generated workflow_id (UUID)")
 
-			// ACT: Retrieve workflow by ID and version
-			retrieved, err := workflowRepo.GetByID(testCtx, workflowID, "v1.0.0")
+			// ACT: Retrieve workflow by UUID
+			// DD-WORKFLOW-002 v3.0: GetByID takes only UUID
+			retrieved, err := workflowRepo.GetByID(testCtx, workflowID)
 
 			// ASSERT: Workflow retrieved successfully
 			Expect(err).ToNot(HaveOccurred(), "Workflow retrieval should succeed")
 			Expect(retrieved).ToNot(BeNil(), "Retrieved workflow should not be nil")
-			Expect(retrieved.WorkflowID).To(Equal(workflowID), "Workflow ID should match")
+			Expect(retrieved.WorkflowID).To(Equal(workflowID), "Workflow ID (UUID) should match")
+			Expect(retrieved.WorkflowName).To(Equal(workflowName), "Workflow Name should match")
 			Expect(retrieved.Version).To(Equal("v1.0.0"), "Version should match")
 			Expect(retrieved.Name).To(Equal("Test Pod OOM Recovery"), "Name should match")
 			Expect(retrieved.Status).To(Equal("active"), "Status should be active")
@@ -109,8 +114,9 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 			Expect(retrievedLabels["business_category"]).To(Equal("payments"), "Business category should match")
 			Expect(retrievedLabels["risk_tolerance"]).To(Equal("low"), "Risk tolerance should match")
 
-			// ACT: Retrieve latest version
-			latest, err := workflowRepo.GetLatestVersion(testCtx, workflowID)
+			// ACT: Retrieve latest version by workflow_name
+			// DD-WORKFLOW-002 v3.0: GetLatestVersion uses workflow_name
+			latest, err := workflowRepo.GetLatestVersion(testCtx, workflowName)
 
 			// ASSERT: Latest version retrieved successfully
 			Expect(err).ToNot(HaveOccurred(), "Latest version retrieval should succeed")
@@ -155,6 +161,7 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 			}
 
 			// Create all workflows
+			// DD-WORKFLOW-002 v3.0: WorkflowName is the human-readable identifier
 			for _, wf := range workflows {
 				labels, _ := json.Marshal(map[string]interface{}{
 					"business_category": "infrastructure",
@@ -163,7 +170,7 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 
 				embedding := pgvector.NewVector(wf.embedding)
 				workflow := &models.RemediationWorkflow{
-					WorkflowID:           wf.id,
+					WorkflowName:         wf.id, // DD-WORKFLOW-002 v3.0: Use WorkflowName
 					Version:              "v1.0.0",
 					Name:                 wf.name,
 					Description:          wf.description,
@@ -177,7 +184,8 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 					SuccessfulExecutions: 0,
 				}
 
-				err := workflowRepo.Create(testCtx, workflow)
+				// DD-WORKFLOW-002 v3.0: Create returns generated UUID
+				_, err := workflowRepo.Create(testCtx, workflow)
 				Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed for "+wf.name)
 			}
 
@@ -201,8 +209,9 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 
 			// The first result should be the memory leak workflow (most similar)
 			// Note: With placeholder embeddings, similarity is based on vector distance
+			// DD-WORKFLOW-002: Flat structure - use Title instead of Workflow.Name
 			firstResult := response.Workflows[0]
-			Expect(firstResult.Workflow.Name).To(ContainSubstring("Memory"), "First result should be memory-related")
+			Expect(firstResult.Title).To(ContainSubstring("Memory"), "First result should be memory-related")
 		})
 	})
 
@@ -247,7 +256,7 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 
 				embedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
 				workflow := &models.RemediationWorkflow{
-					WorkflowID:           wf.id,
+					WorkflowName:         wf.id,
 					Version:              "v1.0.0",
 					Name:                 wf.name,
 					Description:          "Test workflow",
@@ -261,15 +270,16 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 					SuccessfulExecutions: 0,
 				}
 
-				err := workflowRepo.Create(testCtx, workflow)
+				_, err := workflowRepo.Create(testCtx, workflow)
 				Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed for "+wf.name)
 			}
 
 			// Verify workflows were created
+			// DD-WORKFLOW-002 v3.0: workflow_id is UUID, use workflow_name for filtering
 			By("Verifying workflows were created")
 			Eventually(func() int {
 				var count int
-				err := db.QueryRow("SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_id LIKE $1", "%-"+testID).Scan(&count)
+				err := db.QueryRow("SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name LIKE $1", "%-"+testID).Scan(&count)
 				if err != nil {
 					return 0
 				}
@@ -292,31 +302,32 @@ var _ = Describe("Workflow Catalog Integration", Serial, func() {
 				Expect(wf.Status).To(Equal("active"), "All workflows should be active")
 			}
 
-		// ACT: List active payments workflows only
-		category := "payments"
-		paymentsFilters := &models.WorkflowSearchFilters{
-			BusinessCategory: &category,
-			Status:           []string{"active"}, // Filter out disabled workflows
-		}
-		allPaymentsWorkflows, _, err := workflowRepo.List(testCtx, paymentsFilters, 100, 0)
-
-		// ASSERT: Should return only active payments workflows
-		Expect(err).ToNot(HaveOccurred(), "List with category filter should succeed")
-
-		// Filter to only workflows from this test (for parallel execution isolation)
-		paymentsWorkflows := []models.RemediationWorkflow{}
-		for _, wf := range allPaymentsWorkflows {
-			if strings.Contains(wf.WorkflowID, testID) {
-				paymentsWorkflows = append(paymentsWorkflows, wf)
+			// ACT: List active payments workflows only
+			category := "payments"
+			paymentsFilters := &models.WorkflowSearchFilters{
+				BusinessCategory: &category,
+				Status:           []string{"active"}, // Filter out disabled workflows
 			}
-		}
+			allPaymentsWorkflows, _, err := workflowRepo.List(testCtx, paymentsFilters, 100, 0)
 
-		Expect(paymentsWorkflows).ToNot(BeEmpty(), "Should return at least one payments workflow from this test")
-		Expect(len(paymentsWorkflows)).To(Equal(1), "Should have exactly 1 active payments workflow from this test (disabled-payments is filtered out)")
+			// ASSERT: Should return only active payments workflows
+			Expect(err).ToNot(HaveOccurred(), "List with category filter should succeed")
+
+			// Filter to only workflows from this test (for parallel execution isolation)
+			// DD-WORKFLOW-002 v3.0: Use WorkflowName for filtering (WorkflowID is UUID)
+			paymentsWorkflows := []models.RemediationWorkflow{}
+			for _, wf := range allPaymentsWorkflows {
+				if strings.Contains(wf.WorkflowName, testID) {
+					paymentsWorkflows = append(paymentsWorkflows, wf)
+				}
+			}
+
+			Expect(paymentsWorkflows).ToNot(BeEmpty(), "Should return at least one payments workflow from this test")
+			Expect(len(paymentsWorkflows)).To(Equal(1), "Should have exactly 1 active payments workflow from this test (disabled-payments is filtered out)")
 
 			// Verify the returned workflow is the active payments workflow
 			Expect(paymentsWorkflows[0].Status).To(Equal("active"), "Returned workflow should be active")
-			Expect(paymentsWorkflows[0].WorkflowID).To(ContainSubstring("active-payments"), "Returned workflow should be active-payments")
+			Expect(paymentsWorkflows[0].WorkflowName).To(ContainSubstring("active-payments"), "Returned workflow should be active-payments")
 		})
 	})
 })
@@ -380,7 +391,7 @@ var _ = Describe("Workflow Search - Mandatory Label Validation", Serial, func() 
 			workflowID := "test-mandatory-labels-" + testID
 			labels := map[string]interface{}{
 				"signal-type": "MemoryLeak", // Different from other test (OOMKilled)
-				"severity":    "high",        // Different from other test (critical)
+				"severity":    "high",       // Different from other test (critical)
 			}
 			labelsJSON, err := json.Marshal(labels)
 			Expect(err).ToNot(HaveOccurred())
@@ -391,7 +402,7 @@ var _ = Describe("Workflow Search - Mandatory Label Validation", Serial, func() 
 			}
 
 			workflow := &models.RemediationWorkflow{
-				WorkflowID:           workflowID,
+				WorkflowName:         workflowID,
 				Version:              "v1.0.0",
 				Name:                 "Test Mandatory Labels",
 				Description:          "Test workflow with mandatory labels",
@@ -405,14 +416,14 @@ var _ = Describe("Workflow Search - Mandatory Label Validation", Serial, func() 
 				SuccessfulExecutions: 0,
 			}
 
-			err = workflowRepo.Create(testCtx, workflow)
+			_, err = workflowRepo.Create(testCtx, workflow)
 			Expect(err).ToNot(HaveOccurred())
 
-		// ACT: Search with mandatory labels (matching the workflow we created)
-		queryEmbedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
-		for i := range queryEmbedding.Slice() {
-			queryEmbedding.Slice()[i] = 0.5
-		}
+			// ACT: Search with mandatory labels (matching the workflow we created)
+			queryEmbedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
+			for i := range queryEmbedding.Slice() {
+				queryEmbedding.Slice()[i] = 0.5
+			}
 
 			request := &models.WorkflowSearchRequest{
 				Query:     "Memory leak recovery",
@@ -427,10 +438,14 @@ var _ = Describe("Workflow Search - Mandatory Label Validation", Serial, func() 
 			response, err := workflowRepo.SearchByEmbedding(testCtx, request)
 
 			// ASSERT: Search succeeds with mandatory labels
+			// DD-WORKFLOW-002 v3.0: Flat structure - WorkflowID is UUID (not workflow_name)
 			Expect(err).ToNot(HaveOccurred(), "Search with mandatory labels should succeed")
 			Expect(response).ToNot(BeNil())
 			Expect(response.Workflows).ToNot(BeEmpty(), "Should return at least one workflow")
-			Expect(response.Workflows[0].Workflow.WorkflowID).To(Equal(workflowID))
+			// DD-WORKFLOW-002 v3.0: WorkflowID is UUID format
+			Expect(response.Workflows[0].WorkflowID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
+			// Verify we got the right workflow by checking title (maps from Name)
+			Expect(response.Workflows[0].Title).To(Equal("Test Mandatory Labels"))
 		})
 	})
 })
@@ -505,7 +520,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 				}
 
 				workflow := &models.RemediationWorkflow{
-					WorkflowID:           wf.id,
+					WorkflowName:         wf.id,
 					Version:              "v1.0.0",
 					Name:                 wf.name,
 					Description:          "Test workflow for hybrid scoring",
@@ -519,15 +534,15 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 					SuccessfulExecutions: 0,
 				}
 
-				err = workflowRepo.Create(testCtx, workflow)
+				_, err = workflowRepo.Create(testCtx, workflow)
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-		// ACT: Search with gitops filter
-		queryEmbedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
-		for i := range queryEmbedding.Slice() {
-			queryEmbedding.Slice()[i] = 0.9
-		}
+			// ACT: Search with gitops filter
+			queryEmbedding := pgvector.NewVector(make([]float32, 768)) // DD-TEST-001: Updated to 768 dimensions (all-mpnet-base-v2)
+			for i := range queryEmbedding.Slice() {
+				queryEmbedding.Slice()[i] = 0.9
+			}
 
 			resourceMgmt := "gitops"
 			request := &models.WorkflowSearchRequest{
@@ -543,28 +558,26 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 
 			response, err := workflowRepo.SearchByEmbedding(testCtx, request)
 
-			// ASSERT: Hybrid scoring works correctly
+			// ASSERT: V1.0 Scoring (base similarity only) works correctly
+			// DD-WORKFLOW-004 v2.0: V1.0 uses confidence = base_similarity (no boost/penalty)
 			Expect(err).ToNot(HaveOccurred(), "Search should succeed")
 			Expect(response).ToNot(BeNil())
 			Expect(response.Workflows).To(HaveLen(2), "Should return both workflows")
 
-			// Verify gitops workflow scores higher (first in results)
-			gitopsWorkflow := response.Workflows[0]
-			Expect(gitopsWorkflow.Workflow.WorkflowID).To(ContainSubstring("gitops"), "GitOps workflow should rank first")
-			Expect(gitopsWorkflow.LabelBoost).To(BeNumerically(">=", 0.10), "GitOps workflow should have boost")
-			Expect(gitopsWorkflow.LabelPenalty).To(Equal(0.0), "GitOps workflow should have no penalty")
-			// Note: Final score may be capped at 1.0 if base + boost > 1.0
-			Expect(gitopsWorkflow.FinalScore).To(BeNumerically(">=", gitopsWorkflow.BaseSimilarity), "Final score should be >= base (or capped at 1.0)")
+			// Verify both workflows have valid confidence scores
+			// V1.0: Confidence is pure semantic similarity (no label boost/penalty)
+			// DD-WORKFLOW-002 v3.0: Rank is implicit in ordering (index 0 = rank 1)
+			firstWorkflow := response.Workflows[0]
+			Expect(firstWorkflow.Confidence).To(BeNumerically(">=", 0.0), "Confidence should be >= 0.0")
+			Expect(firstWorkflow.Confidence).To(BeNumerically("<=", 1.0), "Confidence should be <= 1.0")
 
-			// Verify manual workflow has penalty (second in results)
-			manualWorkflow := response.Workflows[1]
-			Expect(manualWorkflow.Workflow.WorkflowID).To(ContainSubstring("manual"), "Manual workflow should rank second")
-			Expect(manualWorkflow.LabelBoost).To(Equal(0.0), "Manual workflow should have no boost")
-			Expect(manualWorkflow.LabelPenalty).To(BeNumerically(">=", 0.10), "Manual workflow should have penalty")
-			Expect(manualWorkflow.FinalScore).To(BeNumerically("<", manualWorkflow.BaseSimilarity), "Final score should be lower than base due to penalty")
+			secondWorkflow := response.Workflows[1]
+			Expect(secondWorkflow.Confidence).To(BeNumerically(">=", 0.0), "Confidence should be >= 0.0")
+			Expect(secondWorkflow.Confidence).To(BeNumerically("<=", 1.0), "Confidence should be <= 1.0")
 
-			// Verify gitops workflow ranks higher than manual workflow
-			Expect(gitopsWorkflow.FinalScore).To(BeNumerically(">", manualWorkflow.FinalScore), "GitOps workflow should have higher final score")
+			// Verify ordering: first workflow should have higher or equal confidence
+			Expect(firstWorkflow.Confidence).To(BeNumerically(">=", secondWorkflow.Confidence),
+				"First workflow should have higher or equal confidence (semantic similarity)")
 		})
 	})
 
@@ -578,26 +591,26 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			// ARRANGE: Create workflow WITHOUT embedding (should be auto-generated)
 			workflowID := "test-auto-embedding-" + testID
 			labels := map[string]interface{}{
-				"signal-type":          "OOMKilled",
-				"severity":             "critical",
-				"resource-management":  "gitops",
-				"gitops-tool":          "argocd",
-				"environment":          "production",
-				"business-category":    "payments",
-				"priority":             "high",
-				"risk-tolerance":       "low",
+				"signal-type":         "OOMKilled",
+				"severity":            "critical",
+				"resource-management": "gitops",
+				"gitops-tool":         "argocd",
+				"environment":         "production",
+				"business-category":   "payments",
+				"priority":            "high",
+				"risk-tolerance":      "low",
 			}
 			labelsJSON, err := json.Marshal(labels)
 			Expect(err).ToNot(HaveOccurred())
 
 			workflow := &models.RemediationWorkflow{
-				WorkflowID:           workflowID,
-				Version:              "v1.0.0",
-				Name:                 "OOMKilled Pod Recovery",
-				Description:          "Recovers pods that are killed due to out of memory errors in production environments",
-				Content:              "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: pod-oom-recovery\nspec:\n  tasks:\n  - name: restart-pod\n    taskRef:\n      name: kubectl-restart",
-				ContentHash:          "test-hash-auto-embedding-123",
-				Labels:               labelsJSON,
+				WorkflowName: workflowID,
+				Version:      "v1.0.0",
+				Name:         "OOMKilled Pod Recovery",
+				Description:  "Recovers pods that are killed due to out of memory errors in production environments",
+				Content:      "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: pod-oom-recovery\nspec:\n  tasks:\n  - name: restart-pod\n    taskRef:\n      name: kubectl-restart",
+				ContentHash:  "test-hash-auto-embedding-123",
+				Labels:       labelsJSON,
 				// NOTE: Embedding is NOT set - should be auto-generated by repository
 				Status:               "active",
 				IsLatestVersion:      true,
@@ -606,10 +619,12 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			}
 
 			// ACT: Create workflow (should trigger automatic embedding generation)
-			err = workflowRepo.Create(testCtx, workflow)
+			// DD-WORKFLOW-002 v3.0: Create returns generated UUID
+			generatedUUID, err := workflowRepo.Create(testCtx, workflow)
 
 			// ASSERT: Workflow created successfully
 			Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed")
+			Expect(generatedUUID).ToNot(BeEmpty(), "Should return generated UUID")
 
 			// ASSERT: Embedding was automatically generated
 			Expect(workflow.Embedding).ToNot(BeNil(), "Embedding should be auto-generated")
@@ -626,7 +641,8 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			Expect(hasNonZeroValues).To(BeTrue(), "Embedding should have non-zero values")
 
 			// ACT: Retrieve workflow from database to verify embedding was persisted
-			retrieved, err := workflowRepo.GetByID(testCtx, workflowID, "v1.0.0")
+			// DD-WORKFLOW-002 v3.0: GetByID takes only UUID
+			retrieved, err := workflowRepo.GetByID(testCtx, generatedUUID)
 
 			// ASSERT: Retrieved workflow has embedding
 			Expect(err).ToNot(HaveOccurred(), "Workflow retrieval should succeed")
@@ -651,7 +667,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			workflow1 := &models.RemediationWorkflow{
-				WorkflowID:           workflowID1,
+				WorkflowName:         workflowID1,
 				Version:              "v1.0.0",
 				Name:                 "Identical Workflow Name",
 				Description:          "Identical description for cache testing",
@@ -665,14 +681,14 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			}
 
 			// ACT: Create first workflow (cache miss - generates embedding)
-			err = workflowRepo.Create(testCtx, workflow1)
+			_, err = workflowRepo.Create(testCtx, workflow1)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(workflow1.Embedding).ToNot(BeNil())
 
 			// ARRANGE: Create second workflow with IDENTICAL metadata
 			workflowID2 := "test-cache-hit-2-" + testID
 			workflow2 := &models.RemediationWorkflow{
-				WorkflowID:           workflowID2,
+				WorkflowName:         workflowID2,
 				Version:              "v1.0.0",
 				Name:                 "Identical Workflow Name",
 				Description:          "Identical description for cache testing",
@@ -686,7 +702,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			}
 
 			// ACT: Create second workflow (cache hit - reuses embedding)
-			err = workflowRepo.Create(testCtx, workflow2)
+			_, err = workflowRepo.Create(testCtx, workflow2)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(workflow2.Embedding).ToNot(BeNil())
 
@@ -712,7 +728,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			workflow := &models.RemediationWorkflow{
-				WorkflowID:           workflowID,
+				WorkflowName:         workflowID,
 				Version:              "v1.0.0",
 				Name:                 "CrashLoopBackOff Recovery",
 				Description:          "Recovers pods in CrashLoopBackOff state",
@@ -726,7 +742,7 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			}
 
 			// ACT: Create workflow (embedding service may be unavailable in test environment)
-			err = workflowRepo.Create(testCtx, workflow)
+			_, err = workflowRepo.Create(testCtx, workflow)
 
 			// ASSERT: Workflow creation should succeed even if embedding generation fails
 			Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed with graceful degradation")
@@ -736,4 +752,3 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 		})
 	})
 })
-
