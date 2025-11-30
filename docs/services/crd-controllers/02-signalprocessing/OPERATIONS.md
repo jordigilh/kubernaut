@@ -1,4 +1,4 @@
-# RemediationProcessor Controller - Operations Guide
+# SignalProcessor Controller - Operations Guide
 
 **Version**: 1.0.0
 **Last Updated**: October 21, 2025
@@ -22,10 +22,10 @@
 
 ### Service Description
 
-The RemediationProcessor controller manages remediation request processing with:
+The SignalProcessor controller manages remediation request processing with:
 
 - **Primary Function**: Context enrichment, semantic classification, and deduplication of remediation requests
-- **CRD**: `RemediationProcessing.remediation.kubernaut.io/v1alpha1`
+- **CRD**: `SignalProcessing.signalprocessing.kubernaut.io/v1alpha1`
 - **Namespace**: `kubernaut-system`
 - **Deployment**: Kubernetes Deployment with leader election (1-3 replicas)
 
@@ -61,7 +61,7 @@ The RemediationProcessor controller manages remediation request processing with:
 
 ```bash
 # Manual check
-curl http://remediationprocessor-pod:8081/healthz
+curl http://signalprocessor-pod:8081/healthz
 
 # Expected: 200 OK, body: "ok"
 ```
@@ -90,7 +90,7 @@ livenessProbe:
 
 ```bash
 # Manual check
-curl http://remediationprocessor-pod:8081/readyz
+curl http://signalprocessor-pod:8081/readyz
 
 # Expected: 200 OK, body: "ok"
 ```
@@ -118,10 +118,10 @@ readinessProbe:
 #### Issue: Liveness probe failing repeatedly
 ```bash
 # Check pod logs for panics or deadlocks
-kubectl logs -n kubernaut-system -l app=remediationprocessor --tail=200
+kubectl logs -n kubernaut-system -l app=signalprocessor --tail=200
 
 # Check recent events
-kubectl get events -n kubernaut-system --field-selector involvedObject.name=remediationprocessor --sort-by='.lastTimestamp'
+kubectl get events -n kubernaut-system --field-selector involvedObject.name=signalprocessor --sort-by='.lastTimestamp'
 
 # Common causes:
 # 1. Goroutine leak (check go_goroutines metric)
@@ -132,15 +132,15 @@ kubectl get events -n kubernaut-system --field-selector involvedObject.name=reme
 #### Issue: Readiness probe failing
 ```bash
 # Check PostgreSQL connectivity
-kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+kubectl exec -n kubernaut-system deployment/signalprocessor -- \
   psql -h postgres-service -U remediation_user -d kubernaut_remediation -c "SELECT 1;"
 
 # Check Context API connectivity
-kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+kubectl exec -n kubernaut-system deployment/signalprocessor -- \
   curl -f http://context-api:8080/health
 
 # Check service logs
-kubectl logs -n kubernaut-system -l app=remediationprocessor --tail=100 | grep -i "ready\|health"
+kubectl logs -n kubernaut-system -l app=signalprocessor --tail=100 | grep -i "ready\|health"
 ```
 
 ---
@@ -154,10 +154,10 @@ kubectl logs -n kubernaut-system -l app=remediationprocessor --tail=100 | grep -
 
 ```bash
 # Scrape metrics
-curl http://remediationprocessor-pod:8080/metrics
+curl http://signalprocessor-pod:8080/metrics
 
-# Filter RemediationProcessor-specific metrics
-curl http://remediationprocessor-pod:8080/metrics | grep remediationprocessor
+# Filter SignalProcessor-specific metrics
+curl http://signalprocessor-pod:8080/metrics | grep signalprocessor
 ```
 
 ### Key Metrics
@@ -166,11 +166,11 @@ curl http://remediationprocessor-pod:8080/metrics | grep remediationprocessor
 
 | Metric | Type | Description | Alert Threshold |
 |--------|------|-------------|-----------------|
-| `controller_runtime_reconcile_total{controller="remediationprocessing"}` | Counter | Total reconciliation attempts | - |
-| `controller_runtime_reconcile_errors_total{controller="remediationprocessing"}` | Counter | Failed reconciliations | >100/5min |
-| `controller_runtime_reconcile_time_seconds{controller="remediationprocessing"}` | Histogram | Reconciliation duration | p99 >30s |
-| `workqueue_depth{name="remediationprocessing"}` | Gauge | Items waiting in queue | >1000 |
-| `workqueue_retries_total{name="remediationprocessing"}` | Counter | Retried items | >50/5min |
+| `controller_runtime_reconcile_total{controller="signalprocessing"}` | Counter | Total reconciliation attempts | - |
+| `controller_runtime_reconcile_errors_total{controller="signalprocessing"}` | Counter | Failed reconciliations | >100/5min |
+| `controller_runtime_reconcile_time_seconds{controller="signalprocessing"}` | Histogram | Reconciliation duration | p99 >30s |
+| `workqueue_depth{name="signalprocessing"}` | Gauge | Items waiting in queue | >1000 |
+| `workqueue_retries_total{name="signalprocessing"}` | Counter | Retried items | >50/5min |
 
 #### Resource Metrics
 
@@ -181,18 +181,18 @@ curl http://remediationprocessor-pod:8080/metrics | grep remediationprocessor
 | `go_goroutines` | Gauge | Active goroutines | >10000 |
 | `go_memstats_alloc_bytes` | Gauge | Allocated heap memory | >1.5GB |
 
-#### RemediationProcessor-Specific Metrics
+#### SignalProcessor-Specific Metrics
 
 | Metric | Type | Description | Alert Threshold |
 |--------|------|-------------|-----------------|
-| `remediationprocessor_processing_duration_seconds` | Histogram | End-to-end processing time | p99 >60s |
-| `remediationprocessor_context_enrichment_latency_seconds` | Histogram | Context API call duration | p99 >5s |
-| `remediationprocessor_classification_errors_total` | Counter | Semantic classification failures | >10/5min |
-| `remediationprocessor_deduplication_matches_total` | Counter | Duplicate remediations detected | - |
-| `remediationprocessor_postgres_connection_pool_size` | Gauge | Active PostgreSQL connections | >20 |
-| `remediationprocessor_context_api_requests_total` | Counter | Context API requests made | - |
-| `remediationprocessor_semantic_similarity_score` | Histogram | Similarity scores distribution | - |
-| `remediationprocessor_time_window_matches` | Counter | Matches within time window | - |
+| `signalprocessor_processing_duration_seconds` | Histogram | End-to-end processing time | p99 >60s |
+| `signalprocessor_context_enrichment_latency_seconds` | Histogram | Context API call duration | p99 >5s |
+| `signalprocessor_classification_errors_total` | Counter | Semantic classification failures | >10/5min |
+| `signalprocessor_deduplication_matches_total` | Counter | Duplicate remediations detected | - |
+| `signalprocessor_postgres_connection_pool_size` | Gauge | Active PostgreSQL connections | >20 |
+| `signalprocessor_context_api_requests_total` | Counter | Context API requests made | - |
+| `signalprocessor_semantic_similarity_score` | Histogram | Similarity scores distribution | - |
+| `signalprocessor_time_window_matches` | Counter | Matches within time window | - |
 
 ### ServiceMonitor Configuration
 
@@ -200,14 +200,14 @@ curl http://remediationprocessor-pod:8080/metrics | grep remediationprocessor
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: remediationprocessor
+  name: signalprocessor
   namespace: kubernaut-system
   labels:
-    app: remediationprocessor
+    app: signalprocessor
 spec:
   selector:
     matchLabels:
-      app: remediationprocessor
+      app: signalprocessor
   endpoints:
     - port: metrics
       interval: 30s
@@ -217,7 +217,7 @@ spec:
 
 ### Grafana Dashboards
 
-**Dashboard Location**: `config/grafana/remediationprocessor-dashboard.json`
+**Dashboard Location**: `config/grafana/signalprocessor-dashboard.json`
 
 **Key Panels**:
 - Processing Duration (p50, p95, p99)
@@ -234,7 +234,7 @@ spec:
 
 ### Runbook 1: High Context Enrichment Latency
 
-**Symptom**: `remediationprocessor_context_enrichment_latency_seconds` p99 > 5s
+**Symptom**: `signalprocessor_context_enrichment_latency_seconds` p99 > 5s
 
 **Impact**: Slow remediation processing, queue backlog
 
@@ -247,7 +247,7 @@ kubectl logs -n kubernaut-system -l app=context-api --tail=100
 curl http://context-api:8080/metrics | grep -E "(request_duration|error)"
 
 # Check network latency
-kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+kubectl exec -n kubernaut-system deployment/signalprocessor -- \
   time curl -f http://context-api:8080/health
 ```
 
@@ -273,11 +273,11 @@ kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
 3. **If overload**:
    ```bash
    # Increase timeout temporarily
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      CONTEXT_API_TIMEOUT=60
    
    # Reduce concurrency
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      MAX_CONCURRENCY=5
    ```
 
@@ -290,20 +290,20 @@ kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
 
 ### Runbook 2: High Classification Error Rate
 
-**Symptom**: `remediationprocessor_classification_errors_total` > 10 errors/5min
+**Symptom**: `signalprocessor_classification_errors_total` > 10 errors/5min
 
 **Impact**: Remediation requests not properly classified, potential duplicates missed
 
 **Diagnosis**:
 ```bash
 # Check classification error logs
-kubectl logs -n kubernaut-system -l app=remediationprocessor | grep -i "classification error"
+kubectl logs -n kubernaut-system -l app=signalprocessor | grep -i "classification error"
 
 # Check semantic threshold configuration
-kubectl get configmap remediationprocessor-config -n kubernaut-system -o yaml | grep semantic_threshold
+kubectl get configmap signalprocessor-config -n kubernaut-system -o yaml | grep semantic_threshold
 
 # Check PostgreSQL connectivity
-kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+kubectl exec -n kubernaut-system deployment/signalprocessor -- \
   psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "SELECT count(*) FROM remediation_history;"
 ```
 
@@ -314,10 +314,10 @@ kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
    kubectl logs -n kubernaut-system -l app=postgres
    
    # Check connection pool exhaustion
-   kubectl logs -n kubernaut-system -l app=remediationprocessor | grep "connection pool"
+   kubectl logs -n kubernaut-system -l app=signalprocessor | grep "connection pool"
    
    # Increase pool size temporarily
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      POSTGRES_MAX_CONNECTIONS=50
    ```
 
@@ -329,17 +329,17 @@ kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
      "SELECT count(*) FROM remediation_history WHERE embedding IS NULL;"
    
    # Reduce semantic threshold temporarily
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      SEMANTIC_THRESHOLD=0.75
    ```
 
 3. **If similarity engine issues**:
    ```bash
    # Check similarity engine configuration
-   kubectl get configmap remediationprocessor-config -n kubernaut-system -o yaml | grep similarity_engine
+   kubectl get configmap signalprocessor-config -n kubernaut-system -o yaml | grep similarity_engine
    
    # Switch to fallback engine
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      SIMILARITY_ENGINE=euclidean
    ```
 
@@ -352,7 +352,7 @@ kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
 
 ### Runbook 3: PostgreSQL Connection Issues
 
-**Symptom**: `remediationprocessor_postgres_connection_pool_size` drops to 0, errors in logs
+**Symptom**: `signalprocessor_postgres_connection_pool_size` drops to 0, errors in logs
 
 **Impact**: Cannot store or query remediation history, classification fails
 
@@ -364,12 +364,12 @@ kubectl get pods -n kubernaut-system -l app=postgres
 # Check PostgreSQL logs
 kubectl logs -n kubernaut-system -l app=postgres --tail=100
 
-# Test connection from RemediationProcessor
-kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+# Test connection from SignalProcessor
+kubectl exec -n kubernaut-system deployment/signalprocessor -- \
   psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DATABASE -c "SELECT version();"
 
 # Check connection string configuration
-kubectl get secret remediationprocessor-secret -n kubernaut-system -o yaml
+kubectl get secret signalprocessor-secret -n kubernaut-system -o yaml
 ```
 
 **Resolution**:
@@ -385,15 +385,15 @@ kubectl get secret remediationprocessor-secret -n kubernaut-system -o yaml
 2. **If credentials invalid**:
    ```bash
    # Verify credentials
-   kubectl get secret remediationprocessor-secret -n kubernaut-system -o jsonpath='{.data.postgres_password}' | base64 -d
+   kubectl get secret signalprocessor-secret -n kubernaut-system -o jsonpath='{.data.postgres_password}' | base64 -d
    
    # Update secret if needed
-   kubectl create secret generic remediationprocessor-secret \
+   kubectl create secret generic signalprocessor-secret \
      --from-literal=postgres_password=NEW_PASSWORD \
      --dry-run=client -o yaml | kubectl apply -f -
    
-   # Restart RemediationProcessor to pick up new secret
-   kubectl rollout restart deployment/remediationprocessor -n kubernaut-system
+   # Restart SignalProcessor to pick up new secret
+   kubectl rollout restart deployment/signalprocessor -n kubernaut-system
    ```
 
 3. **If connection pool exhausted**:
@@ -419,7 +419,7 @@ kubectl get secret remediationprocessor-secret -n kubernaut-system -o yaml
 
 ### Runbook 4: Context API Unreachable
 
-**Symptom**: `remediationprocessor_context_api_requests_total` errors spiking, timeout logs
+**Symptom**: `signalprocessor_context_api_requests_total` errors spiking, timeout logs
 
 **Impact**: Cannot enrich remediations with historical context
 
@@ -480,17 +480,17 @@ kubectl get networkpolicy -n kubernaut-system
 
 ### Runbook 5: Deduplication Failure
 
-**Symptom**: `remediationprocessor_deduplication_matches_total` drops to 0, duplicate remediations created
+**Symptom**: `signalprocessor_deduplication_matches_total` drops to 0, duplicate remediations created
 
 **Impact**: Multiple remediation attempts for same issue, wasted resources
 
 **Diagnosis**:
 ```bash
 # Check deduplication configuration
-kubectl get configmap remediationprocessor-config -n kubernaut-system -o yaml | grep -A 5 "classification:"
+kubectl get configmap signalprocessor-config -n kubernaut-system -o yaml | grep -A 5 "classification:"
 
 # Check time window configuration
-kubectl logs -n kubernaut-system -l app=remediationprocessor | grep "time_window"
+kubectl logs -n kubernaut-system -l app=signalprocessor | grep "time_window"
 
 # Query PostgreSQL for recent remediations
 kubectl exec -n kubernaut-system statefulset/postgres -- \
@@ -502,21 +502,21 @@ kubectl exec -n kubernaut-system statefulset/postgres -- \
 1. **If time window too narrow**:
    ```bash
    # Increase time window
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      TIME_WINDOW_MINUTES=120
    
    # Restart to apply
-   kubectl rollout restart deployment/remediationprocessor -n kubernaut-system
+   kubectl rollout restart deployment/signalprocessor -n kubernaut-system
    ```
 
 2. **If semantic threshold too high**:
    ```bash
    # Lower threshold to catch more duplicates
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      SEMANTIC_THRESHOLD=0.80
    
    # Monitor impact
-   kubectl logs -n kubernaut-system -l app=remediationprocessor -f | grep "deduplication"
+   kubectl logs -n kubernaut-system -l app=signalprocessor -f | grep "deduplication"
    ```
 
 3. **If PostgreSQL query issues**:
@@ -548,13 +548,13 @@ kubectl exec -n kubernaut-system statefulset/postgres -- \
 **Diagnosis**:
 ```bash
 # Check memory usage
-kubectl top pod -n kubernaut-system -l app=remediationprocessor
+kubectl top pod -n kubernaut-system -l app=signalprocessor
 
 # Check memory limits
-kubectl get deployment remediationprocessor -n kubernaut-system -o yaml | grep -A 2 "resources:"
+kubectl get deployment signalprocessor -n kubernaut-system -o yaml | grep -A 2 "resources:"
 
 # Check Go heap profile
-kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+kubectl exec -n kubernaut-system deployment/signalprocessor -- \
   curl http://localhost:8080/debug/pprof/heap > heap.prof
 
 # Analyze with pprof
@@ -565,36 +565,36 @@ go tool pprof -top heap.prof
 1. **If memory leak**:
    ```bash
    # Restart pod immediately
-   kubectl delete pod -n kubernaut-system -l app=remediationprocessor
+   kubectl delete pod -n kubernaut-system -l app=signalprocessor
    
    # Reduce concurrency to lower memory footprint
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      MAX_CONCURRENCY=5
    
    # Reduce batch size
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      CLASSIFICATION_BATCH_SIZE=50
    ```
 
 2. **If legitimate high memory usage**:
    ```bash
    # Increase memory limits
-   kubectl set resources deployment/remediationprocessor -n kubernaut-system \
+   kubectl set resources deployment/signalprocessor -n kubernaut-system \
      --limits=memory=4Gi --requests=memory=2Gi
    
    # Enable memory ballast (Go 1.19+)
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      GOMEMLIMIT=3GiB
    ```
 
 3. **If goroutine leak**:
    ```bash
    # Check goroutine count
-   kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+   kubectl exec -n kubernaut-system deployment/signalprocessor -- \
      curl http://localhost:8080/metrics | grep go_goroutines
    
    # Get goroutine profile
-   kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+   kubectl exec -n kubernaut-system deployment/signalprocessor -- \
      curl http://localhost:8080/debug/pprof/goroutine?debug=2 > goroutines.txt
    
    # Analyze for stuck goroutines
@@ -620,29 +620,29 @@ go tool pprof -top heap.prof
 kubectl get lease -n kubernaut-system
 
 # Check which pod is leader
-kubectl logs -n kubernaut-system -l app=remediationprocessor | grep "leader election"
+kubectl logs -n kubernaut-system -l app=signalprocessor | grep "leader election"
 
 # Check for split-brain
-kubectl get pods -n kubernaut-system -l app=remediationprocessor -o wide
+kubectl get pods -n kubernaut-system -l app=signalprocessor -o wide
 
 # Check ConfigMap locks
-kubectl get configmap -n kubernaut-system | grep remediationprocessor-lock
+kubectl get configmap -n kubernaut-system | grep signalprocessor-lock
 ```
 
 **Resolution**:
 1. **If lease expired**:
    ```bash
    # Delete stale lease
-   kubectl delete lease remediationprocessor-lease -n kubernaut-system
+   kubectl delete lease signalprocessor-lease -n kubernaut-system
    
    # Restart all pods to re-elect
-   kubectl rollout restart deployment/remediationprocessor -n kubernaut-system
+   kubectl rollout restart deployment/signalprocessor -n kubernaut-system
    ```
 
 2. **If network partition**:
    ```bash
    # Check pod-to-pod connectivity
-   kubectl exec -n kubernaut-system deployment/remediationprocessor -- \
+   kubectl exec -n kubernaut-system deployment/signalprocessor -- \
      ping -c 3 <other-pod-ip>
    
    # Check kube-apiserver connectivity
@@ -652,13 +652,13 @@ kubectl get configmap -n kubernaut-system | grep remediationprocessor-lock
 3. **If RBAC issues**:
    ```bash
    # Check RBAC permissions
-   kubectl auth can-i create leases --as=system:serviceaccount:kubernaut-system:remediationprocessor -n kubernaut-system
+   kubectl auth can-i create leases --as=system:serviceaccount:kubernaut-system:signalprocessor -n kubernaut-system
    
    # Verify ServiceAccount
-   kubectl get sa remediationprocessor -n kubernaut-system
+   kubectl get sa signalprocessor -n kubernaut-system
    
    # Check RoleBinding
-   kubectl get rolebinding -n kubernaut-system | grep remediationprocessor
+   kubectl get rolebinding -n kubernaut-system | grep signalprocessor
    ```
 
 **Prevention**:
@@ -670,7 +670,7 @@ kubectl get configmap -n kubernaut-system | grep remediationprocessor-lock
 
 ### Runbook 8: High Semantic Threshold Miss Rate
 
-**Symptom**: Very few `remediationprocessor_deduplication_matches_total`, many unique classifications
+**Symptom**: Very few `signalprocessor_deduplication_matches_total`, many unique classifications
 
 **Impact**: Over-classification, missed duplicates, storage bloat
 
@@ -682,7 +682,7 @@ kubectl exec -n kubernaut-system statefulset/postgres -- \
   "SELECT similarity_score, count(*) FROM remediation_history GROUP BY similarity_score ORDER BY similarity_score;"
 
 # Check semantic threshold
-kubectl get configmap remediationprocessor-config -n kubernaut-system -o yaml | grep semantic_threshold
+kubectl get configmap signalprocessor-config -n kubernaut-system -o yaml | grep semantic_threshold
 
 # Check embedding quality
 kubectl exec -n kubernaut-system statefulset/postgres -- \
@@ -694,25 +694,25 @@ kubectl exec -n kubernaut-system statefulset/postgres -- \
 1. **If threshold too high**:
    ```bash
    # Lower threshold incrementally
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      SEMANTIC_THRESHOLD=0.80
    
    # Monitor for 1 hour
-   watch -n 60 'kubectl exec -n kubernaut-system deployment/remediationprocessor -- curl -s http://localhost:8080/metrics | grep deduplication_matches'
+   watch -n 60 'kubectl exec -n kubernaut-system deployment/signalprocessor -- curl -s http://localhost:8080/metrics | grep deduplication_matches'
    
    # Adjust further if needed
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      SEMANTIC_THRESHOLD=0.75
    ```
 
 2. **If similarity engine mismatch**:
    ```bash
    # Try different similarity engine
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      SIMILARITY_ENGINE=euclidean
    
    # Or cosine (default)
-   kubectl set env deployment/remediationprocessor -n kubernaut-system \
+   kubectl set env deployment/signalprocessor -n kubernaut-system \
      SIMILARITY_ENGINE=cosine
    ```
 
@@ -863,10 +863,10 @@ kubectl exec -n kubernaut-system statefulset/postgres -- \
 **Configuration Backups**:
 ```bash
 # Backup ConfigMap
-kubectl get configmap remediationprocessor-config -n kubernaut-system -o yaml > config_backup.yaml
+kubectl get configmap signalprocessor-config -n kubernaut-system -o yaml > config_backup.yaml
 
 # Backup Secret
-kubectl get secret remediationprocessor-secret -n kubernaut-system -o yaml > secret_backup.yaml
+kubectl get secret signalprocessor-secret -n kubernaut-system -o yaml > secret_backup.yaml
 ```
 
 ---
