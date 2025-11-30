@@ -28,6 +28,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/go-logr/logr"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -76,13 +77,13 @@ var _ = Describe("BR-GATEWAY-008: Storm Window Lifecycle (Integration)", func() 
 		// This allows tests to complete quickly while validating expiration logic
 		aggregator = processing.NewStormAggregatorWithConfig(
 			redisClient,
-			nil,           // logger (nil = use nop logger for tests)
+			logr.Discard(),           // logger (DD-005: logr.Logger)
 			1,             // bufferThreshold: 1 alert triggers window creation
 			3*time.Second, // inactivityTimeout: 3s for fast testing
 			3*time.Second, // maxWindowDuration: 3 seconds (VERY SHORT for testing)
 			1000,          // defaultMaxSize: 1000 alerts per namespace
 			5000,          // globalMaxSize: 5000 alerts total
-			nil,           // perNamespaceLimits: none
+			nil,           // perNamespaceLimits: none (map[string]int)
 			0.95,          // samplingThreshold: 95% utilization
 			0.5,           // samplingRate: 50% when sampling enabled
 		)

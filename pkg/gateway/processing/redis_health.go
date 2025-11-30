@@ -4,15 +4,15 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-logr/logr"
 	goredis "github.com/go-redis/redis/v8"
-	"go.uber.org/zap"
 )
 
 // RedisHealthMonitor monitors Redis availability and updates metrics.
 // DD-GATEWAY-003: Background health monitoring for Redis HA observability.
 type RedisHealthMonitor struct {
 	client               *goredis.Client
-	logger               *zap.Logger
+	logger               logr.Logger
 	checkInterval        time.Duration
 	onAvailabilityChange func(service string, available bool, duration time.Duration)
 }
@@ -20,13 +20,13 @@ type RedisHealthMonitor struct {
 // NewRedisHealthMonitor creates a new Redis health monitor.
 func NewRedisHealthMonitor(
 	client *goredis.Client,
-	logger *zap.Logger,
+	logger logr.Logger,
 	checkInterval time.Duration,
 	onAvailabilityChange func(service string, available bool, duration time.Duration),
 ) *RedisHealthMonitor {
 	return &RedisHealthMonitor{
 		client:               client,
-		logger:               logger,
+		logger:               logger.WithName("redis-health"),
 		checkInterval:        checkInterval,
 		onAvailabilityChange: onAvailabilityChange,
 	}
@@ -44,7 +44,7 @@ func (m *RedisHealthMonitor) Start(ctx context.Context) {
 	wasAvailable := true
 
 	m.logger.Info("Starting Redis health monitor",
-		zap.Duration("interval", m.checkInterval))
+		"interval", m.checkInterval)
 
 	for {
 		select {
@@ -60,14 +60,14 @@ func (m *RedisHealthMonitor) Start(ctx context.Context) {
 				// Redis became available
 				outage := time.Since(unavailableSince)
 				m.logger.Info("Redis became available",
-					zap.Duration("outage_duration", outage))
+					"outage_duration", outage)
 				m.onAvailabilityChange("deduplication", true, outage)
 				m.onAvailabilityChange("storm_detection", true, outage)
 				wasAvailable = true
 			} else if !available && wasAvailable {
 				// Redis became unavailable
 				unavailableSince = time.Now()
-				m.logger.Warn("Redis became unavailable")
+				m.logger.Info("Redis became unavailable")
 				m.onAvailabilityChange("deduplication", false, 0)
 				m.onAvailabilityChange("storm_detection", false, 0)
 				wasAvailable = false
@@ -90,7 +90,7 @@ func (m *RedisHealthMonitor) checkRedisHealth(ctx context.Context) bool {
 
 	err := m.client.Ping(checkCtx).Err()
 	if err != nil {
-		m.logger.Debug("Redis health check failed", zap.Error(err))
+		m.logger.V(1).Info("Redis health check failed", "error", err)
 		return false
 	}
 

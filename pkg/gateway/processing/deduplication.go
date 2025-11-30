@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
@@ -35,7 +35,7 @@ import (
 //
 // This service provides fingerprint-based deduplication with a 5-minute TTL window.
 // It prevents duplicate alerts from creating multiple RemediationRequest CRDs, which
-// would overwhelm downstream services (RemediationProcessing, AIAnalysis, WorkflowExecution).
+// would overwhelm downstream services (SignalProcessing, AIAnalysis, WorkflowExecution).
 //
 // Key features:
 // - Redis persistence (survives Gateway restarts, supports HA multi-replica deployments)
@@ -54,7 +54,7 @@ type DeduplicationService struct {
 	redisClient *rediscache.Client // Shared Redis client with graceful degradation
 	k8sClient   *k8s.Client        // DD-GATEWAY-009: K8s client for state-based deduplication
 	ttl         time.Duration
-	logger      *zap.Logger
+	logger      logr.Logger
 	metrics     *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
 }
 
@@ -69,7 +69,7 @@ type DeduplicationService struct {
 //
 // Design Decision: DD-CACHE-001 (Shared Redis Library)
 // Uses pkg/cache/redis.Client for connection management with graceful degradation.
-func NewDeduplicationService(redisClient *rediscache.Client, k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+func NewDeduplicationService(redisClient *rediscache.Client, k8sClient *k8s.Client, logger logr.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
 		// Use custom registry to avoid "duplicate metrics collector registration" in tests
@@ -80,7 +80,7 @@ func NewDeduplicationService(redisClient *rediscache.Client, k8sClient *k8s.Clie
 		redisClient: redisClient,
 		k8sClient:   k8sClient,
 		ttl:         5 * time.Minute,
-		logger:      logger,
+		logger:      logger.WithName("deduplication"),
 		metrics:     metricsInstance,
 	}
 }
@@ -95,7 +95,7 @@ func NewDeduplicationService(redisClient *rediscache.Client, k8sClient *k8s.Clie
 //
 // Design Decision: DD-CACHE-001 (Shared Redis Library)
 // Uses pkg/cache/redis.Client for connection management with graceful degradation.
-func NewDeduplicationServiceWithTTL(redisClient *rediscache.Client, k8sClient *k8s.Client, ttl time.Duration, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+func NewDeduplicationServiceWithTTL(redisClient *rediscache.Client, k8sClient *k8s.Client, ttl time.Duration, logger logr.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
 		// Use custom registry to avoid "duplicate metrics collector registration" in tests
@@ -106,7 +106,7 @@ func NewDeduplicationServiceWithTTL(redisClient *rediscache.Client, k8sClient *k
 		redisClient: redisClient,
 		k8sClient:   k8sClient,
 		ttl:         ttl,
-		logger:      logger,
+		logger:      logger.WithName("deduplication"),
 		metrics:     metricsInstance,
 	}
 }
@@ -149,9 +149,8 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	// This ensures the Gateway returns HTTP 503 when Redis is down, allowing
 	// operators to fix Redis before processing alerts.
 	if err := s.redisClient.EnsureConnection(ctx); err != nil {
-		s.logger.Error("Redis unavailable, deduplication cannot proceed",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint))
+		s.logger.Error(err, "Redis unavailable, deduplication cannot proceed",
+			"fingerprint", signal.Fingerprint)
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, fmt.Errorf("redis unavailable for deduplication: %w", err)
 	}
@@ -159,17 +158,17 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	// DD-GATEWAY-009: If K8s client is nil (e.g., unit tests), fall back to Redis-based check
 	// Redis-only mode requires Redis connectivity (already validated above)
 	if s.k8sClient == nil {
-		s.logger.Debug("K8s client is nil, falling back to Redis-based deduplication",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("namespace", signal.Namespace))
+		s.logger.V(1).Info("K8s client is nil, falling back to Redis-based deduplication",
+			"fingerprint", signal.Fingerprint,
+			"namespace", signal.Namespace)
 		return s.checkRedisDeduplication(ctx, signal)
 	}
 
 	// DD-GATEWAY-009: v1.0 uses direct K8s API queries (no Redis caching)
 	// v1.1 will add informer pattern to reduce API load
-	s.logger.Debug("Using K8s API for state-based deduplication",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("namespace", signal.Namespace))
+	s.logger.V(1).Info("Using K8s API for state-based deduplication",
+		"fingerprint", signal.Fingerprint,
+		"namespace", signal.Namespace)
 
 	// CONCURRENCY FIX: Try to acquire creation lock using Redis SETNX
 	// This prevents race conditions where multiple concurrent requests
@@ -179,14 +178,14 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	redisClient := s.redisClient.GetClient()
 	locked, err := redisClient.SetNX(ctx, lockKey, "1", 5*time.Second).Result()
 	if err != nil {
-		s.logger.Warn("Failed to acquire creation lock, proceeding without lock",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint))
+		s.logger.Info("Failed to acquire creation lock, proceeding without lock",
+			"error", err,
+			"fingerprint", signal.Fingerprint)
 		// Continue without lock (graceful degradation)
 	} else if !locked {
 		// Another request is creating the CRD, wait briefly and recheck
-		s.logger.Debug("Another request is creating CRD, waiting...",
-			zap.String("fingerprint", signal.Fingerprint))
+		s.logger.V(1).Info("Another request is creating CRD, waiting...",
+			"fingerprint", signal.Fingerprint)
 		time.Sleep(100 * time.Millisecond) // Brief wait for CRD creation
 	}
 
@@ -196,10 +195,10 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	crdList, err := s.k8sClient.ListRemediationRequestsByFingerprint(ctx, signal.Fingerprint)
 	if err != nil {
 		// K8s API error → graceful degradation (fall back to Redis)
-		s.logger.Warn("K8s API unavailable for deduplication, falling back to Redis check",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("namespace", signal.Namespace))
+		s.logger.Info("K8s API unavailable for deduplication, falling back to Redis check",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"namespace", signal.Namespace)
 
 		// Fall back to existing Redis-based check
 		return s.checkRedisDeduplication(ctx, signal)
@@ -254,11 +253,11 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 					processingCount++
 				default:
 					unknownCount++
-					s.logger.Warn("Unknown CRD state treated as in-progress (conservative)",
-						zap.String("fingerprint", signal.Fingerprint),
-						zap.String("crd_name", crd.Name),
-						zap.String("unknown_phase", crd.Status.OverallPhase),
-						zap.String("namespace", crd.Namespace))
+					s.logger.Info("Unknown CRD state treated as in-progress (conservative)",
+						"fingerprint", signal.Fingerprint,
+						"crd_name", crd.Name,
+						"unknown_phase", crd.Status.OverallPhase,
+						"namespace", crd.Namespace)
 				}
 			}
 		}
@@ -268,11 +267,11 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	if inProgressCRD == nil {
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
 
-		s.logger.Debug("All CRDs in final states, treating as new incident",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("namespace", signal.Namespace),
-			zap.Int("total_crds", len(crdList.Items)),
-			zap.Int("final_state_count", finalStateCount))
+		s.logger.V(1).Info("All CRDs in final states, treating as new incident",
+			"fingerprint", signal.Fingerprint,
+			"namespace", signal.Namespace,
+			"total_crds", len(crdList.Items),
+			"final_state_count", finalStateCount)
 
 		return false, nil, nil
 	}
@@ -288,13 +287,13 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		LastSeen:              time.Now().Format(time.RFC3339),
 	}
 
-	s.logger.Debug("Duplicate detected (in-progress CRD found)",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("crd_name", inProgressCRD.Name),
-		zap.String("phase", inProgressCRD.Status.OverallPhase),
-		zap.Int("occurrence_count", metadata.Count),
-		zap.Int("total_crds_for_fingerprint", len(crdList.Items)),
-		zap.Int("final_state_crds", finalStateCount))
+	s.logger.V(1).Info("Duplicate detected (in-progress CRD found)",
+		"fingerprint", signal.Fingerprint,
+		"crd_name", inProgressCRD.Name,
+		"phase", inProgressCRD.Status.OverallPhase,
+		"occurrence_count", metadata.Count,
+		"total_crds_for_fingerprint", len(crdList.Items),
+		"final_state_crds", finalStateCount)
 
 	// BR-GATEWAY-003: Update Redis with duplicate metadata and refresh TTL
 	// This ensures:
@@ -304,10 +303,10 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	if err := s.updateDuplicateInRedis(ctx, signal, metadata); err != nil {
 		// Graceful degradation: log error but don't fail the duplicate detection
 		// The CRD-based deduplication already succeeded
-		s.logger.Warn("Failed to update duplicate metadata in Redis",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("crd_ref", metadata.RemediationRequestRef))
+		s.logger.Info("Failed to update duplicate metadata in Redis",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"crd_ref", metadata.RemediationRequestRef)
 	}
 
 	return true, metadata, nil
@@ -349,9 +348,9 @@ func (s *DeduplicationService) GetCRDNameFromFingerprint(fingerprint string) str
 func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, signal *types.NormalizedSignal) (bool, *DeduplicationMetadata, error) {
 	// Check Redis connection
 	if err := s.redisClient.EnsureConnection(ctx); err != nil {
-		s.logger.Warn("Redis unavailable, cannot guarantee deduplication",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint))
+		s.logger.Info("Redis unavailable, cannot guarantee deduplication",
+			"error", err,
+			"fingerprint", signal.Fingerprint)
 
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, fmt.Errorf("redis unavailable: %w", err)
@@ -366,9 +365,9 @@ func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, sign
 	exists, err := redisClient.Exists(ctx, key).Result()
 	if err != nil {
 		// Redis operation failed
-		s.logger.Warn("Redis operation failed, skipping deduplication",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint))
+		s.logger.Info("Redis operation failed, skipping deduplication",
+			"error", err,
+			"fingerprint", signal.Fingerprint)
 
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, nil // Treat as new alert
@@ -453,12 +452,11 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	if err := s.redisClient.EnsureConnection(ctx); err != nil {
 		// Redis unavailable - graceful degradation
 		// Log error but don't fail (CRD already created, alert is being processed)
-		s.logger.Warn("Redis unavailable, failed to store deduplication metadata (future duplicates won't be detected)",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("crd_ref", remediationRequestRef),
-			zap.String("operation", "deduplication_store"),
-		)
+		s.logger.Info("Redis unavailable, failed to store deduplication metadata (future duplicates won't be detected)",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"crd_ref", remediationRequestRef,
+			"operation", "deduplication_store")
 
 		return nil // Don't fail the request, CRD is already created
 	}
@@ -467,9 +465,9 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	now := time.Now().Format(time.RFC3339)
 
 	s.logger.Info("Storing deduplication metadata in Redis",
-		zap.String("key", key),
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("crd_ref", remediationRequestRef))
+		"key", key,
+		"fingerprint", signal.Fingerprint,
+		"crd_ref", remediationRequestRef)
 
 	// Get underlying Redis client for pipeline operations
 	redisClient := s.redisClient.GetClient()
@@ -489,20 +487,19 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	if _, err := pipe.Exec(ctx); err != nil {
 		// Redis operation failed (e.g., connection lost after EnsureConnection)
 		// Graceful degradation: log error but don't fail
-		s.logger.Warn("Redis operation failed, failed to store deduplication metadata (future duplicates won't be detected)",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("crd_ref", remediationRequestRef),
-			zap.String("operation", "deduplication_store"),
-		)
+		s.logger.Info("Redis operation failed, failed to store deduplication metadata (future duplicates won't be detected)",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"crd_ref", remediationRequestRef,
+			"operation", "deduplication_store")
 
 		return nil // Don't fail the request, CRD is already created
 	}
 
 	s.logger.Info("Successfully stored deduplication metadata in Redis",
-		zap.String("key", key),
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.Duration("ttl", s.ttl))
+		"key", key,
+		"fingerprint", signal.Fingerprint,
+		"ttl", s.ttl)
 
 	return nil
 }
@@ -546,10 +543,10 @@ func (s *DeduplicationService) updateDuplicateInRedis(ctx context.Context, signa
 		return fmt.Errorf("failed to update duplicate metadata: %w", err)
 	}
 
-	s.logger.Debug("Updated duplicate metadata in Redis",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.Int("count", metadata.Count),
-		zap.Duration("ttl_refreshed", s.ttl))
+	s.logger.V(1).Info("Updated duplicate metadata in Redis",
+		"fingerprint", signal.Fingerprint,
+		"count", metadata.Count,
+		"ttl_refreshed", s.ttl)
 
 	return nil
 }

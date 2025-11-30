@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -50,7 +50,7 @@ import (
 // - See: docs/architecture/decisions/DD-015-timestamp-based-crd-naming.md
 type CRDCreator struct {
 	k8sClient         *k8s.Client
-	logger            *zap.Logger
+	logger            logr.Logger
 	metrics           *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
 	fallbackNamespace string                // Configurable fallback namespace for CRD creation
 	retryConfig       *config.RetrySettings // BR-GATEWAY-111: Retry configuration
@@ -58,7 +58,7 @@ type CRDCreator struct {
 
 // NewCRDCreator creates a new CRD creator
 // BR-GATEWAY-111: Accepts retry configuration for K8s API retry logic
-func NewCRDCreator(k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
+func NewCRDCreator(k8sClient *k8s.Client, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
 		// Use custom registry to avoid "duplicate metrics collector registration" in tests
@@ -113,10 +113,10 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 				c.metrics.RetryDuration.WithLabelValues(errorType).Observe(duration)
 
 				c.logger.Info("CRD creation succeeded after retry",
-					zap.Int("attempt", attempt+1),
-					zap.Duration("total_duration", time.Since(startTime)),
-					zap.String("name", rr.Name),
-					zap.String("namespace", rr.Namespace))
+					"attempt", attempt+1,
+					"total_duration", time.Since(startTime),
+					"name", rr.Name,
+					"namespace", rr.Namespace)
 			}
 			return nil
 		}
@@ -127,19 +127,17 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 
 		// Non-retryable error (validation, RBAC, etc.)
 		if IsNonRetryableError(err) {
-			c.logger.Error("CRD creation failed with non-retryable error",
-				zap.Error(err),
-				zap.String("name", rr.Name),
-				zap.String("namespace", rr.Namespace))
+			c.logger.Error(err, "CRD creation failed with non-retryable error",
+				"name", rr.Name,
+				"namespace", rr.Namespace)
 			return err
 		}
 
 		// Check if error is retryable (Reliability-First: always retry transient errors)
 		if !IsRetryableError(err) {
-			c.logger.Error("CRD creation failed with non-retryable error",
-				zap.Error(err),
-				zap.String("name", rr.Name),
-				zap.String("namespace", rr.Namespace))
+			c.logger.Error(err, "CRD creation failed with non-retryable error",
+				"name", rr.Name,
+				"namespace", rr.Namespace)
 			return err
 		}
 
@@ -155,12 +153,11 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 			duration := time.Since(startTime).Seconds()
 			c.metrics.RetryDuration.WithLabelValues(errorType).Observe(duration)
 
-			c.logger.Error("CRD creation failed after max retries",
-				zap.Int("max_attempts", c.retryConfig.MaxAttempts),
-				zap.Duration("total_duration", time.Since(startTime)),
-				zap.Error(err),
-				zap.String("name", rr.Name),
-				zap.String("namespace", rr.Namespace))
+			c.logger.Error(err, "CRD creation failed after max retries",
+				"max_attempts", c.retryConfig.MaxAttempts,
+				"total_duration", time.Since(startTime),
+				"name", rr.Name,
+				"namespace", rr.Namespace)
 
 			// Wrap error with retry context (GAP 10: Error Wrapping)
 			return &RetryError{
@@ -174,13 +171,13 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 		}
 
 		// Not the last attempt - retry with exponential backoff
-		c.logger.Warn("CRD creation failed, retrying...",
-			zap.Int("attempt", attempt+1),
-			zap.Int("max_attempts", c.retryConfig.MaxAttempts),
-			zap.Duration("backoff", backoff),
-			zap.Error(err),
-			zap.String("name", rr.Name),
-			zap.String("namespace", rr.Namespace))
+		c.logger.Info("CRD creation failed, retrying...",
+			"attempt", attempt+1,
+			"max_attempts", c.retryConfig.MaxAttempts,
+			"backoff", backoff,
+			"error", err,
+			"name", rr.Name,
+			"namespace", rr.Namespace)
 
 		// Sleep with backoff (context-aware for graceful shutdown - GAP 6)
 		select {
@@ -380,10 +377,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
 		// This is normal behavior - Redis TTL is shorter than CRD lifecycle
 		if strings.Contains(err.Error(), "already exists") {
-			c.logger.Debug("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)",
-				zap.String("name", crdName),
-				zap.String("namespace", signal.Namespace),
-				zap.String("fingerprint", signal.Fingerprint),
+			c.logger.V(1).Info("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)",
+				"name", crdName,
+				"namespace", signal.Namespace,
+				"fingerprint", signal.Fingerprint,
 			)
 
 			// Fetch existing CRD and return it
@@ -395,9 +392,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 			}
 
 			c.logger.Info("Reusing existing RemediationRequest CRD (Redis TTL expired)",
-				zap.String("name", crdName),
-				zap.String("namespace", signal.Namespace),
-				zap.String("fingerprint", signal.Fingerprint),
+				"name", crdName,
+				"namespace", signal.Namespace,
+				"fingerprint", signal.Fingerprint,
 			)
 
 			return existing, nil
@@ -406,10 +403,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 		// Check if namespace doesn't exist - fall back to configured fallback namespace
 		// This handles cluster-scoped signals (e.g., NodeNotReady) that don't have a namespace
 		if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), "not found") {
-			c.logger.Warn("Target namespace not found, creating CRD in fallback namespace",
-				zap.String("original_namespace", signal.Namespace),
-				zap.String("fallback_namespace", c.fallbackNamespace),
-				zap.String("crd_name", crdName))
+			c.logger.Info("Target namespace not found, creating CRD in fallback namespace",
+				"original_namespace", signal.Namespace,
+				"fallback_namespace", c.fallbackNamespace,
+				"crd_name", crdName)
 
 			// Update namespace to configured fallback namespace
 			rr.Namespace = c.fallbackNamespace
@@ -427,10 +424,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			// Success with fallback
 			c.logger.Info("Created RemediationRequest CRD in fallback namespace (cluster-scoped signal)",
-				zap.String("name", crdName),
-				zap.String("namespace", c.fallbackNamespace),
-				zap.String("fingerprint", signal.Fingerprint),
-				zap.String("original_ns", signal.Namespace))
+				"name", crdName,
+				"namespace", c.fallbackNamespace,
+				"fingerprint", signal.Fingerprint,
+				"original_ns", signal.Namespace)
 
 			c.metrics.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 			return rr, nil
@@ -439,11 +436,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 		// Other errors (not namespace-related, not already-exists)
 		c.metrics.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
 
-		c.logger.Error("Failed to create RemediationRequest CRD",
-			zap.String("name", crdName),
-			zap.String("namespace", signal.Namespace),
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Error(err))
+		c.logger.Error(err, "Failed to create RemediationRequest CRD",
+			"name", crdName,
+			"namespace", signal.Namespace,
+			"fingerprint", signal.Fingerprint)
 
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
@@ -453,13 +449,13 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 	// Log creation event
 	c.logger.Info("Created RemediationRequest CRD",
-		zap.String("name", crdName),
-		zap.String("namespace", signal.Namespace),
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("severity", signal.Severity),
-		zap.String("environment", environment),
-		zap.String("priority", priority),
-		zap.String("alertName", signal.AlertName))
+		"name", crdName,
+		"namespace", signal.Namespace,
+		"fingerprint", signal.Fingerprint,
+		"severity", signal.Severity,
+		"environment", environment,
+		"priority", priority,
+		"alertName", signal.AlertName)
 
 	return rr, nil
 }
@@ -475,9 +471,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 // - For deduplication/TTL purposes, ReceivedTime is an acceptable fallback
 func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 	if signal.FiringTime.IsZero() {
-		c.logger.Debug("FiringTime not set by adapter, using ReceivedTime as fallback",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("alert_name", signal.AlertName))
+		c.logger.V(1).Info("FiringTime not set by adapter, using ReceivedTime as fallback",
+			"fingerprint", signal.Fingerprint,
+			"alert_name", signal.AlertName)
 		return signal.ReceivedTime
 	}
 	return signal.FiringTime
@@ -509,9 +505,9 @@ func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 	// Marshal to JSON
 	jsonData, err := json.Marshal(providerData)
 	if err != nil {
-		c.logger.Warn("Failed to marshal provider data, using empty",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Error(err))
+		c.logger.Info("Failed to marshal provider data, using empty",
+			"fingerprint", signal.Fingerprint,
+			"error", err)
 		return []byte("{}")
 	}
 

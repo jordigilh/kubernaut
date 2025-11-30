@@ -20,8 +20,8 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -50,12 +50,14 @@ const (
 // BUSINESS OUTCOME: Operators can trace requests across Gateway components
 // by searching logs for the same request_id.
 //
+// DD-005: Uses logr.Logger for unified logging interface
+//
 // TDD GREEN: Minimal implementation:
 // 1. Generate UUID for each request
 // 2. Store in request context
 // 3. Add to response header (X-Request-ID)
 // 4. Create request-scoped logger with request_id field
-func RequestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
+func RequestIDMiddleware(logger logr.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Generate unique request ID
@@ -64,28 +66,28 @@ func RequestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
 			// Add request ID to response headers for client tracing
 			w.Header().Set("X-Request-ID", requestID)
 
-			// Create request-scoped logger with structured fields
-			requestLogger := logger.With(
-				zap.String("request_id", requestID),
-				zap.String("source_ip", getSourceIP(r)),
-				zap.String("endpoint", r.URL.Path),
-				zap.String("method", r.Method),
+			// Create request-scoped logger with structured fields (logr syntax)
+			requestLogger := logger.WithValues(
+				"request_id", requestID,
+				"source_ip", getSourceIP(r),
+				"endpoint", r.URL.Path,
+				"method", r.Method,
 			)
 
 			// Store request ID and logger in context
 			ctx := context.WithValue(r.Context(), RequestIDKey, requestID)
 			ctx = context.WithValue(ctx, LoggerKey, requestLogger)
 
-			// Log incoming request (debug level for health/readiness checks to reduce noise)
+			// Log incoming request (V(1) for health/readiness checks to reduce noise)
 			if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/ready" {
-				requestLogger.Debug("Incoming request",
-					zap.String("user_agent", r.UserAgent()),
-					zap.String("content_type", r.Header.Get("Content-Type")),
+				requestLogger.V(1).Info("Incoming request",
+					"user_agent", r.UserAgent(),
+					"content_type", r.Header.Get("Content-Type"),
 				)
 			} else {
 				requestLogger.Info("Incoming request",
-					zap.String("user_agent", r.UserAgent()),
-					zap.String("content_type", r.Header.Get("Content-Type")),
+					"user_agent", r.UserAgent(),
+					"content_type", r.Header.Get("Content-Type"),
 				)
 			}
 
@@ -128,11 +130,13 @@ func GetRequestID(ctx context.Context) string {
 
 // GetLogger retrieves the request-scoped logger from context
 //
+// DD-005: Returns logr.Logger for unified logging interface
+//
 // BUSINESS OUTCOME: Enable handlers to use logger with request context.
-func GetLogger(ctx context.Context) *zap.Logger {
-	if logger, ok := ctx.Value(LoggerKey).(*zap.Logger); ok {
+func GetLogger(ctx context.Context) logr.Logger {
+	if logger, ok := ctx.Value(LoggerKey).(logr.Logger); ok {
 		return logger
 	}
-	// Fallback to no-op logger if not found
-	return zap.NewNop()
+	// Fallback to discard logger if not found
+	return logr.Discard()
 }

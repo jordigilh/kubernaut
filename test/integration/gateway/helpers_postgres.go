@@ -21,7 +21,7 @@ import (
 // Uses direct Podman commands (no testcontainers) with random port assignment
 // Used for audit trail storage via Data Storage service
 func SetupPostgresTestClient(ctx context.Context) *PostgresTestClient {
-	containerName := "postgres-integration"
+	containerName := "gateway-postgres-integration"
 
 	// Stop and remove existing container if it exists
 	exec.Command("podman", "stop", containerName).Run()
@@ -71,7 +71,7 @@ func (p *PostgresTestClient) ConnectionString() string {
 
 // Cleanup terminates the PostgreSQL container
 func (p *PostgresTestClient) Cleanup(ctx context.Context) {
-	containerName := "postgres-integration"
+	containerName := "gateway-postgres-integration"
 	GinkgoWriter.Printf("  Stopping PostgreSQL container '%s'...\n", containerName)
 
 	// Stop container

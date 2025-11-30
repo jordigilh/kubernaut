@@ -22,8 +22,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/go-logr/logr"
 	"github.com/open-policy-agent/opa/v1/rego"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -65,7 +65,7 @@ type RemediationPathDecider struct {
 	cache map[string]string
 	mu    sync.RWMutex // Protects cache
 
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // RegoEvaluator interface abstracts Rego policy evaluation
@@ -96,7 +96,7 @@ func (m *MockRegoEvaluator) Evaluate(ctx context.Context, signalCtx *SignalConte
 }
 
 // NewRemediationPathDecider creates a new remediation path decider
-func NewRemediationPathDecider(logger *zap.Logger) *RemediationPathDecider {
+func NewRemediationPathDecider(logger logr.Logger) *RemediationPathDecider {
 	// Build fallback table (environment × priority → path)
 	//
 	// Matrix:
@@ -154,7 +154,7 @@ func NewRemediationPathDecider(logger *zap.Logger) *RemediationPathDecider {
 // OPARegoEvaluator is a real OPA Rego policy evaluator
 type OPARegoEvaluator struct {
 	query  *rego.PreparedEvalQuery
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // Evaluate implements RegoEvaluator for OPA
@@ -216,7 +216,7 @@ func (o *OPARegoEvaluator) Evaluate(ctx context.Context, signalCtx *SignalContex
 //	}
 //
 // Expected Rego output: "aggressive", "moderate", "conservative", or "manual"
-func NewRemediationPathDeciderWithRego(policyPath string, logger *zap.Logger) (*RemediationPathDecider, error) {
+func NewRemediationPathDeciderWithRego(policyPath string, logger logr.Logger) (*RemediationPathDecider, error) {
 	// Build fallback table (same as NewRemediationPathDecider) with catch-all for unknown environments
 	fallbackTable := map[string]map[string]string{
 		"production": {
@@ -264,7 +264,7 @@ func NewRemediationPathDeciderWithRego(policyPath string, logger *zap.Logger) (*
 	}
 
 	logger.Info("Rego policy loaded successfully for remediation path decision",
-		zap.Any("policy_path", policyPath),
+		"policy_path", policyPath,
 	)
 
 	// Create OPA Rego evaluator
@@ -304,7 +304,7 @@ type SignalContext struct {
 func (d *RemediationPathDecider) DeterminePath(ctx context.Context, signalCtx *SignalContext) string {
 	// 1. Handle nil context
 	if signalCtx == nil || signalCtx.Signal == nil {
-		d.logger.Warn("Nil signal context provided to path decider, defaulting to manual")
+		d.logger.Info("Nil signal context provided to path decider, defaulting to manual")
 		return "manual"
 	}
 
@@ -315,11 +315,11 @@ func (d *RemediationPathDecider) DeterminePath(ctx context.Context, signalCtx *S
 	// 3. Check cache
 	cacheKey := d.cacheKey(environment, priority)
 	if path, found := d.getFromCache(cacheKey); found {
-		d.logger.Debug("Remediation path retrieved from cache",
-			zap.Any("environment", environment),
-			zap.Any("priority", priority),
-			zap.Any("path", path),
-			zap.String("source", "cache"),
+		d.logger.V(1).Info("Remediation path retrieved from cache",
+			"environment", environment,
+			"priority", priority,
+			"path", path,
+			"source", "cache",
 		)
 		return path
 	}
@@ -329,11 +329,11 @@ func (d *RemediationPathDecider) DeterminePath(ctx context.Context, signalCtx *S
 		if path, err := d.evaluateRego(ctx, signalCtx); err == nil {
 			// Validate Rego output
 			if d.isValidPath(path) {
-				d.logger.Debug("Remediation path determined via Rego policy",
-					zap.Any("environment", environment),
-					zap.Any("priority", priority),
-					zap.Any("path", path),
-					zap.String("source", "rego"),
+				d.logger.V(1).Info("Remediation path determined via Rego policy",
+					"environment", environment,
+					"priority", priority,
+					"path", path,
+					"source", "rego",
 				)
 
 				d.setCache(cacheKey, path)
@@ -341,17 +341,17 @@ func (d *RemediationPathDecider) DeterminePath(ctx context.Context, signalCtx *S
 			}
 
 			// Invalid Rego output, log and fall through
-			d.logger.Warn("Rego policy returned invalid path, using fallback table",
-				zap.Any("environment", environment),
-				zap.Any("priority", priority),
-				zap.Any("invalid_path", path),
+			d.logger.Info("Rego policy returned invalid path, using fallback table",
+				"environment", environment,
+				"priority", priority,
+				"invalid_path", path,
 			)
 		} else {
 			// Rego evaluation failed, log and fall through
-			d.logger.Warn("Rego policy evaluation failed, using fallback table",
-				zap.Any("environment", environment),
-				zap.Any("priority", priority),
-				zap.Error(err),
+			d.logger.Info("Rego policy evaluation failed, using fallback table",
+				"environment", environment,
+				"priority", priority,
+				"error", err,
 			)
 		}
 	}
@@ -359,11 +359,11 @@ func (d *RemediationPathDecider) DeterminePath(ctx context.Context, signalCtx *S
 	// 5. Use fallback table
 	path := d.lookupFallbackTable(environment, priority)
 
-	d.logger.Debug("Remediation path determined via fallback table",
-		zap.Any("environment", environment),
-		zap.Any("priority", priority),
-		zap.Any("path", path),
-		zap.String("source", "fallback_table"),
+	d.logger.V(1).Info("Remediation path determined via fallback table",
+		"environment", environment,
+		"priority", priority,
+		"path", path,
+		"source", "fallback_table",
 	)
 
 	// 6. Cache result
@@ -376,7 +376,7 @@ func (d *RemediationPathDecider) DeterminePath(ctx context.Context, signalCtx *S
 func (d *RemediationPathDecider) normalizeEnvironment(env string) string {
 	// Empty environment → "unknown" (safe default)
 	if env == "" {
-		d.logger.Warn("Empty environment provided, defaulting to unknown")
+		d.logger.Info("Empty environment provided, defaulting to unknown")
 		return "unknown"
 	}
 
@@ -405,7 +405,7 @@ func (d *RemediationPathDecider) normalizePriority(priority string) string {
 	}
 
 	// Invalid priority → "P99" (manual path)
-	d.logger.Warn("Invalid priority, defaulting to P99 (manual)", zap.Any("priority", priority))
+	d.logger.Info("Invalid priority, defaulting to P99 (manual)", "priority", priority)
 	return "P99"
 }
 
@@ -421,19 +421,19 @@ func (d *RemediationPathDecider) lookupFallbackTable(environment, priority strin
 	// 2. Try catch-all environment ("*") if exact match not found
 	if catchAllMap, ok := d.fallbackTable["*"]; ok {
 		if path, ok := catchAllMap[priority]; ok {
-			d.logger.Debug("Using catch-all fallback for custom environment",
-				zap.Any("environment", environment),
-				zap.Any("priority", priority),
-				zap.Any("path", path),
+			d.logger.V(1).Info("Using catch-all fallback for custom environment",
+				"environment", environment,
+				"priority", priority,
+				"path", path,
 			)
 			return path
 		}
 	}
 
 	// 3. Final fallback → manual (safest, should rarely be reached)
-	d.logger.Warn("No fallback mapping found for environment/priority combination, defaulting to manual",
-		zap.Any("environment", environment),
-		zap.Any("priority", priority),
+	d.logger.Info("No fallback mapping found for environment/priority combination, defaulting to manual",
+		"environment", environment,
+		"priority", priority,
 	)
 	return "manual"
 }
@@ -519,12 +519,12 @@ func (d *RemediationPathDecider) getPathReason(signalCtx *SignalContext, path st
 	// Check if actual path matches expected (detects Rego overrides)
 	if expectedPath != "" && path != expectedPath {
 		// Rego policy override detected - log and provide generic reasoning
-		d.logger.Debug("Rego policy override: path differs from fallback table",
-			zap.Any("environment", signalCtx.Environment),
-			zap.Any("priority", signalCtx.Priority),
-			zap.Any("expected_path", expectedPath),
-			zap.Any("actual_path", path),
-			zap.String("source", "rego_override"),
+		d.logger.V(1).Info("Rego policy override: path differs from fallback table",
+			"environment", signalCtx.Environment,
+			"priority", signalCtx.Priority,
+			"expected_path", expectedPath,
+			"actual_path", path,
+			"source", "rego_override",
 		)
 
 		// Return generic reasoning for Rego-overridden paths

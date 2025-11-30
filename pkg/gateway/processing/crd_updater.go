@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -43,7 +43,7 @@ import (
 // - Structured logging for troubleshooting
 type CRDUpdater struct {
 	k8sClient  *k8s.Client
-	logger     *zap.Logger
+	logger     logr.Logger
 	maxRetries int           // Maximum retry attempts for K8s API calls
 	retryDelay time.Duration // Initial retry delay (exponential backoff)
 }
@@ -56,10 +56,10 @@ type CRDUpdater struct {
 //
 // Returns:
 // - *CRDUpdater: Configured CRD updater with default retry policy (3 retries, 100ms initial delay)
-func NewCRDUpdater(k8sClient *k8s.Client, logger *zap.Logger) *CRDUpdater {
+func NewCRDUpdater(k8sClient *k8s.Client, logger logr.Logger) *CRDUpdater {
 	return &CRDUpdater{
 		k8sClient:  k8sClient,
-		logger:     logger,
+		logger:     logger.WithName("crd-updater"),
 		maxRetries: 10,                    // Increased from 3 to handle high concurrency (20+ concurrent requests)
 		retryDelay: 50 * time.Millisecond, // Reduced from 100ms for faster retries
 	}
@@ -108,21 +108,21 @@ func (u *CRDUpdater) IncrementOccurrenceCount(ctx context.Context, namespace, na
 		crd.Spec.Deduplication.OccurrenceCount++
 		crd.Spec.Deduplication.LastSeen = metav1.Now()
 
-		u.logger.Debug("Updating CRD occurrence count",
-			zap.String("namespace", namespace),
-			zap.String("name", name),
-			zap.Int("occurrence_count", crd.Spec.Deduplication.OccurrenceCount),
-			zap.Int("attempt", attempt+1),
-			zap.Int("max_retries", u.maxRetries))
+		u.logger.V(1).Info("Updating CRD occurrence count",
+			"namespace", namespace,
+			"name", name,
+			"occurrence_count", crd.Spec.Deduplication.OccurrenceCount,
+			"attempt", attempt+1,
+			"max_retries", u.maxRetries)
 
 		// Step 3: Update CRD in Kubernetes
 		err = u.k8sClient.UpdateRemediationRequest(ctx, crd)
 		if err == nil {
 			// Success!
 			u.logger.Info("Successfully updated CRD occurrence count",
-				zap.String("namespace", namespace),
-				zap.String("name", name),
-				zap.Int("occurrence_count", crd.Spec.Deduplication.OccurrenceCount))
+				"namespace", namespace,
+				"name", name,
+				"occurrence_count", crd.Spec.Deduplication.OccurrenceCount)
 			return nil
 		}
 
@@ -134,12 +134,12 @@ func (u *CRDUpdater) IncrementOccurrenceCount(ctx context.Context, namespace, na
 			lastErr = err
 			backoff := u.retryDelay * time.Duration(1<<uint(attempt)) // Exponential backoff
 
-			u.logger.Debug("CRD update conflict, retrying",
-				zap.String("namespace", namespace),
-				zap.String("name", name),
-				zap.Int("attempt", attempt+1),
-				zap.Duration("backoff", backoff),
-				zap.Error(err))
+			u.logger.V(1).Info("CRD update conflict, retrying",
+				"namespace", namespace,
+				"name", name,
+				"attempt", attempt+1,
+				"backoff", backoff,
+				"error", err)
 
 			time.Sleep(backoff)
 			continue

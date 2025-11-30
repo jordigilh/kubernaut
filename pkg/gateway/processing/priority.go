@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-logr/logr"
 	"github.com/open-policy-agent/opa/v1/rego"
-	"go.uber.org/zap"
 )
 
 // PriorityEngine assigns priority based on severity and environment using Rego policies
@@ -47,7 +47,7 @@ type PriorityEngine struct {
 	// regoQuery is the Rego policy evaluator (REQUIRED)
 	regoQuery *rego.PreparedEvalQuery
 
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewPriorityEngineWithRego creates a new priority engine with Rego policy
@@ -71,7 +71,7 @@ type PriorityEngine struct {
 // Expected Rego output: "P0", "P1", "P2", or "P3"
 //
 // Fallback behavior: If Rego evaluation fails, returns "P2" (safe default)
-func NewPriorityEngineWithRego(policyPath string, logger *zap.Logger) (*PriorityEngine, error) {
+func NewPriorityEngineWithRego(policyPath string, logger logr.Logger) (*PriorityEngine, error) {
 	// Load Rego policy from file
 	policyContent, err := os.ReadFile(policyPath)
 	if err != nil {
@@ -89,7 +89,7 @@ func NewPriorityEngineWithRego(policyPath string, logger *zap.Logger) (*Priority
 	}
 
 	logger.Info("Rego policy loaded successfully for priority assignment",
-		zap.String("policy_path", policyPath),
+		"policy_path", policyPath,
 	)
 
 	return &PriorityEngine{
@@ -120,21 +120,19 @@ func (p *PriorityEngine) Assign(ctx context.Context, severity, environment strin
 	// Evaluate Rego policy (REQUIRED - no fallback table)
 	priority, err := p.evaluateRego(ctx, severity, environment)
 	if err == nil {
-		p.logger.Debug("Priority assigned via Rego policy",
-			zap.String("severity", severity),
-			zap.String("environment", environment),
-			zap.String("priority", priority),
-			zap.String("source", "rego"),
+		p.logger.V(1).Info("Priority assigned via Rego policy",
+			"severity", severity,
+			"environment", environment,
+			"priority", priority,
+			"source", "rego",
 		)
 		return priority
 	}
 
 	// Rego evaluation failed - return safe default
-	p.logger.Error("Rego policy evaluation failed, using safe default P2",
-		zap.String("severity", severity),
-		zap.String("environment", environment),
-		zap.Error(err),
-	)
+	p.logger.Error(err, "Rego policy evaluation failed, using safe default P2",
+		"severity", severity,
+		"environment", environment)
 
 	return "P2"
 }
