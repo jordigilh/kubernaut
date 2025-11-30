@@ -33,7 +33,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 1: Happy Path - Complete Remediation Audit Trail (P0)
@@ -65,7 +64,6 @@ import (
 
 var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", Label("e2e", "happy-path", "p0"), Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    *zap.Logger
 		httpClient    *http.Client
@@ -76,7 +74,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 15*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.With(zap.String("test", "happy-path"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -84,31 +82,11 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		testLogger.Info("Scenario 1: Happy Path - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace for this test (parallel execution)
-		testNamespace = generateUniqueNamespace()
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
-
-		// Deploy PostgreSQL, Redis, and Data Storage Service
-		err := infrastructure.DeployDataStorageTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Set up port-forward to Data Storage Service
-		// For E2E tests, we'll use kubectl port-forward to access the service
-		localPort := 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
-		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
-
-		// Start port-forward in background
-		portForwardCancel, err := portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Store cancel function for cleanup
-		DeferCleanup(func() {
-			if portForwardCancel != nil {
-				portForwardCancel()
-			}
-		})
-
-		testLogger.Info("Service URL configured", zap.String("url", serviceURL))
+		// Use shared deployment from SynchronizedBeforeSuite (no per-test deployment)
+		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
+		testNamespace = sharedNamespace
+		serviceURL = dataStorageURL
+		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
 
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
@@ -130,20 +108,10 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
 		testLogger.Info("✅ Data Storage Service is responsive")
 
-		// Connect to PostgreSQL for verification
-		testLogger.Info("🔌 Connecting to PostgreSQL for verification...")
-		// Port-forward to PostgreSQL
-		pgLocalPort := 25433 + GinkgoParallelProcess() // DD-TEST-001: E2E PostgreSQL port range (25433-25436)
-		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", kubeconfigPath, pgLocalPort, 5432)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			if pgPortForwardCancel != nil {
-				pgPortForwardCancel()
-			}
-		})
-
-		// Connect to PostgreSQL
-		connStr := fmt.Sprintf("host=localhost port=%d user=slm_user password=test_password dbname=action_history sslmode=disable", pgLocalPort)
+		// Connect to PostgreSQL for verification (using shared NodePort - no port-forward needed)
+		testLogger.Info("🔌 Connecting to PostgreSQL via NodePort...")
+		connStr := fmt.Sprintf("host=localhost port=5432 user=slm_user password=test_password dbname=action_history sslmode=disable")
+		var err error
 		db, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -160,21 +128,16 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 	})
 
 	AfterAll(func() {
-		testLogger.Info("🧹 Cleaning up test namespace...")
+		testLogger.Info("🧹 Cleaning up test resources...")
 		if db != nil {
 			if err := db.Close(); err != nil {
-			testLogger.Warn("failed to close database connection", zap.Error(err))
-		}
+				testLogger.Warn("failed to close database connection", zap.Error(err))
+			}
 		}
 		if testCancel != nil {
 			testCancel()
 		}
-
-		// Cleanup namespace
-		err := infrastructure.CleanupDataStorageTestNamespace(testNamespace, kubeconfigPath, GinkgoWriter)
-		if err != nil {
-			testLogger.Warn("Failed to cleanup namespace", zap.Error(err))
-		}
+		// Note: Shared namespace is NOT cleaned up here - it's managed by SynchronizedAfterSuite
 	})
 
 	It("should create complete audit trail across all services", func() {
@@ -377,15 +340,15 @@ func postAuditEvent(client *http.Client, baseURL string, event map[string]interf
 
 	// Log response body if not 2xx status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-	bodyBytes, _ := io.ReadAll(resp.Body)
-	if err := resp.Body.Close(); err != nil {
-		// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-		_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
-	}
-	if _, err := fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes)); err != nil {
-		// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-		_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to write to GinkgoWriter: %v\n", err)
-	}
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		if err := resp.Body.Close(); err != nil {
+			// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
+			_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
+		}
+		if _, err := fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes)); err != nil {
+			// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
+			_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to write to GinkgoWriter: %v\n", err)
+		}
 		// Create new reader for the response body so tests can still read it
 		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}

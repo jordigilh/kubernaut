@@ -29,7 +29,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 3: Query API Timeline - Multi-Filter Retrieval (P0)
@@ -64,7 +63,6 @@ import (
 
 var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Label("e2e", "query-api", "p0"), Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    *zap.Logger
 		httpClient    *http.Client
@@ -75,7 +73,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 15*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
 		testLogger = logger.With(zap.String("test", "query-api"))
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -83,27 +81,11 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		testLogger.Info("Scenario 3: Query API Timeline - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace for this test (parallel execution)
-		testNamespace = generateUniqueNamespace()
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
-
-		// Deploy PostgreSQL, Redis, and Data Storage Service
-		err := infrastructure.DeployDataStorageTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Set up port-forward to Data Storage Service
-		localPort := 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
-		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
-
-		portForwardCancel, err := portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			if portForwardCancel != nil {
-				portForwardCancel()
-			}
-		})
-
-		testLogger.Info("Service URL configured", zap.String("url", serviceURL))
+		// Use shared deployment from SynchronizedBeforeSuite (no per-test deployment)
+		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
+		testNamespace = sharedNamespace
+		serviceURL = dataStorageURL
+		testLogger.Info("Using shared deployment", zap.String("namespace", testNamespace), zap.String("url", serviceURL))
 
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
@@ -133,15 +115,11 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 	})
 
 	AfterAll(func() {
-		testLogger.Info("🧹 Cleaning up test namespace...")
+		testLogger.Info("🧹 Cleaning up test resources...")
 		if testCancel != nil {
 			testCancel()
 		}
-
-		err := infrastructure.CleanupDataStorageTestNamespace(testNamespace, kubeconfigPath, GinkgoWriter)
-		if err != nil {
-			testLogger.Warn("Failed to cleanup namespace", zap.Error(err))
-		}
+		// Note: Shared namespace is NOT cleaned up here - it's managed by SynchronizedAfterSuite
 	})
 
 	It("should support multi-dimensional filtering and pagination", func() {
