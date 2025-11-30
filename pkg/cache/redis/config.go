@@ -140,6 +140,3 @@ func DefaultOptions() *Options {
 		MinIdleConns: 5,
 	}
 }
-
-
-

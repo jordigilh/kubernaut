@@ -223,5 +223,3 @@ func (c *Cache[T]) hashKey(key string) string {
 	// Return prefixed hash for Redis storage
 	return c.prefix + ":" + hexHash
 }
-
-

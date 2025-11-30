@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // AuditStore provides non-blocking audit event storage with asynchronous buffered writes.
@@ -71,7 +71,7 @@ type DataStorageClient interface {
 type BufferedAuditStore struct {
 	buffer  chan *AuditEvent
 	client  DataStorageClient
-	logger  *zap.Logger
+	logger  logr.Logger
 	config  Config
 	metrics MetricsLabels
 	done    chan struct{}
@@ -91,7 +91,7 @@ type BufferedAuditStore struct {
 // - client: Data Storage Service client for writing events
 // - config: Configuration for buffer size, batch size, flush interval, etc.
 // - serviceName: Name of the service using this store (for metrics labels)
-// - logger: Structured logger for audit store operations
+// - logger: Structured logger for audit store operations (logr.Logger per DD-005 v2.0)
 //
 // The store starts a background worker goroutine that:
 // - Batches events for efficient writes
@@ -99,23 +99,22 @@ type BufferedAuditStore struct {
 // - Retries failed writes with exponential backoff
 //
 // Call Close() during graceful shutdown to flush remaining events.
-func NewBufferedStore(client DataStorageClient, config Config, serviceName string, logger *zap.Logger) (AuditStore, error) {
+//
+// DD-005 v2.0: Accepts logr.Logger for unified logging interface across all services.
+func NewBufferedStore(client DataStorageClient, config Config, serviceName string, logger logr.Logger) (AuditStore, error) {
 	if client == nil {
 		return nil, fmt.Errorf("client cannot be nil")
 	}
-	if logger == nil {
-		return nil, fmt.Errorf("logger cannot be nil")
-	}
 
 	if err := config.Validate(); err != nil {
-		logger.Error("Invalid audit config, using defaults", zap.Error(err))
+		logger.Error(err, "Invalid audit config, using defaults")
 		config = DefaultConfig()
 	}
 
 	store := &BufferedAuditStore{
 		buffer:  make(chan *AuditEvent, config.BufferSize),
 		client:  client,
-		logger:  logger,
+		logger:  logger.WithName("audit-store"),
 		config:  config,
 		metrics: MetricsLabels{Service: serviceName},
 		done:    make(chan struct{}),
@@ -126,11 +125,11 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 	go store.backgroundWriter()
 
 	logger.Info("Audit store initialized",
-		zap.String("service", serviceName),
-		zap.Int("buffer_size", config.BufferSize),
-		zap.Int("batch_size", config.BatchSize),
-		zap.Duration("flush_interval", config.FlushInterval),
-		zap.Int("max_retries", config.MaxRetries),
+		"service", serviceName,
+		"buffer_size", config.BufferSize,
+		"batch_size", config.BatchSize,
+		"flush_interval", config.FlushInterval,
+		"max_retries", config.MaxRetries,
 	)
 
 	return store, nil
@@ -147,7 +146,7 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error {
 	// Validate event
 	if err := event.Validate(); err != nil {
-		s.logger.Error("Invalid audit event", zap.Error(err))
+		s.logger.Error(err, "Invalid audit event")
 		return fmt.Errorf("invalid audit event: %w", err)
 	}
 
@@ -163,11 +162,11 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) 
 		atomic.AddInt64(&s.droppedCount, 1)
 		s.metrics.RecordDropped()
 
-		s.logger.Warn("Audit buffer full, dropping event",
-			zap.String("event_type", event.EventType),
-			zap.String("correlation_id", event.CorrelationID),
-			zap.Int64("buffered_count", atomic.LoadInt64(&s.bufferedCount)),
-			zap.Int64("dropped_count", atomic.LoadInt64(&s.droppedCount)),
+		s.logger.Info("Audit buffer full, dropping event (graceful degradation)",
+			"event_type", event.EventType,
+			"correlation_id", event.CorrelationID,
+			"buffered_count", atomic.LoadInt64(&s.bufferedCount),
+			"dropped_count", atomic.LoadInt64(&s.droppedCount),
 		)
 
 		// ✅ Don't fail business logic - graceful degradation
@@ -183,7 +182,7 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) 
 func (s *BufferedAuditStore) Close() error {
 	// Check if already closed (atomic operation)
 	if !atomic.CompareAndSwapInt32(&s.closed, 0, 1) {
-		s.logger.Debug("Audit store already closed, skipping")
+		s.logger.V(1).Info("Audit store already closed, skipping")
 		return nil
 	}
 
@@ -203,16 +202,16 @@ func (s *BufferedAuditStore) Close() error {
 	case <-done:
 		// Background worker finished
 		s.logger.Info("Audit store closed",
-			zap.Int64("buffered_count", atomic.LoadInt64(&s.bufferedCount)),
-			zap.Int64("written_count", atomic.LoadInt64(&s.writtenCount)),
-			zap.Int64("dropped_count", atomic.LoadInt64(&s.droppedCount)),
-			zap.Int64("failed_batch_count", atomic.LoadInt64(&s.failedBatchCount)),
+			"buffered_count", atomic.LoadInt64(&s.bufferedCount),
+			"written_count", atomic.LoadInt64(&s.writtenCount),
+			"dropped_count", atomic.LoadInt64(&s.droppedCount),
+			"failed_batch_count", atomic.LoadInt64(&s.failedBatchCount),
 		)
 		return nil
 
 	case <-time.After(30 * time.Second):
 		// Timeout waiting for background worker
-		s.logger.Error("Timeout waiting for audit store to close")
+		s.logger.Error(nil, "Timeout waiting for audit store to close")
 		return fmt.Errorf("timeout waiting for audit store to close")
 	}
 }
@@ -282,10 +281,9 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*AuditEvent) {
 
 	for attempt := 1; attempt <= s.config.MaxRetries; attempt++ {
 		if err := s.client.StoreBatch(ctx, batch); err != nil {
-			s.logger.Error("Failed to write audit batch",
-				zap.Int("attempt", attempt),
-				zap.Int("batch_size", len(batch)),
-				zap.Error(err),
+			s.logger.Error(err, "Failed to write audit batch",
+				"attempt", attempt,
+				"batch_size", len(batch),
 			)
 
 			if attempt < s.config.MaxRetries {
@@ -299,9 +297,9 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*AuditEvent) {
 			atomic.AddInt64(&s.failedBatchCount, 1)
 			s.metrics.RecordBatchFailed()
 
-			s.logger.Error("Dropping audit batch after max retries",
-				zap.Int("batch_size", len(batch)),
-				zap.Int("max_retries", s.config.MaxRetries),
+			s.logger.Error(nil, "Dropping audit batch after max retries",
+				"batch_size", len(batch),
+				"max_retries", s.config.MaxRetries,
 			)
 			return
 		}
@@ -310,9 +308,9 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*AuditEvent) {
 		atomic.AddInt64(&s.writtenCount, int64(len(batch)))
 		s.metrics.RecordWritten(len(batch))
 
-		s.logger.Debug("Wrote audit batch",
-			zap.Int("batch_size", len(batch)),
-			zap.Int("attempt", attempt),
+		s.logger.V(1).Info("Wrote audit batch",
+			"batch_size", len(batch),
+			"attempt", attempt,
 		)
 		return
 	}

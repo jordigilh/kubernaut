@@ -22,8 +22,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 )
 
 // Client provides a Redis client with graceful degradation and lazy connection.
@@ -46,11 +46,13 @@ import (
 // Business Requirements:
 // - BR-GATEWAY-013: Gateway must start even when Redis temporarily unavailable
 // - BR-STORAGE-014: Data Storage must cache embeddings with graceful degradation
+//
+// DD-005 v2.0: Uses logr.Logger for unified logging interface across all services.
 type Client struct {
 	client      *redis.Client
-	logger      *zap.Logger
-	connected   atomic.Bool  // Track Redis connection state (for lazy connection)
-	connCheckMu sync.Mutex   // Protects connection check (prevent thundering herd)
+	logger      logr.Logger
+	connected   atomic.Bool // Track Redis connection state (for lazy connection)
+	connCheckMu sync.Mutex  // Protects connection check (prevent thundering herd)
 }
 
 // NewClient creates a new Redis client with lazy connection.
@@ -60,7 +62,7 @@ type Client struct {
 //
 // Parameters:
 //   - opts: Redis connection options (addr, password, db, timeouts, pool size)
-//   - logger: Structured logger for connection events and errors
+//   - logger: Structured logger for connection events and errors (logr.Logger per DD-005 v2.0)
 //
 // Returns:
 //   - *Client: Redis client ready for use (connection established on first operation)
@@ -74,10 +76,10 @@ type Client struct {
 //	}
 //	client := NewClient(opts, logger)
 //	defer client.Close()
-func NewClient(opts *redis.Options, logger *zap.Logger) *Client {
+func NewClient(opts *redis.Options, logger logr.Logger) *Client {
 	return &Client{
 		client: redis.NewClient(opts),
-		logger: logger,
+		logger: logger.WithName("redis"),
 	}
 }
 
@@ -107,7 +109,7 @@ func NewClient(opts *redis.Options, logger *zap.Logger) *Client {
 //
 //	if err := client.EnsureConnection(ctx); err != nil {
 //	    // Graceful degradation: proceed without cache
-//	    logger.Warn("Redis unavailable, proceeding without cache", zap.Error(err))
+//	    logger.Info("Redis unavailable, proceeding without cache", "error", err)
 //	    return nil
 //	}
 func (c *Client) EnsureConnection(ctx context.Context) error {
@@ -171,13 +173,10 @@ func (c *Client) GetClient() *redis.Client {
 //	defer client.Close()
 func (c *Client) Close() error {
 	if err := c.client.Close(); err != nil {
-		c.logger.Error("Failed to close Redis client", zap.Error(err))
+		c.logger.Error(err, "Failed to close Redis client")
 		return fmt.Errorf("failed to close redis client: %w", err)
 	}
 	c.connected.Store(false)
 	c.logger.Info("Redis client closed")
 	return nil
 }
-
-
-
