@@ -527,7 +527,7 @@ This taxonomy must be included in the LLM prompt (ADR-041) as a dedicated sectio
 
 **Prompt Length**: ~500-600 words (acceptable for Claude 4.5 Haiku)
 
-### 8.2 DD-WORKFLOW-001 v1.4 Alignment
+### 8.2 DD-WORKFLOW-001 v1.6 Alignment
 
 **STATUS**: ✅ DD-WORKFLOW-001 v1.6 is now the authoritative source (snake_case API fields).
 

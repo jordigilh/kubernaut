@@ -524,7 +524,7 @@ Customers define additional labels via Rego policies. Examples:
 | `region` | Namespace label | `["us-east-1"]`, `["eu-west-1"]` |
 | `team` | Namespace label | `["platform"]`, `["payments"]` |
 
-**Note**: CustomLabels use the subdomain format per DD-WORKFLOW-001 v1.5: `map[subdomain][]string`
+**Note**: CustomLabels use the subdomain format per DD-WORKFLOW-001 v1.6: `map[subdomain][]string`
 
 ### Example Rego Policy (Customer-Provided)
 
