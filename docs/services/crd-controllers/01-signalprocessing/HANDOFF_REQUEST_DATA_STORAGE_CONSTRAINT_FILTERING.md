@@ -123,7 +123,7 @@ metadata:
 
 ### Q3: Does the search API support arbitrary label filtering (beyond the 5 mandatory labels)?
 
-**Current understanding** (DD-WORKFLOW-001 v1.6): 5 mandatory labels are:
+**Current understanding** (DD-WORKFLOW-001 v1.7): 5 mandatory labels are:
 1. `signal_type`
 2. `severity`
 3. `component`
@@ -215,7 +215,7 @@ Please provide answers to Q1-Q4 above.
 |----------|-----------|
 | **[RESPONSE_CONSTRAINT_FILTERING.md](../../stateless/datastorage/RESPONSE_CONSTRAINT_FILTERING.md)** | **✅ Data Storage Team Response** |
 | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) | Source of this handoff (F2) |
-| [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | 5 mandatory labels + DetectedLabels + CustomLabels (snake_case API fields) |
+| [DD-WORKFLOW-001 v1.7](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | 5 mandatory labels + DetectedLabels + CustomLabels (snake_case API fields) |
 | [DD-WORKFLOW-002](../../../architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md) | Workflow catalog API contract |
 | [HANDOFF_REQUEST_LABEL_SCHEMA_V1.4.md](../../stateless/datastorage/HANDOFF_REQUEST_LABEL_SCHEMA_V1.4.md) | Label schema handoff (5 mandatory + customer-derived) |
 

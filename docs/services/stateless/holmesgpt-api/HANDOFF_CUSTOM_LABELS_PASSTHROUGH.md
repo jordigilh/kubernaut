@@ -55,7 +55,7 @@ When calling the workflow catalog search tool, include `custom_labels` in filter
 # WorkflowCatalogTool._invoke()
 def _invoke(self, query: str, **kwargs) -> ToolResult:
     filters = {
-        "signal_type": self.signal_type,  # snake_case per DD-WORKFLOW-001 v1.6
+        "signal_type": self.signal_type,  # snake_case per DD-WORKFLOW-001 v1.7
         "severity": self.severity,
         # ... other mandatory labels ...
 
@@ -164,7 +164,7 @@ If you have questions about:
 ## References
 
 - **HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md**: Full extraction design
-- **DD-WORKFLOW-001 v1.6**: Label schema (snake_case field names)
+- **DD-WORKFLOW-001 v1.7**: Label schema (snake_case field names)
 - **DD-WORKFLOW-004 v2.2**: Scoring (custom labels = filters only)
 - **DD-HAPI-001**: Custom Labels Auto-Append Architecture (⭐ **NEW** - authoritative for implementation)
 
@@ -359,7 +359,7 @@ class EnrichmentResults(BaseModel):
 | Version | Date | Changes |
 |---------|------|---------|
 | 2.0 | 2025-11-30 | **IMPLEMENTATION COMPLETE**: Auto-append architecture (DD-HAPI-001), 25 tests passing |
-| 1.3 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case field names) |
+| 1.3 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.7 (snake_case field names) |
 | 1.2 | 2025-11-30 | Answered Q1-Q4 from HolmesGPT-API team |
 | 1.1 | 2025-11-30 | Added questions from HolmesGPT-API team |
 | 1.0 | 2025-11-30 | Initial handoff - pass-through design |

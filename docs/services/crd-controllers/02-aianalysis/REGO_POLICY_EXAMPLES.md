@@ -1,37 +1,87 @@
 # AIAnalysis Rego Policy Examples
 
 **Status**: 🟡 DRAFT - For Design Discussion
-**Version**: 1.0
-**Date**: 2025-11-29
+**Version**: 1.2
+**Date**: 2025-11-30
 **Purpose**: Explore approval policy input/output schemas with sample policies
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **1.2** | 2025-11-30 | Aligned with DD-WORKFLOW-001 v1.7: snake_case for all API fields; Updated input schema to use `git_ops_managed`, `pdb_protected`, etc. |
+| 1.1 | 2025-11-30 | Added `DetectedLabels` and `CustomLabels` to input schema; Added GitOps/constraint-aware policies |
+| 1.0 | 2025-11-29 | Initial draft with sample policies |
 
 ---
 
 ## Policy Input Schema
 
+> **Note**: Per DD-WORKFLOW-001 v1.7, all API field names use **snake_case**.
+> CRD fields (K8s resources) remain camelCase per K8s convention.
+
 ```go
 // ApprovalPolicyInput is passed to Rego policy for evaluation
+// All field names use snake_case per DD-WORKFLOW-001 v1.7
 type ApprovalPolicyInput struct {
     // From AIAnalysis.status.selectedWorkflow
     Action     string  `json:"action"`     // e.g., "restart-pod", "scale-deployment"
     Confidence float64 `json:"confidence"` // 0.0-1.0 from HolmesGPT
 
-    // From SignalProcessing context
-    Environment      string `json:"environment"`      // production, staging, dev
-    Severity         string `json:"severity"`         // critical, warning, info
-    BusinessPriority string `json:"businessPriority"` // P0, P1, P2
+    // From SignalProcessing context (5 mandatory labels)
+    Environment      string `json:"environment"`       // production, staging, dev
+    Severity         string `json:"severity"`          // critical, warning, info
+    BusinessPriority string `json:"business_priority"` // P0, P1, P2
 
     // Target resource
-    TargetResource TargetResourceInput `json:"targetResource"`
+    TargetResource TargetResourceInput `json:"target_resource"`
 
     // Timestamp for business hours calculation
     Timestamp string `json:"timestamp"` // ISO 8601
+
+    // ========================================
+    // CLUSTER CONTEXT (v1.1)
+    // From SignalProcessing EnrichmentResults
+    // ========================================
+
+    // DetectedLabels: Auto-detected cluster characteristics
+    // SignalProcessing populates these automatically - no config needed
+    DetectedLabels DetectedLabelsInput `json:"detected_labels"`
+
+    // CustomLabels: Customer-defined labels via Rego policies
+    // Key = subdomain (e.g., "constraint", "team", "region")
+    // Value = list of label values
+    // Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+    CustomLabels map[string][]string `json:"custom_labels"`
 }
 
 type TargetResourceInput struct {
     Kind      string `json:"kind"`      // Pod, Deployment, StatefulSet
     Name      string `json:"name"`
     Namespace string `json:"namespace"`
+}
+
+// DetectedLabelsInput contains auto-detected cluster characteristics
+// Field names use snake_case per DD-WORKFLOW-001 v1.7
+type DetectedLabelsInput struct {
+    // GitOps
+    GitOpsManaged bool   `json:"git_ops_managed"` // ArgoCD/Flux detected
+    GitOpsTool    string `json:"git_ops_tool"`    // "argocd", "flux", ""
+
+    // Workload Protection
+    PDBProtected bool `json:"pdb_protected"` // PodDisruptionBudget exists
+    HPAEnabled   bool `json:"hpa_enabled"`   // HorizontalPodAutoscaler targets workload
+
+    // Workload Characteristics
+    Stateful    bool `json:"stateful"`     // StatefulSet or PVCs
+    HelmManaged bool `json:"helm_managed"` // helm.sh/chart label
+
+    // Security
+    NetworkIsolated  bool   `json:"network_isolated"`   // NetworkPolicy exists
+    PodSecurityLevel string `json:"pod_security_level"` // "privileged", "baseline", "restricted"
+    ServiceMesh      string `json:"service_mesh"`       // "istio", "linkerd", ""
 }
 ```
 
@@ -160,7 +210,207 @@ reason := sprintf("Auto-approved: safe %s action with %.0f%% confidence", [input
 
 ---
 
-### 2. Development/Staging Policy (`development.rego`)
+### 2. GitOps & Constraint-Aware Policy (`gitops_constraints.rego`) - v1.2
+
+**Purpose**: Demonstrates approval decisions based on detected_labels and custom_labels.
+
+> **Note**: Field names use snake_case per DD-WORKFLOW-001 v1.7
+
+```rego
+package kubernaut.aianalysis.approval.gitops_constraints
+
+import future.keywords.if
+import future.keywords.in
+
+# Default: Require approval
+default require_approval := true
+default auto_approve := false
+
+# ========================================
+# GITOPS-AWARE RULES
+# ========================================
+
+# GitOps-managed namespaces: Only allow GitOps-compatible actions
+require_approval if {
+    input.detected_labels.git_ops_managed
+    not is_gitops_compatible_action
+}
+
+# Auto-approve GitOps-compatible actions in GitOps namespaces
+auto_approve if {
+    input.detected_labels.git_ops_managed
+    is_gitops_compatible_action
+    input.confidence >= 0.85
+}
+
+is_gitops_compatible_action if {
+    # Actions that don't conflict with GitOps sync
+    input.action in [
+        "collect-diagnostics",
+        "capture-heap-dump",
+        "collect-logs",
+        "run-health-check",
+        # Scaling is OK - ArgoCD/Flux won't override HPA decisions
+        "scale-up-replicas",
+        "adjust-hpa-max",
+    ]
+}
+
+# ========================================
+# PDB-AWARE RULES
+# ========================================
+
+# PDB-protected workloads: Be more conservative
+require_approval if {
+    input.detected_labels.pdb_protected
+    is_pod_disruptive_action
+}
+
+is_pod_disruptive_action if {
+    input.action in [
+        "restart-pod",
+        "restart-deployment",
+        "delete-pod",
+        "drain-node",
+    ]
+}
+
+# ========================================
+# STATEFUL WORKLOAD RULES
+# ========================================
+
+# Stateful workloads: Extra caution required
+require_approval if {
+    input.detected_labels.stateful
+    is_data_risk_action
+}
+
+is_data_risk_action if {
+    input.action in [
+        "delete-pod",
+        "delete-pvc",
+        "scale-down-replicas",
+        "restart-deployment",
+    ]
+}
+
+# ========================================
+# CUSTOM CONSTRAINT RULES
+# ========================================
+
+# Cost-constrained namespaces: Block resource increases
+require_approval if {
+    has_constraint("cost-constrained")
+    is_resource_increase_action
+}
+
+is_resource_increase_action if {
+    input.action in [
+        "increase-memory-limit",
+        "increase-cpu-limit",
+        "scale-up-replicas",
+        "adjust-hpa-max",
+    ]
+}
+
+# High-availability constraint: Block single-replica scaling
+require_approval if {
+    has_constraint("high-availability")
+    input.action == "scale-down-replicas"
+}
+
+# ========================================
+# CUSTOM LABEL HELPERS
+# ========================================
+
+# Check if a constraint exists in custom_labels
+has_constraint(name) if {
+    constraints := input.custom_labels["constraint"]
+    name in constraints
+}
+
+# Get team name from custom_labels
+get_team := team if {
+    teams := input.custom_labels["team"]
+    some t in teams
+    startswith(t, "name=")
+    team := substring(t, 5, -1)
+}
+
+# ========================================
+# RISK TOLERANCE RULES (from custom_labels)
+# ========================================
+
+# Low risk tolerance: Require approval for all risky actions
+require_approval if {
+    has_risk_tolerance("low")
+    is_risky_action
+}
+
+# High risk tolerance: Auto-approve more actions
+auto_approve if {
+    has_risk_tolerance("high")
+    input.confidence >= 0.70
+    not is_always_require_approval
+}
+
+has_risk_tolerance(level) if {
+    tolerances := input.custom_labels["risk"]
+    some t in tolerances
+    t == sprintf("tolerance=%s", [level])
+}
+
+is_risky_action if {
+    input.action in [
+        "restart-pod",
+        "restart-deployment",
+        "rollback-deployment",
+        "scale-down-replicas",
+    ]
+}
+
+is_always_require_approval if {
+    input.action in ["delete-namespace", "drain-node", "delete-pvc"]
+}
+
+# ========================================
+# OUTPUT
+# ========================================
+
+reason := sprintf("GitOps namespace (%s): %s action requires manual sync", [input.detected_labels.git_ops_tool, input.action]) if {
+    require_approval
+    input.detected_labels.git_ops_managed
+    not is_gitops_compatible_action
+}
+
+reason := sprintf("PDB-protected workload: %s action requires approval", [input.action]) if {
+    require_approval
+    input.detected_labels.pdb_protected
+    is_pod_disruptive_action
+}
+
+reason := sprintf("Cost-constrained namespace: %s action blocked", [input.action]) if {
+    require_approval
+    has_constraint("cost-constrained")
+    is_resource_increase_action
+}
+
+reason := sprintf("Auto-approved: %s action (high risk tolerance)", [input.action]) if {
+    auto_approve
+    has_risk_tolerance("high")
+}
+
+reason := "Requires approval (default)" if {
+    require_approval
+    not input.detected_labels.git_ops_managed
+    not input.detected_labels.pdb_protected
+    not has_constraint("cost-constrained")
+}
+```
+
+---
+
+### 3. Development/Staging Policy (`development.rego`)
 
 ```rego
 package kubernaut.aianalysis.approval.development
@@ -407,6 +657,8 @@ time_context := "After hours" if { not is_business_hours }
 
 ## Edge Cases to Test
 
+### Basic Edge Cases (v1.0)
+
 | ID | Scenario | Input | Expected Output |
 |----|----------|-------|-----------------|
 | EC-REGO-01 | High confidence + safe action + production | `{confidence: 0.95, action: "increase-memory-limit", environment: "production"}` | `auto_approve: true` |
@@ -418,6 +670,38 @@ time_context := "After hours" if { not is_business_hours }
 | EC-REGO-07 | Missing environment field | `{confidence: 0.85, action: "restart-pod"}` | Default to `require_approval: true` |
 | EC-REGO-08 | Invalid action type | `{confidence: 0.85, action: "unknown-action", environment: "production"}` | Default to `require_approval: true` |
 
+### DetectedLabels Edge Cases (v1.2 - snake_case)
+
+| ID | Scenario | Input | Expected Output |
+|----|----------|-------|-----------------|
+| EC-DL-01 | GitOps namespace + non-compatible action | `{detected_labels: {git_ops_managed: true, git_ops_tool: "argocd"}, action: "restart-deployment"}` | `require_approval: true` (manual sync needed) |
+| EC-DL-02 | GitOps namespace + compatible action | `{detected_labels: {git_ops_managed: true}, action: "collect-diagnostics", confidence: 0.90}` | `auto_approve: true` |
+| EC-DL-03 | PDB-protected + pod disruptive action | `{detected_labels: {pdb_protected: true}, action: "restart-pod"}` | `require_approval: true` |
+| EC-DL-04 | Stateful workload + delete action | `{detected_labels: {stateful: true}, action: "delete-pod"}` | `require_approval: true` |
+| EC-DL-05 | Service mesh + restart action | `{detected_labels: {service_mesh: "istio"}, action: "restart-deployment"}` | Consider sidecar injection delay |
+| EC-DL-06 | Empty detected_labels | `{detected_labels: {}}` | Use default rules only |
+| EC-DL-07 | Wildcard match (v1.6) | `{detected_labels: {git_ops_tool: "argocd"}}` matches workflow `{git_ops_tool: "*"}` | Workflow requires SOME GitOps tool |
+
+### CustomLabels Edge Cases (v1.2 - snake_case)
+
+| ID | Scenario | Input | Expected Output |
+|----|----------|-------|-----------------|
+| EC-CL-01 | Cost-constrained + scale-up | `{custom_labels: {"constraint": ["cost-constrained"]}, action: "scale-up-replicas"}` | `require_approval: true` |
+| EC-CL-02 | High-availability + scale-down | `{custom_labels: {"constraint": ["high-availability"]}, action: "scale-down-replicas"}` | `require_approval: true` |
+| EC-CL-03 | Low risk tolerance + risky action | `{custom_labels: {"risk": ["tolerance=low"]}, action: "restart-pod"}` | `require_approval: true` |
+| EC-CL-04 | High risk tolerance + risky action | `{custom_labels: {"risk": ["tolerance=high"]}, action: "restart-pod", confidence: 0.75}` | `auto_approve: true` |
+| EC-CL-05 | Multiple constraints | `{custom_labels: {"constraint": ["cost-constrained", "stateful-safe"]}, action: "increase-memory-limit"}` | `require_approval: true` (any constraint blocks) |
+| EC-CL-06 | Empty custom_labels | `{custom_labels: {}}` | Use default rules only |
+| EC-CL-07 | Team-specific rules (future) | `{custom_labels: {"team": ["name=payments"]}, action: "restart-pod"}` | Team-specific policy (V2.0) |
+
+### Combined detected_labels + custom_labels Edge Cases
+
+| ID | Scenario | Input | Expected Output |
+|----|----------|-------|-----------------|
+| EC-COMBO-01 | GitOps + cost-constrained | `{detected_labels: {git_ops_managed: true}, custom_labels: {"constraint": ["cost-constrained"]}, action: "scale-up-replicas"}` | `require_approval: true` (both block) |
+| EC-COMBO-02 | PDB + high risk tolerance | `{detected_labels: {pdb_protected: true}, custom_labels: {"risk": ["tolerance=high"]}, action: "restart-pod"}` | `require_approval: true` (PDB takes precedence) |
+| EC-COMBO-03 | No labels (empty) | `{detected_labels: {}, custom_labels: {}}` | Default rules only |
+
 ---
 
 ## Policy Selection Strategy
@@ -426,11 +710,19 @@ For V1.0, we'll use a **single combined policy** that incorporates:
 1. Environment-based rules
 2. Confidence-based rules
 3. Action classification
+4. `detected_labels`-based rules (GitOps, PDB, Stateful, etc.)
+5. `custom_labels`-based rules (constraints, risk tolerance, team)
 
-Future V1.1+ can support:
+**V1.6 Updates**:
+- All API field names use **snake_case** (per DD-WORKFLOW-001 v1.7)
+- `detected_labels` supports **wildcard matching** (`"*"` = requires SOME value)
+- `custom_labels` auto-appended by HolmesGPT-API (per DD-HAPI-001)
+
+Future V2.0+ can support:
 - Multiple policy files per environment
 - Policy composition/inheritance
 - Customer-defined policies via ConfigMap
+- Team-specific policies
 
 ---
 

@@ -20,7 +20,7 @@ This document defines the **initial prompt** that will be used to test the AIAna
 ### What We Know
 
 1. **Signal Processing** enriches alerts with:
-   - **5 mandatory labels** (DD-WORKFLOW-001 v1.6): `signal_type`, `severity`, `component`, `environment`, `priority`
+   - **5 mandatory labels** (DD-WORKFLOW-001 v1.7): `signal_type`, `severity`, `component`, `environment`, `priority`
    - **DetectedLabels**: Auto-detected cluster characteristics (GitOps, PDB, HPA, etc.)
    - **CustomLabels**: Customer-defined via Rego policies (pass-through, not validated by Kubernaut)
 2. **AIAnalysis Controller** creates AIAnalysis CRD and calls HolmesGPT API

@@ -40,7 +40,7 @@ labels JSONB NOT NULL DEFAULT '{}'::jsonb
 ```
 
 **What's Needed**:
-The current search API has **hardcoded filter fields** (5 mandatory labels per DD-WORKFLOW-001 v1.6). To support DetectedLabels and CustomLabels (pass-through), we need to add JSONB filter parameters.
+The current search API has **hardcoded filter fields** (5 mandatory labels per DD-WORKFLOW-001 v1.7). To support DetectedLabels and CustomLabels (pass-through), we need to add JSONB filter parameters.
 
 **Proposed Enhancement** (Option A - Pre-filter):
 ```go
@@ -99,17 +99,17 @@ labels JSONB NOT NULL DEFAULT '{}'::jsonb
 
 **Answer: 🟡 PARTIAL (enhancement needed)**
 
-**Current Support** (per DD-WORKFLOW-001 v1.6):
+**Current Support** (per DD-WORKFLOW-001 v1.7):
 
 | Label Type | Example | Filterable? | Notes |
 |------------|---------|-------------|-------|
 | **Mandatory (5)** | `signal_type: OOMKilled`, `severity: critical`, `component: pod`, `environment: production`, `priority: P0` | ✅ Yes | Structured columns with WHERE clause |
 | **Custom** | `custom_labels: {"constraint": ["cost-constrained"]}` | ✅ Yes | JSONB containment filter |
 
-**Filter Fields** (`pkg/datastorage/models/workflow.go`) - snake_case per DD-WORKFLOW-001 v1.6:
+**Filter Fields** (`pkg/datastorage/models/workflow.go`) - snake_case per DD-WORKFLOW-001 v1.7:
 ```go
 type WorkflowSearchFilters struct {
-    // 5 MANDATORY (structured columns per DD-WORKFLOW-001 v1.6)
+    // 5 MANDATORY (structured columns per DD-WORKFLOW-001 v1.7)
     SignalType  string `json:"signal_type" validate:"required"`
     Severity    string `json:"severity" validate:"required,oneof=critical high medium low"`
     Component   string `json:"component" validate:"required"`
@@ -150,7 +150,7 @@ CustomLabels map[string]string `json:"custom_labels,omitempty"`
    CREATE INDEX idx_workflow_labels ON remediation_workflow_catalog USING GIN (labels);
    ```
 
-**Implementation Approach** (per DD-WORKFLOW-001 v1.6 - structured columns + JSONB):
+**Implementation Approach** (per DD-WORKFLOW-001 v1.7 - structured columns + JSONB):
 ```sql
 -- Pre-filter using structured columns for mandatory labels + JSONB for custom labels
 SELECT * FROM remediation_workflow_catalog
@@ -301,7 +301,7 @@ LIMIT 10;
 
 | Document | Relevance |
 |----------|-----------|
-| [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Mandatory label schema (snake_case API fields) |
+| [DD-WORKFLOW-001 v1.7](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Mandatory label schema (snake_case API fields) |
 | [DD-WORKFLOW-002 v3.0](../../../architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md) | Workflow catalog API |
 | [DD-WORKFLOW-004](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-scoring.md) | Hybrid scoring |
 | [Migration 015](../../../../migrations/015_create_workflow_catalog_table.sql) | JSONB labels schema |
