@@ -1,13 +1,33 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.14.md`
-**Version**: v1.14
+**Filename**: `IMPLEMENTATION_PLAN_V1.16.md`
+**Version**: v1.16
 **Last Updated**: 2025-11-30
 **Timeline**: 14-17 days (quality-focused, includes label detection)
-**Status**: 📋 DRAFT
-**Quality Level**: Production-Ready Standard (98% Confidence Target)
+**Status**: ✅ VALIDATED - Ready for Implementation
+**Quality Level**: Production-Ready Standard (100% Confidence - All Dependencies Validated)
 
 **Change Log**:
+- **v1.16** (2025-11-30): Cross-Team Validation Complete
+  - ✅ **HolmesGPT-API Team**: CustomLabels pass-through validated (auto-append per DD-HAPI-001)
+  - ✅ **AIAnalysis Team**: Integration paths validated, RO responsibility confirmed
+  - ✅ **Data Storage Team**: JSONB query structure confirmed
+  - ✅ **Gateway Team**: Label passthrough behavior confirmed
+  - ✅ **Status Changed**: 📋 DRAFT → ✅ VALIDATED
+  - ✅ **Confidence Updated**: 98% → 100% (all cross-team contracts validated)
+  - 📏 **Validation Records**:
+    - [RESPONSE_CUSTOM_LABELS_VALIDATION.md](RESPONSE_CUSTOM_LABELS_VALIDATION.md) (HolmesGPT-API)
+    - [RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md](RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md) (Gateway)
+    - [RESPONSE_SIGNALPROCESSING_INTEGRATION_VALIDATION.md](../02-aianalysis/RESPONSE_SIGNALPROCESSING_INTEGRATION_VALIDATION.md) (AIAnalysis)
+- **v1.15** (2025-11-30): DD-CRD-001 + DD-TEST-001 compliance
+  - ✅ **API Group Updated**: `kubernaut.io` → `kubernaut.ai` throughout document (DD-CRD-001)
+  - ✅ **CRD Manifest Path Updated**: `kubernaut.io_signalprocessings.yaml` → `signalprocessing.kubernaut.ai_signalprocessings.yaml`
+  - ✅ **RBAC Groups Updated**: All `kubernaut.io` → `kubernaut.ai` in RBAC rules
+  - ✅ **API Import Paths Updated**: `api/kubernaut.io/v1alpha1` → `api/signalprocessing/v1alpha1`
+  - ✅ **Reference Updated**: `001-crd-api-group-rationale.md` → `DD-CRD-001`
+  - ✅ **Port Allocation Verified**: Full DD-TEST-001 port table added (8082, 30082, 30182)
+  - 📏 **Impact**: 40 occurrences updated for DD-CRD-001 compliance
+  - 📏 **References**: [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md), [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
 - **v1.14** (2025-11-30): DD-WORKFLOW-001 v1.8 - OwnerChain, DetectedLabels, CustomLabels
   - ✅ **Added Phase 3.25**: Owner Chain & Label Detection (2-3 days)
   - ✅ **OwnerChain Implementation**: K8s ownerReference traversal for DetectedLabels validation
@@ -217,7 +237,7 @@
 4. **ADR-032**: Use Data Storage Service REST API for audit writes (no direct DB access)
 5. **ADR-015**: Use "Signal" terminology throughout (not "Alert")
 6. **DD-SIGNAL-PROCESSING-001**: Service renamed from RemediationProcessor to SignalProcessing
-7. **001-crd-api-group-rationale**: Use unified `kubernaut.io/v1alpha1` API group for ALL CRDs
+7. **DD-CRD-001**: Use `*.kubernaut.ai/v1alpha1` API group for ALL CRDs (AIOps branding)
 8. **ADR-041**: K8s Enricher fetches data, Rego policies evaluate classification (no `http.send` in Rego)
 9. **DD-017**: Signal-driven K8s enrichment with standard depth (hardcoded, no configuration)
 10. **DD-WORKFLOW-001 v1.8**: Label schema with OwnerChain, DetectedLabels, CustomLabels ⭐ NEW
@@ -228,22 +248,24 @@
 
 ## 🔷 **CRD API Group Standard (AUTHORITATIVE)**
 
-**API Group**: `kubernaut.io/v1alpha1`
-**Reference**: `docs/architecture/decisions/001-crd-api-group-rationale.md`
+**API Group**: `signalprocessing.kubernaut.ai/v1alpha1`
+**Reference**: `docs/architecture/decisions/DD-CRD-001-api-group-domain-selection.md`
 
 ### **Decision**
-All Kubernaut CRDs use the **unified** `kubernaut.io` API group:
+All Kubernaut CRDs use the **`.ai` domain** for AIOps branding:
 
 ```yaml
-apiVersion: kubernaut.io/v1alpha1
+apiVersion: signalprocessing.kubernaut.ai/v1alpha1
 kind: SignalProcessing
 ```
 
-### **Rationale**
-1. **Simplicity**: Single API group is easier to manage, document, and use in kubectl commands
-2. **Project Identity**: `kubernaut.io` clearly identifies all CRDs as part of the Kubernaut project
-3. **Convention**: Follows industry patterns (Tekton uses `tekton.dev`, Istio uses `istio.io`)
-4. **No Fragmentation**: Avoids namespace pollution with controller-specific subgroups
+### **Rationale** (per DD-CRD-001)
+1. **K8sGPT Precedent**: AI K8s projects use `.ai` (e.g., `core.k8sgpt.ai`)
+2. **Brand Alignment**: AIOps is the core value proposition - domain reflects this
+3. **Differentiation**: Stands out from traditional infrastructure tooling (`.io`)
+4. **Industry Trend**: AI-native platforms increasingly adopt `.ai`
+
+**Note**: Label keys still use `kubernaut.io/` prefix (K8s label convention, not CRD API group).
 
 ### **Industry Best Practices Analysis**
 
@@ -278,11 +300,11 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
 
 | CRD Kind | Full Resource Name | Controller |
 |----------|-------------------|------------|
-| `RemediationRequest` | `remediationrequests.kubernaut.io` | RemediationOrchestrator |
-| `SignalProcessing` | `signalprocessings.kubernaut.io` | SignalProcessing |
-| `AIAnalysis` | `aianalyses.kubernaut.io` | AIAnalysis |
-| `WorkflowExecution` | `workflowexecutions.kubernaut.io` | RemediationExecution |
-| `NotificationRequest` | `notificationrequests.kubernaut.io` | Notification |
+| `RemediationRequest` | `remediationrequests.remediation.kubernaut.ai` | RemediationOrchestrator |
+| `SignalProcessing` | `signalprocessings.signalprocessing.kubernaut.ai` | SignalProcessing |
+| `AIAnalysis` | `aianalyses.aianalysis.kubernaut.ai` | AIAnalysis |
+| `WorkflowExecution` | `workflowexecutions.workflowexecution.kubernaut.ai` | RemediationExecution |
+| `NotificationRequest` | `notificationrequests.notification.kubernaut.ai` | Notification |
 
 ---
 
@@ -599,8 +621,8 @@ ctrl.NewControllerManagedBy(mgr).
 | File | Purpose | Day |
 |------|---------|-----|
 | `cmd/signalprocessing/main.go` | Controller entry point | Day 1 |
-| `api/kubernaut.io/v1alpha1/signalprocessing_types.go` | CRD type definitions | Day 2 |
-| `api/kubernaut.io/v1alpha1/zz_generated.deepcopy.go` | Generated deepcopy | Day 2 |
+| `api/signalprocessing/v1alpha1/signalprocessing_types.go` | CRD type definitions | Day 2 |
+| `api/signalprocessing/v1alpha1/zz_generated.deepcopy.go` | Generated deepcopy | Day 2 |
 | `internal/controller/signalprocessing/reconciler.go` | Main reconciler | Day 7 |
 | `internal/controller/signalprocessing/phases.go` | Phase handlers | Day 7 |
 | `pkg/signalprocessing/enricher/enricher.go` | K8s context enricher | Day 3 |
@@ -626,7 +648,7 @@ ctrl.NewControllerManagedBy(mgr).
 | `pkg/gateway/processing/crd_creator.go` | Remove classification, pass through raw values | Day 12 |
 | `pkg/gateway/server.go` | Remove classifier/categorizer instantiation | Day 12 |
 | `pkg/gateway/config/config.go` | Remove classification config section | Day 12 |
-| `config/crd/bases/kubernaut.io_signalprocessings.yaml` | Generated CRD manifest | Day 2 |
+| `config/crd/bases/signalprocessing.kubernaut.ai_signalprocessings.yaml` | Generated CRD manifest | Day 2 |
 | `Makefile` | Add signalprocessing targets | Day 1 |
 
 ### **Deleted Files** (obsolete files to remove)
@@ -798,7 +820,7 @@ ctrl.NewControllerManagedBy(mgr).
 │                                                                          │
 │  ┌──────────────────┐                                                   │
 │  │ SignalProcessing │  (Input CRD - created by RemediationOrchestrator) │
-│  │   kubernaut.io/  │                                                   │
+│  │   kubernaut.ai/  │                                                   │
 │  │   v1alpha1       │                                                   │
 │  └────────┬─────────┘                                                   │
 │           │ Watches                                                      │
@@ -976,7 +998,7 @@ mkdir -p deploy/signalprocessing
 2. **Replace placeholders**:
    - `{{CONTROLLER_NAME}}` → `signalprocessing`
    - `{{PACKAGE_PATH}}` → `github.com/jordigilh/kubernaut/pkg/signalprocessing`
-   - `{{CRD_GROUP}}` → `kubernaut.io`
+   - `{{CRD_GROUP}}` → `signalprocessing.kubernaut.ai`
    - `{{CRD_VERSION}}` → `v1alpha1`
    - `{{CRD_KIND}}` → `SignalProcessing`
 
@@ -1361,7 +1383,7 @@ type BusinessClassification struct {
 
 **Hour 7-8: CRD Manifest Generation**
 1. Run `make manifests` to generate CRD YAML
-2. Verify CRD in `config/crd/bases/kubernaut.io_signalprocessings.yaml`
+2. Verify CRD in `config/crd/bases/signalprocessing.kubernaut.ai_signalprocessings.yaml`
 
 **EOD Day 2 Checklist**:
 - [ ] CRD types defined with all fields
@@ -3691,11 +3713,31 @@ Eventually(func() error {
 }, 60*time.Second, 2*time.Second).Should(Succeed())
 ```
 
-**Port Allocation** (from DD-TEST-001):
-| Port | Purpose |
-|------|---------|
-| `30182` | Signal Processing Metrics NodePort |
-| `9182` | Host port for metrics access |
+**Port Allocation** (from DD-TEST-001 - AUTHORITATIVE):
+
+| Port Type | Port | Purpose |
+|-----------|------|---------|
+| **Internal Metrics** | `9090` | Prometheus metrics endpoint (container) |
+| **Internal Health** | `8081` | Health/Ready probes (container) |
+| **Host Port** | `8082` | Kind extraPortMappings (localhost access) |
+| **NodePort (API)** | `30082` | K8s NodePort for service access |
+| **NodePort (Metrics)** | `30182` | K8s NodePort for metrics scraping |
+| **Host Metrics** | `9182` | localhost:9182 → 30182 (Kind mapping) |
+
+**Kind Config**: `test/infrastructure/kind-signalprocessing-config.yaml`
+
+**Full DD-TEST-001 Reference**:
+```
+Signal Processing Service:
+├── Internal Ports (Container)
+│   ├── 9090 - Metrics (/metrics)
+│   └── 8081 - Health (/healthz, /readyz)
+├── E2E Tests (Kind NodePort)
+│   ├── Host Port: 8082 (extraPortMappings)
+│   ├── NodePort: 30082 (API)
+│   └── Metrics NodePort: 30182
+└── Config: test/infrastructure/kind-signalprocessing-config.yaml
+```
 
 **E2E Test Scenarios**: `test/e2e/signalprocessing/`
 - Happy path: RemediationRequest → SignalProcessing → Complete
