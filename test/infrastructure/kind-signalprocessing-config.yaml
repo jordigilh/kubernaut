@@ -1,0 +1,42 @@
+# Kind cluster configuration for SignalProcessing E2E tests
+# Reference: DD-TEST-001 Port Allocation Strategy
+#
+# Port Allocation (from DD-TEST-001):
+#   Host Port: 8082
+#   NodePort (API): 30082
+#   NodePort (Metrics): 30182
+#
+# Usage:
+#   kind create cluster --name signalprocessing-e2e --config test/infrastructure/kind-signalprocessing-config.yaml
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  # Expose SignalProcessing Controller ports via NodePort to host machine
+  # This eliminates kubectl port-forward instability for E2E tests
+  extraPortMappings:
+  # Service NodePort (for API access if needed)
+  - containerPort: 30082  # SignalProcessing NodePort (per DD-TEST-001)
+    hostPort: 8082        # Port on host machine (localhost:8082)
+    protocol: TCP
+  # Metrics NodePort (for Prometheus scraping)
+  - containerPort: 30182  # SignalProcessing Metrics NodePort (per DD-TEST-001)
+    hostPort: 9182        # Port on host machine (localhost:9182/metrics)
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel E2E testing
+        # With 4 parallel test processes, need headroom for CRD operations
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        kube-api-qps: "100"
+        kube-api-burst: "200"
+- role: worker
+

@@ -23,7 +23,7 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: kubernaut.io
+  domain: kubernaut.ai
   group: signalprocessing
   kind: SignalProcessing
   path: github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1

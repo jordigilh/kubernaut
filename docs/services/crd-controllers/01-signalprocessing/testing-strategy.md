@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.4 | 2025-11-30 | Added 5 more Rego security wrapper tests (TC-CL-008 to TC-CL-012) for 100% confidence | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.3 | 2025-11-30 | Added label detection test scenarios (OwnerChain, DetectedLabels, CustomLabels) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 > | v1.2 | 2025-11-28 | Added ADR-004, DD-TEST-002 refs, fixed test paths, updated coverage targets | [ADR-004](../../../architecture/decisions/ADR-004-fake-kubernetes-client.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md) |
 > | v1.1 | 2025-11-27 | Service rename: SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
@@ -169,6 +170,11 @@ var _ = Describe("DetectedLabels", func() {
 | TC-CL-005 | Policy tries to set `severity` | Label stripped (security wrapper) | BR-SP-103 |
 | TC-CL-006 | Empty policy | Empty map returned | BR-SP-102 |
 | TC-CL-007 | Policy evaluation error | Empty map returned (non-fatal) | BR-SP-102 |
+| TC-CL-008 | Policy tries to set `component` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-009 | Policy tries to set `environment` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-010 | Policy tries to set `priority` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-011 | Policy sets all 5 mandatory labels | All 5 stripped, empty result | BR-SP-103 |
+| TC-CL-012 | Policy sets 2 mandatory + 2 custom | 2 mandatory stripped, 2 custom kept | BR-SP-103 |
 
 ```go
 // test/unit/signalprocessing/custom_labels_test.go
