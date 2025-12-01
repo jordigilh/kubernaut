@@ -1,14 +1,14 @@
 # Signal Processing Service
 
-**Version**: v1.3
-**Status**: ✅ Design Complete (100%)
+**Version**: v1.4
+**Status**: ✅ VALIDATED - Ready for Implementation
 **Health/Ready Port**: 8081 (`/health`, `/ready` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
 **CRD**: SignalProcessing
-**CRD API Group**: `kubernaut.io/v1alpha1`
+**CRD API Group**: `signalprocessing.kubernaut.ai/v1alpha1` (DD-CRD-001)
 **Controller**: SignalProcessingReconciler
 **Priority**: **P0 - HIGH**
-**Effort**: 1 week
+**Effort**: 14-17 days (quality-focused, includes label detection)
 
 ---
 
@@ -16,6 +16,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v1.4 | 2025-11-30 | Cross-team validation complete, API group updated to `.ai`, implementation plan v1.16 | [IMPLEMENTATION_PLAN_V1.16](IMPLEMENTATION_PLAN_V1.16.md), [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md) |
 | v1.3 | 2025-11-30 | DD-WORKFLOW-001 v1.8: OwnerChain, DetectedLabels, CustomLabels, updated gap analysis | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 | v1.2 | 2025-11-28 | Port fix: 8080 → 8081, API group standardization, metrics naming, graceful shutdown, parallel testing | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md), [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
 | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
@@ -43,8 +44,17 @@
 | **[Integration Points](./integration-points.md)** | Upstream/downstream services, external dependencies | ~200 | ✅ Complete |
 | **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path, reusability analysis | ~290 | ✅ Complete |
 | **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~220 | ✅ Complete |
+| **[Implementation Plan v1.16](./IMPLEMENTATION_PLAN_V1.16.md)** | Day-by-day implementation guide (authoritative) | ~5,200 | ✅ Validated |
 
-**Total**: ~5,000 lines across 13 documents
+### Cross-Team Validation Records
+
+| Document | Team | Status |
+|----------|------|--------|
+| [RESPONSE_CUSTOM_LABELS_VALIDATION.md](./RESPONSE_CUSTOM_LABELS_VALIDATION.md) | HolmesGPT-API | ✅ Validated |
+| [RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md](./RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md) | Gateway | ✅ Validated |
+| [RESPONSE_SIGNALPROCESSING_INTEGRATION_VALIDATION.md](../02-aianalysis/RESPONSE_SIGNALPROCESSING_INTEGRATION_VALIDATION.md) | AIAnalysis | ✅ Validated |
+
+**Total**: ~5,800 lines across 14 documents + 3 validation records
 
 ---
 
