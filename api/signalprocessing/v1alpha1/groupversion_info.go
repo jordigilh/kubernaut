@@ -16,8 +16,9 @@ limitations under the License.
 
 // Package v1alpha1 contains API Schema definitions for the signalprocessing v1alpha1 API group.
 // DD-SIGNAL-PROCESSING-001: Renamed from remediationprocessing per ADR-015
+// DD-CRD-001: Migrated to .ai domain for AIOps branding
 // +kubebuilder:object:generate=true
-// +groupName=signalprocessing.kubernaut.io
+// +groupName=signalprocessing.kubernaut.ai
 package v1alpha1
 
 import (
@@ -27,7 +28,8 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "signalprocessing.kubernaut.io", Version: "v1alpha1"}
+	// DD-CRD-001: Using .ai domain for AIOps platform branding
+	GroupVersion = schema.GroupVersion{Group: "signalprocessing.kubernaut.ai", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
