@@ -334,6 +334,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 			SignalSource: signal.Source,
 			TargetType:   "kubernetes",
 
+			// Target resource identification (populated from NormalizedSignal.Resource)
+			// Used by SignalProcessing for context enrichment and RO for workflow routing
+			TargetResource: c.buildTargetResource(signal),
+
 			// Temporal data
 			// Fallback: if FiringTime is zero (not set by adapter), use ReceivedTime
 			FiringTime:   metav1.NewTime(c.getFiringTime(signal)),
@@ -490,16 +494,32 @@ func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 // - WHICH resource to remediate (kubectl target)
 // - WHERE to remediate (namespace, cluster)
 // - Additional context for decision-making
+// buildTargetResource constructs the ResourceIdentifier from NormalizedSignal.Resource
+// This is used by SignalProcessing for context enrichment and RO for workflow routing.
+// Returns nil if no resource info is available (non-K8s signals).
+func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) *remediationv1alpha1.ResourceIdentifier {
+	// Check if resource info is available
+	if signal.Resource.Kind == "" && signal.Resource.Name == "" {
+		return nil
+	}
+
+	return &remediationv1alpha1.ResourceIdentifier{
+		Kind:      signal.Resource.Kind,
+		Name:      signal.Resource.Name,
+		Namespace: signal.Resource.Namespace,
+	}
+}
+
 func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 	// Construct provider-specific data structure
+	// NOTE: Resource info is now in spec.targetResource (per RESPONSE_TARGET_RESOURCE_SCHEMA.md)
+	// ProviderData contains only provider-specific fields not covered by top-level spec fields
 	providerData := map[string]interface{}{
 		"namespace": signal.Namespace,
-		"resource": map[string]string{
-			"kind":      signal.Resource.Kind,
-			"name":      signal.Resource.Name,
-			"namespace": signal.Resource.Namespace,
-		},
-		"labels": signal.Labels,
+		"labels":    signal.Labels,
+		// Provider-specific fields can be added here based on signal.SourceType
+		// e.g., for Prometheus: "alertmanagerURL", "generatorURL"
+		// e.g., for AWS: "region", "accountId"
 	}
 
 	// Marshal to JSON
