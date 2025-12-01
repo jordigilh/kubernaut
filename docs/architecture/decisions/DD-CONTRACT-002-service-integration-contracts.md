@@ -1,8 +1,8 @@
 # DD-CONTRACT-002: Service Integration Contracts
 
 **Status**: ✅ Approved
-**Version**: 1.0
-**Date**: 2025-11-28
+**Version**: 1.2
+**Date**: 2025-12-01
 **Confidence**: 98%
 
 ---
@@ -38,8 +38,8 @@ This document defines the **authoritative API contracts** between AIAnalysis, Re
 │        │   waits for approval decision                                      │
 │        │                                                                    │
 │        │ THEN (if approved or no approval needed):                          │
-│        │   calls Data Storage API                                           │
-│        │   resolves workflow_id → container_image                           │
+│        │   reads containerImage from AIAnalysis.status.selectedWorkflow     │
+│        │   (NO catalog lookup - HolmesGPT-API resolved during MCP search)   │
 │        │                                                                    │
 │        ▼                                                                    │
 │  ┌─────────────┐     creates      ┌──────────────────┐                      │
@@ -283,12 +283,12 @@ spec:
     apiVersion: kubernaut.io/v1alpha1
     kind: RemediationRequest
 
-  # REQUIRED: Workflow reference (resolved from catalog)
+  # REQUIRED: Workflow reference (PASS THROUGH from AIAnalysis)
   workflowRef:
     workflowId: string        # From AIAnalysis.status.selectedWorkflow.workflowId
     version: string           # From AIAnalysis.status.selectedWorkflow.version
-    containerImage: string    # FROM CATALOG LOOKUP (not AIAnalysis)
-    containerDigest: string   # FROM CATALOG LOOKUP (not AIAnalysis)
+    containerImage: string    # PASS THROUGH from AIAnalysis.status.selectedWorkflow.containerImage
+    containerDigest: string   # PASS THROUGH from AIAnalysis.status.selectedWorkflow.containerDigest
 
   # REQUIRED: Parameters from LLM
   parameters:                 # map[string]string - copied from AIAnalysis
@@ -541,6 +541,7 @@ Before implementing any service, verify:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2025-12-01 | Fixed internal inconsistencies: Updated integration diagram and Contract 4 to consistently state RO passes through containerImage from AIAnalysis.status (no catalog lookup). Removed stale "FROM CATALOG LOOKUP" comments. |
 | 1.1 | 2025-11-28 | Updated contracts for HolmesGPT-API containerImage resolution (DD-CONTRACT-001 v1.2). RO no longer calls Data Storage. Added HolmesGPT-API amendment requirement. |
 | 1.0 | 2025-11-28 | Initial authoritative integration contracts |
 

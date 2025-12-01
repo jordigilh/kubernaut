@@ -4,8 +4,8 @@
 **Service Type**: CRD Controller
 **CRD**: RemediationRequest
 **Controller**: RemediationRequestReconciler
-**Version**: 1.0
-**Last Updated**: November 28, 2025
+**Version**: 1.2
+**Last Updated**: December 1, 2025
 **Status**: In Development
 
 ---
@@ -19,7 +19,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 1. **Lifecycle Orchestration**: Manage RemediationRequest phase transitions
 2. **Child CRD Management**: Create and monitor SignalProcessing, AIAnalysis, WorkflowExecution
 3. **Approval Orchestration**: Create RemediationApprovalRequest and NotificationRequest when needed
-4. **Catalog Lookup**: Resolve workflow_id to container image via Data Storage API
+4. **Data Pass-Through**: Pass workflow data from AIAnalysis.status to WorkflowExecution.spec (no catalog lookup)
 5. **Timeout Enforcement**: Enforce global and per-phase timeouts
 6. **Notification Triggering**: Create NotificationRequest CRDs for operator alerts
 
@@ -27,34 +27,40 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 ## 🎯 Business Requirements
 
-### Category 1: Workflow Catalog Integration
+### Category 1: Workflow Data Pass-Through
 
-#### BR-ORCH-025: Catalog Lookup Before WorkflowExecution
+#### BR-ORCH-025: Workflow Data Pass-Through to WorkflowExecution
 
-**Description**: RemediationOrchestrator MUST resolve `workflow_id` to `container_image` via Data Storage API before creating WorkflowExecution CRD, ensuring the workflow exists and capturing the image digest for audit.
+**Description**: RemediationOrchestrator MUST pass through workflow data (including `container_image` and `container_digest`) from AIAnalysis.status.selectedWorkflow to WorkflowExecution.spec.workflowRef without performing catalog lookups.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: The AIAnalysis output contains `workflow_id` (catalog reference), not the actual container image. RemediationOrchestrator must resolve this reference before creating WorkflowExecution to ensure the workflow exists and capture immutable image reference for audit trail.
+**Rationale**: HolmesGPT-API resolves `workflow_id → container_image` during MCP search (per DD-CONTRACT-001 v1.2). AIAnalysis.status.selectedWorkflow contains the fully resolved workflow reference including containerImage and containerDigest. RO's responsibility is to pass this data through to WorkflowExecution, not to perform additional catalog lookups.
 
 **Implementation**:
-- Call Data Storage API: `GET /api/v1/workflows/{workflow_id}`
-- Extract `container_image` and `container_digest` from response
-- Populate WorkflowExecution.spec.workflowRef with resolved values
-- Fail gracefully if workflow not found in catalog
+- Read `AIAnalysis.status.selectedWorkflow` when phase = "Completed"
+- Pass through all fields to `WorkflowExecution.spec.workflowRef`:
+  - `workflowId` ← `selectedWorkflow.workflowId`
+  - `version` ← `selectedWorkflow.version`
+  - `containerImage` ← `selectedWorkflow.containerImage` (resolved by HolmesGPT-API)
+  - `containerDigest` ← `selectedWorkflow.containerDigest` (resolved by HolmesGPT-API)
+- Pass through `parameters` unchanged (UPPER_SNAKE_CASE keys)
+- Pass through `confidence` and `rationale` for audit trail
+- Fail if `selectedWorkflow` is nil or missing required fields
 
 **Acceptance Criteria**:
-- ✅ Catalog lookup executed before WorkflowExecution creation
-- ✅ `container_image` and `container_digest` populated in WorkflowExecution
-- ✅ Workflow not found → RemediationRequest marked as Failed
-- ✅ Catalog lookup errors retried with backoff
+- ✅ RO does NOT call Data Storage API for workflow resolution
+- ✅ `container_image` and `container_digest` passed through from AIAnalysis.status
+- ✅ All workflow parameters passed through unchanged
+- ✅ Missing selectedWorkflow → RemediationRequest marked as Failed
+- ✅ Audit trail contains complete workflow selection context
 
 **Test Coverage**:
-- Unit: Catalog client mock tests
-- Integration: Data Storage API integration
-- E2E: End-to-end workflow resolution
+- Unit: Pass-through logic, field mapping
+- Integration: AIAnalysis → WorkflowExecution data flow
+- E2E: End-to-end workflow execution with resolved image
 
-**Related DDs**: DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)
+**Related DDs**: DD-CONTRACT-001 v1.2 (AIAnalysis ↔ WorkflowExecution Alignment - **AUTHORITATIVE**)
 **Related ADRs**: ADR-043 (Workflow Schema Definition)
 
 ---
@@ -298,13 +304,14 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2025-12-01 | **BREAKING**: BR-ORCH-025 updated - RO does NOT call Data Storage API. HolmesGPT-API resolves workflow_id → containerImage during MCP search. RO passes through from AIAnalysis.status. Aligned with DD-CONTRACT-001 v1.2 (authoritative). |
 | 1.1 | 2025-11-28 | Added BR-ORCH-029/030/031 for notification handling (cancellation, status tracking, cascade cleanup) |
 | 1.0 | 2025-11-28 | Initial BR document with catalog integration and timeout requirements |
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: November 28, 2025
+**Document Version**: 1.2
+**Last Updated**: December 1, 2025
 **Maintained By**: Kubernaut Architecture Team
 **Status**: In Development
 

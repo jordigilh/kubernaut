@@ -74,6 +74,19 @@ type RemediationRequestSpec struct {
 	// +kubebuilder:validation:Enum=kubernetes;aws;azure;gcp;datadog
 	TargetType string `json:"targetType"`
 
+	// ========================================
+	// TARGET RESOURCE IDENTIFICATION
+	// ========================================
+
+	// TargetResource identifies the Kubernetes resource that triggered this signal.
+	// Populated by Gateway from NormalizedSignal.Resource.
+	// Used by SignalProcessing for context enrichment and RO for workflow routing.
+	// For Kubernetes signals, this contains Kind, Name, Namespace of the affected resource.
+	// For non-Kubernetes signals (AWS, Datadog, etc.), this may be nil or contain
+	// provider-specific resource mapping (V2 feature).
+	// +optional
+	TargetResource *ResourceIdentifier `json:"targetResource,omitempty"`
+
 	// Temporal Data
 	// When the signal first started firing (from upstream source)
 	FiringTime metav1.Time `json:"firingTime"`
@@ -176,6 +189,22 @@ type TimeoutConfig struct {
 
 	// Overall workflow timeout (default: 1h)
 	OverallWorkflowTimeout metav1.Duration `json:"overallWorkflowTimeout,omitempty"`
+}
+
+// ResourceIdentifier uniquely identifies a Kubernetes resource.
+// Used for target resource identification across CRDs.
+// Per Gateway Team response (RESPONSE_TARGET_RESOURCE_SCHEMA.md), this is populated
+// by Gateway from NormalizedSignal.Resource and passed through to SignalProcessing.
+type ResourceIdentifier struct {
+	// Kind of the Kubernetes resource (e.g., "Pod", "Deployment", "Node", "StatefulSet")
+	Kind string `json:"kind"`
+
+	// Name of the Kubernetes resource instance
+	Name string `json:"name"`
+
+	// Namespace of the Kubernetes resource (empty for cluster-scoped resources like Node)
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // RemediationRequestStatus defines the observed state of RemediationRequest.
