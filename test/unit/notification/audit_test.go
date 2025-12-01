@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,10 +31,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 )
 
-func TestAuditHelpers(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Notification Audit Helpers Suite")
-}
+// Note: RunSpecs is called in suite_test.go - do not add another TestXxx function here
+// to avoid "RunSpecs called more than once" error
 
 var _ = Describe("Audit Helpers", func() {
 	var (
