@@ -171,7 +171,11 @@ spec:
                             - stateful
                             type: object
                           enrichmentQuality:
-                            description: Overall enrichment quality score (0.0-1.0)
+                            description: |-
+                              Overall enrichment quality score (0.0-1.0)
+                              1.0 = all enrichments successful, 0.0 = all failed
+                              CONSUMER: Remediation Orchestrator (RO) - NOT for LLM/HolmesGPT
+                              PURPOSE: RO uses this to detect degraded mode (< 0.8) and notify operators
                             maximum: 1
                             minimum: 0
                             type: number
@@ -222,6 +226,40 @@ spec:
                             required:
                             - namespace
                             type: object
+                          ownerChain:
+                            description: |-
+                              OwnerChain: K8s ownership traversal from signal source resource
+                              DD-WORKFLOW-001 v1.7: Used by HolmesGPT-API for 100% safe DetectedLabels validation
+                              SignalProcessing traverses metadata.ownerReferences to build this chain
+                              Example: Pod → ReplicaSet → Deployment
+                              Empty chain = orphan resource (no owners)
+                              HolmesGPT-API uses this to validate DetectedLabels applicability when RCA
+                              identifies a different resource than the original signal source
+                            items:
+                              description: "OwnerChainEntry represents a single entry
+                                in the K8s ownership chain\nDD-WORKFLOW-001 v1.7:
+                                SignalProcessing traverses ownerReferences to build
+                                this\nExample chain for a Pod owned by Deployment:\n\n\t[0]:
+                                {Namespace: \"prod\", Kind: \"ReplicaSet\", Name:
+                                \"api-7d8f9c6b5\"}\n\t[1]: {Namespace: \"prod\", Kind:
+                                \"Deployment\", Name: \"api\"}"
+                              properties:
+                                kind:
+                                  description: Kind of the owner resource (e.g., ReplicaSet,
+                                    Deployment, StatefulSet, DaemonSet)
+                                  type: string
+                                name:
+                                  description: Name of the owner resource
+                                  type: string
+                                namespace:
+                                  description: Namespace of the owner resource (empty
+                                    for cluster-scoped resources like Node)
+                                  type: string
+                              required:
+                              - kind
+                              - name
+                              type: object
+                            type: array
                         type: object
                       environment:
                         description: Environment classification
