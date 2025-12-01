@@ -55,11 +55,11 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 ## 📊 Implementation Status
 
-**Current Phase**: Phase 2 In Progress - 4 of 10 services production-ready (40%)
+**Current Phase**: Phase 2 In Progress - 4 of 9 services production-ready (44%)
 
 | Service | Status | Purpose | BR Coverage |
 |---------|--------|---------|-------------|
-| **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (100%) |
+| **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (240 tests: 120U+114I+6E2E) |
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (100%) |
 | **Dynamic Toolset Service** | ⏸️ **Deferred to V2.0** | Service discovery & toolset generation | 8 BRs (DD-016: V1.x uses static config) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | 12 BRs (100%) |
@@ -78,7 +78,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 - ⏸️ **Dynamic Toolset Deferred to V2.0**: Per DD-016, deferred to V2.0 (V1.x uses static config, redundant with HolmesGPT-API's built-in Prometheus discovery)
 - ✅ **E2E Test Optimization**: Parallel execution enabled, 2m37s runtime (~40% improvement)
 - ✅ **Production Deployment Ready**: In-cluster deployment manifests with RBAC, NetworkPolicy, ServiceMonitor
-- ✅ **RFC 7807 & Graceful Shutdown**: Implemented for Dynamic Toolset & HolmesGPT API (186 tests, 100% pass rate)
+- ✅ **RFC 7807 & Graceful Shutdown**: Implemented for HolmesGPT API (v3.1 extension, 100% pass rate)
 - ✅ **BR Documentation Complete**: 121 BRs documented across 5 services (100% coverage)
 - ✅ Gateway Service v1.0: 240/240 tests passing, 20 BRs, production-ready
 - ✅ Data Storage Service Phase 1: Unified audit table, PostgreSQL access layer (ADR-032)
@@ -248,17 +248,17 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 - **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows, microservices architecture
 - **E2E Tests**: **<10% coverage** - Critical end-to-end user journeys
 
-**Current Test Status**: ~1,177 tests passing (100% pass rate across all tiers)
+**Current Test Status**: ~1,196 tests passing (100% pass rate across all tiers)
 
 | Service | Unit Specs | Integration Specs | E2E Specs | Total | Confidence |
 |---------|------------|-------------------|-----------|-------|------------|
-| **Gateway v1.0** | 105 | 114 | 2 (+12 deferred to v1.1) | **221** | **100%** |
+| **Gateway v1.0** | 120 | 114 | 6 (+12 deferred to v1.1) | **240** | **100%** |
 | **Data Storage** | 475 | ~60 | - | **~535** | **98%** |
 | **Dynamic Toolset** | - | - | - | **Deferred to V2.0** | **DD-016** |
 | **Notification Service** | 140 | 97 | 12 | **249** | **100%** |
 | **HolmesGPT API v3.2** | 151 | 21 | - | **172** | **98%** |
 
-**Total**: ~871 unit specs + ~292 integration specs + 14 E2E specs = **~1,177 test specs**
+**Total**: ~886 unit specs + ~292 integration specs + 18 E2E specs = **~1,196 test specs**
 
 *Note: Gateway v1.0 has 2 E2E specs (Storm TTL, K8s API Rate Limiting), 12 additional E2E tests deferred to v1.1. Notification Service has 12 E2E specs (Kind-based file delivery + metrics validation). Dynamic Toolset (245 tests) deferred to V2.0 per DD-016. Integration spec counts are estimates.*
 
