@@ -507,4 +507,140 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// ✅ Event details provide AI with root cause context
 		})
 	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-TARGET-RESOURCE: Target Resource Population
+	// Business Outcome: SignalProcessing and RO can access resource info directly
+	// Reference: RESPONSE_TARGET_RESOURCE_SCHEMA.md - Option A
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Context("BR-GATEWAY-TARGET-RESOURCE: Target Resource in CRD (Integration)", func() {
+		It("populates spec.targetResource from Prometheus alert for downstream services", func() {
+			// BUSINESS SCENARIO: SignalProcessing receives CRD and needs resource info
+			// to query K8s API for context enrichment.
+			// MUST be able to access: rr.Spec.TargetResource.Kind, .Name, .Namespace
+			// WITHOUT parsing ProviderData JSON
+
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "PodCrashLooping",
+						"severity": "critical",
+						"namespace": "%s",
+						"pod": "payment-service-abc123"
+					},
+					"annotations": {
+						"summary": "Pod is crash looping"
+					},
+					"startsAt": "2025-10-22T12:00:00Z"
+				}]
+			}`, testNamespace))
+
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"Alert should create CRD")
+
+			// BUSINESS OUTCOME: CRD has spec.targetResource populated
+			var crdList remediationv1alpha1.RemediationRequestList
+			Eventually(func() int {
+				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+				Expect(err).NotTo(HaveOccurred())
+				return len(crdList.Items)
+			}, "5s", "100ms").Should(Equal(1), "CRD should be created")
+
+			crd := crdList.Items[0]
+
+			// INTEGRATION VERIFICATION: TargetResource is populated in actual K8s CRD
+			Expect(crd.Spec.TargetResource).NotTo(BeNil(),
+				"SignalProcessing MUST have TargetResource populated to enrich context")
+			Expect(crd.Spec.TargetResource.Kind).To(Equal("Pod"),
+				"SignalProcessing needs Kind to query correct K8s resource type")
+			Expect(crd.Spec.TargetResource.Name).To(Equal("payment-service-abc123"),
+				"SignalProcessing needs Name to query specific resource")
+			Expect(crd.Spec.TargetResource.Namespace).To(Equal(testNamespace),
+				"SignalProcessing needs Namespace to scope K8s API query")
+
+			// CORRECTNESS: ProviderData does NOT duplicate resource info
+			var providerData map[string]interface{}
+			err = json.Unmarshal(crd.Spec.ProviderData, &providerData)
+			Expect(err).NotTo(HaveOccurred(), "ProviderData should be valid JSON")
+			Expect(providerData).NotTo(HaveKey("resource"),
+				"ProviderData should NOT contain resource{} - data is in spec.targetResource")
+
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ spec.targetResource populated from Prometheus alert
+			// ✅ SignalProcessing can access resource info directly (no JSON parsing)
+			// ✅ No data duplication between spec.targetResource and ProviderData
+		})
+
+		It("populates spec.targetResource from Kubernetes event for downstream services", func() {
+			// BUSINESS SCENARIO: K8s event triggers remediation
+			// RO needs resource info for workflow routing decisions
+			// NOTE: Gateway only processes Warning/Error events (Normal events are filtered)
+
+			payload := []byte(fmt.Sprintf(`{
+				"type": "Warning",
+				"reason": "FailedMount",
+				"message": "Unable to attach or mount volumes: failed to attach volume",
+				"involvedObject": {
+					"kind": "Pod",
+					"name": "nginx-pod-abc123",
+					"namespace": "%s",
+					"apiVersion": "v1"
+				},
+				"firstTimestamp": "2025-10-22T12:00:00Z",
+				"lastTimestamp": "2025-10-22T12:00:00Z",
+				"count": 1,
+				"source": {
+					"component": "kubelet",
+					"host": "worker-node-1"
+				}
+			}`, testNamespace))
+
+			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL)
+			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// Warning events should create CRD
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"Warning event should create CRD")
+
+			// Verify CRD was created with TargetResource
+			var crdList remediationv1alpha1.RemediationRequestList
+			Eventually(func() int {
+				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+				Expect(err).NotTo(HaveOccurred())
+				return len(crdList.Items)
+			}, "5s", "100ms").Should(BeNumerically(">=", 1), "CRD should be created")
+
+			// Find the CRD for this event
+			var targetCRD *remediationv1alpha1.RemediationRequest
+			for i := range crdList.Items {
+				if crdList.Items[i].Spec.SignalType == "kubernetes-event" {
+					targetCRD = &crdList.Items[i]
+					break
+				}
+			}
+
+			Expect(targetCRD).NotTo(BeNil(), "K8s event CRD should exist")
+
+			// INTEGRATION VERIFICATION: TargetResource populated from K8s event
+			Expect(targetCRD.Spec.TargetResource).NotTo(BeNil(),
+				"RO MUST have TargetResource for workflow routing")
+			Expect(targetCRD.Spec.TargetResource.Kind).To(Equal("Pod"),
+				"RO uses Kind for resource-type-specific workflows")
+			Expect(targetCRD.Spec.TargetResource.Name).To(Equal("nginx-pod-abc123"),
+				"RO uses Name for targeting specific resources")
+
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ K8s events populate spec.targetResource
+			// ✅ RO can route workflows based on resource type
+		})
+	})
 })
