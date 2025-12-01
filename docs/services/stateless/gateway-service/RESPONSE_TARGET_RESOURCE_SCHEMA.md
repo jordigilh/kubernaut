@@ -3,7 +3,7 @@
 **From**: Gateway Service Team
 **To**: Remediation Orchestrator Team
 **Date**: 2025-12-01
-**Status**: ✅ APPROVED
+**Status**: ✅ IMPLEMENTED
 
 ---
 
@@ -113,15 +113,15 @@ func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 
 ## Timeline
 
-| Task | Owner | Dependency | ETA |
-|------|-------|------------|-----|
-| 1. Add `ResourceIdentifier` type | RO Team | None | Day 1 |
-| 2. Add `TargetResource` field to spec | RO Team | Task 1 | Day 1 |
-| 3. Run `make generate` for CRD | RO Team | Task 2 | Day 1 |
-| 4. Update Gateway `CRDCreator` | Gateway Team | Task 3 | Day 2 |
-| 5. Remove resource from ProviderData | Gateway Team | Task 4 | Day 2 |
-| 6. Update unit tests | Both Teams | Task 4-5 | Day 2-3 |
-| 7. Update integration tests | Both Teams | Task 6 | Day 3 |
+| Task | Owner | Dependency | Status |
+|------|-------|------------|--------|
+| 1. Add `ResourceIdentifier` type | RO Team | None | ✅ Complete |
+| 2. Add `TargetResource` field to spec | RO Team | Task 1 | ✅ Complete |
+| 3. Run `make generate` for CRD | RO Team | Task 2 | ✅ Complete |
+| 4. Update Gateway `CRDCreator` | Gateway Team | Task 3 | ✅ Complete |
+| 5. Remove resource from ProviderData | Gateway Team | Task 4 | ✅ Complete |
+| 6. Update unit tests | Both Teams | Task 4-5 | ⬜ Pending |
+| 7. Update integration tests | Both Teams | Task 6 | ⬜ Pending |
 
 ---
 
