@@ -5,9 +5,12 @@
 # Build stage - Red Hat UBI9 Go 1.24 toolset
 FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
 
-# Build arguments for multi-architecture support
+# Auto-detect target architecture from --platform flag
+# Podman/Docker automatically set TARGETARCH when --platform is specified
+ARG TARGETARCH
 ARG GOOS=linux
-ARG GOARCH=amd64
+# Use TARGETARCH if set (multi-arch build), otherwise detect from runtime
+ARG GOARCH=${TARGETARCH:-amd64}
 
 # Switch to root for package installation
 USER root
