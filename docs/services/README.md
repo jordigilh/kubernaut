@@ -1,8 +1,8 @@
 # Kubernaut Services Documentation
 
-**Version**: 2.2
+**Version**: 2.3
 **Last Updated**: 2025-12-01
-**Purpose**: Navigation hub for all Kubernaut V1 service specifications
+**Purpose**: Navigation hub for all Kubernaut V1.0 service specifications (8 active services)
 
 ---
 
@@ -59,11 +59,12 @@ Stateless HTTP API services:
 | 5 | Gateway Service | HTTP | ✅ **v1.0 PRODUCTION-READY** | 240 (120U+114I+6E2E) | 20 BRs (100%) |
 | 6 | Data Storage | HTTP | ✅ **Phase 1 PRODUCTION-READY** | ~535 (475U+60I) | 34 BRs (100%) |
 | 7 | HolmesGPT API | HTTP | ✅ **v3.2 PRODUCTION-READY** | 172 (151U+21I) | 47 BRs (100%) |
-| 8 | Dynamic Toolset | HTTP | ⏸️ **Deferred to V2.0** | - | 8 BRs (DD-016: static config in V1.x) |
-| 9 | Notification Controller | CRD | ✅ **PRODUCTION-READY** | 249 (140U+97I+12E2E) | 12 BRs (100%) |
-| 10 | ~~Context API~~ | HTTP | ❌ **DEPRECATED** | - | Replaced by Data Storage (DD-CONTEXT-006) |
+| 8 | Notification Controller | CRD | ✅ **PRODUCTION-READY** | 249 (140U+97I+12E2E) | 12 BRs (100%) |
+| 9 | ~~Dynamic Toolset~~ | HTTP | ❌ **Deferred to V2.0** | - | 8 BRs (DD-016: static config in V1.x) |
+| 10 | ~~Effectiveness Monitor~~ | HTTP | ❌ **Deferred to V1.1** | - | 10 BRs (DD-017: requires 8+ weeks of data) |
+| 11 | ~~Context API~~ | HTTP | ❌ **DEPRECATED** | - | Replaced by Data Storage (DD-CONTEXT-006) |
 
-**Overall**: ✅ **4/9 services** (44%) production-ready | **~1,196 tests** passing (100% pass rate)
+**Overall**: ✅ **4/8 services** (50%) production-ready | **~1,196 tests** passing (100% pass rate)
 
 ---
 
@@ -164,10 +165,10 @@ stateless/
 
 | Category | Count | Status |
 |----------|-------|--------|
-| **Services Active** | 9/9 | ✅ 100% (1 deprecated, 1 deferred to V2.0) |
-| **Production-Ready** | 4/9 | 🟡 44% |
-| **CRD Controllers** | 5 (1 ready) | 🟡 In Progress |
-| **HTTP Services** | 4 (3 ready, 1 deferred) | 🟡 75% Complete |
+| **Services Active (V1.0)** | 8/8 | ✅ 100% (1 deprecated, 1 deferred to V2.0, 1 deferred to V1.1) |
+| **Production-Ready** | 4/8 | ✅ 50% |
+| **CRD Controllers** | 4 (1 ready, 3 in progress) | 🔄 In Progress (Phases 3 & 4 simultaneous) |
+| **HTTP Services** | 4 (3 ready, 1 deferred) | ✅ 75% Complete |
 | **Total Tests** | ~1,196 | ✅ 100% Pass Rate |
 | **Total Test Coverage** | Unit 70%+ / Integration >50% / E2E <10% | ✅ Meeting Standards |
 
@@ -177,6 +178,7 @@ stateless/
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.3** | 2025-12-01 | **DD-017 Integration + Parallel Development**: Effectiveness Monitor deferred to V1.1 (DD-017, year-end timeline); V1.0 service count 9→8 services; Production-ready 4/9 (44%)→4/8 (50%); Added parallel development strategy (Phases 3 & 4 simultaneous for API contract validation); Updated CRD Controllers status (3 in progress) |
 | **2.2** | 2025-12-01 | **Test Count Corrections**: Gateway 221→240 tests (120U+114I+6E2E per GATEWAY_V1_PRODUCTION_READY.md); Total tests ~1,177→~1,196; Service count corrected to 4/9 (44%) - V1.0 has 9 services (11 original - Context API deprecated - Dynamic Toolset deferred) |
 | **2.1** | 2025-12-01 | **DD-016 Integration**: Dynamic Toolset deferred to V2.0 (static config in V1.x); Updated service count to 4/10 production-ready (40%); Updated test count to ~1,177 (removed Dynamic Toolset's 245 tests); Corrected HTTP Services to 3 ready (60%); Fixed Implementation Priorities (removed Context API reference) |
 | **2.0** | 2025-12-01 | Updated to reflect production-ready services: Gateway v1.0, Data Storage Phase 1, HolmesGPT API v3.2, Notification Controller (249 tests); Context API deprecated per DD-CONTEXT-006; Updated service count to 10 active services |
@@ -195,4 +197,4 @@ stateless/
 
 **Document Maintainer**: Kubernaut Documentation Team
 **Last Updated**: 2025-12-01
-**Status**: 🟡 Phase 2 In Progress - 4/9 Services Production-Ready (44%) | 1 Deferred to V2.0 (DD-016)
+**Status**: 🔄 Phases 3 & 4 Simultaneous - 4/8 Services Production-Ready (50%) | 1 Deferred to V2.0 (DD-016), 1 Deferred to V1.1 (DD-017)
