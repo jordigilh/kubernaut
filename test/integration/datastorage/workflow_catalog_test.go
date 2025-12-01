@@ -663,6 +663,96 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 	})
 
 	// ========================================
+	// TEST 5b: Container Image and Digest in Search Response
+	// ========================================
+	// DD-CONTRACT-001 v1.2: container_image and container_digest must be returned in search
+	// TDD RED Phase: This test should FAIL initially (fields not returned)
+	Context("when searching for workflows with container image", func() {
+		It("should return container_image and container_digest in search results", func() {
+			// ARRANGE: Create workflow WITH container_image and container_digest
+			workflowID := "test-container-image-" + testID
+			containerImage := "ghcr.io/kubernaut/pod-oom-recovery:v1.0.0"
+			containerDigest := "sha256:abc123def456789012345678901234567890123456789012345678901234"
+
+			labels := map[string]interface{}{
+				"signal_type": "OOMKilled",
+				"severity":    "critical",
+				"component":   "pod",
+				"environment": "production",
+				"priority":    "P0",
+			}
+			labelsJSON, err := json.Marshal(labels)
+			Expect(err).ToNot(HaveOccurred())
+
+			embedding := pgvector.NewVector(make([]float32, 768))
+			for i := range embedding.Slice() {
+				embedding.Slice()[i] = 0.85
+			}
+
+			workflow := &models.RemediationWorkflow{
+				WorkflowName:    workflowID,
+				Version:         "v1.0.0",
+				Name:            "Container Image Test Workflow",
+				Description:     "Test workflow for container image in search response",
+				Content:         "apiVersion: tekton.dev/v1beta1",
+				ContentHash:     "hash-container-image-" + testID,
+				Labels:          labelsJSON,
+				Embedding:       &embedding,
+				ContainerImage:  &containerImage,
+				ContainerDigest: &containerDigest,
+				Status:          "active",
+				IsLatestVersion: true,
+			}
+
+			err = workflowRepo.Create(testCtx, workflow)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ACT: Search for the workflow
+			queryEmbedding := pgvector.NewVector(make([]float32, 768))
+			for i := range queryEmbedding.Slice() {
+				queryEmbedding.Slice()[i] = 0.85
+			}
+
+			request := &models.WorkflowSearchRequest{
+				Query:     "OOM recovery container image test",
+				Embedding: &queryEmbedding,
+				TopK:      10,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "OOMKilled",
+					Severity:    "critical",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P0",
+				},
+			}
+
+			response, err := workflowRepo.SearchByEmbedding(testCtx, request)
+
+			// ASSERT: Search succeeds and returns the workflow
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+			Expect(len(response.Workflows)).To(BeNumerically(">=", 1), "Should return at least 1 workflow")
+
+			// Find our test workflow in results
+			var foundWorkflow *models.WorkflowSearchResult
+			for i := range response.Workflows {
+				if response.Workflows[i].WorkflowID == workflow.WorkflowID {
+					foundWorkflow = &response.Workflows[i]
+					break
+				}
+			}
+			Expect(foundWorkflow).ToNot(BeNil(), "Should find the test workflow in search results")
+
+			// ASSERT: container_image and container_digest are populated
+			// DD-CONTRACT-001 v1.2: These fields MUST be returned in search response
+			Expect(foundWorkflow.ContainerImage).To(Equal(containerImage),
+				"container_image should be returned in search response")
+			Expect(foundWorkflow.ContainerDigest).To(Equal(containerDigest),
+				"container_digest should be returned in search response")
+		})
+	})
+
+	// ========================================
 	// TEST 6: Automatic Embedding Generation
 	// ========================================
 	// BR-STORAGE-014: Workflow CRUD operations with embedding generation
