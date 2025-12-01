@@ -55,13 +55,13 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 ## 📊 Implementation Status
 
-**Current Phase**: Phase 2 Complete - 5 of 10 services production-ready (50%)
+**Current Phase**: Phase 2 In Progress - 4 of 10 services production-ready (40%)
 
 | Service | Status | Purpose | BR Coverage |
 |---------|--------|---------|-------------|
 | **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (100%) |
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (100%) |
-| **Dynamic Toolset Service** | ✅ **v1.0 PRODUCTION-READY** | Service discovery & toolset generation | 8 BRs (100%, E2E complete) |
+| **Dynamic Toolset Service** | ⏸️ **Deferred to V2.0** | Service discovery & toolset generation | 8 BRs (DD-016: V1.x uses static config) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | 12 BRs (100%) |
 | **HolmesGPT API** | ✅ **v3.2 PRODUCTION-READY** | AI investigation wrapper | 47 BRs (RFC 7807 + Graceful Shutdown + Recovery Prompt, 100%) |
 | **Signal Processing** | ⏸️ Phase 3 | Signal enrichment | - |
@@ -75,7 +75,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 **Recent Updates** (November 30, 2025):
 - ✅ **HolmesGPT API v3.2**: Recovery prompt implementation complete (DD-RECOVERY-002/003), DetectedLabels integration, mock LLM server for testing
 - ✅ **DEV_MODE Anti-Pattern Removed**: Tests now use mock LLM server with same code path as production
-- ✅ **Dynamic Toolset v1.0 Complete**: 245/245 tests (194 unit + 38 integration + 13 E2E), deployment manifests, operations runbook
+- ⏸️ **Dynamic Toolset Deferred to V2.0**: Per DD-016, deferred to V2.0 (V1.x uses static config, redundant with HolmesGPT-API's built-in Prometheus discovery)
 - ✅ **E2E Test Optimization**: Parallel execution enabled, 2m37s runtime (~40% improvement)
 - ✅ **Production Deployment Ready**: In-cluster deployment manifests with RBAC, NetworkPolicy, ServiceMonitor
 - ✅ **RFC 7807 & Graceful Shutdown**: Implemented for Dynamic Toolset & HolmesGPT API (186 tests, 100% pass rate)
@@ -248,19 +248,19 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 - **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows, microservices architecture
 - **E2E Tests**: **<10% coverage** - Critical end-to-end user journeys
 
-**Current Test Status**: 1,422+ tests passing (100% pass rate across all tiers)
+**Current Test Status**: ~1,177 tests passing (100% pass rate across all tiers)
 
 | Service | Unit Specs | Integration Specs | E2E Specs | Total | Confidence |
 |---------|------------|-------------------|-----------|-------|------------|
 | **Gateway v1.0** | 105 | 114 | 2 (+12 deferred to v1.1) | **221** | **100%** |
 | **Data Storage** | 475 | ~60 | - | **~535** | **98%** |
-| **Dynamic Toolset v1.0** | 194 | 38 | 13 | **245** | **100%** |
+| **Dynamic Toolset** | - | - | - | **Deferred to V2.0** | **DD-016** |
 | **Notification Service** | 140 | 97 | 12 | **249** | **100%** |
 | **HolmesGPT API v3.2** | 151 | 21 | - | **172** | **98%** |
 
-**Total**: ~1,065 unit specs + ~330 integration specs + 27 E2E specs = **~1,422 test specs**
+**Total**: ~871 unit specs + ~292 integration specs + 14 E2E specs = **~1,177 test specs**
 
-*Note: Gateway v1.0 has 2 E2E specs (Storm TTL, K8s API Rate Limiting), 12 additional E2E tests deferred to v1.1. Dynamic Toolset has 13 E2E specs (service discovery + K8s integration), Notification Service has 12 E2E specs (Kind-based file delivery + metrics validation). Integration spec counts are estimates.*
+*Note: Gateway v1.0 has 2 E2E specs (Storm TTL, K8s API Rate Limiting), 12 additional E2E tests deferred to v1.1. Notification Service has 12 E2E specs (Kind-based file delivery + metrics validation). Dynamic Toolset (245 tests) deferred to V2.0 per DD-016. Integration spec counts are estimates.*
 
 ---
 
@@ -322,7 +322,7 @@ Apache License 2.0
 
 **Kubernaut** - Building the next evolution of Kubernetes operations through intelligent, CRD-based microservices that learn and adapt.
 
-**Current Status**: Phase 2 Complete - 6 of 11 services production-ready (55%) | **Target**: Week 13 for V1 completion
+**Current Status**: Phase 2 In Progress - 4 of 10 services production-ready (40%) | 1 deferred to V2.0 (DD-016) | **Target**: Week 13 for V1 completion
 
 ---
 
