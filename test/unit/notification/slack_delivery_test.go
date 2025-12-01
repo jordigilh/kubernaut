@@ -196,13 +196,24 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 
 	Context("when context is cancelled", func() {
 		It("should respect context cancellation", func() {
-			// Create a server that delays response
+			// Use a channel to signal handler completion for clean shutdown
+			handlerDone := make(chan struct{})
+
+			// Create a server that waits for context cancellation
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Intentionally delay to allow context cancellation
+				defer close(handlerDone)
+				// Wait for context cancellation
 				<-r.Context().Done()
-				w.WriteHeader(http.StatusOK)
+				// Don't write response after context cancelled
 			}))
-			defer server.Close()
+			defer func() {
+				// Wait for handler to finish before closing server to avoid blocking
+				select {
+				case <-handlerDone:
+				case <-time.After(2 * time.Second):
+				}
+				server.Close()
+			}()
 
 			service = delivery.NewSlackDeliveryService(server.URL)
 
@@ -231,18 +242,24 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 			It("should classify webhook timeout as retryable error (BR-NOT-052: Retry on Timeout)", func() {
 				// TDD RED: Test that timeout is classified as retryable
 
+				// Use a channel to signal handler completion for clean shutdown
+				handlerDone := make(chan struct{})
+
 				// Create mock server that delays response beyond timeout
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// Simulate slow webhook response (10 seconds)
-					select {
-					case <-time.After(10 * time.Second):
-						w.WriteHeader(http.StatusOK)
-					case <-r.Context().Done():
-						// Client timeout - expected behavior
-						return
-					}
+					defer close(handlerDone)
+					// Simulate slow webhook response - wait for request context to be cancelled
+					<-r.Context().Done()
+					// Don't write response after context cancelled
 				}))
-				defer server.Close()
+				defer func() {
+					// Wait for handler to finish before closing server to avoid blocking
+					select {
+					case <-handlerDone:
+					case <-time.After(2 * time.Second):
+					}
+					server.Close()
+				}()
 
 				service = delivery.NewSlackDeliveryService(server.URL)
 
@@ -283,12 +300,24 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 			It("should handle webhook timeout and preserve error details for audit trail (BR-NOT-051: Audit Trail)", func() {
 				// TDD RED: Test that timeout errors include actionable details
 
-				// Create mock server with timeout
+				// Use a channel to signal handler completion for clean shutdown
+				handlerDone := make(chan struct{})
+
+				// Create mock server with timeout - wait for context cancellation
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					time.Sleep(5 * time.Second) // Longer than our timeout
-					w.WriteHeader(http.StatusOK)
+					defer close(handlerDone)
+					// Wait for request context to be cancelled (timeout)
+					<-r.Context().Done()
+					// Don't write response after context cancelled
 				}))
-				defer server.Close()
+				defer func() {
+					// Wait for handler to finish before closing server to avoid blocking
+					select {
+					case <-handlerDone:
+					case <-time.After(2 * time.Second):
+					}
+					server.Close()
+				}()
 
 				service = delivery.NewSlackDeliveryService(server.URL)
 
