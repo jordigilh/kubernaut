@@ -57,13 +57,18 @@ type SignalProcessingSpec struct {
 	// ========================================
 	// SIGNAL CLASSIFICATION (From RemediationRequest)
 	// ========================================
-	// Environment: "prod", "staging", "dev"
-	// +kubebuilder:validation:Enum=prod;staging;dev
+	// Environment value provided by Rego policies - no enum enforcement
+	// Examples: "production", "staging", "development", "qa-eu", "canary"
+	// GAP-C1-01 FIX: Changed from Enum=prod;staging;dev to free-text
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	Environment string `json:"environment"`
 
-	// Priority assigned by Gateway (P0=critical, P1=high, P2=normal)
-	// +kubebuilder:validation:Enum=P0;P1;P2
-	// +kubebuilder:validation:Pattern="^P[0-2]$"
+	// Priority value provided by Rego policies - no enum enforcement
+	// Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
+	// GAP-C1-02 FIX: Changed from Enum=P0;P1;P2 + Pattern to free-text
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	Priority string `json:"priority"`
 
 	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", etc.
@@ -128,6 +133,18 @@ type SignalProcessingSpec struct {
 
 	// Number of alerts in the storm
 	StormAlertCount int `json:"stormAlertCount,omitempty"`
+
+	// Storm type classification
+	// GAP-C1-05 FIX: Added field for contract alignment with RemediationRequest
+	// Values: "rate" (frequency-based storm) or "pattern" (similar alerts storm)
+	// +kubebuilder:validation:MaxLength=63
+	StormType string `json:"stormType,omitempty"`
+
+	// Time window used for storm detection
+	// GAP-C1-06 FIX: Added field for contract alignment with RemediationRequest
+	// Format: duration string (e.g., "5m", "1h")
+	// +kubebuilder:validation:MaxLength=63
+	StormWindow string `json:"stormWindow,omitempty"`
 
 	// ========================================
 	// CONFIGURATION (Processor-Specific)

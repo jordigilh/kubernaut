@@ -103,11 +103,11 @@ spec:
                   ========================================
                   SIGNAL CLASSIFICATION (From RemediationRequest)
                   ========================================
-                  Environment: "prod", "staging", "dev"
-                enum:
-                - prod
-                - staging
-                - dev
+                  Environment value provided by Rego policies - no enum enforcement
+                  Examples: "production", "staging", "development", "qa-eu", "canary"
+                  GAP-C1-01 FIX: Changed from Enum=prod;staging;dev to free-text
+                maxLength: 63
+                minLength: 1
                 type: string
               firingTime:
                 description: |-
@@ -129,12 +129,12 @@ spec:
                 format: byte
                 type: string
               priority:
-                description: Priority assigned by Gateway (P0=critical, P1=high, P2=normal)
-                enum:
-                - P0
-                - P1
-                - P2
-                pattern: ^P[0-2]$
+                description: |-
+                  Priority value provided by Rego policies - no enum enforcement
+                  Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
+                  GAP-C1-02 FIX: Changed from Enum=P0;P1;P2 + Pattern to free-text
+                maxLength: 63
+                minLength: 1
                 type: string
               providerData:
                 description: |-
@@ -248,6 +248,20 @@ spec:
               stormAlertCount:
                 description: Number of alerts in the storm
                 type: integer
+              stormType:
+                description: |-
+                  Storm type classification
+                  GAP-C1-05 FIX: Added field for contract alignment with RemediationRequest
+                  Values: "rate" (frequency-based storm) or "pattern" (similar alerts storm)
+                maxLength: 63
+                type: string
+              stormWindow:
+                description: |-
+                  Time window used for storm detection
+                  GAP-C1-06 FIX: Added field for contract alignment with RemediationRequest
+                  Format: duration string (e.g., "5m", "1h")
+                maxLength: 63
+                type: string
               targetResource:
                 description: |-
                   ========================================
