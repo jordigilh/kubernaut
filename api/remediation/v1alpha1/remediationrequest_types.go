@@ -79,13 +79,11 @@ type RemediationRequestSpec struct {
 	// ========================================
 
 	// TargetResource identifies the Kubernetes resource that triggered this signal.
-	// Populated by Gateway from NormalizedSignal.Resource.
+	// Populated by Gateway from NormalizedSignal.Resource - REQUIRED.
 	// Used by SignalProcessing for context enrichment and RO for workflow routing.
 	// For Kubernetes signals, this contains Kind, Name, Namespace of the affected resource.
-	// For non-Kubernetes signals (AWS, Datadog, etc.), this may be nil or contain
-	// provider-specific resource mapping (V2 feature).
-	// +optional
-	TargetResource *ResourceIdentifier `json:"targetResource,omitempty"`
+	// +kubebuilder:validation:Required
+	TargetResource ResourceIdentifier `json:"targetResource"`
 
 	// Temporal Data
 	// When the signal first started firing (from upstream source)

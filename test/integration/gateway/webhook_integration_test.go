@@ -556,8 +556,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			crd := crdList.Items[0]
 
 			// INTEGRATION VERIFICATION: TargetResource is populated in actual K8s CRD
-			Expect(crd.Spec.TargetResource).NotTo(BeNil(),
-				"SignalProcessing MUST have TargetResource populated to enrich context")
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
 			Expect(crd.Spec.TargetResource.Kind).To(Equal("Pod"),
 				"SignalProcessing needs Kind to query correct K8s resource type")
 			Expect(crd.Spec.TargetResource.Name).To(Equal("payment-service-abc123"),
@@ -631,8 +630,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			Expect(targetCRD).NotTo(BeNil(), "K8s event CRD should exist")
 
 			// INTEGRATION VERIFICATION: TargetResource populated from K8s event
-			Expect(targetCRD.Spec.TargetResource).NotTo(BeNil(),
-				"RO MUST have TargetResource for workflow routing")
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
 			Expect(targetCRD.Spec.TargetResource.Kind).To(Equal("Pod"),
 				"RO uses Kind for resource-type-specific workflows")
 			Expect(targetCRD.Spec.TargetResource.Name).To(Equal("nginx-pod-abc123"),

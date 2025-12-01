@@ -496,16 +496,22 @@ func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 // - Additional context for decision-making
 // buildTargetResource constructs the ResourceIdentifier from NormalizedSignal.Resource
 // This is used by SignalProcessing for context enrichment and RO for workflow routing.
-// Returns nil if no resource info is available (non-K8s signals).
-func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) *remediationv1alpha1.ResourceIdentifier {
-	// Check if resource info is available
-	if signal.Resource.Kind == "" && signal.Resource.Name == "" {
-		return nil
+// TargetResource is REQUIRED - Gateway MUST always populate this field.
+// For signals without explicit resource info, returns ResourceIdentifier with Kind="Unknown".
+func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remediationv1alpha1.ResourceIdentifier {
+	// TargetResource is required - provide defaults if no resource info available
+	kind := signal.Resource.Kind
+	name := signal.Resource.Name
+	if kind == "" {
+		kind = "Unknown"
+	}
+	if name == "" {
+		name = "unknown"
 	}
 
-	return &remediationv1alpha1.ResourceIdentifier{
-		Kind:      signal.Resource.Kind,
-		Name:      signal.Resource.Name,
+	return remediationv1alpha1.ResourceIdentifier{
+		Kind:      kind,
+		Name:      name,
 		Namespace: signal.Resource.Namespace,
 	}
 }
