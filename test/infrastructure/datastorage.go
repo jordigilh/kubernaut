@@ -606,7 +606,7 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 		"017_add_workflow_schema_fields.sql",
 		"018_rename_execution_bundle_to_container_image.sql",
 		"019_uuid_primary_key.sql",
-		"999_add_nov_2025_partition.sql",
+		"020_add_workflow_label_columns.sql", // DD-WORKFLOW-001 v1.6: custom_labels + detected_labels
 		"1000_create_audit_events_partitions.sql",
 	}
 
@@ -1374,7 +1374,7 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 		"017_add_workflow_schema_fields.sql",
 		"018_rename_execution_bundle_to_container_image.sql",
 		"019_uuid_primary_key.sql",
-		"999_add_nov_2025_partition.sql",
+		"020_add_workflow_label_columns.sql", // DD-WORKFLOW-001 v1.6: custom_labels + detected_labels
 		"1000_create_audit_events_partitions.sql",
 	}
 
