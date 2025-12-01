@@ -6,8 +6,8 @@ nodes:
   # This eliminates kubectl port-forward instability for E2E tests
   # Using 8081 on host (gateway uses 8080) - proven port pattern
   extraPortMappings:
-  - containerPort: 30090  # Notification metrics NodePort in cluster
-    hostPort: 9090        # Port on host machine (localhost:9090) - controller-runtime default
+  - containerPort: 30186  # Notification metrics NodePort (per DD-TEST-001)
+    hostPort: 9186        # Port on host machine (localhost:9186)
     protocol: TCP
   # Mount host directory for E2E file delivery validation
   # This allows tests to directly read files written by FileService

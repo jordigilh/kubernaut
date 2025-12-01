@@ -202,15 +202,15 @@ var _ = SynchronizedBeforeSuite(
 	Expect(err).ToNot(HaveOccurred(), "HostPath directory should exist")
 
 	// Wait for Notification Controller metrics NodePort to be responsive
-	// NodePort 30090 (in cluster) → localhost:9090 (on host via Kind extraPortMappings)
-	// Using controller-runtime's default metrics port :9090
+	// NodePort 30186 (in cluster) → localhost:9186 (on host via Kind extraPortMappings)
+	// Per DD-TEST-001 port allocation strategy
 	logger.Info("⏳ Waiting for Notification Controller metrics NodePort to be responsive...")
 
 	// Give Kind a moment to set up port forwarding after deployment
 	logger.Info("Waiting 5 seconds for Kind port mapping to stabilize...")
 	time.Sleep(5 * time.Second)
 
-	metricsURL := "http://localhost:9090/metrics"  // controller-runtime default metrics port
+	metricsURL := "http://localhost:9186/metrics"  // Per DD-TEST-001
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 
 	attemptCount := 0
@@ -251,13 +251,10 @@ var _ = SynchronizedAfterSuite(
 			"process", GinkgoParallelProcess())
 		logger.Info("Notification E2E Process Cleanup", "process", GinkgoParallelProcess())
 
-		// Clean up E2E file output directory
-		if e2eFileOutputDir != "" {
-			os.RemoveAll(e2eFileOutputDir)
-			logger.Info("Cleaned up file output directory",
-				"process", GinkgoParallelProcess(),
-				"dir", e2eFileOutputDir)
-		}
+		// NOTE: Do NOT clean up e2eFileOutputDir here!
+		// It's a shared HostPath directory used by all parallel processes.
+		// If we clean it here, parallel processes will race and delete each other's files.
+		// Cleanup happens in cluster cleanup (second function) after all tests complete.
 
 		// Cancel context
 		if cancel != nil {
