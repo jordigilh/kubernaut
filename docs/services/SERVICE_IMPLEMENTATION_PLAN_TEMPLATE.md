@@ -1,13 +1,23 @@
 # [Service Name] - Implementation Plan Template
 
 **Filename Convention**: `IMPLEMENTATION_PLAN_V<semantic_version>.md` (e.g., `IMPLEMENTATION_PLAN_V1.3.md`)
-**Version**: v2.9 - CODE EXAMPLE DD-005 COMPLIANCE
-**Last Updated**: 2025-11-30
+**Version**: v3.0 - CROSS-TEAM VALIDATION + CRD API GROUP STANDARD
+**Last Updated**: 2025-12-01
 **Timeline**: [X] days (11-12 days typical)
-**Status**: ✅ Production-Ready Template (98% Confidence Standard)
+**Status**: 📋 DRAFT | ⏳ IN REVIEW | ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Matches Data Storage v4.1 and Notification V3.0 standards
 
 **Change Log**:
+- **v3.0** (2025-12-01): 🎯 **CROSS-TEAM VALIDATION + CRD API GROUP STANDARD**
+  - ✅ **Cross-Team Validation Section**: New section for multi-team dependency sign-off ⭐ NEW
+  - ✅ **HANDOFF/RESPONSE Pattern**: Documentation for cross-team validation records ⭐ NEW
+  - ✅ **Pre-Implementation Validation Gate**: Formal checklist before Day 1 ⭐ NEW
+  - ✅ **CRD API Group Standard**: DD-CRD-001 unified `.ai` domain for CRD controllers ⭐ NEW
+  - ✅ **Industry Best Practices Table**: Reusable format for architectural justification ⭐ NEW
+  - ✅ **Risk Mitigation Status Tracking**: Links risks to specific days with status tracking ⭐ NEW
+  - ✅ **Port Allocation Consolidated Table**: Enhanced DD-TEST-001 compliance format ⭐ NEW
+  - 📏 **Template size**: ~7,600 lines (growth for cross-team validation patterns)
+  - 📏 **Source**: SignalProcessing IMPLEMENTATION_PLAN_V1.16 learnings (100% validation confidence)
 - **v2.9** (2025-11-30): 🎯 **CODE EXAMPLE DD-005 COMPLIANCE**
   - ✅ **Shared Library Extraction Examples**: Updated to use `logr.Logger` (per DD-005 v2.0)
   - ✅ **Redis Cache Example**: Changed from `*zap.Logger` to `logr.Logger` in "After" section
@@ -116,41 +126,45 @@
 | [Naming Convention](#-naming-convention) | ~48 | File naming patterns and anti-patterns |
 | [Document Purpose](#document-purpose) | ~175 | Template history and key improvements |
 | [Prerequisites Checklist](#prerequisites-checklist) | ~209 | Pre-Day 1 requirements |
-| [Integration Test Environment Decision](#-integration-test-environment-decision-v13-) | ~230 | KIND/envtest/Podman/Mocks decision tree |
-| [Timeline Overview](#timeline-overview) | ~335 | Phase breakdown (11-12 days) |
+| [Cross-Team Validation](#-cross-team-validation--v30-new---scope-common-all-services) | ~365 | Multi-team dependency sign-off ⭐ V3.0 |
+| [Integration Test Environment Decision](#-integration-test-environment-decision-v13-) | ~430 | KIND/envtest/Podman/Mocks decision tree |
+| [Risk Assessment Matrix](#️-risk-assessment-matrix--v28-new---scope-common-all-services) | ~760 | Risk identification and mitigation |
+|    └─ [Risk Mitigation Status Tracking](#risk-mitigation-status-tracking--v30-new) | ~795 | Day-linked risk tracking ⭐ V3.0 |
+| [Timeline Overview](#timeline-overview) | ~535 | Phase breakdown (11-12 days) |
 | **Day-by-Day Breakdown** | | |
-| ├─ [Day 1: Foundation](#day-1-foundation-8h) | ~351 | Types, interfaces, K8s client |
-| ├─ [Days 2-6: Core Implementation](#days-2-6-core-implementation-5-days-8h-each) | ~414 | Business logic components |
-|    └─ [Error Handling Philosophy](#-error-handling-philosophy-template--v20) | ~694 | Day 6 EOD deliverable |
-| ├─ [Day 7: Server + API + Metrics](#day-7-server--api--metrics-8h) | ~1023 | Integration, metrics (10+) |
-|    └─ [Metrics Validation Commands](#-metrics-validation-commands-template-day-7) | ~3994 | Day 7 validation |
-| ├─ [Day 8: Unit Tests](#day-8-unit-tests-8h) | ~1386 | All component unit tests (parallel: 4 procs) |
-| ├─ [Days 9-10: Testing](#day-9-unit-tests-part-2-8h) | ~2276 | Integration + E2E (parallel: 4 procs) |
-|    └─ [Edge Case Categories](#-edge-case-categories-template-days-9-10) | ~3962 | Days 9-10 test coverage |
-| ├─ [Day 11: Documentation](#day-11-comprehensive-documentation-8h--v20-enhanced) | ~2655 | README, design decisions |
-| └─ [Day 12: Production Readiness](#day-12-check-phase--production-readiness--v20-comprehensive-8h) | ~3165 | Checklist, handoff |
-|    ├─ [Production Runbooks](#-production-runbooks-template-day-12-deliverable) | ~3895 | Day 12 deliverable |
-|    ├─ [Lessons Learned](#-lessons-learned-template-day-12) | ~4041 | Day 12 deliverable |
-|    ├─ [Technical Debt](#-technical-debt-template-day-12) | ~4071 | Day 12 deliverable |
-|    └─ [Team Handoff Notes](#-team-handoff-notes-template-day-12) | ~4091 | Day 12 deliverable |
-| [Critical Checkpoints](#critical-checkpoints-from-gateway-learnings) | ~3518 | 5 gateway learnings |
-| [Documentation Standards](#documentation-standards) | ~3547 | Daily status docs, DD format |
-| [Testing Strategy](#testing-strategy) | ~3610 | Test distribution, table-driven patterns |
-| [Performance Targets](#performance-targets) | ~3791 | Latency, throughput metrics |
-| [Common Pitfalls](#common-pitfalls-to-avoid) | ~3808 | Do's and don'ts |
-| [Success Criteria](#success-criteria) | ~3832 | Completion checklist |
-| [Makefile Targets](#makefile-targets) | ~3856 | Development commands |
+| ├─ [Day 1: Foundation](#day-1-foundation-8h) | ~551 | Types, interfaces, K8s client |
+| ├─ [Days 2-6: Core Implementation](#days-2-6-core-implementation-5-days-8h-each) | ~614 | Business logic components |
+|    └─ [Error Handling Philosophy](#-error-handling-philosophy-template--v20) | ~894 | Day 6 EOD deliverable |
+| ├─ [Day 7: Server + API + Metrics](#day-7-server--api--metrics-8h) | ~1223 | Integration, metrics (10+) |
+|    └─ [Metrics Validation Commands](#-metrics-validation-commands-template-day-7) | ~4194 | Day 7 validation |
+| ├─ [Day 8: Unit Tests](#day-8-unit-tests-8h) | ~1586 | All component unit tests (parallel: 4 procs) |
+| ├─ [Days 9-10: Testing](#day-9-unit-tests-part-2-8h) | ~2476 | Integration + E2E (parallel: 4 procs) |
+|    └─ [Edge Case Categories](#-edge-case-categories-template-days-9-10) | ~4162 | Days 9-10 test coverage |
+| ├─ [Day 11: Documentation](#day-11-comprehensive-documentation-8h--v20-enhanced) | ~2855 | README, design decisions |
+| └─ [Day 12: Production Readiness](#day-12-check-phase--production-readiness--v20-comprehensive-8h) | ~3365 | Checklist, handoff |
+|    ├─ [Production Runbooks](#-production-runbooks-template-day-12-deliverable) | ~4095 | Day 12 deliverable |
+|    ├─ [Lessons Learned](#-lessons-learned-template-day-12) | ~4241 | Day 12 deliverable |
+|    ├─ [Technical Debt](#-technical-debt-template-day-12) | ~4271 | Day 12 deliverable |
+|    └─ [Team Handoff Notes](#-team-handoff-notes-template-day-12) | ~4291 | Day 12 deliverable |
+| [Critical Checkpoints](#critical-checkpoints-from-gateway-learnings) | ~3718 | 5 gateway learnings |
+| [Documentation Standards](#documentation-standards) | ~3747 | Daily status docs, DD format |
+| [Testing Strategy](#testing-strategy) | ~3810 | Test distribution, table-driven patterns |
+| [Performance Targets](#performance-targets) | ~3991 | Latency, throughput metrics |
+| [Common Pitfalls](#common-pitfalls-to-avoid) | ~4008 | Do's and don'ts |
+| [Success Criteria](#success-criteria) | ~4032 | Completion checklist |
+| [Makefile Targets](#makefile-targets) | ~4056 | Development commands |
 | **Appendices** | | |
-| ├─ [Appendix A: EOD Templates](#-appendix-a-complete-eod-documentation-templates--v20) | ~3906 | Days 1, 4, 7 templates |
-| ├─ [Appendix B: CRD Controller](#-appendix-b-crd-controller-variant--v20) | ~4301 | Reconciliation patterns |
-| └─ [Appendix C: Confidence Assessment](#-appendix-c-confidence-assessment-methodology--v20) | ~4646 | Evidence-based calculation |
+| ├─ [Appendix A: EOD Templates](#-appendix-a-complete-eod-documentation-templates--v20) | ~4106 | Days 1, 4, 7 templates |
+| ├─ [Appendix B: CRD Controller](#-appendix-b-crd-controller-variant--v20) | ~4501 | Reconciliation patterns |
+|    └─ [CRD API Group Standard](#-crd-api-group-standard--v30-new) | ~4510 | DD-CRD-001 unified `.ai` domain ⭐ V3.0 |
+| └─ [Appendix C: Confidence Assessment](#-appendix-c-confidence-assessment-methodology--v20) | ~4846 | Evidence-based calculation |
 | **Language/Deployment Patterns** | | |
-| ├─ [Python Service Adaptation](#-python-service-adaptation) | ~5025 | Python-specific patterns |
-| ├─ [Sidecar Deployment Pattern](#-sidecar-deployment-pattern) | ~5150 | K8s sidecar examples |
-| ├─ [Shared Library Extraction](#-shared-library-extraction) | ~5305 | ROI analysis, Redis example |
-| └─ [Multi-Language Services](#-multi-language-services) | ~5471 | Go+Python structure |
-| [Enhanced Error Handling](#-enhanced-error-handling-philosophy) | ~5620 | Graceful degradation |
-| [Version History](#version-history) | ~5788 | Template changelog |
+| ├─ [Python Service Adaptation](#-python-service-adaptation) | ~5225 | Python-specific patterns |
+| ├─ [Sidecar Deployment Pattern](#-sidecar-deployment-pattern) | ~5350 | K8s sidecar examples |
+| ├─ [Shared Library Extraction](#-shared-library-extraction) | ~5505 | ROI analysis, Redis example |
+| └─ [Multi-Language Services](#-multi-language-services) | ~5671 | Go+Python structure |
+| [Enhanced Error Handling](#-enhanced-error-handling-philosophy) | ~5820 | Graceful degradation |
+| [Version History](#version-history) | ~5988 | Template changelog |
 
 ---
 
@@ -358,6 +372,71 @@ Before starting Day 1, ensure:
   - [ ] Complete Integration Test Examples (Day 8 Enhanced)
   - [ ] Phase 4 Documentation Templates (Days 10-12 Enhanced)
   - [ ] Confidence Assessment Methodology (Day 12 Enhanced)
+- [ ] **Cross-team dependencies validated** (see Cross-Team Validation section below) ⭐ V3.0 NEW
+
+---
+
+## 🤝 **Cross-Team Validation** ⭐ V3.0 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**Purpose**: Formally validate all cross-team dependencies before starting implementation.
+
+### **When to Use This Section**
+
+Use cross-team validation when your service:
+- Consumes data from another service (e.g., CRD status fields)
+- Produces data consumed by another service (e.g., API responses)
+- Has shared type definitions (e.g., `EnrichmentResults`)
+- Requires coordination on naming conventions, field paths, or schemas
+
+### **Cross-Team Validation Status Template**
+
+> **Validation Status**: 📋 DRAFT | ⏳ IN REVIEW | ✅ VALIDATED
+>
+> | Team | Validation Topic | Status | Record |
+> |------|-----------------|--------|--------|
+> | [Team Name] | [What needs validation] | ⬜ Pending | - |
+> | [Team Name] | [What needs validation] | ⏳ In Review | [HANDOFF_REQUEST_*.md] |
+> | [Team Name] | [What needs validation] | ✅ Complete | [RESPONSE_*.md] |
+
+### **HANDOFF/RESPONSE Pattern**
+
+For cross-team validations, use the HANDOFF/RESPONSE document pattern:
+
+**File Naming Convention**:
+- `HANDOFF_REQUEST_[TOPIC].md` - Request sent to another team
+- `RESPONSE_[TOPIC].md` - Response received from that team
+
+**Validation Workflow**:
+1. **Create** `HANDOFF_REQUEST_*.md` with questions, proposals, or validation needs
+2. **Send** to dependent team for review
+3. **Team responds** in `RESPONSE_*.md` (or updates the handoff inline)
+4. **Update status** from ⬜ Pending → ✅ Complete when confirmed
+5. **Plan status** changes to ✅ VALIDATED when ALL dependencies are complete
+
+**Example**:
+```
+Service: Signal Processing
+├── HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md    ← Sent to AI Analysis team
+├── HANDOFF_REQUEST_GATEWAY_LABEL_PASSTHROUGH.md ← Sent to Gateway team
+├── RESPONSE_CUSTOM_LABELS_VALIDATION.md        ← From HolmesGPT-API team
+└── RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md       ← From Gateway team
+```
+
+### **Pre-Implementation Validation Gate**
+
+> **🚨 BLOCKING REQUIREMENT**: Do NOT start Day 1 until ALL cross-team validations are ✅ Complete.
+
+**Validation Checklist**:
+- [ ] All upstream data contracts validated (data you CONSUME)
+- [ ] All downstream data contracts validated (data you PRODUCE)
+- [ ] Shared type definitions aligned across teams
+- [ ] Naming conventions agreed (snake_case vs camelCase, kebab-case for K8s)
+- [ ] Field paths confirmed (e.g., `spec.analysisRequest.signalContext.enrichmentResults`)
+- [ ] Integration points documented with examples
+
+**Confidence Impact**:
+- Without validation: Maximum 85% confidence (integration risk)
+- With validation: 100% confidence achievable (contracts verified)
 
 ### 📋 **Pre-Implementation ADR/DD Validation Checklist** ⭐ V2.5 NEW
 
@@ -793,6 +872,31 @@ Before starting Day 1:
 - **Mitigate**: Must have mitigation plan before proceeding
 - **Monitor**: Proceed with monitoring plan
 - **Accept**: Proceed with documented acceptance
+
+### **Risk Mitigation Status Tracking** ⭐ V3.0 NEW
+
+**Purpose**: Link identified risks to specific implementation days and track mitigation status.
+
+| Risk # | Action Required | Day | Status |
+|--------|-----------------|-----|--------|
+| 1 | [Specific mitigation implementation] | Day X | ⬜ Pending |
+| 2 | [Specific mitigation implementation] | Day Y | ⬜ Pending |
+| 3 | [Specific mitigation implementation] | Day Z | ⬜ Pending |
+
+**Status Legend**:
+- ⬜ Pending: Not yet implemented
+- 🔄 In Progress: Currently being addressed
+- ✅ Complete: Mitigation implemented and tested
+- ❌ Blocked: Cannot proceed (escalate)
+
+**Example** (from Signal Processing):
+| Risk # | Action Required | Day | Status |
+|--------|-----------------|-----|--------|
+| 1 | Implement `buildDegradedContext()` for K8s API failures | Day 3 | ⬜ Pending |
+| 2 | Add Rego timeout (100ms) and fallback matrix | Day 5 | ⬜ Pending |
+| 3 | Use `audit.NewBufferedStore()` with retry | Day 8 | ⬜ Pending |
+
+**Validation**: Update status to ✅ Complete when mitigation is implemented AND tested.
 
 ---
 
@@ -3360,15 +3464,25 @@ var _ = SynchronizedBeforeSuite(
 )
 ```
 
-**Port Allocation Quick Reference** (from DD-TEST-001):
-| Service | Host Port | NodePort | Metrics Host | Metrics NodePort |
-|---------|-----------|----------|--------------|------------------|
-| Gateway | 8080 | 30080 | 9090 | 30090 |
-| Data Storage | 8081 | 30081 | 9181 | 30181 |
-| Signal Processing | 8082 | 30082 | 9182 | 30182 |
-| Notification | 8086 | 30086 | 9186 | 30186 |
+**Port Allocation Consolidated Reference** ⭐ V3.0 ENHANCED (from DD-TEST-001):
 
-**Full table**: See [DD-TEST-001](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
+| Service | Internal Health | Internal Metrics | Host Port | NodePort | Metrics NodePort |
+|---------|-----------------|------------------|-----------|----------|------------------|
+| Gateway | 8081 | 9090 | 8080 | 30080 | 30090 |
+| Data Storage | 8081 | 9090 | 8081 | 30081 | 30181 |
+| Signal Processing | 8081 | 9090 | 8082 | 30082 | 30182 |
+| AI Analysis | 8081 | 9090 | 8083 | 30083 | 30183 |
+| Notification | 8081 | 9090 | 8086 | 30086 | 30186 |
+| Remediation Orchestrator | 8081 | 9090 | 8087 | 30087 | 30187 |
+
+**Port Type Definitions**:
+- **Internal Health**: Pod-internal health/readiness probes (`:8081/health`, `:8081/ready`)
+- **Internal Metrics**: Pod-internal Prometheus metrics (`:9090/metrics`)
+- **Host Port**: Docker/Podman host mapping for integration tests
+- **NodePort**: Kind cluster NodePort for E2E tests (no port-forward needed)
+- **Metrics NodePort**: Prometheus scraping in Kind cluster
+
+**Full table and rationale**: See [DD-TEST-001](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
 
 ---
 
@@ -6385,11 +6499,68 @@ deploy-kind-[service]:
 **When to Use**: If your service is a CRD controller (5 out of 12 V1 services are CRD controllers)
 
 **CRD Controllers in V1**:
-- RemediationProcessor
+- SignalProcessing (renamed from RemediationProcessor)
 - AIAnalysis
 - WorkflowExecution
 - KubernetesExecutor
 - RemediationOrchestrator
+
+---
+
+### 🔷 **CRD API Group Standard** ⭐ V3.0 NEW
+
+**Reference**: [DD-CRD-001: API Group Domain Selection](../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md)
+
+All Kubernaut CRDs use the **`.ai` domain** for AIOps branding:
+
+```yaml
+apiVersion: [servicename].kubernaut.ai/v1alpha1
+kind: [ServiceName]
+```
+
+**Decision Rationale** (per DD-CRD-001):
+1. **K8sGPT Precedent**: AI K8s projects use `.ai` (e.g., `core.k8sgpt.ai`)
+2. **Brand Alignment**: AIOps is the core value proposition - domain reflects this
+3. **Differentiation**: Stands out from traditional infrastructure tooling (`.io`)
+4. **Industry Trend**: AI-native platforms increasingly adopt `.ai`
+
+**Note**: Label keys still use `kubernaut.io/` prefix (K8s label convention, not CRD API group).
+
+#### **Industry Best Practices Analysis**
+
+| Project | API Group Strategy | Pattern |
+|---------|-------------------|---------|
+| **Tekton** | `tekton.dev/v1` | ✅ Unified - all CRDs under single domain |
+| **Istio** | `istio.io/v1` | ✅ Unified - network, security, config all under `istio.io` |
+| **Cert-Manager** | `cert-manager.io/v1` | ✅ Unified - certificates, issuers, challenges |
+| **ArgoCD** | `argoproj.io/v1alpha1` | ✅ Unified - applications, projects, rollouts |
+| **Crossplane** | `crossplane.io/v1` | ✅ Unified - compositions, providers |
+| **Knative** | Multiple: `serving.knative.dev`, `eventing.knative.dev` | ⚠️ Split by domain |
+
+**Conclusion**: 5/6 major CNCF projects use unified API groups. Splitting is only justified when:
+- Projects have **distinct product lines** (Knative Serving vs Eventing)
+- Projects have **independent release cycles**
+- Projects may be **deployed separately**
+
+Kubernaut's CRD controllers are **tightly coupled** in a single remediation workflow, making unified grouping the correct choice.
+
+#### **CRD Inventory (Unified API Group)**
+
+| CRD | API Group | Purpose |
+|-----|-----------|---------|
+| SignalProcessing | `signalprocessing.kubernaut.ai/v1alpha1` | Context enrichment, classification |
+| AIAnalysis | `aianalysis.kubernaut.ai/v1alpha1` | HolmesGPT RCA + workflow selection |
+| WorkflowExecution | `workflowexecution.kubernaut.ai/v1alpha1` | Ansible/K8s workflow execution |
+| RemediationRequest | `remediation.kubernaut.ai/v1alpha1` | User-facing remediation entry point |
+
+#### **RBAC Template for CRD Controllers**
+
+```yaml
+# kubebuilder markers for CRD controller
+//+kubebuilder:rbac:groups=[servicename].kubernaut.ai,resources=[resources],verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=[servicename].kubernaut.ai,resources=[resources]/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=[servicename].kubernaut.ai,resources=[resources]/finalizers,verbs=update
+```
 
 ---
 
