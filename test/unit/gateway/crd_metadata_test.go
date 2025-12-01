@@ -444,3 +444,322 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 		})
 	})
 })
+
+// BR-GATEWAY-TARGET-RESOURCE: Target Resource Accessibility
+// Business Outcome: SignalProcessing and RO can access resource info WITHOUT JSON parsing
+// Reference: RESPONSE_TARGET_RESOURCE_SCHEMA.md - Option A approved
+var _ = Describe("BR-GATEWAY-TARGET-RESOURCE: Target Resource in RemediationRequest CRD", func() {
+	var (
+		crdCreator    *processing.CRDCreator
+		ctx           context.Context
+		logger        logr.Logger
+		fakeK8sClient *k8s.Client
+	)
+
+	BeforeEach(func() {
+		logger = logr.Discard()
+		ctx = context.Background()
+
+		scheme := runtime.NewScheme()
+		_ = remediationv1alpha1.AddToScheme(scheme)
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		fakeK8sClient = k8s.NewClient(fakeClient)
+		retryConfig := config.DefaultRetrySettings()
+		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, nil, "default", &retryConfig)
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BUSINESS CAPABILITY: Direct resource access for downstream services
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Context("when creating CRD for SignalProcessing and RO consumption", func() {
+
+		It("enables SignalProcessing to access resource Kind directly for context enrichment", func() {
+			// BUSINESS SCENARIO: SignalProcessing needs resource Kind to:
+			// - Query K8s API for resource-specific context (Pod logs, Deployment status)
+			// - Choose appropriate enrichment strategy per resource type
+			// Required: spec.targetResource.kind directly accessible (no JSON parsing)
+
+			signal := &types.NormalizedSignal{
+				Fingerprint: "target-resource-kind-test-123456",
+				AlertName:   "PodCrashLooping",
+				Severity:    "critical",
+				Namespace:   "production",
+				Resource: types.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "payment-api-789",
+					Namespace: "production",
+				},
+				FiringTime:   time.Now(),
+				ReceivedTime: time.Now(),
+				SourceType:   "prometheus-alert",
+				Source:       "prometheus-adapter",
+				RawPayload:   json.RawMessage(`{}`),
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+
+			// BUSINESS OUTCOME: Resource Kind is directly accessible
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
+				"SignalProcessing MUST be able to access targetResource without nil check failures")
+			Expect(rr.Spec.TargetResource.Kind).To(Equal("Pod"),
+				"SignalProcessing can access rr.Spec.TargetResource.Kind directly - no JSON parsing needed")
+
+			// Business capability verified:
+			// SignalProcessing: rr.Spec.TargetResource.Kind == "Pod" → query Pod logs
+		})
+
+		It("enables RO to access resource Name directly for workflow routing", func() {
+			// BUSINESS SCENARIO: RO needs resource Name to:
+			// - Include in workflow execution context
+			// - Route to resource-specific remediation workflows
+			// Required: spec.targetResource.name directly accessible (no JSON parsing)
+
+			signal := &types.NormalizedSignal{
+				Fingerprint: "target-resource-name-test-123456",
+				AlertName:   "HighMemoryUsage",
+				Severity:    "warning",
+				Namespace:   "staging",
+				Resource: types.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "checkout-service",
+					Namespace: "staging",
+				},
+				FiringTime:   time.Now(),
+				ReceivedTime: time.Now(),
+				SourceType:   "prometheus-alert",
+				Source:       "prometheus-adapter",
+				RawPayload:   json.RawMessage(`{}`),
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P1", "staging")
+
+			// BUSINESS OUTCOME: Resource Name is directly accessible
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
+				"RO MUST be able to access targetResource without nil check failures")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("checkout-service"),
+				"RO can access rr.Spec.TargetResource.Name directly - no JSON parsing needed")
+
+			// Business capability verified:
+			// RO: rr.Spec.TargetResource.Name == "checkout-service" → include in workflow context
+		})
+
+		It("enables SignalProcessing to access resource Namespace for K8s API queries", func() {
+			// BUSINESS SCENARIO: SignalProcessing needs resource Namespace to:
+			// - Scope K8s API queries (GetPod, GetDeployment)
+			// - Enrich with namespace-level context (labels, annotations)
+			// Required: spec.targetResource.namespace directly accessible (no JSON parsing)
+
+			signal := &types.NormalizedSignal{
+				Fingerprint: "target-resource-ns-test-1234567",
+				AlertName:   "ReplicaSetUnavailable",
+				Severity:    "critical",
+				Namespace:   "prod-payments",
+				Resource: types.ResourceIdentifier{
+					Kind:      "ReplicaSet",
+					Name:      "payment-api-v2-abc123",
+					Namespace: "prod-payments",
+				},
+				FiringTime:   time.Now(),
+				ReceivedTime: time.Now(),
+				SourceType:   "prometheus-alert",
+				Source:       "prometheus-adapter",
+				RawPayload:   json.RawMessage(`{}`),
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+
+			// BUSINESS OUTCOME: Resource Namespace is directly accessible
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
+				"SignalProcessing MUST be able to access targetResource without nil check failures")
+			Expect(rr.Spec.TargetResource.Namespace).To(Equal("prod-payments"),
+				"SignalProcessing can access rr.Spec.TargetResource.Namespace directly - no JSON parsing needed")
+
+			// Business capability verified:
+			// SignalProcessing: client.Get(ctx, types.NamespacedName{
+			//   Name: rr.Spec.TargetResource.Name,
+			//   Namespace: rr.Spec.TargetResource.Namespace,
+			// }, &pod)
+		})
+
+		It("provides complete ResourceIdentifier for downstream workflow execution", func() {
+			// BUSINESS SCENARIO: Complete resource identification enables:
+			// - SignalProcessing context enrichment
+			// - RO workflow routing decisions
+			// - WorkflowExecution targeting
+			// Required: ALL fields (Kind, Name, Namespace) populated together
+
+			signal := &types.NormalizedSignal{
+				Fingerprint: "complete-resource-id-test-12345",
+				AlertName:   "StatefulSetNotReady",
+				Severity:    "critical",
+				Namespace:   "database-tier",
+				Resource: types.ResourceIdentifier{
+					Kind:      "StatefulSet",
+					Name:      "postgresql-primary",
+					Namespace: "database-tier",
+				},
+				FiringTime:   time.Now(),
+				ReceivedTime: time.Now(),
+				SourceType:   "prometheus-alert",
+				Source:       "prometheus-adapter",
+				RawPayload:   json.RawMessage(`{}`),
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+
+			// BUSINESS OUTCOME: Complete ResourceIdentifier available
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
+				"Downstream services MUST have targetResource populated")
+
+			// Verify complete identification
+			Expect(rr.Spec.TargetResource.Kind).To(Equal("StatefulSet"),
+				"Kind enables resource-type-specific workflows")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("postgresql-primary"),
+				"Name enables specific resource targeting")
+			Expect(rr.Spec.TargetResource.Namespace).To(Equal("database-tier"),
+				"Namespace enables K8s API scoping")
+
+			// Business capability verified:
+			// WorkflowExecution can target: StatefulSet/postgresql-primary in database-tier
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// CORRECTNESS: No duplicate resource data in ProviderData
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Context("when verifying ProviderData structure (no duplication)", func() {
+
+		It("does NOT duplicate resource info in ProviderData (per RESPONSE_TARGET_RESOURCE_SCHEMA.md)", func() {
+			// BUSINESS SCENARIO: Pre-release cleanup decision
+			// Resource info is now in spec.targetResource (top-level field)
+			// ProviderData should NOT contain redundant resource{} object
+			// This reduces CRD size and prevents data inconsistency
+
+			signal := &types.NormalizedSignal{
+				Fingerprint: "no-duplicate-resource-test-1234",
+				AlertName:   "NodeNotReady",
+				Severity:    "critical",
+				Namespace:   "kube-system",
+				Resource: types.ResourceIdentifier{
+					Kind:      "Node",
+					Name:      "worker-node-3",
+					Namespace: "", // Cluster-scoped resource
+				},
+				FiringTime:   time.Now(),
+				ReceivedTime: time.Now(),
+				SourceType:   "prometheus-alert",
+				Source:       "prometheus-adapter",
+				RawPayload:   json.RawMessage(`{}`),
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+
+			// CORRECTNESS: ProviderData does NOT contain resource duplication
+			Expect(err).NotTo(HaveOccurred())
+
+			// Parse ProviderData to verify no resource{} object
+			var providerData map[string]interface{}
+			err = json.Unmarshal(rr.Spec.ProviderData, &providerData)
+			Expect(err).NotTo(HaveOccurred(), "ProviderData should be valid JSON")
+
+			// Verify NO resource{} duplication
+			Expect(providerData).NotTo(HaveKey("resource"),
+				"ProviderData should NOT contain resource{} - it's now in spec.targetResource")
+
+			// Correctness verified:
+			// - spec.targetResource has the data (single source of truth)
+			// - ProviderData is lean (no duplication)
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// EDGE CASES: Handle missing/empty resource info gracefully
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Context("when handling edge cases for resource identification", func() {
+
+		It("handles cluster-scoped resources (empty namespace) correctly", func() {
+			// BUSINESS SCENARIO: Node alerts don't have namespace
+			// SignalProcessing must handle empty namespace gracefully
+
+			signal := &types.NormalizedSignal{
+				Fingerprint: "cluster-scoped-resource-test-12",
+				AlertName:   "NodeDiskPressure",
+				Severity:    "warning",
+				Namespace:   "default", // CRD namespace, not resource namespace
+				Resource: types.ResourceIdentifier{
+					Kind:      "Node",
+					Name:      "worker-node-5",
+					Namespace: "", // Cluster-scoped - no namespace
+				},
+				FiringTime:   time.Now(),
+				ReceivedTime: time.Now(),
+				SourceType:   "prometheus-alert",
+				Source:       "prometheus-adapter",
+				RawPayload:   json.RawMessage(`{}`),
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P1", "production")
+
+			// BUSINESS OUTCOME: Cluster-scoped resource handled correctly
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
+				"Cluster-scoped resources should still have targetResource populated")
+			Expect(rr.Spec.TargetResource.Kind).To(Equal("Node"),
+				"Kind is populated for cluster-scoped resources")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("worker-node-5"),
+				"Name is populated for cluster-scoped resources")
+			Expect(rr.Spec.TargetResource.Namespace).To(BeEmpty(),
+				"Namespace is empty for cluster-scoped resources (Node, PV, etc.)")
+
+			// Business capability verified:
+			// SignalProcessing: if rr.Spec.TargetResource.Namespace == "" → cluster-scoped query
+		})
+
+		It("handles signals without resource info (nil TargetResource)", func() {
+			// BUSINESS SCENARIO: Some signals may not have specific resource targets
+			// (e.g., cluster-wide alerts, external system alerts)
+			// SignalProcessing should handle nil TargetResource gracefully
+
+			signal := &types.NormalizedSignal{
+				Fingerprint: "no-resource-signal-test-123456",
+				AlertName:   "ClusterCPUHigh",
+				Severity:    "warning",
+				Namespace:   "monitoring",
+				Resource: types.ResourceIdentifier{
+					// All fields empty - no specific resource target
+					Kind:      "",
+					Name:      "",
+					Namespace: "",
+				},
+				FiringTime:   time.Now(),
+				ReceivedTime: time.Now(),
+				SourceType:   "prometheus-alert",
+				Source:       "prometheus-adapter",
+				RawPayload:   json.RawMessage(`{}`),
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P2", "production")
+
+			// BUSINESS OUTCOME: Signal without resource info handled gracefully
+			Expect(err).NotTo(HaveOccurred())
+
+			// TargetResource should be nil when no resource info is available
+			Expect(rr.Spec.TargetResource).To(BeNil(),
+				"Signals without resource info should have nil TargetResource (not empty struct)")
+
+			// Business capability verified:
+			// SignalProcessing: if rr.Spec.TargetResource == nil → skip resource-specific enrichment
+		})
+	})
+})
