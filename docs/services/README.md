@@ -1,6 +1,6 @@
 # Kubernaut Services Documentation
 
-**Version**: 2.1
+**Version**: 2.2
 **Last Updated**: 2025-12-01
 **Purpose**: Navigation hub for all Kubernaut V1 service specifications
 
@@ -56,14 +56,14 @@ Stateless HTTP API services:
 | 2 | AI Analysis | CRD | ⏸️ Phase 4 | - | - |
 | 3 | Remediation Execution | CRD | ⏸️ Phase 3 | - | - |
 | 4 | Remediation Orchestrator | CRD | ⏸️ Phase 5 | - | - |
-| 5 | Gateway Service | HTTP | ✅ **v1.0 PRODUCTION-READY** | 221 (105U+114I+2E2E) | 20 BRs (100%) |
+| 5 | Gateway Service | HTTP | ✅ **v1.0 PRODUCTION-READY** | 240 (120U+114I+6E2E) | 20 BRs (100%) |
 | 6 | Data Storage | HTTP | ✅ **Phase 1 PRODUCTION-READY** | ~535 (475U+60I) | 34 BRs (100%) |
 | 7 | HolmesGPT API | HTTP | ✅ **v3.2 PRODUCTION-READY** | 172 (151U+21I) | 47 BRs (100%) |
 | 8 | Dynamic Toolset | HTTP | ⏸️ **Deferred to V2.0** | - | 8 BRs (DD-016: static config in V1.x) |
 | 9 | Notification Controller | CRD | ✅ **PRODUCTION-READY** | 249 (140U+97I+12E2E) | 12 BRs (100%) |
 | 10 | ~~Context API~~ | HTTP | ❌ **DEPRECATED** | - | Replaced by Data Storage (DD-CONTEXT-006) |
 
-**Overall**: ✅ **4/10 services** (40%) production-ready | **~1,177 tests** passing (100% pass rate)
+**Overall**: ✅ **4/9 services** (44%) production-ready | **~1,196 tests** passing (100% pass rate)
 
 ---
 
@@ -164,11 +164,11 @@ stateless/
 
 | Category | Count | Status |
 |----------|-------|--------|
-| **Services Active** | 10/10 | ✅ 100% (1 deprecated, 1 deferred to V2.0) |
-| **Production-Ready** | 4/10 | 🟡 40% |
+| **Services Active** | 9/9 | ✅ 100% (1 deprecated, 1 deferred to V2.0) |
+| **Production-Ready** | 4/9 | 🟡 44% |
 | **CRD Controllers** | 5 (1 ready) | 🟡 In Progress |
-| **HTTP Services** | 5 (3 ready, 1 deferred) | 🟡 60% Complete |
-| **Total Tests** | ~1,177 | ✅ 100% Pass Rate |
+| **HTTP Services** | 4 (3 ready, 1 deferred) | 🟡 75% Complete |
+| **Total Tests** | ~1,196 | ✅ 100% Pass Rate |
 | **Total Test Coverage** | Unit 70%+ / Integration >50% / E2E <10% | ✅ Meeting Standards |
 
 ---
@@ -177,6 +177,7 @@ stateless/
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.2** | 2025-12-01 | **Test Count Corrections**: Gateway 221→240 tests (120U+114I+6E2E per GATEWAY_V1_PRODUCTION_READY.md); Total tests ~1,177→~1,196; Service count corrected to 4/9 (44%) - V1.0 has 9 services (11 original - Context API deprecated - Dynamic Toolset deferred) |
 | **2.1** | 2025-12-01 | **DD-016 Integration**: Dynamic Toolset deferred to V2.0 (static config in V1.x); Updated service count to 4/10 production-ready (40%); Updated test count to ~1,177 (removed Dynamic Toolset's 245 tests); Corrected HTTP Services to 3 ready (60%); Fixed Implementation Priorities (removed Context API reference) |
 | **2.0** | 2025-12-01 | Updated to reflect production-ready services: Gateway v1.0, Data Storage Phase 1, HolmesGPT API v3.2, Notification Controller (249 tests); Context API deprecated per DD-CONTEXT-006; Updated service count to 10 active services |
 | **1.0** | 2025-10-06 | Initial top-level navigation hub created |
@@ -194,4 +195,4 @@ stateless/
 
 **Document Maintainer**: Kubernaut Documentation Team
 **Last Updated**: 2025-12-01
-**Status**: 🟡 Phase 2 In Progress - 4/10 Services Production-Ready (40%) | 1 Deferred to V2.0 (DD-016)
+**Status**: 🟡 Phase 2 In Progress - 4/9 Services Production-Ready (44%) | 1 Deferred to V2.0 (DD-016)
