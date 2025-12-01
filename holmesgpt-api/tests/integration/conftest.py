@@ -53,11 +53,13 @@ import requests
 # DD-TEST-001: Port Allocation Constants
 # ========================================
 # HolmesGPT API Integration Test Ports (18120-18129 range)
-POSTGRES_PORT = "15433"
-REDIS_PORT = "16380"
-EMBEDDING_SERVICE_PORT = "18000"
-DATA_STORAGE_PORT = "18090"
-HOLMESGPT_API_PORT = "18120"
+# Data Storage as DEPENDENCY uses different ports than Data Storage's own tests
+# Per DD-TEST-001: HolmesGPT-API is service index 5, uses dependency ports accordingly
+POSTGRES_PORT = "15435"      # PostgreSQL for Data Storage dependency (not 15433 - that's DS's own)
+REDIS_PORT = "16381"         # Redis for Data Storage dependency (not 16379 - that's DS's own)
+EMBEDDING_SERVICE_PORT = "18001"  # Embedding Service (not 18000 - that's DS's own)
+DATA_STORAGE_PORT = "18094"  # Data Storage as dependency (not 18090 - that's DS's own)
+HOLMESGPT_API_PORT = "18120" # HolmesGPT API's own port
 
 # Service URLs
 DATA_STORAGE_URL = f"http://localhost:{DATA_STORAGE_PORT}"

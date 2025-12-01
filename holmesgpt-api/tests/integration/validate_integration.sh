@@ -1,6 +1,10 @@
 #!/bin/bash
 # Quick validation script for Workflow Catalog Integration
 #
+# DD-TEST-001: HolmesGPT-API uses dedicated ports (not Data Storage's own test ports)
+#   - Data Storage: 18094 (not 18090)
+#   - Embedding Service: 18001 (not 18000)
+#
 # This script performs a quick smoke test to ensure everything is working
 # before running the full integration test suite.
 #
@@ -13,6 +17,10 @@ echo "Workflow Catalog Integration Validation"
 echo "========================================="
 echo ""
 
+# DD-TEST-001: HolmesGPT-API ports
+DATA_STORAGE_PORT=18094
+EMBEDDING_SERVICE_PORT=18001
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -23,9 +31,9 @@ NC='\033[0m' # No Color
 echo "🔍 Checking if services are running..."
 echo ""
 
-# Check PostgreSQL
-if curl -sf http://localhost:18090/health &> /dev/null; then
-    echo -e "${GREEN}✅ Data Storage Service is running (port 18090)${NC}"
+# Check Data Storage Service
+if curl -sf http://localhost:$DATA_STORAGE_PORT/health &> /dev/null; then
+    echo -e "${GREEN}✅ Data Storage Service is running (port $DATA_STORAGE_PORT)${NC}"
 else
     echo -e "${RED}❌ Data Storage Service is NOT running${NC}"
     echo "   Run: ./setup_workflow_catalog_integration.sh"
@@ -33,8 +41,8 @@ else
 fi
 
 # Check Embedding Service
-if curl -sf http://localhost:18000/health &> /dev/null; then
-    echo -e "${GREEN}✅ Embedding Service is running (port 18000)${NC}"
+if curl -sf http://localhost:$EMBEDDING_SERVICE_PORT/health &> /dev/null; then
+    echo -e "${GREEN}✅ Embedding Service is running (port $EMBEDDING_SERVICE_PORT)${NC}"
 else
     echo -e "${RED}❌ Embedding Service is NOT running${NC}"
     echo "   Run: ./setup_workflow_catalog_integration.sh"
@@ -45,7 +53,7 @@ echo ""
 
 # Test Data Storage Service API
 echo "🔍 Testing Data Storage Service API..."
-SEARCH_RESPONSE=$(curl -s -X POST http://localhost:18090/api/v1/workflows/search \
+SEARCH_RESPONSE=$(curl -s -X POST http://localhost:$DATA_STORAGE_PORT/api/v1/workflows/search \
     -H "Content-Type: application/json" \
     -d '{
         "query": "OOMKilled critical",
@@ -74,7 +82,7 @@ echo ""
 
 # Test Embedding Service API
 echo "🔍 Testing Embedding Service API..."
-EMBEDDING_RESPONSE=$(curl -s -X POST http://localhost:18000/embed \
+EMBEDDING_RESPONSE=$(curl -s -X POST http://localhost:$EMBEDDING_SERVICE_PORT/embed \
     -H "Content-Type: application/json" \
     -d '{"text": "test embedding"}')
 
@@ -101,4 +109,3 @@ echo "Ready to run integration tests:"
 echo "  cd ../.."
 echo "  python3 -m pytest tests/integration/test_workflow_catalog_data_storage_integration.py -v"
 echo ""
-

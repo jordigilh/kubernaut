@@ -557,7 +557,7 @@ clean-all: ## Clean all build artifacts including test binaries (Go only)
 
 ##@ Microservices Container Build
 .PHONY: docker-build-microservices
-docker-build-microservices: docker-build-gateway-service ## Build all microservice container images
+docker-build-microservices: docker-build-gateway-service docker-build-datastorage ## Build all microservice container images
 
 .PHONY: docker-build-gateway-service
 docker-build-gateway-service: ## Build gateway service container image (multi-arch UBI9)
@@ -586,6 +586,32 @@ docker-push-gateway-service: docker-build-gateway-service ## Push Gateway servic
 	@echo "📤 Pushing multi-arch Gateway image..."
 	podman manifest push $(REGISTRY)/kubernaut-gateway:$(VERSION) docker://$(REGISTRY)/kubernaut-gateway:$(VERSION)
 	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
+
+# Data Storage container targets
+# LOCAL_PLATFORM auto-detects host architecture (arm64 on Apple Silicon, amd64 on Intel/AMD)
+LOCAL_PLATFORM := linux/$(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+
+.PHONY: docker-build-datastorage
+docker-build-datastorage: ## Build Data Storage service for local architecture (auto-detects arm64/amd64)
+	@echo "🔨 Building Data Storage image for local arch: $(LOCAL_PLATFORM)"
+	podman build --platform $(LOCAL_PLATFORM) \
+		-f docker/data-storage.Dockerfile \
+		-t localhost/data-storage:integration .
+	@echo "✅ Image built: localhost/data-storage:integration ($(LOCAL_PLATFORM))"
+
+.PHONY: docker-build-datastorage-multi
+docker-build-datastorage-multi: ## Build Data Storage service multi-arch (amd64 + arm64)
+	@echo "🔨 Building multi-arch Data Storage image (amd64 + arm64)"
+	podman build --platform linux/amd64,linux/arm64 \
+		-f docker/data-storage.Dockerfile \
+		-t $(REGISTRY)/kubernaut-data-storage:$(VERSION) .
+	@echo "✅ Multi-arch image built: $(REGISTRY)/kubernaut-data-storage:$(VERSION)"
+
+.PHONY: docker-push-datastorage
+docker-push-datastorage: docker-build-datastorage-multi ## Push Data Storage service multi-arch image
+	@echo "📤 Pushing multi-arch Data Storage image..."
+	podman manifest push $(REGISTRY)/kubernaut-data-storage:$(VERSION) docker://$(REGISTRY)/kubernaut-data-storage:$(VERSION)
+	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-data-storage:$(VERSION)"
 
 .PHONY: docker-run
 docker-run: ## Run container locally

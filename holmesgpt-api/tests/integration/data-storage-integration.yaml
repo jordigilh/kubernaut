@@ -4,6 +4,9 @@
 # Design Decision: DD-TEST-001 - Port Allocation Strategy
 # ADR-030: Service Configuration Management
 #
+# DD-TEST-001: HolmesGPT-API uses dedicated container names (prefixed with 'hapi')
+# to avoid conflicts with Data Storage's own integration tests.
+#
 # This configuration is used by the Data Storage Service container
 # during integration testing.
 
@@ -18,7 +21,7 @@ logging:
   format: "json"
 
 database:
-  host: "postgres-integration"  # Docker service name
+  host: "postgres-integration"  # Docker Compose service name (not container name)
   port: 5432  # Internal PostgreSQL port
   name: "kubernaut_test"
   user: "kubernaut"
@@ -32,7 +35,7 @@ database:
   conn_max_idle_time: "5m"
 
 redis:
-  addr: "kubernaut-redis-integration:6379"  # Container name
+  addr: "redis-integration:6379"  # Docker Compose service name
   db: 0
   max_retries: 3
   pool_size: 10
@@ -42,7 +45,6 @@ redis:
 
 # Embedding Service configuration (for workflow catalog)
 embedding:
-  url: "http://kubernaut-embedding-service-integration:8086"  # Container name
+  url: "http://embedding-service:8086"  # Docker Compose service name
   timeout: "30s"
   max_retries: 3
-

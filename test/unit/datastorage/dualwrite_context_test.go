@@ -196,7 +196,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 		DescribeTable("should respect context signals",
 			func(ctxSetup func() context.Context, expectedErr error, description string) {
 				ctx := ctxSetup()
-				embedding := make([]float32, 384)
+				embedding := make([]float32, 768)
 
 				_, err := coordinator.Write(ctx, testAudit, embedding)
 
@@ -243,7 +243,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 
 		It("should propagate context to BeginTx", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			_, err := coordinator.Write(ctx, testAudit, embedding)
 
@@ -267,7 +267,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 			mockDB.slowMode = true
 			mockDB.delay = 100 * time.Millisecond
 
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			_, err := coordinator.Write(ctx, testAudit, embedding)
 
@@ -282,7 +282,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel() // Cancel before fallback
 
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 			mockVectorDB.shouldFail = true // Force fallback
 
 			_, err := coordinator.WriteWithFallback(ctx, testAudit, embedding)
@@ -299,7 +299,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 
 		It("should propagate context to PostgreSQL-only fallback", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 			mockVectorDB.shouldFail = true // Force PostgreSQL-only fallback
 
 			_, err := coordinator.WriteWithFallback(ctx, testAudit, embedding)
@@ -355,7 +355,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 						Metadata:             testAudit.Metadata,
 					}
 
-					embedding := make([]float32, 384)
+					embedding := make([]float32, 768)
 					_, err := coordinator.Write(ctx, audit, embedding)
 
 					mu.Lock()
@@ -387,7 +387,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 			mockDB.slowMode = true
 			mockDB.delay = 50 * time.Millisecond
 
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 			_, err := coordinator.Write(ctx, testAudit, embedding)
 
 			Expect(err).To(HaveOccurred())
@@ -402,7 +402,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 			const requestIDKey contextKey = "request-id"
 
 			ctx := context.WithValue(context.Background(), requestIDKey, "req-12345")
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			// ACT: Write with context containing request ID
 			_, err := coordinator.Write(ctx, testAudit, embedding)

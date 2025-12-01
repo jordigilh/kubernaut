@@ -27,9 +27,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -193,7 +193,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		testLogger.Info(fmt.Sprintf("  ✅ CRD created in namespace: %s", crd.Namespace))
 		testLogger.Info(fmt.Sprintf("  ✅ CRD name: %s", crd.Name))
 		testLogger.Info(fmt.Sprintf("  ✅ Affected resources: %d", len(crd.Spec.AffectedResources)))
-		testLogger.Info(fmt.Sprintf("  ✅ Signal fingerprint present"))
+		testLogger.Info("  ✅ Signal fingerprint present")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 })

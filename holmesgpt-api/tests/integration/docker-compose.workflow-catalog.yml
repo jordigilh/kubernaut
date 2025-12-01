@@ -1,19 +1,21 @@
 # Docker Compose for Workflow Catalog Integration Tests
+# DD-TEST-001: HolmesGPT-API uses DIFFERENT ports than Data Storage's own tests
+# This allows both test suites to run in parallel without port conflicts
 version: '3.8'
 
 services:
   postgres-integration:
     image: pgvector/pgvector:pg16
-    container_name: kubernaut-postgres-integration
+    container_name: kubernaut-hapi-postgres-integration
     environment:
       POSTGRES_DB: kubernaut_test
       POSTGRES_USER: kubernaut
       POSTGRES_PASSWORD: kubernaut_test_password
       POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "15433:5432"
+      - "15435:5432"  # DD-TEST-001: HolmesGPT-API uses 15435 (not 15433)
     volumes:
-      - postgres-integration-data:/var/lib/postgresql/data
+      - hapi-postgres-integration-data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kubernaut -d kubernaut_test"]
@@ -21,32 +23,32 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - kubernaut-integration
+      - kubernaut-hapi-integration
 
   redis-integration:
     image: redis:7-alpine
-    container_name: kubernaut-redis-integration
+    container_name: kubernaut-hapi-redis-integration
     ports:
-      - "16380:6379"
+      - "16381:6379"  # DD-TEST-001: HolmesGPT-API uses 16381 (not 16379)
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
     networks:
-      - kubernaut-integration
+      - kubernaut-hapi-integration
 
   embedding-service:
     build:
       context: ../../../embedding-service
       dockerfile: Dockerfile
-    container_name: kubernaut-embedding-service-integration
+    container_name: kubernaut-hapi-embedding-service-integration
     environment:
       - EMBEDDING_SERVICE_PORT=8086
       - EMBEDDING_DEVICE=cpu
       - LOG_LEVEL=INFO
     ports:
-      - "18000:8086"
+      - "18001:8086"  # DD-TEST-001: HolmesGPT-API uses 18001 (not 18000)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
       interval: 10s
@@ -54,16 +56,16 @@ services:
       retries: 10
       start_period: 60s
     networks:
-      - kubernaut-integration
+      - kubernaut-hapi-integration
 
   data-storage-service:
     image: localhost/data-storage:integration
-    container_name: kubernaut-data-storage-integration
+    container_name: kubernaut-hapi-data-storage-integration
     environment:
       - CONFIG_PATH=/app/config/data-storage-integration.yaml
       - EMBEDDING_SERVICE_URL=http://embedding-service:8086
     ports:
-      - "18090:8080"
+      - "18094:8080"  # DD-TEST-001: HolmesGPT-API uses 18094 (not 18090)
     volumes:
       - ./data-storage-integration.yaml:/app/config/data-storage-integration.yaml:ro
       - ./secrets/database-credentials.yaml:/app/secrets/database-credentials.yaml:ro
@@ -82,12 +84,12 @@ services:
       retries: 10
       start_period: 20s
     networks:
-      - kubernaut-integration
+      - kubernaut-hapi-integration
 
 networks:
-  kubernaut-integration:
+  kubernaut-hapi-integration:
     driver: bridge
 
 volumes:
-  postgres-integration-data:
-  embedding-model-cache:
+  hapi-postgres-integration-data:
+  hapi-embedding-model-cache:

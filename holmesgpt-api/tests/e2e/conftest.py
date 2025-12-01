@@ -1,141 +1,68 @@
 """
-E2E Test Infrastructure Configuration
+Copyright 2025 Jordi Gil.
 
-Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
-Design Decision: DD-TEST-001 - Port Allocation Strategy
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-This module provides pytest fixtures for E2E tests that require
-real infrastructure (Data Storage Service, PostgreSQL, Redis, Embedding Service).
+    http://www.apache.org/licenses/LICENSE-2.0
 
-E2E tests are different from integration tests:
-- They require REAL infrastructure to be running
-- They test full end-to-end flows
-- They are expensive and should be run in CI or manually
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
 
-Port Allocation (per DD-TEST-001):
-- PostgreSQL: 15433
-- Redis: 16380
-- Embedding Service: 18000
-- Data Storage Service: 18090
+"""
+E2E Test Configuration and Fixtures
 
-Setup:
-    ./tests/integration/setup_workflow_catalog_integration.sh
-
-Teardown:
-    ./tests/integration/teardown_workflow_catalog_integration.sh
+Provides session-scoped fixtures for E2E testing with mock LLM server.
 """
 
 import os
+import sys
 import pytest
-import requests
 
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-# ========================================
-# DD-TEST-001: Port Allocation Constants
-# ========================================
-POSTGRES_PORT = "15433"
-REDIS_PORT = "16380"
-EMBEDDING_SERVICE_PORT = "18000"
-DATA_STORAGE_PORT = "18090"
-
-# Service URLs
-DATA_STORAGE_URL = f"http://localhost:{DATA_STORAGE_PORT}"
-EMBEDDING_SERVICE_URL = f"http://localhost:{EMBEDDING_SERVICE_PORT}"
-
-
-def is_service_available(url: str, timeout: float = 2.0) -> bool:
-    """Check if a service is available at the given URL."""
-    try:
-        for endpoint in ["/health", "/api/v1/health", ""]:
-            try:
-                response = requests.get(f"{url}{endpoint}", timeout=timeout)
-                if response.status_code < 500:
-                    return True
-            except requests.RequestException:
-                continue
-        return False
-    except Exception:
-        return False
-
-
-def is_e2e_infra_available() -> bool:
-    """
-    Check if E2E infrastructure is running.
-
-    Checks Data Storage Service as primary indicator.
-    """
-    return is_service_available(DATA_STORAGE_URL)
-
-
-# ========================================
-# Pytest Configuration
-# ========================================
 
 def pytest_configure(config):
-    """Register custom markers for E2E tests."""
+    """Register custom markers."""
     config.addinivalue_line(
-        "markers",
-        "e2e: mark test as end-to-end test (requires full infrastructure)"
+        "markers", "e2e: mark test as E2E test"
     )
 
 
-def pytest_collection_modifyitems(config, items):
-    """
-    Skip E2E tests if infrastructure is not available.
+@pytest.fixture(scope="session", autouse=True)
+def setup_e2e_environment():
+    """Set up environment variables for E2E testing."""
+    # These will be overridden by individual fixtures, but set defaults
+    os.environ.setdefault("LLM_PROVIDER", "openai")
+    os.environ.setdefault("LLM_MODEL", "mock-model")
+    os.environ.setdefault("OPENAI_API_KEY", "mock-key-for-e2e")
+    os.environ.setdefault("DATA_STORAGE_URL", "http://mock-data-storage:8080")
+    os.environ.setdefault("DATA_STORAGE_TIMEOUT", "10")
 
-    All tests in the e2e directory require real infrastructure.
-    """
-    if is_e2e_infra_available():
-        return
+    yield
 
-    skip_reason = pytest.mark.skip(
-        reason="E2E infrastructure not running. "
-        "Start with: ./tests/integration/setup_workflow_catalog_integration.sh"
-    )
-
-    for item in items:
-        item.add_marker(skip_reason)
-
-
-# ========================================
-# Pytest Fixtures
-# ========================================
-
-@pytest.fixture(scope="session")
-def integration_infrastructure():
-    """
-    Session-scoped fixture that ensures E2E infrastructure is available.
-
-    If infrastructure is not running, tests will be skipped.
-    """
-    if not is_e2e_infra_available():
-        pytest.skip(
-            "E2E infrastructure not running. "
-            "Start with: ./tests/integration/setup_workflow_catalog_integration.sh"
-        )
-
-    # Set environment variables for service clients
-    os.environ["DATA_STORAGE_URL"] = DATA_STORAGE_URL
-    os.environ["EMBEDDING_SERVICE_URL"] = EMBEDDING_SERVICE_URL
-    os.environ["POSTGRES_HOST"] = "localhost"
-    os.environ["POSTGRES_PORT"] = POSTGRES_PORT
-    os.environ["REDIS_HOST"] = "localhost"
-    os.environ["REDIS_PORT"] = REDIS_PORT
-
-    yield {
-        "data_storage_url": DATA_STORAGE_URL,
-        "embedding_service_url": EMBEDDING_SERVICE_URL,
-        "postgres_host": "localhost",
-        "postgres_port": POSTGRES_PORT,
-        "redis_host": "localhost",
-        "redis_port": REDIS_PORT,
-    }
+    # Cleanup if needed
 
 
 @pytest.fixture(scope="session")
-def data_storage_url(integration_infrastructure):
-    """Fixture that provides the Data Storage Service URL."""
-    return integration_infrastructure["data_storage_url"]
+def mock_llm_server_e2e():
+    """
+    Session-scoped mock LLM server with tool call support for E2E tests.
 
+    This server:
+    - Returns tool calls (not just text)
+    - Tracks all tool calls for validation
+    - Supports multi-turn conversations
+    """
+    from tests.mock_llm_server import MockLLMServer
 
-
+    with MockLLMServer(force_text_response=False) as server:
+        # Set environment to use this server
+        os.environ["LLM_ENDPOINT"] = server.url
+        yield server

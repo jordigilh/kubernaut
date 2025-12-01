@@ -209,27 +209,48 @@ Per **DD-HAPI-001: Custom Labels Auto-Append Architecture**, custom labels are n
 
 | Test Type | File | Tests | Status |
 |-----------|------|-------|--------|
-| Unit | `tests/unit/test_custom_labels_auto_append_dd_hapi_001.py` | 17 | ✅ All passing |
+| Unit | `tests/unit/test_custom_labels_auto_append_dd_hapi_001.py` | 31 | ✅ All passing |
 | Integration | `tests/integration/test_custom_labels_integration_dd_hapi_001.py` | 8 | ✅ All passing |
+| Integration | `tests/integration/test_data_storage_label_integration.py` | 16 | ✅ All passing |
 
-### Data Storage Dependency
+**Total: 55 tests** validating custom labels, detected labels, and Data Storage integration.
 
-⏳ **Awaiting Data Storage implementation**
+### Data Storage Integration
 
-The custom_labels are now correctly passed to Data Storage in the search request:
+✅ **COMPLETE** (2025-11-30)
+
+Data Storage has implemented `custom_labels` support. The full integration is verified:
+
+**Request Format**:
 ```json
 {
+  "query": "OOMKilled critical",
   "filters": {
     "signal_type": "OOMKilled",
     "custom_labels": {
       "constraint": ["cost-constrained"],
       "team": ["name=payments"]
     }
-  }
+  },
+  "top_k": 5
 }
 ```
 
-Data Storage will silently ignore the `custom_labels` field until their implementation is complete.
+**Response Format** (confirmed by Data Storage team):
+```json
+{
+  "workflows": [{
+    "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
+    "title": "Pod OOM Recovery",
+    "confidence": 0.95,
+    "custom_labels": {"constraint": ["cost-constrained"]},
+    "detected_labels": {"git_ops_managed": true}
+  }],
+  "total_results": 1
+}
+```
+
+**SQL Filtering**: `custom_labels @> '{"constraint": ["cost-constrained"]}'::jsonb`
 
 ---
 
@@ -294,13 +315,13 @@ Has the Data Storage team confirmed their `/api/v1/workflows/search` endpoint ac
 
 The handoff shows this format but doesn't confirm Data Storage is ready to receive it.
 
-**Answer**: ✅ **Handoff sent, awaiting implementation**
+**Answer**: ✅ **COMPLETE - Data Storage has implemented custom_labels support**
 
-Data Storage team has received their handoff document:
+Data Storage team confirmed implementation (2025-11-30):
 - **Document**: `docs/services/stateless/datastorage/HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md`
-- **Status**: Implementation required (P1 priority in their action items)
+- **Status**: ✅ **IMPLEMENTED**
 
-**Contract from our side is confirmed**:
+**Confirmed API Contract**:
 ```json
 {
   "filters": {
@@ -313,7 +334,13 @@ Data Storage team has received their handoff document:
 }
 ```
 
-**Recommendation**: Coordinate with Data Storage team on implementation timeline. HolmesGPT-API can prepare the pass-through logic now; Data Storage will implement the query handling.
+**Database Changes**:
+- Added `custom_labels JSONB` column to `remediation_workflow_catalog`
+- Added `detected_labels JSONB` column
+- Added GIN indexes for filtering
+- SQL uses JSONB containment: `custom_labels @> '{"constraint": ["cost-constrained"]}'::jsonb`
+
+**Integration Verified**: All 16 tests in `test_data_storage_label_integration.py` pass.
 
 ---
 
@@ -358,6 +385,7 @@ class EnrichmentResults(BaseModel):
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.0 | 2025-11-30 | **END-TO-END COMPLETE**: Data Storage implemented custom_labels, 16 integration tests passing, full cross-service integration verified |
 | 2.0 | 2025-11-30 | **IMPLEMENTATION COMPLETE**: Auto-append architecture (DD-HAPI-001), 25 tests passing |
 | 1.3 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.8 (snake_case field names) |
 | 1.2 | 2025-11-30 | Answered Q1-Q4 from HolmesGPT-API team |

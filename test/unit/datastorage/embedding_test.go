@@ -82,8 +82,8 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 		mockCache = NewMockCache()
 
-		// Create 384-dimensional embedding
-		testEmbedding := make([]float32, 384)
+		// Create 768-dimensional embedding
+		testEmbedding := make([]float32, 768)
 		for i := range testEmbedding {
 			testEmbedding[i] = float32(i) * 0.01
 		}
@@ -131,7 +131,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				TargetResource:       "deployment/my-app",
 				Metadata:             "{}",
 			},
-			384, true),
+			768, true),
 
 		Entry("BR-STORAGE-012.2: Audit with minimal fields",
 			&models.RemediationAudit{
@@ -149,7 +149,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				TargetResource:       "pod/test",
 				Metadata:             "{}",
 			},
-			384, true),
+			768, true),
 
 		Entry("BR-STORAGE-012.3: Audit with very long text",
 			&models.RemediationAudit{
@@ -167,7 +167,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				TargetResource:       strings.Repeat("deployment/", 46),
 				Metadata:             "{}",
 			},
-			384, true),
+			768, true),
 
 		Entry("BR-STORAGE-012.4: Audit with special characters",
 			&models.RemediationAudit{
@@ -185,7 +185,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				TargetResource:       "deployment/app-用户",
 				Metadata:             "{}",
 			},
-			384, true),
+			768, true),
 
 		Entry("BR-STORAGE-012.5: Audit with empty name",
 			&models.RemediationAudit{
@@ -203,7 +203,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				TargetResource:       "deployment/my-app",
 				Metadata:             "{}",
 			},
-			384, true),
+			768, true),
 	)
 
 	Context("cache behavior", func() {
