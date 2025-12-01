@@ -195,11 +195,9 @@ spec:
               targetResource:
                 description: |-
                   TargetResource identifies the Kubernetes resource that triggered this signal.
-                  Populated by Gateway from NormalizedSignal.Resource.
+                  Populated by Gateway from NormalizedSignal.Resource - REQUIRED.
                   Used by SignalProcessing for context enrichment and RO for workflow routing.
                   For Kubernetes signals, this contains Kind, Name, Namespace of the affected resource.
-                  For non-Kubernetes signals (AWS, Datadog, etc.), this may be nil or contain
-                  provider-specific resource mapping (V2 feature).
                 properties:
                   kind:
                     description: Kind of the Kubernetes resource (e.g., "Pod", "Deployment",
@@ -254,6 +252,7 @@ spec:
             - signalFingerprint
             - signalName
             - signalType
+            - targetResource
             - targetType
             type: object
           status:

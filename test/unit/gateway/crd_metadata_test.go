@@ -504,9 +504,8 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE: Target Resource in RemediationRequ
 			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
 
 			// BUSINESS OUTCOME: Resource Kind is directly accessible
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
-				"SignalProcessing MUST be able to access targetResource without nil check failures")
 			Expect(rr.Spec.TargetResource.Kind).To(Equal("Pod"),
 				"SignalProcessing can access rr.Spec.TargetResource.Kind directly - no JSON parsing needed")
 
@@ -540,9 +539,8 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE: Target Resource in RemediationRequ
 			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P1", "staging")
 
 			// BUSINESS OUTCOME: Resource Name is directly accessible
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
-				"RO MUST be able to access targetResource without nil check failures")
 			Expect(rr.Spec.TargetResource.Name).To(Equal("checkout-service"),
 				"RO can access rr.Spec.TargetResource.Name directly - no JSON parsing needed")
 
@@ -576,9 +574,8 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE: Target Resource in RemediationRequ
 			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
 
 			// BUSINESS OUTCOME: Resource Namespace is directly accessible
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
-				"SignalProcessing MUST be able to access targetResource without nil check failures")
 			Expect(rr.Spec.TargetResource.Namespace).To(Equal("prod-payments"),
 				"SignalProcessing can access rr.Spec.TargetResource.Namespace directly - no JSON parsing needed")
 
@@ -616,9 +613,8 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE: Target Resource in RemediationRequ
 			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
 
 			// BUSINESS OUTCOME: Complete ResourceIdentifier available
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
-				"Downstream services MUST have targetResource populated")
 
 			// Verify complete identification
 			Expect(rr.Spec.TargetResource.Kind).To(Equal("StatefulSet"),
@@ -712,9 +708,8 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE: Target Resource in RemediationRequ
 			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P1", "production")
 
 			// BUSINESS OUTCOME: Cluster-scoped resource handled correctly
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.TargetResource).NotTo(BeNil(),
-				"Cluster-scoped resources should still have targetResource populated")
 			Expect(rr.Spec.TargetResource.Kind).To(Equal("Node"),
 				"Kind is populated for cluster-scoped resources")
 			Expect(rr.Spec.TargetResource.Name).To(Equal("worker-node-5"),
@@ -726,10 +721,11 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE: Target Resource in RemediationRequ
 			// SignalProcessing: if rr.Spec.TargetResource.Namespace == "" → cluster-scoped query
 		})
 
-		It("handles signals without resource info (nil TargetResource)", func() {
+		It("handles signals without resource info (default TargetResource)", func() {
 			// BUSINESS SCENARIO: Some signals may not have specific resource targets
 			// (e.g., cluster-wide alerts, external system alerts)
-			// SignalProcessing should handle nil TargetResource gracefully
+			// TargetResource is REQUIRED - defaults to Kind="Unknown" for missing info
+			// SignalProcessing should detect Unknown kind and skip resource-specific enrichment
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "no-resource-signal-test-123456",
@@ -754,12 +750,15 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE: Target Resource in RemediationRequ
 			// BUSINESS OUTCOME: Signal without resource info handled gracefully
 			Expect(err).NotTo(HaveOccurred())
 
-			// TargetResource should be nil when no resource info is available
-			Expect(rr.Spec.TargetResource).To(BeNil(),
-				"Signals without resource info should have nil TargetResource (not empty struct)")
+			// TargetResource is REQUIRED - signals without resource info get defaults
+			// Per API_CONTRACT_TRIAGE.md: TargetResource must always be present
+			Expect(rr.Spec.TargetResource.Kind).To(Equal("Unknown"),
+				"Signals without resource info should have Kind='Unknown' (TargetResource is required)")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("unknown"),
+				"Signals without resource info should have Name='unknown' (TargetResource is required)")
 
 			// Business capability verified:
-			// SignalProcessing: if rr.Spec.TargetResource == nil → skip resource-specific enrichment
+			// SignalProcessing: if rr.Spec.TargetResource.Kind == "Unknown" → skip resource-specific enrichment
 		})
 	})
 })
