@@ -13,9 +13,9 @@ spec:
     app: notification-controller
     control-plane: controller-manager
   ports:
-    - name: metrics
-      protocol: TCP
-      port: 9090
-      targetPort: 9090
-      nodePort: 30090  # Exposed to host via Kind extraPortMappings (localhost:9090)
+  - name: metrics
+    protocol: TCP
+    port: 9090
+    targetPort: 9090
+    nodePort: 30186  # Per DD-TEST-001  # Exposed to host via Kind extraPortMappings (localhost:9090)
 

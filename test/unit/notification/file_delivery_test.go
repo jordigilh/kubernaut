@@ -47,7 +47,10 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 		ctx = context.Background()
 
 		// Create temporary directory for tests
-		tempDir = filepath.Join(os.TempDir(), "file-delivery-unit-test-"+time.Now().Format("20060102-150405"))
+		// Include GinkgoParallelProcess() to ensure unique directories across parallel tests
+		tempDir = filepath.Join(os.TempDir(), fmt.Sprintf("file-delivery-unit-test-%s-process-%d",
+			time.Now().Format("20060102-150405"),
+			GinkgoParallelProcess()))
 		Expect(os.MkdirAll(tempDir, 0755)).To(Succeed())
 
 		fileService = delivery.NewFileDeliveryService(tempDir)

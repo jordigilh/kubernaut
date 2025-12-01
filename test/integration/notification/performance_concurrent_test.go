@@ -130,9 +130,10 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 			}
 		})
 
-		It("should handle rapid successive CRD creations (stress test)", func() {
-			// BEHAVIOR: Rapid creation doesn't cause controller failures
-			// CORRECTNESS: All CRDs processed in correct order
+	It("should handle rapid successive CRD creations (stress test)", Serial, func() {
+		// BEHAVIOR: Rapid creation doesn't cause controller failures
+		// CORRECTNESS: All CRDs processed in correct order
+		// NOTE: Marked Serial to prevent resource contention with parallel tests
 
 			const rapidCount = 20
 			notifications := make([]*notificationv1alpha1.NotificationRequest, rapidCount)

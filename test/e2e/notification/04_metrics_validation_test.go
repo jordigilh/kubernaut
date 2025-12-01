@@ -40,10 +40,10 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 	)
 
 	BeforeEach(func() {
-		// BR-NOT-054: Controller metrics exposed via NodePort (localhost:9090)
-		// Kind extraPortMappings: containerPort 30090 → hostPort 9090
-		// Using controller-runtime's default metrics port
-		metricsEndpoint = "http://localhost:9090/metrics"
+		// BR-NOT-054: Controller metrics exposed via NodePort (localhost:9186)
+		// Kind extraPortMappings: containerPort 30186 → hostPort 9186
+		// Per DD-TEST-001 port allocation strategy
+		metricsEndpoint = "http://localhost:9186/metrics"
 	})
 
 	Context("Metrics Endpoint Availability", func() {
