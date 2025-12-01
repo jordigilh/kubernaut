@@ -17,7 +17,7 @@
 || 003 | [GitOps Priority Order](./003-gitops-priority-order.md) | ✅ Accepted | 2025 | Implementation priority for GitOps features |
 || 004 | [Metrics Authentication](./004-metrics-authentication.md) | ✅ Accepted | 2025 | Authentication strategy for metrics endpoints |
 || 005 | [Owner Reference Architecture](./005-owner-reference-architecture.md) | ✅ Accepted | 2025 | CRD lifecycle and ownership patterns |
-|| 006 | [Effectiveness Monitor V1 Inclusion](./006-effectiveness-monitor-v1-inclusion.md) | ✅ Accepted | 2025-10 | Moving Effectiveness Monitor from V2 to V1 |
+|| 006 | [Effectiveness Monitor V1 Inclusion](./006-effectiveness-monitor-v1-inclusion.md) | ⚠️ SUPERSEDED by DD-017 | 2025-10 | Moving Effectiveness Monitor from V2 to V1 → REVERSED |
 || 027 | [Multi-Architecture Build Strategy](./ADR-027-multi-architecture-build-strategy.md) | ✅ Accepted | 2025-10-20 | All services built for amd64 + arm64 by default |
 || 032 | [Data Access Layer Isolation](./ADR-032-data-access-layer-isolation.md) | ✅ Accepted | 2025-10-31 | All services access DB via Data Storage Service REST API |
 || 034 | [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) | ✅ Approved | 2025-11-08 | Event sourcing pattern with JSONB for audit traces |
@@ -58,9 +58,11 @@
 || DD-CONTEXT-002 | [Cache Size Limit Configuration](./DD-CONTEXT-002-cache-size-limit-configuration.md) | Context API | ✅ Approved | 2025-10-20 | OOM prevention, configurable limits |
 || DD-CONTEXT-003 | [Context Enrichment Placement](./DD-CONTEXT-003-Context-Enrichment-Placement.md) | Context API / HolmesGPT API | ✅ Approved | 2025-10-22 | LLM-driven tool call pattern, 36% token cost reduction |
 || DD-CONTEXT-004 | [BR-AI-002 Ownership](./DD-CONTEXT-004-BR-AI-002-Ownership.md) | AIAnalysis / Context API | ✅ Approved | 2025-10-22 | Keep BR-AI-002 in AIAnalysis (revised scope) |
-|| DD-EFFECTIVENESS-001 | [Hybrid Automated + AI Analysis](./DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) | Effectiveness Monitor | ✅ Approved | 2025-10-16 | 85-90% effectiveness, 11x ROI |
-|| DD-EFFECTIVENESS-002 | [Restart Recovery Idempotency](./DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) | Effectiveness Monitor | ✅ Approved | 2025-10-16 | Idempotent restart recovery |
-|| DD-EFFECTIVENESS-003 | [RemediationRequest Watch Strategy](./DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md) | Effectiveness Monitor | ✅ Approved | 2025-10-16 | 92% confidence, future-proof design |
+|| DD-016 | [Dynamic Toolset V2.0 Deferral](./DD-016-dynamic-toolset-v2-deferral.md) | Dynamic Toolset | ✅ Approved | 2025-11-21 | Deferred to V2.0 (redundant with HolmesGPT-API Prometheus discovery) |
+|| DD-017 | [Effectiveness Monitor V1.1 Deferral](./DD-017-effectiveness-monitor-v1.1-deferral.md) | Effectiveness Monitor | ✅ Approved | 2025-12-01 | Deferred to V1.1 (year-end timeline + requires 8+ weeks of data) |
+|| DD-EFFECTIVENESS-001 | [Hybrid Automated + AI Analysis](./DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) | Effectiveness Monitor | ⏸️ Deferred to V1.1 | 2025-10-16 | 85-90% effectiveness, 11x ROI (DD-017) |
+|| DD-EFFECTIVENESS-002 | [Restart Recovery Idempotency](./DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) | Effectiveness Monitor | ⏸️ Deferred to V1.1 | 2025-10-16 | Idempotent restart recovery (DD-017) |
+|| DD-EFFECTIVENESS-003 | [RemediationRequest Watch Strategy](./DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md) | Effectiveness Monitor | ⏸️ Deferred to V1.1 | 2025-10-16 | 92% confidence, future-proof design (DD-017) |
 || DD-GATEWAY-004 | [Redis Memory Optimization](./DD-GATEWAY-004-redis-memory-optimization.md) | Gateway Service | ✅ Approved | 2025-10-24 | 93% memory reduction, lightweight metadata |
 || DD-GATEWAY-005 | [Redis Cleanup on CRD Deletion](./DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md) | Gateway Service | ✅ Approved | 2025-10-27 | No cleanup needed (TTL-based expiration) |
 || DD-GATEWAY-006 | [Authentication Strategy](./DD-GATEWAY-006-authentication-strategy.md) | Gateway Service | ✅ Approved | 2025-10-27 | Network-level security, no OAuth2 |
