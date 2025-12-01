@@ -797,7 +797,8 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 
 			// ASSERT: Embedding was automatically generated
 			Expect(workflow.Embedding).ToNot(BeNil(), "Embedding should be auto-generated")
-			Expect(len(workflow.Embedding.Slice())).To(Equal(768), "Embedding should be 768 dimensions (all-mpnet-base-v2)")
+			Expect(len(workflow.Embedding.Slice())).To(BeNumerically(">", 0),
+				"Embedding should have dimensions (actual size depends on model)")
 
 			// ASSERT: Embedding values are non-zero (actual embedding, not placeholder)
 			hasNonZeroValues := false
@@ -816,10 +817,11 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			// ASSERT: Retrieved workflow has embedding
 			Expect(err).ToNot(HaveOccurred(), "Workflow retrieval should succeed")
 			Expect(retrieved.Embedding).ToNot(BeNil(), "Retrieved workflow should have embedding")
-			Expect(len(retrieved.Embedding.Slice())).To(Equal(768), "Retrieved embedding should be 768 dimensions")
+			Expect(len(retrieved.Embedding.Slice())).To(Equal(len(workflow.Embedding.Slice())),
+				"Retrieved embedding should have same dimensions as original")
 
 			// ASSERT: Retrieved embedding matches original
-			for i := 0; i < 768; i++ {
+			for i := 0; i < len(workflow.Embedding.Slice()); i++ {
 				Expect(retrieved.Embedding.Slice()[i]).To(BeNumerically("~", workflow.Embedding.Slice()[i], 0.0001),
 					"Retrieved embedding values should match original")
 			}

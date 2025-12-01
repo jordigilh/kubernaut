@@ -1,9 +1,18 @@
 # AI & Machine Learning Components - Business Requirements
 
-**Document Version**: 1.0
-**Date**: January 2025
+**Document Version**: 1.1
+**Date**: November 2025
 **Status**: Business Requirements Specification
 **Module**: AI & Machine Learning (`pkg/ai/`)
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.1 | 2025-11-30 | Added BR-AI-075-076 (Workflow Selection), BR-AI-080-083 (Recovery Flow) |
+| 1.0 | 2025-01-15 | Initial version |
 
 ---
 
@@ -146,6 +155,48 @@ The AI & Machine Learning components provide intelligent decision-making capabil
   - **Justification**: Generate evidence-based justification for all resource increase recommendations
   - **Integration**: Works with BR-OSC-* (oscillation detection) for comprehensive stability
   - **Confidence Tracking**: Include pattern analysis confidence in all recommendations
+
+### 2.7 Workflow Selection & Output Contract
+
+> **Added**: v1.1 (2025-11-30) - Formalizes workflow selection output requirements per DD-CONTRACT-001
+
+- **BR-AI-075**: MUST produce structured workflow selection output per ADR-041 LLM contract
+  - **Output Fields**: `workflowId` (UUID from catalog), `containerImage` (OCI reference), `parameters` (map)
+  - **Catalog Integration**: Selected workflow MUST exist in Data Storage workflow catalog
+  - **Container Resolution**: HolmesGPT-API resolves `workflowId` → `containerImage` during MCP search
+  - **Parameter Validation**: Parameters MUST conform to workflow's parameter schema
+  - **Reference**: DD-CONTRACT-001 v1.2, DD-WORKFLOW-002 v3.3
+- **BR-AI-076**: MUST provide rich approval context when confidence is below threshold (<80%)
+  - **Approval Context Fields**: `investigationSummary`, `rootCauseEvidence`, `recommendationRationale`, `riskAssessment`
+  - **Threshold**: Auto-approval only when confidence ≥80%, otherwise `approvalRequired=true`
+  - **V1.0 Flow**: AIAnalysis sets flag, Remediation Orchestrator triggers notification
+  - **V1.1 Flow**: Creates `RemediationApprovalRequest` CRD for approval workflow
+  - **Reference**: ADR-040, ADR-018
+
+### 2.8 Recovery Flow
+
+> **Added**: v1.1 (2025-11-30) - Formalizes recovery attempt handling per DD-RECOVERY-002
+
+- **BR-AI-080**: MUST support recovery analysis for failed WorkflowExecution attempts
+  - **Trigger**: Remediation Orchestrator creates new AIAnalysis CRD with `isRecoveryAttempt=true`
+  - **Attempt Tracking**: `recoveryAttemptNumber` increments for each retry (1, 2, 3, ...)
+  - **Max Attempts**: Configurable via annotation (default: 3)
+  - **Reference**: DD-RECOVERY-002
+- **BR-AI-081**: MUST accept and utilize previous execution context for recovery analysis
+  - **Input**: `previousExecutions` array containing ALL prior attempt contexts
+  - **Context Fields**: `workflowId`, `containerImage`, `failureReason`, `failurePhase`, `kubernetesReason`
+  - **Purpose**: Enable LLM to learn from failures and avoid repeating mistakes
+  - **Reference**: DD-RECOVERY-003
+- **BR-AI-082**: MUST call HolmesGPT-API recovery endpoint for failed workflow analysis
+  - **Endpoint**: `POST /api/v1/recovery/analyze`
+  - **Payload**: Original context + failure context + Kubernetes reason codes
+  - **Response**: New workflow recommendation avoiding previous failure causes
+  - **Reference**: DD-RECOVERY-003, BR-HAPI-RECOVERY-001
+- **BR-AI-083**: MUST reuse original enrichment data without re-enriching for recovery attempts
+  - **Source**: `spec.enrichmentResults` copied from original SignalProcessing CRD
+  - **Rationale**: Signal context hasn't changed; re-enriching wastes resources
+  - **Optimization**: Skip SignalProcessing reconciliation for recovery AIAnalysis CRDs
+  - **Reference**: DD-RECOVERY-002
 
 ---
 

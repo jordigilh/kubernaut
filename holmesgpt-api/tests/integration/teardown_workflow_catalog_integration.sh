@@ -16,7 +16,7 @@ echo ""
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.workflow-catalog.yml"
-PROJECT_NAME="kubernaut-workflow-catalog-integration"
+PROJECT_NAME="kubernaut-hapi-workflow-catalog-integration"
 
 # Colors
 GREEN='\033[0;32m'

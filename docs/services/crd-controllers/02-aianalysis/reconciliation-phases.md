@@ -1,899 +1,421 @@
-## Reconciliation Architecture
+# AI Analysis Service - Reconciliation Phases
+
+**Version**: v2.0
+**Last Updated**: 2025-11-30
+**Status**: ✅ V1.0 Scope Defined
+
+---
+
+## Changelog
+
+| Version | Date | Changes | Reference |
+|---------|------|---------|-----------|
+| v2.0 | 2025-11-30 | **REGENERATED**: Removed "Approving" phase (V1.0); Removed BR-AI-051-053 (dependency validation); Simplified to 4-phase flow; Added DetectedLabels/CustomLabels handling | DD-RECOVERY-002, BR_MAPPING v1.2 |
+| v1.1 | 2025-10-20 | Added approval context population | ADR-018 |
+| v1.0 | 2025-10-15 | Initial specification | - |
+
+---
+
+## Phase Overview (V1.0)
 
 ### Phase Transitions
 
 ```
-investigating → analyzing → recommending → completed
-     ↓              ↓              ↓              ↓
-  (15 min)      (15 min)       (15 min)       (final)
+Pending → Investigating → Analyzing → Completed
+   ↓           ↓              ↓           ↓
+(<1s)       (≤60s)         (≤5s)     (terminal)
 ```
 
-### Phase Breakdown
+**Note**: The "Approving" phase is **deferred to V1.1**. In V1.0, approval decisions are made during the Analyzing phase, and the Remediation Orchestrator (RO) handles notification.
 
-#### 1. **investigating** (BR-AI-011, BR-AI-012, BR-AI-013)
+### Phase Summary
 
-**Purpose**: Trigger HolmesGPT investigation and gather root cause evidence
-
-**Actions**:
-- Trigger HolmesGPT investigation via HTTP API (port 8080)
-- Retrieve historical patterns from Data Storage Service (BR-AI-011)
-- Correlate related alerts across time windows (BR-AI-013)
-- Identify root cause candidates with evidence (BR-AI-012)
-- Update `status.investigationResult` with findings
-
-**Timeout**: 15 minutes (configurable via annotation)
-
-**Transition Criteria**:
-```go
-if investigationComplete && rootCauseIdentified {
-    phase = "analyzing"
-} else if timeout {
-    phase = "failed"
-    reason = "investigation_timeout"
-}
-```
-
-**Example CRD Update**:
-```yaml
-status:
-  phase: investigating
-  investigationResult:
-    rootCauseHypotheses:
-    - hypothesis: "Pod memory limit too low"
-      confidence: 0.85
-      evidence:
-      - "OOMKilled events in pod history"
-      - "Memory usage consistently near 95% of limit"
-    correlatedAlerts:
-    - fingerprint: "abc123def456"
-      timestamp: "2025-01-15T10:30:00Z"
-```
-
-#### 2. **analyzing** (BR-AI-001, BR-AI-002, BR-AI-003, BR-AI-021, BR-AI-023)
-
-**Purpose**: Perform contextual AI analysis and validate results
-
-**Actions**:
-- Execute diagnostic, predictive, and prescriptive analysis (BR-AI-002)
-- Generate confidence scores for analysis results (BR-AI-003)
-- Validate AI responses for completeness (BR-AI-021)
-- Detect and handle AI hallucinations (BR-AI-023)
-- Perform contextual analysis of Kubernetes state (BR-AI-001)
-- Update `status.analysisResult` with validated findings
-
-**Timeout**: 15 minutes (configurable via annotation)
-
-**Transition Criteria**:
-```go
-if analysisComplete && validationPassed && confidenceAboveThreshold {
-    phase = "recommending"
-} else if hallucinationDetected || validationFailed {
-    phase = "failed"
-    reason = "invalid_ai_response"
-}
-```
-
-**Example CRD Update**:
-```yaml
-status:
-  phase: analyzing
-  analysisResult:
-    contextualAnalysis: "Memory pressure due to insufficient resource limits"
-    analysisTypes:
-    - type: diagnostic
-      result: "Container memory limit (512Mi) insufficient for workload"
-      confidence: 0.9
-    - type: predictive
-      result: "Pod will continue OOMKill cycle without intervention"
-      confidence: 0.85
-    - type: prescriptive
-      result: "Increase memory limit to 1Gi based on historical usage"
-      confidence: 0.88
-    validationStatus:
-      completeness: true
-      hallucinationDetected: false
-      confidenceThresholdMet: true
-```
-
-#### 3. **recommending** (BR-AI-006, BR-AI-007, BR-AI-008, BR-AI-009, BR-AI-010)
-
-**Purpose**: Generate and rank remediation recommendations
-
-**Actions**:
-- Generate remediation recommendations from AI analysis (BR-AI-006)
-- Rank recommendations by effectiveness probability (BR-AI-007)
-- Incorporate historical success rates from vector DB (BR-AI-008)
-- Apply constraint-based filtering (environment, RBAC) (BR-AI-009)
-- Provide explanations with supporting evidence (BR-AI-010)
-- **Validate recommendation dependencies** (BR-AI-051, BR-AI-052, BR-AI-053)
-- Update `status.recommendations` with ranked actions
-
-**Timeout**: 15 minutes (configurable via annotation)
-
-**Dependency Validation** (BR-AI-051, BR-AI-052, BR-AI-053):
-```go
-// Validate dependencies before transitioning to completed
-func (r *AIAnalysisReconciler) validateRecommendationDependencies(
-    recommendations []Recommendation,
-) error {
-    // BR-AI-051: Validate dependency completeness and correctness
-    if err := validateDependencyReferences(recommendations); err != nil {
-        return fmt.Errorf("dependency validation failed: %w", err)
-    }
-
-    // BR-AI-052: Detect circular dependencies
-    if err := detectCircularDependencies(recommendations); err != nil {
-        log.Error(err, "Circular dependency detected, falling back to sequential execution")
-        // Fallback: Convert to sequential order
-        recommendations = convertToSequentialOrder(recommendations)
-    }
-
-    // BR-AI-053: Handle missing dependencies
-    for i, rec := range recommendations {
-        if rec.Dependencies == nil {
-            // Default to empty array (no dependencies)
-            recommendations[i].Dependencies = []string{}
-        }
-    }
-
-    return nil
-}
-
-// BR-AI-051: Validate all dependency IDs reference valid recommendations
-func validateDependencyReferences(recommendations []Recommendation) error {
-    recommendationIDs := make(map[string]bool)
-    for _, rec := range recommendations {
-        recommendationIDs[rec.ID] = true
-    }
-
-    for _, rec := range recommendations {
-        for _, depID := range rec.Dependencies {
-            if !recommendationIDs[depID] {
-                return fmt.Errorf("recommendation %s has invalid dependency: %s (not found in recommendations list)", rec.ID, depID)
-            }
-            if depID == rec.ID {
-                return fmt.Errorf("recommendation %s cannot depend on itself", rec.ID)
-            }
-        }
-    }
-
-    return nil
-}
-
-// BR-AI-052: Detect circular dependencies using topological sort
-func detectCircularDependencies(recommendations []Recommendation) error {
-    // Build adjacency list
-    graph := make(map[string][]string)
-    inDegree := make(map[string]int)
-
-    for _, rec := range recommendations {
-        graph[rec.ID] = rec.Dependencies
-        if _, exists := inDegree[rec.ID]; !exists {
-            inDegree[rec.ID] = 0
-        }
-        for _, dep := range rec.Dependencies {
-            inDegree[rec.ID]++
-        }
-    }
-
-    // Topological sort (Kahn's algorithm)
-    queue := []string{}
-    for id, degree := range inDegree {
-        if degree == 0 {
-            queue = append(queue, id)
-        }
-    }
-
-    visited := 0
-    for len(queue) > 0 {
-        current := queue[0]
-        queue = queue[1:]
-        visited++
-
-        // Remove edges from current node
-        for _, neighbor := range graph[current] {
-            inDegree[neighbor]--
-            if inDegree[neighbor] == 0 {
-                queue = append(queue, neighbor)
-            }
-        }
-    }
-
-    // If not all nodes visited, there's a cycle
-    if visited != len(recommendations) {
-        return fmt.Errorf("circular dependency detected in recommendation graph")
-    }
-
-    return nil
-}
-```
-
-**Transition Criteria**:
-```go
-if recommendationsGenerated && constraintsApplied && dependenciesValidated {
-    phase = "completed"
-    createWorkflowExecutionCRD()
-} else if dependencyValidationFailed {
-    // Fallback to sequential execution or retry
-    log.Warn("Dependency validation failed, using fallback strategy")
-}
-```
-
-**Example CRD Update**:
-```yaml
-status:
-  phase: recommending
-  recommendations:
-  - action: "increase-memory-limit"
-    targetResource:
-      kind: Deployment
-      name: web-app
-      namespace: production
-    parameters:
-      newMemoryLimit: "1Gi"
-    effectivenessProbability: 0.92
-    historicalSuccessRate: 0.88
-    riskLevel: low
-    explanation: "Historical data shows 88% success rate for memory increase in similar scenarios"
-    supportingEvidence:
-    - "15 similar cases resolved by memory increase"
-    - "No side effects observed in production rollouts"
-    constraints:
-      environmentAllowed: [production, staging]
-      rbacRequired: ["apps/deployments:update"]
-```
-
-#### 4. **completed** (BR-AI-014)
-
-**Purpose**: Finalize analysis and create workflow execution
-
-**Actions**:
-- Create WorkflowExecution CRD with top recommendation (owner reference)
-- Generate investigation report (BR-AI-014)
-- Update audit database with analysis metadata
-- Emit Kubernetes event: `AIAnalysisCompleted`
-- Set `status.phase = "completed"`
-
-**No Timeout** (terminal state)
-
-**Example CRD Update**:
-```yaml
-status:
-  phase: completed
-  workflowExecutionRef:
-    name: aianalysis-abc123-workflow-1
-    namespace: kubernaut-system
-  investigationReport: |
-    Root Cause: Pod memory limit insufficient for workload demands
-    Evidence: OOMKilled events, 95% memory utilization
-    Recommendation: Increase memory limit to 1Gi
-    Expected Impact: 92% resolution probability
-    Historical Success: 88% in similar scenarios
-  completionTime: "2025-01-15T11:15:00Z"
-```
-
+| Phase | Purpose | Timeout | Key Actions |
+|-------|---------|---------|-------------|
+| **Pending** | Validation | <1s | Validate spec, add finalizer |
+| **Investigating** | AI Analysis | 60s | Call HolmesGPT-API, receive workflow recommendation |
+| **Analyzing** | Policy Evaluation | 5s | Evaluate Rego policies, validate workflow exists in catalog |
+| **Completed** | Terminal | N/A | Output ready for RO consumption |
 
 ---
 
-### CRD-Based Coordination Patterns
+## Phase 1: Pending
 
-#### Event-Driven Coordination
+**Purpose**: Initial validation and setup
 
-This service uses **CRD-based reconciliation** for coordination with RemediationRequest controller and approval workflow:
+**Timeout**: Immediate (<1s)
 
-1. **Created By**: RemediationRequest controller creates AIAnalysis CRD (with owner reference)
-2. **Watch Pattern (Upstream)**: RemediationRequest watches AIAnalysis status for completion
-3. **Watch Pattern (Downstream)**: AIAnalysis watches AIApprovalRequest status for approval
-4. **Status Propagation**: Status updates trigger RemediationRequest reconciliation automatically (<1s latency)
-5. **Event Emission**: Emit Kubernetes events for operational visibility
+### Actions
 
-**Coordination Flow (Two Layers)**:
-```
-Layer 1: RemediationRequest → AIAnalysis
-    RemediationRequest.status.overallPhase = "analyzing"
-        ↓
-    RemediationRequest Controller creates AIAnalysis CRD
-        ↓
-    AIAnalysis Controller reconciles (this controller)
-        ↓
-    AIAnalysis.status.phase = "completed"
-        ↓ (watch trigger in RemediationRequest)
-    RemediationRequest Controller reconciles (detects completion)
-        ↓
-    RemediationRequest Controller creates WorkflowExecution CRD
+1. **Validate Spec**
+   - Ensure `enrichmentResults` is present (required)
+   - Validate `signalContext` structure
+   - Check parent references
 
-Layer 2: AIAnalysis → AIApprovalRequest → Approval
-    AIAnalysis.status.phase = "recommendations"
-        ↓
-    AIAnalysis Controller creates AIApprovalRequest CRD (owned)
-        ↓
-    AIApprovalRequest Controller watches for Approval CRD
-        ↓ (manual/auto approval via Rego policy)
-    Approval CRD created
-        ↓ (watch trigger)
-    AIApprovalRequest.status.approved = true
-        ↓ (watch trigger in AIAnalysis)
-    AIAnalysis Controller reconciles
-        ↓
-    AIAnalysis.status.phase = "completed"
-```
+2. **Add Finalizer**
+   - Add `aianalysis.kubernaut.io/cleanup` finalizer
+   - Enables cleanup on deletion
 
----
+3. **Initialize Status**
+   - Set `status.phase = "Pending"`
+   - Record `status.startTime`
 
-#### Owner Reference Management
-
-**This CRD (AIAnalysis)**:
-- **Owned By**: RemediationRequest (parent CRD)
-- **Owner Reference**: Set at creation by RemediationRequest controller
-- **Cascade Deletion**: Deleted automatically when RemediationRequest is deleted
-- **Owns**: AIApprovalRequest (child CRD for approval workflow)
-- **Watches**: AIApprovalRequest (for approval status changes)
-
-**Two-Layer Coordination Pattern**:
-
-AIAnalysis is a **middle controller** in the remediation workflow:
-- ✅ **Owned by RemediationRequest**: Parent controller manages lifecycle
-- ✅ **Creates AIApprovalRequest**: Child CRD for approval workflow
-- ✅ **Watches AIApprovalRequest**: Event-driven approval detection
-- ✅ **Does NOT create WorkflowExecution**: RemediationRequest does this after AIAnalysis completes
-
-**Lifecycle**:
-```
-RemediationRequest Controller
-    ↓ (creates with owner reference)
-AIAnalysis CRD
-    ↓ (investigates with HolmesGPT)
-AIAnalysis.status.phase = "recommendations"
-    ↓ (creates with owner reference)
-AIApprovalRequest CRD
-    ↓ (watches for approval)
-AIApprovalRequest.status.approved = true
-    ↓ (watch trigger)
-AIAnalysis.status.phase = "completed"
-    ↓ (watch trigger in RemediationRequest)
-RemediationRequest Controller (creates WorkflowExecution)
-```
-
----
-
-#### No Direct HTTP Calls Between Controllers
-
-**Anti-Pattern (Avoided)**: ❌ AIAnalysis calling WorkflowExecution or other controllers via HTTP
-
-**Correct Pattern (Used)**: ✅ CRD status update + RemediationRequest watch-based coordination
-
-**Why This Matters**:
-- **Reliability**: CRD status persists in etcd (HTTP calls can fail silently)
-- **Observability**: Status visible via `kubectl get aianalysis` (HTTP calls are opaque)
-- **Kubernetes-Native**: Leverages built-in watch/reconcile patterns (no custom HTTP infrastructure)
-- **Decoupling**: AIAnalysis doesn't need to know about WorkflowExecution existence or endpoint
-- **Approval Workflow**: AIApprovalRequest is also a CRD (Kubernetes-native approval pattern)
-
-**What AIAnalysis Does NOT Do**:
-- ❌ Call WorkflowExecution controller via HTTP
-- ❌ Create WorkflowExecution CRD (RemediationRequest does this)
-- ❌ Watch WorkflowExecution status (RemediationRequest does this)
-- ❌ Coordinate directly with Workflow Execution Service
-
-**What AIAnalysis DOES Do**:
-- ✅ Process its own AIAnalysis CRD
-- ✅ Create AIApprovalRequest CRD (owned child)
-- ✅ Watch AIApprovalRequest status for approval
-- ✅ Update its own status to "completed" after approval
-- ✅ Trust RemediationRequest to create WorkflowExecution
-
----
-
-#### Watch Configuration
-
-**1. RemediationRequest Watches AIAnalysis (Upstream)**:
+### Transition Criteria
 
 ```go
-// In RemediationRequestReconciler.SetupWithManager()
-err = c.Watch(
-    &source.Kind{Type: &aianalysisv1.AIAnalysis{}},
-    handler.EnqueueRequestsFromMapFunc(r.aiAnalysisToRemediation),
-)
-
-// Mapping function
-func (r *RemediationRequestReconciler) aiAnalysisToRemediation(obj client.Object) []ctrl.Request {
-    ai := obj.(*aianalysisv1.AIAnalysis)
-    return []ctrl.Request{
-        {
-            NamespacedName: types.NamespacedName{
-                Name:      ai.Spec.RemediationRequestRef.Name,
-                Namespace: ai.Spec.RemediationRequestRef.Namespace,
-            },
-        },
-    }
+if specValid && finalizerAdded {
+    status.Phase = "Investigating"
+    status.PhaseTransitions["Investigating"] = metav1.Now()
 }
 ```
 
-**2. AIAnalysis Watches AIApprovalRequest (Downstream)**:
+### Example Status After Pending
+
+```yaml
+status:
+  phase: "Investigating"
+  startTime: "2025-11-30T10:00:00Z"
+  phaseTransitions:
+    Pending: "2025-11-30T10:00:00Z"
+    Investigating: "2025-11-30T10:00:01Z"
+```
+
+---
+
+## Phase 2: Investigating
+
+**Purpose**: AI-powered investigation via HolmesGPT-API
+
+**Timeout**: 60 seconds (configurable via annotation)
+
+### Actions
+
+1. **Build Investigation Request**
+   - Include `signalContext` from spec
+   - Include `enrichmentResults.kubernetesContext`
+   - Include `enrichmentResults.detectedLabels`
+   - Include `enrichmentResults.customLabels`
+   - If recovery: include `previousExecutions` array
+
+2. **Call HolmesGPT-API**
+   - Endpoint: `POST /api/v1/investigate`
+   - HolmesGPT-API uses MCP tool to search workflow catalog
+   - Labels are used for workflow pre-filtering in Data Storage
+
+3. **Receive Workflow Recommendation**
+   - `workflowId`: UUID from catalog
+   - `containerImage`: OCI reference (resolved by HolmesGPT-API)
+   - `parameters`: Workflow parameters
+   - `confidence`: 0.0-1.0 score
+   - `reasoning`: Human-readable explanation
+
+### Investigation Request Example
 
 ```go
-// In AIAnalysisReconciler.SetupWithManager()
-err = c.Watch(
-    &source.Kind{Type: &approvalv1.AIApprovalRequest{}},
-    handler.EnqueueRequestsFromMapFunc(r.approvalRequestToAnalysis),
-)
+type InvestigationRequest struct {
+    SignalContext      SignalContextInput     `json:"signalContext"`
+    KubernetesContext  *KubernetesContext     `json:"kubernetesContext,omitempty"`
+    DetectedLabels     *DetectedLabels        `json:"detectedLabels,omitempty"`
+    CustomLabels       map[string][]string    `json:"customLabels,omitempty"`
+    OwnerChain         []OwnerChainEntry      `json:"ownerChain,omitempty"`
 
-// Mapping function
-func (r *AIAnalysisReconciler) approvalRequestToAnalysis(obj client.Object) []ctrl.Request {
-    approval := obj.(*approvalv1.AIApprovalRequest)
-    return []ctrl.Request{
-        {
-            NamespacedName: types.NamespacedName{
-                Name:      approval.Spec.AIAnalysisRef.Name,
-                Namespace: approval.Spec.AIAnalysisRef.Namespace,
-            },
-        },
-    }
+    // Recovery context (if isRecoveryAttempt)
+    IsRecoveryAttempt   bool                  `json:"isRecoveryAttempt,omitempty"`
+    PreviousExecutions  []PreviousExecution   `json:"previousExecutions,omitempty"`
 }
 ```
 
-**Result**: Bi-directional event propagation with ~100ms latency:
-- RemediationRequest detects AIAnalysis completion within ~100ms
-- AIAnalysis detects approval within ~100ms
+### Transition Criteria
 
----
-
-#### Approval Workflow Pattern
-
-**Unique Pattern**: AIAnalysis is the only service with a **child approval workflow**
-
-**Why AIApprovalRequest is Needed**:
-- **Separation of Concerns**: Approval logic isolated from AI analysis logic
-- **Policy-Based Approval**: Rego policy determines auto-approval eligibility
-- **Manual Override**: Operators can approve high-risk actions manually
-- **Audit Trail**: Approval decisions tracked in dedicated CRD
-
-**Approval Decision Flow**:
-```
-AIAnalysis generates recommendations
-    ↓
-AIAnalysis creates AIApprovalRequest CRD
-    ↓
-AIApprovalRequest Controller evaluates Rego policy
-    ↓ (policy decision)
-If auto-approve: Create Approval CRD automatically
-If manual:      Wait for operator to create Approval CRD
-    ↓ (watch trigger)
-AIApprovalRequest.status.approved = true
-    ↓ (watch trigger in AIAnalysis)
-AIAnalysis.status.phase = "completed"
+```go
+if investigationResponse != nil && investigationResponse.WorkflowRecommendation != nil {
+    status.InvestigationResult = investigationResponse
+    status.Phase = "Analyzing"
+    status.PhaseTransitions["Analyzing"] = metav1.Now()
+} else if timeoutExceeded {
+    status.Phase = "Failed"
+    status.FailureReason = "Investigation timeout exceeded (60s)"
+}
 ```
 
-**Why NOT Embed Approval in AIAnalysis**:
-- ❌ **Mixing Concerns**: AI analysis logic mixed with approval logic
-- ❌ **Testing Complexity**: Hard to test approval independently
-- ❌ **Policy Changes**: Rego policy updates require AI controller changes
-- ❌ **Audit Trail**: Approval history buried in AIAnalysis status
+### Timeout Configuration
 
-**Why AIApprovalRequest CRD is Better**:
-- ✅ **Clean Separation**: AI analysis and approval are separate phases
-- ✅ **Independent Testing**: Each controller tested independently
-- ✅ **Policy Evolution**: Rego policy changes don't affect AI controller
-- ✅ **Clear Audit**: `kubectl get aiapprovalrequest` shows all approvals
-
----
-
-## Approval Context Population & Decision Tracking (V1.0)
-
-**Business Requirements**: BR-AI-059 (Approval Context), BR-AI-060 (Approval Decision Tracking)
-**ADR Reference**: ADR-018 (Approval Notification V1.0 Integration)
-
-### Approval Context Population (BR-AI-059)
-
-**Purpose**: Enable RemediationOrchestrator to create rich operator notifications by populating comprehensive approval context when AI recommendations require human review.
-
-**Trigger**: HolmesGPT response with confidence 60-79% (medium confidence threshold)
-
-**Action**: Populate `status.approvalContext` with:
-1. **Investigation Summary**: Concise description of root cause analysis
-2. **Evidence Collected**: List of supporting evidence from Context API and cluster state
-3. **Recommended Actions**: Structured list of actions with rationales
-4. **Alternatives Considered**: Other approaches considered with pros/cons
-5. **Why Approval Required**: Clear explanation of why human review is needed
-
-**Code Reference**: `populateApprovalContext()` function in controller implementation
-
-**Validation Requirements**:
-- ✅ MUST have `investigationSummary` (non-empty)
-- ✅ MUST have at least 1 `recommendedAction`
-- ✅ MUST have at least 1 `evidenceCollected` item
-- ✅ SHOULD have at least 1 `alternativeConsidered` (for informed decisions)
-
-**Example Approval Context**:
 ```yaml
-status:
-  approvalContext:
-    reason: "Medium confidence (72.5%) - requires human review"
-    confidenceScore: 72.5
-    confidenceLevel: "medium"
-    investigationSummary: "Memory leak detected in payment processing coroutine (50MB/hr growth rate)"
-    evidenceCollected:
-      - "Linear memory growth 50MB/hour per pod over 4-hour observation window"
-      - "Similar incident resolved 3 weeks ago with 92% success rate (memory increase)"
-      - "No code deployment in last 24h - rules out recent regression"
-    recommendedActions:
-      - action: "collect_diagnostics"
-        rationale: "Capture heap dump before making changes for post-mortem analysis"
-      - action: "increase_resources"
-        rationale: "Increase memory limit 2Gi → 3Gi based on observed growth rate"
-      - action: "restart_pod"
-        rationale: "Rolling restart to clear leaked memory and restore service"
-    alternativesConsidered:
-      - approach: "Wait and monitor"
-        prosCons: "Pros: No disruption. Cons: OOM risk in ~4 hours based on current trend"
-      - approach: "Immediate restart without memory increase"
-        prosCons: "Pros: Fast recovery. Cons: Doesn't address root cause, will recur"
-    whyApprovalRequired: "Historical pattern requires validation (71-86% HolmesGPT accuracy on generic K8s memory issues)"
-```
-
-**Integration**: RemediationOrchestrator watches `AIAnalysis.status.phase = "Approving"` and uses `approvalContext` to format rich notifications for Slack/Console delivery.
-
----
-
-### Approval Decision Tracking (BR-AI-060)
-
-**Purpose**: Maintain complete audit trail of operator approval decisions for compliance, system learning, and effectiveness tracking.
-
-**Trigger**: AIApprovalRequest status update (decision = "approved" or "rejected")
-
-**Action**: Update `status` with approval decision metadata:
-1. **Approval Status**: "approved", "rejected", or "pending"
-2. **Decision Metadata**: Approver/rejector identity, timestamp, method (console/slack/api)
-3. **Justification**: Operator-provided reason for their decision
-4. **Timing**: Duration from approval request to decision
-
-**Code Reference**: `updateApprovalDecisionStatus()` function in controller implementation
-
-**Status Fields Populated**:
-```yaml
-status:
-  # Decision metadata
-  approvalStatus: "approved"  # or "rejected" or "pending"
-  approvalTime: "2025-10-20T14:32:45Z"
-  approvalDuration: "2m15s"
-  approvalMethod: "console"
-  approvalJustification: "Approved - low risk change in staging environment"
-
-  # Approval path (if approved)
-  approvedBy: "ops-engineer@company.com"
-
-  # Rejection path (if rejected)
-  rejectedBy: "ops-engineer@company.com"
-  rejectionReason: "Resource constraints - cannot increase memory at this time"
-```
-
-**Audit Trail Benefits**:
-- ✅ **Compliance**: Complete record of who approved/rejected what and why
-- ✅ **System Learning**: AI learns from operator decisions to improve future confidence scoring
-- ✅ **Effectiveness Tracking**: Track approval success rates for different recommendation types
-- ✅ **Operator Patterns**: Identify frequently rejected action types for training improvement
-
-**Watch Pattern**: AIAnalysis controller watches AIApprovalRequest status changes and updates its own status when decisions are made.
-
----
-
-#### Coordination Benefits
-
-**For AIAnalysis Controller**:
-- ✅ **Focused**: Only handles AI investigation and recommendations
-- ✅ **Decoupled**: Doesn't know about WorkflowExecution
-- ✅ **Approval Separation**: Approval logic isolated in AIApprovalRequest
-- ✅ **Testable**: Unit tests only need fake K8s client + approval CRD
-
-**For RemediationRequest Controller**:
-- ✅ **Visibility**: Can query AIAnalysis status anytime
-- ✅ **Control**: Decides when to create WorkflowExecution
-- ✅ **Timeout Detection**: Can detect if AIAnalysis takes too long
-- ✅ **Approval Awareness**: Sees approval status in AIAnalysis
-
-**For Operations**:
-- ✅ **Debuggable**: `kubectl get aianalysis -o yaml` shows full investigation state
-- ✅ **Approval Transparency**: `kubectl get aiapprovalrequest` shows approval decisions
-- ✅ **Observable**: Kubernetes events show investigation and approval progress
-- ✅ **Traceable**: CRD history shows complete workflow with approvals
-
----
-
-
-## Phase-Specific Timeouts & Fallback Mechanisms
-
-### Phase Timeout Configuration (BR-AI-032)
-
-**Default Timeouts**:
-- **investigating**: 15 minutes (HolmesGPT investigation)
-- **analyzing**: 10 minutes (AI analysis and validation)
-- **recommending**: 5 minutes (Recommendation generation)
-- **completed**: No timeout (terminal state)
-
-**Configurable via Annotation**:
-```yaml
-apiVersion: aianalysis.kubernaut.io/v1
-kind: AIAnalysis
 metadata:
   annotations:
-    aianalysis.kubernaut.io/investigating-timeout: "20m"
-    aianalysis.kubernaut.io/analyzing-timeout: "15m"
-    aianalysis.kubernaut.io/recommending-timeout: "10m"
+    aianalysis.kubernaut.io/investigating-timeout: "90s"  # Override default 60s
+```
+
+### Error Handling
+
+| Error | Action | Retry |
+|-------|--------|-------|
+| HolmesGPT-API unavailable | Retry with exponential backoff | 3 attempts |
+| Timeout | Mark as Failed | No |
+| Invalid response | Mark as Failed | No |
+
+---
+
+## Phase 3: Analyzing
+
+**Purpose**: Rego policy evaluation and workflow validation
+
+**Timeout**: 5 seconds
+
+### Actions
+
+1. **Load Rego Approval Policies**
+   - ConfigMap: `ai-approval-policies` in `kubernaut-system`
+   - Evaluate with investigation result and context
+
+2. **Build Policy Input**
+   ```go
+   type ApprovalPolicyInput struct {
+       Confidence       float64           `json:"confidence"`
+       Environment      string            `json:"environment"`
+       Severity         string            `json:"severity"`
+       ActionType       string            `json:"action_type"`
+       DetectedLabels   *DetectedLabels   `json:"detected_labels,omitempty"`
+       CustomLabels     map[string][]string `json:"custom_labels,omitempty"`
+       IsRecoveryAttempt bool             `json:"is_recovery_attempt"`
+   }
+   ```
+
+3. **Evaluate Approval Decision**
+   - `AUTO_APPROVE`: Confidence ≥80%, low-risk environment
+   - `MANUAL_APPROVAL_REQUIRED`: Confidence <80%, production, high-risk action
+
+4. **Validate Workflow Exists**
+   - Verify `workflowId` exists in catalog (hallucination detection)
+   - Verify `containerImage` format is valid OCI reference
+   - Verify parameters conform to workflow schema
+
+### Transition Criteria
+
+```go
+if policyEvaluated && workflowValidated {
+    status.SelectedWorkflow = investigationResult.WorkflowRecommendation
+    status.ApprovalRequired = (regoDecision == "MANUAL_APPROVAL_REQUIRED")
+    status.ApprovalReason = regoDecision.Reason
+    status.Phase = "Completed"
+    status.CompletionTime = metav1.Now()
+}
+```
+
+### Rego Policy Example
+
+```rego
+package aianalysis.approval
+
+default decision = "MANUAL_APPROVAL_REQUIRED"
+
+# Auto-approve if high confidence in non-production
+decision = "AUTO_APPROVE" {
+    input.confidence >= 0.8
+    input.environment != "production"
+}
+
+# Auto-approve GitOps-managed + low-risk
+decision = "AUTO_APPROVE" {
+    input.confidence >= 0.85
+    input.detected_labels.git_ops_managed == true
+    input.action_type != "drain_node"
+}
+```
+
+---
+
+## Phase 4: Completed
+
+**Purpose**: Terminal state - output ready for RO consumption
+
+**Timeout**: None (terminal)
+
+### Status After Completion
+
+```yaml
+status:
+  phase: "Completed"
+  completionTime: "2025-11-30T10:00:45Z"
+
+  # Workflow recommendation (from HolmesGPT-API)
+  selectedWorkflow:
+    workflowId: "wf-memory-increase-v2"
+    containerImage: "ghcr.io/kubernaut/workflows/memory-increase:v2.1.0"
+    parameters:
+      targetDeployment: "payment-api"
+      memoryIncrease: "512Mi"
+      namespace: "production"
+    confidence: 0.87
+    reasoning: "Historical success rate 92% for similar OOM scenarios"
+
+  # Approval decision (from Rego policy)
+  approvalRequired: true
+  approvalReason: "Production environment requires manual approval"
+
+  # Investigation summary (for operator context)
+  investigationSummary: "OOMKilled due to memory leak in payment processing coroutine"
+
+  # Phase timing
+  phaseTransitions:
+    Pending: "2025-11-30T10:00:00Z"
+    Investigating: "2025-11-30T10:00:01Z"
+    Analyzing: "2025-11-30T10:00:40Z"
+    Completed: "2025-11-30T10:00:45Z"
+```
+
+### What Happens Next (RO Responsibility)
+
+1. **RO watches** `AIAnalysis.status.phase == "Completed"`
+2. **RO checks** `status.approvalRequired`:
+   - **If false**: Create WorkflowExecution CRD immediately
+   - **If true**: Create notification (Slack/Console), wait for operator approval
+3. **V1.1**: RO will create `RemediationApprovalRequest` CRD for explicit approval workflow
+
+---
+
+## Recovery Attempts
+
+### Handling Previous Failures
+
+When `spec.isRecoveryAttempt = true`, the controller:
+
+1. **Includes all previous executions** in investigation request
+2. **HolmesGPT-API uses** failure context to avoid repeating mistakes
+3. **Tracks attempt number** for max retry enforcement
+
+### Example Recovery Input
+
+```yaml
 spec:
-  # ... analysis request
+  isRecoveryAttempt: true
+  recoveryAttemptNumber: 2
+  previousExecutions:
+    - workflowId: "wf-oom-restart-v1"
+      containerImage: "ghcr.io/kubernaut/workflows/oom-restart:v1.2.0"
+      failureReason: "Pod evicted during restart - node pressure"
+      failurePhase: "execution"
+      kubernetesReason: "Evicted"
+      attemptNumber: 1
+    - workflowId: "wf-node-drain-v1"
+      containerImage: "ghcr.io/kubernaut/workflows/node-drain:v1.0.0"
+      failureReason: "PDB violation - insufficient replicas"
+      failurePhase: "validation"
+      kubernetesReason: "PodDisruptionBudgetViolation"
+      attemptNumber: 2
 ```
 
-**Implementation**:
-```go
-// pkg/ai/analysis/phases/timeout.go
-package phases
+### Recovery Decision
 
-import (
-    "time"
-    "strconv"
-    aianalysisv1 "github.com/jordigilh/kubernaut/api/ai/v1"
-)
+HolmesGPT-API analyzes previous failures and:
+- Avoids selecting the same workflow if it failed with non-transient error
+- Considers alternative approaches based on failure patterns
+- May escalate to `notify_only` if all reasonable options exhausted
 
-const (
-    DefaultInvestigatingTimeout = 15 * time.Minute
-    DefaultAnalyzingTimeout     = 10 * time.Minute
-    DefaultRecommendingTimeout  = 5 * time.Minute
-)
+---
 
-func GetPhaseTimeout(aiAnalysis *aianalysisv1.AIAnalysis) time.Duration {
-    phase := aiAnalysis.Status.Phase
+## CRD-Based Coordination
 
-    // Check for annotation override
-    annotationKey := fmt.Sprintf("aianalysis.kubernaut.io/%s-timeout", phase)
-    if timeoutStr, ok := aiAnalysis.Annotations[annotationKey]; ok {
-        if timeout, err := time.ParseDuration(timeoutStr); err == nil {
-            return timeout
-        }
-    }
-
-    // Return default based on phase
-    switch phase {
-    case "investigating":
-        return DefaultInvestigatingTimeout
-    case "analyzing":
-        return DefaultAnalyzingTimeout
-    case "recommending":
-        return DefaultRecommendingTimeout
-    default:
-        return 15 * time.Minute
-    }
-}
-
-func (r *AIAnalysisReconciler) checkPhaseTimeout(aiAnalysis *aianalysisv1.AIAnalysis) (bool, string) {
-    timeout := GetPhaseTimeout(aiAnalysis)
-
-    phaseStartTime := aiAnalysis.Status.PhaseTransitions[aiAnalysis.Status.Phase]
-    if time.Since(phaseStartTime.Time) > timeout {
-        return true, fmt.Sprintf("phase %s exceeded timeout of %v", aiAnalysis.Status.Phase, timeout)
-    }
-
-    return false, ""
-}
-```
-
-### HolmesGPT Fallback Strategy (BR-AI-024)
-
-**Requirement**: AIAnalysis MUST provide fallback when HolmesGPT is unavailable
-
-#### Fallback Decision Tree
+### Watch Patterns
 
 ```
-HolmesGPT Investigation Request
-        ↓
-    Available?
-    /        \
-  YES        NO
-   ↓          ↓
- Use     Check Historical
- HolmesGPT    Patterns
-              ↓
-          Found Similar?
-          /        \
-        YES        NO
-         ↓          ↓
-    Use Historical  Degraded
-      Analysis      Mode
+RemediationOrchestrator
+    ↓ (watches SignalProcessing completion)
+SignalProcessing.status.phase == "Completed"
+    ↓ (creates AIAnalysis with enrichmentResults)
+AIAnalysis CRD created
+    ↓ (AIAnalysis controller watches)
+AIAnalysis.status.phase == "Completed"
+    ↓ (RO watches for completion)
+RemediationOrchestrator creates WorkflowExecution (if approved)
 ```
 
-#### BR-AI-024: HolmesGPT Unavailability Fallback
+### No Direct HTTP Calls Between Controllers
 
-**Implementation**: Multi-tier fallback strategy
+**Correct Pattern**: CRD status updates + Kubernetes watches
 
-**Tier 1: Historical Pattern Matching** (Primary Fallback)
-- Query vector DB for similar alert fingerprints
-- Retrieve past investigation results with >0.8 similarity
-- Use cached HolmesGPT responses from similar scenarios
+**Benefits**:
+- ✅ **Reliability**: Status persists in etcd
+- ✅ **Observability**: `kubectl get aianalysis` shows state
+- ✅ **Decoupling**: Controllers don't know about each other's endpoints
 
-**Tier 2: Rule-Based Analysis** (Secondary Fallback)
-- Apply predefined diagnostic rules for common patterns
-- Use heuristic-based root cause identification
-- Generate basic recommendations from knowledge base
+---
 
-**Tier 3: Degraded Mode** (Final Fallback)
-- Mark analysis as "degraded"
-- Escalate to manual review
-- Provide basic context without AI analysis
+## Phase Timeout Configuration
 
-#### Implementation: HolmesGPT Fallback
+### Default Timeouts
+
+| Phase | Default | Configurable |
+|-------|---------|--------------|
+| Pending | Immediate | No |
+| Investigating | 60s | Yes (annotation) |
+| Analyzing | 5s | No |
+| Completed | N/A | No |
+
+### Timeout Annotation
+
+```yaml
+metadata:
+  annotations:
+    aianalysis.kubernaut.io/investigating-timeout: "120s"  # Extended for complex investigations
+```
+
+### Timeout Implementation
 
 ```go
-// pkg/ai/analysis/integration/holmesgpt_fallback.go
-package integration
-
-import (
-    "context"
-    "fmt"
-    "github.com/jordigilh/kubernaut/pkg/ai/analysis"
-    "github.com/jordigilh/kubernaut/pkg/storage"
-)
-
-type HolmesGPTClientWithFallback struct {
-    holmesClient  *HolmesGPTClient
-    vectorDB      storage.VectorDBClient
-    knowledgeBase *KnowledgeBase
-}
-
-func (h *HolmesGPTClientWithFallback) Investigate(
-    ctx context.Context,
-    req analysis.InvestigationRequest,
-) (*analysis.InvestigationResult, error) {
-
-    // Tier 1: Try HolmesGPT (primary)
-    result, err := h.holmesClient.Investigate(ctx, req)
-    if err == nil {
-        return result, nil
-    }
-
-    log.Warn("HolmesGPT unavailable, using fallback", "error", err)
-
-    // Tier 2: Historical Pattern Matching (fallback)
-    historicalResult, err := h.useHistoricalPatterns(ctx, req)
-    if err == nil && historicalResult.Confidence > 0.8 {
-        log.Info("Using historical pattern fallback", "confidence", historicalResult.Confidence)
-        return historicalResult, nil
-    }
-
-    // Tier 3: Rule-Based Analysis (fallback)
-    ruleBasedResult, err := h.useRuleBasedAnalysis(ctx, req)
-    if err == nil {
-        log.Info("Using rule-based fallback")
-        return ruleBasedResult, nil
-    }
-
-    // Tier 4: Degraded Mode (final fallback)
-    return h.degradedModeAnalysis(ctx, req), nil
-}
-
-func (h *HolmesGPTClientWithFallback) useHistoricalPatterns(
-    ctx context.Context,
-    req analysis.InvestigationRequest,
-) (*analysis.InvestigationResult, error) {
-
-    // Vector similarity search for similar alerts
-    similarAlerts, err := h.vectorDB.Search(ctx, storage.VectorSearchRequest{
-        Query:     req.AlertContext.Fingerprint,
-        TopK:      5,
-        Threshold: 0.8,
-    })
-
-    if err != nil || len(similarAlerts) == 0 {
-        return nil, fmt.Errorf("no historical patterns found")
-    }
-
-    // Use most similar past investigation
-    bestMatch := similarAlerts[0]
-
-    return &analysis.InvestigationResult{
-        RootCauseHypotheses: bestMatch.PastInvestigation.RootCauseHypotheses,
-        CorrelatedAlerts:    bestMatch.PastInvestigation.CorrelatedAlerts,
-        InvestigationReport: fmt.Sprintf(
-            "[HISTORICAL FALLBACK] Based on similar alert (similarity: %.2f)\n%s",
-            bestMatch.Similarity,
-            bestMatch.PastInvestigation.Report,
-        ),
-        ContextualAnalysis: bestMatch.PastInvestigation.ContextualAnalysis,
-        Confidence:         bestMatch.Similarity,
-        FallbackUsed:       "historical-patterns",
-    }, nil
-}
-
-func (h *HolmesGPTClientWithFallback) useRuleBasedAnalysis(
-    ctx context.Context,
-    req analysis.InvestigationRequest,
-) (*analysis.InvestigationResult, error) {
-
-    // Apply predefined diagnostic rules
-    rules := h.knowledgeBase.GetRulesForAlert(req.AlertContext)
-
-    hypotheses := []analysis.RootCauseHypothesis{}
-    for _, rule := range rules {
-        if rule.Matches(req.AlertContext) {
-            hypotheses = append(hypotheses, analysis.RootCauseHypothesis{
-                Hypothesis: rule.RootCause,
-                Confidence: rule.Confidence,
-                Evidence:   rule.Evidence,
-            })
+func getPhaseTimeout(aiAnalysis *AIAnalysis) time.Duration {
+    if timeout, ok := aiAnalysis.Annotations["aianalysis.kubernaut.io/investigating-timeout"]; ok {
+        if d, err := time.ParseDuration(timeout); err == nil {
+            return d
         }
     }
-
-    if len(hypotheses) == 0 {
-        return nil, fmt.Errorf("no matching rules found")
-    }
-
-    return &analysis.InvestigationResult{
-        RootCauseHypotheses: hypotheses,
-        InvestigationReport: "[RULE-BASED FALLBACK] Analysis based on predefined diagnostic rules",
-        FallbackUsed:        "rule-based",
-    }, nil
-}
-
-func (h *HolmesGPTClientWithFallback) degradedModeAnalysis(
-    ctx context.Context,
-    req analysis.InvestigationRequest,
-) *analysis.InvestigationResult {
-
-    return &analysis.InvestigationResult{
-        RootCauseHypotheses: []analysis.RootCauseHypothesis{
-            {
-                Hypothesis: "Manual investigation required (AI unavailable)",
-                Confidence: 0.0,
-                Evidence:   []string{"HolmesGPT unavailable", "No historical patterns found"},
-            },
-        },
-        InvestigationReport: "[DEGRADED MODE] AI analysis unavailable, manual review required",
-        ContextualAnalysis:  fmt.Sprintf("Alert: %s, Severity: %s, Environment: %s",
-            req.AlertContext.Fingerprint,
-            req.AlertContext.Severity,
-            req.AlertContext.Environment,
-        ),
-        FallbackUsed: "degraded-mode",
-        Confidence:   0.0,
-    }
+    return DefaultInvestigatingTimeout // 60s
 }
 ```
 
-#### Metrics for Fallback Usage
+---
+
+## Metrics
+
+### Phase Duration Metrics
 
 ```go
 var (
-    aiHolmesGPTFallbackCount = promauto.NewCounterVec(prometheus.CounterOpts{
-        Name: "kubernaut_ai_holmesgpt_fallback_total",
-        Help: "Total HolmesGPT fallback operations",
-    }, []string{"fallback_tier", "environment"})
+    aiAnalysisPhaseDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "kubernaut_aianalysis_phase_duration_seconds",
+            Help:    "Duration of each AIAnalysis phase",
+            Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120},
+        },
+        []string{"phase", "environment"},
+    )
 
-    aiHolmesGPTAvailability = promauto.NewGaugeVec(prometheus.GaugeOpts{
-        Name: "kubernaut_ai_holmesgpt_availability",
-        Help: "HolmesGPT service availability (1 = available, 0 = unavailable)",
-    }, []string{"endpoint"})
+    aiAnalysisPhaseTransitions = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "kubernaut_aianalysis_phase_transitions_total",
+            Help: "Total phase transitions",
+        },
+        []string{"from_phase", "to_phase"},
+    )
 )
-
-// Record fallback usage
-aiHolmesGPTFallbackCount.WithLabelValues("historical-patterns", "production").Inc()
-aiHolmesGPTAvailability.WithLabelValues("holmesgpt-api:8080").Set(0)
 ```
 
-#### Status Field for Fallback Tracking
+### Key Metrics
 
-```yaml
-status:
-  phase: investigating
-  investigationResult:
-    rootCauseHypotheses: [...]
-    investigationReport: "[HISTORICAL FALLBACK] Based on similar alert..."
-
-    # Fallback metadata
-    fallbackMetadata:
-      fallbackUsed: "historical-patterns"  # or "rule-based", "degraded-mode", "none"
-      holmesGPTAvailable: false
-      fallbackConfidence: 0.85
-      fallbackReason: "HolmesGPT service unavailable (connection timeout)"
-```
-
+| Metric | Purpose |
+|--------|---------|
+| `aianalysis_phase_duration_seconds{phase="Investigating"}` | HolmesGPT-API latency |
+| `aianalysis_phase_duration_seconds{phase="Analyzing"}` | Rego evaluation time |
+| `aianalysis_phase_transitions_total{to_phase="Failed"}` | Failure rate |
+| `aianalysis_approval_required_total` | Manual approval rate |
 
 ---
 
+## Related Documents
+
+| Document | Purpose |
+|----------|---------|
+| [Overview](./overview.md) | Service architecture |
+| [Controller Implementation](./controller-implementation.md) | Reconciler logic |
+| [Rego Policy Examples](./REGO_POLICY_EXAMPLES.md) | Approval policy patterns |
+| [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) | Recovery flow design |

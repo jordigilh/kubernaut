@@ -3,7 +3,8 @@
 
 set -e
 
-DATA_STORAGE_URL="${DATA_STORAGE_URL:-http://localhost:18090}"
+# DD-TEST-001: HolmesGPT-API uses port 18094 (not 18090 - that's Data Storage's own tests)
+DATA_STORAGE_URL="${DATA_STORAGE_URL:-http://localhost:18094}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

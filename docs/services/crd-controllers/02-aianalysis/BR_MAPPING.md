@@ -1,13 +1,28 @@
 # AIAnalysis Service - Business Requirements Mapping
 
 **Service**: AIAnalysis Controller
-**Version**: 1.1
-**Date**: November 30, 2025
-**Status**: V1.0 Scope Defined
+**Version**: 1.3
+**Date**: December 1, 2025
+**Status**: V1.0 Scope Defined - Authoritative
 
 ---
 
 ## Changelog
+
+### Version 1.3 (2025-12-01)
+- **AUTHORITY TRIAGE**: All BRs verified against authoritative source documents
+- **FIXED**: BR-SP-001, BR-SP-002, BR-SP-003 descriptions aligned with `06_INTEGRATION_LAYER.md`
+- **CLARIFIED**: Implementation details (EnrichmentResults, EnrichmentQuality) reference DD-CONTRACT-002, not BRs
+
+### Version 1.2 (2025-11-30)
+- **GOVERNANCE FIX**: Established single source of truth for requirements
+  - All BRs now reference authoritative requirements documents
+  - DDs/ADRs reference BRs; they do NOT define them
+  - Removed phantom BR-RO-*, BR-WE-* references (replaced with integration contracts)
+- **FORMALIZED**: BR-AI-075-076 (Workflow Selection) - now in `02_AI_MACHINE_LEARNING.md` v1.1
+- **FORMALIZED**: BR-AI-080-083 (Recovery Flow) - now in `02_AI_MACHINE_LEARNING.md` v1.1
+- **FORMALIZED**: BR-HAPI-250-252 (MCP Integration) - now in `13_HOLMESGPT_REST_API_WRAPPER.md` v1.1
+- **UPDATED**: Indirect dependencies now show integration contracts, not phantom BRs
 
 ### Version 1.1 (2025-11-30)
 - **REMOVED FROM V1.0**: BR-AI-051, BR-AI-052, BR-AI-053 (Dependency Validation)
@@ -31,11 +46,17 @@
 
 This document maps all business requirements (BRs) relevant to the AIAnalysis Service, categorized by ownership (direct vs. indirect) and V1.0 scope.
 
-**Source Documents**:
-- `docs/requirements/02_AI_MACHINE_LEARNING.md` - Primary AI/ML requirements
+**⚠️ Single Source of Truth**: All BRs MUST be defined in authoritative requirements documents. DDs/ADRs REFERENCE BRs; they do NOT define them.
+
+**Authoritative Source Documents**:
+- `docs/requirements/02_AI_MACHINE_LEARNING.md` v1.1 - Primary AI/ML requirements (BR-AI-*)
+- `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` v1.1 - HolmesGPT-API requirements (BR-HAPI-*)
+- `docs/requirements/06_INTEGRATION_LAYER.md` - Integration requirements (BR-SP-*)
+
+**Reference Documents** (do NOT define BRs):
 - `docs/architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md` - Integration contracts
 - `docs/architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md` - Recovery flow
-- `docs/architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md` - Workflow catalog (predefined workflows)
+- `docs/architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md` - Workflow catalog
 
 ---
 
@@ -179,19 +200,27 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 ### SignalProcessing → AIAnalysis
 
+**Source**: `docs/requirements/06_INTEGRATION_LAYER.md`
+
 | BR ID | Source | Relationship | Notes |
 |-------|--------|--------------|-------|
-| **BR-SP-001** | SignalProcessing | Provides `EnrichmentResults` | Structured K8s context |
-| **BR-SP-002** | SignalProcessing | Provides `HistoricalContext` | Historical patterns |
-| **BR-SP-003** | SignalProcessing | Provides `EnrichmentQuality` | Quality score (0.0-1.0) |
+| **BR-SP-001** | SignalProcessing | Alert processing | Configurable filtering rules |
+| **BR-SP-002** | SignalProcessing | Context enrichment | K8s cluster context, DetectedLabels, CustomLabels |
+| **BR-SP-003** | SignalProcessing | Format normalization | Multi-system format support |
+
+**Implementation Details**: `EnrichmentResults` struct and `EnrichmentQuality` score are defined in DD-CONTRACT-002, not as separate BRs.
 
 ### HolmesGPT-API → AIAnalysis
 
+**Source**: `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` v1.1
+
 | BR ID | Source | Relationship | Notes |
 |-------|--------|--------------|-------|
-| **BR-HAPI-001** | HolmesGPT-API | Investigation results | `/incident/analyze` response |
-| **BR-HAPI-002** | HolmesGPT-API | Recovery analysis | `/recovery/analyze` response |
+| **BR-HAPI-001** | HolmesGPT-API | Investigation results | `/api/v1/investigate` response |
+| **BR-HAPI-RECOVERY-001** | HolmesGPT-API | Recovery analysis | `/api/v1/recovery/analyze` response |
 | **BR-HAPI-250** | HolmesGPT-API | Workflow catalog search | MCP tool with `containerImage` |
+| **BR-HAPI-251** | HolmesGPT-API | Container resolution | Resolves `workflowId` → `containerImage` |
+| **BR-HAPI-252** | HolmesGPT-API | Label passthrough | DetectedLabels + CustomLabels to MCP |
 
 ---
 
@@ -199,18 +228,25 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 ### AIAnalysis → RemediationOrchestrator
 
-| BR ID | Target | Relationship | Notes |
-|-------|--------|--------------|-------|
-| **BR-RO-010** | RO | Watches AIAnalysis.status | Creates WorkflowExecution |
-| **BR-RO-011** | RO | Reads `selectedWorkflow` | Uses for WorkflowExecution.spec |
-| **BR-RO-012** | RO | Reads `approvalRequired` | Orchestrates approval flow |
+**Note**: RO requirements should be defined in a separate `BR-RO-*` requirements document.
+The following describes the **integration contract**, not formal BRs.
+
+| Integration Point | Consumer | Contract | Reference |
+|-------------------|----------|----------|-----------|
+| `status.phase == "Completed"` | RO (watch) | Creates WorkflowExecution when analysis complete | DD-CONTRACT-002 |
+| `status.selectedWorkflow` | RO | Uses `workflowId`, `containerImage`, `parameters` | DD-CONTRACT-001 |
+| `status.approvalRequired` | RO | Triggers Notification when `true` | ADR-018 |
 
 ### AIAnalysis → WorkflowExecution
 
-| BR ID | Target | Relationship | Notes |
-|-------|--------|--------------|-------|
-| **BR-WE-001** | WorkflowExecution | Receives `containerImage` | From `selectedWorkflow.containerImage` |
-| **BR-WE-002** | WorkflowExecution | Receives `parameters` | From `selectedWorkflow.parameters` |
+**Note**: WorkflowExecution requirements should be defined in a separate `BR-WE-*` requirements document.
+The following describes the **output contract**, not formal BRs.
+
+| Output Field | Consumer | Contract | Reference |
+|--------------|----------|----------|-----------|
+| `selectedWorkflow.containerImage` | WorkflowExecution.spec | OCI container reference for Tekton | DD-CONTRACT-001 |
+| `selectedWorkflow.parameters` | WorkflowExecution.spec | Workflow parameters map | DD-CONTRACT-001 |
+| `selectedWorkflow.workflowId` | Audit trail | UUID for traceability | DD-WORKFLOW-002 |
 
 ---
 
@@ -281,12 +317,15 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | 2025-12-01 | Authority triage: All BRs verified; Fixed BR-SP-* descriptions |
+| 1.2 | 2025-11-30 | Governance fix: Single source of truth; Formalized BR-AI-075-083, BR-HAPI-250-252 |
 | 1.1 | 2025-11-30 | Removed BR-AI-051-053 from V1.0 (predefined workflows); Clarified BR-AI-023 |
 | 1.0 | 2025-11-29 | Initial comprehensive BR mapping for V1.0 scope |
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: November 30, 2025
+**Document Version**: 1.3
+**Last Updated**: December 1, 2025
 **Maintained By**: AIAnalysis Service Team
+**Governance**: All BRs MUST be defined in `docs/requirements/*.md` (single source of truth)
 

@@ -191,9 +191,9 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 		// BEHAVIOR: Coordinator writes to both PostgreSQL and Vector DB in a single atomic transaction
 		// CORRECTNESS: Both writes succeed, PostgreSQL commit happens once, no rollbacks occur
 		It("should write to both PostgreSQL and Vector DB atomically with single commit", func() {
-			// ARRANGE: Context and 384-dimensional embedding
+			// ARRANGE: Context and 768-dimensional embedding
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 			for i := range embedding {
 				embedding[i] = float32(i) * 0.01
 			}
@@ -221,7 +221,7 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 		It("should return exact PostgreSQL ID from mock on successful write", func() {
 			// ARRANGE: Context and embedding
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			// ACT: Perform dual-write
 			result, err := coordinator.Write(ctx, testAudit, embedding)
@@ -237,7 +237,7 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 	Context("PostgreSQL failure handling", func() {
 		It("should rollback on PostgreSQL transaction begin failure", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			mockDB.shouldFail = true
 
@@ -266,7 +266,7 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 
 		It("should rollback on PostgreSQL commit failure", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			mockDB.failOnCommit = true
 
@@ -284,7 +284,7 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 	Context("Vector DB failure handling", func() {
 		It("should rollback PostgreSQL transaction on Vector DB failure", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			mockVectorDB.shouldFail = true
 
@@ -299,7 +299,7 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 
 		It("should not commit PostgreSQL if Vector DB is unavailable", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			mockVectorDB.shouldFail = true
 
@@ -340,7 +340,7 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 						Metadata:             "{}",
 					}
 
-					embedding := make([]float32, 384)
+					embedding := make([]float32, 768)
 					for j := range embedding {
 						embedding[j] = float32(index*j) * 0.001
 					}
@@ -373,7 +373,7 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 	Context("validation", func() {
 		It("should reject nil audit", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			result, err := coordinator.Write(ctx, nil, embedding)
 
@@ -444,7 +444,7 @@ var _ = Describe("BR-STORAGE-015: Graceful Degradation", func() {
 		It("should fall back to PostgreSQL-only on Vector DB unavailability", func() {
 			// ARRANGE: Context, embedding, and VectorDB failure
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 			mockVectorDB.shouldFail = true
 
 			// ACT: Write with fallback enabled
@@ -470,7 +470,7 @@ var _ = Describe("BR-STORAGE-015: Graceful Degradation", func() {
 		It("should record Vector DB failure with descriptive error message", func() {
 			// ARRANGE: Context, embedding, and VectorDB failure
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 			mockVectorDB.shouldFail = true
 
 			// ACT: Write with fallback enabled
@@ -488,7 +488,7 @@ var _ = Describe("BR-STORAGE-015: Graceful Degradation", func() {
 
 		It("should not fall back if PostgreSQL fails", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			mockDB.shouldFail = true
 
@@ -503,7 +503,7 @@ var _ = Describe("BR-STORAGE-015: Graceful Degradation", func() {
 		It("should record Vector DB failure with descriptive error message", func() {
 			// ARRANGE: Context, embedding, and VectorDB failure
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 			mockVectorDB.shouldFail = true
 
 			// ACT: Write with fallback enabled
@@ -521,7 +521,7 @@ var _ = Describe("BR-STORAGE-015: Graceful Degradation", func() {
 
 		It("should not fall back if PostgreSQL fails", func() {
 			ctx := context.Background()
-			embedding := make([]float32, 384)
+			embedding := make([]float32, 768)
 
 			mockDB.shouldFail = true
 

@@ -1,7 +1,26 @@
 ## Testing Strategy
 
-**Testing Framework Reference**: [.cursor/rules/03-testing-strategy.mdc](../../../.cursor/rules/03-testing-strategy.mdc)
-**Summary Document**: [TESTING_STRATEGY_SUMMARY.md](../TESTING_STRATEGY_SUMMARY.md)
+**Version**: v2.0
+**Last Updated**: 2025-11-30
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| v2.0 | 2025-11-30 | Added TESTING_GUIDELINES.md reference; Updated port allocation per DD-TEST-001 |
+| v1.0 | 2025-10-15 | Initial specification |
+
+---
+
+## References
+
+| Document | Purpose |
+|----------|---------|
+| [TESTING_GUIDELINES.md](../../../development/business-requirements/TESTING_GUIDELINES.md) | **AUTHORITATIVE** - Testing methodology and standards |
+| [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc) | Testing framework rules |
+| [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) | Port allocation for E2E tests |
 
 ### Testing Pyramid
 
