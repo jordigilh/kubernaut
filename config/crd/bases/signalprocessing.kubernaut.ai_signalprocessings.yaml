@@ -50,8 +50,9 @@ spec:
                   DEDUPLICATION (From RemediationRequest)
                   ========================================
                   Deduplication and correlation context
+                  Uses shared type for API contract alignment (RO Team decision)
                 properties:
-                  correlationID:
+                  correlationId:
                     description: Optional correlation ID for grouping related signals
                     type: string
                   firstOccurrence:
@@ -59,6 +60,9 @@ spec:
                       seen
                     format: date-time
                     type: string
+                  isDuplicate:
+                    description: True if this signal is a duplicate of an active remediation
+                    type: boolean
                   lastOccurrence:
                     description: Timestamp when this signal fingerprint was last seen
                     format: date-time
@@ -66,6 +70,10 @@ spec:
                   occurrenceCount:
                     description: Total count of occurrences of this signal
                     type: integer
+                  previousRemediationRequestRef:
+                    description: Reference to previous RemediationRequest CRD (if
+                      duplicate)
+                    type: string
                 required:
                 - firstOccurrence
                 - lastOccurrence

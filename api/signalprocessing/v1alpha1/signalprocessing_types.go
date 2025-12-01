@@ -22,6 +22,8 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // SignalProcessingSpec defines the desired state of SignalProcessing.
@@ -105,7 +107,8 @@ type SignalProcessingSpec struct {
 	// DEDUPLICATION (From RemediationRequest)
 	// ========================================
 	// Deduplication and correlation context
-	Deduplication DeduplicationContext `json:"deduplication"`
+	// Uses shared type for API contract alignment (RO Team decision)
+	Deduplication sharedtypes.DeduplicationInfo `json:"deduplication"`
 
 	// ========================================
 	// PROVIDER DATA (From RemediationRequest)
@@ -143,21 +146,6 @@ type ResourceIdentifier struct {
 
 	// Resource namespace
 	Namespace string `json:"namespace"`
-}
-
-// DeduplicationContext provides correlation and deduplication information
-type DeduplicationContext struct {
-	// Timestamp when this signal fingerprint was first seen
-	FirstOccurrence metav1.Time `json:"firstOccurrence"`
-
-	// Timestamp when this signal fingerprint was last seen
-	LastOccurrence metav1.Time `json:"lastOccurrence"`
-
-	// Total count of occurrences of this signal
-	OccurrenceCount int `json:"occurrenceCount"`
-
-	// Optional correlation ID for grouping related signals
-	CorrelationID string `json:"correlationID,omitempty"`
 }
 
 // EnrichmentConfiguration specifies how to enrich signal context
