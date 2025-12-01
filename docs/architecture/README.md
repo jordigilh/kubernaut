@@ -1,8 +1,8 @@
 # Kubernaut Architecture Documentation
 
-**Document Version**: 4.0
-**Date**: January 2025
-**Status**: V1 Implementation Focus (10 Services)
+**Document Version**: 4.1
+**Date**: December 1, 2025
+**Status**: V1.0 Implementation Focus (8 Services - 2 deferred per DD-016, DD-017)
 
 ---
 
@@ -236,8 +236,9 @@ These 4 documents are the **ONLY** authoritative sources for architecture decisi
 
 ### **Architecture Standards**
 - **Port Assignments**: Context API (8091), HolmesGPT-API (8090) - standardized
-- **Service Count**: V1 = 10 services, V2 = 15 services (5 additional)
-- **Architecture Version**: V1 is current implementation, V2 is future roadmap
+- **Service Count**: V1.0 = 8 services, V1.1 = 9 services (+Effectiveness Monitor), V2.0 = 14+ services (+Dynamic Toolset, +others)
+- **Architecture Version**: V1.0 is current implementation, V1.1 adds continuous improvement, V2 is future roadmap
+- **Deferrals**: Dynamic Toolset→V2.0 (DD-016), Effectiveness Monitor→V1.1 (DD-017)
 
 ### **Related Documentation Directories**
 - **Implementation**: [`../implementation/`](../implementation/) - Implementation-specific details and patterns
