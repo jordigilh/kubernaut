@@ -320,10 +320,10 @@ Kubernaut's V1.0 architecture consists of:
 #### ~~6. Effectiveness Monitor Service~~ ⏸️ **Deferred to V1.1**
 
 > **⚠️ DEFERRED TO V1.1** (DD-017, December 1, 2025)
-> 
+>
 > **Reason**: Year-end timeline constraints + requires 8+ weeks of remediation data for meaningful assessments
 > **V1.1 Timeline**: ~8 weeks post V1.0 GA (Q1 2026)
-> 
+>
 > See: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md`
 
 **Purpose**: Performance assessment and oscillation detection

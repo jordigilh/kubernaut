@@ -4,7 +4,7 @@
 > - **Context API** (2025-11-13): Deprecated, consolidated into Data Storage Service (DD-CONTEXT-006)
 > - **Dynamic Toolset** (2025-11-21): Deferred to V2.0, V1.x uses static config (DD-016)
 > - **Effectiveness Monitor** (2025-12-01): Deferred to V1.1 due to year-end timeline (DD-017)
-> 
+>
 > This document retains historical references. See DD-CONTEXT-006, DD-016, DD-017 for details.
 
 **Document Version**: 2.6
@@ -27,7 +27,7 @@
 
 This document defines the **V1.0 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1.0 architecture implements **8 core microservices** (4 CRD controllers + 4 stateless services), each adhering to the **Single Responsibility Principle**, with a **V1.1 roadmap** for 1 additional service and **V2 roadmap** for advanced services. This provides rapid deployment capability before year-end 2025 while maintaining complete core remediation requirements coverage.
 
-**December 2025 Updates**: 
+**December 2025 Updates**:
 - **Dynamic Toolset** deferred to V2.0 (DD-016, redundant with HolmesGPT-API's Prometheus discovery)
 - **Effectiveness Monitor** deferred to V1.1 (DD-017, requires 8+ weeks of remediation data for meaningful assessments)
 

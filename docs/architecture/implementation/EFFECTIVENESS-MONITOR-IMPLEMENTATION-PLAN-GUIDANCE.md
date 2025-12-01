@@ -1,12 +1,12 @@
 # Effectiveness Monitor - Implementation Plan Creation Guidance
 
 > **⚠️ DEFERRED TO V1.1** (December 1, 2025)
-> 
+>
 > Effectiveness Monitor Service has been deferred to V1.1 per DD-017.
 > **Reason**: Year-end timeline constraints + requires 8+ weeks of remediation data
 > **V1.0 Focus**: Core remediation capabilities (8 services)
 > **V1.1 Timeline**: ~8 weeks post V1.0 GA (Q1 2026)
-> 
+>
 > See: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md`
 
 **Date**: November 2, 2025
