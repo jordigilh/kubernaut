@@ -1,6 +1,6 @@
 # Kubernaut Services Documentation
 
-**Version**: 2.0
+**Version**: 2.1
 **Last Updated**: 2025-12-01
 **Purpose**: Navigation hub for all Kubernaut V1 service specifications
 
@@ -23,7 +23,7 @@ Stateless HTTP API services:
 6. **[Gateway Service](./stateless/gateway-service/)** - ✅ **v1.0 PRODUCTION-READY** - Signal ingestion and triage (221 tests)
 7. **[Data Storage](./stateless/data-storage/)** - ✅ **Phase 1 PRODUCTION-READY** - REST API Gateway for PostgreSQL with unified audit table (~535 tests)
 8. **[HolmesGPT API](./stateless/holmesgpt-api/)** - ✅ **v3.2 PRODUCTION-READY** - AI investigation wrapper (172 tests)
-9. **[Dynamic Toolset](./stateless/dynamic-toolset/)** - ✅ **v1.0 PRODUCTION-READY** - HolmesGPT toolset configuration management (245 tests)
+9. **[Dynamic Toolset](./stateless/dynamic-toolset/)** - ⏸️ **Deferred to V2.0** - HolmesGPT toolset configuration (DD-016: V1.x uses static config)
 10. **[Notification Controller](./crd-controllers/06-notification/)** - ✅ **PRODUCTION-READY** - CRD-based multi-channel delivery (249 tests: 140 unit + 97 integration + 12 E2E)
 
 ---
@@ -59,11 +59,11 @@ Stateless HTTP API services:
 | 5 | Gateway Service | HTTP | ✅ **v1.0 PRODUCTION-READY** | 221 (105U+114I+2E2E) | 20 BRs (100%) |
 | 6 | Data Storage | HTTP | ✅ **Phase 1 PRODUCTION-READY** | ~535 (475U+60I) | 34 BRs (100%) |
 | 7 | HolmesGPT API | HTTP | ✅ **v3.2 PRODUCTION-READY** | 172 (151U+21I) | 47 BRs (100%) |
-| 8 | Dynamic Toolset | HTTP | ✅ **v1.0 PRODUCTION-READY** | 245 (194U+38I+13E2E) | 8 BRs (100%) |
+| 8 | Dynamic Toolset | HTTP | ⏸️ **Deferred to V2.0** | - | 8 BRs (DD-016: static config in V1.x) |
 | 9 | Notification Controller | CRD | ✅ **PRODUCTION-READY** | 249 (140U+97I+12E2E) | 12 BRs (100%) |
 | 10 | ~~Context API~~ | HTTP | ❌ **DEPRECATED** | - | Replaced by Data Storage (DD-CONTEXT-006) |
 
-**Overall**: ✅ **5/10 services** (50%) production-ready | **1,422+ tests** passing (100% pass rate)
+**Overall**: ✅ **4/10 services** (40%) production-ready | **~1,177 tests** passing (100% pass rate)
 
 ---
 
@@ -139,7 +139,7 @@ stateless/
 ### **Phase 1: Foundation** (Weeks 1-2)
 - Deploy PostgreSQL + Vector DB
 - Deploy Redis
-- Deploy Data Storage + Context API
+- Deploy Data Storage Service
 
 ### **Phase 2: Core Services** (Weeks 3-4)
 - Deploy Gateway Service
@@ -164,11 +164,11 @@ stateless/
 
 | Category | Count | Status |
 |----------|-------|--------|
-| **Services Active** | 10/10 | ✅ 100% (1 deprecated) |
-| **Production-Ready** | 5/10 | ✅ 50% |
+| **Services Active** | 10/10 | ✅ 100% (1 deprecated, 1 deferred to V2.0) |
+| **Production-Ready** | 4/10 | 🟡 40% |
 | **CRD Controllers** | 5 (1 ready) | 🟡 In Progress |
-| **HTTP Services** | 5 (4 ready) | ✅ 80% Complete |
-| **Total Tests** | 1,422+ | ✅ 100% Pass Rate |
+| **HTTP Services** | 5 (3 ready, 1 deferred) | 🟡 60% Complete |
+| **Total Tests** | ~1,177 | ✅ 100% Pass Rate |
 | **Total Test Coverage** | Unit 70%+ / Integration >50% / E2E <10% | ✅ Meeting Standards |
 
 ---
@@ -177,7 +177,8 @@ stateless/
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **2.0** | 2025-12-01 | Updated to reflect production-ready services: Gateway v1.0, Data Storage Phase 1, HolmesGPT API v3.2, Dynamic Toolset v1.0, Notification Controller (249 tests); Context API deprecated per DD-CONTEXT-006; Updated service count to 10 active services |
+| **2.1** | 2025-12-01 | **DD-016 Integration**: Dynamic Toolset deferred to V2.0 (static config in V1.x); Updated service count to 4/10 production-ready (40%); Updated test count to ~1,177 (removed Dynamic Toolset's 245 tests); Corrected HTTP Services to 3 ready (60%); Fixed Implementation Priorities (removed Context API reference) |
+| **2.0** | 2025-12-01 | Updated to reflect production-ready services: Gateway v1.0, Data Storage Phase 1, HolmesGPT API v3.2, Notification Controller (249 tests); Context API deprecated per DD-CONTEXT-006; Updated service count to 10 active services |
 | **1.0** | 2025-10-06 | Initial top-level navigation hub created |
 
 ---
@@ -193,4 +194,4 @@ stateless/
 
 **Document Maintainer**: Kubernaut Documentation Team
 **Last Updated**: 2025-12-01
-**Status**: ✅ Phase 2 Complete - 5/10 Services Production-Ready (50%)
+**Status**: 🟡 Phase 2 In Progress - 4/10 Services Production-Ready (40%) | 1 Deferred to V2.0 (DD-016)
