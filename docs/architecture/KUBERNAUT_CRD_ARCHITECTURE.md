@@ -1,8 +1,9 @@
 # Kubernaut CRD Architecture
 
-**Version**: 1.1.0
-**Date**: November 15, 2025
+**Version**: 1.2.0
+**Date**: December 1, 2025
 **Status**: ✅ Authoritative Reference
+**V1.0 Services**: 8 (Dynamic Toolset→V2.0, Effectiveness Monitor→V1.1)
 **Supersedes**: [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) (DEPRECATED)
 
 ---
@@ -11,8 +12,8 @@
 
 This document is the **authoritative reference** for Kubernaut's Custom Resource Definition (CRD) architecture. It defines:
 
-- **Service catalog** (11 services: 5 CRD controllers + 6 stateless services)
-- **CRD specifications** for all 5 CRDs
+- **Service catalog** (8 V1.0 services: 4 CRD controllers + 4 stateless services; 2 services deferred per DD-016, DD-017)
+- **CRD specifications** for all 4 CRDs
 - **Reconciliation patterns** and controller responsibilities
 - **Integration flows** between services
 - **Execution architecture** using Tekton Pipelines
@@ -41,7 +42,7 @@ This document is the **authoritative reference** for Kubernaut's Custom Resource
 Kubernaut is an AI-powered Kubernetes remediation platform that uses a **microservices + CRD architecture** to enable autonomous incident analysis and automated remediation actions.
 
 **Key Characteristics**:
-- **11 Services**: 5 CRD controllers + 6 stateless services
+- **8 V1.0 Services**: 4 CRD controllers + 4 stateless services (2 deferred: Dynamic Toolset→V2.0, Effectiveness Monitor→V1.1)
 - **Multi-Signal Processing**: Prometheus alerts, Kubernetes events, CloudWatch, webhooks
 - **AI-Powered Analysis**: HolmesGPT integration for root cause analysis
 - **Tekton-Based Execution**: Industry-standard CI/CD for remediation workflows
@@ -50,9 +51,9 @@ Kubernaut is an AI-powered Kubernetes remediation platform that uses a **microse
 
 ---
 
-### 11 Services + Tekton Pipelines
+### 8 V1.0 Services + Tekton Pipelines
 
-Kubernaut's architecture consists of:
+Kubernaut's V1.0 architecture consists of:
 
 **CRD Controllers** (5):
 1. **RemediationOrchestrator** - Central lifecycle orchestration
@@ -66,8 +67,8 @@ Kubernaut's architecture consists of:
 2. **Context API** - Historical intelligence provider
 3. **Data Storage** - PostgreSQL + Vector DB persistence
 4. **HolmesGPT-API** - AI investigation wrapper
-5. **Dynamic Toolset** - HolmesGPT toolset configuration
-6. **Effectiveness Monitor** - Performance assessment
+~~5. **Dynamic Toolset**~~ - ⏸️ Deferred to V2.0 (DD-016)
+~~6. **Effectiveness Monitor**~~ - ⏸️ Deferred to V1.1 (DD-017)
 
 **Execution Engine**:
 - **Tekton Pipelines** - DAG orchestration and parallel execution (Tekton Pipelines or upstream Tekton)
@@ -316,13 +317,20 @@ Kubernaut's architecture consists of:
 
 ---
 
-#### 6. Effectiveness Monitor Service
+#### ~~6. Effectiveness Monitor Service~~ ⏸️ **Deferred to V1.1**
+
+> **⚠️ DEFERRED TO V1.1** (DD-017, December 1, 2025)
+> 
+> **Reason**: Year-end timeline constraints + requires 8+ weeks of remediation data for meaningful assessments
+> **V1.1 Timeline**: ~8 weeks post V1.0 GA (Q1 2026)
+> 
+> See: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md`
 
 **Purpose**: Performance assessment and oscillation detection
 
 **Type**: Stateless HTTP API
 
-**Responsibilities**:
+**Responsibilities** (V1.1):
 - Real-time effectiveness assessment
 - Long-term effectiveness trend tracking
 - Advanced pattern recognition across remediation history
@@ -331,7 +339,7 @@ Kubernaut's architecture consists of:
 
 **Port**: 8080 (API/health), 9090 (metrics)
 
-**Business Requirements**: BR-INS-001 to BR-INS-010
+**Business Requirements**: BR-INS-001 to BR-INS-010 (Deferred to V1.1)
 
 **Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
 
@@ -1118,9 +1126,11 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 
 ---
 
-#### 11. Effectiveness Monitor - Performance Assessment
+#### ~~11. Effectiveness Monitor~~ - ⏸️ **Deferred to V1.1** (DD-017)
 
-**Key Features**:
+> **⚠️ DEFERRED TO V1.1**: Requires 8+ weeks of remediation data for meaningful assessments
+
+**Key Features** (V1.1):
 
 1. **Effectiveness Assessment** (BR-INS-001)
    - Real-time effectiveness assessment of remediation actions
@@ -1873,6 +1883,19 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 
 ## Changelog
 
+### Version 1.2.0 (2025-12-01)
+
+**DD-016 & DD-017 Integration**: Updated V1.0 service count from 11 to 8.
+
+**Changes**:
+- Dynamic Toolset deferred to V2.0 (DD-016)
+- Effectiveness Monitor deferred to V1.1 (DD-017)
+- Updated service count: 11→8 V1.0 services (4 CRD + 4 HTTP)
+- Added deferral notices to service descriptions
+- Updated "11 Services + Tekton"→"8 V1.0 Services + Tekton"
+- Corrected service catalog references throughout document
+
+**Impact**: Service count and catalog consistency across all architecture documentation.
 
 ### Version 1.1.0 (2025-11-15)
 
@@ -1891,8 +1914,8 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 **Initial Release**: Authoritative CRD architecture document based on service specifications, implementation plans, and ADRs.
 
 **Key Content**:
-- 11 services (5 CRD controllers + 6 stateless services)
-- 5 CRD specifications with detailed schemas
+- 11 services (5 CRD controllers + 6 stateless services) → **Updated to 8 V1.0 services in v1.2.0 (DD-016, DD-017)**
+- 4 CRD specifications with detailed schemas
 - Central orchestration pattern (RemediationOrchestrator)
 - Tekton Pipelines integration
 - Watch-based coordination patterns

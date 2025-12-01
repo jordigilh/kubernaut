@@ -1,22 +1,23 @@
 # Kubernaut Architecture Overview
 
-**Document Version**: 3.2
-**Date**: November 15, 2025
-**Status**: V1 Implementation Focus (11 Services)
+**Document Version**: 3.3
+**Date**: December 1, 2025
+**Status**: V1.0 Implementation Focus (8 Services - 2 deferred per DD-016, DD-017)
 
 ## 📋 Version History
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
-| 3.1 | Oct 31, 2025 | Updated End-to-End Traceability diagram: Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
+| 3.3 | Dec 1, 2025 | **DD-016 & DD-017 Integration**: Updated V1.0 service count from 11 to 8. Dynamic Toolset deferred to V2.0 (DD-016). Effectiveness Monitor deferred to V1.1 (DD-017). Updated service categories and V2 enhancement list. | AI Assistant |
 | 3.2 | Nov 15, 2025 | Corrected service naming: "Workflow Engine" → "Remediation Execution Engine" (per ADR-035) | AI Assistant |
+| 3.1 | Oct 31, 2025 | Updated End-to-End Traceability diagram: Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
 | 3.0 | Jan 2025 | V1 Implementation Focus (10 Services) | - |
 
 ---
 
 ## 🎯 **Executive Summary**
 
-Kubernaut is an intelligent Kubernetes remediation platform built on **V1 microservices architecture (10 services)** that separates **AI investigation** from **infrastructure execution** for maximum safety and reliability.
+Kubernaut is an intelligent Kubernetes remediation platform built on **V1.0 microservices architecture (8 services)** that separates **AI investigation** from **infrastructure execution** for maximum safety and reliability. Two services deferred: Dynamic Toolset→V2.0 (DD-016), Effectiveness Monitor→V1.1 (DD-017).
 
 ### **V1 Implementation Strategy**
 - **🚀 Timeline**: 3-4 weeks to production with 95% confidence
@@ -58,7 +59,7 @@ flowchart LR
     class EXECUTOR execution
 ```
 
-### **V1 Service Categories (10 Services)**
+### **V1.0 Service Categories (8 Services)**
 
 #### **🎯 Core Processing (3 services)**
 - **Gateway Service** (8080): Multi-signal webhook reception (alerts, events, alarms)
@@ -79,9 +80,13 @@ flowchart LR
 - **Notification Controller** (CRD): Multi-channel delivery with CRD persistence 🆕
 
 ### **V2 Future Services (5 Additional - Post V1)**
+### **V1.1 Services (1 Service)**
+- **Effectiveness Monitor** (8080): Performance assessment & continuous improvement (DD-017: Deferred to V1.1)
+
+### **V2.0 Services (5+ Services)**
 - **Multi-Model Orchestration** (8092): Ensemble AI decision making
 - **Intelligence** (8086): Advanced pattern discovery & analytics
-- **Effectiveness Monitor** (8080): Assessment & optimization
+- **Dynamic Toolset** (8087): HolmesGPT toolset configuration (DD-016: Deferred to V2.0)
 - **Security & Access Control** (8093): RBAC, authentication & secrets
 - **Enhanced Health Monitoring** (8096): LLM health & enterprise monitoring
 
