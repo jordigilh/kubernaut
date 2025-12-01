@@ -79,13 +79,21 @@ var _ = Describe("Workflow Search Performance", Label("performance"), func() {
 
 		It("should achieve P50 latency <100ms", func() {
 			// ARRANGE: Prepare search request
+			// DD-WORKFLOW-001 v1.6: Updated to use DetectedLabels for GitOps fields
 			embedding := generateTestEmbedding("OOMKilled critical gitops argocd production")
 			embeddingVec := pgvector.NewVector(embedding)
+			gitOpsManaged := true
+			gitOpsTool := "argocd"
 			filters := &models.WorkflowSearchFilters{
-				SignalType:         "OOMKilled",
-				Severity:           "critical",
-				ResourceManagement: stringPtr("gitops"),
-				GitOpsTool:         stringPtr("argocd"),
+				SignalType:  "OOMKilled",
+				Severity:    "critical",
+				Component:   "pod",
+				Environment: "production",
+				Priority:    "P0",
+				DetectedLabels: &models.DetectedLabels{
+					GitOpsManaged: &gitOpsManaged,
+					GitOpsTool:    &gitOpsTool,
+				},
 			}
 			searchReq := &models.WorkflowSearchRequest{
 				Query:     "OOMKilled critical with GitOps ArgoCD",
@@ -115,12 +123,19 @@ var _ = Describe("Workflow Search Performance", Label("performance"), func() {
 
 		It("should achieve P95 latency <200ms", func() {
 			// ARRANGE: Prepare search request
+			// DD-WORKFLOW-001 v1.6: Updated to use DetectedLabels for GitOps fields
 			embedding := generateTestEmbedding("OOMKilled critical gitops argocd production")
 			embeddingVec := pgvector.NewVector(embedding)
+			gitOpsManaged := true
 			filters := &models.WorkflowSearchFilters{
-				SignalType:         "OOMKilled",
-				Severity:           "critical",
-				ResourceManagement: stringPtr("gitops"),
+				SignalType:  "OOMKilled",
+				Severity:    "critical",
+				Component:   "pod",
+				Environment: "production",
+				Priority:    "P0",
+				DetectedLabels: &models.DetectedLabels{
+					GitOpsManaged: &gitOpsManaged,
+				},
 			}
 			searchReq := &models.WorkflowSearchRequest{
 				Query:     "OOMKilled critical with GitOps",
@@ -227,13 +242,21 @@ var _ = Describe("Workflow Search Performance", Label("performance"), func() {
 
 		It("should provide latency distribution summary", func() {
 			// ARRANGE: Prepare search request
+			// DD-WORKFLOW-001 v1.6: Updated to use DetectedLabels for GitOps fields
 			embedding := generateTestEmbedding("OOMKilled critical gitops argocd production")
 			embeddingVec := pgvector.NewVector(embedding)
+			gitOpsManaged := true
+			gitOpsTool := "argocd"
 			filters := &models.WorkflowSearchFilters{
-				SignalType:         "OOMKilled",
-				Severity:           "critical",
-				ResourceManagement: stringPtr("gitops"),
-				GitOpsTool:         stringPtr("argocd"),
+				SignalType:  "OOMKilled",
+				Severity:    "critical",
+				Component:   "pod",
+				Environment: "production",
+				Priority:    "P0",
+				DetectedLabels: &models.DetectedLabels{
+					GitOpsManaged: &gitOpsManaged,
+					GitOpsTool:    &gitOpsTool,
+				},
 			}
 			searchReq := &models.WorkflowSearchRequest{
 				Query:     "OOMKilled critical with GitOps ArgoCD",
@@ -296,56 +319,79 @@ var _ = Describe("Workflow Search Performance", Label("performance"), func() {
 // Helper functions
 
 func seedWorkflows(ctx context.Context, count int, testID string) {
+	// DD-WORKFLOW-001 v1.6: Updated label schema with mandatory labels as structured columns
 	signalTypes := []string{"OOMKilled", "CrashLoopBackOff", "ImagePullBackOff", "NodeNotReady", "PodEvicted"}
 	severities := []string{"critical", "high", "medium", "low"}
-	resourceMgmt := []string{"gitops", "manual", "helm", "terraform", "operator"}
-	gitopsTools := []string{"argocd", "flux", ""}
+	components := []string{"pod", "deployment", "service", "node", "ingress"}
 	environments := []string{"production", "staging", "development"}
-	businessCats := []string{"revenue-critical", "customer-facing", "internal"}
 	priorities := []string{"P0", "P1", "P2", "P3"}
+	gitopsTools := []string{"argocd", "flux", ""}
+	businessCats := []string{"revenue-critical", "customer-facing", "internal"}
 	riskTols := []string{"low", "medium", "high"}
 
 	for i := 0; i < count; i++ {
-		// Generate random labels
+		// Generate random mandatory labels (5 structured columns)
 		signalType := signalTypes[rand.Intn(len(signalTypes))]
 		severity := severities[rand.Intn(len(severities))]
-		resourceMgmtVal := resourceMgmt[rand.Intn(len(resourceMgmt))]
-		gitopsTool := gitopsTools[rand.Intn(len(gitopsTools))]
+		component := components[rand.Intn(len(components))]
 		environment := environments[rand.Intn(len(environments))]
-		businessCat := businessCats[rand.Intn(len(businessCats))]
 		priority := priorities[rand.Intn(len(priorities))]
+
+		// Generate random detected labels (from K8s resources)
+		gitopsTool := gitopsTools[rand.Intn(len(gitopsTools))]
+		gitOpsManaged := gitopsTool != ""
+
+		// Generate random custom labels (customer-defined)
+		businessCat := businessCats[rand.Intn(len(businessCats))]
 		riskTol := riskTols[rand.Intn(len(riskTols))]
 
 		// Generate random embedding
-		embedding := generateTestEmbedding(fmt.Sprintf("%s %s %s %s", signalType, severity, resourceMgmtVal, environment))
+		embedding := generateTestEmbedding(fmt.Sprintf("%s %s %s %s", signalType, severity, component, environment))
 		embeddingVec := pgvector.NewVector(embedding)
 
-		// Marshal labels to JSON
+		// Marshal labels to JSON (legacy field, kept for compatibility)
 		labelsMap := map[string]interface{}{
-			"signal_type":         signalType,
-			"severity":            severity,
-			"resource_management": resourceMgmtVal,
-			"gitops_tool":         gitopsTool,
-			"environment":         environment,
-			"business_category":   businessCat,
-			"priority":            priority,
-			"risk_tolerance":      riskTol,
+			"signal_type": signalType,
+			"severity":    severity,
+			"component":   component,
+			"environment": environment,
+			"priority":    priority,
 		}
 		labelsJSON, err := json.Marshal(labelsMap)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create workflow
+		// DD-WORKFLOW-001 v1.6: Custom labels as map[string][]string
+		customLabelsMap := map[string][]string{
+			"business": {businessCat},
+			"risk":     {riskTol},
+		}
+		customLabelsJSON, err := json.Marshal(customLabelsMap)
+		Expect(err).ToNot(HaveOccurred())
+
+		// DD-WORKFLOW-001 v1.6: Detected labels from K8s resources
+		detectedLabelsMap := map[string]interface{}{
+			"git_ops_managed": gitOpsManaged,
+		}
+		if gitopsTool != "" {
+			detectedLabelsMap["git_ops_tool"] = gitopsTool
+		}
+		detectedLabelsJSON, err := json.Marshal(detectedLabelsMap)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create workflow with all new fields
 		workflow := &models.RemediationWorkflow{
-			WorkflowID:       fmt.Sprintf("perf-wf-%s-%d", testID, i),
-			Version:          "1.0.0",
-			Name:             fmt.Sprintf("Performance Test Workflow %d", i),
-			Description:      fmt.Sprintf("Test workflow for performance testing: %s %s", signalType, severity),
-			Content:          fmt.Sprintf("# Workflow content for performance test %d", i),
-			ContentHash:      fmt.Sprintf("%064d", i), // Dummy hash for testing
-			Labels:           labelsJSON,
-			Embedding:        &embeddingVec,
-			Status:           "active",
-			IsLatestVersion:  true,
+			WorkflowID:      fmt.Sprintf("perf-wf-%s-%d", testID, i),
+			Version:         "1.0.0",
+			Name:            fmt.Sprintf("Performance Test Workflow %d", i),
+			Description:     fmt.Sprintf("Test workflow for performance testing: %s %s", signalType, severity),
+			Content:         fmt.Sprintf("# Workflow content for performance test %d", i),
+			ContentHash:     fmt.Sprintf("%064d", i), // Dummy hash for testing
+			Labels:          labelsJSON,
+			CustomLabels:    customLabelsJSON,
+			DetectedLabels:  detectedLabelsJSON,
+			Embedding:       &embeddingVec,
+			Status:          "active",
+			IsLatestVersion: true,
 		}
 
 		err = workflowRepo.Create(ctx, workflow)
@@ -365,8 +411,8 @@ func cleanupWorkflows(ctx context.Context, testID string) {
 }
 
 func generateTestEmbedding(text string) []float32 {
-	// Generate a deterministic 384-dimensional embedding
-	embedding := make([]float32, 384)
+	// Generate a deterministic 768-dimensional embedding (DD-WORKFLOW-001 v1.6: all-mpnet-base-v2)
+	embedding := make([]float32, 768)
 	hash := 0
 	for _, c := range text {
 		hash = (hash*31 + int(c)) % 1000
@@ -393,9 +439,5 @@ func calculatePercentile(latencies []time.Duration, percentile int) time.Duratio
 	}
 
 	return sorted[index]
-}
-
-func stringPtr(s string) *string {
-	return &s
 }
 
