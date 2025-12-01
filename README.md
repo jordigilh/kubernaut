@@ -248,19 +248,19 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 - **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows, microservices architecture
 - **E2E Tests**: **<10% coverage** - Critical end-to-end user journeys
 
-**Current Test Status**: 1,060+ unit tests passing (100% pass rate)
+**Current Test Status**: 1,422+ tests passing (100% pass rate across all tiers)
 
 | Service | Unit Specs | Integration Specs | E2E Specs | Total | Confidence |
 |---------|------------|-------------------|-----------|-------|------------|
 | **Gateway v1.0** | 105 | 114 | 2 (+12 deferred to v1.1) | **221** | **100%** |
 | **Data Storage** | 475 | ~60 | - | **~535** | **98%** |
 | **Dynamic Toolset v1.0** | 194 | 38 | 13 | **245** | **100%** |
-| **Notification Service** | 83 | ~10 | - | **~93** | **95%** |
+| **Notification Service** | 140 | 97 | 12 | **249** | **100%** |
 | **HolmesGPT API v3.2** | 151 | 21 | - | **172** | **98%** |
 
-**Total**: ~1,010 unit specs + ~241 integration specs + 15 E2E specs = **~1,266 test specs**
+**Total**: ~1,065 unit specs + ~330 integration specs + 27 E2E specs = **~1,422 test specs**
 
-*Note: Gateway v1.0 has 2 E2E specs (Storm TTL, K8s API Rate Limiting). 12 additional E2E tests deferred to v1.1 per strategic decision to prioritize integration test coverage (114 specs provide substantial E2E-like validation). Integration spec counts are estimates.*
+*Note: Gateway v1.0 has 2 E2E specs (Storm TTL, K8s API Rate Limiting), 12 additional E2E tests deferred to v1.1. Dynamic Toolset has 13 E2E specs (service discovery + K8s integration), Notification Service has 12 E2E specs (Kind-based file delivery + metrics validation). Integration spec counts are estimates.*
 
 ---
 

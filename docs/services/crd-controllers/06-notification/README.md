@@ -1,20 +1,30 @@
 # Notification Controller - Production-Ready CRD Controller
 
-**Version**: 1.1.0
-**Status**: Production-Ready (ADR-034 Audit Integration Complete)
+**Version**: 1.2.0
+**Status**: Production-Ready (ADR-034 Audit Integration + E2E Complete)
 **Architecture**: CRD-based declarative notification delivery
 **BR Coverage**: 100% (12/12 BRs implemented)
+**Test Coverage**: 249 tests (140 unit + 97 integration + 12 E2E) - 100% pass rate
 
 ---
 
 ## 📝 **Version History**
+
+### **Version 1.2.0** (2025-12-01)
+- ✅ **Comprehensive Test Implementation**: 249 tests (140 unit + 97 integration + 12 E2E) - 100% pass rate
+- ✅ **E2E Kind-Based Testing**: 12 E2E tests with Kind cluster (file delivery + metrics validation)
+- ✅ **DD-TEST-001 Compliance**: Notification metrics on dedicated ports (30186/9186) to prevent collisions
+- ✅ **Production-Ready Validation**: All 3 test tiers passing, stable in CI/CD, zero flaky tests
+- ✅ **HostPath File Delivery**: Clean E2E file validation without production image pollution
+- ✅ **Parallel Test Execution**: 4 concurrent processes for race condition detection
+- 📊 **Test Coverage**: Unit 70%+, Integration >50%, E2E <10% (defense-in-depth pyramid)
 
 ### **Version 1.1.0** (2025-11-21)
 - ✅ **ADR-034 Unified Audit Table Integration**: All notification events written to unified `audit_events` table
 - ✅ **Fire-and-Forget Audit Writes**: <1ms audit overhead, zero impact on delivery performance
 - ✅ **Zero Audit Loss**: DLQ fallback with Redis Streams ensures no audit data lost
 - ✅ **End-to-End Correlation**: Query complete workflow trail via `correlation_id`
-- ✅ **121 Tests Passing**: 110 unit + 9 integration + 2 E2E tests (100% pass rate)
+- ✅ **Enhanced Testing**: Expanded integration test coverage for audit scenarios
 - ✅ **BR-NOT-062, BR-NOT-063 Complete**: Unified audit table + graceful degradation
 
 ### **Version 1.0.1** (2025-10-20)
