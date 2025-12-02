@@ -137,7 +137,7 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 				"Should be managed by gateway-service")
 
 			// BUSINESS VALIDATION 3: CRD has Kubernaut-specific labels
-			Expect(crd.Labels).To(HaveKey("kubernaut.io/signal_type"), "Should have signal_type label")
+			Expect(crd.Labels).To(HaveKey("kubernaut.io/signal-type"), "Should have signal-type label")
 			Expect(crd.Labels).To(HaveKey("kubernaut.io/severity"), "Should have severity label")
 			Expect(crd.Labels).To(HaveKey("kubernaut.io/environment"), "Should have environment label")
 			Expect(crd.Labels).To(HaveKey("kubernaut.io/priority"), "Should have priority label")

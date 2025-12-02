@@ -96,19 +96,30 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		}
 
 		for _, ns := range testNamespaces {
-			// Delete first to ensure clean state (ignore error if doesn't exist)
+			// Check if namespace exists first
+			existingNs := &corev1.Namespace{}
+			err := k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, existingNs)
+			namespaceExists := err == nil
+
+			if namespaceExists {
+				// Check if it already has the right label - if so, skip deletion/recreation
+				if existingNs.Labels != nil && existingNs.Labels["environment"] == ns.label {
+					continue // Namespace already configured correctly
+				}
+
+				// Delete namespace to recreate with correct labels
+				_ = k8sClient.Client.Delete(ctx, existingNs)
+
+				// Wait for deletion to complete (namespace deletion is asynchronous)
+				// Use longer timeout for envtest which can be slower
+				Eventually(func() error {
+					checkNs := &corev1.Namespace{}
+					return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
+				}, "60s", "500ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
+			}
+
+			// Create namespace with correct label
 			namespace := &corev1.Namespace{}
-			namespace.Name = ns.name
-			_ = k8sClient.Client.Delete(ctx, namespace)
-
-			// Wait for deletion to complete (namespace deletion is asynchronous)
-			Eventually(func() error {
-				checkNs := &corev1.Namespace{}
-				return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
-			}, "10s", "100ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
-
-			// Recreate with correct label
-			namespace = &corev1.Namespace{}
 			namespace.Name = ns.name
 			namespace.Labels = map[string]string{
 				"environment": ns.label, // Required for EnvironmentClassifier
