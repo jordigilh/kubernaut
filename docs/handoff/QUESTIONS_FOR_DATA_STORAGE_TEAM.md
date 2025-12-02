@@ -78,9 +78,9 @@ The following are confirmed working (no questions):
 
 | Item | Owner | Status |
 |------|-------|--------|
-| Clarify container_image in search | DS Team | ⏳ Pending |
-| Confirm pagination support | DS Team | ⏳ Pending |
-| Clarify detected_labels population | DS Team | ⏳ Pending |
+| Clarify container_image in search | DS Team | ✅ **CONFIRMED WORKING** |
+| Confirm pagination support | DS Team | ✅ **CONFIRMED** (top_k max 100) |
+| Clarify detected_labels population | DS Team | ✅ **CLARIFIED** - Auto-population NOT DS responsibility (see A3) |
 
 ---
 
@@ -117,7 +117,7 @@ ContainerDigest string `json:"container_digest,omitempty"`
 
 **Implementation Details**:
 
-1. **Semantic Search (`POST /api/v1/workflows/search`)**: 
+1. **Semantic Search (`POST /api/v1/workflows/search`)**:
    - Uses `top_k` parameter (not `limit`/`offset`)
    - Default: 10, Maximum: 100
    - Validation: `validate:"omitempty,min=1,max=100"` (`pkg/datastorage/models/workflow.go` line 163)
@@ -128,7 +128,7 @@ ContainerDigest string `json:"container_digest,omitempty"`
    - Returns `total` count in response for calculating pages
    - Code: `pkg/datastorage/server/workflow_handlers.go` lines 301-313
 
-3. **Cursor-based Pagination**: 
+3. **Cursor-based Pagination**:
    - **Not currently implemented** for workflow catalog
    - Offset-based pagination is used
    - For deterministic results, workflows are ordered by `created_at DESC`
@@ -140,31 +140,53 @@ ContainerDigest string `json:"container_digest,omitempty"`
 
 ---
 
-### A3: detected_labels Auto-Population ⚠️ PARTIALLY IMPLEMENTED
+### A3: detected_labels Auto-Population ✅ CLARIFIED (NOT DS RESPONSIBILITY)
 
-**Status**: Schema and filtering are implemented; auto-population is **NOT YET** implemented.
+> ⚠️ **TERMINOLOGY CLARIFICATION (Dec 2, 2025)**: There was confusion between two different concepts. See **DD-WORKFLOW-001 v2.0** for authoritative end-to-end flow.
 
-**Current State**:
+#### **Two Different Contexts for "detected_labels"**
 
-1. **Schema**: ✅ The `detected_labels` JSONB column exists in `remediation_workflow_catalog` table (migration 020)
+| Context | Owner | When Populated | Purpose |
+|---------|-------|----------------|---------|
+| **Incident DetectedLabels** | SignalProcessing | At runtime (V1.0 ✅ IMPLEMENTED) | Auto-detected facts about the **incident's** K8s environment |
+| **Workflow Catalog detected_labels** | Workflow Author | At workflow creation (manual) | Metadata describing what environments a workflow **supports** |
 
-2. **Model**: ✅ `DetectedLabels` struct is fully defined with 9 fields (`pkg/datastorage/models/workflow.go` lines 238-283):
-   - Boolean fields: `git_ops_managed`, `pdb_protected`, `hpa_enabled`, `stateful`, `helm_managed`, `network_isolated`
-   - String fields: `git_ops_tool`, `pod_security_level`, `service_mesh`
+#### **Clarification**
 
-3. **Filtering**: ✅ Search can filter by `detected_labels` (wildcard `*` support implemented)
+**Original Question**: "Should Data Storage auto-populate the 9 `detected_labels` fields?"
 
-4. **Auto-Population**: ❌ **NOT IMPLEMENTED**
-   - Currently, `detected_labels` must be provided by the caller at CREATE time
-   - Planned implementation: Kubernetes resource inspection at workflow creation
-   - This requires integration with the Kubernetes API to detect PDB, HPA, GitOps annotations, etc.
+**Answer**: **NO** - This was based on a misunderstanding.
 
-**HolmesGPT-API Impact**:
-- You **cannot** rely on `detected_labels` being auto-populated
-- If you need these labels, you must provide them in the CREATE request
-- Alternative: Use `custom_labels` for customer-defined metadata (fully working)
+1. **SignalProcessing** auto-detects `DetectedLabels` from the **live K8s cluster** at incident time ✅ IMPLEMENTED (V1.0)
+   - Checks ArgoCD/Flux annotations → `gitOpsManaged`, `gitOpsTool`
+   - Queries PDB, HPA → `pdbProtected`, `hpaEnabled`
+   - Checks helm.sh/chart label → `helmManaged`
 
-**Roadmap**: Auto-population is planned for Data Storage v2.0 (post-MVP). Please file BR-STORAGE-XXX if this is a blocking requirement.
+2. **Data Storage** stores `detected_labels` as **workflow metadata** (author-defined constraints)
+   - Workflow authors specify which environments their workflow supports
+   - Example: `{"gitOpsTool": "argocd"}` means "this workflow only supports ArgoCD-managed workloads"
+   - This is NOT auto-populated - it's design-time metadata
+
+3. **HolmesGPT-API** passes the incident's DetectedLabels as **search filters** to Data Storage
+   - Data Storage matches incident labels against workflow metadata
+
+#### **Current State (Correct)**
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Schema | ✅ Implemented | `detected_labels` JSONB column exists |
+| Filtering | ✅ Implemented | Wildcard `*` support working |
+| Auto-population | ❌ **NOT NEEDED** | Workflow authors define this manually |
+
+#### **Why DS Auto-Population Was Never Needed**
+
+The original question asked if DS should auto-populate workflow `detected_labels` at CREATE time. This was a misunderstanding:
+
+- Workflow `detected_labels` describe what the workflow **SUPPORTS** (author intent)
+- Incident `DetectedLabels` describe what the workload **IS** (runtime facts)
+- These are matched during search, not populated by the same service
+
+**Authoritative Reference**: DD-WORKFLOW-001 v2.0 "DetectedLabels End-to-End Architecture"
 
 ---
 
@@ -183,8 +205,10 @@ ContainerDigest string `json:"container_digest,omitempty"`
 **Hybrid Scoring Weights** (DD-WORKFLOW-004 v1.1):
 - **Label Boost**: +0.10 per matching optional label
 - **Label Penalty**: -0.10 per conflicting optional label
-- **Final Score**: `min(base_similarity + label_boost - label_penalty, 1.0)`
+- **Final Score**: `min(base_similarity + label_boost - label_penalty, 1.0)` (capped at 100%)
 - **Tuning Plans**: Current weights are based on initial testing. We're collecting metrics to tune these values post-MVP. Please share any feedback on search quality.
+
+**Future Enhancement (v1.1 Candidate)**: True score normalization (scaling all scores to 0-1 range based on max possible score) is being considered for v1.1 pending user feedback on whether capping at 1.0 is sufficient for ranking purposes.
 
 **Index Optimization**:
 - HNSW index on `embedding` column for fast approximate nearest neighbor search
@@ -198,7 +222,7 @@ ContainerDigest string `json:"container_digest,omitempty"`
 |------|-------|--------|
 | Clarify container_image in search | DS Team | ✅ **CONFIRMED WORKING** |
 | Confirm pagination support | DS Team | ✅ **CONFIRMED** (top_k max 100) |
-| Clarify detected_labels population | DS Team | ⚠️ **PARTIAL** - filtering works, auto-population not implemented |
+| Clarify detected_labels population | DS Team | ✅ **CLARIFIED** - Auto-population NOT DS responsibility (see A3) |
 
 ---
 

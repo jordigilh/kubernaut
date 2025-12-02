@@ -526,23 +526,15 @@ execution:
 		})
 	})
 
-	Context("when embedding service is unavailable (graceful degradation)", func() {
-		It("should create workflow without embedding and continue operation (BR-STORAGE-014)", func() {
-			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			testLogger.Info("Test: Graceful Degradation - Embedding Service Unavailable")
-			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-			// TODO: Implement test for graceful degradation
-			// This requires:
-			// 1. Stop the embedding service pod
-			// 2. Create workflow (should succeed without embedding)
-			// 3. Verify workflow was created but embedding is NULL
-			// 4. Restart embedding service
-			// 5. Update workflow (should generate embedding)
-
-			testLogger.Info("⚠️  Test skipped - requires embedding service pod management")
-			testLogger.Info("   Manual test: kubectl delete pod -l app=embedding-service")
-			Skip("Requires embedding service pod management - manual test")
-		})
-	})
+	// NOTE: Graceful degradation test removed (2025-12-02)
+	//
+	// The "embedding service unavailable" test was removed because:
+	// 1. Pod disruption testing in Kind is inherently flaky (timing-dependent)
+	// 2. The business outcome (graceful degradation) is better validated through:
+	//    - Unit tests: Mock embedding service returning errors → verify fallback behavior
+	//    - Integration tests: Test with embedding service unavailable at startup
+	// 3. Manual verification procedure documented in runbook
+	//
+	// See: docs/services/stateless/data-storage/operations/embedding-service-runbook.md
+	// for manual chaos engineering verification procedure.
 })
