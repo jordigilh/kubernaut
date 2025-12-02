@@ -37,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -218,9 +219,9 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 						TargetType:        "kubernetes",
 						FiringTime:        now,
 						ReceivedTime:      now,
-						Deduplication: remediationv1alpha1.DeduplicationInfo{
-							FirstSeen:       now,
-							LastSeen:        now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
 							OccurrenceCount: 1,
 						},
 					},

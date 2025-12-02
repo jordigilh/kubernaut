@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	goredis "github.com/go-redis/redis/v8"
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -41,6 +41,7 @@ var (
 	testNamespaces      = make(map[string]bool) // Track all test namespaces
 	testNamespacesMutex sync.Mutex              // Thread-safe access
 )
+
 
 // RegisterTestNamespace adds a namespace to the suite-level cleanup list
 func RegisterTestNamespace(namespace string) {

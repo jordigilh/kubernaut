@@ -22,8 +22,10 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 
 	// DD-GATEWAY-004: kubernetes import removed - no longer needed
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,14 +65,15 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 	var (
 		ctx              context.Context
 		crdCreator       *processing.CRDCreator
-		logger           logr.Logger // DD-005: Use logr.Logger
+		logger           logr.Logger
 		failingK8sClient *ErrorInjectableK8sClient
 		testSignal       *types.NormalizedSignal
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
+		zapLogger := zap.NewNop()
+		logger = zapr.NewLogger(zapLogger)
 
 		// Check if running in CI without K8s
 		if os.Getenv("SKIP_K8S_INTEGRATION") == "true" {
@@ -86,7 +89,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 		// Wrap failing client in k8s.Client
 		wrappedK8sClient := k8s.NewClient(failingK8sClient)
 
-		// Create CRD creator with failing client (DD-005: logr.Logger)
+		// Create CRD creator with failing client (DD-005: uses logr.Logger)
 		retryConfig := config.DefaultRetrySettings()
 		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, nil, "default", &retryConfig)
 
@@ -284,21 +287,9 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 
-			dedupService := processing.NewDeduplicationService(redisClient.Client, 5*time.Second, logger)
-			stormDetector := processing.NewStormDetector(redisClient.Client, logger)
-			// Use bufferThreshold=1 for immediate window creation in tests
-			stormAggregator := processing.NewStormAggregatorWithConfig(
-				redisClient.Client,
-				nil,                  // logger (nil = use nop logger for tests)
-				1,                    // bufferThreshold: 1 alert triggers window creation
-				60*time.Second,       // inactivityTimeout: 1 minute
-				5*time.Minute,        // maxWindowDuration: 5 minutes
-				1000,                 // defaultMaxSize: 1000 alerts per namespace
-				5000,                 // globalMaxSize: 5000 alerts total
-				nil,                  // perNamespaceLimits: none
-				0.95,                 // samplingThreshold: 95% utilization
-				0.5,                  // samplingRate: 50% when sampling enabled
-			)
+				dedupService := processing.NewDeduplicationService(redisClient.Client, 5*time.Second, logger)
+				stormDetector := processing.NewStormDetector(redisClient.Client, logger)
+				stormAggregator := processing.NewStormAggregator(redisClient.Client)
 
 				// DD-GATEWAY-004: K8s clientset no longer needed - authentication removed
 				// Phase 2 Fix: Create custom Prometheus registry per test to prevent

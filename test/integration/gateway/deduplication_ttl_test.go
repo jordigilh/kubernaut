@@ -23,9 +23,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
@@ -90,12 +90,8 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 		}
 
 		// Create rediscache.Client wrapper for NewDeduplicationServiceWithTTL
-		// DD-CACHE-001: Use shared Redis library
-		rediscacheClient = rediscache.NewClient(&goredis.Options{
-			Addr:     goredisClient.Options().Addr,
-			Password: goredisClient.Options().Password,
-			DB:       goredisClient.Options().DB,
-		}, logger)
+		// DD-CACHE-001: Use shared Redis library (uses same redis v9 Options)
+		rediscacheClient = rediscache.NewClient(goredisClient.Options(), logger)
 
 		// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
 		err = goredisClient.FlushDB(ctx).Err()

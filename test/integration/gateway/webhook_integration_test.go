@@ -344,15 +344,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			}, "2s", "100ms").Should(BeNumerically(">=", 5),
 				"Count shows alert fired 5 times (1 original + 4 duplicates)")
 
-			firstSeen, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "firstSeen").Result()
+			firstOccurrence, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "firstOccurrence").Result()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(firstSeen).NotTo(BeEmpty(),
-				"First seen timestamp shows when issue started")
+			Expect(firstOccurrence).NotTo(BeEmpty(),
+				"First occurrence timestamp shows when issue started")
 
-			lastSeen, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "lastSeen").Result()
+			lastOccurrence, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "lastOccurrence").Result()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(lastSeen).NotTo(BeEmpty(),
-				"Last seen timestamp shows issue is ongoing")
+			Expect(lastOccurrence).NotTo(BeEmpty(),
+				"Last occurrence timestamp shows issue is ongoing")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Duplicate tracking provides operational visibility

@@ -19,11 +19,8 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
-	"os/exec"
 	"testing"
-	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -35,11 +32,10 @@ import (
 
 // Test suite for Gateway E2E tests
 // This suite sets up a complete production-like environment:
-// - Kind cluster (2 nodes: 1 control-plane + 1 worker)
-// - Redis Master-Replica (1 master + 1 replica)
+// - Kind cluster (4 nodes: 1 control-plane + 3 workers)
+// - Redis Sentinel HA (1 master + 2 replicas + 3 Sentinels)
+// - Prometheus AlertManager (for webhook testing)
 // - Gateway service (deployed to Kind cluster)
-//
-// NOTE: AlertManager is NOT deployed - tests send payloads directly to Gateway endpoint
 
 func TestGatewayE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -49,145 +45,68 @@ func TestGatewayE2E(t *testing.T) {
 var (
 	ctx    context.Context
 	cancel context.CancelFunc
-	logger logr.Logger // DD-005: Use logr.Logger
+	logger logr.Logger // DD-005: logr.Logger for unified logging
 
 	// Cluster configuration (shared across all tests)
 	clusterName    string
 	kubeconfigPath string
-
-	// Shared Gateway configuration (deployed ONCE for all tests)
-	gatewayNamespace string = "gateway-e2e"
-	gatewayURL       string // Port-forwarded from gateway-service (unique per process)
+	gatewayURL     string // Gateway URL for E2E tests (NodePort or port-forward)
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 )
 
-// SynchronizedBeforeSuite runs cluster setup ONCE on process 1, then each process sets up port-forward
-var _ = SynchronizedBeforeSuite(
-	// This runs ONCE on process 1 only - sets up shared cluster
-	func() []byte {
-		// Initialize context
-		ctx, cancel = context.WithCancel(context.Background())
+var _ = BeforeSuite(func() {
+	// Initialize context
+	ctx, cancel = context.WithCancel(context.Background())
 
-		// DD-005: Initialize logger using shared logging library
-		logger = kubelog.NewLogger(kubelog.Options{
-			Development: true,
-			Level:       0, // INFO
-			ServiceName: "gateway-e2e-test",
-		})
+	// Initialize logger (DD-005: logr.Logger for unified logging)
+	logger = kubelog.NewLogger(kubelog.Options{
+		Development: true,
+		Level:       0, // INFO
+		ServiceName: "gateway-e2e-test",
+	})
 
-		// Initialize failure tracking
-		anyTestFailed = false
+	// Initialize failure tracking
+	anyTestFailed = false
 
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("Gateway E2E Test Suite - Cluster Setup (ONCE - Process 1)")
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("Creating Kind cluster and deploying shared Gateway...")
-		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
-		logger.Info("  • RemediationRequest CRD (cluster-wide)")
-		logger.Info("  • Gateway Docker image (build + load)")
-		logger.Info("  • Shared Gateway + Redis (gateway-e2e namespace)")
-		logger.Info("  • Kubeconfig: ~/.kube/gateway-kubeconfig")
-		logger.Info("")
-		logger.Info("Note: All tests share the same Gateway instance")
-		logger.Info("      Each process creates unique port-forward")
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	logger.Info("Gateway E2E Test Suite - Cluster Setup (ONCE)")
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	logger.Info("Creating Kind cluster for all E2E tests...")
+	logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
+	logger.Info("  • RemediationRequest CRD (cluster-wide)")
+	logger.Info("  • Gateway Docker image (build + load)")
+	logger.Info("  • Kubeconfig: ~/.kube/kind-config")
+	logger.Info("")
+	logger.Info("Note: Each test will deploy its own services in a unique namespace")
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Set cluster configuration
-		clusterName = "gateway-e2e"
-		homeDir, err := os.UserHomeDir()
-		Expect(err).ToNot(HaveOccurred())
-		kubeconfigPath = fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+	// Set cluster configuration
+	clusterName = "gateway-e2e"
+	homeDir, err := os.UserHomeDir()
+	Expect(err).ToNot(HaveOccurred())
+	kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config", homeDir)
 
-		// Delete any existing cluster first to ensure clean state
-		logger.Info("Checking for existing cluster...")
-		err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
-		if err != nil {
-			logger.Info("Failed to delete existing cluster (may not exist)", "error", err)
-		}
+	// Create Kind cluster (ONCE for all tests)
+	err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred())
 
-		// Create Kind cluster (ONCE for all tests)
-		err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
+	// Set KUBECONFIG environment variable
+	err = os.Setenv("KUBECONFIG", kubeconfigPath)
+	Expect(err).ToNot(HaveOccurred())
 
-		// Set KUBECONFIG environment variable
-		err = os.Setenv("KUBECONFIG", kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred())
+	// Set Gateway URL (localhost:8080 is exposed via Kind extraPortMappings or NodePort)
+	gatewayURL = "http://localhost:8080"
 
-		// Deploy shared Gateway + Redis (ONCE for all tests)
-		logger.Info("Deploying shared Gateway + Redis...")
-		err = infrastructure.DeployTestServices(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Wait for Gateway pod to be ready
-		logger.Info("⏳ Waiting for Gateway pod to be ready...")
-		waitCmd := exec.Command("kubectl", "wait",
-			"-n", gatewayNamespace,
-			"--for=condition=ready",
-			"pod",
-			"-l", "app=gateway",
-			"--timeout=120s",
-			"--kubeconfig", kubeconfigPath)
-		waitCmd.Stdout = GinkgoWriter
-		waitCmd.Stderr = GinkgoWriter
-		err = waitCmd.Run()
-		Expect(err).ToNot(HaveOccurred(), "Gateway pod did not become ready")
-		logger.Info("✅ Gateway pod is ready")
-
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("Cluster Setup Complete - Ready for parallel processes")
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-		// Return kubeconfig path to all processes
-		return []byte(kubeconfigPath)
-	},
-	// This runs on ALL processes (including process 1) - verifies NodePort access
-	func(data []byte) {
-		// Initialize context for this process
-		ctx, cancel = context.WithCancel(context.Background())
-
-		// DD-005: Initialize logger for this process using shared logging library
-		logger = kubelog.NewLogger(kubelog.Options{
-			Development: true,
-			Level:       0, // INFO
-			ServiceName: "gateway-e2e-test",
-		})
-
-		// Get kubeconfig from process 1
-		kubeconfigPath = string(data)
-		clusterName = "gateway-e2e"
-
-		// Set KUBECONFIG environment variable
-		err := os.Setenv("KUBECONFIG", kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred())
-
-		// All processes use the same NodePort URL (exposed via Kind extraPortMappings)
-		// No per-process port-forwards needed - eliminates kubectl port-forward instability
-		processID := GinkgoParallelProcess()
-		gatewayURL = "http://localhost:8080" // NodePort 30080 mapped to localhost:8080
-
-		logger.Info("🔌 Using Gateway NodePort (no port-forward needed)",
-			"process", processID,
-			"url", gatewayURL)
-
-		// Wait for Gateway HTTP endpoint to be responsive via NodePort
-		logger.Info("⏳ Waiting for Gateway NodePort to be responsive...")
-		httpClient := &http.Client{Timeout: 10 * time.Second}
-		Eventually(func() error {
-			resp, err := httpClient.Get(gatewayURL + "/health")
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("health check returned status %d", resp.StatusCode)
-			}
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Gateway NodePort did not become responsive")
-		logger.Info("✅ Gateway is ready via NodePort", "process", processID)
-	},
-)
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	logger.Info("Cluster Setup Complete - Tests can now deploy services per-namespace")
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
+	logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
+	logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+})
 
 // Track test failures for cluster cleanup decision
 var _ = ReportAfterEach(func(report SpecReport) {
@@ -196,91 +115,40 @@ var _ = ReportAfterEach(func(report SpecReport) {
 	}
 })
 
-// SynchronizedAfterSuite ensures cluster cleanup happens ONLY after ALL processes complete
-var _ = SynchronizedAfterSuite(
-	// This runs on ALL processes - cleanup per-process resources and report status
-	func() {
-		processID := GinkgoParallelProcess()
-		logger.Info("Process cleanup complete",
-			"process", processID,
-			"hadFailures", anyTestFailed)
+var _ = AfterSuite(func() {
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	logger.Info("Gateway E2E Test Suite - Cluster Teardown")
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Cancel context for this process
-		if cancel != nil {
-			cancel()
-		}
-
-		// DD-005: Sync logger using shared library
-		kubelog.Sync(logger)
-
-		// Return failure status to process 1 via the suite report
-		// (Ginkgo handles aggregating failure status across processes)
-	},
-	// This runs ONLY on process 1 AFTER all other processes complete
-	func() {
-		// DD-005: Re-initialize logger for final cleanup using shared logging library
-		logger = kubelog.NewLogger(kubelog.Options{
-			Development: true,
-			Level:       0,
-			ServiceName: "gateway-e2e-test",
-		})
-
+	// Check if any test failed - preserve cluster for debugging
+	if anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true" {
+		logger.Info("⚠️  Test FAILED - Keeping cluster alive for debugging")
+		logger.Info("To debug:")
+		logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
+		logger.Info("  kubectl get namespaces | grep -E 'storm|rate|concurrent|crd|restart'")
+		logger.Info("  kubectl get pods -n <namespace>")
+		logger.Info("  kubectl logs -n <namespace> deployment/gateway")
+		logger.Info("To cleanup manually:")
+		logger.Info(fmt.Sprintf("  kind delete cluster --name %s", clusterName))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("Gateway E2E Test Suite - Cluster Teardown (Process 1 - Final)")
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		return
+	}
 
-		// Check if the suite failed (Ginkgo aggregates this across all processes)
-		// We use CurrentSpecReport().Failed() to check suite-level failure
-		suiteReport := CurrentSpecReport()
-		suiteFailed := suiteReport.Failed() || anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true"
+	// All tests passed - cleanup cluster
+	logger.Info("✅ All tests passed - cleaning up cluster...")
+	err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+	if err != nil {
+		logger.Error(err, "Failed to delete cluster")
+	}
 
-		if suiteFailed {
-			logger.Info("⚠️  Test FAILED - Keeping cluster alive for debugging")
-			logger.Info("To debug:")
-			logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
-			logger.Info("  kubectl get namespaces | grep -E 'storm|rate|concurrent|crd|restart'")
-			logger.Info("  kubectl get pods -n <namespace>")
-			logger.Info("  kubectl logs -n <namespace> deployment/gateway")
-			logger.Info("To cleanup manually:")
-			logger.Info(fmt.Sprintf("  kind delete cluster --name %s", clusterName))
-			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			return
-		}
+	// Cancel context
+	if cancel != nil {
+		cancel()
+	}
 
-		// All tests passed - cleanup cluster
-		logger.Info("✅ All tests passed - cleaning up cluster...")
-		err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
-		if err != nil {
-			logger.Info("Failed to delete cluster", "error", err)
-		}
-
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("Cluster Teardown Complete")
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-		// DD-005: Final logger sync using shared library
-		kubelog.Sync(logger)
-	},
-)
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	logger.Info("Cluster Teardown Complete")
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+})
 
 // Helper functions for tests
-
-// CleanupRedisForTest flushes Redis to ensure test isolation
-// This should be called in each test's AfterAll to prevent cross-test interference
-func CleanupRedisForTest(namespace string) error {
-	// Use kubectl to exec into Redis pod and flush DB
-	// This ensures each test starts with clean Redis state
-	return infrastructure.FlushRedis(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
-}
-
-// GenerateUniqueAlertName creates a unique alert name for test isolation
-// Format: <baseName>-<timestamp>-<process>
-func GenerateUniqueAlertName(baseName string) string {
-	return fmt.Sprintf("%s-%d-p%d", baseName, GinkgoRandomSeed(), GinkgoParallelProcess())
-}
-
-// GenerateUniqueNamespace creates a unique namespace name for test isolation
-// Format: <prefix>-<timestamp>
-func GenerateUniqueNamespace(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, GinkgoRandomSeed())
-}

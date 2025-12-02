@@ -193,7 +193,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			Expect(response2.Status).To(Equal("duplicate"))
 			Expect(response2.Duplicate).To(BeTrue())
 
-			By("5. Verify occurrence count was incremented and LastSeen timestamp updated")
+			By("5. Verify occurrence count was incremented and LastOccurrence timestamp updated")
 			var firstSeen time.Time
 			Eventually(func() bool {
 				updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
@@ -206,14 +206,14 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 					return false
 				}
 
-				// Capture FirstSeen for comparison
-				firstSeen = updatedCRD.Spec.Deduplication.FirstSeen.Time
-				lastSeen := updatedCRD.Spec.Deduplication.LastSeen.Time
+				// Capture FirstOccurrence for comparison
+				firstSeen = updatedCRD.Spec.Deduplication.FirstOccurrence.Time
+				lastOccurrence := updatedCRD.Spec.Deduplication.LastOccurrence.Time
 
-				// LastSeen should be >= FirstSeen (allow same millisecond for fast systems)
-				return !lastSeen.Before(firstSeen)
+				// LastOccurrence should be >= FirstOccurrence (allow same millisecond for fast systems)
+				return !lastOccurrence.Before(firstSeen)
 			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Occurrence count should be 2 and LastSeen should be >= FirstSeen")
+				"Occurrence count should be 2 and LastOccurrence should be >= FirstOccurrence")
 		})
 
 		// REMOVED: "should handle multiple concurrent duplicates correctly"

@@ -31,6 +31,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -47,7 +48,8 @@ var (
 	testEnv          *envtest.Environment   // envtest environment (in-memory K8s)
 	suitePgClient    *PostgresTestClient    // PostgreSQL container
 	suiteDataStorage *DataStorageTestServer // Data Storage service
-	// suiteRedisPort and k8sConfig are declared in helpers.go to be accessible by both test and non-test files
+	suiteRedisPort   int                    // Redis port for integration tests
+	k8sConfig        *rest.Config           // Kubernetes client config from envtest
 )
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
