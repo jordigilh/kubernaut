@@ -14,6 +14,31 @@ import (
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POSTGRESQL TEST INFRASTRUCTURE TYPES (envtest Migration - Phase 2)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// PostgresTestClient wraps PostgreSQL container for integration tests
+// Used for audit trail storage via Data Storage service
+type PostgresTestClient struct {
+	ContainerName string
+	Host          string
+	Port          int
+	Database      string
+	User          string
+	Password      string
+	DSN           string
+}
+
+// DataStorageTestServer wraps httptest.Server for Data Storage service
+// Used for audit trail storage integration tests
+type DataStorageTestServer struct {
+	Server       *httptest.Server
+	BaseURL      string
+	PostgresPort int
+	PgClient     *PostgresTestClient
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // POSTGRESQL TEST CLIENT METHODS (envtest Migration - Phase 2)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

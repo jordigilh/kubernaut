@@ -18,13 +18,15 @@ package gateway
 
 import (
 	"context"
-	"fmt"
+	"os"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 
 	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
@@ -38,39 +40,69 @@ import (
 
 var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tests", func() {
 	var (
-		ctx          context.Context
-		dedupService *processing.DeduplicationService
-		redisClient  *redis.Client
-		logger       logr.Logger // DD-005: Use logr.Logger
-		testSignal   *types.NormalizedSignal
+		ctx             context.Context
+		dedupService    *processing.DeduplicationService
+		goredisClient   *goredis.Client
+		rediscacheClient *rediscache.Client
+		logger          logr.Logger
+		testSignal      *types.NormalizedSignal
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
+		zapLogger := zap.NewNop()
+		logger = zapr.NewLogger(zapLogger)
 
-		// Use suite's Redis client for test isolation in parallel execution
-		// This ensures tests use the same Redis instance as the Gateway server
-		redisAddr := fmt.Sprintf("localhost:%d", suiteRedisPort)
-		// Use same DB offset as helpers.go: 2 + processID
-		redisDB := 2 + GinkgoParallelProcess()
+		// Check if running in CI/Kind environment
+		if os.Getenv("SKIP_REDIS_INTEGRATION") == "true" {
+			Skip("Redis integration tests skipped (SKIP_REDIS_INTEGRATION=true)")
+		}
 
-		redisClient = redis.NewClient(&redis.Options{
+		// Connect to REAL Redis in OCP cluster (kubernaut-system namespace)
+		// Requires port-forward: kubectl port-forward -n kubernaut-system svc/redis 6379:6379
+		// OR uses local Redis from docker-compose.integration.yml (port 6380)
+		redisAddr := "localhost:6379"
+		redisPassword := "" // OCP Redis has no password configured
+		redisDB := 1        // Use DB 1 to avoid conflicts
+
+		goredisClient = goredis.NewClient(&goredis.Options{
 			Addr:     redisAddr,
-			Password: "",
+			Password: redisPassword,
 			DB:       redisDB,
 		})
 
 		// Verify Redis is available
-		_, err := redisClient.Ping(ctx).Result()
-		Expect(err).ToNot(HaveOccurred(), "Suite Redis should be available")
+		_, err := goredisClient.Ping(ctx).Result()
+		if err != nil {
+			// Try fallback to local Docker Redis (port 6380)
+			_ = goredisClient.Close()
+
+			goredisClient = goredis.NewClient(&goredis.Options{
+				Addr:     "localhost:6380",
+				Password: "integration_redis_password",
+				DB:       redisDB,
+			})
+
+			_, err = goredisClient.Ping(ctx).Result()
+			if err != nil {
+				Skip("Redis not available - run 'kubectl port-forward -n kubernaut-system svc/redis 6379:6379' or 'make bootstrap-dev'")
+			}
+		}
+
+		// Create rediscache.Client wrapper for NewDeduplicationServiceWithTTL
+		// DD-CACHE-001: Use shared Redis library
+		rediscacheClient = rediscache.NewClient(&goredis.Options{
+			Addr:     goredisClient.Options().Addr,
+			Password: goredisClient.Options().Password,
+			DB:       goredisClient.Options().DB,
+		}, logger)
 
 		// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
-		err = redisClient.FlushDB(ctx).Err()
+		err = goredisClient.FlushDB(ctx).Err()
 		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
 		// Verify Redis is clean
-		keys, err := redisClient.Keys(ctx, "*").Result()
+		keys, err := goredisClient.Keys(ctx, "*").Result()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 
@@ -85,27 +117,27 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 			Fingerprint: "integration-test-ttl-" + time.Now().Format("20060102150405"),
 		}
 
-		rediscacheClient := rediscache.NewClient(&redis.Options{
-			Addr:     redisAddr,
-			Password: "",
-			DB:       redisDB,
-		}, logger)
+		// NewDeduplicationServiceWithTTL signature: (redisClient, k8sClient, ttl, logger, metrics)
+		// k8sClient is nil for dedup-only tests (not needed for fingerprint operations)
 		dedupService = processing.NewDeduplicationServiceWithTTL(rediscacheClient, nil, 5*time.Second, logger, nil)
 	})
 
 	AfterEach(func() {
-		if redisClient != nil {
+		if goredisClient != nil {
 			// Reset Redis config to prevent OOM cascade failures
 			// (TriggerMemoryPressure sets maxmemory to 1MB)
-			redisClient.ConfigSet(ctx, "maxmemory", "2147483648")
-			redisClient.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+			goredisClient.ConfigSet(ctx, "maxmemory", "2147483648")
+			goredisClient.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
 
 			// Cleanup test data
-			keys, _ := redisClient.Keys(ctx, "gateway:dedup:fingerprint:integration-test-ttl-*").Result()
+			keys, _ := goredisClient.Keys(ctx, "gateway:dedup:fingerprint:integration-test-ttl-*").Result()
 			if len(keys) > 0 {
-				redisClient.Del(ctx, keys...)
+				goredisClient.Del(ctx, keys...)
 			}
-			_ = redisClient.Close()
+			_ = goredisClient.Close()
+		}
+		if rediscacheClient != nil {
+			_ = rediscacheClient.Close()
 		}
 	})
 
@@ -137,7 +169,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 			// Step 3: Manually expire the key to simulate TTL expiration
 			// This simulates waiting 5+ minutes without actually waiting
 			key := "gateway:dedup:fingerprint:" + testSignal.Fingerprint
-			deleted, err := redisClient.Del(ctx, key).Result()
+			deleted, err := goredisClient.Del(ctx, key).Result()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(deleted).To(BeNumerically(">", 0),
 				"Redis key must exist and be deleted")
@@ -174,7 +206,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 
 			// Verify TTL is set correctly in Redis
 			key := "gateway:dedup:fingerprint:" + testSignal.Fingerprint
-			ttl, err := redisClient.TTL(ctx, key).Result()
+			ttl, err := goredisClient.TTL(ctx, key).Result()
 			Expect(err).NotTo(HaveOccurred())
 
 			// TEST-SPECIFIC: Expect 5-second TTL (production uses 5 minutes)
@@ -201,28 +233,28 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 			err := dedupService.Record(ctx, testSignal.Fingerprint, "rr-refresh-789")
 			Expect(err).NotTo(HaveOccurred())
 
-			// Wait 1 second to let TTL decrease (legitimate time-based test)
+			// Wait 1 second
 			time.Sleep(1 * time.Second)
 
-			// Check TTL after 1 second (should be ~4 seconds remaining)
+			// Check TTL after 1 second
 			key := "gateway:dedup:fingerprint:" + testSignal.Fingerprint
-			ttlBefore, err := redisClient.TTL(ctx, key).Result()
+			ttlBefore, err := goredisClient.TTL(ctx, key).Result()
 			Expect(err).NotTo(HaveOccurred())
-			GinkgoWriter.Printf("TTL before duplicate detection: %v\n", ttlBefore)
 
 			// Detect duplicate (this should refresh TTL)
 			isDuplicate, _, err := dedupService.Check(ctx, testSignal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(isDuplicate).To(BeTrue())
 
-			// FIX: Use Eventually to handle timing variance in TTL refresh
-			// Check that TTL is refreshed to approximately 5 seconds
-			Eventually(func() time.Duration {
-				ttl, _ := redisClient.TTL(ctx, key).Result()
-				GinkgoWriter.Printf("TTL after duplicate detection: %v\n", ttl)
-				return ttl
-			}, "5s", "100ms").Should(BeNumerically(">=", 4*time.Second),
-				"TTL should be refreshed to approximately 5 seconds after duplicate detection")
+			// Check TTL after duplicate detection
+			ttlAfter, err := goredisClient.TTL(ctx, key).Result()
+			Expect(err).NotTo(HaveOccurred())
+
+			// TTL should be refreshed (back to ~5 seconds for tests, 5 minutes in production)
+			Expect(ttlAfter).To(BeNumerically(">", ttlBefore),
+				"TTL must be refreshed on duplicate detection")
+			Expect(ttlAfter).To(BeNumerically("~", 5*time.Second, 1*time.Second),
+				"Refreshed TTL must be approximately 5 seconds (test configuration)")
 
 			// BUSINESS OUTCOME VERIFIED:
 			// ✅ Ongoing incidents keep deduplication active
@@ -264,7 +296,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 
 			// Manually expire fingerprint
 			key := "gateway:dedup:fingerprint:" + testSignal.Fingerprint
-			redisClient.Del(ctx, key)
+			goredisClient.Del(ctx, key)
 
 			// Check after expiration - counter reset
 			isDuplicate, metadata, err = dedupService.Check(ctx, testSignal)

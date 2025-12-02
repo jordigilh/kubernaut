@@ -11,20 +11,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
-	. "github.com/onsi/ginkgo/v2"
+	goredis "github.com/go-redis/redis/v8"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -33,15 +34,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	gatewayconfig "github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
-	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
 // Suite-level namespace tracking for batch cleanup
 var (
 	testNamespaces      = make(map[string]bool) // Track all test namespaces
 	testNamespacesMutex sync.Mutex              // Thread-safe access
-	suiteRedisPort      int                     // Redis port (random to avoid conflicts with Data Storage tests)
-	k8sConfig           *rest.Config            // K8s REST config from envtest (set in suite_test.go)
 )
 
 // RegisterTestNamespace adds a namespace to the suite-level cleanup list
@@ -57,28 +55,12 @@ func RegisterTestNamespace(namespace string) {
 
 // RedisTestClient wraps Redis client for integration tests
 type RedisTestClient struct {
-	Client *redis.Client
+	Client *goredis.Client
 }
 
 // K8sTestClient wraps Kubernetes client for integration tests
 type K8sTestClient struct {
 	Client client.Client
-}
-
-// PostgresTestClient wraps PostgreSQL container for integration tests
-// Uses direct Podman commands (no testcontainers)
-type PostgresTestClient struct {
-	Host     string
-	Port     int
-	Database string
-	User     string
-	Password string
-}
-
-// DataStorageTestServer wraps Data Storage service for integration tests
-type DataStorageTestServer struct {
-	Server   *httptest.Server
-	PgClient *PostgresTestClient
 }
 
 // WebhookResponse represents HTTP response from Gateway webhook
@@ -103,37 +85,43 @@ type ResourceIdentifier struct {
 	Name string
 }
 
+// TestServerOptions configures Gateway server for integration tests
+// Used by StartTestGatewayWithOptions() to create customized test servers
+type TestServerOptions struct {
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
+	IdleTimeout  time.Duration
+}
+
+// DefaultTestServerOptions returns default options for test Gateway servers
+func DefaultTestServerOptions() *TestServerOptions {
+	return &TestServerOptions{
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // REDIS TEST CLIENT METHODS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // SetupRedisTestClient creates a Redis client for integration tests
-// ONLY connects to local Podman Redis (dynamic port)
-// Integration tests use envtest + local Podman Redis (no OCP fallback)
-// Redis is started automatically in suite_test.go SynchronizedBeforeSuite
-// This is a convenience wrapper that uses the global suiteRedisPort
+// ONLY connects to local Podman Redis (localhost:6379)
+// Integration tests use Kind cluster + local Podman Redis (no OCP fallback)
+// Start Redis with: ./test/integration/gateway/start-redis.sh
 func SetupRedisTestClient(ctx context.Context) *RedisTestClient {
-	return SetupRedisTestClientWithPort(ctx, suiteRedisPort)
-}
-
-// SetupRedisTestClientWithPort creates a Redis test client with a specific port
-func SetupRedisTestClientWithPort(ctx context.Context, port int) *RedisTestClient {
 	// Check if running in CI without Redis
 	if os.Getenv("SKIP_INTEGRATION_TESTS") == "true" {
 		return &RedisTestClient{Client: nil}
 	}
 
 	// Priority 1: Local Podman Redis (fastest, recommended for development)
-	// Uses dynamic port from suite setup to avoid conflicts with Data Storage tests
-	// Use different Redis DB per parallel process to prevent state leakage
-	processID := GinkgoParallelProcess()
-	redisDB := 2 + processID // DB 2 for process 1, DB 3 for process 2, etc.
-
-	redisAddr := fmt.Sprintf("localhost:%d", port)
-	client := redis.NewClient(&redis.Options{
-		Addr:         redisAddr,
+	// Start with: ./test/integration/gateway/start-redis.sh
+	client := goredis.NewClient(&goredis.Options{
+		Addr:         "localhost:6379",
 		Password:     "",
-		DB:           redisDB,
+		DB:           2,
 		PoolSize:     20,
 		MinIdleConns: 5,
 		MaxRetries:   3,
@@ -150,7 +138,7 @@ func SetupRedisTestClientWithPort(ctx context.Context, port int) *RedisTestClien
 		return &RedisTestClient{Client: client}
 	}
 
-	// NO OCP FALLBACK - Integration tests use envtest + local Podman Redis only
+	// NO OCP FALLBACK - Integration tests use Kind + local Podman Redis only
 	// If Redis is not available, fail fast with clear error
 	_ = client.Close()
 	return &RedisTestClient{Client: nil}
@@ -173,8 +161,6 @@ func (r *RedisTestClient) CountFingerprints(ctx context.Context, namespace strin
 }
 
 // Cleanup removes all test data from Redis
-// WARNING: FlushDB wipes ALL data, breaking parallel test execution
-// Use CleanupByPattern for parallel-safe cleanup
 func (r *RedisTestClient) Cleanup(ctx context.Context) {
 	if r.Client == nil {
 		return
@@ -182,47 +168,24 @@ func (r *RedisTestClient) Cleanup(ctx context.Context) {
 	r.Client.FlushDB(ctx)
 }
 
-// CleanupByPattern removes Redis keys matching the given pattern
-// This is parallel-safe - only removes keys for the current test's namespace/process
-func (r *RedisTestClient) CleanupByPattern(ctx context.Context, pattern string) error {
-	if r.Client == nil {
-		return nil
-	}
-
-	var cursor uint64
-	for {
-		keys, nextCursor, err := r.Client.Scan(ctx, cursor, pattern, 100).Result()
-		if err != nil {
-			return err
-		}
-
-		if len(keys) > 0 {
-			if err := r.Client.Del(ctx, keys...).Err(); err != nil {
-				return err
-			}
-		}
-
-		cursor = nextCursor
-		if cursor == 0 {
-			break
-		}
-	}
-	return nil
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // KUBERNETES TEST CLIENT METHODS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // SetupK8sTestClient creates a Kubernetes client for integration tests
-// Uses envtest (in-memory K8s API) for integration testing (supports auth, real API behavior)
-// BR-GATEWAY-001: Real K8s API required for authentication/authorization testing
+// Uses Kind cluster for integration testing (supports auth, real API behavior)
+// BR-GATEWAY-001: Real K8s cluster required for authentication/authorization testing
 func SetupK8sTestClient(ctx context.Context) *K8sTestClient {
-	// envtest Migration: Use global k8sConfig from envtest
-	// k8sConfig is initialized in suite_test.go SynchronizedBeforeSuite
-	// All parallel processes share the same envtest instance and config
-	if k8sConfig == nil {
-		panic("k8sConfig is nil - envtest not initialized in suite_test.go")
+	// Use isolated kubeconfig for Kind cluster to avoid impacting other tests
+	kubeconfigPath := os.Getenv("KUBECONFIG")
+	if kubeconfigPath == "" {
+		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "kind-config")
+	}
+
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		// Integration tests require real K8s cluster
+		panic(fmt.Sprintf("Failed to load kubeconfig for integration tests from %s: %v", kubeconfigPath, err))
 	}
 
 	// Create scheme with RemediationRequest CRD + core K8s types
@@ -230,9 +193,8 @@ func SetupK8sTestClient(ctx context.Context) *K8sTestClient {
 	_ = remediationv1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
 
-	// Create Kubernetes client using envtest config
-	// All tests share the same envtest API server, no isolation needed
-	k8sClient, err := client.New(k8sConfig, client.Options{Scheme: scheme})
+	// Create real Kubernetes client
+	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create K8s client for integration tests: %v", err))
 	}
@@ -284,22 +246,30 @@ func (k *K8sTestClient) DeleteCRD(ctx context.Context, name, namespace string) e
 //	resp, _ := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", body)
 //
 // DD-GATEWAY-004: Authentication removed - security now at network layer
-// DD-005: Uses logr.Logger for unified logging interface
 func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) (*gateway.Server, error) {
-	// DD-005: Use shared logging library (logr.Logger interface)
-	logger := kubelog.NewLogger(kubelog.Options{
-		Development: true,
-		Level:       0, // INFO
-		ServiceName: "gateway-test",
-	})
+	// Use production logger with console output to capture errors in test logs
+	logConfig := zap.NewProductionConfig()
+	logConfig.OutputPaths = []string{"stdout"}
+	logConfig.ErrorOutputPaths = []string{"stderr"}
+	logger, _ := logConfig.Build()
 
 	return StartTestGatewayWithLogger(ctx, redisClient, k8sClient, logger)
 }
 
 // StartTestGatewayWithLogger creates and starts a Gateway server with a custom logger
 // This is useful for observability tests that need to capture and verify log output
-// DD-005: Uses logr.Logger for unified logging interface
-func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, logger logr.Logger) (*gateway.Server, error) {
+func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, logger *zap.Logger) (*gateway.Server, error) {
+	return StartTestGatewayWithOptions(ctx, redisClient, k8sClient, DefaultTestServerOptions())
+}
+
+// StartTestGatewayWithOptions creates a Gateway server with custom timeout options
+// Used for testing HTTP timeout behavior (BR-GATEWAY-019, BR-GATEWAY-020)
+func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, opts *TestServerOptions) (*gateway.Server, error) {
+	// Use production logger with console output to capture errors in test logs
+	logConfig := zap.NewProductionConfig()
+	logConfig.OutputPaths = []string{"stdout"}
+	logConfig.ErrorOutputPaths = []string{"stderr"}
+	logger, _ := logConfig.Build()
 
 	// v2.9: Wire deduplication and storm detection services (REQUIRED)
 	// BR-GATEWAY-008, BR-GATEWAY-009, BR-GATEWAY-010
@@ -308,14 +278,19 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 		return nil, fmt.Errorf("Redis client is required for Gateway startup (BR-GATEWAY-008, BR-GATEWAY-009)")
 	}
 
+	// Use options if provided, otherwise use defaults
+	if opts == nil {
+		opts = DefaultTestServerOptions()
+	}
+
 	// Create ServerConfig for tests (nested structure)
 	// Uses fast TTLs and low thresholds for rapid test execution
 	cfg := &gatewayconfig.ServerConfig{
 		Server: gatewayconfig.ServerSettings{
 			ListenAddr:   ":8080",
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 10 * time.Second,
-			IdleTimeout:  120 * time.Second,
+			ReadTimeout:  opts.ReadTimeout,
+			WriteTimeout: opts.WriteTimeout,
+			IdleTimeout:  opts.IdleTimeout,
 		},
 
 		Middleware: gatewayconfig.MiddlewareSettings{
@@ -360,9 +335,9 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 	}
 
 	logger.Info("Creating Gateway server for integration tests",
-		"deduplication_ttl", cfg.Processing.Deduplication.TTL,
-		"storm_rate_threshold", cfg.Processing.Storm.RateThreshold,
-		"rate_limit", cfg.Middleware.RateLimit.RequestsPerMinute,
+		zap.Duration("deduplication_ttl", cfg.Processing.Deduplication.TTL),
+		zap.Int("storm_rate_threshold", cfg.Processing.Storm.RateThreshold),
+		zap.Int("rate_limit", cfg.Middleware.RateLimit.RequestsPerMinute),
 	)
 
 	// Create isolated Prometheus registry for this test
@@ -378,7 +353,9 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 	// TDD FIX: Use NewServerWithK8sClient to share K8s client with test
 	// This ensures Gateway and test use the same K8s API cache, preventing
 	// "namespace not found" errors due to cache propagation delays
-	server, err := gateway.NewServerWithK8sClient(cfg, logger, metricsInstance, k8sClient.Client)
+	// DD-005: Convert zap.Logger to logr.Logger for unified logging (per migration decision)
+	logrLogger := zapr.NewLogger(logger)
+	server, err := gateway.NewServerWithK8sClient(cfg, logrLogger, metricsInstance, k8sClient.Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gateway server: %w", err)
 	}
@@ -390,145 +367,6 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 	}
 
 	// Register Kubernetes Event adapter
-	k8sEventAdapter := adapters.NewKubernetesEventAdapter()
-	if err := server.RegisterAdapter(k8sEventAdapter); err != nil {
-		return nil, fmt.Errorf("failed to register Kubernetes Event adapter: %w", err)
-	}
-
-	return server, nil
-}
-
-// TestServerOptions allows customization of Gateway server settings for specific test scenarios
-// BR-GATEWAY-019: Configurable HTTP timeouts for testing timeout behavior
-// BR-GATEWAY-020: Graceful shutdown control for testing shutdown behavior
-type TestServerOptions struct {
-	// HTTP server timeouts (BR-GATEWAY-019)
-	ReadTimeout  time.Duration // Time allowed to read request body
-	WriteTimeout time.Duration // Time allowed to write response
-	IdleTimeout  time.Duration // Time to keep idle connections open
-
-	// Processing settings
-	DeduplicationTTL   time.Duration // TTL for deduplication fingerprints
-	StormRateThreshold int           // Threshold for storm detection
-	RateLimitRPM       int           // Rate limit requests per minute
-}
-
-// DefaultTestServerOptions returns default options for integration tests
-func DefaultTestServerOptions() TestServerOptions {
-	return TestServerOptions{
-		ReadTimeout:        5 * time.Second,
-		WriteTimeout:       10 * time.Second,
-		IdleTimeout:        120 * time.Second,
-		DeduplicationTTL:   5 * time.Second,
-		StormRateThreshold: 2,
-		RateLimitRPM:       20,
-	}
-}
-
-// StartTestGatewayWithOptions creates a Gateway server with custom options
-// This enables testing of timeout behavior (BR-GATEWAY-019) and graceful shutdown (BR-GATEWAY-020)
-//
-// Example usage for timeout testing:
-//
-//	opts := DefaultTestServerOptions()
-//	opts.ReadTimeout = 2 * time.Second  // Short timeout for testing
-//	gatewayServer, err := StartTestGatewayWithOptions(ctx, redisClient, k8sClient, opts)
-//
-// Example usage for shutdown testing:
-//
-//	gatewayServer, err := StartTestGatewayWithOptions(ctx, redisClient, k8sClient, DefaultTestServerOptions())
-//	testServer := httptest.NewServer(gatewayServer.Handler())
-//	// ... send requests ...
-//	gatewayServer.Stop(ctx) // Trigger graceful shutdown
-func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, opts TestServerOptions) (*gateway.Server, error) {
-	// DD-005: Use shared logging library (logr.Logger interface)
-	logger := kubelog.NewLogger(kubelog.Options{
-		Development: true,
-		Level:       0, // INFO
-		ServiceName: "gateway-test",
-	})
-
-	// v2.9: Wire deduplication and storm detection services (REQUIRED)
-	if redisClient == nil || redisClient.Client == nil {
-		return nil, fmt.Errorf("Redis client is required for Gateway startup (BR-GATEWAY-008, BR-GATEWAY-009)")
-	}
-
-	// Create ServerConfig with custom options
-	cfg := &gatewayconfig.ServerConfig{
-		Server: gatewayconfig.ServerSettings{
-			ListenAddr:   ":8080",
-			ReadTimeout:  opts.ReadTimeout,
-			WriteTimeout: opts.WriteTimeout,
-			IdleTimeout:  opts.IdleTimeout,
-		},
-
-		Middleware: gatewayconfig.MiddlewareSettings{
-			RateLimit: gatewayconfig.RateLimitSettings{
-				RequestsPerMinute: opts.RateLimitRPM,
-				Burst:             5,
-			},
-		},
-
-		Infrastructure: gatewayconfig.InfrastructureSettings{
-			Redis: &rediscache.Options{
-				Addr:         redisClient.Client.Options().Addr,
-				DB:           redisClient.Client.Options().DB,
-				Password:     redisClient.Client.Options().Password,
-				DialTimeout:  redisClient.Client.Options().DialTimeout,
-				ReadTimeout:  redisClient.Client.Options().ReadTimeout,
-				WriteTimeout: redisClient.Client.Options().WriteTimeout,
-				PoolSize:     redisClient.Client.Options().PoolSize,
-				MinIdleConns: redisClient.Client.Options().MinIdleConns,
-			},
-		},
-
-		Processing: gatewayconfig.ProcessingSettings{
-			Deduplication: gatewayconfig.DeduplicationSettings{
-				TTL: opts.DeduplicationTTL,
-			},
-			Storm: gatewayconfig.StormSettings{
-				RateThreshold:     opts.StormRateThreshold,
-				PatternThreshold:  2,
-				AggregationWindow: 1 * time.Second,
-			},
-			Environment: gatewayconfig.EnvironmentSettings{
-				CacheTTL:           5 * time.Second,
-				ConfigMapNamespace: "kubernaut-system",
-				ConfigMapName:      "kubernaut-environment-overrides",
-			},
-			Priority: gatewayconfig.PrioritySettings{
-				PolicyPath: "../../../config.app/gateway/policies/priority.rego",
-			},
-			Retry: gatewayconfig.DefaultRetrySettings(),
-		},
-	}
-
-	logger.Info("Creating Gateway server with custom options",
-		"read_timeout", opts.ReadTimeout,
-		"write_timeout", opts.WriteTimeout,
-		"idle_timeout", opts.IdleTimeout,
-		"deduplication_ttl", opts.DeduplicationTTL,
-		"storm_rate_threshold", opts.StormRateThreshold,
-		"rate_limit_rpm", opts.RateLimitRPM,
-	)
-
-	// Create isolated Prometheus registry for this test
-	registry := prometheus.NewRegistry()
-	metricsInstance := metrics.NewMetricsWithRegistry(registry)
-	metricsInstance.RedisAvailable.Set(1)
-
-	// Use NewServerWithK8sClient to share K8s client with test
-	server, err := gateway.NewServerWithK8sClient(cfg, logger, metricsInstance, k8sClient.Client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Gateway server: %w", err)
-	}
-
-	// Register adapters
-	prometheusAdapter := adapters.NewPrometheusAdapter()
-	if err := server.RegisterAdapter(prometheusAdapter); err != nil {
-		return nil, fmt.Errorf("failed to register Prometheus adapter: %w", err)
-	}
-
 	k8sEventAdapter := adapters.NewKubernetesEventAdapter()
 	if err := server.RegisterAdapter(k8sEventAdapter); err != nil {
 		return nil, fmt.Errorf("failed to register Kubernetes Event adapter: %w", err)
@@ -623,24 +461,9 @@ func GeneratePrometheusAlert(opts PrometheusAlertOptions) []byte {
 	}
 
 	// Add resource labels if provided
-	// Use Prometheus-style labels (pod, deployment, node, etc.) for adapter compatibility
-	if opts.Resource.Kind != "" && opts.Resource.Name != "" {
-		switch opts.Resource.Kind {
-		case "Pod":
-			labels["pod"] = opts.Resource.Name
-		case "Deployment":
-			labels["deployment"] = opts.Resource.Name
-		case "StatefulSet":
-			labels["statefulset"] = opts.Resource.Name
-		case "DaemonSet":
-			labels["daemonset"] = opts.Resource.Name
-		case "Node":
-			labels["node"] = opts.Resource.Name
-		default:
-			// Fallback for unknown resource types
-			labels["resource_kind"] = opts.Resource.Kind
-			labels["resource_name"] = opts.Resource.Name
-		}
+	if opts.Resource.Kind != "" {
+		labels["resource_kind"] = opts.Resource.Kind
+		labels["resource_name"] = opts.Resource.Name
 	}
 
 	// Merge custom labels
@@ -743,31 +566,25 @@ func (r *RedisTestClient) SimulateFailover(ctx context.Context) {
 	_ = r.Client.Close()
 
 	// Recreate client (simulates failover to new master)
-	redisAddr := fmt.Sprintf("localhost:%d", suiteRedisPort)
-	r.Client = redis.NewClient(&redis.Options{
-		Addr: redisAddr,
+	r.Client = goredis.NewClient(&goredis.Options{
+		Addr: "localhost:6379",
 		DB:   2,
 	})
 }
 
 // TriggerMemoryPressure simulates Redis memory pressure/LRU eviction
 // Tests behavior when Redis starts evicting keys due to memory limits
-//
-// ⚠️ IMPORTANT: This function does NOT modify maxmemory because that's a
-// global Redis setting that would affect ALL parallel tests.
-// Instead, it simulates memory pressure by:
-// 1. Setting short TTLs on existing keys (simulating eviction)
-// 2. Flushing the current DB (simulating complete eviction)
-//
-// For true memory pressure testing, run tests in isolation (not parallel).
 func (r *RedisTestClient) TriggerMemoryPressure(ctx context.Context) {
 	if r.Client == nil {
 		return
 	}
-	// FIX: Do NOT set maxmemory to low values - it affects ALL parallel tests
-	// Instead, simulate eviction by flushing the current DB
-	// This is safer for parallel test execution
-	r.Client.FlushDB(ctx)
+	// Set a very low maxmemory limit to trigger LRU eviction
+	// This simulates production scenario where Redis hits memory limits
+
+	// Note: In real Redis cluster, this would trigger LRU eviction
+	// In test environment, we simulate by setting short TTLs
+	r.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+	r.Client.ConfigSet(ctx, "maxmemory", "1mb") // Force memory pressure
 }
 
 // ResetRedisConfig resets Redis to test-safe configuration
@@ -1481,10 +1298,8 @@ func createTestK8sClient(ctx context.Context) (*K8sTestClient, string) {
 	k8sClient := SetupK8sTestClient(ctx)
 
 	// TDD FIX: Create unique namespace per test to prevent CRD conflicts
-	// Format: test-prod-p<process>-<timestamp>-<random>
-	// Process ID ensures isolation in parallel execution (4 processes)
-	processID := GinkgoParallelProcess()
-	uniqueNamespace := fmt.Sprintf("test-prod-p%d-%d-%d", processID, time.Now().Unix(), rand.Intn(10000))
+	// Format: test-prod-<timestamp>-<random>
+	uniqueNamespace := fmt.Sprintf("test-prod-%d-%d", time.Now().Unix(), rand.Intn(10000))
 	EnsureTestNamespace(ctx, k8sClient, uniqueNamespace)
 
 	return k8sClient, uniqueNamespace
