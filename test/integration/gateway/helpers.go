@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	goredis "github.com/redis/go-redis/v9"
@@ -25,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -108,21 +110,32 @@ func DefaultTestServerOptions() *TestServerOptions {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // SetupRedisTestClient creates a Redis client for integration tests
-// ONLY connects to local Podman Redis (localhost:6379)
-// Integration tests use Kind cluster + local Podman Redis (no OCP fallback)
-// Start Redis with: ./test/integration/gateway/start-redis.sh
+// Uses the suite's Redis port if set (via SetSuiteRedisPort), otherwise tries default port
+// Integration tests use envtest + Podman Redis
+// Each parallel process uses a different Redis DB: DB 2 + processID (for test isolation)
 func SetupRedisTestClient(ctx context.Context) *RedisTestClient {
 	// Check if running in CI without Redis
 	if os.Getenv("SKIP_INTEGRATION_TESTS") == "true" {
 		return &RedisTestClient{Client: nil}
 	}
 
-	// Priority 1: Local Podman Redis (fastest, recommended for development)
-	// Start with: ./test/integration/gateway/start-redis.sh
+	// Determine Redis address
+	// Priority 1: Suite-level Redis port (set by suite_test.go via SetSuiteRedisPort)
+	// Priority 2: Default localhost:6379
+	redisAddr := "localhost:6379"
+	if suiteRedisPortValue > 0 {
+		redisAddr = fmt.Sprintf("localhost:%d", suiteRedisPortValue)
+	}
+
+	// Each parallel process uses a different DB for test isolation
+	// DB 2 is the base, each process adds its ID
+	processID := GinkgoParallelProcess()
+	redisDB := 2 + processID
+
 	client := goredis.NewClient(&goredis.Options{
-		Addr:         "localhost:6379",
+		Addr:         redisAddr,
 		Password:     "",
-		DB:           2,
+		DB:           redisDB,
 		PoolSize:     20,
 		MinIdleConns: 5,
 		MaxRetries:   3,
@@ -139,7 +152,6 @@ func SetupRedisTestClient(ctx context.Context) *RedisTestClient {
 		return &RedisTestClient{Client: client}
 	}
 
-	// NO OCP FALLBACK - Integration tests use Kind + local Podman Redis only
 	// If Redis is not available, fail fast with clear error
 	_ = client.Close()
 	return &RedisTestClient{Client: nil}
@@ -173,20 +185,46 @@ func (r *RedisTestClient) Cleanup(ctx context.Context) {
 // KUBERNETES TEST CLIENT METHODS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// suiteK8sConfig holds the K8s config from envtest, set by suite_test.go
+// This allows SetupK8sTestClient to use envtest config instead of loading from file
+var suiteK8sConfig interface{} // *rest.Config but interface{} to avoid import cycles
+
+// suiteRedisPortValue holds the Redis port from suite_test.go
+// This allows SetupRedisTestClient to use the suite's Redis instead of hardcoded port
+var suiteRedisPortValue int
+
+// SetSuiteK8sConfig sets the K8s config for the test suite (called from suite_test.go)
+func SetSuiteK8sConfig(config interface{}) {
+	suiteK8sConfig = config
+}
+
+// SetSuiteRedisPort sets the Redis port for the test suite (called from suite_test.go)
+func SetSuiteRedisPort(port int) {
+	suiteRedisPortValue = port
+}
+
 // SetupK8sTestClient creates a Kubernetes client for integration tests
-// Uses Kind cluster for integration testing (supports auth, real API behavior)
+// Uses envtest config if available (set via SetSuiteK8sConfig), otherwise falls back to kubeconfig file
 // BR-GATEWAY-001: Real K8s cluster required for authentication/authorization testing
 func SetupK8sTestClient(ctx context.Context) *K8sTestClient {
-	// Use isolated kubeconfig for Kind cluster to avoid impacting other tests
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "kind-config")
-	}
+	var config interface{}
 
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		// Integration tests require real K8s cluster
-		panic(fmt.Sprintf("Failed to load kubeconfig for integration tests from %s: %v", kubeconfigPath, err))
+	// Priority 1: Use suite-level config from envtest (set by SetSuiteK8sConfig)
+	if suiteK8sConfig != nil {
+		config = suiteK8sConfig
+	} else {
+		// Priority 2: Fall back to loading from kubeconfig file (for standalone tests)
+		kubeconfigPath := os.Getenv("KUBECONFIG")
+		if kubeconfigPath == "" {
+			kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "kind-config")
+		}
+
+		fileConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		if err != nil {
+			// Integration tests require real K8s cluster
+			panic(fmt.Sprintf("Failed to load kubeconfig for integration tests from %s: %v", kubeconfigPath, err))
+		}
+		config = fileConfig
 	}
 
 	// Create scheme with RemediationRequest CRD + core K8s types
@@ -194,8 +232,13 @@ func SetupK8sTestClient(ctx context.Context) *K8sTestClient {
 	_ = remediationv1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
 
-	// Create real Kubernetes client
-	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
+	// Create real Kubernetes client using the config (type assert from interface{})
+	restConfig, ok := config.(*rest.Config)
+	if !ok {
+		panic("Invalid K8s config type - expected *rest.Config")
+	}
+
+	k8sClient, err := client.New(restConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create K8s client for integration tests: %v", err))
 	}

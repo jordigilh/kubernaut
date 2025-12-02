@@ -48,9 +48,10 @@ var (
 	logger logr.Logger // DD-005: logr.Logger for unified logging
 
 	// Cluster configuration (shared across all tests)
-	clusterName    string
-	kubeconfigPath string
-	gatewayURL     string // Gateway URL for E2E tests (NodePort or port-forward)
+	clusterName      string
+	kubeconfigPath   string
+	gatewayURL       string // Gateway URL for E2E tests (NodePort or port-forward)
+	gatewayNamespace string // Namespace where Gateway is deployed
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -96,8 +97,9 @@ var _ = BeforeSuite(func() {
 	err = os.Setenv("KUBECONFIG", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Set Gateway URL (localhost:8080 is exposed via Kind extraPortMappings or NodePort)
+	// Set Gateway URL and namespace (localhost:8080 is exposed via Kind extraPortMappings or NodePort)
 	gatewayURL = "http://localhost:8080"
+	gatewayNamespace = "kubernaut-system" // Standard namespace for Gateway deployment
 
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	logger.Info("Cluster Setup Complete - Tests can now deploy services per-namespace")
@@ -105,6 +107,7 @@ var _ = BeforeSuite(func() {
 	logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
 	logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 	logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
+	logger.Info(fmt.Sprintf("  • Gateway Namespace: %s", gatewayNamespace))
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 

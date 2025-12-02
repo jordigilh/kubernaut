@@ -207,7 +207,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	suiteLogger.Info(fmt.Sprintf("Process %d initialized with K8s API: %s, Redis port: %d",
 		GinkgoParallelProcess(), k8sConfig.Host, suiteRedisPort))
 
-	// Initialize K8s client for this process (uses reconstructed k8sConfig)
+	// Set the K8s config for helpers.go to use (instead of loading from file)
+	SetSuiteK8sConfig(k8sConfig)
+
+	// Set the Redis port for helpers.go to use (instead of hardcoded port)
+	SetSuiteRedisPort(suiteRedisPort)
+
+	// Initialize K8s client for this process (uses reconstructed k8sConfig via SetSuiteK8sConfig)
 	// Each process creates its own client.Client - clients are thread-safe and stateless
 	suiteK8sClient = SetupK8sTestClient(suiteCtx)
 	Expect(suiteK8sClient).ToNot(BeNil(), "Failed to setup K8s client for suite")

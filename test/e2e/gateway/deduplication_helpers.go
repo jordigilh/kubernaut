@@ -25,6 +25,7 @@ import (
 	"os"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -188,4 +189,13 @@ func getKubernetesClientSafe() client.Client {
 // GetLastK8sClientError returns the last error from getKubernetesClientSafe
 func GetLastK8sClientError() error {
 	return lastK8sClientError
+}
+
+// GenerateUniqueNamespace generates a unique namespace name for E2E tests
+// Format: <prefix>-<process-id>-<timestamp>
+// This ensures test isolation when running in parallel
+func GenerateUniqueNamespace(prefix string) string {
+	processID := GinkgoParallelProcess()
+	timestamp := time.Now().UnixNano()
+	return fmt.Sprintf("%s-%d-%d", prefix, processID, timestamp)
 }
