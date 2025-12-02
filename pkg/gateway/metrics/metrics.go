@@ -46,6 +46,11 @@ type Metrics struct {
 	AlertsDeduplicatedTotal  *prometheus.CounterVec // gateway_signals_deduplicated_total
 	AlertStormsDetectedTotal *prometheus.CounterVec // gateway_signal_storms_detected_total
 
+	// Signal Rejection Metrics (BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+	// Tracks signals rejected due to validation failures (e.g., missing resource info)
+	// Labels: reason (missing_resource_kind, missing_resource_name, missing_resource_info)
+	SignalsRejectedTotal *prometheus.CounterVec // gateway_signals_rejected_total
+
 	// CRD Creation Metrics
 	CRDsCreatedTotal  *prometheus.CounterVec
 	CRDCreationErrors *prometheus.CounterVec
@@ -181,6 +186,15 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Help: "Total signal storms detected by type (rate-based or pattern-based)",
 			},
 			[]string{"storm_type", "signal_name"},
+		),
+
+		// Signal Rejection Metrics (BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+		SignalsRejectedTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "gateway_signals_rejected_total",
+				Help: "Total signals rejected due to validation failures (V1.0 requires valid Kubernetes resource info)",
+			},
+			[]string{"reason"},
 		),
 
 		// CRD Creation Metrics

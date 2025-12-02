@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // CRDCreator converts NormalizedSignal to RemediationRequest CRD
@@ -43,14 +44,13 @@ import (
 // 4. Creating CRD in Kubernetes via API
 // 5. Recording metrics (success/failure)
 //
-// CRD naming (DD-015):
-// - Format: rr-<first-12-chars-of-fingerprint>-<unix-timestamp>
-// - Example: rr-a1b2c3d4e5f6-1731868032
-// - Reason: Ensures unique CRD per occurrence, prevents name collisions
-// - See: docs/architecture/decisions/DD-015-timestamp-based-crd-naming.md
+// CRD naming:
+// - Format: rr-<first-16-chars-of-fingerprint>
+// - Example: rr-a1b2c3d4e5f6789
+// - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
 type CRDCreator struct {
 	k8sClient         *k8s.Client
-	logger            logr.Logger
+	logger            logr.Logger           // DD-005: logr.Logger for unified logging
 	metrics           *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
 	fallbackNamespace string                // Configurable fallback namespace for CRD creation
 	retryConfig       *config.RetrySettings // BR-GATEWAY-111: Retry configuration
@@ -58,6 +58,7 @@ type CRDCreator struct {
 
 // NewCRDCreator creates a new CRD creator
 // BR-GATEWAY-111: Accepts retry configuration for K8s API retry logic
+// DD-005: Uses logr.Logger for unified logging
 func NewCRDCreator(k8sClient *k8s.Client, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
@@ -172,6 +173,7 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 
 		// Not the last attempt - retry with exponential backoff
 		c.logger.Info("CRD creation failed, retrying...",
+			"warning", true,
 			"attempt", attempt+1,
 			"max_attempts", c.retryConfig.MaxAttempts,
 			"backoff", backoff,
@@ -287,16 +289,25 @@ func (c *CRDCreator) CreateRemediationRequest(
 	priority string,
 	environment string,
 ) (*remediationv1alpha1.RemediationRequest, error) {
-	// Generate CRD name from fingerprint + timestamp (DD-015)
-	// Example: rr-a1b2c3d4e5f6-1731868032
-	fingerprintPrefix := signal.Fingerprint
-	// DD-015: Timestamp-based CRD naming to prevent collisions
-	// Format: rr-<fingerprint-prefix-12>-<unix-timestamp>
-	if len(fingerprintPrefix) > 12 {
-		fingerprintPrefix = fingerprintPrefix[:12]
+	// BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Validate resource info (V1.0 Kubernetes-only)
+	// Business Outcome: V1.0 only supports Kubernetes signals - reject signals without
+	// resource info with HTTP 400 to provide clear feedback to alert sources.
+	// This prevents downstream processing failures in SP enrichment, AIAnalysis RCA, and WE remediation.
+	if err := c.validateResourceInfo(signal); err != nil {
+		c.logger.Info("Signal rejected: missing resource info",
+			"fingerprint", signal.Fingerprint,
+			"alertName", signal.AlertName,
+			"error", err)
+		return nil, err
 	}
-	timestamp := time.Now().Unix()
-	crdName := fmt.Sprintf("rr-%s-%d", fingerprintPrefix, timestamp)
+
+	// Generate CRD name from fingerprint (first 16 chars, or full fingerprint if shorter)
+	// Example: rr-a1b2c3d4e5f6789
+	fingerprintPrefix := signal.Fingerprint
+	if len(fingerprintPrefix) > 16 {
+		fingerprintPrefix = fingerprintPrefix[:16]
+	}
+	crdName := fmt.Sprintf("rr-%s", fingerprintPrefix)
 
 	// Build RemediationRequest CRD
 	rr := &remediationv1alpha1.RemediationRequest{
@@ -334,8 +345,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 			SignalSource: signal.Source,
 			TargetType:   "kubernetes",
 
-			// Target resource identification (populated from NormalizedSignal.Resource)
-			// Used by SignalProcessing for context enrichment and RO for workflow routing
+			// Target resource identification (BR-GATEWAY-TARGET-RESOURCE)
+			// Business Outcome: SignalProcessing and RO can access resource info directly
+			// without parsing ProviderData JSON
 			TargetResource: c.buildTargetResource(signal),
 
 			// Temporal data
@@ -361,9 +373,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 			AffectedResources: signal.AffectedResources,
 
 			// Deduplication metadata (initial values)
-			Deduplication: remediationv1alpha1.DeduplicationInfo{
-				FirstSeen:       metav1.NewTime(signal.ReceivedTime),
-				LastSeen:        metav1.NewTime(signal.ReceivedTime),
+			// Uses shared type field names (per RO team API Contract Alignment)
+			Deduplication: sharedtypes.DeduplicationInfo{
+				FirstOccurrence: metav1.NewTime(signal.ReceivedTime),
+				LastOccurrence:  metav1.NewTime(signal.ReceivedTime),
 				OccurrenceCount: 1,
 			},
 		},
@@ -408,6 +421,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 		// This handles cluster-scoped signals (e.g., NodeNotReady) that don't have a namespace
 		if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), "not found") {
 			c.logger.Info("Target namespace not found, creating CRD in fallback namespace",
+				"warning", true,
 				"original_namespace", signal.Namespace,
 				"fallback_namespace", c.fallbackNamespace,
 				"crd_name", crdName)
@@ -494,50 +508,88 @@ func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 // - WHICH resource to remediate (kubectl target)
 // - WHERE to remediate (namespace, cluster)
 // - Additional context for decision-making
-// buildTargetResource constructs the ResourceIdentifier from NormalizedSignal.Resource
-// This is used by SignalProcessing for context enrichment and RO for workflow routing.
-// TargetResource is REQUIRED - Gateway MUST always populate this field.
-// For signals without explicit resource info, returns ResourceIdentifier with Kind="Unknown".
-func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remediationv1alpha1.ResourceIdentifier {
-	// TargetResource is required - provide defaults if no resource info available
-	kind := signal.Resource.Kind
-	name := signal.Resource.Name
-	if kind == "" {
-		kind = "Unknown"
-	}
-	if name == "" {
-		name = "unknown"
-	}
-
-	return remediationv1alpha1.ResourceIdentifier{
-		Kind:      kind,
-		Name:      name,
-		Namespace: signal.Resource.Namespace,
-	}
-}
-
 func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 	// Construct provider-specific data structure
-	// NOTE: Resource info is now in spec.targetResource (per RESPONSE_TARGET_RESOURCE_SCHEMA.md)
-	// ProviderData contains only provider-specific fields not covered by top-level spec fields
 	providerData := map[string]interface{}{
 		"namespace": signal.Namespace,
-		"labels":    signal.Labels,
-		// Provider-specific fields can be added here based on signal.SourceType
-		// e.g., for Prometheus: "alertmanagerURL", "generatorURL"
-		// e.g., for AWS: "region", "accountId"
+		"resource": map[string]string{
+			"kind":      signal.Resource.Kind,
+			"name":      signal.Resource.Name,
+			"namespace": signal.Resource.Namespace,
+		},
+		"labels": signal.Labels,
 	}
 
 	// Marshal to JSON
 	jsonData, err := json.Marshal(providerData)
 	if err != nil {
 		c.logger.Info("Failed to marshal provider data, using empty",
+			"warning", true,
 			"fingerprint", signal.Fingerprint,
 			"error", err)
 		return []byte("{}")
 	}
 
 	return jsonData
+}
+
+// validateResourceInfo validates that signal has required resource info for V1.0 (Kubernetes-only)
+// Business Outcome: V1.0 only supports Kubernetes signals. Signals without resource info indicate
+// configuration issues at the alert source and should be rejected with clear HTTP 400 feedback.
+//
+// Per RO team API Contract Alignment (Q3 response):
+// - V1.0 is Kubernetes-only
+// - Malformed alerts missing resource labels indicate configuration issues at source
+// - Rejecting early provides clear feedback to alert authors
+// - "Unknown" kind would break downstream processing (SP enrichment, AIAnalysis RCA, WE remediation)
+//
+// Validation Rules:
+// - Resource.Kind is REQUIRED (e.g., "Pod", "Deployment", "Node")
+// - Resource.Name is REQUIRED (e.g., "payment-api-789", "worker-node-1")
+// - Resource.Namespace may be empty for cluster-scoped resources (e.g., Node, ClusterRole)
+//
+// Metrics: Increments gateway_signals_rejected_total{reason="..."} on validation failure
+func (c *CRDCreator) validateResourceInfo(signal *types.NormalizedSignal) error {
+	var missingFields []string
+
+	if signal.Resource.Kind == "" {
+		missingFields = append(missingFields, "Kind")
+	}
+	if signal.Resource.Name == "" {
+		missingFields = append(missingFields, "Name")
+	}
+
+	if len(missingFields) > 0 {
+		// Record metric for rejected signals (S2: helps alert source authors identify misconfigured alerts)
+		if c.metrics != nil && c.metrics.SignalsRejectedTotal != nil {
+			reason := "missing_resource_info"
+			if len(missingFields) == 1 {
+				reason = "missing_resource_" + strings.ToLower(missingFields[0])
+			}
+			c.metrics.SignalsRejectedTotal.WithLabelValues(reason).Inc()
+		}
+
+		return fmt.Errorf("resource validation failed: missing required fields [%s] - V1.0 requires valid Kubernetes resource info",
+			strings.Join(missingFields, ", "))
+	}
+
+	return nil
+}
+
+// buildTargetResource constructs ResourceIdentifier from NormalizedSignal.Resource
+// Business Outcome: SignalProcessing and RO can access resource info directly
+// without parsing ProviderData JSON
+//
+// TargetResource is REQUIRED (per API_CONTRACT_TRIAGE.md GAP-C1-03)
+// Validation is performed by validateResourceInfo() before this function is called.
+func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remediationv1alpha1.ResourceIdentifier {
+	// Note: Validation already performed by validateResourceInfo()
+	// Kind and Name are guaranteed to be non-empty at this point
+	return remediationv1alpha1.ResourceIdentifier{
+		Kind:      signal.Resource.Kind,
+		Name:      signal.Resource.Name,
+		Namespace: signal.Resource.Namespace,
+	}
 }
 
 // CreateStormCRD creates a new RemediationRequest CRD for storm aggregation
