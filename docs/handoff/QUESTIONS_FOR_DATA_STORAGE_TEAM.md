@@ -7,6 +7,144 @@
 
 ---
 
+## 🔔 SCHEMA CHANGE: DetectedLabels `failedDetections` (Dec 2, 2025)
+
+**Status**: ⚠️ **ACTION REQUIRED** - DetectedLabels schema updated per DD-WORKFLOW-001 v2.1
+
+**Change**: Added `failedDetections []string` field to track detection failures. Avoids `*bool` anti-pattern.
+
+**Impact on Workflow Filtering**: When matching incident `DetectedLabels` against workflow catalog `detected_labels`, you must **skip fields that are in `failedDetections`**.
+
+**New Schema**:
+```json
+{
+  "failedDetections": ["pdbProtected", "hpaEnabled"],
+  "gitOpsManaged": true,
+  "gitOpsTool": "argocd",
+  "pdbProtected": false,   // SKIP - in failedDetections
+  "hpaEnabled": false,     // SKIP - in failedDetections
+  "stateful": false,
+  "helmManaged": true,
+  "networkIsolated": false
+}
+```
+
+**SQL Filtering Adjustment**:
+```sql
+-- BEFORE: Match all provided labels
+WHERE (workflow.detected_labels->>'gitOpsManaged' = 'true'
+       OR workflow.detected_labels->>'gitOpsManaged' IS NULL)
+  AND (workflow.detected_labels->>'pdbProtected' = 'true'
+       OR workflow.detected_labels->>'pdbProtected' IS NULL)
+
+-- AFTER: Skip fields in failedDetections
+WHERE (workflow.detected_labels->>'gitOpsManaged' = 'true'
+       OR workflow.detected_labels->>'gitOpsManaged' IS NULL)
+  AND (
+    'pdbProtected' = ANY($failed_detections)  -- Skip if failed
+    OR workflow.detected_labels->>'pdbProtected' = signal.detected_labels->>'pdbProtected'
+    OR workflow.detected_labels->>'pdbProtected' IS NULL
+  )
+```
+
+**Validation**: `failedDetections` only accepts known field names:
+- `gitOpsManaged`, `pdbProtected`, `hpaEnabled`, `stateful`, `helmManaged`, `networkIsolated`, `podSecurityLevel`, `serviceMesh`
+
+**Authoritative Source**: DD-WORKFLOW-001 v2.1
+
+---
+
+### ✅ Data Storage Team Response (Dec 2, 2025)
+
+**Status**: ✅ **ACKNOWLEDGED** - Implementation plan documented below
+
+#### Impact Assessment
+
+| Component | Impact | Action Required |
+|-----------|--------|-----------------|
+| `pkg/shared/types/enrichment.go` | **HIGH** | Add `FailedDetections []string` to `DetectedLabels` struct |
+| `pkg/datastorage/models/workflow.go` | **MEDIUM** | Add `FailedDetections` to search filter `DetectedLabels` |
+| `pkg/datastorage/repository/workflow_repository.go` | **HIGH** | Update SQL filtering to skip `failedDetections` fields |
+| `pkg/datastorage/audit/workflow_search_event.go` | **LOW** | Include `failedDetections` in audit events |
+
+#### Current State Analysis
+
+1. **Authoritative Schema** (`pkg/shared/types/enrichment.go`):
+   - Current version: DD-WORKFLOW-001 v2.1 (comments reference this)
+   - **Missing**: `FailedDetections` field not yet added to Go struct
+   - **Note**: The schema comments mention "NO `*bool` anti-pattern" but the implementation approach differs from HolmesGPT-API
+
+2. **Data Storage Filter Model** (`pkg/datastorage/models/workflow.go`):
+   - Uses `*bool` for boolean fields (for optional filtering)
+   - This is **correct for filtering** (null = no filter, true = filter for true, false = filter for false)
+   - Different from incident `DetectedLabels` which uses plain `bool`
+
+3. **SQL Filtering** (`pkg/datastorage/repository/workflow_repository.go`):
+   - Currently does NOT handle `failedDetections` skip logic
+   - Needs update to implement the SQL pattern shown above
+
+#### Implementation Plan (BR-STORAGE-020)
+
+**Phase 1: Schema Update** (Priority: HIGH)
+```go
+// pkg/shared/types/enrichment.go - ADD to DetectedLabels struct
+type DetectedLabels struct {
+    // ... existing fields ...
+    
+    // FailedDetections lists fields where detection failed (RBAC, timeout, etc.)
+    // DD-WORKFLOW-001 v2.1: Consumers MUST skip these fields when filtering
+    // Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, podSecurityLevel, serviceMesh
+    FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged pdbProtected hpaEnabled stateful helmManaged networkIsolated podSecurityLevel serviceMesh"`
+}
+```
+
+**Phase 2: Filter Model Update** (Priority: MEDIUM)
+```go
+// pkg/datastorage/models/workflow.go - ADD to DetectedLabels filter struct
+type DetectedLabels struct {
+    // ... existing fields ...
+    
+    // FailedDetections from incident - fields to skip during filtering
+    FailedDetections []string `json:"failed_detections,omitempty"`
+}
+```
+
+**Phase 3: SQL Filtering Update** (Priority: HIGH)
+- Update `SearchByEmbedding()` to accept `failedDetections` parameter
+- Modify WHERE clause generation to skip fields in `failedDetections`
+- Add unit tests for skip logic
+
+#### Questions for AI Analysis Team
+
+1. **Who passes `failedDetections` to Data Storage?**
+   - Is it HolmesGPT-API (as part of the search request)?
+   - Or should Data Storage parse it from the incident's `DetectedLabels`?
+
+2. **Filtering Semantics Confirmation**:
+   - If `pdbProtected` is in `failedDetections`, should we:
+     - A) Skip the `pdbProtected` filter entirely (treat as "no preference")
+     - B) Only skip if the workflow requires `pdbProtected=true`
+   - Current understanding: Option A (skip entirely)
+
+3. **Backwards Compatibility**:
+   - If `failedDetections` is omitted from request, assume all detections succeeded?
+   - Confirm: empty array = all detections succeeded
+
+#### Timeline
+
+| Task | Estimate | Dependency |
+|------|----------|------------|
+| Schema update (`enrichment.go`) | 1 hour | None |
+| Filter model update | 1 hour | Schema update |
+| SQL filtering implementation | 4 hours | Filter model |
+| Unit tests | 2 hours | SQL implementation |
+| Integration tests | 2 hours | Unit tests |
+| **Total** | **10 hours** | - |
+
+**Target Completion**: V1.0 (if answers to questions above confirm approach)
+
+---
+
 ## Context
 
 The HolmesGPT-API team has successfully integrated with Data Storage for workflow catalog search. The `custom_labels` pass-through is now working end-to-end as confirmed in our integration tests (v3.2 release).
