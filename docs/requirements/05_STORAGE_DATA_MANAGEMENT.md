@@ -522,4 +522,36 @@ The Storage & Data Management layer provides comprehensive data persistence, ret
 
 ---
 
+## 17. Workflow Catalog Enhancements (V1.1 Candidates)
+
+### 17.1 Hybrid Scoring Improvements
+
+#### **BR-STORAGE-050: True Score Normalization (V1.1 Candidate)**
+**Business Requirement**: The system MAY provide true score normalization for hybrid workflow scoring, scaling all scores to a 0-1 range based on the maximum possible score rather than simple capping.
+
+**Status**: 🟡 **V1.1 CANDIDATE** - Pending user feedback on V1.0 capping behavior
+
+**Current V1.0 Behavior**:
+- Hybrid scoring uses: `final_score = min(base_similarity + label_boost - label_penalty, 1.0)`
+- Scores are **capped** at 1.0 (100%), not normalized
+- Label boost: +0.10 per matching optional label
+- Label penalty: -0.10 per conflicting optional label
+
+**Proposed V1.1 Enhancement**:
+1. **True Normalization** - MAY scale all scores to 0-1 range based on max possible score
+2. **Dynamic Range** - MAY adjust normalization based on candidate set
+3. **Confidence Calibration** - MAY provide calibrated confidence scores for downstream decisions
+
+**Evaluation Criteria** (for V1.1 decision):
+- User feedback on whether capping at 1.0 is sufficient for ranking purposes
+- Impact on workflow selection quality
+- Complexity vs. benefit analysis
+- Performance implications of dynamic normalization
+
+**Reference**: DD-WORKFLOW-004 v1.1, QUESTIONS_FOR_DATA_STORAGE_TEAM.md A4
+
+**Business Value**: Improved confidence calibration enables better downstream decision-making in approval policies
+
+---
+
 *This document serves as the definitive specification for business requirements of Kubernaut's Storage & Data Management components. All implementation and testing should align with these requirements to ensure reliable, performant, and secure data operations supporting intelligent remediation capabilities.*
