@@ -641,24 +641,22 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 
 			// ASSERT: V1.0 Scoring (base similarity only) works correctly
 			// DD-WORKFLOW-004 v2.0: V1.0 uses confidence = base_similarity (no boost/penalty)
+			// BR-STORAGE-020: DetectedLabels filtering now applies via WHERE clause
+			// Only workflows matching GitOpsManaged=true are returned
 			Expect(err).ToNot(HaveOccurred(), "Search should succeed")
 			Expect(response).ToNot(BeNil())
-			Expect(response.Workflows).To(HaveLen(2), "Should return both workflows")
+			Expect(response.Workflows).To(HaveLen(1), "Should return only GitOps workflow (BR-STORAGE-020 filtering)")
 
-			// Verify both workflows have valid scores
+			// Verify the returned workflow has valid scores
 			// DD-WORKFLOW-004: FinalScore is the hybrid weighted score
 			// DD-WORKFLOW-002 v3.0: Rank is implicit in ordering (index 0 = rank 1)
 			firstWorkflow := response.Workflows[0]
 			Expect(firstWorkflow.FinalScore).To(BeNumerically(">=", 0.0), "FinalScore should be >= 0.0")
 			Expect(firstWorkflow.FinalScore).To(BeNumerically("<=", 1.0), "FinalScore should be <= 1.0")
 
-			secondWorkflow := response.Workflows[1]
-			Expect(secondWorkflow.FinalScore).To(BeNumerically(">=", 0.0), "FinalScore should be >= 0.0")
-			Expect(secondWorkflow.FinalScore).To(BeNumerically("<=", 1.0), "FinalScore should be <= 1.0")
-
-			// Verify ordering: first workflow should have higher or equal score
-			Expect(firstWorkflow.FinalScore).To(BeNumerically(">=", secondWorkflow.FinalScore),
-				"First workflow should have higher or equal score (semantic similarity)")
+			// BR-STORAGE-020: Verify the returned workflow is the GitOps workflow
+			Expect(firstWorkflow.Workflow.Name).To(Equal("GitOps OOM Recovery"),
+				"Should return GitOps workflow (matches GitOpsManaged=true filter)")
 		})
 	})
 
@@ -922,10 +920,245 @@ var _ = Describe("Workflow Search - Hybrid Scoring End-to-End", Serial, func() {
 			// This is acceptable behavior - embedding can be generated later
 		})
 	})
+
+	// ========================================
+	// TEST 8: FailedDetections Skip Logic (BR-STORAGE-020)
+	// ========================================
+	// DD-WORKFLOW-001 v2.1: When matching incident DetectedLabels against workflow
+	// catalog detected_labels, skip fields that are in failedDetections.
+	Context("when searching with failedDetections", func() {
+		It("should skip filtering on fields listed in failedDetections", func() {
+			// ARRANGE: Create two workflows with different detected_labels
+			// Workflow A: requires pdbProtected=true
+			// Workflow B: requires pdbProtected=false (or no requirement)
+
+			workflowAID := "test-pdb-required-" + testID
+			workflowBID := "test-pdb-not-required-" + testID
+
+			labelsA := map[string]interface{}{
+				"signal_type": "OOMKilled",
+				"severity":    "critical",
+			}
+			labelsAJSON, err := json.Marshal(labelsA)
+			Expect(err).ToNot(HaveOccurred())
+
+			labelsB := map[string]interface{}{
+				"signal_type": "OOMKilled",
+				"severity":    "critical",
+			}
+			labelsBJSON, err := json.Marshal(labelsB)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Detected labels for workflow A: requires PDB protection
+			detectedLabelsA := map[string]interface{}{
+				"pdb_protected": true,
+				"git_ops_tool":  "argocd",
+			}
+			detectedLabelsAJSON, err := json.Marshal(detectedLabelsA)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Detected labels for workflow B: no PDB requirement
+			detectedLabelsB := map[string]interface{}{
+				"git_ops_tool": "argocd",
+			}
+			detectedLabelsBJSON, err := json.Marshal(detectedLabelsB)
+			Expect(err).ToNot(HaveOccurred())
+
+			embeddingA := pgvector.NewVector(make([]float32, 768))
+			for i := range embeddingA.Slice() {
+				embeddingA.Slice()[i] = 0.9
+			}
+			embeddingB := pgvector.NewVector(make([]float32, 768))
+			for i := range embeddingB.Slice() {
+				embeddingB.Slice()[i] = 0.9
+			}
+
+			workflowA := &models.RemediationWorkflow{
+				WorkflowName:         workflowAID,
+				Version:              "v1.0.0",
+				Name:                 "OOM Recovery with PDB Required",
+				Description:          "Requires PDB protection for safe remediation",
+				Content:              "apiVersion: tekton.dev/v1beta1\nkind: Pipeline",
+				ContentHash:          "test-hash-pdb-required-" + testID,
+				Labels:               labelsAJSON,
+				DetectedLabels:       detectedLabelsAJSON,
+				Embedding:            &embeddingA,
+				Status:               "active",
+				IsLatestVersion:      true,
+				TotalExecutions:      0,
+				SuccessfulExecutions: 0,
+			}
+
+			workflowB := &models.RemediationWorkflow{
+				WorkflowName:         workflowBID,
+				Version:              "v1.0.0",
+				Name:                 "OOM Recovery without PDB Requirement",
+				Description:          "Works with or without PDB protection",
+				Content:              "apiVersion: tekton.dev/v1beta1\nkind: Pipeline",
+				ContentHash:          "test-hash-pdb-not-required-" + testID,
+				Labels:               labelsBJSON,
+				DetectedLabels:       detectedLabelsBJSON,
+				Embedding:            &embeddingB,
+				Status:               "active",
+				IsLatestVersion:      true,
+				TotalExecutions:      0,
+				SuccessfulExecutions: 0,
+			}
+
+			err = workflowRepo.Create(testCtx, workflowA)
+			Expect(err).ToNot(HaveOccurred())
+			err = workflowRepo.Create(testCtx, workflowB)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ACT: Search with pdbProtected=false BUT pdbProtected is in failedDetections
+			// This simulates: SignalProcessing couldn't detect PDB status (RBAC error)
+			queryEmbedding := pgvector.NewVector(make([]float32, 768))
+			for i := range queryEmbedding.Slice() {
+				queryEmbedding.Slice()[i] = 0.9
+			}
+
+			pdbProtected := false
+			gitOpsTool := "argocd"
+
+			request := &models.WorkflowSearchRequest{
+				Query:     "OOM recovery",
+				Embedding: &queryEmbedding,
+				TopK:      10,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType: "OOMKilled",
+					Severity:   "critical",
+					DetectedLabels: &models.DetectedLabels{
+						PDBProtected: &pdbProtected,
+						GitOpsTool:   &gitOpsTool,
+						// pdbProtected is in failedDetections - should be skipped
+						FailedDetections: []string{"pdbProtected"},
+					},
+				},
+			}
+
+			response, err := workflowRepo.SearchByEmbedding(testCtx, request)
+
+			// ASSERT: Search succeeds
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+
+			// ASSERT: Both workflows should be returned because pdbProtected filter is skipped
+			// (since it's in failedDetections)
+			foundA := false
+			foundB := false
+			for _, w := range response.Workflows {
+				if w.WorkflowID == workflowA.WorkflowID {
+					foundA = true
+				}
+				if w.WorkflowID == workflowB.WorkflowID {
+					foundB = true
+				}
+			}
+
+			// Workflow B should definitely be found (matches git_ops_tool=argocd)
+			Expect(foundB).To(BeTrue(), "Workflow B should be found (matches git_ops_tool)")
+
+			// Workflow A should ALSO be found because pdbProtected filter is skipped
+			// (even though the incident has pdbProtected=false and workflow requires pdbProtected=true)
+			Expect(foundA).To(BeTrue(),
+				"Workflow A should be found because pdbProtected filter is skipped (in failedDetections)")
+		})
+
+		It("should apply filtering on fields NOT in failedDetections", func() {
+			// ARRANGE: Create workflow that requires argocd
+			workflowID := "test-gitops-required-" + testID
+
+			labels := map[string]interface{}{
+				"signal_type": "OOMKilled",
+				"severity":    "critical",
+			}
+			labelsJSON, err := json.Marshal(labels)
+			Expect(err).ToNot(HaveOccurred())
+
+			detectedLabels := map[string]interface{}{
+				"git_ops_tool": "argocd", // Requires ArgoCD
+			}
+			detectedLabelsJSON, err := json.Marshal(detectedLabels)
+			Expect(err).ToNot(HaveOccurred())
+
+			embedding := pgvector.NewVector(make([]float32, 768))
+			for i := range embedding.Slice() {
+				embedding.Slice()[i] = 0.9
+			}
+
+			workflow := &models.RemediationWorkflow{
+				WorkflowName:         workflowID,
+				Version:              "v1.0.0",
+				Name:                 "OOM Recovery for ArgoCD",
+				Description:          "Requires ArgoCD for GitOps sync",
+				Content:              "apiVersion: tekton.dev/v1beta1\nkind: Pipeline",
+				ContentHash:          "test-hash-argocd-" + testID,
+				Labels:               labelsJSON,
+				DetectedLabels:       detectedLabelsJSON,
+				Embedding:            &embedding,
+				Status:               "active",
+				IsLatestVersion:      true,
+				TotalExecutions:      0,
+				SuccessfulExecutions: 0,
+			}
+
+			err = workflowRepo.Create(testCtx, workflow)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ACT: Search with git_ops_tool=flux (NOT in failedDetections)
+			queryEmbedding := pgvector.NewVector(make([]float32, 768))
+			for i := range queryEmbedding.Slice() {
+				queryEmbedding.Slice()[i] = 0.9
+			}
+
+			gitOpsTool := "flux" // Different from workflow's argocd
+
+			request := &models.WorkflowSearchRequest{
+				Query:     "OOM recovery",
+				Embedding: &queryEmbedding,
+				TopK:      10,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType: "OOMKilled",
+					Severity:   "critical",
+					DetectedLabels: &models.DetectedLabels{
+						GitOpsTool: &gitOpsTool,
+						// git_ops_tool is NOT in failedDetections - filter should apply
+						FailedDetections: []string{"pdbProtected"}, // Only pdbProtected is failed
+					},
+				},
+			}
+
+			response, err := workflowRepo.SearchByEmbedding(testCtx, request)
+
+			// ASSERT: Search succeeds
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+
+			// ASSERT: The ArgoCD workflow should NOT be found because git_ops_tool filter applies
+			// (it's NOT in failedDetections)
+			found := false
+			for _, w := range response.Workflows {
+				if w.WorkflowID == workflow.WorkflowID {
+					found = true
+					break
+				}
+			}
+
+			// Workflow should NOT be found - git_ops_tool filter is active and doesn't match
+			Expect(found).To(BeFalse(),
+				"ArgoCD workflow should NOT be found when searching for flux (git_ops_tool filter is active)")
+		})
+	})
 })
 
 // stringPtr returns a pointer to the given string
 // Helper for optional string fields in test data
 func stringPtr(s string) *string {
 	return &s
+}
+
+// boolPtr returns a pointer to the given bool
+// Helper for optional bool fields in test data
+func boolPtr(b bool) *bool {
+	return &b
 }

@@ -280,6 +280,86 @@ type DetectedLabels struct {
 	// ServiceMesh filters by service mesh (OPTIONAL, wildcard support)
 	// Values: "istio", "linkerd", "*"
 	ServiceMesh *string `json:"service_mesh,omitempty"`
+
+	// ========================================
+	// DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.1)
+	// ========================================
+
+	// FailedDetections lists fields where detection failed (RBAC, timeout, etc.)
+	// DD-WORKFLOW-001 v2.1: Consumers MUST skip these fields when filtering
+	// If a field is in this array, its value should be ignored during workflow matching
+	// Empty array = all detections succeeded
+	// Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged,
+	//               networkIsolated, podSecurityLevel, serviceMesh
+	FailedDetections []string `json:"failed_detections,omitempty"`
+}
+
+// ========================================
+// DETECTED LABEL FIELD NAMES (DD-WORKFLOW-001 v2.1)
+// ========================================
+// These constants define the valid field names for failedDetections.
+// They match the JSON field names in the shared types DetectedLabels struct.
+const (
+	// DetectedLabelGitOpsManaged is the field name for GitOps management detection
+	DetectedLabelGitOpsManaged = "gitOpsManaged"
+	// DetectedLabelGitOpsTool is the field name for GitOps tool detection
+	DetectedLabelGitOpsTool = "gitOpsTool"
+	// DetectedLabelPDBProtected is the field name for PDB protection detection
+	DetectedLabelPDBProtected = "pdbProtected"
+	// DetectedLabelHPAEnabled is the field name for HPA enabled detection
+	DetectedLabelHPAEnabled = "hpaEnabled"
+	// DetectedLabelStateful is the field name for stateful workload detection
+	DetectedLabelStateful = "stateful"
+	// DetectedLabelHelmManaged is the field name for Helm managed detection
+	DetectedLabelHelmManaged = "helmManaged"
+	// DetectedLabelNetworkIsolated is the field name for network isolation detection
+	DetectedLabelNetworkIsolated = "networkIsolated"
+	// DetectedLabelPodSecurityLevel is the field name for pod security level detection
+	DetectedLabelPodSecurityLevel = "podSecurityLevel"
+	// DetectedLabelServiceMesh is the field name for service mesh detection
+	DetectedLabelServiceMesh = "serviceMesh"
+)
+
+// ValidFailedDetectionFields contains all valid field names for failedDetections
+// DD-WORKFLOW-001 v2.1: Only these field names are allowed in failedDetections
+var ValidFailedDetectionFields = []string{
+	DetectedLabelGitOpsManaged,
+	DetectedLabelGitOpsTool,
+	DetectedLabelPDBProtected,
+	DetectedLabelHPAEnabled,
+	DetectedLabelStateful,
+	DetectedLabelHelmManaged,
+	DetectedLabelNetworkIsolated,
+	DetectedLabelPodSecurityLevel,
+	DetectedLabelServiceMesh,
+}
+
+// ShouldSkipDetectedLabel returns true if the given field name should be skipped
+// because it's in the failedDetections list.
+// DD-WORKFLOW-001 v2.1: When matching incident DetectedLabels against workflow
+// catalog detected_labels, skip fields that are in failedDetections.
+func ShouldSkipDetectedLabel(fieldName string, failedDetections []string) bool {
+	if len(failedDetections) == 0 {
+		return false
+	}
+	for _, failed := range failedDetections {
+		if failed == fieldName {
+			return true
+		}
+	}
+	return false
+}
+
+// IsValidFailedDetectionField returns true if the given field name is a valid
+// DetectedLabels field that can be included in failedDetections.
+// DD-WORKFLOW-001 v2.1: Validation for failedDetections field names
+func IsValidFailedDetectionField(fieldName string) bool {
+	for _, valid := range ValidFailedDetectionFields {
+		if valid == fieldName {
+			return true
+		}
+	}
+	return false
 }
 
 // ========================================

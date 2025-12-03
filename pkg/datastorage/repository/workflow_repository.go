@@ -502,6 +502,128 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 		}
 	}
 
+	// ========================================
+	// BR-STORAGE-020: DETECTED LABELS FILTERING WITH failedDetections SKIP LOGIC
+	// ========================================
+	// DD-WORKFLOW-001 v2.1: When matching incident DetectedLabels against workflow
+	// catalog detected_labels, skip fields that are in failedDetections.
+	//
+	// Filtering Logic:
+	// - If field is in failedDetections → SKIP the filter (treat as "no preference")
+	// - If field is NOT in failedDetections → APPLY the filter
+	//
+	// Example:
+	// - failedDetections: ["pdbProtected"] → skip pdbProtected filter, apply others
+	// - failedDetections: [] → apply all filters
+	if request.Filters != nil && request.Filters.DetectedLabels != nil {
+		dl := request.Filters.DetectedLabels
+		failedDetections := dl.FailedDetections
+
+		// Filter 1: git_ops_tool (string field)
+		// Skip if "gitOpsTool" is in failedDetections
+		if dl.GitOpsTool != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelGitOpsTool, failedDetections) {
+			if *dl.GitOpsTool == "*" {
+				// Wildcard: workflow must have SOME git_ops_tool value
+				whereClauses = append(whereClauses, "detected_labels->>'git_ops_tool' IS NOT NULL")
+			} else {
+				// Exact match: workflow's git_ops_tool must match OR be NULL (no requirement)
+				whereClauses = append(whereClauses, fmt.Sprintf(
+					"(detected_labels->>'git_ops_tool' = $%d OR detected_labels->>'git_ops_tool' IS NULL)",
+					argIndex))
+				args = append(args, *dl.GitOpsTool)
+				argIndex++
+			}
+		}
+
+		// Filter 2: pod_security_level (string field)
+		// Skip if "podSecurityLevel" is in failedDetections
+		if dl.PodSecurityLevel != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelPodSecurityLevel, failedDetections) {
+			if *dl.PodSecurityLevel == "*" {
+				whereClauses = append(whereClauses, "detected_labels->>'pod_security_level' IS NOT NULL")
+			} else {
+				whereClauses = append(whereClauses, fmt.Sprintf(
+					"(detected_labels->>'pod_security_level' = $%d OR detected_labels->>'pod_security_level' IS NULL)",
+					argIndex))
+				args = append(args, *dl.PodSecurityLevel)
+				argIndex++
+			}
+		}
+
+		// Filter 3: service_mesh (string field)
+		// Skip if "serviceMesh" is in failedDetections
+		if dl.ServiceMesh != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelServiceMesh, failedDetections) {
+			if *dl.ServiceMesh == "*" {
+				whereClauses = append(whereClauses, "detected_labels->>'service_mesh' IS NOT NULL")
+			} else {
+				whereClauses = append(whereClauses, fmt.Sprintf(
+					"(detected_labels->>'service_mesh' = $%d OR detected_labels->>'service_mesh' IS NULL)",
+					argIndex))
+				args = append(args, *dl.ServiceMesh)
+				argIndex++
+			}
+		}
+
+		// Filter 4: git_ops_managed (boolean field)
+		// Skip if "gitOpsManaged" is in failedDetections
+		if dl.GitOpsManaged != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelGitOpsManaged, failedDetections) {
+			whereClauses = append(whereClauses, fmt.Sprintf(
+				"(detected_labels->>'git_ops_managed' = $%d OR detected_labels->>'git_ops_managed' IS NULL)",
+				argIndex))
+			args = append(args, fmt.Sprintf("%t", *dl.GitOpsManaged))
+			argIndex++
+		}
+
+		// Filter 5: pdb_protected (boolean field)
+		// Skip if "pdbProtected" is in failedDetections
+		if dl.PDBProtected != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelPDBProtected, failedDetections) {
+			whereClauses = append(whereClauses, fmt.Sprintf(
+				"(detected_labels->>'pdb_protected' = $%d OR detected_labels->>'pdb_protected' IS NULL)",
+				argIndex))
+			args = append(args, fmt.Sprintf("%t", *dl.PDBProtected))
+			argIndex++
+		}
+
+		// Filter 6: hpa_enabled (boolean field)
+		// Skip if "hpaEnabled" is in failedDetections
+		if dl.HPAEnabled != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelHPAEnabled, failedDetections) {
+			whereClauses = append(whereClauses, fmt.Sprintf(
+				"(detected_labels->>'hpa_enabled' = $%d OR detected_labels->>'hpa_enabled' IS NULL)",
+				argIndex))
+			args = append(args, fmt.Sprintf("%t", *dl.HPAEnabled))
+			argIndex++
+		}
+
+		// Filter 7: stateful (boolean field)
+		// Skip if "stateful" is in failedDetections
+		if dl.Stateful != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelStateful, failedDetections) {
+			whereClauses = append(whereClauses, fmt.Sprintf(
+				"(detected_labels->>'stateful' = $%d OR detected_labels->>'stateful' IS NULL)",
+				argIndex))
+			args = append(args, fmt.Sprintf("%t", *dl.Stateful))
+			argIndex++
+		}
+
+		// Filter 8: helm_managed (boolean field)
+		// Skip if "helmManaged" is in failedDetections
+		if dl.HelmManaged != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelHelmManaged, failedDetections) {
+			whereClauses = append(whereClauses, fmt.Sprintf(
+				"(detected_labels->>'helm_managed' = $%d OR detected_labels->>'helm_managed' IS NULL)",
+				argIndex))
+			args = append(args, fmt.Sprintf("%t", *dl.HelmManaged))
+			argIndex++
+		}
+
+		// Filter 9: network_isolated (boolean field)
+		// Skip if "networkIsolated" is in failedDetections
+		if dl.NetworkIsolated != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelNetworkIsolated, failedDetections) {
+			whereClauses = append(whereClauses, fmt.Sprintf(
+				"(detected_labels->>'network_isolated' = $%d OR detected_labels->>'network_isolated' IS NULL)",
+				argIndex))
+			args = append(args, fmt.Sprintf("%t", *dl.NetworkIsolated))
+			argIndex++
+		}
+	}
+
 	// Apply minimum similarity threshold
 	minSimilarity := 0.7 // Default: 70% similarity
 	if request.MinSimilarity != nil {
@@ -551,49 +673,53 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 	// DD-WORKFLOW-001 v1.6: Boost/penalty applies to DetectedLabels string fields
 	// Build label boost calculation using extracted constants
 	// Each matching optional label adds its weight to the total boost
+	//
+	// NOTE: Since we now filter in WHERE clause (BR-STORAGE-020), the boost only applies
+	// to workflows that MATCH the filter. Workflows with matching detected_labels get a boost.
+	// Workflows with NULL detected_labels pass the filter but don't get a boost.
 	boostCases := []string{}
 
 	// DetectedLabels boosts (only if filter provided)
 	// DD-WORKFLOW-001 v1.6: Only string fields support boost/penalty
+	// DD-WORKFLOW-001 v2.1: Skip boost for fields in failedDetections
 	if request.Filters != nil && request.Filters.DetectedLabels != nil {
 		dl := request.Filters.DetectedLabels
+		failedDetections := dl.FailedDetections
 
 		// Boost 1: git_ops_tool (+0.10)
 		// Example: argocd workflow gets boost when searching for argocd
 		// Wildcard "*" matches any non-null value
-		if dl.GitOpsTool != nil {
+		// Skip if "gitOpsTool" is in failedDetections
+		// NOTE: Boost uses hardcoded value comparison, not parameter, to avoid index issues
+		if dl.GitOpsTool != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelGitOpsTool, failedDetections) {
 			if *dl.GitOpsTool == "*" {
 				// Wildcard: boost if any value is present
 				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'git_ops_tool' IS NOT NULL THEN %.2f", boostWeightGitOpsTool))
 			} else {
-				// Exact match
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'git_ops_tool' = $%d THEN %.2f", argIndex, boostWeightGitOpsTool))
-				args = append(args, *dl.GitOpsTool)
-				argIndex++
+				// Exact match - use literal value in SQL (safe since it's validated enum)
+				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'git_ops_tool' = '%s' THEN %.2f", *dl.GitOpsTool, boostWeightGitOpsTool))
 			}
 		}
 
 		// Boost 2: pod_security_level (+0.08)
 		// Example: restricted workflow gets boost when searching for restricted
-		if dl.PodSecurityLevel != nil {
+		// Skip if "podSecurityLevel" is in failedDetections
+		if dl.PodSecurityLevel != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelPodSecurityLevel, failedDetections) {
 			if *dl.PodSecurityLevel == "*" {
 				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'pod_security_level' IS NOT NULL THEN %.2f", boostWeightEnvironment))
 			} else {
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'pod_security_level' = $%d THEN %.2f", argIndex, boostWeightEnvironment))
-				args = append(args, *dl.PodSecurityLevel)
-				argIndex++
+				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'pod_security_level' = '%s' THEN %.2f", *dl.PodSecurityLevel, boostWeightEnvironment))
 			}
 		}
 
 		// Boost 3: service_mesh (+0.08)
 		// Example: istio workflow gets boost when searching for istio
-		if dl.ServiceMesh != nil {
+		// Skip if "serviceMesh" is in failedDetections
+		if dl.ServiceMesh != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelServiceMesh, failedDetections) {
 			if *dl.ServiceMesh == "*" {
 				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'service_mesh' IS NOT NULL THEN %.2f", boostWeightBusinessCategory))
 			} else {
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'service_mesh' = $%d THEN %.2f", argIndex, boostWeightBusinessCategory))
-				args = append(args, *dl.ServiceMesh)
-				argIndex++
+				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'service_mesh' = '%s' THEN %.2f", *dl.ServiceMesh, boostWeightBusinessCategory))
 			}
 		}
 	}
@@ -614,28 +740,34 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 	// ========================================
 	// Build label penalty calculation
 	// DD-WORKFLOW-001 v1.6: Penalty applies to DetectedLabels string fields
+	// DD-WORKFLOW-001 v2.1: Skip penalty for fields in failedDetections
 	//
 	// Penalty Logic:
 	// - Applies when workflow label EXISTS but CONFLICTS with search filter
 	// - Only git_ops_tool has penalties (other DetectedLabels don't)
 	// - Rationale: GitOps tool is a critical decision (argocd vs flux)
+	// - Skip if field is in failedDetections
 	//
 	// Examples:
 	// - Searching for argocd, find flux workflow → -0.10 penalty
 	// - Searching for "*" (any GitOps), find flux workflow → 0.0 penalty (wildcard matches)
+	// - gitOpsTool in failedDetections → 0.0 penalty (skipped)
 	penaltyCases := []string{}
 
 	if request.Filters != nil && request.Filters.DetectedLabels != nil {
 		dl := request.Filters.DetectedLabels
+		failedDetections := dl.FailedDetections
 
 		// Penalty 1: git_ops_tool conflict (-0.10)
 		// Critical label: ArgoCD vs Flux are incompatible tools
 		// Wildcard "*" does NOT apply penalty (matches any value)
-		if dl.GitOpsTool != nil && *dl.GitOpsTool != "*" {
+		// Skip if "gitOpsTool" is in failedDetections
+		// NOTE: Uses literal value in SQL (safe since it's validated enum)
+		if dl.GitOpsTool != nil && *dl.GitOpsTool != "*" && !models.ShouldSkipDetectedLabel(models.DetectedLabelGitOpsTool, failedDetections) {
 			// Exact match required - penalty if workflow has different tool
 			penaltyCases = append(penaltyCases, fmt.Sprintf(
-				"WHEN detected_labels->>'git_ops_tool' IS NOT NULL AND detected_labels->>'git_ops_tool' != $%d THEN %.2f",
-				argIndex-len(boostCases), // Reuse the same parameter from boost
+				"WHEN detected_labels->>'git_ops_tool' IS NOT NULL AND detected_labels->>'git_ops_tool' != '%s' THEN %.2f",
+				*dl.GitOpsTool,
 				penaltyWeightGitOpsTool,
 			))
 		}
