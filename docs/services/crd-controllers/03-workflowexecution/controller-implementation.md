@@ -65,9 +65,11 @@ const (
 // WorkflowExecutionReconciler reconciles a WorkflowExecution object
 type WorkflowExecutionReconciler struct {
     client.Client
-    Scheme         *runtime.Scheme
-    Recorder       record.EventRecorder
-    CooldownPeriod time.Duration
+    Scheme             *runtime.Scheme
+    Recorder           record.EventRecorder
+    CooldownPeriod     time.Duration
+    ExecutionNamespace string  // "kubernaut-workflows" (DD-WE-002)
+    ServiceAccountName string  // "kubernaut-workflow-runner"
 }
 
 // ========================================
@@ -196,9 +198,10 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(
 
     // Get PipelineRun
     var pr tektonv1.PipelineRun
+    // PipelineRun is in execution namespace, not wfe.Namespace (DD-WE-002)
     if err := r.Get(ctx, client.ObjectKey{
         Name:      wfe.Status.PipelineRunRef.Name,
-        Namespace: wfe.Namespace,
+        Namespace: r.ExecutionNamespace,  // "kubernaut-workflows"
     }, &pr); err != nil {
         if apierrors.IsNotFound(err) {
             log.Error(err, "PipelineRun not found - deleted externally")
@@ -231,6 +234,8 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(
 }
 
 // buildPipelineRun creates a PipelineRun with bundle resolver
+// buildPipelineRun creates a PipelineRun in the dedicated execution namespace (DD-WE-002)
+// Note: PipelineRun runs in kubernaut-workflows, NOT in wfe.Namespace
 func (r *WorkflowExecutionReconciler) buildPipelineRun(
     wfe *workflowexecutionv1.WorkflowExecution,
 ) *tektonv1.PipelineRun {
@@ -246,15 +251,16 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
     return &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
             Name:      wfe.Name,
-            Namespace: wfe.Namespace,
+            Namespace: r.ExecutionNamespace,  // Always "kubernaut-workflows" (DD-WE-002)
             Labels: map[string]string{
                 "kubernaut.ai/workflow-execution": wfe.Name,
                 "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
                 "kubernaut.ai/target-resource":    wfe.Spec.TargetResource,
+                // Source tracking for cross-namespace lookup
+                "kubernaut.ai/source-namespace":   wfe.Namespace,
             },
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(wfe, workflowexecutionv1.GroupVersion.WithKind("WorkflowExecution")),
-            },
+            // NOTE: No OwnerReference - cross-namespace not supported
+            // Cleanup handled via finalizer in reconcileDelete()
         },
         Spec: tektonv1.PipelineRunSpec{
             PipelineRef: &tektonv1.PipelineRef{
@@ -266,7 +272,8 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
                     },
                 },
             },
-            Params: params,
+            Params:             params,
+            ServiceAccountName: r.ServiceAccountName,  // "kubernaut-workflow-runner"
         },
     }
 }

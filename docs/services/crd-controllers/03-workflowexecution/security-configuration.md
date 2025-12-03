@@ -1,13 +1,18 @@
 ## Security Configuration
 
-**Version**: 3.1
-**Last Updated**: 2025-12-02
+**Version**: 4.0
+**Last Updated**: 2025-12-03
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
-**Status**: ✅ Updated for Tekton Architecture
+**Status**: ✅ Updated for Dedicated Execution Namespace (DD-WE-002)
 
 ---
 
 ## Changelog
+
+### Version 4.0 (2025-12-03)
+- ✅ **Added**: Dedicated execution namespace RBAC (DD-WE-002)
+- ✅ **Added**: kubernaut-workflow-runner ClusterRole for cross-namespace operations
+- ✅ **Updated**: All PipelineRuns run in `kubernaut-workflows` namespace
 
 ### Version 3.1 (2025-12-02)
 - ✅ **Removed**: All KubernetesExecution RBAC and code references
@@ -15,6 +20,85 @@
 - ✅ **Updated**: Code examples for Tekton-based architecture
 
 ---
+
+## Two ServiceAccounts Required
+
+| ServiceAccount | Namespace | Purpose | RBAC |
+|----------------|-----------|---------|------|
+| `workflowexecution-controller` | `kubernaut-system` | Controller operations | ClusterRole |
+| `kubernaut-workflow-runner` | `kubernaut-workflows` | PipelineRun execution | ClusterRole |
+
+---
+
+## 1. PipelineRun Execution RBAC (DD-WE-002)
+
+**ServiceAccount for workflow execution with cross-namespace permissions**:
+
+```yaml
+# Dedicated namespace for all PipelineRuns
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-workflows
+  labels:
+    kubernaut.ai/component: workflow-execution
+---
+# ServiceAccount for PipelineRun execution
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-workflow-runner
+  namespace: kubernaut-workflows
+---
+# ClusterRole with cross-namespace remediation permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-workflow-runner
+rules:
+  # Workload remediation (all namespaces)
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+  # Node operations (cluster-scoped)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch"]
+  # ConfigMaps/Secrets for workflow data (read-only)
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list"]
+  # Events for workflow logging
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+# Bind ClusterRole to ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-workflow-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-workflow-runner
+subjects:
+- kind: ServiceAccount
+  name: kubernaut-workflow-runner
+  namespace: kubernaut-workflows
+```
+
+**Why ClusterRole (not namespace-scoped Role)**:
+- PipelineRuns remediate resources in ANY namespace
+- Cluster-scoped resources (Nodes) require cluster-level access
+- Industry standard pattern (Crossplane, AWX, Argo)
+
+---
+
+## 2. Controller RBAC
 
 ### ServiceAccount & RBAC Least Privilege
 

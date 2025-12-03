@@ -92,9 +92,10 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
     return &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
             Name:      wfe.Name,
-            Namespace: wfe.Namespace,
+            Namespace: r.ExecutionNamespace,  // "kubernaut-workflows" (DD-WE-002)
             Labels: map[string]string{
                 "kubernaut.ai/workflow-execution": wfe.Name,
+                "kubernaut.ai/source-namespace":   wfe.Namespace,  // Track source for cleanup
                 "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
                 "kubernaut.ai/target-resource":    wfe.Spec.TargetResource,
             },

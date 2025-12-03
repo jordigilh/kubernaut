@@ -20,46 +20,70 @@
 |------------|---------|---------|
 | **Tekton Pipelines** | Latest stable | Workflow execution engine |
 | **Bundle Resolver** | Built-in | Resolves OCI bundle references |
+| **kubernaut-workflows** namespace | - | Dedicated namespace for all PipelineRuns |
 
-### Per-Namespace Setup
+### Dedicated Execution Namespace Setup
+
+**All PipelineRuns execute in `kubernaut-workflows` namespace** (industry standard pattern).
 
 ```yaml
-# Required: ServiceAccount for workflow execution
+# 1. Create dedicated namespace for workflow execution
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-workflows
+  labels:
+    kubernaut.ai/component: workflow-execution
+---
+# 2. ServiceAccount for PipelineRun execution
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kubernaut-workflow-runner
-  namespace: <target-namespace>
+  namespace: kubernaut-workflows
 ---
-# Required: Role with permissions for remediation actions
+# 3. ClusterRole with cross-namespace remediation permissions
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: kubernaut-workflow-runner
-  namespace: <target-namespace>
 rules:
-  # Permissions defined by workflow requirements
+  # Remediation actions on workloads (all namespaces)
   - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets"]
-    verbs: ["get", "patch"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "patch", "update"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "delete"]
+    verbs: ["get", "list", "delete"]
+  # Node operations (cluster-scoped)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch", "cordon", "uncordon"]
+  # ConfigMaps/Secrets for workflow data
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list"]
 ---
+# 4. Bind ClusterRole to ServiceAccount
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
   name: kubernaut-workflow-runner
-  namespace: <target-namespace>
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
+  kind: ClusterRole
   name: kubernaut-workflow-runner
 subjects:
 - kind: ServiceAccount
   name: kubernaut-workflow-runner
-  namespace: <target-namespace>
+  namespace: kubernaut-workflows
 ```
+
+**Benefits**:
+- ✅ All remediation activity in one namespace (audit clarity)
+- ✅ Single ServiceAccount with cluster-wide permissions
+- ✅ Easy PipelineRun cleanup and resource quota management
+- ✅ No pollution of application namespaces
 
 ### Optional: Signed Bundle Verification (V1.0)
 

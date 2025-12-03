@@ -1,12 +1,18 @@
 ## Overview
 
-**Version**: 4.0
-**Last Updated**: 2025-12-02
-**Status**: ✅ Updated for Tekton Architecture + Single-Workflow Model
+**Version**: 4.1
+**Last Updated**: 2025-12-03
+**Status**: ✅ Updated for Dedicated Execution Namespace (DD-WE-002)
 
 ---
 
 ## Changelog
+
+### Version 4.1 (2025-12-03)
+**Updates**:
+- ✅ **Added**: Dedicated execution namespace pattern (DD-WE-002)
+- ✅ **Updated**: All PipelineRuns run in `kubernaut-workflows` namespace
+- ✅ **Updated**: ServiceAccount with ClusterRoleBinding for cross-namespace operations
 
 ### Version 4.0 (2025-12-02)
 **Updates**:
@@ -102,11 +108,29 @@ func checkTektonAvailable(ctx context.Context, client client.Client) error {
 
 **Behavior**: Tekton's Pipeline-defined timeout wins. If a PipelineRun exceeds its timeout, Tekton marks it `Failed` with reason `PipelineRunTimeout`. RO's 60-minute timeout is the maximum for the entire remediation (including analysis, approval, execution).
 
+### Execution Namespace (DD-WE-002)
+
+**All PipelineRuns run in `kubernaut-workflows` namespace** (industry standard pattern).
+
+| Component | Namespace |
+|-----------|-----------|
+| WorkflowExecution CRD | `kubernaut-system` |
+| WE Controller | `kubernaut-system` |
+| PipelineRun | `kubernaut-workflows` |
+| ServiceAccount | `kubernaut-workflows` |
+
+**Benefits**:
+- All remediation activity in one namespace (audit clarity)
+- Single ServiceAccount with ClusterRoleBinding
+- Easy PipelineRun cleanup and resource quota management
+
 ### ServiceAccount
 - **Name**: `kubernaut-workflow-runner`
-- **Namespace**: Per target namespace (not `kubernaut-system`)
-- **Purpose**: PipelineRun execution with remediation permissions
+- **Namespace**: `kubernaut-workflows` (dedicated execution namespace)
+- **RBAC**: ClusterRole + ClusterRoleBinding for cross-namespace operations
 - **Failure**: If missing, execution fails with `ConfigurationError` reason
+
+See: [DD-WE-002](../../../architecture/decisions/DD-WE-002-dedicated-execution-namespace.md)
 
 ### Notes
 - CRD controllers do not expose REST APIs
