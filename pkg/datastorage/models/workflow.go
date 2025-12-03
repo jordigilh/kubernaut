@@ -273,9 +273,9 @@ type DetectedLabels struct {
 	// DD-WORKFLOW-001 v1.6: Wildcard "*" means "requires SOME value"
 	GitOpsTool *string `json:"git_ops_tool,omitempty"`
 
-	// PodSecurityLevel filters by pod security level (OPTIONAL, wildcard support)
-	// Values: "privileged", "baseline", "restricted", "*"
-	PodSecurityLevel *string `json:"pod_security_level,omitempty"`
+	// PodSecurityLevel REMOVED in DD-WORKFLOW-001 v2.2
+	// Rationale: PSP deprecated in K8s 1.21, removed in K8s 1.25
+	// PSS is enforced at namespace-level, not pod-level
 
 	// ServiceMesh filters by service mesh (OPTIONAL, wildcard support)
 	// Values: "istio", "linkerd", "*"
@@ -290,7 +290,8 @@ type DetectedLabels struct {
 	// If a field is in this array, its value should be ignored during workflow matching
 	// Empty array = all detections succeeded
 	// Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged,
-	//               networkIsolated, podSecurityLevel, serviceMesh
+	//               networkIsolated, serviceMesh
+	// NOTE: podSecurityLevel removed in DD-WORKFLOW-001 v2.2
 	FailedDetections []string `json:"failed_detections,omitempty"`
 }
 
@@ -314,14 +315,16 @@ const (
 	DetectedLabelHelmManaged = "helmManaged"
 	// DetectedLabelNetworkIsolated is the field name for network isolation detection
 	DetectedLabelNetworkIsolated = "networkIsolated"
-	// DetectedLabelPodSecurityLevel is the field name for pod security level detection
-	DetectedLabelPodSecurityLevel = "podSecurityLevel"
+	// DetectedLabelPodSecurityLevel REMOVED in DD-WORKFLOW-001 v2.2
+	// Rationale: PSP deprecated, PSS is namespace-level
 	// DetectedLabelServiceMesh is the field name for service mesh detection
 	DetectedLabelServiceMesh = "serviceMesh"
 )
 
 // ValidFailedDetectionFields contains all valid field names for failedDetections
 // DD-WORKFLOW-001 v2.1: Only these field names are allowed in failedDetections
+// ValidFailedDetectionFields contains all valid field names for failedDetections
+// DD-WORKFLOW-001 v2.2: podSecurityLevel removed (PSP deprecated, PSS is namespace-level)
 var ValidFailedDetectionFields = []string{
 	DetectedLabelGitOpsManaged,
 	DetectedLabelGitOpsTool,
@@ -330,7 +333,6 @@ var ValidFailedDetectionFields = []string{
 	DetectedLabelStateful,
 	DetectedLabelHelmManaged,
 	DetectedLabelNetworkIsolated,
-	DetectedLabelPodSecurityLevel,
 	DetectedLabelServiceMesh,
 }
 
@@ -525,9 +527,9 @@ type WorkflowListResponse struct {
 // WorkflowVersionsResponse represents all versions of a workflow by workflow_name
 // DD-WORKFLOW-002 v3.0: List all versions by workflow_name
 type WorkflowVersionsResponse struct {
-	WorkflowName string                 `json:"workflow_name"`
-	Versions     []RemediationWorkflow  `json:"versions"`
-	Total        int                    `json:"total"`
+	WorkflowName string                `json:"workflow_name"`
+	Versions     []RemediationWorkflow `json:"versions"`
+	Total        int                   `json:"total"`
 }
 
 // WorkflowUpdateRequest represents a request to update mutable workflow fields

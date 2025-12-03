@@ -249,9 +249,7 @@ func (b *WorkflowSearchAuditEventBuilder) buildQueryMetadata() QueryMetadata {
 			if dl.GitOpsTool != nil {
 				detectedLabels["git_ops_tool"] = *dl.GitOpsTool
 			}
-			if dl.PodSecurityLevel != nil {
-				detectedLabels["pod_security_level"] = *dl.PodSecurityLevel
-			}
+			// PodSecurityLevel REMOVED in DD-WORKFLOW-001 v2.2
 			if dl.ServiceMesh != nil {
 				detectedLabels["service_mesh"] = *dl.ServiceMesh
 			}

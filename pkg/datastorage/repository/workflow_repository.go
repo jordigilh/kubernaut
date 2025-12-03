@@ -535,19 +535,9 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 			}
 		}
 
-		// Filter 2: pod_security_level (string field)
-		// Skip if "podSecurityLevel" is in failedDetections
-		if dl.PodSecurityLevel != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelPodSecurityLevel, failedDetections) {
-			if *dl.PodSecurityLevel == "*" {
-				whereClauses = append(whereClauses, "detected_labels->>'pod_security_level' IS NOT NULL")
-			} else {
-				whereClauses = append(whereClauses, fmt.Sprintf(
-					"(detected_labels->>'pod_security_level' = $%d OR detected_labels->>'pod_security_level' IS NULL)",
-					argIndex))
-				args = append(args, *dl.PodSecurityLevel)
-				argIndex++
-			}
-		}
+		// Filter 2: pod_security_level REMOVED in DD-WORKFLOW-001 v2.2
+		// Rationale: PSP deprecated in K8s 1.21, removed in K8s 1.25
+		// PSS is enforced at namespace-level, not pod-level
 
 		// Filter 3: service_mesh (string field)
 		// Skip if "serviceMesh" is in failedDetections
@@ -701,16 +691,8 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 			}
 		}
 
-		// Boost 2: pod_security_level (+0.08)
-		// Example: restricted workflow gets boost when searching for restricted
-		// Skip if "podSecurityLevel" is in failedDetections
-		if dl.PodSecurityLevel != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelPodSecurityLevel, failedDetections) {
-			if *dl.PodSecurityLevel == "*" {
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'pod_security_level' IS NOT NULL THEN %.2f", boostWeightEnvironment))
-			} else {
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'pod_security_level' = '%s' THEN %.2f", *dl.PodSecurityLevel, boostWeightEnvironment))
-			}
-		}
+		// Boost 2: pod_security_level REMOVED in DD-WORKFLOW-001 v2.2
+		// Rationale: PSP deprecated in K8s 1.21, removed in K8s 1.25
 
 		// Boost 3: service_mesh (+0.08)
 		// Example: istio workflow gets boost when searching for istio
