@@ -510,14 +510,11 @@ func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 // - Additional context for decision-making
 func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 	// Construct provider-specific data structure
+	// NOTE: Resource info is NOT included here - it's in spec.TargetResource
+	// per API Contract Alignment (BR-GATEWAY-TARGET-RESOURCE)
 	providerData := map[string]interface{}{
 		"namespace": signal.Namespace,
-		"resource": map[string]string{
-			"kind":      signal.Resource.Kind,
-			"name":      signal.Resource.Name,
-			"namespace": signal.Resource.Namespace,
-		},
-		"labels": signal.Labels,
+		"labels":    signal.Labels,
 	}
 
 	// Marshal to JSON

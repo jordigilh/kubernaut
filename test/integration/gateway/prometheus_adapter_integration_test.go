@@ -57,11 +57,21 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		logger        *zap.Logger
+		// Unique namespace names per test run (avoids parallel test interference)
+		prodNamespace string
+		stagingNamespace string
+		devNamespace string
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		logger = zap.NewNop()
+
+		// Generate unique namespace names to avoid parallel test interference
+		uniqueSuffix := fmt.Sprintf("p%d-%d", GinkgoParallelProcess(), GinkgoRandomSeed())
+		prodNamespace = fmt.Sprintf("production-%s", uniqueSuffix)
+		stagingNamespace = fmt.Sprintf("staging-%s", uniqueSuffix)
+		devNamespace = fmt.Sprintf("development-%s", uniqueSuffix)
 
 		// Setup test infrastructure using helpers
 		redisClient = SetupRedisTestClient(ctx)
@@ -84,15 +94,15 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		testServer = httptest.NewServer(gatewayServer.Handler())
 		Expect(testServer).ToNot(BeNil(), "Test server should be created")
 
-		// Create test namespaces with environment labels for classification
+		// Create UNIQUE test namespaces with environment labels for classification
 		// This is required for environment-based priority assignment
 		testNamespaces := []struct {
 			name  string
 			label string
 		}{
-			{"production", "production"},
-			{"staging", "staging"},
-			{"development", "development"},
+			{prodNamespace, "production"},
+			{stagingNamespace, "staging"},
+			{devNamespace, "development"},
 		}
 
 		for _, ns := range testNamespaces {
@@ -142,7 +152,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		}
 
 		// Cleanup all test namespaces
-		testNamespaces := []string{"production", "staging", "development"}
+		testNamespaces := []string{prodNamespace, stagingNamespace, devNamespace}
 		for _, nsName := range testNamespaces {
 			ns := &corev1.Namespace{}
 			ns.Name = nsName
@@ -168,22 +178,22 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// BUSINESS SCENARIO: Production pod memory alert → AI analysis triggered
 			// Expected: CRD created with priority, environment, severity for AI decision-making
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "HighMemoryUsage",
 						"severity": "critical",
-						"namespace": "production",
+						"namespace": "%s",
 						"pod": "payment-api-123"
 					},
 					"annotations": {
-						"summary": "Pod payment-api-123 using 95% memory",
+						"summary": "Pod payment-api-123 using 95%% memory",
 						"description": "Memory threshold exceeded, may cause OOM"
 					},
 					"startsAt": "2025-10-22T10:00:00Z"
 				}]
-			}`)
+			}`, prodNamespace))
 
 			// Send webhook to Gateway
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
@@ -212,7 +222,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes with correct business metadata
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(prodNamespace))
 			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in production namespace")
 			Expect(crdList.Items).To(HaveLen(1), "Exactly one CRD should be created")
 
@@ -227,7 +237,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				"Environment classification drives priority assignment")
 			Expect(crd.Spec.Severity).To(Equal("critical"),
 				"Severity helps AI choose remediation strategy")
-			Expect(crd.Namespace).To(Equal("production"),
+			Expect(crd.Namespace).To(Equal(prodNamespace),
 				"Namespace enables kubectl targeting: 'kubectl -n production'")
 
 			// Verify fingerprint label matches response fingerprint (truncated to K8s 63-char limit)
@@ -251,23 +261,23 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// BUSINESS SCENARIO: Alert includes pod/node info → AI can target specific resources
 			// Expected: CRD includes resource details for kubectl commands
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "DiskSpaceWarning",
 						"severity": "warning",
-						"namespace": "staging",
+						"namespace": "%s",
 						"pod": "database-replica-2",
 						"node": "worker-node-05"
 					},
 					"annotations": {
-						"summary": "Disk usage at 85%",
+						"summary": "Disk usage at 85%%",
 						"runbook_url": "https://runbooks.example.com/disk-space"
 					},
 					"startsAt": "2025-10-22T11:30:00Z"
 				}]
-			}`)
+			}`, stagingNamespace))
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -278,7 +288,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("staging"))
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(stagingNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList.Items).To(HaveLen(1))
 
@@ -307,13 +317,13 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// BUSINESS SCENARIO: Same alert fires twice in 5 seconds → Only 1 CRD created
 			// Expected: First alert creates CRD, second alert returns 202 Accepted, NO new CRD
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "CPUThrottling",
 						"severity": "warning",
-						"namespace": "production",
+						"namespace": "%s",
 						"pod": "api-gateway-7"
 					},
 					"annotations": {
@@ -321,7 +331,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 					},
 					"startsAt": "2025-10-22T12:00:00Z"
 				}]
-			}`)
+			}`, prodNamespace))
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
@@ -342,7 +352,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			// BUSINESS OUTCOME 1: First CRD created in K8s
 			var crdList1 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace(prodNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList1.Items).To(HaveLen(1), "First alert creates exactly one CRD")
 
@@ -363,7 +373,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			// BUSINESS OUTCOME 2: NO new CRD created (deduplication works)
 			var crdList2 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList2, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList2, client.InNamespace(prodNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList2.Items).To(HaveLen(1),
 				"Duplicate alert must NOT create new CRD (still only 1 CRD)")
@@ -393,6 +403,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// BR-GATEWAY-011, BR-GATEWAY-020-021: Environment classification → Priority assignment
 			// BUSINESS SCENARIO: Namespace determines environment → Affects priority → Affects AI resource allocation
 			// Expected: production critical = P0, staging critical = P1, dev critical = P2
+			// Using unique namespaces created in BeforeEach to avoid parallel test interference
 
 			testCases := []struct {
 				namespace   string
@@ -402,21 +413,21 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				rationale   string
 			}{
 				{
-					namespace:   "production",
+					namespace:   prodNamespace,
 					severity:    "critical",
 					expectedEnv: "production",
 					expectedPri: "P0",
 					rationale:   "Revenue-impacting, immediate AI analysis required",
 				},
 				{
-					namespace:   "staging",
+					namespace:   stagingNamespace,
 					severity:    "critical",
 					expectedEnv: "staging",
 					expectedPri: "P1",
 					rationale:   "Pre-production issue, high priority to prevent prod impact",
 				},
 				{
-					namespace:   "development",
+					namespace:   devNamespace,
 					severity:    "critical",
 					expectedEnv: "development",
 					expectedPri: "P2",
