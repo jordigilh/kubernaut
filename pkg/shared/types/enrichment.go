@@ -7,7 +7,7 @@
 //
 // This file is the AUTHORITATIVE SOURCE for:
 //   - EnrichmentResults schema
-//   - DetectedLabels schema (9 fields)
+//   - DetectedLabels schema (8 fields)
 //   - OwnerChainEntry schema
 //   - KubernetesContext schema
 //
@@ -17,7 +17,7 @@
 //   - HolmesGPT-API (uses for workflow filtering + LLM context)
 //   - Data Storage (stores workflow metadata constraints)
 //
-// Design Decision: DD-WORKFLOW-001 v2.1, DD-CONTRACT-002
+// Design Decision: DD-WORKFLOW-001 v2.2, DD-CONTRACT-002
 // See: docs/architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md
 //
 // +kubebuilder:object:generate=true
@@ -79,7 +79,7 @@ type OwnerChainEntry struct {
 }
 
 // ========================================
-// DETECTED LABELS (DD-WORKFLOW-001 v2.1)
+// DETECTED LABELS (DD-WORKFLOW-001 v2.2)
 // ========================================
 
 // DetectedLabels contains auto-detected cluster characteristics.
@@ -88,7 +88,7 @@ type OwnerChainEntry struct {
 //   - Workflow filtering (deterministic SQL WHERE)
 //   - LLM context (natural language in prompt)
 //
-// DETECTION FAILURE HANDLING (DD-WORKFLOW-001 v2.1):
+// DETECTION FAILURE HANDLING (DD-WORKFLOW-001 v2.2):
 // All fields are plain `bool` (NOT `*bool`). Uses `FailedDetections` array to track
 // which fields had query failures (RBAC denied, timeout, network error).
 //
@@ -99,13 +99,14 @@ type OwnerChainEntry struct {
 // Consumers should check FailedDetections before trusting a false value.
 type DetectedLabels struct {
 	// ========================================
-	// DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.1)
+	// DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.2)
 	// ========================================
 	// Lists field names where detection QUERY failed (RBAC, timeout, network error).
 	// If a field is in this array, its value should be ignored.
 	// If empty/nil, all detections succeeded.
 	// Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
-	// stateful, helmManaged, networkIsolated, podSecurityLevel, serviceMesh
+	// stateful, helmManaged, networkIsolated, serviceMesh
+	// +kubebuilder:validation:Enum=gitOpsManaged;pdbProtected;hpaEnabled;stateful;helmManaged;networkIsolated;serviceMesh
 	FailedDetections []string `json:"failedDetections,omitempty"`
 
 	// ========================================
@@ -139,9 +140,6 @@ type DetectedLabels struct {
 	// ========================================
 	// True if NetworkPolicy exists in namespace
 	NetworkIsolated bool `json:"networkIsolated"`
-	// Pod Security Standard level from namespace label
-	// +kubebuilder:validation:Enum=privileged;baseline;restricted;""
-	PodSecurityLevel string `json:"podSecurityLevel,omitempty"`
 	// Service mesh if detected (from sidecar or namespace labels)
 	// +kubebuilder:validation:Enum=istio;linkerd;""
 	ServiceMesh string `json:"serviceMesh,omitempty"`

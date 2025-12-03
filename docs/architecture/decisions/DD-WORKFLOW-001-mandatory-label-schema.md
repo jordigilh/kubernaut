@@ -1,12 +1,12 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V1.8 - OwnerChainEntry Schema + Traversal Algorithm)
+**Status**: ✅ **APPROVED** (V2.2 - PodSecurityLevel Removed)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
 **Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
-**Version**: 1.8
+**Version**: 2.2
 
 ---
 
@@ -34,6 +34,34 @@
 ---
 
 ## 📝 **Changelog**
+
+### Version 2.2 (2025-12-03)
+- **REMOVED**: `podSecurityLevel` field from DetectedLabels
+- **RATIONALE**: PodSecurityPolicy (PSP) is deprecated since K8s 1.21, removed in 1.25. Pod Security Standards (PSS) are namespace-level, not pod-level, making detection inconsistent and unreliable.
+- **IMPACT**: Field count reduced from 9 to 8 detected labels
+- **MIGRATION**: Services should remove any references to `podSecurityLevel` in DetectedLabels
+- **NOTIFICATION**: See `docs/handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md`
+
+### Version 2.1 (2025-12-02)
+- **NEW**: Added **Detection Failure Handling** section documenting the December 2025 inter-team agreement
+- **DESIGN**: Plain `bool` fields + `FailedDetections []string` array (avoids `*bool` anti-pattern)
+- **VALIDATION**: Added `go-playground/validator` enum validation for `FailedDetections`
+- **SCHEMA**: `FailedDetections` only accepts known field names (validated enum)
+- **AUTHORITATIVE**: Go type definition with validation tags
+
+### Version 2.0 (2025-12-02)
+- **NEW**: Added **DetectedLabels End-to-End Architecture** section clarifying:
+  - **Incident DetectedLabels** (SignalProcessing auto-detects from live K8s) vs
+  - **Workflow Catalog detected_labels** (workflow author-defined metadata)
+- **CLARIFICATION**: Data Storage does NOT auto-populate workflow detected_labels (they are author-defined)
+- **NEW**: End-to-end flow diagram showing label flow from SignalProcessing → HolmesGPT-API → Data Storage
+- **CLARIFICATION**: SignalProcessing V1.0 ✅ IMPLEMENTED for incident DetectedLabels auto-detection
+
+### Version 1.9 (2025-12-02)
+- **NEW**: Added **CustomLabels Validation Limits** section (max 10 keys, 5 values/key, 63 char keys, 100 char values)
+- **NEW**: Added **Security Measures** section for Sandboxed OPA Runtime (no network, no filesystem, 5s timeout, 128MB memory)
+- **NEW**: Added **Mandatory Label Protection** via Rego security wrapper (blocks 5 system labels)
+- **FORMALIZED**: Validation limits previously discussed in handoff documents now authoritative
 
 ### Version 1.8 (2025-11-30)
 - **NEW**: Added **authoritative `OwnerChainEntry` Go schema** with explicit field definitions
@@ -64,8 +92,8 @@
 - Updated Implementation section to align with v1.4 (5 mandatory labels, not 7)
 - Removed `risk_tolerance` and `business_category` from mandatory (now customer-derived via Rego)
 - Updated Go struct JSON tags from `json:"kubernaut.io/signal-type"` to `json:"signal_type"`
-- **NEW**: Added authoritative **DetectedLabels** section (9 auto-detected fields)
-- **NEW**: Added **Wildcard Support for DetectedLabels** string fields (`gitOpsTool`, `podSecurityLevel`, `serviceMesh`)
+- **NEW**: Added authoritative **DetectedLabels** section (8 auto-detected fields)
+- **NEW**: Added **Wildcard Support for DetectedLabels** string fields (`gitOpsTool`, `serviceMesh`)
 - **NEW**: Documented matching semantics: `"*"` = "requires SOME value", *(absent)* = "no requirement"
 - **NEW**: Added complete examples showing all three label types (mandatory + detected + custom)
 - **Documented**: Boolean Normalization Rule - booleans only included when `true`, omitted when `false`
@@ -210,6 +238,67 @@ Operators define their own subdomains. Kubernaut does NOT validate subdomain nam
 
 **Key Principle**: Kubernaut is a **conduit, not a transformer**. Custom labels flow unchanged from Rego → SignalProcessing → HolmesGPT-API → Data Storage.
 
+#### **Validation Limits (V1.9)**
+
+SignalProcessing enforces validation limits on CustomLabels output:
+
+| Constraint | Limit | Rationale |
+|------------|-------|-----------|
+| Max keys (subdomains) | 10 | Prevent prompt bloat, reasonable filtering dimensions |
+| Max values per key | 5 | Reasonable multi-value, prevent unbounded arrays |
+| Max key length | 63 chars | K8s label key compatibility |
+| Max value length | 100 chars | Prompt efficiency, reasonable constraint values |
+| Allowed key chars | `[a-zA-Z0-9._-]` | K8s label key compatible |
+| Allowed value chars | UTF-8 printable | Prompt safety, no control characters |
+| Reserved key prefixes | `kubernaut.ai/`, `system/` | Prevent collision with system labels |
+
+**Total max size**: 10 keys × 5 values × 100 chars ≈ **5KB** (well within HolmesGPT-API's 64k token limit)
+
+**Validation Behavior**:
+- Keys exceeding limits → **truncated** with warning log
+- Values exceeding limits → **truncated** with warning log
+- Reserved prefixes → **stripped** (security enforcement)
+- Invalid characters → **rejected** with error log
+
+#### **Security Measures (V1.9 - Sandboxed OPA Runtime)**
+
+CustomLabels are extracted via Rego policies in a **sandboxed OPA runtime**:
+
+| Measure | Setting | Rationale |
+|---------|---------|-----------|
+| Network access | ❌ Disabled | Prevent data exfiltration |
+| Filesystem access | ❌ Disabled | Prevent local file access |
+| Evaluation timeout | 5 seconds | Prevent infinite loops |
+| Memory limit | 128 MB | Prevent memory exhaustion |
+| External data | ❌ Disabled (V1.0) | Inline tables only, no `http.send()` |
+
+**Mandatory Label Protection (Security Wrapper)**:
+
+SignalProcessing wraps customer Rego policies with a security policy that **strips** attempts to override the 5 mandatory labels:
+
+```rego
+# Security wrapper - strips system labels from customer output
+system_labels := {
+    "kubernaut.io/signal_type",
+    "kubernaut.io/severity",
+    "kubernaut.io/component",
+    "kubernaut.io/environment",
+    "kubernaut.io/priority"
+}
+
+# Customer labels with system labels removed
+final_labels[key] = value {
+    customer_labels[key] = value
+    not startswith(key, "kubernaut.io/signal")
+    not startswith(key, "kubernaut.io/sever")
+    not startswith(key, "kubernaut.io/compon")
+    not startswith(key, "kubernaut.io/environ")
+    not startswith(key, "kubernaut.io/prior")
+}
+```
+
+**Defense in Depth**: Even if Rego policy attempts to set mandatory labels, they are stripped before output.
+
 **Reference**: [HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md](../../services/crd-controllers/01-signalprocessing/HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md)
 
 ---
@@ -229,7 +318,6 @@ SignalProcessing auto-detects these labels from Kubernetes resources **without a
 | `stateful` | bool | ❌ No | StatefulSet or has PVCs attached | State handling |
 | `helmManaged` | bool | ❌ No | `helm.sh/chart` label present | Deployment method |
 | `networkIsolated` | bool | ❌ No | NetworkPolicy exists in namespace | Security context |
-| `podSecurityLevel` | string | ✅ `"*"` | `"privileged"`, `"baseline"`, `"restricted"` | Security posture |
 | `serviceMesh` | string | ✅ `"*"` | `"istio"`, `"linkerd"`, or omitted | Traffic management |
 
 **Note**: Only **string fields** support wildcards. Boolean fields use absence semantics (see Boolean Normalization Rule below).
@@ -278,9 +366,6 @@ func buildDetectedLabelsForRego(dl *v1alpha1.DetectedLabels) map[string]interfac
     }
 
     // Always include non-empty strings
-    if dl.PodSecurityLevel != "" {
-        result["podSecurityLevel"] = dl.PodSecurityLevel
-    }
     if dl.ServiceMesh != "" {
         result["serviceMesh"] = dl.ServiceMesh
     }
@@ -291,6 +376,210 @@ func buildDetectedLabelsForRego(dl *v1alpha1.DetectedLabels) map[string]interfac
 
 **Reference**: [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](../../services/crd-controllers/01-signalprocessing/HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
 
+#### **Detection Failure Handling (V2.1 - December 2025)**
+
+**CRITICAL**: DetectedLabels uses plain `bool` fields with a separate `FailedDetections` array to track which detections failed. This avoids the `*bool` anti-pattern while providing explicit failure tracking.
+
+| Scenario | `FailedDetections` | Field Value | Meaning |
+|----------|-------------------|-------------|---------|
+| Detection succeeds (found) | Field NOT in array | `true` | Feature confirmed present |
+| Detection succeeds (not found) | Field NOT in array | `false` | Feature confirmed absent |
+| Detection fails (RBAC, timeout) | Field IN array | `false` (ignore) | Unknown - detection failed |
+
+**Concrete Example** (`pdbProtected` field):
+
+| Scenario | `pdbProtected` | `FailedDetections` | Interpretation |
+|----------|----------------|-------------------|----------------|
+| PDB exists for pod | `true` | `[]` | ✅ Has PDB protection |
+| No PDB for pod | `false` | `[]` | ✅ No PDB protection |
+| RBAC denied querying PDBs | `false` | `["pdbProtected"]` | ⚠️ Unknown - skip filter |
+
+**Key Distinction**: "Resource doesn't exist" is NOT a failure - it's a successful detection with result `false`.
+
+**Design Decision (December 2025 - Inter-Team Agreement)**:
+
+1. **Plain `bool` fields** - No `*bool` pointers (anti-pattern)
+2. **`FailedDetections []string`** - Lists field names where detection failed
+3. **Explicit failure tracking** - Consumers know exactly which detections failed
+4. **Error logging** - Detection failures also emit error logs for observability
+
+**Rationale**:
+
+- **Avoids `*bool` anti-pattern**: `*bool` causes JSON ambiguity (`null` vs absent vs `false`)
+- **Explicit about failures**: `FailedDetections` array clearly shows what couldn't be detected
+- **Auditable**: Post-incident analysis can see exactly which detections failed
+- **Cleaner Rego**: No need to handle `null` values, just check array membership
+- **Smaller payload**: When all detections succeed, `FailedDetections` is omitted
+
+**Consumer Handling**:
+
+```go
+// Check if detection succeeded before trusting the value
+if !slices.Contains(labels.FailedDetections, "pdbProtected") {
+    // labels.PDBProtected is reliable
+    if labels.PDBProtected {
+        // Has PDB protection
+    }
+} else {
+    // Detection failed - don't trust the value
+}
+```
+
+**Rego Policy Example**:
+```rego
+# Trust value only if detection succeeded
+pdb_protected {
+    not "pdbProtected" in input.detected_labels.failedDetections
+    input.detected_labels.pdbProtected
+}
+
+# Require approval if critical detections failed
+require_approval {
+    "gitOpsManaged" in input.detected_labels.failedDetections
+    input.environment == "production"
+}
+```
+
+**Go Type Definition** (authoritative - `pkg/shared/types/enrichment.go`):
+```go
+// ValidDetectedLabelFields defines the allowed values for FailedDetections
+// Used by go-playground/validator for enum validation
+var ValidDetectedLabelFields = []string{
+    "gitOpsManaged",
+    "pdbProtected",
+    "hpaEnabled",
+    "stateful",
+    "helmManaged",
+    "networkIsolated",
+    "serviceMesh",
+}
+
+type DetectedLabels struct {
+    // Detection metadata - lists fields where detection failed (RBAC, timeout, etc.)
+    // If a field name is in this array, its value should be ignored
+    // If empty/nil, all detections succeeded
+    // Validated: only accepts values from ValidDetectedLabelFields
+    FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged pdbProtected hpaEnabled stateful helmManaged networkIsolated serviceMesh"`
+
+    // GitOps Management
+    GitOpsManaged bool   `json:"gitOpsManaged"`
+    GitOpsTool    string `json:"gitOpsTool,omitempty" validate:"omitempty,oneof=argocd flux"`
+
+    // Workload Protection
+    PDBProtected bool `json:"pdbProtected"`
+    HPAEnabled   bool `json:"hpaEnabled"`
+
+    // Workload Characteristics
+    Stateful    bool `json:"stateful"`
+    HelmManaged bool `json:"helmManaged"`
+
+    // Security Posture
+    NetworkIsolated bool   `json:"networkIsolated"`
+    ServiceMesh     string `json:"serviceMesh,omitempty" validate:"omitempty,oneof=istio linkerd"`
+}
+```
+
+**Validation Setup** (in `pkg/shared/types/validation.go`):
+```go
+package types
+
+import (
+    "github.com/go-playground/validator/v10"
+)
+
+var validate *validator.Validate
+
+func init() {
+    validate = validator.New()
+}
+
+// ValidateDetectedLabels validates the DetectedLabels struct
+func ValidateDetectedLabels(dl *DetectedLabels) error {
+    return validate.Struct(dl)
+}
+```
+
+**Validation Behavior**:
+- `FailedDetections` only accepts known field names (enum validation)
+- `GitOpsTool` only accepts `"argocd"` or `"flux"` (or empty)
+- `ServiceMesh` only accepts `"istio"` or `"linkerd"` (or empty)
+
+**Example Validation Error**:
+```go
+labels := &DetectedLabels{
+    FailedDetections: []string{"unknownField"}, // Invalid!
+}
+err := ValidateDetectedLabels(labels)
+// err: "FailedDetections[0]" failed on "oneof" tag
+```
+
+**SignalProcessing Implementation**:
+```go
+func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *KubernetesContext) *DetectedLabels {
+    labels := &DetectedLabels{}
+    var failedDetections []string
+
+    // PDB detection
+    hasPDB, err := d.detectPDB(ctx, k8sCtx)
+    if err != nil {
+        log.Error(err, "Failed to detect PDB (RBAC?)")
+        failedDetections = append(failedDetections, "pdbProtected")
+        // labels.PDBProtected remains false (but ignored due to failedDetections)
+    } else {
+        labels.PDBProtected = hasPDB
+    }
+
+    // GitOps detection
+    managed, tool, err := d.detectGitOps(ctx, k8sCtx)
+    if err != nil {
+        log.Error(err, "Failed to detect GitOps")
+        failedDetections = append(failedDetections, "gitOpsManaged")
+    } else {
+        labels.GitOpsManaged = managed
+        labels.GitOpsTool = tool
+    }
+
+    // ... other detections ...
+
+    if len(failedDetections) > 0 {
+        labels.FailedDetections = failedDetections
+    }
+    return labels
+}
+```
+
+**JSON Examples**:
+
+*All detections succeeded:*
+```json
+{
+  "gitOpsManaged": true,
+  "gitOpsTool": "argocd",
+  "pdbProtected": true,
+  "hpaEnabled": false,
+  "stateful": false,
+  "helmManaged": true,
+  "networkIsolated": false
+}
+```
+
+*Some detections failed (RBAC issues):*
+```json
+{
+  "failedDetections": ["pdbProtected", "hpaEnabled"],
+  "gitOpsManaged": true,
+  "gitOpsTool": "argocd",
+  "pdbProtected": false,
+  "hpaEnabled": false,
+  "stateful": false,
+  "helmManaged": true,
+  "networkIsolated": false
+}
+```
+Note: `pdbProtected` and `hpaEnabled` values should be ignored because they're in `failedDetections`.
+
+---
+
 #### **Wildcard Support for DetectedLabels String Fields (V1.6)**
 
 **String fields** in DetectedLabels support wildcard matching (`"*"`) in workflow blueprints:
@@ -298,7 +587,6 @@ func buildDetectedLabelsForRego(dl *v1alpha1.DetectedLabels) map[string]interfac
 | Field | Wildcard Support | Values |
 |-------|------------------|--------|
 | `gitOpsTool` | ✅ `"*"` | `"argocd"`, `"flux"`, `"*"` |
-| `podSecurityLevel` | ✅ `"*"` | `"privileged"`, `"baseline"`, `"restricted"`, `"*"` |
 | `serviceMesh` | ✅ `"*"` | `"istio"`, `"linkerd"`, `"*"` |
 
 **Boolean fields do NOT support wildcards** - absence means "no requirement".
@@ -361,6 +649,102 @@ WHERE signal.detected_labels->>'gitOpsTool' IS NOT NULL
     "gitOpsTool": "*"
   }
 }
+```
+
+---
+
+### **⭐ DetectedLabels End-to-End Architecture (V2.0)**
+
+> ⚠️ **CRITICAL DISTINCTION**: There are TWO different contexts for "detected_labels" - do NOT confuse them.
+
+#### **Two Different Contexts**
+
+| Context | Owner | When Populated | Data Type | Purpose |
+|---------|-------|----------------|-----------|---------|
+| **Incident DetectedLabels** | SignalProcessing | At runtime (incident detection) | Auto-detected facts | Describes what the affected workload **IS** |
+| **Workflow Catalog detected_labels** | Workflow Author | At workflow creation | Metadata constraints | Describes what environments the workflow **SUPPORTS** |
+
+#### **End-to-End Flow Diagram**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              INCIDENT OCCURS                                     │
+│                     (OOMKilled in production namespace)                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         SIGNAL PROCESSING (V1.0)                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │ AUTO-DETECT from LIVE Kubernetes cluster:                                │   │
+│  │   - Check ArgoCD/Flux annotations → gitOpsManaged: true, gitOpsTool: argocd │
+│  │   - Query PodDisruptionBudget → pdbProtected: true                       │   │
+│  │   - Query HorizontalPodAutoscaler → hpaEnabled: false (omitted)          │   │
+│  │   - Check helm.sh/chart label → helmManaged: true                        │   │
+│  │   - Check NetworkPolicy → networkIsolated: false (omitted)               │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  OUTPUT: EnrichmentResults.DetectedLabels = {                                    │
+│    "gitOpsManaged": true,                                                        │
+│    "gitOpsTool": "argocd",                                                       │
+│    "pdbProtected": true,                                                         │
+│    "helmManaged": true                                                           │
+│  }                                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            HOLMESGPT-API                                         │
+│  - Receives incident with DetectedLabels from SignalProcessing                   │
+│  - Passes DetectedLabels as FILTERS to workflow catalog search                   │
+│  - LLM also sees DetectedLabels for context understanding                        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         DATA STORAGE (Workflow Catalog)                          │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │ WORKFLOW METADATA (author-defined at creation time):                     │   │
+│  │                                                                          │   │
+│  │ Workflow A: "scale-horizontal-argocd"                                    │   │
+│  │   detected_labels: { "gitOpsTool": "argocd" }  ← "I only support ArgoCD" │   │
+│  │                                                                          │   │
+│  │ Workflow B: "restart-pod-generic"                                        │   │
+│  │   detected_labels: {}  ← "I have no requirements, generic workflow"      │   │
+│  │                                                                          │   │
+│  │ Workflow C: "scale-horizontal-gitops"                                    │   │
+│  │   detected_labels: { "gitOpsTool": "*" }  ← "I support any GitOps tool"  │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  MATCHING: Incident's gitOpsTool="argocd" matches:                               │
+│    ✅ Workflow A (exact match)                                                   │
+│    ✅ Workflow B (no requirement = matches anything)                             │
+│    ✅ Workflow C (wildcard = matches any value)                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### **Key Principles**
+
+1. **SignalProcessing AUTO-POPULATES** incident DetectedLabels from live K8s ✅ IMPLEMENTED (V1.0)
+2. **Workflow authors MANUALLY DEFINE** workflow catalog detected_labels at creation time
+3. **Data Storage does NOT auto-populate** workflow detected_labels - they are workflow metadata
+4. **HolmesGPT-API passes incident DetectedLabels** as filters to Data Storage search
+5. **Matching logic** is in Data Storage: incident labels match workflow metadata
+
+#### **Common Misconception**
+
+> ❌ "Data Storage should auto-populate detected_labels"
+
+**Clarification**: Data Storage **receives** incident DetectedLabels as search filters. It does NOT populate them. The workflow catalog's `detected_labels` field is **workflow metadata** (author-defined), not auto-detected.
+
+| Service | Populates | Consumes |
+|---------|-----------|----------|
+| SignalProcessing | Incident DetectedLabels (auto-detect from K8s) | — |
+| HolmesGPT-API | — | Incident DetectedLabels (from SP), passes to DS as filters |
+| Data Storage | — | Incident DetectedLabels (as filters), Workflow detected_labels (as metadata) |
+| Workflow Author | Workflow detected_labels (manual, at creation) | — |
+
+---
 ```
 
 **Generic workflow** (no GitOps requirement):
@@ -563,7 +947,7 @@ The `search_workflow_catalog` tool includes `rca_resource` for validation:
 2. **Semantic Ranking**: Query string (`<signal_type> <severity>`) for pgvector semantic similarity
 3. **Component Storage Only**: `component` is stored but NOT used as search filter (workflows are generic)
 4. **Wildcard Support (Mandatory Labels)**: `environment`, `priority` support `'*'` (matches any value)
-5. **Wildcard Support (DetectedLabels)**: `gitOpsTool`, `podSecurityLevel`, `serviceMesh` support `'*'` (matches any non-empty value)
+5. **Wildcard Support (DetectedLabels)**: `gitOpsTool`, `serviceMesh` support `'*'` (matches any non-empty value)
 6. **Custom Label Filtering**: Each subdomain becomes a separate WHERE clause (see V1.5 format above)
 7. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
 
@@ -969,7 +1353,7 @@ metadata:
     "pdbProtected": true,
     "helmManaged": true,
     "networkIsolated": true,
-    "podSecurityLevel": "restricted"
+    "serviceMesh": "istio"
   },
   "custom_labels": {
     "risk_tolerance": ["low"],

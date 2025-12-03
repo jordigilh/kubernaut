@@ -1,20 +1,27 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.19.md`
-**Version**: v1.19
+**Filename**: `IMPLEMENTATION_PLAN_V1.20.md`
+**Version**: v1.20
 **Last Updated**: 2025-12-03
 **Timeline**: 14-17 days (quality-focused, includes label detection)
 **Status**: ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Production-Ready Standard (100% Confidence - All Dependencies Validated)
 
 **Change Log**:
-- **v1.19** (2025-12-03): Rego Policy Testing Strategy
-  - ✅ **Dedicated Section Added**: "Rego Policy Testing Strategy" explains testing approach unique to SignalProcessing
-  - ✅ **ConfigMap Integration Tests**: Real K8s ConfigMap → policy load flow (not mocked)
-  - ✅ **Hot-Reload Concurrency Tests**: Policy update during active reconciliation (Risk #5 mitigation)
-  - ✅ **Policy Validation Tests**: Invalid Rego syntax → graceful fallback validation
-  - ✅ **Alignment**: AIAnalysis team feedback incorporated (integration testing uniqueness)
-  - 📏 **Tests Added**: 4 new integration test scenarios in `rego_integration_test.go`
+- **v1.20** (2025-12-03): DD-WORKFLOW-001 v2.2 - PodSecurityLevel Removed + All 8 Detections in V1.0
+  - ✅ **PodSecurityLevel REMOVED**: PSP deprecated K8s 1.21, removed 1.25; PSS is namespace-level (inconsistent)
+  - ✅ **DetectedLabels Scope**: All 8 detections in V1.0 (NetworkIsolated, ServiceMesh no longer deferred)
+  - ✅ **DD-WORKFLOW-001 Updated**: v2.1 → v2.2 (schema change)
+  - ✅ **Go Type Updated**: `pkg/shared/types/enrichment.go` - PodSecurityLevel field removed
+  - 📏 **Notification**: See `docs/handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md`
+- **v1.19** (2025-12-03): Rego Policy Testing + Timeline Optimization + RBAC Documentation
+  - ✅ **Rego Policy Testing Strategy**: Dedicated section with 4 integration test scenarios
+  - ✅ **Timeline Optimized**: Gateway migration moved earlier (Days 4-5, 10) instead of last day
+  - ✅ **RBAC Documentation**: Extended permissions for DetectedLabels documented in Deployment Guide
+  - ✅ **User Documentation**: Added Day 14 task for operator/user-facing docs
+  - ✅ **Performance Testing**: Deferred to V1.1 (KIND API server limits >100 concurrent signals)
+  - ✅ **Missing RBAC Markers**: Added PDB, HPA, NetworkPolicy permissions for DetectedLabels
+  - 📏 **AIAnalysis Feedback**: Rego policy integration testing uniqueness addressed
 - **v1.18** (2025-12-02): DD-WORKFLOW-001 v2.1 + Template v3.0 Compliance + All Gaps Fixed + Gateway Triage
   - ✅ **DD-WORKFLOW-001 Updated**: v1.9 → v2.1 (DetectedLabels schema change)
   - ✅ **FailedDetections Field**: New `[]string` field tracks query failures (RBAC, timeout)
@@ -43,7 +50,7 @@
 - **v1.14** (2025-11-30): DD-WORKFLOW-001 v1.9 - OwnerChain, DetectedLabels, CustomLabels
   - ✅ **Added Phase 3.25**: Owner Chain & Label Detection (2-3 days)
   - ✅ **OwnerChain Implementation**: K8s ownerReference traversal for DetectedLabels validation
-  - ✅ **DetectedLabels Auto-Detection**: 9 detection types (GitOps, PDB, HPA, StatefulSet, Helm, NetworkPolicy, PSS, ServiceMesh)
+  - ✅ **DetectedLabels Auto-Detection**: 8 detection types (GitOps, PDB, HPA, StatefulSet, Helm, NetworkPolicy, ServiceMesh) - PSS removed v1.20
   - ✅ **CustomLabels Rego Extraction**: Customer Rego policies with security wrapper
   - ✅ **Security Wrapper**: Blocks override of 5 mandatory labels
   - ✅ **New Business Requirements**: BR-SP-100 to BR-SP-104 for label detection
@@ -170,7 +177,7 @@
   - ✅ Complete categorization ownership (migrated from Gateway)
   - ✅ Rego policy engine integration (ConfigMap hot-reload)
   - ✅ K8s context enrichment and business classification
-  - ✅ Gateway migration tasks (last day)
+  - ✅ Gateway migration tasks (Days 4-5, 10 per v1.19 optimization)
   - ✅ ENVTEST integration test environment
 
 ---
@@ -493,7 +500,7 @@ The following contract gaps (identified by RO team) were fixed in `api/signalpro
 - **Rego Policy Evaluation**: <100ms P95 - *Justification: Fast policy decisions*
 - **Audit Write Latency**: <1ms P95 - *Justification: Fire-and-forget pattern per ADR-038 (non-blocking)*
 - **Owner Chain Build**: <500ms P95 - *Justification: Fast K8s API traversal (DD-WORKFLOW-001 v1.9)*
-- **DetectedLabels Detection**: <200ms P95 - *Justification: Parallel K8s queries for 9 detection types*
+- **DetectedLabels Detection**: <200ms P95 - *Justification: Parallel K8s queries for 8 detection types*
 - **Rego Policy Evaluation**: <100ms P95 - *Justification: Fast policy decisions*
 - **Test Coverage**: 70%+ unit, 50%+ integration - *Justification: Defense-in-depth testing*
 
@@ -977,9 +984,9 @@ ctrl.NewControllerManagedBy(mgr).
 | **Label Detection** | 2-3 days | Days 7-9 | OwnerChain, DetectedLabels, CustomLabels | DD-WORKFLOW-001 v1.9 ⭐ NEW |
 | **Integration** | 2 days | Days 10-11 | Controller, metrics, audit | Complete CRD controller |
 | **Testing** | 2 days | Days 12-13 | Unit → Integration → E2E | 70%+ coverage |
-| **Finalization** | 2 days | Days 14-15 | E2E, docs, Gateway migration | Production-ready |
+| **Finalization** | 2 days | Days 14-15 | Docs, user guides, Gateway cleanup | Production-ready |
 
-### **14-17 Day Implementation Timeline** (Updated for DD-WORKFLOW-001 v1.9)
+### **14-17 Day Implementation Timeline** (Updated for DD-WORKFLOW-001 v1.9 + Gateway Migration v1.19)
 
 | Day | Phase | Focus | Hours | Key Milestones |
 |-----|-------|-------|-------|----------------|
@@ -987,20 +994,22 @@ ctrl.NewControllerManagedBy(mgr).
 | **Day 1** | Foundation | DD-006 scaffolding | 8h | Package structure, main.go, config |
 | **Day 2** | Foundation | CRD types, API | 8h | SignalProcessing CRD, types_test.go |
 | **Day 3** | Core Logic | K8s Enricher | 8h | Kubernetes context fetching |
-| **Day 4** | Core Logic | Environment Classifier | 8h | Namespace labels, ConfigMap, fallback |
-| **Day 5** | Core Logic | Priority Engine (Rego) | 8h | Rego policy engine, hot-reload |
+| **Day 4** | Core Logic | Environment Classifier | 8h | **PORT from Gateway** (478 LOC), Namespace labels, ConfigMap |
+| **Day 5** | Core Logic | Priority Engine (Rego) | 8h | **PORT from Gateway**, Rego policy engine, hot-reload |
 | **Day 6** | Core Logic | Business Classifier | 8h | Confidence scoring, multi-dimensional |
 | **Day 7** | Label Detection ⭐ | OwnerChain | 8h | K8s ownerReference traversal |
-| **Day 8** | Label Detection ⭐ | DetectedLabels | 8h | 9 auto-detection types (GitOps, PDB, HPA, etc.) |
+| **Day 8** | Label Detection ⭐ | DetectedLabels | 8h | 8 auto-detection types (all in V1.0, PSS removed) |
 | **Day 9** | Label Detection ⭐ | CustomLabels Rego | 8h | Rego extraction, security wrapper, ConfigMap |
-| **Day 10** | Integration | Reconciler | 8h | SignalProcessingReconciler with labels |
+| **Day 10** | Integration | Reconciler + Gateway Tests | 8h | SignalProcessingReconciler, **PORT Gateway tests** (857 LOC) |
 | **Day 11** | Integration | Metrics, Audit | 8h | Prometheus metrics, audit client |
-| **Day 12** | Testing | Unit Tests | 8h | 70%+ unit coverage (including labels) |
-| **Day 13** | Testing | Integration + E2E | 8h | ENVTEST integration, E2E validation |
-| **Day 14** | Finalization | E2E, Documentation | 8h | E2E tests, service docs |
-| **Day 15** | Finalization | Gateway Migration | 8h | Remove Gateway classification code |
+| **Day 12** | Testing | Unit Tests | 8h | 70%+ unit coverage (including ported tests) |
+| **Day 13** | Testing | Integration + E2E | 8h | ENVTEST integration, Rego policy tests |
+| **Day 14** | Finalization | Documentation | 8h | Service docs, **User documentation**, deployment guide |
+| **Day 15** | Finalization | Gateway Cleanup + Buffer | 8h | Remove Gateway classification code, polish |
 
-**Note**: Days 7-9 (Label Detection) added per DD-WORKFLOW-001 v1.9. Timeline extended from 12 to 15 days.
+**Note**: Days 7-9 (Label Detection) added per DD-WORKFLOW-001 v1.9. Gateway migration moved earlier (Days 4-5, 10) per v1.19 timeline optimization.
+
+**⚠️ Performance Testing**: Deferred to V1.1 (KIND API server limits prevent >100 concurrent signals).
 
 ---
 
@@ -2941,6 +2950,12 @@ type SignalProcessingReconciler struct {
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
+
+// RBAC: DetectedLabels auto-detection (DD-WORKFLOW-001 v2.1)
+//+kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
+//+kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
 
 // RBAC: ConfigMaps for Rego policy hot-reload
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
@@ -5514,10 +5529,10 @@ The Signal Processing CRD Controller is a Kubernetes controller that enriches in
 - Unit tests (70%+ coverage)
 - BR coverage matrix (100% coverage)
 
-✅ **Phase 5 (Days 11-12)**: Finalization
-- E2E tests
-- Gateway migration (classification code removed)
-- Documentation complete
+✅ **Phase 5 (Days 14-15)**: Finalization
+- Documentation (service docs, user guides, deployment guide)
+- Gateway cleanup (remove old classification code)
+- Production readiness validation
 
 ---
 
@@ -5641,6 +5656,52 @@ kubectl apply -f deploy/signalprocessing/
 # Verify
 kubectl get pods -n kubernaut | grep signalprocessing
 ```
+
+### RBAC Requirements for DetectedLabels (DD-WORKFLOW-001 v2.1)
+
+> **📋 TODO (Day 14)**: Expand this section with detailed RBAC documentation for operators.
+
+The SignalProcessing controller requires expanded RBAC permissions to auto-detect cluster characteristics:
+
+| Resource | API Group | Verbs | Used For |
+|----------|-----------|-------|----------|
+| pods | "" (core) | get, list, watch | Pod context enrichment |
+| nodes | "" (core) | get, list, watch | Node context enrichment |
+| namespaces | "" (core) | get, list, watch | Namespace labels for environment detection |
+| configmaps | "" (core) | get, list, watch | Rego policy hot-reload |
+| deployments | apps | get, list, watch | OwnerChain traversal |
+| replicasets | apps | get, list, watch | OwnerChain traversal |
+| statefulsets | apps | get, list, watch | Stateful detection |
+| **poddisruptionbudgets** | policy | get, list, watch | PDBProtected detection |
+| **horizontalpodautoscalers** | autoscaling | get, list, watch | HPAEnabled detection |
+| **networkpolicies** | networking.k8s.io | get, list, watch | NetworkIsolated detection |
+
+**⚠️ Important for Operators**:
+- If RBAC permissions are denied, the detection will fail gracefully
+- Failed detections are tracked in `status.enrichmentResults.detectedLabels.failedDetections`
+- Check controller logs for RBAC-related errors: `Failed to query [resource] (RBAC denied or API error)`
+
+**Minimal RBAC (Core Functionality Only)**:
+```yaml
+# If you cannot grant extended permissions, use this minimal set:
+# DetectedLabels will populate FailedDetections for missing permissions
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "namespaces", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+```
+
+### User Documentation (Day 14)
+
+> **📋 TODO (Day 14)**: Create user-facing documentation covering:
+
+1. **Operator Guide**: How to deploy and configure SignalProcessing
+2. **Custom Rego Policies**: How to write and deploy custom classification policies
+3. **Troubleshooting Guide**: Common issues and solutions
+4. **Monitoring Dashboard**: Grafana dashboard JSON for SignalProcessing metrics
 
 ---
 

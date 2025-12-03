@@ -135,6 +135,6 @@ Please acknowledge receipt by adding your team name below:
 | AIAnalysis | ✅ Done | 2025-12-03 | Updated crd-schema.md v2.4 (removed field + enum), README.md v2.6 |
 | HolmesGPT-API | ✅ Done | 2025-12-03 | Removed from model, filters, context, tests (9 files). OpenAPI regenerated. |
 | Data Storage | ✅ Acknowledged | 2025-12-03 | 3 files, ~21 lines to remove: models/workflow.go (field + constant), repository/workflow_repository.go (WHERE + boost), audit/workflow_search_event.go (audit field) |
-| RO | ⏳ Pending | | |
-| Gateway | ⏳ Pending | | |
+| RO | ✅ Acknowledged | 2025-12-03 | No action required - pass-through only, no consumption of DetectedLabels fields |
+| Gateway | ✅ Acknowledged | 2025-12-03 | No impact - Gateway does not use DetectedLabels schema |
 
