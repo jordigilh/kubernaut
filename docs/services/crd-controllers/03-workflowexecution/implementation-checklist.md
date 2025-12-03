@@ -142,13 +142,21 @@
   - [ ] Add RBAC permissions for CRD operations
   - [ ] Create Kubernetes deployment manifests
 
-### Phase 7: Documentation (1 day)
+### Phase 7: Documentation (1.5 days)
 
 - [ ] Update API documentation with WorkflowExecution CRD
 - [ ] Document workflow planning patterns
 - [ ] Add troubleshooting guide for workflow execution
 - [ ] Create runbook for rollback procedures
 - [ ] Document adaptive orchestration mechanisms
+- [ ] **Workflow Author's Guide** (`docs/guides/workflow-authoring.md`)
+  - [ ] Directory structure (pipeline.yaml, tasks/, workflow-schema.yaml)
+  - [ ] workflow-schema.yaml format (reference DD-STORAGE-008)
+  - [ ] Building OCI bundles (`tkn bundle push` or Dockerfile)
+  - [ ] Signing with Cosign (optional for v1.0)
+  - [ ] Registering in Data Storage catalog
+  - [ ] Testing locally with `tkn pipeline start`
+  - [ ] Example: Complete disk-cleanup workflow
 
 ---
 
