@@ -1,20 +1,26 @@
-# 📢 API Contract Change Notification: WorkflowExecution v3.0
+# 📢 API Contract Change Notification: WorkflowExecution v3.0 / v3.1
 
 **From**: Workflow Engine (WE) Service Team
 **To**: RemediationOrchestrator (RO) Team, AIAnalysis Service Team
 **Date**: December 1, 2025
-**Priority**: 🟡 Medium (Non-Breaking Change)
-**Effective Version**: WorkflowExecution CRD Schema v3.0
+**Priority**: 🔴 High (v3.1 requires RO changes)
+**Effective Version**: WorkflowExecution CRD Schema v3.0 + v3.1
 
 ---
 
 ## 📋 Executive Summary
 
-The WorkflowExecution service is introducing **enhanced failure details** in `status.failureDetails` to support the recovery flow. This is an **additive, non-breaking change** that provides richer failure information for:
+The WorkflowExecution service is introducing two significant changes:
 
-1. **User Notifications**: More informative failure alerts
-2. **LLM Recovery Context**: Natural language summaries for recovery analysis
-3. **Deterministic Recovery**: K8s-style reason codes for programmatic decisions
+### v3.0: Enhanced Failure Details (Non-Breaking)
+- **New field**: `status.failureDetails` with structured failure information
+- **Purpose**: Richer failure data for notifications, LLM recovery, deterministic decisions
+
+### v3.1: Resource Locking Safety (🔴 RO Action Required)
+- **New spec field**: `spec.targetResource` (REQUIRED)
+- **New status phase**: `Skipped` with `skipDetails`
+- **Purpose**: Prevent parallel/redundant workflow executions on same target
+- **RO Impact**: Must populate `targetResource` and handle `Skipped` phase
 
 ---
 
@@ -57,6 +63,151 @@ status:
 | `ConfigurationError` | Invalid parameters | Should be caught by validation |
 | `ImagePullBackOff` | Cannot pull container image | Image doesn't exist or no creds |
 | `Unknown` | Unclassified failure | Manual investigation needed |
+
+---
+
+## 🔐 v3.1: Resource Locking (RO Action Required)
+
+### Problem Solved
+
+When a node experiences DiskPressure, multiple pods may be evicted, generating 10+ signals. Each signal resolves to the same root cause (`node-disk-cleanup` workflow). Without resource locking, 10+ parallel WorkflowExecutions would target the same node.
+
+### New Spec Field: `targetResource` (REQUIRED)
+
+```yaml
+spec:
+  # NEW in v3.1 - RO must populate this
+  targetResource: "payment/deployment/payment-api"  # namespace/kind/name
+  # For cluster-scoped: "node/worker-node-1"       # kind/name
+```
+
+**Format**:
+- Namespaced: `namespace/kind/name` (e.g., `payment/deployment/payment-api`)
+- Cluster-scoped: `kind/name` (e.g., `node/worker-node-1`)
+
+### New Phase: `Skipped`
+
+```yaml
+status:
+  phase: Skipped  # NEW valid phase
+
+  # No PipelineRun created
+  pipelineRunRef: null
+
+  skipDetails:
+    reason: "ResourceBusy"  # or "RecentlyRemediated"
+    message: "Another workflow is currently remediating this resource"
+    skippedAt: "2025-12-01T10:16:00Z"
+    conflictingWorkflow:       # When reason=ResourceBusy
+      name: "workflow-payment-oom-001"
+      workflowId: "oomkill-increase-memory"
+      startedAt: "2025-12-01T10:15:00Z"
+      targetResource: "payment/deployment/payment-api"
+    recentRemediation:         # When reason=RecentlyRemediated
+      name: "workflow-node-disk-001"
+      workflowId: "node-disk-cleanup"
+      completedAt: "2025-12-01T10:18:00Z"
+      outcome: "Completed"
+      targetResource: "node/worker-node-1"
+      cooldownRemaining: "4m30s"
+```
+
+### Lock Decision Rules
+
+| Scenario | Decision |
+|----------|----------|
+| Another workflow **Running** on same target | **Skip (ResourceBusy)** |
+| Same workflow+target completed **<5 min ago** | **Skip (RecentlyRemediated)** |
+| Different workflow on same target, completed recently | **Allow** |
+| Same workflow+target completed **>5 min ago** | **Allow** |
+| Different target | **Allow** |
+
+### 🔴 RO Required Changes
+
+#### 1. Populate `targetResource` When Creating WE
+
+```go
+// pkg/remediationorchestrator/reconciler.go
+func (r *Reconciler) createWorkflowExecution(
+    ctx context.Context,
+    aiAnalysis *v1alpha1.AIAnalysis,
+    rr *v1alpha1.RemediationRequest,
+) error {
+    wfe := &v1alpha1.WorkflowExecution{
+        Spec: v1alpha1.WorkflowExecutionSpec{
+            // ... existing fields ...
+
+            // NEW v3.1: Required for resource locking
+            TargetResource: buildTargetResource(rr, aiAnalysis),
+        },
+    }
+    return r.Create(ctx, wfe)
+}
+
+// Extract target from signal context
+func buildTargetResource(rr *v1alpha1.RemediationRequest, aia *v1alpha1.AIAnalysis) string {
+    // For pods/deployments: namespace/kind/name
+    if rr.Spec.SignalContext.TargetNamespace != "" {
+        return fmt.Sprintf("%s/%s/%s",
+            rr.Spec.SignalContext.TargetNamespace,
+            rr.Spec.SignalContext.TargetKind,
+            rr.Spec.SignalContext.TargetName)
+    }
+    // For cluster-scoped (nodes): kind/name
+    return fmt.Sprintf("%s/%s",
+        rr.Spec.SignalContext.TargetKind,
+        rr.Spec.SignalContext.TargetName)
+}
+```
+
+#### 2. Handle `Skipped` Phase in Status Watching
+
+```go
+// pkg/remediationorchestrator/reconciler.go
+func (r *Reconciler) handleWorkflowExecutionStatus(
+    ctx context.Context,
+    rr *v1alpha1.RemediationRequest,
+    we *v1alpha1.WorkflowExecution,
+) error {
+    switch we.Status.Phase {
+    case "Completed":
+        return r.handleWorkflowExecutionCompleted(ctx, rr, we)
+    case "Failed":
+        return r.handleWorkflowExecutionFailed(ctx, rr, we)
+
+    // NEW v3.1: Handle Skipped phase
+    case "Skipped":
+        return r.handleWorkflowExecutionSkipped(ctx, rr, we)
+
+    case "Running", "Pending":
+        return nil // Still in progress
+    }
+    return nil
+}
+
+func (r *Reconciler) handleWorkflowExecutionSkipped(
+    ctx context.Context,
+    rr *v1alpha1.RemediationRequest,
+    we *v1alpha1.WorkflowExecution,
+) error {
+    // Log skip reason
+    log.Info("WorkflowExecution skipped",
+        "reason", we.Status.SkipDetails.Reason,
+        "target", we.Spec.TargetResource)
+
+    // Update RemediationRequest status
+    rr.Status.Phase = "Skipped"
+    rr.Status.Message = we.Status.SkipDetails.Message
+
+    // Optionally create notification
+    if we.Status.SkipDetails.Reason == "ResourceBusy" {
+        // Notify that another remediation is in progress
+        return r.createSkippedNotification(ctx, rr, we)
+    }
+
+    return r.Status().Update(ctx, rr)
+}
+```
 
 ---
 

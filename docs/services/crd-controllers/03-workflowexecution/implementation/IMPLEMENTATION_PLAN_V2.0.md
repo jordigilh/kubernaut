@@ -49,18 +49,17 @@
 
 | BR ID | Description | Priority |
 |-------|-------------|----------|
-| **BR-WF-001** | Create Tekton PipelineRun from WorkflowExecution CRD | P0 |
-| **BR-WF-002** | Pass parameters to PipelineRun from spec | P0 |
-| **BR-WF-003** | Monitor PipelineRun status (Running/Completed/Failed) | P0 |
-| **BR-WF-004** | Update WorkflowExecution status based on PipelineRun | P0 |
-| **BR-WF-005** | Set owner reference for cascade deletion | P0 |
-| **BR-WF-006** | Support configurable ServiceAccount for PipelineRun | P1 |
-| **BR-WF-007** | Emit Prometheus metrics for execution outcomes | P1 |
-| **BR-WF-008** | Write audit event on completion (ADR-034) | P0 |
-| **BR-WF-009** | Handle PipelineRun creation failures gracefully | P0 |
-| **BR-WF-010** | Requeue for status updates while Running | P1 |
-| **BR-WF-011** | Support Tekton bundle resolver for OCI images | P0 |
-| **BR-WF-012** | Validate spec before PipelineRun creation | P0 |
+| **BR-WE-001** | Create Tekton PipelineRun from WorkflowExecution CRD | P0 |
+| **BR-WE-002** | Pass parameters to PipelineRun from spec | P0 |
+| **BR-WE-003** | Monitor PipelineRun status (Running/Completed/Failed) | P0 |
+| **BR-WE-004** | Update WorkflowExecution status based on PipelineRun | P0 |
+| **BR-WE-005** | Set owner reference for cascade deletion | P0 |
+| **BR-WE-006** | Support configurable ServiceAccount for PipelineRun | P1 |
+| **BR-WE-007** | Emit Prometheus metrics for execution outcomes | P1 |
+| **BR-WE-008** | Write audit event on completion (ADR-034) | P0 |
+| **BR-WE-009** | Resource locking - prevent parallel execution | P0 |
+| **BR-WE-010** | Cooldown - prevent redundant sequential execution | P0 |
+| **BR-WE-011** | Target resource identification and validation | P0 |
 
 **Total**: 12 BRs (vs 38 in v1.3)
 
@@ -179,7 +178,7 @@ type WorkflowExecutionStatus struct {
 **Deliverables**:
 ```bash
 # Day 1
-kubebuilder init --domain kubernaut.io --repo github.com/jordigilh/kubernaut
+kubebuilder init --domain kubernaut.ai --repo github.com/jordigilh/kubernaut
 kubebuilder create api --group workflowexecution --version v1alpha1 --kind WorkflowExecution
 
 # Day 2
@@ -190,7 +189,7 @@ make generate
 **Files Created**:
 - `api/workflowexecution/v1alpha1/types.go`
 - `api/workflowexecution/v1alpha1/zz_generated.deepcopy.go`
-- `config/crd/bases/workflowexecution.kubernaut.io_workflowexecutions.yaml`
+- `config/crd/bases/workflowexecution.kubernaut.ai_workflowexecutions.yaml`
 - `internal/controller/workflowexecution/workflowexecution_controller.go`
 
 ---
@@ -303,8 +302,8 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(wfe *workflowexecutionv1a
             GenerateName: fmt.Sprintf("%s-", wfe.Name),
             Namespace:    wfe.Namespace,
             Labels: map[string]string{
-                "kubernaut.io/workflow-execution": wfe.Name,
-                "kubernaut.io/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+                "kubernaut.ai/workflow-execution": wfe.Name,
+                "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
             },
             OwnerReferences: []metav1.OwnerReference{
                 *metav1.NewControllerRef(wfe, workflowexecutionv1alpha1.GroupVersion.WithKind("WorkflowExecution")),
@@ -433,7 +432,7 @@ func (r *WorkflowExecutionReconciler) handleRunning(ctx context.Context, wfe *wo
         return ctrl.Result{}, err
     }
 
-    // Write audit event (BR-WF-008)
+    // Write audit event (BR-WE-008)
     r.writeAuditEvent(ctx, wfe)
 
     return ctrl.Result{}, nil

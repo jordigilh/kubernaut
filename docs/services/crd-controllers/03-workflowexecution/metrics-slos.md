@@ -1,5 +1,21 @@
 ## Enhanced Metrics & SLOs
 
+**Version**: 3.0
+**Last Updated**: 2025-12-02
+**CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
+**Status**: ✅ Updated for Tekton Architecture
+
+---
+
+## Changelog
+
+### Version 3.1 (2025-12-02)
+- ✅ **Removed**: All KubernetesExecution metrics (replaced by Tekton PipelineRun)
+- ✅ **Added**: `pipelinerun_creation_duration` metric
+- ✅ **Added**: Resource locking metrics (DD-WE-001)
+
+---
+
 ### SLI/SLO Definitions
 
 **Service Level Indicators (SLIs)**:
@@ -73,73 +89,63 @@ var (
         },
     )
 
-    // Step execution metrics
-    stepExecutionTotal = promauto.NewCounterVec(
+    // NOTE: Step execution metrics are provided by Tekton Pipelines
+    // - tekton_pipelinerun_duration_seconds
+    // - tekton_taskrun_duration_seconds
+    // - tekton_taskrun_count
+    // See: Tekton Metrics documentation
+
+    // Phase transition metrics
+    phaseTransitionTotal = promauto.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "workflowexecution_step_execution_total",
-            Help: "Total number of step executions",
+            Name: "workflowexecution_phase_transition_total",
+            Help: "Total phase transitions",
         },
-        []string{"status", "action"},  // status: completed|failed, action: restart-pod|scale-deployment|etc
+        []string{"from_phase", "to_phase"},
     )
 
-    stepExecutionDuration = promauto.NewHistogramVec(
+    // Skip reason metrics (DD-WE-001 resource locking)
+    skipTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "workflowexecution_skip_total",
+            Help: "Total workflows skipped",
+        },
+        []string{"reason"},  // ResourceBusy, RecentlyRemediated
+    )
+
+    // Outcome metrics
+    outcomeTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "workflowexecution_outcome_total",
+            Help: "Total workflow outcomes",
+        },
+        []string{"outcome", "workflow_id"},  // outcome: Success, Failed
+    )
+
+    // PipelineRun creation metrics
+    pipelineRunCreationDuration = promauto.NewHistogram(
         prometheus.HistogramOpts{
-            Name:    "workflowexecution_step_execution_duration_seconds",
-            Help:    "Step execution duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(0.5, 2, 10),  // 0.5s to 512s
-        },
-        []string{"action"},
-    )
-
-    // Dependency resolution metrics
-    dependencyResolutionDuration = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "workflowexecution_dependency_resolution_duration_seconds",
-            Help:    "Dependency graph resolution duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(0.01, 2, 10),  // 10ms to 10s
-        },
-    )
-
-    dependencyGraphComplexity = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "workflowexecution_dependency_graph_complexity",
-            Help:    "Number of dependencies in workflow graph",
-            Buckets: prometheus.LinearBuckets(0, 2, 10),  // 0 to 20
-        },
-    )
-
-    // Parallel execution metrics
-    parallelStepsExecuted = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "workflowexecution_parallel_steps_count",
-            Help:    "Number of steps executed in parallel",
-            Buckets: prometheus.LinearBuckets(1, 1, 10),  // 1 to 10
-        },
-    )
-
-    parallelExecutionEfficiency = promauto.NewGauge(
-        prometheus.GaugeOpts{
-            Name: "workflowexecution_parallel_execution_efficiency",
-            Help: "Ratio of parallel steps to total steps (0-1)",
-        },
-    )
-
-    // Workflow complexity metrics
-    workflowStepCount = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "workflowexecution_step_count",
-            Help:    "Number of steps in workflow",
-            Buckets: prometheus.LinearBuckets(1, 1, 10),  // 1 to 10 steps
-        },
-    )
-
-    // Child CRD creation metrics
-    kubernetesExecutionCreationDuration = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "workflowexecution_kubernetesexecution_creation_duration_seconds",
-            Help:    "KubernetesExecution CRD creation duration in seconds",
+            Name:    "workflowexecution_pipelinerun_creation_duration_seconds",
+            Help:    "Tekton PipelineRun creation duration in seconds",
             Buckets: prometheus.ExponentialBuckets(0.01, 2, 8),  // 10ms to 2.56s
         },
+    )
+
+    // Resource locking metrics (DD-WE-001)
+    resourceLockCheckDuration = promauto.NewHistogram(
+        prometheus.HistogramOpts{
+            Name:    "workflowexecution_resource_lock_check_duration_seconds",
+            Help:    "Resource lock check duration in seconds",
+            Buckets: prometheus.ExponentialBuckets(0.001, 2, 8),  // 1ms to 256ms
+        },
+    )
+
+    resourceLockSkipped = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "workflowexecution_resource_lock_skipped_total",
+            Help: "Total workflows skipped due to resource lock",
+        },
+        []string{"reason"},  // reason: ResourceBusy|RecentlyRemediated
     )
 )
 ```

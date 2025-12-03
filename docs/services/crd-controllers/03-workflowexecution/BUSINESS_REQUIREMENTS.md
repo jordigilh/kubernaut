@@ -3,9 +3,10 @@
 **Service**: WorkflowExecution Controller
 **Service Type**: CRD Controller
 **CRD**: WorkflowExecution
+**CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Controller**: WorkflowExecutionReconciler
-**Version**: 2.0 (Engine-Agnostic Architecture)
-**Last Updated**: November 28, 2025
+**Version**: 3.0 (Standardized BR-WE-* + API Group)
+**Last Updated**: December 2, 2025
 **Status**: Ready for Implementation
 
 ---
@@ -36,7 +37,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ### Category 1: Execution Delegation
 
-#### BR-WF-001: Create PipelineRun from OCI Bundle
+#### BR-WE-001: Create PipelineRun from OCI Bundle
 
 **Description**: WorkflowExecution Controller MUST create a Tekton PipelineRun using the bundle resolver to reference the OCI image specified in `spec.workflowRef.containerImage`.
 
@@ -65,7 +66,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
-#### BR-WF-002: Pass Parameters to Execution Engine
+#### BR-WE-002: Pass Parameters to Execution Engine
 
 **Description**: WorkflowExecution Controller MUST pass all parameters from `spec.parameters` to the Tekton PipelineRun params, preserving UPPER_SNAKE_CASE naming per DD-WORKFLOW-003.
 
@@ -96,7 +97,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ### Category 2: Status Management
 
-#### BR-WF-003: Monitor Execution Status
+#### BR-WE-003: Monitor Execution Status
 
 **Description**: WorkflowExecution Controller MUST watch the created PipelineRun status and update WorkflowExecution status accordingly (Pending → Running → Completed/Failed).
 
@@ -125,7 +126,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
-#### BR-WF-004: Owner Reference for Cascade Deletion
+#### BR-WE-004: Owner Reference for Cascade Deletion
 
 **Description**: WorkflowExecution Controller MUST set owner reference on created PipelineRun to enable cascade deletion when WorkflowExecution is deleted.
 
@@ -152,7 +153,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ### Category 3: Observability
 
-#### BR-WF-005: Audit Events for Execution Lifecycle
+#### BR-WE-005: Audit Events for Execution Lifecycle
 
 **Description**: WorkflowExecution Controller MUST emit audit events for key lifecycle transitions (created, running, completed, failed) to support compliance and debugging.
 
@@ -181,7 +182,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
-#### BR-WF-008: Prometheus Metrics for Execution Outcomes
+#### BR-WE-008: Prometheus Metrics for Execution Outcomes
 
 **Description**: WorkflowExecution Controller MUST expose Prometheus metrics for execution outcomes (success/failure counts, duration histograms) on port 9090.
 
@@ -209,7 +210,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ### Category 4: Error Handling
 
-#### BR-WF-006: ServiceAccount Configuration
+#### BR-WE-006: ServiceAccount Configuration
 
 **Description**: WorkflowExecution Controller MUST support optional ServiceAccountName configuration for PipelineRun execution.
 
@@ -233,7 +234,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
-#### BR-WF-007: Handle Externally Deleted PipelineRun
+#### BR-WE-007: Handle Externally Deleted PipelineRun
 
 **Description**: WorkflowExecution Controller MUST gracefully handle PipelineRun deletion by external actors (operators, garbage collection) and mark WorkflowExecution as Failed.
 
@@ -258,6 +259,99 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
+### Category 5: Resource Safety (V1.0)
+
+#### BR-WE-009: Resource Locking - Prevent Parallel Execution
+
+**Description**: WorkflowExecution Controller MUST prevent parallel workflow execution on the same target resource. Only ONE workflow can remediate a resource at any given time, regardless of workflow type.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Parallel workflows on the same resource can cause conflicts, unpredictable state, and cascading failures. Two different workflows (e.g., `increase-memory` and `restart-pods`) targeting the same deployment could interfere with each other.
+
+**Implementation**:
+- Before creating PipelineRun, check for other Running/Pending WorkflowExecutions on same `targetResource`
+- If found, set Phase=Skipped with Reason=ResourceBusy
+- Include `conflictingWorkflow` details in `skipDetails`
+- Emit audit event and notification
+- No PipelineRun created for skipped executions
+
+**Acceptance Criteria**:
+- ✅ Only one workflow runs on a target resource at a time
+- ✅ Second workflow is Skipped (not queued or failed)
+- ✅ `skipDetails.conflictingWorkflow` populated with blocking workflow info
+- ✅ Audit trail records skipped execution with reason
+- ✅ Different targets can run in parallel
+
+**Test Coverage**:
+- Unit: Resource lock checking logic
+- Integration: Concurrent WorkflowExecution creation
+- E2E: Parallel signals targeting same resource
+
+**Related DDs**: DD-CONTRACT-001 v1.4 (Resource Locking)
+
+---
+
+#### BR-WE-010: Cooldown - Prevent Redundant Sequential Execution
+
+**Description**: WorkflowExecution Controller MUST prevent the same workflow from executing on the same target within a cooldown period (default: 5 minutes). This prevents redundant remediations from duplicate signals.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Multiple signals can resolve to the same root cause and workflow (e.g., 10 pod evictions due to node DiskPressure all trigger `node-disk-cleanup`). Only one execution should occur; subsequent identical requests should be skipped.
+
+**Implementation**:
+- After resource lock check, check for recent Completed/Failed WorkflowExecutions with same `workflowId` + `targetResource`
+- If found within cooldown period, set Phase=Skipped with Reason=RecentlyRemediated
+- Include `recentRemediation` details in `skipDetails`
+- Different workflows on same target ARE allowed (only same workflow+target blocked)
+- Cooldown period configurable via controller config
+
+**Acceptance Criteria**:
+- ✅ Same workflow+target skipped within cooldown period
+- ✅ Different workflow on same target is allowed
+- ✅ `skipDetails.recentRemediation` populated with previous execution info
+- ✅ `cooldownRemaining` indicates time until next execution allowed
+- ✅ Audit trail records skipped execution with reason
+
+**Test Coverage**:
+- Unit: Cooldown checking logic
+- Integration: Rapid sequential WorkflowExecution creation
+- E2E: Storm scenario with duplicate signals
+
+**Related DDs**: DD-CONTRACT-001 v1.4 (Resource Locking), DD-GATEWAY-008 (Storm Aggregation)
+
+---
+
+#### BR-WE-011: Target Resource Identification
+
+**Description**: WorkflowExecution MUST include `spec.targetResource` field identifying the Kubernetes resource being remediated. Format: `namespace/kind/name` for namespaced resources, `kind/name` for cluster-scoped.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Resource locking requires identifying the target resource. The `targetResource` field provides a canonical key for lock checking and audit trail.
+
+**Implementation**:
+- `spec.targetResource` is required field
+- Format: `namespace/kind/name` (e.g., `payment/deployment/payment-api`)
+- For cluster-scoped: `kind/name` (e.g., `node/worker-node-1`)
+- Populated by RemediationOrchestrator from signal context
+- Used as cache key for resource locking
+
+**Acceptance Criteria**:
+- ✅ `targetResource` is required in CRD validation
+- ✅ Format enforced via validation webhook
+- ✅ Used for resource lock comparisons
+- ✅ Included in audit trail
+
+**Test Coverage**:
+- Unit: Target resource parsing and comparison
+- Integration: CRD validation
+
+**Related DDs**: DD-CONTRACT-001 v1.4
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Target Coverage
@@ -272,14 +366,17 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 | BR ID | Unit | Integration | E2E | Total |
 |-------|------|-------------|-----|-------|
-| BR-WF-001 | ✅ | ✅ | ✅ | 100% |
-| BR-WF-002 | ✅ | ✅ | ✅ | 100% |
-| BR-WF-003 | ✅ | ✅ | ✅ | 100% |
-| BR-WF-004 | ✅ | ✅ | ✅ | 100% |
-| BR-WF-005 | ✅ | ✅ | ✅ | 100% |
-| BR-WF-006 | ✅ | ✅ | - | 90% |
-| BR-WF-007 | ✅ | ✅ | - | 90% |
-| BR-WF-008 | ✅ | ✅ | - | 90% |
+| BR-WE-001 | ✅ | ✅ | ✅ | 100% |
+| BR-WE-002 | ✅ | ✅ | ✅ | 100% |
+| BR-WE-003 | ✅ | ✅ | ✅ | 100% |
+| BR-WE-004 | ✅ | ✅ | ✅ | 100% |
+| BR-WE-005 | ✅ | ✅ | ✅ | 100% |
+| BR-WE-006 | ✅ | ✅ | - | 90% |
+| BR-WE-007 | ✅ | ✅ | - | 90% |
+| BR-WE-008 | ✅ | ✅ | - | 90% |
+| BR-WE-009 | ✅ | ✅ | ✅ | 100% |
+| BR-WE-010 | ✅ | ✅ | ✅ | 100% |
+| BR-WE-011 | ✅ | ✅ | - | 90% |
 
 ---
 
@@ -298,13 +395,25 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | 2025-12-01 | **Resource Locking Safety**: Added BR-WE-009 (parallel prevention), BR-WE-010 (cooldown), BR-WE-011 (target identification). New `targetResource` spec field. New `Skipped` phase. See DD-WE-001 for design decision. |
 | 2.0 | 2025-11-28 | **SIMPLIFIED**: Engine-agnostic architecture. Reduced from 38 BRs to 8 BRs. Removed step orchestration, validation framework, rollback handling. |
 | 1.0 | 2025-10-13 | ❌ SUPERSEDED - Complex step orchestration with 38 BRs |
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: November 28, 2025
+**Document Version**: 3.0
+**Last Updated**: December 2, 2025
 **Maintained By**: Kubernaut Architecture Team
 **Status**: Ready for Implementation
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 3.0 | 2025-12-02 | **Standardization**: Changed BR prefix from `BR-WF-*` to `BR-WE-*` per [00-core-development-methodology.mdc](../../../.cursor/rules/00-core-development-methodology.mdc). API group updated to `workflowexecution.kubernaut.ai/v1alpha1`. |
+| 2.1 | 2025-12-01 | **Resource Locking Safety**: Added BR-WE-009 to BR-WE-011. New `targetResource` spec field. New `Skipped` phase. |
+| 2.0 | 2025-11-28 | **SIMPLIFIED**: Engine-agnostic architecture. Reduced from 38 BRs to 8 BRs. |
+| 1.0 | 2025-10-13 | ❌ SUPERSEDED - Complex step orchestration with 38 BRs |
 

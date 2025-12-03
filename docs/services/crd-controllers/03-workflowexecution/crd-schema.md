@@ -1,8 +1,8 @@
 ## CRD Schema Specification
 
-**Version**: 3.0
+**Version**: 3.1
 **Last Updated**: 2025-12-01
-**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.3, ADR-043
+**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043
 
 **Full Schema**: See [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
 
@@ -15,7 +15,7 @@
 | Document | Impact on CRD |
 |----------|---------------|
 | **ADR-044** | **Engine Delegation** - Tekton handles step orchestration; controller just creates PipelineRun |
-| **DD-CONTRACT-001 v1.3** | **Enhanced Failure Details** - Rich structured failure data for recovery flow |
+| **DD-CONTRACT-001 v1.4** | **Enhanced Failure Details** + **Resource Locking** - Rich failure data + parallel execution prevention |
 | **ADR-043** | **OCI Bundle** - Workflow definition lives in container, not CRD |
 | **DD-WORKFLOW-003** | **Parameters** - UPPER_SNAKE_CASE keys for Tekton params |
 | **BR-WE-001** | **Defense-in-Depth** - Parameter validation before Tekton creation |
@@ -79,6 +79,13 @@ type WorkflowExecutionSpec struct {
     // Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
     WorkflowRef WorkflowRef `json:"workflowRef"`
 
+    // TargetResource identifies the K8s resource being remediated
+    // Used for resource locking (v3.1) - prevents parallel workflows on same target
+    // Format: "namespace/kind/name" for namespaced resources
+    //         "kind/name" for cluster-scoped resources
+    // Example: "payment/deployment/payment-api", "node/worker-node-1"
+    TargetResource string `json:"targetResource"`
+
     // Parameters from LLM selection (per DD-WORKFLOW-003)
     // Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params
     Parameters map[string]string `json:"parameters"`
@@ -124,9 +131,11 @@ type ExecutionConfig struct {
 // WorkflowExecutionStatus defines the observed state
 // Simplified per ADR-044 - just tracks PipelineRun status
 // Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for recovery flow
+// Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
 type WorkflowExecutionStatus struct {
     // Phase tracks current execution stage
-    // +kubebuilder:validation:Enum=Pending;Running;Completed;Failed
+    // Skipped: Resource is busy (another workflow running) or recently remediated
+    // +kubebuilder:validation:Enum=Pending;Running;Completed;Failed;Skipped
     Phase string `json:"phase"`
 
     // StartTime when execution started
@@ -159,8 +168,93 @@ type WorkflowExecutionStatus struct {
     // RO uses this to populate AIAnalysis.Spec.PreviousExecutions for recovery
     FailureDetails *FailureDetails `json:"failureDetails,omitempty"`
 
+    // ========================================
+    // RESOURCE LOCKING (v3.1)
+    // DD-CONTRACT-001 v1.4: Prevents parallel workflows on same target
+    // ========================================
+
+    // SkipDetails contains information about why execution was skipped
+    // Populated when Phase=Skipped
+    // Enables RO to understand why workflow didn't execute
+    SkipDetails *SkipDetails `json:"skipDetails,omitempty"`
+
     // Conditions provide detailed status information
     Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// ========================================
+// SKIP DETAILS (v3.1)
+// DD-CONTRACT-001 v1.4: Resource locking prevents parallel/redundant execution
+// ========================================
+
+// SkipDetails contains information about why a WorkflowExecution was skipped
+// Provides context for notifications and audit trail
+type SkipDetails struct {
+    // Reason explains why execution was skipped
+    // +kubebuilder:validation:Enum=ResourceBusy;RecentlyRemediated
+    Reason string `json:"reason"`
+
+    // Message is a human-readable explanation
+    Message string `json:"message"`
+
+    // SkippedAt is when the skip decision was made
+    SkippedAt metav1.Time `json:"skippedAt"`
+
+    // ConflictingWorkflow contains details about the blocking workflow
+    // Populated when Reason=ResourceBusy
+    ConflictingWorkflow *ConflictingWorkflowRef `json:"conflictingWorkflow,omitempty"`
+
+    // RecentRemediation contains details about the recent execution
+    // Populated when Reason=RecentlyRemediated
+    RecentRemediation *RecentRemediationRef `json:"recentRemediation,omitempty"`
+}
+
+// SkipReasonCode defines reasons for skipping execution
+const (
+    // SkipReasonResourceBusy indicates another workflow is running on the target
+    SkipReasonResourceBusy = "ResourceBusy"
+
+    // SkipReasonRecentlyRemediated indicates same workflow+target was recently executed
+    SkipReasonRecentlyRemediated = "RecentlyRemediated"
+)
+
+// ConflictingWorkflowRef identifies the workflow blocking this execution
+type ConflictingWorkflowRef struct {
+    // Name of the conflicting WorkflowExecution CRD
+    Name string `json:"name"`
+
+    // WorkflowID of the conflicting workflow
+    WorkflowID string `json:"workflowId"`
+
+    // StartedAt when the conflicting workflow started
+    StartedAt metav1.Time `json:"startedAt"`
+
+    // TargetResource is the resource being remediated (for audit trail)
+    // Format: "namespace/kind/name" or "kind/name" for cluster-scoped
+    TargetResource string `json:"targetResource"`
+}
+
+// RecentRemediationRef identifies the recent execution that caused skip
+type RecentRemediationRef struct {
+    // Name of the recent WorkflowExecution CRD
+    Name string `json:"name"`
+
+    // WorkflowID that was executed
+    WorkflowID string `json:"workflowId"`
+
+    // CompletedAt when the workflow completed
+    CompletedAt metav1.Time `json:"completedAt"`
+
+    // Outcome of the recent execution (Completed/Failed)
+    Outcome string `json:"outcome"`
+
+    // TargetResource is the resource that was remediated
+    // Format: "namespace/kind/name" or "kind/name" for cluster-scoped
+    TargetResource string `json:"targetResource"`
+
+    // CooldownRemaining is how long until this target can be remediated again
+    // Format: Go duration string (e.g., "4m30s")
+    CooldownRemaining string `json:"cooldownRemaining,omitempty"`
 }
 
 // FailureDetails contains structured failure information for recovery
@@ -293,25 +387,25 @@ func init() {
 ## Complete YAML Example
 
 ```yaml
-apiVersion: kubernaut.io/v1alpha1
+apiVersion: workflowexecution.kubernaut.ai/v1alpha1
 kind: WorkflowExecution
 metadata:
   name: workflow-payment-oom-001
   namespace: kubernaut-system
   ownerReferences:
-  - apiVersion: kubernaut.io/v1alpha1
+  - apiVersion: workflowexecution.kubernaut.ai/v1alpha1
     kind: RemediationRequest
     name: remediation-payment-oom
     uid: abc-123-def-456
     controller: true
   labels:
-    kubernaut.io/remediation-request: remediation-payment-oom
-    kubernaut.io/workflow-id: oomkill-increase-memory
+    kubernaut.ai/remediation-request: remediation-payment-oom
+    kubernaut.ai/workflow-id: oomkill-increase-memory
 spec:
   remediationRequestRef:
     name: remediation-payment-oom
     namespace: kubernaut-system
-    apiVersion: kubernaut.io/v1alpha1
+    apiVersion: workflowexecution.kubernaut.ai/v1alpha1
     kind: RemediationRequest
 
   workflowRef:
@@ -319,6 +413,9 @@ spec:
     version: "1.0.0"
     containerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0"
     containerDigest: "sha256:abc123def456..."
+
+  # v3.1: Target resource for resource locking
+  targetResource: "payment/deployment/payment-api"
 
   parameters:
     NAMESPACE: "payment"
@@ -366,25 +463,25 @@ status:
 ## Complete YAML Example (Failed Execution with FailureDetails)
 
 ```yaml
-apiVersion: kubernaut.io/v1alpha1
+apiVersion: workflowexecution.kubernaut.ai/v1alpha1
 kind: WorkflowExecution
 metadata:
   name: workflow-payment-oom-002
   namespace: kubernaut-system
   ownerReferences:
-  - apiVersion: kubernaut.io/v1alpha1
+  - apiVersion: workflowexecution.kubernaut.ai/v1alpha1
     kind: RemediationRequest
     name: remediation-payment-oom
     uid: abc-123-def-456
     controller: true
   labels:
-    kubernaut.io/remediation-request: remediation-payment-oom
-    kubernaut.io/workflow-id: oomkill-increase-memory
+    kubernaut.ai/remediation-request: remediation-payment-oom
+    kubernaut.ai/workflow-id: oomkill-increase-memory
 spec:
   remediationRequestRef:
     name: remediation-payment-oom
     namespace: kubernaut-system
-    apiVersion: kubernaut.io/v1alpha1
+    apiVersion: workflowexecution.kubernaut.ai/v1alpha1
     kind: RemediationRequest
 
   workflowRef:
@@ -392,6 +489,9 @@ spec:
     version: "1.0.0"
     containerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0"
     containerDigest: "sha256:abc123def456..."
+
+  # v3.1: Target resource for resource locking
+  targetResource: "payment/deployment/payment-api"
 
   parameters:
     NAMESPACE: "payment"
@@ -457,6 +557,145 @@ status:
 
 ---
 
+## Complete YAML Example (Skipped Execution - ResourceBusy)
+
+```yaml
+apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+kind: WorkflowExecution
+metadata:
+  name: workflow-payment-oom-003
+  namespace: kubernaut-system
+  ownerReferences:
+  - apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+    kind: RemediationRequest
+    name: remediation-payment-oom-duplicate
+    uid: def-456-ghi-789
+    controller: true
+  labels:
+    kubernaut.ai/remediation-request: remediation-payment-oom-duplicate
+    kubernaut.ai/workflow-id: oomkill-increase-memory
+spec:
+  remediationRequestRef:
+    name: remediation-payment-oom-duplicate
+    namespace: kubernaut-system
+    apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+    kind: RemediationRequest
+
+  workflowRef:
+    workflowId: "oomkill-increase-memory"
+    version: "1.0.0"
+    containerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0"
+    containerDigest: "sha256:abc123def456..."
+
+  targetResource: "payment/deployment/payment-api"
+
+  parameters:
+    NAMESPACE: "payment"
+    DEPLOYMENT_NAME: "payment-api"
+    NEW_MEMORY_LIMIT: "1Gi"
+
+  confidence: 0.89
+  rationale: "OOMKill pattern detected"
+
+  executionConfig:
+    timeout: "30m"
+    serviceAccountName: "kubernaut-workflow-runner"
+
+status:
+  # v3.1: Skipped phase for resource locking
+  phase: Skipped
+
+  # No PipelineRun created - skipped before execution
+  pipelineRunRef: null
+
+  skipDetails:
+    reason: "ResourceBusy"
+    message: "Another workflow is currently remediating this resource"
+    skippedAt: "2025-12-01T10:16:00Z"
+    conflictingWorkflow:
+      name: "workflow-payment-oom-001"
+      workflowId: "oomkill-increase-memory"
+      startedAt: "2025-12-01T10:15:00Z"
+      targetResource: "payment/deployment/payment-api"
+
+  conditions:
+  - type: ResourceLockAcquired
+    status: "False"
+    reason: ResourceBusy
+    message: "Resource payment/deployment/payment-api is being remediated by workflow-payment-oom-001"
+    lastTransitionTime: "2025-12-01T10:16:00Z"
+```
+
+---
+
+## Complete YAML Example (Skipped Execution - RecentlyRemediated)
+
+```yaml
+apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+kind: WorkflowExecution
+metadata:
+  name: workflow-node-disk-004
+  namespace: kubernaut-system
+  ownerReferences:
+  - apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+    kind: RemediationRequest
+    name: remediation-node-disk-duplicate
+    uid: ghi-789-jkl-012
+    controller: true
+  labels:
+    kubernaut.ai/remediation-request: remediation-node-disk-duplicate
+    kubernaut.ai/workflow-id: node-disk-cleanup
+spec:
+  remediationRequestRef:
+    name: remediation-node-disk-duplicate
+    namespace: kubernaut-system
+    apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+    kind: RemediationRequest
+
+  workflowRef:
+    workflowId: "node-disk-cleanup"
+    version: "1.0.0"
+    containerImage: "quay.io/kubernaut/workflow-disk-cleanup:v1.0.0"
+    containerDigest: "sha256:def456ghi789..."
+
+  targetResource: "node/worker-node-1"
+
+  parameters:
+    NODE_NAME: "worker-node-1"
+    CLEANUP_PATHS: "/var/log,/tmp"
+
+  confidence: 0.95
+  rationale: "DiskPressure detected on node"
+
+  executionConfig:
+    timeout: "15m"
+    serviceAccountName: "kubernaut-node-runner"
+
+status:
+  phase: Skipped
+
+  skipDetails:
+    reason: "RecentlyRemediated"
+    message: "Same workflow was recently executed on this resource"
+    skippedAt: "2025-12-01T10:20:00Z"
+    recentRemediation:
+      name: "workflow-node-disk-001"
+      workflowId: "node-disk-cleanup"
+      completedAt: "2025-12-01T10:18:00Z"
+      outcome: "Completed"
+      targetResource: "node/worker-node-1"
+      cooldownRemaining: "4m30s"
+
+  conditions:
+  - type: ResourceLockAcquired
+    status: "False"
+    reason: RecentlyRemediated
+    message: "Resource node/worker-node-1 was remediated 2m ago by workflow-node-disk-001 (cooldown: 5m)"
+    lastTransitionTime: "2025-12-01T10:20:00Z"
+```
+
+---
+
 ## Controller Logic (Simplified per ADR-044)
 
 ```go
@@ -495,7 +734,7 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
         return r.handlePending(ctx, &wfe)
     case "Running":
         return r.handleRunning(ctx, &wfe)
-    case "Completed", "Failed":
+    case "Completed", "Failed", "Skipped":
         // Terminal states - no action needed
         return ctrl.Result{}, nil
     default:
@@ -504,12 +743,33 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
     }
 }
 
-// handlePending creates the Tekton PipelineRun
+// handlePending checks resource lock and creates the Tekton PipelineRun
 func (r *WorkflowExecutionReconciler) handlePending(
     ctx context.Context,
     wfe *kubernautv1alpha1.WorkflowExecution,
 ) (ctrl.Result, error) {
     _log := log.FromContext(ctx)
+
+    // v3.1: Check resource lock BEFORE creating PipelineRun
+    skipDetails, shouldSkip := r.checkResourceLock(ctx, wfe)
+    if shouldSkip {
+        _log.Info("Skipping execution due to resource lock",
+            "reason", skipDetails.Reason,
+            "target", wfe.Spec.TargetResource)
+
+        wfe.Status.Phase = "Skipped"
+        wfe.Status.SkipDetails = skipDetails
+
+        if err := r.Status().Update(ctx, wfe); err != nil {
+            return ctrl.Result{}, err
+        }
+
+        // Write audit trace for skipped execution
+        go r.AuditClient.WriteExecutionSkipped(ctx, wfe)
+
+        return ctrl.Result{}, nil
+    }
+
     _log.Info("Creating PipelineRun", "workflowId", wfe.Spec.WorkflowRef.WorkflowID)
 
     // Build Tekton PipelineRun
@@ -569,8 +829,8 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
             Name:      fmt.Sprintf("%s-run", wfe.Name),
             Namespace: wfe.Namespace,
             Labels: map[string]string{
-                "kubernaut.io/workflow-execution": wfe.Name,
-                "kubernaut.io/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+                "kubernaut.ai/workflow-execution": wfe.Name,
+                "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
             },
             OwnerReferences: []metav1.OwnerReference{
                 {
@@ -835,6 +1095,88 @@ func (r *WorkflowExecutionReconciler) generateNaturalLanguageSummary(
 
     return sb.String()
 }
+
+// ========================================
+// RESOURCE LOCKING LOGIC (v3.1)
+// DD-CONTRACT-001 v1.4: Prevents parallel/redundant workflows on same target
+// ========================================
+
+// checkResourceLock verifies no other workflow is running or recently ran on the target
+// Returns (SkipDetails, shouldSkip)
+func (r *WorkflowExecutionReconciler) checkResourceLock(
+    ctx context.Context,
+    wfe *kubernautv1alpha1.WorkflowExecution,
+) (*kubernautv1alpha1.SkipDetails, bool) {
+    targetResource := wfe.Spec.TargetResource
+    workflowID := wfe.Spec.WorkflowRef.WorkflowID
+
+    // List all WorkflowExecutions in the namespace
+    var wfeList kubernautv1alpha1.WorkflowExecutionList
+    if err := r.List(ctx, &wfeList, client.InNamespace(wfe.Namespace)); err != nil {
+        // On error, allow execution (fail-open for availability)
+        return nil, false
+    }
+
+    for _, existing := range wfeList.Items {
+        // Skip self
+        if existing.Name == wfe.Name {
+            continue
+        }
+
+        // Check if targeting the same resource
+        if existing.Spec.TargetResource != targetResource {
+            continue
+        }
+
+        // Check 1: Is another workflow RUNNING on this resource?
+        if existing.Status.Phase == "Running" || existing.Status.Phase == "Pending" {
+            return &kubernautv1alpha1.SkipDetails{
+                Reason:    kubernautv1alpha1.SkipReasonResourceBusy,
+                Message:   "Another workflow is currently remediating this resource",
+                SkippedAt: metav1.Now(),
+                ConflictingWorkflow: &kubernautv1alpha1.ConflictingWorkflowRef{
+                    Name:           existing.Name,
+                    WorkflowID:     existing.Spec.WorkflowRef.WorkflowID,
+                    StartedAt:      *existing.Status.StartTime,
+                    TargetResource: existing.Spec.TargetResource,
+                },
+            }, true
+        }
+
+        // Check 2: Was the SAME workflow recently executed on this resource?
+        // Only check same workflow+target combination
+        if existing.Spec.WorkflowRef.WorkflowID != workflowID {
+            continue // Different workflow is allowed
+        }
+
+        // Check if recently completed (within cooldown period)
+        if existing.Status.Phase == "Completed" || existing.Status.Phase == "Failed" {
+            if existing.Status.CompletionTime != nil {
+                cooldown := 5 * time.Minute // Configurable via controller config
+                elapsed := time.Since(existing.Status.CompletionTime.Time)
+
+                if elapsed < cooldown {
+                    remaining := cooldown - elapsed
+                    return &kubernautv1alpha1.SkipDetails{
+                        Reason:    kubernautv1alpha1.SkipReasonRecentlyRemediated,
+                        Message:   "Same workflow was recently executed on this resource",
+                        SkippedAt: metav1.Now(),
+                        RecentRemediation: &kubernautv1alpha1.RecentRemediationRef{
+                            Name:              existing.Name,
+                            WorkflowID:        existing.Spec.WorkflowRef.WorkflowID,
+                            CompletedAt:       *existing.Status.CompletionTime,
+                            Outcome:           existing.Status.Phase,
+                            TargetResource:    existing.Spec.TargetResource,
+                            CooldownRemaining: remaining.Round(time.Second).String(),
+                        },
+                    }, true
+                }
+            }
+        }
+    }
+
+    return nil, false
+}
 ```
 
 ---
@@ -887,6 +1229,7 @@ func (r *WorkflowExecutionReconciler) generateNaturalLanguageSummary(
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.1 | 2025-12-01 | **Resource Locking (V1.0 Safety)**: Added `targetResource` to spec. Added `Skipped` phase with `SkipDetails` struct. Prevents parallel workflows on same target (ResourceBusy). Prevents redundant sequential workflows with same workflow+target (RecentlyRemediated). Added `SkipDetails`, `ConflictingWorkflowRef`, `RecentRemediationRef` types. Added controller logic for `checkResourceLock()`. Aligned with DD-CONTRACT-001 v1.4. Audit trail for skipped executions. |
 | 3.0 | 2025-12-01 | **Enhanced Failure Details**: Added `FailureDetails` struct with structured failure information for recovery flow. Includes `failedTaskIndex`, `failedTaskName`, `reason` (K8s-style enum), `naturalLanguageSummary` for LLM context. Deprecated `failureReason` string field. Added controller logic for extracting failure details from PipelineRun. Aligned with DD-CONTRACT-001 v1.3. |
 | 2.0 | 2025-11-28 | **Breaking**: Simplified schema per ADR-044. Replaced `WorkflowDefinition` with `WorkflowRef`. Removed step orchestration, status tracking, rollback logic. Controller now creates single PipelineRun and watches status. |
 | 1.x | Prior | Complex schema with embedded WorkflowDefinition, step-level status, rollback spec, preconditions/postconditions |

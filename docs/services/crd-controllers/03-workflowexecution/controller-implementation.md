@@ -1,14 +1,31 @@
 ## Controller Implementation
 
+**Version**: 4.0
+**Last Updated**: 2025-12-02
+**CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
+**Status**: ✅ Updated for Tekton Architecture (ADR-044)
+
 **Location**: `internal/controller/workflowexecution_controller.go`
+
+---
+
+## Changelog
+
+### Version 4.0 (2025-12-02)
+- ✅ **Rewritten**: Complete rewrite for Tekton PipelineRun delegation
+- ✅ **Removed**: All step orchestration logic (Tekton handles this)
+- ✅ **Added**: Resource locking implementation (DD-WE-001)
+- ✅ **Updated**: Simplified reconciliation phases
+
+---
 
 ### Controller Configuration
 
-**Critical Patterns from [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)**:
+**Critical Patterns**:
 1. **Owner References**: WorkflowExecution CRD owned by RemediationRequest for cascade deletion
 2. **Finalizers**: Cleanup coordination before deletion
-3. **Watch Optimization**: Watches KubernetesExecution CRDs for step completion
-4. **Timeout Handling**: Phase-level timeout detection and escalation
+3. **PipelineRun Watch**: Watch owned PipelineRun for status sync
+4. **Resource Locking**: Check for active executions on same target (DD-WE-001)
 5. **Event Emission**: Operational visibility through Kubernetes events
 
 ```go
@@ -21,7 +38,6 @@ import (
 
     corev1 "k8s.io/api/core/v1"
     apierrors "k8s.io/apimachinery/pkg/api/errors"
-    apimeta "k8s.io/apimachinery/pkg/api/meta"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime"
     "k8s.io/client-go/tools/record"
@@ -30,530 +46,452 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
     "sigs.k8s.io/controller-runtime/pkg/log"
 
-    remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1"
-    executorv1 "github.com/jordigilh/kubernaut/api/executor/v1"
-    workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflow/v1"
+    tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+    remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+    workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
 const (
     // Finalizer for cleanup coordination
-    workflowExecutionFinalizer = "workflowexecution.kubernaut.io/finalizer"
+    workflowExecutionFinalizer = "workflowexecution.kubernaut.ai/finalizer"
 
-    // Timeout configuration
-    defaultPlanningTimeout   = 30 * time.Second
-    defaultValidationTimeout = 5 * time.Minute
-    defaultStepTimeout       = 5 * time.Minute
-    defaultMonitoringTimeout = 10 * time.Minute
+    // Cooldown period for same workflow on same target
+    defaultCooldownPeriod = 5 * time.Minute
+
+    // Status check interval for running PipelineRuns
+    statusCheckInterval = 10 * time.Second
 )
 
 // WorkflowExecutionReconciler reconciles a WorkflowExecution object
 type WorkflowExecutionReconciler struct {
     client.Client
     Scheme         *runtime.Scheme
-    Recorder       record.EventRecorder  // Event emission for visibility
-    WorkflowEngine WorkflowEngine        // Workflow planning and orchestration
-    Validator      WorkflowValidator     // Safety validation
-    Monitor        WorkflowMonitor       // Execution monitoring
+    Recorder       record.EventRecorder
+    CooldownPeriod time.Duration
 }
 
 // ========================================
-// ARCHITECTURAL NOTE: Remediation Orchestrator Pattern
+// ARCHITECTURAL NOTE: Tekton Delegation Pattern
 // ========================================
 //
-// This controller (WorkflowExecution) updates ONLY its own status.
-// The RemediationRequest Controller (Remediation Orchestrator) watches this CRD and aggregates status.
+// This controller DELEGATES workflow execution to Tekton.
+// WorkflowExecution creates exactly one PipelineRun per execution.
+// Tekton handles all step orchestration, parallelism, and dependencies.
 //
-// DO NOT update RemediationRequest.status from this controller.
-// The watch-based coordination pattern handles all status aggregation automatically.
+// This controller:
+// - Creates PipelineRun with bundle resolver
+// - Syncs status from PipelineRun to WorkflowExecution
+// - Enforces resource locking (DD-WE-001)
 //
-// See: docs/services/crd-controllers/05-remediationorchestrator/overview.md
-// See: docs/services/crd-controllers/CENTRAL_CONTROLLER_VIOLATION_ANALYSIS.md
+// See: ADR-044 (Tekton Delegation Architecture)
+// See: DD-WE-001 (Resource Locking Safety)
 
-//+kubebuilder:rbac:groups=workflowexecution.kubernaut.io,resources=workflowexecutions,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=workflowexecution.kubernaut.io,resources=workflowexecutions/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=workflowexecution.kubernaut.io,resources=workflowexecutions/finalizers,verbs=update
-//+kubebuilder:rbac:groups=kubernetesexecution.kubernaut.io,resources=kubernetesexecutions,verbs=create;get;list;watch
-//+kubebuilder:rbac:groups=kubernaut.io,resources=alertremediations,verbs=get;list;watch
+//+kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions/finalizers,verbs=update
+//+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=create;get;list;watch;delete
+//+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups=remediation.kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     log := log.FromContext(ctx)
 
     // Fetch WorkflowExecution CRD
-    var wf workflowexecutionv1.WorkflowExecution
-    if err := r.Get(ctx, req.NamespacedName, &wf); err != nil {
+    var wfe workflowexecutionv1.WorkflowExecution
+    if err := r.Get(ctx, req.NamespacedName, &wfe); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
     // Handle deletion with finalizer
-    if !wf.DeletionTimestamp.IsZero() {
-        return r.reconcileDelete(ctx, &wf)
+    if !wfe.DeletionTimestamp.IsZero() {
+        return r.reconcileDelete(ctx, &wfe)
     }
 
     // Add finalizer if not present
-    if !controllerutil.ContainsFinalizer(&wf, workflowExecutionFinalizer) {
-        controllerutil.AddFinalizer(&wf, workflowExecutionFinalizer)
-        if err := r.Update(ctx, &wf); err != nil {
-            return ctrl.Result{}, err
-        }
-    }
-
-    // Set owner reference to RemediationRequest (for cascade deletion)
-    if err := r.ensureOwnerReference(ctx, &wf); err != nil {
-        log.Error(err, "Failed to set owner reference")
-        r.Recorder.Event(&wf, "Warning", "OwnerReferenceFailed",
-            fmt.Sprintf("Failed to set owner reference: %v", err))
-        return ctrl.Result{RequeueAfter: time.Second * 30}, err
-    }
-
-    // Check for phase timeout
-    if r.isPhaseTimedOut(&wf) {
-        return r.handlePhaseTimeout(ctx, &wf)
-    }
-
-    // Initialize phase if empty
-    if wf.Status.Phase == "" {
-        wf.Status.Phase = "planning"
-        wf.Status.PlanningStartTime = &metav1.Time{Time: time.Now()}
-        if err := r.Status().Update(ctx, &wf); err != nil {
+    if !controllerutil.ContainsFinalizer(&wfe, workflowExecutionFinalizer) {
+        controllerutil.AddFinalizer(&wfe, workflowExecutionFinalizer)
+        if err := r.Update(ctx, &wfe); err != nil {
             return ctrl.Result{}, err
         }
     }
 
     // Reconcile based on current phase
-    var result ctrl.Result
-    var err error
-
-    switch wf.Status.Phase {
-    case "planning":
-        result, err = r.reconcilePlanning(ctx, &wf)
-    case "validating":
-        result, err = r.reconcileValidating(ctx, &wf)
-    case "executing":
-        result, err = r.reconcileExecuting(ctx, &wf)
-    case "monitoring":
-        result, err = r.reconcileMonitoring(ctx, &wf)
-    case "rolling_back":
-        result, err = r.reconcileRollback(ctx, &wf)
-    case "completed", "failed":
-        // Terminal states - use optimized requeue strategy
-        return r.determineRequeueStrategy(&wf), nil
+    switch wfe.Status.Phase {
+    case "", workflowexecutionv1.PhasePending:
+        return r.reconcilePending(ctx, &wfe)
+    case workflowexecutionv1.PhaseRunning:
+        return r.reconcileRunning(ctx, &wfe)
+    case workflowexecutionv1.PhaseCompleted, workflowexecutionv1.PhaseFailed, workflowexecutionv1.PhaseSkipped:
+        // Terminal states - no requeue
+        return ctrl.Result{}, nil
     default:
-        log.Error(nil, "Unknown phase", "phase", wf.Status.Phase)
-        r.Recorder.Event(&wf, "Warning", "UnknownPhase",
-            fmt.Sprintf("Unknown phase: %s", wf.Status.Phase))
-        return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+        log.Error(nil, "Unknown phase", "phase", wfe.Status.Phase)
+        return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
     }
-
-    return result, err
 }
 
-// Additional controller methods would be implemented here...
-// reconcilePlanning, reconcileValidating, reconcileExecuting, reconcileMonitoring, etc.
+// reconcilePending handles the Pending phase
+// - Validates spec
+// - Checks resource locks (DD-WE-001)
+// - Creates PipelineRun
+func (r *WorkflowExecutionReconciler) reconcilePending(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+) (ctrl.Result, error) {
+    log := log.FromContext(ctx)
+
+    // Step 1: Validate spec
+    if err := r.validateSpec(wfe); err != nil {
+        log.Error(err, "Spec validation failed")
+        return r.markFailed(ctx, wfe, "ValidationError", err.Error(), false)
+    }
+
+    // Step 2: Check resource lock (DD-WE-001)
+    if blocked, conflicting := r.checkResourceLock(ctx, wfe); blocked {
+        log.Info("Resource locked by another execution", "conflicting", conflicting.Name)
+        return r.markSkipped(ctx, wfe, "ResourceBusy", conflicting)
+    }
+
+    // Step 3: Check cooldown (DD-WE-001)
+    if recent := r.checkCooldown(ctx, wfe); recent != nil {
+        log.Info("Same workflow ran recently", "previous", recent.Name)
+        return r.markSkippedCooldown(ctx, wfe, "RecentlyRemediated", recent)
+    }
+
+    // Step 4: Create PipelineRun
+    pr := r.buildPipelineRun(wfe)
+    if err := r.Create(ctx, pr); err != nil {
+        log.Error(err, "Failed to create PipelineRun")
+        return r.markFailed(ctx, wfe, "PipelineRunCreationFailed", err.Error(), false)
+    }
+
+    log.Info("Created PipelineRun", "pipelineRun", pr.Name)
+    r.Recorder.Event(wfe, "Normal", "PipelineRunCreated",
+        fmt.Sprintf("Created PipelineRun %s for workflow %s", pr.Name, wfe.Spec.WorkflowRef.WorkflowID))
+
+    // Transition to Running
+    wfe.Status.Phase = workflowexecutionv1.PhaseRunning
+    wfe.Status.StartTime = &metav1.Time{Time: time.Now()}
+    wfe.Status.PipelineRunRef = &corev1.ObjectReference{
+        Name:      pr.Name,
+        Namespace: pr.Namespace,
+    }
+
+    if err := r.Status().Update(ctx, wfe); err != nil {
+        return ctrl.Result{}, err
+    }
+
+    return ctrl.Result{RequeueAfter: statusCheckInterval}, nil
+}
+
+// reconcileRunning handles the Running phase
+// - Gets PipelineRun status
+// - Maps Tekton status to WFE status
+func (r *WorkflowExecutionReconciler) reconcileRunning(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+) (ctrl.Result, error) {
+    log := log.FromContext(ctx)
+
+    // Get PipelineRun
+    var pr tektonv1.PipelineRun
+    if err := r.Get(ctx, client.ObjectKey{
+        Name:      wfe.Status.PipelineRunRef.Name,
+        Namespace: wfe.Namespace,
+    }, &pr); err != nil {
+        if apierrors.IsNotFound(err) {
+            log.Error(err, "PipelineRun not found - deleted externally")
+            return r.markFailed(ctx, wfe, "PipelineRunDeleted", "PipelineRun was deleted externally", false)
+        }
+        return ctrl.Result{}, err
+    }
+
+    // Check Tekton conditions
+    for _, cond := range pr.Status.Conditions {
+        if cond.Type != "Succeeded" {
+            continue
+        }
+
+        switch cond.Status {
+        case "True":
+            // Success!
+            return r.markCompleted(ctx, wfe, &pr)
+        case "False":
+            // Failure - extract details
+            return r.markFailedFromPipelineRun(ctx, wfe, &pr, cond)
+        default:
+            // Still running - check again soon
+            log.V(1).Info("PipelineRun still running", "reason", cond.Reason)
+        }
+    }
+
+    // Requeue for next status check
+    return ctrl.Result{RequeueAfter: statusCheckInterval}, nil
+}
+
+// buildPipelineRun creates a PipelineRun with bundle resolver
+func (r *WorkflowExecutionReconciler) buildPipelineRun(
+    wfe *workflowexecutionv1.WorkflowExecution,
+) *tektonv1.PipelineRun {
+    // Convert parameters to Tekton format
+    params := make([]tektonv1.Param, 0, len(wfe.Spec.Parameters))
+    for key, value := range wfe.Spec.Parameters {
+        params = append(params, tektonv1.Param{
+            Name:  key,
+            Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: value},
+        })
+    }
+
+    return &tektonv1.PipelineRun{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      wfe.Name,
+            Namespace: wfe.Namespace,
+            Labels: map[string]string{
+                "kubernaut.ai/workflow-execution": wfe.Name,
+                "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+                "kubernaut.ai/target-resource":    wfe.Spec.TargetResource,
+            },
+            OwnerReferences: []metav1.OwnerReference{
+                *metav1.NewControllerRef(wfe, workflowexecutionv1.GroupVersion.WithKind("WorkflowExecution")),
+            },
+        },
+        Spec: tektonv1.PipelineRunSpec{
+            PipelineRef: &tektonv1.PipelineRef{
+                ResolverRef: tektonv1.ResolverRef{
+                    Resolver: "bundles",
+                    Params: []tektonv1.Param{
+                        {Name: "bundle", Value: tektonv1.ParamValue{StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
+                        {Name: "name", Value: tektonv1.ParamValue{StringVal: "workflow"}},
+                    },
+                },
+            },
+            Params: params,
+        },
+    }
+}
+
+// checkResourceLock checks if another WFE is running on the same target (DD-WE-001)
+func (r *WorkflowExecutionReconciler) checkResourceLock(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+) (blocked bool, conflicting *workflowexecutionv1.WorkflowExecution) {
+    var wfeList workflowexecutionv1.WorkflowExecutionList
+    if err := r.List(ctx, &wfeList, client.InNamespace(wfe.Namespace)); err != nil {
+        return false, nil
+    }
+
+    for i := range wfeList.Items {
+        other := &wfeList.Items[i]
+        if other.Name == wfe.Name {
+            continue
+        }
+        if other.Spec.TargetResource != wfe.Spec.TargetResource {
+            continue
+        }
+        if other.Status.Phase == workflowexecutionv1.PhaseRunning ||
+           other.Status.Phase == workflowexecutionv1.PhasePending {
+            return true, other
+        }
+    }
+
+    return false, nil
+}
+
+// checkCooldown checks if same workflow ran recently on same target (DD-WE-001)
+func (r *WorkflowExecutionReconciler) checkCooldown(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+) *workflowexecutionv1.WorkflowExecution {
+    cooldown := r.CooldownPeriod
+    if cooldown == 0 {
+        cooldown = defaultCooldownPeriod
+    }
+
+    var wfeList workflowexecutionv1.WorkflowExecutionList
+    if err := r.List(ctx, &wfeList, client.InNamespace(wfe.Namespace)); err != nil {
+        return nil
+    }
+
+    for i := range wfeList.Items {
+        other := &wfeList.Items[i]
+        if other.Name == wfe.Name {
+            continue
+        }
+        if other.Spec.TargetResource != wfe.Spec.TargetResource {
+            continue
+        }
+        if other.Spec.WorkflowRef.WorkflowID != wfe.Spec.WorkflowRef.WorkflowID {
+            continue
+        }
+        if other.Status.Phase == workflowexecutionv1.PhaseCompleted &&
+           other.Status.CompletionTime != nil &&
+           time.Since(other.Status.CompletionTime.Time) < cooldown {
+            return other
+        }
+    }
+
+    return nil
+}
+
+// markCompleted transitions to Completed phase
+func (r *WorkflowExecutionReconciler) markCompleted(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+    pr *tektonv1.PipelineRun,
+) (ctrl.Result, error) {
+    wfe.Status.Phase = workflowexecutionv1.PhaseCompleted
+    wfe.Status.Outcome = workflowexecutionv1.OutcomeSuccess
+    wfe.Status.CompletionTime = pr.Status.CompletionTime
+    wfe.Status.Message = "Workflow completed successfully"
+
+    r.Recorder.Event(wfe, "Normal", "WorkflowCompleted",
+        fmt.Sprintf("Workflow %s completed successfully", wfe.Spec.WorkflowRef.WorkflowID))
+
+    return ctrl.Result{}, r.Status().Update(ctx, wfe)
+}
+
+// markFailed transitions to Failed phase
+func (r *WorkflowExecutionReconciler) markFailed(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+    reason string,
+    message string,
+    wasExecutionFailure bool,
+) (ctrl.Result, error) {
+    wfe.Status.Phase = workflowexecutionv1.PhaseFailed
+    wfe.Status.Outcome = workflowexecutionv1.OutcomeFailed
+    wfe.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+    wfe.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
+        Reason:              reason,
+        Message:             message,
+        FailedAt:            metav1.Now(),
+        WasExecutionFailure: wasExecutionFailure,
+        RequiresManualReview: wasExecutionFailure, // Manual review for execution failures
+        NaturalLanguageSummary: fmt.Sprintf(
+            "Workflow '%s' failed on target '%s': %s - %s",
+            wfe.Spec.WorkflowRef.WorkflowID,
+            wfe.Spec.TargetResource,
+            reason,
+            message,
+        ),
+    }
+
+    r.Recorder.Event(wfe, "Warning", "WorkflowFailed",
+        fmt.Sprintf("Workflow %s failed: %s", wfe.Spec.WorkflowRef.WorkflowID, reason))
+
+    return ctrl.Result{}, r.Status().Update(ctx, wfe)
+}
+
+// markSkipped transitions to Skipped phase (resource lock)
+func (r *WorkflowExecutionReconciler) markSkipped(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+    reason string,
+    conflicting *workflowexecutionv1.WorkflowExecution,
+) (ctrl.Result, error) {
+    wfe.Status.Phase = workflowexecutionv1.PhaseSkipped
+    wfe.Status.SkipDetails = &workflowexecutionv1.SkipDetails{
+        Reason:  reason,
+        Message: fmt.Sprintf("Target resource %s is being remediated by %s", wfe.Spec.TargetResource, conflicting.Name),
+        ConflictingWorkflow: &workflowexecutionv1.ConflictingWorkflowInfo{
+            Name:       conflicting.Name,
+            WorkflowID: conflicting.Spec.WorkflowRef.WorkflowID,
+            StartTime:  conflicting.Status.StartTime,
+        },
+        SkippedAt: metav1.Now(),
+    }
+
+    r.Recorder.Event(wfe, "Normal", "WorkflowSkipped",
+        fmt.Sprintf("Skipped: target %s already being remediated by %s", wfe.Spec.TargetResource, conflicting.Name))
+
+    return ctrl.Result{}, r.Status().Update(ctx, wfe)
+}
+
+// markSkippedCooldown transitions to Skipped phase (cooldown)
+func (r *WorkflowExecutionReconciler) markSkippedCooldown(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+    reason string,
+    recent *workflowexecutionv1.WorkflowExecution,
+) (ctrl.Result, error) {
+    wfe.Status.Phase = workflowexecutionv1.PhaseSkipped
+    wfe.Status.SkipDetails = &workflowexecutionv1.SkipDetails{
+        Reason:  reason,
+        Message: fmt.Sprintf("Same workflow ran at %s (cooldown active)", recent.Status.CompletionTime.Format(time.RFC3339)),
+        ConflictingWorkflow: &workflowexecutionv1.ConflictingWorkflowInfo{
+            Name:       recent.Name,
+            WorkflowID: recent.Spec.WorkflowRef.WorkflowID,
+            StartTime:  recent.Status.CompletionTime,
+        },
+        SkippedAt: metav1.Now(),
+    }
+
+    r.Recorder.Event(wfe, "Normal", "WorkflowSkipped",
+        fmt.Sprintf("Skipped: same workflow completed recently at %s", recent.Status.CompletionTime.Format(time.RFC3339)))
+
+    return ctrl.Result{}, r.Status().Update(ctx, wfe)
+}
+
+// validateSpec validates the WorkflowExecution spec
+func (r *WorkflowExecutionReconciler) validateSpec(wfe *workflowexecutionv1.WorkflowExecution) error {
+    if wfe.Spec.WorkflowRef.ContainerImage == "" {
+        return fmt.Errorf("workflowRef.containerImage is required")
+    }
+    if wfe.Spec.TargetResource == "" {
+        return fmt.Errorf("targetResource is required")
+    }
+    // Validate targetResource format: {namespace}/{kind}/{name}
+    parts := strings.Split(wfe.Spec.TargetResource, "/")
+    if len(parts) != 3 {
+        return fmt.Errorf("targetResource must be in format {namespace}/{kind}/{name}")
+    }
+    return nil
+}
+
+// reconcileDelete handles cleanup before deletion
+func (r *WorkflowExecutionReconciler) reconcileDelete(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+) (ctrl.Result, error) {
+    log := log.FromContext(ctx)
+
+    if controllerutil.ContainsFinalizer(wfe, workflowExecutionFinalizer) {
+        // Cleanup: Record final audit
+        log.Info("Cleaning up WorkflowExecution", "name", wfe.Name)
+
+        // Remove finalizer
+        controllerutil.RemoveFinalizer(wfe, workflowExecutionFinalizer)
+        if err := r.Update(ctx, wfe); err != nil {
+            return ctrl.Result{}, err
+        }
+    }
+
+    return ctrl.Result{}, nil
+}
 
 func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
         For(&workflowexecutionv1.WorkflowExecution{}).
-        Owns(&executorv1.KubernetesExecution{}).  // Watch KubernetesExecution CRDs
+        Owns(&tektonv1.PipelineRun{}).  // Watch owned PipelineRuns
         Complete(r)
 }
 ```
 
 ---
 
-## 🔄 **Recovery Coordination Notes**
+## Recovery Coordination
 
-**Status**: ✅ Phase 1 Critical Fix (C6)
-**Reference**: [`docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
-**Business Requirement**: BR-WF-RECOVERY-007
+**Status**: ✅ Aligned with Tekton Architecture
 
-### Overview
-
-**CRITICAL PRINCIPLE**: WorkflowExecution controller does NOT handle its own recovery. Recovery coordination is the responsibility of the Remediation Orchestrator Controller.
+**CRITICAL PRINCIPLE**: WorkflowExecution controller does NOT handle its own recovery. Recovery coordination is the responsibility of the RemediationOrchestrator.
 
 **Controller Responsibilities**:
-- ✅ **WorkflowExecution**: Detect failures, update status to "failed", record failure details
-- ✅ **Remediation Orchestrator**: Watch for "failed" status, evaluate recovery viability, create new AIAnalysis CRD
+- ✅ **WorkflowExecution**: Detect failures, update status to "Failed", extract failure details
+- ✅ **RemediationOrchestrator**: Watch for "Failed" status, evaluate recovery viability
 
-**Anti-Pattern**: WorkflowExecution directly triggering recovery actions
-
-### Failure Detection & Status Update
-
-When a workflow step fails, WorkflowExecution updates its own status:
-
-```go
-// In reconcileExecuting phase
-func (r *WorkflowExecutionReconciler) reconcileExecuting(
-    ctx context.Context,
-    wf *workflowexecutionv1.WorkflowExecution,
-) (ctrl.Result, error) {
-
-    // Execute current step
-    stepResult, err := r.executeStep(ctx, wf, currentStep)
-
-    if err != nil || stepResult.Failed {
-        // Record failure details in WorkflowExecution status
-        wf.Status.Phase = "failed"
-        wf.Status.FailedStep = currentStep.Index
-        wf.Status.FailureReason = fmt.Sprintf("Step %d failed: %v", currentStep.Index, err)
-        wf.Status.FailedAction = currentStep.Action.Type
-        wf.Status.ErrorType = classifyError(err)  // "timeout", "permission_denied", "resource_not_found", etc.
-        wf.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-
-        // Record detailed execution state for recovery analysis
-        wf.Status.ExecutionSnapshot = &workflowexecutionv1.ExecutionSnapshot{
-            CompletedSteps: wf.Status.CompletedSteps,
-            CurrentStep:    currentStep.Index,
-            ClusterState:   captureClusterState(ctx, wf),
-            ResourceSnapshot: captureResourceSnapshot(ctx, wf),
-        }
-
-        // Update status - Remediation Orchestrator watches this
-        if err := r.Status().Update(ctx, wf); err != nil {
-            return ctrl.Result{}, err
-        }
-
-        // Emit event for visibility
-        r.Recorder.Event(wf, corev1.EventTypeWarning, "WorkflowFailed",
-            fmt.Sprintf("Workflow failed at step %d: %v", currentStep.Index, err))
-
-        // Return with no requeue - WorkflowExecution's job is done
-        // Remediation Orchestrator will handle recovery coordination
-        return ctrl.Result{}, nil
-    }
-
-    // Continue with next step...
-}
-```
-
-### WorkflowExecution Status Fields for Recovery
-
-```go
-// api/workflowexecution/v1/workflowexecution_types.go
-type WorkflowExecutionStatus struct {
-    // Existing fields...
-    Phase            string       `json:"phase"`
-    CompletedSteps   int          `json:"completedSteps"`
-    TotalSteps       int          `json:"totalSteps"`
-    CompletionTime   *metav1.Time `json:"completionTime,omitempty"`
-
-    // Enhanced failure tracking for recovery
-    FailedStep       *int         `json:"failedStep,omitempty"`       // Which step failed (0-based)
-    FailedAction     *string      `json:"failedAction,omitempty"`     // Action type that failed (e.g., "scale-deployment")
-    FailureReason    *string      `json:"failureReason,omitempty"`    // Human-readable failure reason
-    ErrorType        *string      `json:"errorType,omitempty"`        // Classified error ("timeout", "permission_denied", etc.)
-    ExecutionSnapshot *ExecutionSnapshot `json:"executionSnapshot,omitempty"` // State at failure time
-}
-
-// NEW: ExecutionSnapshot captures state at failure time for recovery analysis
-type ExecutionSnapshot struct {
-    CompletedSteps   []StepResult           `json:"completedSteps"`
-    CurrentStep      int                    `json:"currentStep"`
-    ClusterState     map[string]interface{} `json:"clusterState"`
-    ResourceSnapshot map[string]interface{} `json:"resourceSnapshot"`
-    Timestamp        metav1.Time            `json:"timestamp"`
-}
-
-type StepResult struct {
-    StepIndex   int         `json:"stepIndex"`
-    Action      string      `json:"action"`
-    Status      string      `json:"status"` // "completed", "failed", "skipped"
-    Duration    string      `json:"duration"`
-    Output      interface{} `json:"output,omitempty"`
-    Error       *string     `json:"error,omitempty"`
-}
-```
-
-### Remediation Orchestrator Watches WorkflowExecution
-
-The Remediation Orchestrator watches WorkflowExecution CRDs and triggers recovery:
-
-```go
-// In Remediation Orchestrator Controller
-func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
-    return ctrl.NewControllerManagedBy(mgr).
-        For(&remediationv1.RemediationRequest{}).
-        Owns(&processingv1.RemediationProcessing{}).
-        Owns(&aianalysisv1.AIAnalysis{}).
-        Owns(&workflowexecutionv1.WorkflowExecution{}).  // WATCH owned WorkflowExecution CRDs
-        Complete(r)
-}
-
-// Reconcile detects workflow failures via watch
-func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    var remediation remediationv1.RemediationRequest
-    if err := r.Get(ctx, req.NamespacedName, &remediation); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
-    }
-
-    // Check if current workflow has failed
-    if remediation.Status.CurrentWorkflowExecutionRef != nil {
-        var workflow workflowexecutionv1.WorkflowExecution
-        if err := r.Get(ctx, client.ObjectKey{
-            Name:      *remediation.Status.CurrentWorkflowExecutionRef,
-            Namespace: remediation.Namespace,
-        }, &workflow); err == nil {
-
-            // Workflow failure detected
-            if workflow.Status.Phase == "failed" && remediation.Status.OverallPhase == "executing" {
-                log.Info("Workflow failure detected, evaluating recovery viability",
-                    "workflow", workflow.Name,
-                    "failedStep", *workflow.Status.FailedStep,
-                    "failureReason", *workflow.Status.FailureReason)
-
-                // Evaluate recovery viability (BR-WF-RECOVERY-010)
-                canRecover, reason := r.evaluateRecoveryViability(ctx, &remediation, &workflow)
-
-                if canRecover {
-                    // Transition to recovering phase and create new AIAnalysis
-                    return r.initiateRecovery(ctx, &remediation, &workflow)
-                } else {
-                    // Escalate to manual review
-                    return r.escalateToManualReview(ctx, &remediation, reason)
-                }
-            }
-        }
-    }
-
-    // Continue with normal reconciliation...
-}
-```
-
-### Recovery Initiation Flow
-
-**Step 1**: WorkflowExecution updates status to "failed"
-
-```yaml
-apiVersion: workflowexecution.kubernaut.io/v1
-kind: WorkflowExecution
-metadata:
-  name: workflow-001
-  namespace: default
-  ownerReferences:
-    - apiVersion: remediation.kubernaut.io/v1
-      kind: RemediationRequest
-      name: rr-2025-001
-status:
-  phase: failed  # ← WorkflowExecution sets this
-  failedStep: 3
-  failedAction: scale-deployment
-  failureReason: "Operation timed out after 5m"
-  errorType: timeout
-  completedSteps: 2
-  totalSteps: 5
-  executionSnapshot:
-    currentStep: 3
-    clusterState:
-      deployment_replicas: 2
-      pod_status: "CrashLoopBackOff"
-    resourceSnapshot:
-      deployment_name: "api-server"
-      namespace: "production"
-```
-
-**Step 2**: Remediation Orchestrator watches and detects failure
-
-```go
-// Remediation Orchestrator reconcile triggered by watch event
-func (r *RemediationRequestReconciler) initiateRecovery(
-    ctx context.Context,
-    remediation *remediationv1.RemediationRequest,
-    failedWorkflow *workflowexecutionv1.WorkflowExecution,
-) (ctrl.Result, error) {
-
-    log := ctrl.LoggerFrom(ctx)
-    log.Info("Initiating recovery",
-        "recoveryAttempt", remediation.Status.RecoveryAttempts+1,
-        "maxAttempts", remediation.Status.MaxRecoveryAttempts)
-
-    // Update RemediationRequest to "recovering" phase
-    remediation.Status.OverallPhase = "recovering"
-    remediation.Status.RecoveryAttempts++
-    remediation.Status.LastFailureTime = &metav1.Time{Time: time.Now()}
-    reason := fmt.Sprintf("workflow_%s_step_%d",
-        *failedWorkflow.Status.ErrorType,
-        *failedWorkflow.Status.FailedStep)
-    remediation.Status.RecoveryReason = &reason
-
-    // Create new AIAnalysis CRD with recovery context
-    aiAnalysis := &aianalysisv1.AIAnalysis{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-recovery-%d", remediation.Name, remediation.Status.RecoveryAttempts),
-            Namespace: remediation.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
-            },
-        },
-        Spec: aianalysisv1.AIAnalysisSpec{
-            // Copy signal context from original
-            SignalContext:          remediation.Spec.SignalContext,
-            RemediationRequestRef:  corev1.LocalObjectReference{Name: remediation.Name},
-
-            // NEW: Recovery-specific fields
-            IsRecoveryAttempt:      true,
-            RecoveryAttemptNumber:  remediation.Status.RecoveryAttempts,
-            FailedWorkflowRef:      &corev1.LocalObjectReference{Name: failedWorkflow.Name},
-            FailedStep:             failedWorkflow.Status.FailedStep,
-            FailureReason:          failedWorkflow.Status.FailureReason,
-            PreviousAIAnalysisRefs: remediation.Status.AIAnalysisRefs,
-        },
-    }
-
-    if err := r.Create(ctx, aiAnalysis); err != nil {
-        return ctrl.Result{}, err
-    }
-
-    // Update refs arrays in RemediationRequest status
-    remediation.Status.AIAnalysisRefs = append(
-        remediation.Status.AIAnalysisRefs,
-        remediationv1.AIAnalysisReference{
-            Name:      aiAnalysis.Name,
-            Namespace: aiAnalysis.Namespace,
-        },
-    )
-
-    remediation.Status.WorkflowExecutionRefs = append(
-        remediation.Status.WorkflowExecutionRefs,
-        remediationv1.WorkflowExecutionReferenceWithOutcome{
-            Name:           failedWorkflow.Name,
-            Namespace:      failedWorkflow.Namespace,
-            Outcome:        "failed",
-            FailedStep:     failedWorkflow.Status.FailedStep,
-            FailureReason:  failedWorkflow.Status.FailureReason,
-            CompletionTime: failedWorkflow.Status.CompletionTime,
-            AttemptNumber:  remediation.Status.RecoveryAttempts,
-        },
-    )
-
-    if err := r.Status().Update(ctx, remediation); err != nil {
-        return ctrl.Result{}, err
-    }
-
-    r.Recorder.Event(remediation, corev1.EventTypeNormal, "RecoveryInitiated",
-        fmt.Sprintf("Recovery attempt %d initiated after workflow failure",
-            remediation.Status.RecoveryAttempts))
-
-    return ctrl.Result{}, nil
-}
-```
-
-### Error Classification
-
-WorkflowExecution classifies errors to help recovery decision-making:
-
-```go
-// classifyError categorizes error types for pattern detection
-func classifyError(err error) string {
-    switch {
-    case errors.Is(err, context.DeadlineExceeded):
-        return "timeout"
-    case strings.Contains(err.Error(), "forbidden"):
-        return "permission_denied"
-    case strings.Contains(err.Error(), "not found"):
-        return "resource_not_found"
-    case strings.Contains(err.Error(), "conflict"):
-        return "resource_conflict"
-    case strings.Contains(err.Error(), "quota exceeded"):
-        return "resource_quota_exceeded"
-    case strings.Contains(err.Error(), "invalid"):
-        return "validation_error"
-    default:
-        return "unknown_error"
-    }
-}
-```
-
-### Separation of Concerns
-
-| Responsibility | WorkflowExecution | Remediation Orchestrator |
-|---|---|---|
-| **Execute workflow steps** | ✅ Yes | ❌ No |
-| **Detect step failures** | ✅ Yes | ❌ No |
-| **Update own status to "failed"** | ✅ Yes | ❌ No |
-| **Capture execution snapshot** | ✅ Yes | ❌ No |
-| **Evaluate recovery viability** | ❌ No | ✅ Yes |
-| **Create recovery AIAnalysis** | ❌ No | ✅ Yes |
-| **Track recovery attempts** | ❌ No | ✅ Yes |
-| **Escalate to manual review** | ❌ No | ✅ Yes |
-| **Update RemediationRequest** | ❌ No | ✅ Yes |
-
-### Testing Recovery Coordination
-
-```go
-func TestWorkflowExecution_FailureDetection(t *testing.T) {
-    // WorkflowExecution detects step failure
-    wf := &workflowexecutionv1.WorkflowExecution{
-        Status: workflowexecutionv1.WorkflowExecutionStatus{
-            Phase: "executing",
-            CompletedSteps: 2,
-        },
-    }
-
-    // Simulate step failure
-    err := fmt.Errorf("operation timed out")
-    reconciler := &WorkflowExecutionReconciler{}
-
-    result, err := reconciler.reconcileExecuting(context.Background(), wf)
-
-    // Verify WorkflowExecution updated its own status
-    assert.Equal(t, "failed", wf.Status.Phase)
-    assert.Equal(t, 2, *wf.Status.FailedStep)
-    assert.Equal(t, "timeout", *wf.Status.ErrorType)
-    assert.NotNil(t, wf.Status.ExecutionSnapshot)
-
-    // Verify NO recovery triggered (that's Remediation Orchestrator's job)
-    assert.NoError(t, err)  // No error returned
-    assert.Equal(t, ctrl.Result{}, result)  // No requeue
-}
-
-func TestRemediationOrchestrator_WatchesWorkflowFailure(t *testing.T) {
-    // Setup: RemediationRequest with executing workflow
-    remediation := &remediationv1.RemediationRequest{
-        Status: remediationv1.RemediationRequestStatus{
-            OverallPhase: "executing",
-            CurrentWorkflowExecutionRef: ptr.To("workflow-001"),
-            RecoveryAttempts: 0,
-            MaxRecoveryAttempts: 3,
-        },
-    }
-
-    // Workflow fails
-    workflow := &workflowexecutionv1.WorkflowExecution{
-        ObjectMeta: metav1.ObjectMeta{Name: "workflow-001"},
-        Status: workflowexecutionv1.WorkflowExecutionStatus{
-            Phase: "failed",
-            FailedStep: ptr.To(3),
-            FailureReason: ptr.To("timeout"),
-        },
-    }
-
-    reconciler := &RemediationRequestReconciler{}
-
-    // Remediation Orchestrator reconciles
-    result, err := reconciler.Reconcile(context.Background(), ctrl.Request{})
-
-    // Verify recovery initiated
-    assert.NoError(t, err)
-    assert.Equal(t, "recovering", remediation.Status.OverallPhase)
-    assert.Equal(t, 1, remediation.Status.RecoveryAttempts)
-    assert.Len(t, remediation.Status.AIAnalysisRefs, 2)  // Initial + recovery
-}
-```
-
-### Key Principles
-
-1. **WorkflowExecution**: "I failed, here's why" (status update only)
-2. **Remediation Orchestrator**: "I see you failed, let me coordinate recovery" (watch & coordinate)
-3. **No self-recovery**: WorkflowExecution NEVER triggers its own recovery
-4. **Clean separation**: Clear responsibility boundaries prevent tight coupling
-5. **Watch-based coordination**: Kubernetes-native pattern for controller coordination
-
-### Related Documentation
-
-- **Architecture**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
-- **Business Requirements**: BR-WF-RECOVERY-007 in `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md`
-- **Remediation Orchestrator**: `docs/services/crd-controllers/05-remediationorchestrator/controller-implementation.md` (C7)
-- **CRD Schema**: `docs/services/crd-controllers/05-remediationorchestrator/crd-schema.md`
+**Failure Classification**:
+- `wasExecutionFailure: false` → Pre-execution failure (validation, resource lock) - safe to retry
+- `wasExecutionFailure: true` → During-execution failure - requires manual review
 
 ---
-

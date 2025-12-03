@@ -1,5 +1,20 @@
 ## Implementation Checklist
 
+**Version**: 3.0
+**Last Updated**: 2025-12-02
+**CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
+**Status**: ✅ Updated for Tekton Architecture
+
+---
+
+## Changelog
+
+### Version 3.0 (2025-12-02)
+- ✅ **Updated**: API group references to `.ai`
+- ✅ **Updated**: BR prefixes standardized to `BR-WE-*`
+
+---
+
 **Note**: Follow APDC-TDD phases for each implementation step (see Development Methodology section)
 
 ### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
@@ -19,11 +34,7 @@
 
 - [ ] **ANALYSIS**: Search existing workflow implementations (`codebase_search "workflow execution implementations"`)
 - [ ] **ANALYSIS**: Map business requirements across all 4 BR prefixes:
-  - BR-WF-001 to BR-WF-021 (21 BRs): Core workflow management
-  - BR-ORCHESTRATION-001 to BR-ORCHESTRATION-010 (10 BRs): Multi-step coordination
-  - BR-AUTOMATION-001 to BR-AUTOMATION-002 (2 BRs): Intelligent automation
-  - BR-EXECUTION-001 to BR-EXECUTION-002 (2 BRs): Workflow execution monitoring
-  - **Total V1 BRs**: 35
+  - BR-WE-001 to BR-WE-011: Core workflow execution and resource locking (see BUSINESS_REQUIREMENTS.md)
 
 ### Logging Library
 
@@ -67,11 +78,11 @@
 ### Phase 3: Execution & Monitoring Phases (3-4 days) [RED-GREEN-REFACTOR]
 
 - [ ] **Execution RED**: Write tests for step execution (fail - no execution logic yet)
-- [ ] **Execution GREEN**: Implement step orchestration (tests pass)
-  - [ ] KubernetesExecution CRD creation per step
-  - [ ] Watch-based step completion monitoring
-  - [ ] Dependency handling (sequential/parallel)
-  - [ ] Failure handling and retry logic
+- [ ] **Execution GREEN**: Implement Tekton PipelineRun orchestration (tests pass)
+  - [ ] Create PipelineRun with OCI bundle resolver (ADR-044)
+  - [ ] Watch-based PipelineRun completion monitoring
+  - [ ] Tekton handles step orchestration internally
+  - [ ] Failure handling and resource locking (DD-WE-001)
 - [ ] **Execution REFACTOR**: Enhance with adaptive adjustments
   - [ ] Runtime optimization
   - [ ] Historical pattern application
@@ -96,23 +107,19 @@
 ### Phase 5: Testing & Validation (2 days) [CHECK Phase]
 
 - [ ] **CHECK**: Verify 70%+ unit test coverage (test/unit/workflowexecution/)
-  - [ ] Core Workflow tests (BR-WF-001 to BR-WF-021): Planning, validation, lifecycle
-  - [ ] Orchestration tests (BR-ORCHESTRATION-001 to BR-ORCHESTRATION-010): Step coordination, dependencies
-  - [ ] Automation tests (BR-AUTOMATION-001 to BR-AUTOMATION-002): Adaptive workflow adjustment
-  - [ ] Execution Monitoring tests (BR-EXECUTION-001 to BR-EXECUTION-002): Progress tracking, health monitoring
+  - [ ] Core Workflow tests (BR-WE-001 to BR-WE-008): PipelineRun creation, status monitoring
+  - [ ] Resource Locking tests (BR-WE-009 to BR-WE-011): Parallel prevention, cooldown
 - [ ] **CHECK**: Run integration tests - 20% coverage target (test/integration/workflowexecution/)
   - [ ] Real K8s API (KIND) CRD lifecycle tests
-  - [ ] Cross-CRD coordination with KubernetesExecution
-  - [ ] Watch-based step monitoring tests
+  - [ ] Tekton PipelineRun creation and monitoring
+  - [ ] Resource lock verification tests
 - [ ] **CHECK**: Execute E2E tests - 10% coverage target (test/e2e/workflowexecution/)
   - [ ] Complete workflow-to-completion scenario
   - [ ] Multi-step workflow with dependencies
   - [ ] Rollback scenario testing
-- [ ] **CHECK**: Validate business requirement coverage (all 35 V1 BRs)
-  - [ ] BR-WF-001 to BR-WF-021 (21 BRs): Core workflow functionality
-  - [ ] BR-ORCHESTRATION-001 to BR-ORCHESTRATION-010 (10 BRs): Orchestration logic
-  - [ ] BR-AUTOMATION-001 to BR-AUTOMATION-002 (2 BRs): Automation features
-  - [ ] BR-EXECUTION-001 to BR-EXECUTION-002 (2 BRs): Execution monitoring
+- [ ] **CHECK**: Validate business requirement coverage (BR-WE-001 to BR-WE-011)
+  - [ ] BR-WE-001 to BR-WE-008: Core workflow execution
+  - [ ] BR-WE-009 to BR-WE-011: Resource locking safety
 - [ ] **CHECK**: Performance validation (per-step <5min, total <30min)
 - [ ] **CHECK**: Provide confidence assessment (90% high confidence)
 

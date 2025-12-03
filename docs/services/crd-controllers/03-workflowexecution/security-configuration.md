@@ -1,5 +1,21 @@
 ## Security Configuration
 
+**Version**: 3.1
+**Last Updated**: 2025-12-02
+**CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
+**Status**: ✅ Updated for Tekton Architecture
+
+---
+
+## Changelog
+
+### Version 3.1 (2025-12-02)
+- ✅ **Removed**: All KubernetesExecution RBAC and code references
+- ✅ **Updated**: RBAC to use Tekton PipelineRun permissions
+- ✅ **Updated**: Code examples for Tekton-based architecture
+
+---
+
 ### ServiceAccount & RBAC Least Privilege
 
 **ServiceAccount Setup**:
@@ -18,27 +34,27 @@ metadata:
   name: workflowexecution-controller
 rules:
 # WorkflowExecution CRD permissions (full control)
-- apiGroups: ["workflowexecution.kubernaut.io"]
+- apiGroups: ["workflowexecution.kubernaut.ai"]
   resources: ["workflowexecutions"]
   verbs: ["get", "list", "watch", "update", "patch"]
-- apiGroups: ["workflowexecution.kubernaut.io"]
+- apiGroups: ["workflowexecution.kubernaut.ai"]
   resources: ["workflowexecutions/status"]
   verbs: ["get", "update", "patch"]
-- apiGroups: ["workflowexecution.kubernaut.io"]
+- apiGroups: ["workflowexecution.kubernaut.ai"]
   resources: ["workflowexecutions/finalizers"]
   verbs: ["update"]
 
-# KubernetesExecution CRD permissions (create + watch for orchestration)
-- apiGroups: ["kubernetesexecution.kubernaut.io"]
-  resources: ["kubernetesexecutions"]
-  verbs: ["create", "get", "list", "watch"]
-- apiGroups: ["kubernetesexecution.kubernaut.io"]
-  resources: ["kubernetesexecutions/status"]
+# Tekton PipelineRun permissions (create + watch for execution)
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns/status"]
   verbs: ["get", "list", "watch"]
 
 # RemediationRequest CRD permissions (read-only for parent reference)
-- apiGroups: ["remediation.kubernaut.io"]
-  resources: ["alertremediations"]
+- apiGroups: ["remediation.kubernaut.ai"]
+  resources: ["remediationrequests"]
   verbs: ["get", "list", "watch"]
 # NOTE: NO status write permissions - Remediation Orchestrator Pattern (see below)
 
@@ -63,33 +79,32 @@ subjects:
 
 **Least Privilege Principles**:
 - ✅ Write access ONLY to WorkflowExecution CRDs
-- ✅ Create access to KubernetesExecution CRDs (orchestration)
-- ✅ Watch access to child CRD status (step completion monitoring)
-- ✅ NO direct Kubernetes resource access (Executor Service responsibility)
+- ✅ Create access to Tekton PipelineRun (workflow execution)
+- ✅ Watch access to PipelineRun status (completion monitoring)
+- ✅ NO direct Kubernetes resource access (Tekton handles execution)
 - ✅ Event creation scoped to WorkflowExecution events only
 
 **Remediation Orchestrator Pattern - RBAC Justification**:
 
 This controller follows the **Remediation Orchestrator Pattern** where:
 - ✅ **This controller** updates ONLY `WorkflowExecution.status`
-- ✅ **RemediationRequest Controller** (Remediation Orchestrator) watches `WorkflowExecution` and aggregates status
+- ✅ **RemediationOrchestrator** watches `WorkflowExecution` and aggregates status
 - ❌ **NO status write permissions** needed on `RemediationRequest` - watch-based coordination handles all status updates
 
 **Why No RemediationRequest.status Write Access**:
 1. **Architectural Separation**: Remediation Orchestrator Pattern decouples child controllers from orchestration
-2. **Watch-Based Coordination**: RemediationRequest Controller watches this CRD for status changes (<1s latency)
-3. **Single Writer**: Only RemediationRequest Controller updates `RemediationRequest.status` (prevents race conditions)
+2. **Watch-Based Coordination**: RemediationOrchestrator watches this CRD for status changes (<1s latency)
+3. **Single Writer**: Only RemediationOrchestrator updates `RemediationRequest.status` (prevents race conditions)
 4. **Testability**: This controller can be tested in complete isolation without RemediationRequest dependency
 
 **What This Controller CAN Do with RemediationRequest**:
 - ✅ `get` - Read parent CRD for owner reference setup
 - ✅ `list` - List parent CRDs for audit/tracing
 - ✅ `watch` - Watch for parent lifecycle events (deletion)
-- ❌ NO `update` or `patch` on `alertremediations` or `alertremediations/status`
+- ❌ NO `update` or `patch` on `remediationrequests` or `remediationrequests/status`
 
 **Reference**:
 - See: [Remediation Orchestrator Architecture](../05-remediationorchestrator/overview.md)
-- See: [Remediation Orchestrator Pattern Violation Analysis](../CENTRAL_CONTROLLER_VIOLATION_ANALYSIS.md)
 
 **🚨 CRITICAL SECRET PROTECTION**:
 - ❌ Secrets are NEVER captured verbatim in logs, CRD status, events, or audit trails
@@ -124,7 +139,7 @@ spec:
           name: kube-system
     ports:
     - protocol: TCP
-      port: 8080  # Health/Ready
+      port: 8081  # Health/Ready (DD-TEST-001)
   # Metrics scraping from Prometheus
   - from:
     - namespaceSelector:
@@ -137,7 +152,7 @@ spec:
     - protocol: TCP
       port: 9090  # Metrics
   egress:
-  # Kubernetes API server (for CRD operations)
+  # Kubernetes API server (for CRD and PipelineRun operations)
   - to:
     - namespaceSelector:
         matchLabels:
@@ -169,7 +184,7 @@ spec:
 **Why These Restrictions**:
 - No external network access (all dependencies internal or via API server)
 - No direct database access (goes through Data Storage Service)
-- No access to application namespaces (orchestrates via child CRDs only)
+- No access to application namespaces (delegates execution to Tekton)
 - No direct service-to-service communication (CRD-based coordination)
 
 ---
@@ -179,11 +194,11 @@ spec:
 **No Direct Secret Handling in WorkflowExecution**:
 
 WorkflowExecution controller does NOT handle secrets directly. All secrets are:
-- Embedded in workflow definitions (created by AIAnalysis)
-- Passed through to KubernetesExecution CRDs (executor responsibility)
-- Referenced by name/namespace only (no secret values)
+- Referenced in workflow OCI bundles (defined by workflow authors)
+- Passed through workflow parameters (LLM-selected)
+- Referenced by name/namespace only (no secret values in CRD)
 
-**Pattern 1: Workflow Definition Sanitization**:
+**Pattern 1: Workflow Parameter Sanitization**:
 ```go
 package controller
 
@@ -223,14 +238,15 @@ func sanitizeWorkflowPayload(payload string) string {
 
 func (r *WorkflowExecutionReconciler) recordAudit(
     ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
+    wfe *workflowexecutionv1.WorkflowExecution,
 ) error {
-    // Sanitize workflow definition before audit logging
-    sanitizedWorkflow := sanitizeWorkflowPayload(we.Spec.WorkflowDefinition.String())
+    // Sanitize parameters before audit logging
+    sanitizedParams := sanitizeWorkflowPayload(fmt.Sprintf("%v", wfe.Spec.Parameters))
 
     auditRecord := &AuditRecord{
-        WorkflowID:         we.Name,
-        WorkflowDefinition: sanitizedWorkflow,  // Sanitized version
+        WorkflowID:     wfe.Spec.WorkflowRef.WorkflowID,
+        TargetResource: wfe.Spec.TargetResource,
+        Parameters:     sanitizedParams,  // Sanitized version
         // ... other fields
     }
 
@@ -251,7 +267,7 @@ import (
 )
 
 func (r *WorkflowExecutionReconciler) emitEventSanitized(
-    we *workflowexecutionv1.WorkflowExecution,
+    wfe *workflowexecutionv1.WorkflowExecution,
     eventType string,
     reason string,
     message string,
@@ -259,24 +275,23 @@ func (r *WorkflowExecutionReconciler) emitEventSanitized(
     // Sanitize message before emitting event
     sanitizedMessage := sanitizeWorkflowPayload(message)
 
-    r.Recorder.Event(we, eventType, reason, sanitizedMessage)
+    r.Recorder.Event(wfe, eventType, reason, sanitizedMessage)
 }
 
-// Example: Step execution event with sanitized details
-func (r *WorkflowExecutionReconciler) emitStepExecutionEvent(
-    we *workflowexecutionv1.WorkflowExecution,
-    stepName string,
+// Example: PipelineRun creation event with sanitized details
+func (r *WorkflowExecutionReconciler) emitPipelineRunCreationEvent(
+    wfe *workflowexecutionv1.WorkflowExecution,
 ) {
     // Build message with potentially sensitive data
     message := fmt.Sprintf(
-        "Executing step: %s, action=%s, parameters=%v",
-        stepName,
-        we.Spec.WorkflowDefinition.Steps[stepName].Action,
-        we.Spec.WorkflowDefinition.Steps[stepName].Parameters,  // May contain secrets
+        "Creating PipelineRun: workflow=%s, target=%s, params=%v",
+        wfe.Spec.WorkflowRef.WorkflowID,
+        wfe.Spec.TargetResource,
+        wfe.Spec.Parameters,  // May contain secrets
     )
 
     // Sanitize before emitting
-    r.emitEventSanitized(we, "Normal", "StepExecuting", message)
+    r.emitEventSanitized(wfe, "Normal", "PipelineRunCreating", message)
 }
 ```
 
@@ -311,67 +326,92 @@ func (r *WorkflowExecutionReconciler) logWithSanitization(
 }
 
 // Example usage
-func (r *WorkflowExecutionReconciler) orchestrateStep(
+func (r *WorkflowExecutionReconciler) createPipelineRun(
     ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
-    stepName string,
+    wfe *workflowexecutionv1.WorkflowExecution,
     log logr.Logger,
 ) error {
     // Sanitize before logging
-    r.logWithSanitization(log, "Orchestrating workflow step",
-        "workflowID", we.Name,
-        "stepName", stepName,
-        "parameters", we.Spec.WorkflowDefinition.Steps[stepName].Parameters,  // Will be sanitized
+    r.logWithSanitization(log, "Creating Tekton PipelineRun",
+        "workflowId", wfe.Spec.WorkflowRef.WorkflowID,
+        "targetResource", wfe.Spec.TargetResource,
+        "parameters", fmt.Sprintf("%v", wfe.Spec.Parameters),  // Will be sanitized
     )
 
-    // ... orchestration logic
+    // ... PipelineRun creation logic
+    return nil
 }
 ```
 
-**Pattern 4: Step Parameter Sanitization**:
+**Pattern 4: PipelineRun Parameter Sanitization**:
 ```go
 package controller
 
 import (
     "context"
+    "fmt"
 
     workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
-    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1"
+    tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *WorkflowExecutionReconciler) createKubernetesExecution(
-    ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
-    step *workflowexecutionv1.WorkflowStep,
-) error {
-    // Create KubernetesExecution CRD for step
-    ke := &kubernetesexecutionv1.KubernetesExecution{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-%s", we.Name, step.Name),
-            Namespace: we.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(we, workflowexecutionv1.GroupVersion.WithKind("WorkflowExecution")),
-            },
-        },
-        Spec: kubernetesexecutionv1.KubernetesExecutionSpec{
-            Action:     step.Action,
-            Parameters: step.Parameters,  // Pass through as-is (executor sanitizes)
-            TargetCluster: step.TargetCluster,
-        },
+func (r *WorkflowExecutionReconciler) buildPipelineRun(
+    wfe *workflowexecutionv1.WorkflowExecution,
+) *tektonv1.PipelineRun {
+    // Build parameters from spec
+    params := make([]tektonv1.Param, 0, len(wfe.Spec.Parameters))
+    for key, value := range wfe.Spec.Parameters {
+        params = append(params, tektonv1.Param{
+            Name:  key,
+            Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: value},
+        })
     }
 
-    // Sanitize step parameters ONLY for logging/events (not in CRD)
-    sanitizedParams := sanitizeWorkflowPayload(step.Parameters.String())
-    r.logWithSanitization(r.Log, "Creating KubernetesExecution CRD",
-        "workflowID", we.Name,
-        "stepName", step.Name,
+    // Create PipelineRun with bundle resolver
+    return &tektonv1.PipelineRun{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      wfe.Name,
+            Namespace: wfe.Namespace,
+            Labels: map[string]string{
+                "kubernaut.ai/workflow-execution": wfe.Name,
+                "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+            },
+            OwnerReferences: []metav1.OwnerReference{
+                *metav1.NewControllerRef(wfe, workflowexecutionv1.GroupVersion.WithKind("WorkflowExecution")),
+            },
+        },
+        Spec: tektonv1.PipelineRunSpec{
+            PipelineRef: &tektonv1.PipelineRef{
+                ResolverRef: tektonv1.ResolverRef{
+                    Resolver: "bundles",
+                    Params: []tektonv1.Param{
+                        {Name: "bundle", Value: tektonv1.ParamValue{StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
+                        {Name: "name", Value: tektonv1.ParamValue{StringVal: "workflow"}},
+                    },
+                },
+            },
+            Params: params,  // Pass through as-is (Tekton handles securely)
+        },
+    }
+}
+
+func (r *WorkflowExecutionReconciler) createPipelineRunWithLogging(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+) error {
+    pr := r.buildPipelineRun(wfe)
+
+    // Sanitize parameters ONLY for logging (not in PipelineRun)
+    sanitizedParams := sanitizeWorkflowPayload(fmt.Sprintf("%v", wfe.Spec.Parameters))
+    r.logWithSanitization(r.Log, "Creating PipelineRun",
+        "workflowId", wfe.Spec.WorkflowRef.WorkflowID,
         "parameters", sanitizedParams,  // Sanitized for logs
     )
 
-    return r.Create(ctx, ke)
+    return r.Create(ctx, pr)
 }
 ```
 
@@ -380,7 +420,7 @@ func (r *WorkflowExecutionReconciler) createKubernetesExecution(
 - ❌ NEVER log secret values verbatim (logs, events, traces)
 - ❌ NEVER include secrets in audit records
 - ❌ NEVER include secrets in Kubernetes Events
-- ✅ Pass secrets through to child CRDs (executor handles sanitization)
+- ✅ Pass secrets through to PipelineRun params (Tekton handles securely)
 - ✅ Sanitize ALL outgoing data (logs, events, audit records, traces)
 - ✅ Use regex patterns for common secret formats
 - ✅ Apply sanitization at controller boundaries (before any external output)
@@ -391,7 +431,7 @@ func (r *WorkflowExecutionReconciler) createKubernetesExecution(
 - ✅ Structured Logs → `logWithSanitization()` wrapper
 - ✅ Kubernetes Events → `emitEventSanitized()` wrapper
 - ✅ Distributed Traces → Sanitize span attributes
-- ✅ Child CRD Creation → Pass through (executor sanitizes)
+- ✅ PipelineRun Creation → Pass through (Tekton handles securely)
 
 ---
 
@@ -444,7 +484,7 @@ spec:
             cpu: 500m
             memory: 512Mi
         ports:
-        - containerPort: 8080
+        - containerPort: 8081
           name: health
           protocol: TCP
         - containerPort: 9090
@@ -453,13 +493,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8080
+            port: 8081
           initialDelaySeconds: 15
           periodSeconds: 20
         readinessProbe:
           httpGet:
             path: /readyz
-            port: 8080
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
         volumeMounts:
