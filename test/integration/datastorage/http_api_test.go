@@ -36,6 +36,9 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Seri
 	})
 
 	BeforeEach(func() {
+		// Serial tests MUST use public schema (HTTP API writes to public schema)
+		usePublicSchema()
+
 		// Create unique notification_id to avoid conflicts
 		// Use a fixed timestamp that's definitely in the past (2024-01-01)
 		fixedPastTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
