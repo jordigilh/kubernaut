@@ -203,7 +203,7 @@
             },
             "type": "array",
             "title": "Faileddetections",
-            "description": "Field names where detection failed. Consumer should ignore values of these fields. Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, podSecurityLevel, serviceMesh"
+            "description": "Field names where detection failed. Consumer should ignore values of these fields. Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh"
           },
           "gitOpsManaged": {
             "type": "boolean",
@@ -247,12 +247,6 @@
             "description": "Whether NetworkPolicy restricts traffic",
             "default": false
           },
-          "podSecurityLevel": {
-            "type": "string",
-            "title": "Podsecuritylevel",
-            "description": "Pod Security Standard: 'privileged', 'baseline', 'restricted', ''",
-            "default": ""
-          },
           "serviceMesh": {
             "type": "string",
             "title": "Servicemesh",
@@ -262,7 +256,7 @@
         },
         "type": "object",
         "title": "DetectedLabels",
-        "description": "Auto-detected cluster characteristics from SignalProcessing.\n\nThese labels are used for:\n1. LLM context (natural language) - help LLM understand cluster environment\n2. MCP workflow filtering - filter workflows to only compatible ones\n\nDesign Decision: DD-WORKFLOW-001 v2.1, DD-RECOVERY-003\n\nBreaking Change (Dec 2, 2025):\n- Added `failedDetections` field to track which detections failed\n- Avoids the `*bool` anti-pattern where null means \"unknown\"\n- Consumer logic: if field is in failedDetections, ignore its value"
+        "description": "Auto-detected cluster characteristics from SignalProcessing.\n\nThese labels are used for:\n1. LLM context (natural language) - help LLM understand cluster environment\n2. MCP workflow filtering - filter workflows to only compatible ones\n\nDesign Decision: DD-WORKFLOW-001 v2.2, DD-RECOVERY-003\n\nChanges:\n- v2.1: Added `failedDetections` field to track which detections failed\n- v2.2: Removed `podSecurityLevel` (PSP deprecated, PSS is namespace-level)\n\nConsumer logic: if field is in failedDetections, ignore its value"
       },
       "EffectivenessAssessment": {
         "properties": {

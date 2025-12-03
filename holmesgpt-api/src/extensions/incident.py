@@ -101,11 +101,7 @@ def _build_cluster_context_section(detected_labels: Dict[str, Any]) -> str:
         sections.append("NetworkPolicy restricts traffic in this namespace. "
                        "Workflows may need network exceptions.")
 
-    if 'podSecurityLevel' not in failed_fields:
-        pss = detected_labels.get("podSecurityLevel", "")
-        if pss == "restricted":
-            sections.append("Pod Security Standard is RESTRICTED. "
-                           "Workflows must not require privileged access.")
+    # DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED (PSP deprecated, PSS is namespace-level)
 
     if 'serviceMesh' not in failed_fields:
         mesh = detected_labels.get("serviceMesh", "")
@@ -150,7 +146,7 @@ def _build_mcp_filter_instructions(detected_labels: Dict[str, Any]) -> str:
         'helmManaged': 'helm_managed',
         'gitOpsTool': 'gitops_tool',
         'serviceMesh': 'service_mesh',
-        'podSecurityLevel': 'pod_security_level',
+        # DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED
     }
 
     filters = {}

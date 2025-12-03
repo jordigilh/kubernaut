@@ -44,9 +44,10 @@ CustomLabels = Dict[str, List[str]]
 # ========================================
 
 # Valid field names for failedDetections validation
+# DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED (PSP deprecated, PSS is namespace-level)
 DETECTED_LABELS_FIELD_NAMES = {
     "gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled",
-    "stateful", "helmManaged", "networkIsolated", "podSecurityLevel", "serviceMesh"
+    "stateful", "helmManaged", "networkIsolated", "serviceMesh"
 }
 
 
@@ -58,19 +59,20 @@ class DetectedLabels(BaseModel):
     1. LLM context (natural language) - help LLM understand cluster environment
     2. MCP workflow filtering - filter workflows to only compatible ones
 
-    Design Decision: DD-WORKFLOW-001 v2.1, DD-RECOVERY-003
+    Design Decision: DD-WORKFLOW-001 v2.2, DD-RECOVERY-003
 
-    Breaking Change (Dec 2, 2025):
-    - Added `failedDetections` field to track which detections failed
-    - Avoids the `*bool` anti-pattern where null means "unknown"
-    - Consumer logic: if field is in failedDetections, ignore its value
+    Changes:
+    - v2.1: Added `failedDetections` field to track which detections failed
+    - v2.2: Removed `podSecurityLevel` (PSP deprecated, PSS is namespace-level)
+
+    Consumer logic: if field is in failedDetections, ignore its value
     """
     # Detection failure tracking (DD-WORKFLOW-001 v2.1)
     failedDetections: List[str] = Field(
         default_factory=list,
         description="Field names where detection failed. Consumer should ignore values of these fields. "
                     "Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, "
-                    "networkIsolated, podSecurityLevel, serviceMesh"
+                    "networkIsolated, serviceMesh"
     )
 
     # GitOps Management
@@ -86,8 +88,8 @@ class DetectedLabels(BaseModel):
     helmManaged: bool = Field(default=False, description="Whether resource is managed by Helm")
 
     # Security Posture
+    # DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED (PSP deprecated, PSS is namespace-level)
     networkIsolated: bool = Field(default=False, description="Whether NetworkPolicy restricts traffic")
-    podSecurityLevel: str = Field(default="", description="Pod Security Standard: 'privileged', 'baseline', 'restricted', ''")
     serviceMesh: str = Field(default="", description="Service mesh: 'istio', 'linkerd', ''")
 
     @field_validator('failedDetections')

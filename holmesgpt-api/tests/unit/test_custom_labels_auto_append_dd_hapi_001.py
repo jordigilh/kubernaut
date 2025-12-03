@@ -487,6 +487,7 @@ class TestSearchWorkflowCatalogToolDetectedLabels:
         mock_post.return_value = mock_response
 
         # Full detected_labels with all field types
+        # DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED (PSP deprecated)
         detected_labels = {
             # Boolean fields
             "gitOpsManaged": True,
@@ -497,7 +498,6 @@ class TestSearchWorkflowCatalogToolDetectedLabels:
             "networkIsolated": True,
             # String fields
             "gitOpsTool": "argocd",
-            "podSecurityLevel": "restricted",
             "serviceMesh": "istio"
         }
 
@@ -521,7 +521,6 @@ class TestSearchWorkflowCatalogToolDetectedLabels:
         assert request_data["filters"]["detected_labels"] == detected_labels
         assert request_data["filters"]["detected_labels"]["gitOpsManaged"] is True
         assert request_data["filters"]["detected_labels"]["gitOpsTool"] == "argocd"
-        assert request_data["filters"]["detected_labels"]["podSecurityLevel"] == "restricted"
 
     @patch('src.toolsets.workflow_catalog.requests.post')
     def test_both_custom_and_detected_labels_appended(self, mock_post):
@@ -591,10 +590,11 @@ class TestWorkflowCatalogToolsetDetectedLabels:
 
     def test_toolset_passes_detected_labels_to_tool(self):
         """DD-WORKFLOW-001 v1.6: Toolset should pass detected_labels to SearchWorkflowCatalogTool"""
+        # DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED
         detected_labels = {
             "gitOpsManaged": True,
             "gitOpsTool": "argocd",
-            "podSecurityLevel": "restricted"
+            "serviceMesh": "istio"
         }
 
         toolset = WorkflowCatalogToolset(

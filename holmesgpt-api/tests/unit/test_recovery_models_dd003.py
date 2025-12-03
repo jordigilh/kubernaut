@@ -355,17 +355,16 @@ class TestDetectedLabelsModel:
     def test_detected_labels_captures_security_posture(self):
         """
         Business Outcome: Know security constraints for workflow selection
+        DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED (PSP deprecated)
         """
         from src.models.incident_models import DetectedLabels
 
         labels = DetectedLabels(
             networkIsolated=True,
-            podSecurityLevel="restricted",
             serviceMesh="istio"
         )
 
         assert labels.networkIsolated is True
-        assert labels.podSecurityLevel == "restricted"
         assert labels.serviceMesh == "istio"
 
     def test_detected_labels_defaults_to_safe_values(self):
@@ -379,7 +378,6 @@ class TestDetectedLabelsModel:
         assert labels.gitOpsManaged is False
         assert labels.pdbProtected is False
         assert labels.stateful is False
-        assert labels.podSecurityLevel == ""
 
 
 class TestEnrichmentResultsModel:

@@ -114,7 +114,7 @@ def sample_incident_request() -> Dict[str, Any]:
                 "stateful": False,
                 "helmManaged": True,
                 "networkIsolated": True,
-                "podSecurityLevel": "restricted",
+                # DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED
                 "serviceMesh": "istio"
             },
             "customLabels": {

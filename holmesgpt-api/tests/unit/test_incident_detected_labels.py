@@ -223,18 +223,17 @@ class TestIncidentClusterContextSection:
     def test_security_context_mentions_restrictions(self):
         """
         Business Outcome: Security constraints are communicated
+        DD-WORKFLOW-001 v2.2: podSecurityLevel REMOVED (PSP deprecated)
         """
         from src.extensions.incident import _build_cluster_context_section
 
         detected_labels = {
-            "networkIsolated": True,
-            "podSecurityLevel": "restricted"
+            "networkIsolated": True
         }
 
         context = _build_cluster_context_section(detected_labels)
 
         assert "NetworkPolicy" in context or "network" in context.lower()
-        assert "RESTRICTED" in context or "restricted" in context.lower()
 
 
 class TestIncidentMCPFilterInstructions:
