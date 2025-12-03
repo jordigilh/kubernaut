@@ -234,8 +234,22 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(
 }
 
 // buildPipelineRun creates a PipelineRun with bundle resolver
+// ========================================
+// RESOURCE LOCK PERSISTENCE (DD-WE-003)
+// ========================================
+// The PipelineRun IS the lock. Its existence means the resource is locked.
+// Deterministic naming ensures Kubernetes atomically prevents race conditions.
+
+// pipelineRunName generates a deterministic name based on target resource.
+// Two WFEs targeting the same resource generate the same name.
+// Kubernetes rejects duplicate creation, providing atomic locking.
+func pipelineRunName(targetResource string) string {
+    h := sha256.Sum256([]byte(targetResource))
+    return fmt.Sprintf("wfe-%s", hex.EncodeToString(h[:])[:16])
+}
+
 // buildPipelineRun creates a PipelineRun in the dedicated execution namespace (DD-WE-002)
-// Note: PipelineRun runs in kubernaut-workflows, NOT in wfe.Namespace
+// Uses deterministic name for atomic locking (DD-WE-003)
 func (r *WorkflowExecutionReconciler) buildPipelineRun(
     wfe *workflowexecutionv1.WorkflowExecution,
 ) *tektonv1.PipelineRun {
@@ -250,7 +264,8 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
 
     return &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
-            Name:      wfe.Name,
+            // CRITICAL: Deterministic name = atomic lock (DD-WE-003)
+            Name:      pipelineRunName(wfe.Spec.TargetResource),
             Namespace: r.ExecutionNamespace,  // Always "kubernaut-workflows" (DD-WE-002)
             Labels: map[string]string{
                 "kubernaut.ai/workflow-execution": wfe.Name,
@@ -478,10 +493,52 @@ func (r *WorkflowExecutionReconciler) reconcileDelete(
 }
 
 func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+    // Create index on targetResource for O(1) lock check (DD-WE-003)
+    if err := mgr.GetFieldIndexer().IndexField(
+        context.Background(),
+        &workflowexecutionv1.WorkflowExecution{},
+        "spec.targetResource",
+        func(obj client.Object) []string {
+            wfe := obj.(*workflowexecutionv1.WorkflowExecution)
+            return []string{wfe.Spec.TargetResource}
+        },
+    ); err != nil {
+        return err
+    }
+
     return ctrl.NewControllerManagedBy(mgr).
         For(&workflowexecutionv1.WorkflowExecution{}).
-        Owns(&tektonv1.PipelineRun{}).  // Watch owned PipelineRuns
+        // Watch PipelineRuns in execution namespace (cross-namespace via label)
+        Watches(
+            &tektonv1.PipelineRun{},
+            handler.EnqueueRequestsFromMapFunc(r.findWFEForPipelineRun),
+            builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+                _, hasLabel := obj.GetLabels()["kubernaut.ai/workflow-execution"]
+                return hasLabel
+            })),
+        ).
         Complete(r)
+}
+
+// findWFEForPipelineRun maps PipelineRun events to WorkflowExecution reconcile requests
+func (r *WorkflowExecutionReconciler) findWFEForPipelineRun(
+    ctx context.Context,
+    pr client.Object,
+) []reconcile.Request {
+    labels := pr.GetLabels()
+    wfeName := labels["kubernaut.ai/workflow-execution"]
+    sourceNS := labels["kubernaut.ai/source-namespace"]
+    
+    if wfeName == "" || sourceNS == "" {
+        return nil
+    }
+    
+    return []reconcile.Request{{
+        NamespacedName: types.NamespacedName{
+            Name:      wfeName,
+            Namespace: sourceNS,
+        },
+    }}
 }
 
 // ========================================

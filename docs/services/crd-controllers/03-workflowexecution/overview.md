@@ -1,12 +1,19 @@
 ## Overview
 
-**Version**: 4.1
+**Version**: 4.2
 **Last Updated**: 2025-12-03
-**Status**: ✅ Updated for Dedicated Execution Namespace (DD-WE-002)
+**Status**: ✅ Updated for Lock Persistence (DD-WE-003)
 
 ---
 
 ## Changelog
+
+### Version 4.2 (2025-12-03)
+**Updates**:
+- ✅ **Added**: Lock persistence via deterministic PipelineRun name (DD-WE-003)
+- ✅ **Added**: Field index on `spec.targetResource` for O(1) lock check
+- ✅ **Added**: Two-layer lock check (indexed query + atomic create)
+- ✅ **Updated**: Race condition eliminated via Kubernetes object uniqueness
 
 ### Version 4.1 (2025-12-03)
 **Updates**:
@@ -280,6 +287,8 @@ stateDiagram-v2
 | **Execution Engine** | Tekton PipelineRun delegation | [ADR-044](../../../architecture/decisions/ADR-044-workflow-execution-engine-delegation.md) |
 | **Workflow Storage** | OCI bundle references | [ADR-043](../../../architecture/decisions/ADR-043-workflow-schema-definition-standard.md) |
 | **Resource Locking** | Target-scoped, skip-not-queue | [DD-WE-001](../../../architecture/decisions/DD-WE-001-resource-locking-safety.md) |
+| **Execution Namespace** | Dedicated `kubernaut-workflows` | [DD-WE-002](../../../architecture/decisions/DD-WE-002-dedicated-execution-namespace.md) |
+| **Lock Persistence** | Deterministic PipelineRun name | [DD-WE-003](../../../architecture/decisions/DD-WE-003-resource-lock-persistence.md) |
 | **API Group** | `workflowexecution.kubernaut.ai` | [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md) |
 | **Contract Alignment** | Enhanced failure details | [DD-CONTRACT-001](../../../architecture/decisions/DD-CONTRACT-001-aianalysis-workflowexecution-alignment.md) |
 
