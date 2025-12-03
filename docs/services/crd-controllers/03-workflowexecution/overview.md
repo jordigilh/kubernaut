@@ -302,7 +302,6 @@ WorkflowExecution uses the **BR-WE-*** prefix for all business requirements:
 |----------|-------|-------------|
 | **Core Execution** | BR-WE-001 to BR-WE-008 | Tekton PipelineRun creation and status monitoring |
 | **Resource Locking** | BR-WE-009 to BR-WE-011 | Safety features (parallel/sequential prevention) |
-| **Failure Handling** | BR-WE-012 to BR-WE-015 | Rich failure details for recovery flow |
 
 **V1.0 Focus**:
 - BR-WE-009: Prevent parallel execution on same target

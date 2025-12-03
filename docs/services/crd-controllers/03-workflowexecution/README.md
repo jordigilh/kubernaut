@@ -238,7 +238,7 @@ See: [BR-WE-009-011-resource-locking.md](../../../requirements/BR-WE-009-011-res
 | Decision | Choice | Document |
 |----------|--------|----------|
 | **Execution Model** | Tekton PipelineRun | [ADR-044](../../../architecture/decisions/ADR-044-workflow-execution-engine-delegation.md) |
-| **Workflow Source** | User-provided OCI bundles | [ADR-043](../../../architecture/decisions/ADR-043-workflow-oci-bundles.md) |
+| **Workflow Source** | User-provided OCI bundles | [ADR-043](../../../architecture/decisions/ADR-043-workflow-schema-definition-standard.md) |
 | **Resource Locking** | Target-scoped locking | [DD-WE-001](../../../architecture/decisions/DD-WE-001-resource-locking-safety.md) |
 | **Owner Reference** | RemediationRequest owns this | [Finalizers & Lifecycle](./finalizers-lifecycle.md) |
 | **Failure Recovery** | Rich failure details for LLM | [CRD Schema](./crd-schema.md) |
@@ -313,7 +313,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 - **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
 - **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
-- **CRD Design Spec**: [docs/design/CRD/06_WORKFLOW_EXECUTION_CRD.md](../../../design/CRD/06_WORKFLOW_EXECUTION_CRD.md)
+- **CRD Design Spec**: [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)
 
 ---

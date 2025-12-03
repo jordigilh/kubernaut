@@ -528,11 +528,11 @@ func (r *WorkflowExecutionReconciler) findWFEForPipelineRun(
     labels := pr.GetLabels()
     wfeName := labels["kubernaut.ai/workflow-execution"]
     sourceNS := labels["kubernaut.ai/source-namespace"]
-    
+
     if wfeName == "" || sourceNS == "" {
         return nil
     }
-    
+
     return []reconcile.Request{{
         NamespacedName: types.NamespacedName{
             Name:      wfeName,

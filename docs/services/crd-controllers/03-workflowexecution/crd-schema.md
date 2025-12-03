@@ -1220,8 +1220,8 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 | **DD-WORKFLOW-003** | Parameterized Actions (UPPER_SNAKE_CASE parameters) |
 | **DD-WORKFLOW-005** | Automated Schema Extraction (workflow registration) |
 | **DD-WORKFLOW-011** | Tekton Pipeline OCI Bundles |
-| **BR-WE-001** | Defense-in-Depth Parameter Validation |
-| **BR-HAPI-260** | Primary Parameter Validation (HolmesGPT-API) |
+| **BR-WE-001** | Create PipelineRun from OCI Bundle |
+| **BR-HAPI-191** | Primary Parameter Validation (HolmesGPT-API) |
 
 ---
 

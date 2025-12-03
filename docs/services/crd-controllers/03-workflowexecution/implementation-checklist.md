@@ -151,7 +151,7 @@
 - [ ] Document adaptive orchestration mechanisms
 - [ ] **Workflow Author's Guide** (`docs/guides/workflow-authoring.md`)
   - [ ] Directory structure (pipeline.yaml, tasks/, workflow-schema.yaml)
-  - [ ] workflow-schema.yaml format (reference DD-STORAGE-008)
+  - [ ] workflow-schema.yaml format (reference [DD-STORAGE-008](../../../services/stateless/data-storage/implementation/DD-STORAGE-008-PLAYBOOK-CATALOG-SCHEMA.md))
   - [ ] Building OCI bundles (`tkn bundle push` or Dockerfile)
   - [ ] Signing with Cosign (optional for v1.0)
   - [ ] Registering in Data Storage catalog
