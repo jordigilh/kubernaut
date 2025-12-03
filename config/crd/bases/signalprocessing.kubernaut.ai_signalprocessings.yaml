@@ -318,6 +318,7 @@ spec:
                 description: |-
                   Structured enrichment results (DD-CONTRACT-002)
                   Replaces ContextData map[string]string anti-pattern
+                  GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
                 properties:
                   customLabels:
                     additionalProperties:
@@ -325,20 +326,17 @@ spec:
                         type: string
                       type: array
                     description: |-
-                      CustomLabels: Subdomain-based custom labels from Rego policies
-                      Format: <subdomain>.kubernaut.io/<key>[:<value>] → map[subdomain][]values
-                      Key = subdomain (filter dimension in Data Storage)
-                      Value = list of extracted labels (boolean keys or "key=value" pairs)
-                      Boolean: empty/"true" → key only; "false" → omitted
-                      Key-value: other values → "key=value" string
-                      Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
-                      Reference: HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md
+                      Custom labels from Rego policies - CUSTOMER DEFINED
+                      Key = subdomain/category (e.g., "constraint", "team", "region")
+                      Value = list of label values (boolean keys or "key=value" pairs)
+                      Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
+                      Passed through to HolmesGPT-API for workflow filtering + LLM context
                     type: object
                   detectedLabels:
                     description: |-
                       Auto-detected cluster characteristics - NO CONFIG NEEDED
-                      SignalProcessing auto-detects these from K8s resources
-                      Flow: SignalProcessing → AIAnalysis → HolmesGPT-API → LLM prompt + MCP workflow filter
+                      SignalProcessing detects these from K8s resources automatically
+                      Used by HolmesGPT-API for: workflow filtering + LLM context
                     properties:
                       gitOpsManaged:
                         description: |-
@@ -407,15 +405,9 @@ spec:
                     - pdbProtected
                     - stateful
                     type: object
-                  enrichmentQuality:
-                    description: |-
-                      Overall enrichment quality score (0.0-1.0)
-                      1.0 = all enrichments successful, 0.0 = all failed
-                      CONSUMER: Remediation Orchestrator (RO) - NOT for LLM/HolmesGPT
-                      PURPOSE: RO uses this to detect degraded mode (< 0.8) and notify operators
-                    type: number
                   kubernetesContext:
-                    description: Kubernetes resource context (from cluster API queries)
+                    description: Kubernetes resource context (pod status, node conditions,
+                      etc.)
                     properties:
                       deploymentDetails:
                         description: Deployment/workload context
@@ -455,7 +447,7 @@ spec:
                         description: Node context
                         properties:
                           allocatable:
-                            description: ResourceList contains resource quantities
+                            description: ResourceList contains resource quantities.
                             properties:
                               cpu:
                                 type: string
@@ -466,7 +458,7 @@ spec:
                             - memory
                             type: object
                           capacity:
-                            description: ResourceList contains resource quantities
+                            description: ResourceList contains resource quantities.
                             properties:
                               cpu:
                                 type: string
@@ -478,7 +470,7 @@ spec:
                             type: object
                           conditions:
                             items:
-                              description: NodeCondition contains node condition status
+                              description: NodeCondition contains node condition status.
                               properties:
                                 status:
                                   type: string
@@ -510,7 +502,7 @@ spec:
                           containers:
                             items:
                               description: ContainerStatus contains container-level
-                                status
+                                status.
                               properties:
                                 image:
                                   type: string
@@ -553,7 +545,7 @@ spec:
                       relatedConfigMaps:
                         items:
                           description: ConfigMapSummary contains ConfigMap targeting
-                            information
+                            information.
                           properties:
                             keys:
                               items:
@@ -568,7 +560,7 @@ spec:
                         type: array
                       relatedIngresses:
                         items:
-                          description: IngressSummary contains ingress targeting information
+                          description: IngressSummary contains ingress targeting information.
                           properties:
                             hosts:
                               items:
@@ -578,7 +570,7 @@ spec:
                               type: string
                             rules:
                               items:
-                                description: IngressRule contains ingress rule configuration
+                                description: IngressRule contains ingress rule configuration.
                                 properties:
                                   host:
                                     type: string
@@ -597,7 +589,7 @@ spec:
                       relatedServices:
                         description: Related resources (targeting data only)
                         items:
-                          description: ServiceSummary contains service targeting information
+                          description: ServiceSummary contains service targeting information.
                           properties:
                             clusterIP:
                               type: string
@@ -605,7 +597,7 @@ spec:
                               type: string
                             ports:
                               items:
-                                description: ServicePort contains service port configuration
+                                description: ServicePort contains service port configuration.
                                 properties:
                                   name:
                                     type: string
@@ -645,8 +637,8 @@ spec:
                       identifies a different resource than the original signal source
                     items:
                       description: "OwnerChainEntry represents a single entry in the
-                        K8s ownership chain\nDD-WORKFLOW-001 v1.7: SignalProcessing
-                        traverses ownerReferences to build this\nExample chain for
+                        K8s ownership chain.\nDD-WORKFLOW-001 v1.8: SignalProcessing
+                        traverses ownerReferences to build this.\nExample chain for
                         a Pod owned by Deployment:\n\n\t[0]: {Namespace: \"prod\",
                         Kind: \"ReplicaSet\", Name: \"api-7d8f9c6b5\"}\n\t[1]: {Namespace:
                         \"prod\", Kind: \"Deployment\", Name: \"api\"}"

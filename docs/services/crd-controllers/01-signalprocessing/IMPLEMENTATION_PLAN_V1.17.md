@@ -1,8 +1,8 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.16.md`
-**Version**: v1.16
-**Last Updated**: 2025-11-30
+**Filename**: `IMPLEMENTATION_PLAN_V1.18.md`
+**Version**: v1.18
+**Last Updated**: 2025-12-02
 **Timeline**: 14-17 days (quality-focused, includes label detection)
 **Status**: ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Production-Ready Standard (100% Confidence - All Dependencies Validated)
@@ -28,7 +28,25 @@
   - ✅ **Port Allocation Verified**: Full DD-TEST-001 port table added (8082, 30082, 30182)
   - 📏 **Impact**: 40 occurrences updated for DD-CRD-001 compliance
   - 📏 **References**: [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md), [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
-- **v1.14** (2025-11-30): DD-WORKFLOW-001 v1.8 - OwnerChain, DetectedLabels, CustomLabels
+- **v1.18** (2025-12-02): DD-WORKFLOW-001 v2.1 - DetectedLabels FailedDetections Schema
+  - ✅ **DD-WORKFLOW-001 Updated**: v1.9 → v2.1 (DetectedLabels schema change)
+  - ✅ **FailedDetections Field**: New `[]string` field tracks detection failures (RBAC, timeout)
+  - ✅ **Pattern Change**: Detection fails → `false` + append to `FailedDetections` + error log
+  - ✅ **Validation**: Only valid field names allowed in `FailedDetections` (go-playground/validator)
+  - ✅ **Benefits**: Consumers can distinguish "actually false" from "detection failed"
+  - 📏 **Reference**: [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [AIANALYSIS_TO_SIGNALPROCESSING_TEAM.md](../../handoff/AIANALYSIS_TO_SIGNALPROCESSING_TEAM.md)
+- **v1.17** (2025-12-02): DD-WORKFLOW-001 v1.9 + Shared Types + RO Contract Gaps + Data Flow
+  - ✅ **DD-WORKFLOW-001 Updated**: v1.8 → v1.9 (CustomLabels validation limits now authoritative)
+  - ✅ **Validation Limits**: max 10 keys, 5 values/key, 63 char keys, 100 char values
+  - ✅ **Security Measures**: Sandboxed OPA Runtime (no network, no filesystem, 5s timeout, 128MB)
+  - ✅ **Mandatory Label Protection**: Security wrapper strips 5 system labels from customer Rego output
+  - ✅ **Shared Types Section**: Added `pkg/shared/types/` as authoritative source for enrichment types
+  - ✅ **Data Flow Section**: Documented RO copying to AIAnalysis (per NOTICE_AIANALYSIS_PATH_CORRECTION.md)
+  - ✅ **RO Contract Gaps**: Documented GAP-C1-01/02/05/06 fixes (Environment, Priority, StormType, StormWindow)
+  - ✅ **EnrichmentQuality Decision**: Documented NOT implementing (deterministic lookups don't need quality scores)
+  - ✅ **Code Examples Updated**: OwnerChainEntry now uses `sharedtypes.OwnerChainEntry`
+  - 📏 **Reference**: [DD-WORKFLOW-001 v1.9](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [NOTICE_AIANALYSIS_PATH_CORRECTION.md](../../handoff/NOTICE_AIANALYSIS_PATH_CORRECTION.md)
+- **v1.14** (2025-11-30): DD-WORKFLOW-001 v1.9 - OwnerChain, DetectedLabels, CustomLabels
   - ✅ **Added Phase 3.25**: Owner Chain & Label Detection (2-3 days)
   - ✅ **OwnerChain Implementation**: K8s ownerReference traversal for DetectedLabels validation
   - ✅ **DetectedLabels Auto-Detection**: 9 detection types (GitOps, PDB, HPA, StatefulSet, Helm, NetworkPolicy, PSS, ServiceMesh)
@@ -37,8 +55,8 @@
   - ✅ **New Business Requirements**: BR-SP-100 to BR-SP-104 for label detection
   - ✅ **New Test Scenarios**: 12 label detection test cases added
   - ✅ **Timeline Updated**: 12-14 days → 14-17 days (+2-3 days for label detection)
-  - ✅ **Prerequisites Updated**: DD-WORKFLOW-001 v1.8 added as mandatory
-  - 📏 **Reference**: [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
+  - ✅ **Prerequisites Updated**: DD-WORKFLOW-001 v1.9 added as mandatory
+  - 📏 **Reference**: [DD-WORKFLOW-001 v1.9](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
 - **v1.13** (2025-11-30): DD-005 v2.0 code example compliance
   - ✅ **Code Examples Fixed**: All `*zap.Logger` → `logr.Logger` in code examples
   - ✅ **Logging Syntax Fixed**: All `zap.Error()`, `zap.String()` → key-value pairs
@@ -209,7 +227,7 @@
 |       ├─ [Retry Strategy](#-retry-strategy-for-crd-controller) | Backoff and requeue |
 |       ├─ [Error Wrapping](#-error-wrapping-pattern) | Standard error patterns |
 |       └─ [Logging Best Practices](#-logging-best-practices) | Structured logging |
-| ├─ [Days 7-9: Label Detection](#days-7-9-label-detection--new-dd-workflow-001-v18) | OwnerChain, DetectedLabels, CustomLabels ⭐ NEW |
+| ├─ [Days 7-9: Label Detection](#days-7-9-label-detection--new-dd-workflow-001-v19) | OwnerChain, DetectedLabels, CustomLabels (v1.9 validation) ⭐ NEW |
 | ├─ [Days 10-11: Integration](#days-10-11-integration) | Metrics, server, controller |
 | ├─ [Days 12-13: Testing](#days-12-13-testing) | Unit, integration, E2E |
 | └─ [Days 14-15: Finalization](#days-14-15-finalization) | Docs, cleanup, handoff |
@@ -240,7 +258,9 @@
 7. **DD-CRD-001**: Use `*.kubernaut.ai/v1alpha1` API group for ALL CRDs (AIOps branding)
 8. **ADR-041**: K8s Enricher fetches data, Rego policies evaluate classification (no `http.send` in Rego)
 9. **DD-017**: Signal-driven K8s enrichment with standard depth (hardcoded, no configuration)
-10. **DD-WORKFLOW-001 v1.8**: Label schema with OwnerChain, DetectedLabels, CustomLabels ⭐ NEW
+10. **DD-WORKFLOW-001 v2.1**: Label schema with OwnerChain, DetectedLabels (FailedDetections), CustomLabels ⭐ UPDATED
+11. **Shared Types**: Use `pkg/shared/types/` for `EnrichmentResults`, `DetectedLabels`, `OwnerChainEntry`, `DeduplicationInfo` ⭐ NEW
+12. **RO Contract Alignment**: GAP-C1-01/02/05/06 fixes applied to CRD types ⭐ NEW
 
 ⚠️ **Build Fresh**: No legacy code migration. Use DD-006 templates and deprecate existing `pkg/signalprocessing/` code.
 
@@ -308,11 +328,135 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
 
 ---
 
+## 🔗 **Shared Types (AUTHORITATIVE)** ⭐ NEW (v1.17)
+
+**Location**: `pkg/shared/types/`
+**Reference**: DD-CONTRACT-002, DD-WORKFLOW-001 v1.9
+
+SignalProcessing MUST use shared types from `pkg/shared/types/` for API contract alignment:
+
+### **Import Pattern**
+```go
+import sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+```
+
+### **Shared Types Usage**
+
+| Type | Location | Used In |
+|------|----------|---------|
+| `sharedtypes.EnrichmentResults` | `pkg/shared/types/enrichment.go` | `SignalProcessingStatus.EnrichmentResults` |
+| `sharedtypes.DetectedLabels` | `pkg/shared/types/enrichment.go` | `EnrichmentResults.DetectedLabels` |
+| `sharedtypes.OwnerChainEntry` | `pkg/shared/types/enrichment.go` | `EnrichmentResults.OwnerChain` |
+| `sharedtypes.KubernetesContext` | `pkg/shared/types/enrichment.go` | `EnrichmentResults.KubernetesContext` |
+| `sharedtypes.DeduplicationInfo` | `pkg/shared/types/deduplication.go` | `SignalProcessingSpec.Deduplication` |
+
+### **Why Shared Types?**
+- ✅ **Single source of truth**: All services use identical type definitions
+- ✅ **API contract alignment**: RO, AIAnalysis, HolmesGPT-API consume same schema
+- ✅ **Type safety**: Go compiler enforces contract compliance
+- ✅ **Maintenance**: Schema changes propagate automatically
+
+### **EnrichmentQuality Field - NOT IMPLEMENTED**
+
+> ⚠️ **Decision (Dec 2, 2025)**: `EnrichmentQuality` field is NOT implemented.
+>
+> **Rationale**: SignalProcessing's `DetectedLabels` are **deterministic lookups**:
+> - Detection succeeds → explicit `true`/`false` values
+> - Detection fails (RBAC, timeout) → `false` + error log
+>
+> No "partial success" concept exists. Error logs provide observability for failed detections.
+>
+> **Reference**: `pkg/shared/types/enrichment.go` (lines 58-62)
+
+---
+
+## 📊 **Data Flow to Downstream Services** ⭐ NEW (v1.17)
+
+**Reference**: [NOTICE_AIANALYSIS_PATH_CORRECTION.md](../../handoff/NOTICE_AIANALYSIS_PATH_CORRECTION.md)
+
+### **SignalProcessing Output**
+
+SignalProcessing populates `status.enrichmentResults`:
+```go
+// SignalProcessing controller reconciliation output
+sp.Status.EnrichmentResults = sharedtypes.EnrichmentResults{
+    KubernetesContext: kubeCtx,
+    DetectedLabels:    detectedLabels,
+    OwnerChain:        ownerChain,
+    CustomLabels:      customLabels,
+}
+```
+
+### **RO Copies to AIAnalysis**
+
+Remediation Orchestrator (RO) copies data when creating AIAnalysis CRD:
+```go
+// RO creates AIAnalysis with enrichment data from SignalProcessing
+aiAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults = sharedtypes.EnrichmentResults{
+    KubernetesContext: signalProcessing.Status.EnrichmentResults.KubernetesContext,
+    DetectedLabels:    signalProcessing.Status.EnrichmentResults.DetectedLabels,
+    OwnerChain:        signalProcessing.Status.EnrichmentResults.OwnerChain,
+    CustomLabels:      signalProcessing.Status.EnrichmentResults.CustomLabels,
+}
+```
+
+### **Data Flow Diagram**
+```
+SignalProcessing.Status.EnrichmentResults
+        │
+        │ (RO copies)
+        ▼
+AIAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults
+        │
+        │ (AIAnalysis passes to)
+        ▼
+HolmesGPT-API (workflow filtering + LLM context)
+        │
+        │ (searches)
+        ▼
+Data Storage (workflow catalog)
+```
+
+### **SignalProcessing Responsibility**
+- ✅ Populate `status.enrichmentResults` with all enrichment data
+- ❌ Do NOT create AIAnalysis CRD (RO's responsibility)
+- ❌ Do NOT call HolmesGPT-API (AIAnalysis's responsibility)
+
+---
+
+## 📝 **RO Contract Gap Fixes** ⭐ NEW (v1.17)
+
+**Reference**: `docs/services/crd-controllers/01-signalprocessing/RO_CONTRACT_GAPS.md`
+
+The following contract gaps were identified and fixed in `api/signalprocessing/v1alpha1/signalprocessing_types.go`:
+
+| GAP ID | Issue | Fix | Status |
+|--------|-------|-----|--------|
+| **GAP-C1-01** | `Environment` had enum constraint | Changed to free-text (MinLength=1, MaxLength=63) | ✅ Fixed |
+| **GAP-C1-02** | `Priority` had enum + pattern constraint | Changed to free-text (MinLength=1, MaxLength=63) | ✅ Fixed |
+| **GAP-C1-05** | Missing `StormType` field | Added field for contract alignment | ✅ Fixed |
+| **GAP-C1-06** | Missing `StormWindow` field | Added field for contract alignment | ✅ Fixed |
+
+### **Why Free-Text for Environment/Priority?**
+
+**Rationale** (per DD-WORKFLOW-001 v1.9):
+- Customers define environment meaning for risk (e.g., "uat" = high risk for one team, low for another)
+- Rego policies assign environment and priority values
+- Enum constraints prevent valid customer-defined values like "qa-eu", "canary", "dr-site"
+
+**Best Practice Examples**:
+- Environment: `production`, `staging`, `development`, `qa-eu`, `canary`, `dr-site`
+- Priority: `P0` (critical), `P1` (high), `P2` (normal), `P3` (low), `critical`, `high`
+
+---
+
 ## 📋 **Version History**
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **v1.6** | 2025-11-28 | Test scenarios (138), Gateway code migration (489 LOC + 34 tests), operational sections, DD-007 | ✅ **CURRENT** |
+| **v1.17** | 2025-12-02 | Shared types, data flow, RO contract gaps, DD-WORKFLOW-001 v1.9 | ✅ **CURRENT** |
+| **v1.16** | 2025-11-30 | Cross-team validation complete (100% confidence) | ✅ |
+| **v1.6** | 2025-11-28 | Test scenarios (138), Gateway code migration (489 LOC + 34 tests), operational sections, DD-007 | ✅ |
 | **v1.5** | 2025-11-28 | Template compliance: TOC, Common Pitfalls, Success Criteria, Makefile, Table-Driven Tests | ✅ |
 | **v1.4** | 2025-11-28 | Metrics triage (12→6), test location fix (api/ → test/unit/), null-testing removal | ✅ |
 | **v1.3** | 2025-11-27 | DD-017: K8s Enrichment Depth Strategy documentation | ✅ |
@@ -349,7 +493,7 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
 - **Categorization Accuracy**: 95%+ confidence - *Justification: Enables AI analysis reliability*
 - **Rego Policy Evaluation**: <100ms P95 - *Justification: Fast policy decisions*
 - **Audit Write Latency**: <1ms P95 - *Justification: Fire-and-forget pattern per ADR-038 (non-blocking)*
-- **Owner Chain Build**: <500ms P95 - *Justification: Fast K8s API traversal (DD-WORKFLOW-001 v1.8)*
+- **Owner Chain Build**: <500ms P95 - *Justification: Fast K8s API traversal (DD-WORKFLOW-001 v1.9)*
 - **DetectedLabels Detection**: <200ms P95 - *Justification: Parallel K8s queries for 9 detection types*
 - **Rego Policy Evaluation**: <100ms P95 - *Justification: Fast policy decisions*
 - **Test Coverage**: 70%+ unit, 50%+ integration - *Justification: Defense-in-depth testing*
@@ -369,7 +513,7 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
 | **DD-CATEGORIZATION-001** | Gateway vs Signal Processing Split | Signal Processing owns ALL categorization |
 | **DD-SIGNAL-PROCESSING-001** | Service Rename | Use SignalProcessing (not RemediationProcessor) |
 | **DD-CONTEXT-006** | Context API Deprecation | No Context API integration |
-| **DD-WORKFLOW-001 v1.8** | Mandatory Label Schema | OwnerChain, DetectedLabels, CustomLabels for workflow filtering ⭐ NEW |
+| **DD-WORKFLOW-001 v1.9** | Mandatory Label Schema | OwnerChain, DetectedLabels, CustomLabels for workflow filtering ⭐ NEW |
 
 ### **Architecture Decision Records (ADR)**
 
@@ -416,8 +560,8 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
     - [ ] DD-CATEGORIZATION-001: Categorization Ownership ✅
     - [ ] DD-017: K8s Enrichment Depth ✅
     - [ ] DD-001: Recovery Context Enrichment ✅
-  - **Label Detection (DD-WORKFLOW-001 v1.8)**: ⭐ NEW
-    - [ ] DD-WORKFLOW-001 v1.8: OwnerChain, DetectedLabels, CustomLabels (**MANDATORY**)
+  - **Label Detection (DD-WORKFLOW-001 v1.9)**: ⭐ NEW
+    - [ ] DD-WORKFLOW-001 v1.9: OwnerChain, DetectedLabels, CustomLabels (**MANDATORY**)
     - [ ] HANDOFF v3.2: Rego Label Extraction specification
     - [ ] Security wrapper for 5 mandatory labels
     - [ ] ADR-041: Rego Policy Data Fetching Separation ✅
@@ -773,12 +917,12 @@ ctrl.NewControllerManagedBy(mgr).
 | **PLAN** | 4 hours | Day 0 | Implementation strategy | This document, TDD phase mapping |
 | **Foundation** | 2 days | Days 1-2 | Package structure, CRD types | DD-006 scaffolding, API types |
 | **Core Logic** | 4 days | Days 3-6 | Business logic components | Enrichment, classification, Rego (priority) |
-| **Label Detection** | 2-3 days | Days 7-9 | OwnerChain, DetectedLabels, CustomLabels | DD-WORKFLOW-001 v1.8 ⭐ NEW |
+| **Label Detection** | 2-3 days | Days 7-9 | OwnerChain, DetectedLabels, CustomLabels | DD-WORKFLOW-001 v1.9 ⭐ NEW |
 | **Integration** | 2 days | Days 10-11 | Controller, metrics, audit | Complete CRD controller |
 | **Testing** | 2 days | Days 12-13 | Unit → Integration → E2E | 70%+ coverage |
 | **Finalization** | 2 days | Days 14-15 | E2E, docs, Gateway migration | Production-ready |
 
-### **14-17 Day Implementation Timeline** (Updated for DD-WORKFLOW-001 v1.8)
+### **14-17 Day Implementation Timeline** (Updated for DD-WORKFLOW-001 v1.9)
 
 | Day | Phase | Focus | Hours | Key Milestones |
 |-----|-------|-------|-------|----------------|
@@ -799,7 +943,7 @@ ctrl.NewControllerManagedBy(mgr).
 | **Day 14** | Finalization | E2E, Documentation | 8h | E2E tests, service docs |
 | **Day 15** | Finalization | Gateway Migration | 8h | Remove Gateway classification code |
 
-**Note**: Days 7-9 (Label Detection) added per DD-WORKFLOW-001 v1.8. Timeline extended from 12 to 15 days.
+**Note**: Days 7-9 (Label Detection) added per DD-WORKFLOW-001 v1.9. Timeline extended from 12 to 15 days.
 
 ---
 
@@ -2089,9 +2233,9 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 ---
 
-### **Days 7-9: Label Detection** ⭐ NEW (DD-WORKFLOW-001 v1.8)
+### **Days 7-9: Label Detection** ⭐ NEW (DD-WORKFLOW-001 v1.9)
 
-**Reference**: [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
+**Reference**: [DD-WORKFLOW-001 v1.9](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
 
 #### **Day 7: Owner Chain**
 
@@ -2109,12 +2253,13 @@ import (
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
-    signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+    sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Builder constructs the K8s ownership chain
 // Used by HolmesGPT-API to validate DetectedLabels applicability
-// See: DD-WORKFLOW-001 v1.8
+// See: DD-WORKFLOW-001 v1.9
+// Uses sharedtypes.OwnerChainEntry from pkg/shared/types/enrichment.go
 type Builder struct {
     client client.Client
     logger logr.Logger
@@ -2130,15 +2275,15 @@ func NewBuilder(c client.Client, logger logr.Logger) *Builder {
 // Build traverses K8s ownerReferences to construct ownership chain
 // Algorithm: Follow first `controller: true` ownerReference at each level
 // Example: Pod → ReplicaSet → Deployment
-func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]signalprocessingv1.OwnerChainEntry, error) {
-    var chain []signalprocessingv1.OwnerChainEntry
+func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]sharedtypes.OwnerChainEntry, error) {
+    var chain []sharedtypes.OwnerChainEntry
 
     currentNamespace := namespace
     currentKind := kind
     currentName := name
 
     // Add source resource as first entry
-    chain = append(chain, signalprocessingv1.OwnerChainEntry{
+    chain = append(chain, sharedtypes.OwnerChainEntry{
         Namespace: currentNamespace,
         Kind:      currentKind,
         Name:      currentName,
@@ -2157,7 +2302,7 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]si
             ownerNamespace = ""
         }
 
-        chain = append(chain, signalprocessingv1.OwnerChainEntry{
+        chain = append(chain, sharedtypes.OwnerChainEntry{
             Namespace: ownerNamespace,
             Kind:      ownerRef.Kind,
             Name:      ownerRef.Name,
@@ -2235,101 +2380,147 @@ func NewLabelDetector(c client.Client, logger logr.Logger) *LabelDetector {
 }
 
 // DetectLabels detects 9 label types from K8s context
-func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) *signalprocessingv1.DetectedLabels {
+// Per DD-WORKFLOW-001 v2.1: Tracks detection failures in FailedDetections field
+func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) *sharedtypes.DetectedLabels {
     if k8sCtx == nil {
         return nil
     }
 
-    labels := &signalprocessingv1.DetectedLabels{}
+    labels := &sharedtypes.DetectedLabels{}
+    var failedDetections []string  // NEW: Track detection failures (DD-WORKFLOW-001 v2.1)
 
     // 1. GitOps detection (ArgoCD/Flux)
-    if tool := d.detectGitOpsTool(ctx, k8sCtx); tool != "" {
+    tool, err := d.detectGitOpsTool(ctx, k8sCtx)
+    if err != nil {
+        d.logger.Error(err, "Failed to detect GitOps tool (RBAC?)")
+        failedDetections = append(failedDetections, "gitOpsManaged")
+    } else if tool != "" {
         labels.GitOpsManaged = true
         labels.GitOpsTool = tool
     }
 
     // 2. PDB protection detection
-    if d.hasPDB(ctx, k8sCtx) {
-        labels.PDBProtected = true
+    hasPDB, err := d.hasPDB(ctx, k8sCtx)
+    if err != nil {
+        d.logger.Error(err, "Failed to detect PDB (RBAC?)")
+        failedDetections = append(failedDetections, "pdbProtected")
+    } else {
+        labels.PDBProtected = hasPDB
     }
 
     // 3. HPA detection
-    if d.hasHPA(ctx, k8sCtx) {
-        labels.HPAEnabled = true
+    hasHPA, err := d.hasHPA(ctx, k8sCtx)
+    if err != nil {
+        d.logger.Error(err, "Failed to detect HPA (RBAC?)")
+        failedDetections = append(failedDetections, "hpaEnabled")
+    } else {
+        labels.HPAEnabled = hasHPA
     }
 
     // 4. StatefulSet detection
-    if d.isStateful(ctx, k8sCtx) {
-        labels.Stateful = true
+    isStateful, err := d.isStateful(ctx, k8sCtx)
+    if err != nil {
+        d.logger.Error(err, "Failed to detect StatefulSet (RBAC?)")
+        failedDetections = append(failedDetections, "stateful")
+    } else {
+        labels.Stateful = isStateful
     }
 
     // 5. Helm managed detection
-    if d.isHelmManaged(ctx, k8sCtx) {
-        labels.HelmManaged = true
+    isHelm, err := d.isHelmManaged(ctx, k8sCtx)
+    if err != nil {
+        d.logger.Error(err, "Failed to detect Helm (RBAC?)")
+        failedDetections = append(failedDetections, "helmManaged")
+    } else {
+        labels.HelmManaged = isHelm
     }
 
     // 6. Network isolation detection
-    if d.hasNetworkPolicy(ctx, k8sCtx) {
-        labels.NetworkIsolated = true
+    hasNetPol, err := d.hasNetworkPolicy(ctx, k8sCtx)
+    if err != nil {
+        d.logger.Error(err, "Failed to detect NetworkPolicy (RBAC?)")
+        failedDetections = append(failedDetections, "networkIsolated")
+    } else {
+        labels.NetworkIsolated = hasNetPol
     }
 
     // 7. Pod Security Level detection
-    if level := d.getPodSecurityLevel(ctx, k8sCtx); level != "" {
+    level, err := d.getPodSecurityLevel(ctx, k8sCtx)
+    if err != nil {
+        d.logger.Error(err, "Failed to detect Pod Security Level (RBAC?)")
+        failedDetections = append(failedDetections, "podSecurityLevel")
+    } else if level != "" {
         labels.PodSecurityLevel = level
     }
 
     // 8. Service Mesh detection
-    if mesh := d.detectServiceMesh(ctx, k8sCtx); mesh != "" {
+    mesh, err := d.detectServiceMesh(ctx, k8sCtx)
+    if err != nil {
+        d.logger.Error(err, "Failed to detect Service Mesh (RBAC?)")
+        failedDetections = append(failedDetections, "serviceMesh")
+    } else if mesh != "" {
         labels.ServiceMesh = mesh
+    }
+
+    // Set FailedDetections if any (DD-WORKFLOW-001 v2.1)
+    if len(failedDetections) > 0 {
+        labels.FailedDetections = failedDetections
     }
 
     d.logger.Info("DetectedLabels populated",
         "gitOpsManaged", labels.GitOpsManaged,
         "pdbProtected", labels.PDBProtected,
-        "hpaEnabled", labels.HPAEnabled)
+        "hpaEnabled", labels.HPAEnabled,
+        "failedDetections", failedDetections)
 
     return labels
 }
 
-func (d *LabelDetector) detectGitOpsTool(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) string {
+// Helper functions now return (value, error) for FailedDetections tracking (DD-WORKFLOW-001 v2.1)
+
+func (d *LabelDetector) detectGitOpsTool(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (string, error) {
     // Check for ArgoCD: argocd.argoproj.io/instance annotation
     // Check for Flux: fluxcd.io/sync-gc-mark label
-    return ""
+    // Returns ("argocd" | "flux" | "", nil) on success, ("", err) on RBAC/timeout
+    return "", nil
 }
 
-func (d *LabelDetector) hasPDB(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+func (d *LabelDetector) hasPDB(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Query PodDisruptionBudgets matching pod labels
-    return false
+    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
+    return false, nil
 }
 
-func (d *LabelDetector) hasHPA(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+func (d *LabelDetector) hasHPA(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Query HorizontalPodAutoscalers targeting deployment
-    return false
+    return false, nil
 }
 
-func (d *LabelDetector) isStateful(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+func (d *LabelDetector) isStateful(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Check if pod is owned by StatefulSet or has PVCs
-    return false
+    return false, nil
 }
 
-func (d *LabelDetector) isHelmManaged(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+func (d *LabelDetector) isHelmManaged(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Check for app.kubernetes.io/managed-by: Helm or helm.sh/chart annotation
-    return false
+    return false, nil
 }
 
-func (d *LabelDetector) hasNetworkPolicy(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) bool {
+func (d *LabelDetector) hasNetworkPolicy(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Query NetworkPolicies in namespace
-    return false
+    return false, nil
 }
 
-func (d *LabelDetector) getPodSecurityLevel(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) string {
+func (d *LabelDetector) getPodSecurityLevel(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (string, error) {
     // Check namespace label: pod-security.kubernetes.io/enforce
-    return ""
+    // Returns ("privileged" | "baseline" | "restricted" | "", nil) on success
+    return "", nil
 }
 
-func (d *LabelDetector) detectServiceMesh(ctx context.Context, k8sCtx *signalprocessingv1.KubernetesContext) string {
+func (d *LabelDetector) detectServiceMesh(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (string, error) {
     // Check for Istio sidecar or Linkerd proxy annotations
-    return ""
+    // Returns ("istio" | "linkerd" | "", nil) on success
+    return "", nil
 }
 ```
 
@@ -2423,10 +2614,73 @@ func (e *Engine) EvaluatePolicy(ctx context.Context, input *Input) (map[string][
     result := make(map[string][]string)
     // ... conversion logic
 
+    // Validate and sanitize (DD-WORKFLOW-001 v1.9)
+    result = e.validateAndSanitize(result)
+
     e.logger.Info("CustomLabels evaluated",
         "labelCount", len(result))
 
     return result, nil
+}
+
+// validateAndSanitize enforces validation limits per DD-WORKFLOW-001 v1.9
+func (e *Engine) validateAndSanitize(labels map[string][]string) map[string][]string {
+    result := make(map[string][]string)
+
+    const (
+        maxKeys         = 10   // Max keys (subdomains)
+        maxValuesPerKey = 5    // Max values per key
+        maxKeyLength    = 63   // K8s label key compatibility
+        maxValueLength  = 100  // Prompt efficiency
+    )
+
+    // Reserved prefixes - strip these for security
+    reservedPrefixes := []string{"kubernaut.ai/", "system/"}
+
+    keyCount := 0
+    for key, values := range labels {
+        // Check key count limit
+        if keyCount >= maxKeys {
+            e.logger.Info("CustomLabels key limit reached, truncating",
+                "maxKeys", maxKeys, "totalKeys", len(labels))
+            break
+        }
+
+        // Skip reserved prefixes
+        if hasReservedPrefix(key, reservedPrefixes) {
+            e.logger.Info("CustomLabels reserved prefix stripped",
+                "key", key)
+            continue
+        }
+
+        // Truncate key if too long
+        if len(key) > maxKeyLength {
+            e.logger.Info("CustomLabels key truncated",
+                "key", key, "maxLength", maxKeyLength)
+            key = key[:maxKeyLength]
+        }
+
+        // Validate and truncate values
+        var validValues []string
+        for i, value := range values {
+            if i >= maxValuesPerKey {
+                e.logger.Info("CustomLabels values limit reached",
+                    "key", key, "maxValues", maxValuesPerKey)
+                break
+            }
+            if len(value) > maxValueLength {
+                e.logger.Info("CustomLabels value truncated",
+                    "key", key, "maxLength", maxValueLength)
+                value = value[:maxValueLength]
+            }
+            validValues = append(validValues, value)
+        }
+
+        result[key] = validValues
+        keyCount++
+    }
+
+    return result
 }
 
 // wrapWithSecurityPolicy wraps customer policy with security wrapper
@@ -2437,7 +2691,7 @@ package signalprocessing.security
 
 import data.signalprocessing.labels as customer_labels
 
-# 5 mandatory system labels (DD-WORKFLOW-001 v1.8) - cannot be overridden
+# 5 mandatory system labels (DD-WORKFLOW-001 v1.9) - cannot be overridden
 system_labels := {
     "kubernaut.io/signal-type",
     "kubernaut.io/severity",
@@ -2562,7 +2816,7 @@ type SignalProcessingReconciler struct {
     BusinessClassifier  *classifier.BusinessClassifier
     AuditClient         *audit.Client
     Metrics             *metrics.Metrics
-    // NEW: Label Detection components (DD-WORKFLOW-001 v1.8)
+    // NEW: Label Detection components (DD-WORKFLOW-001 v1.9)
     OwnerChainBuilder   *ownerchain.Builder
     LabelDetector       *detection.LabelDetector
     RegoEngine          *rego.Engine
@@ -2572,7 +2826,7 @@ type SignalProcessingReconciler struct {
 func (r *SignalProcessingReconciler) handleEnrichingPhase(ctx context.Context, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {
     // ... existing K8s enrichment ...
 
-    // NEW: Build owner chain (DD-WORKFLOW-001 v1.8)
+    // NEW: Build owner chain (DD-WORKFLOW-001 v1.9)
     ownerChain, err := r.OwnerChainBuilder.Build(ctx,
         sp.Status.EnrichmentResults.KubernetesContext.Namespace,
         "Pod",

@@ -17,7 +17,7 @@
 //   - HolmesGPT-API (uses for workflow filtering + LLM context)
 //   - Data Storage (stores workflow metadata constraints)
 //
-// Design Decision: DD-WORKFLOW-001 v1.9, DD-CONTRACT-002
+// Design Decision: DD-WORKFLOW-001 v2.1, DD-CONTRACT-002
 // See: docs/architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md
 //
 // +kubebuilder:object:generate=true
@@ -56,10 +56,11 @@ type EnrichmentResults struct {
 	CustomLabels map[string][]string `json:"customLabels,omitempty"`
 
 	// NOTE: EnrichmentQuality field was REMOVED (Dec 2, 2025)
-	// SignalProcessing confirmed DetectedLabels are deterministic lookups:
+	// Detection Failure Handling (DD-WORKFLOW-001 v2.1):
 	// - Detection succeeds → explicit true/false values
 	// - Detection fails (RBAC, timeout) → false + error log
-	// No partial success concept - error logs provide observability instead.
+	// No "unknown" state - downstream consumers receive valid booleans only.
+	// See: docs/architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md#detection-failure-handling-v21
 }
 
 // OwnerChainEntry represents a single entry in the K8s ownership chain.
@@ -78,7 +79,7 @@ type OwnerChainEntry struct {
 }
 
 // ========================================
-// DETECTED LABELS (DD-WORKFLOW-001 v1.4)
+// DETECTED LABELS (DD-WORKFLOW-001 v2.1)
 // ========================================
 
 // DetectedLabels contains auto-detected cluster characteristics.
@@ -86,7 +87,27 @@ type OwnerChainEntry struct {
 // Used by HolmesGPT-API for:
 //   - Workflow filtering (deterministic SQL WHERE)
 //   - LLM context (natural language in prompt)
+//
+// DETECTION FAILURE HANDLING (DD-WORKFLOW-001 v2.1):
+// All fields are plain `bool` (NOT `*bool`). Uses `FailedDetections` array to track
+// which fields had query failures (RBAC denied, timeout, network error).
+//
+// IMPORTANT DISTINCTION:
+//   - Resource doesn't exist (no PDB) → false value, NOT in FailedDetections
+//   - Query failed (RBAC denied) → false value, field name IN FailedDetections
+//
+// Consumers should check FailedDetections before trusting a false value.
 type DetectedLabels struct {
+	// ========================================
+	// DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.1)
+	// ========================================
+	// Lists field names where detection QUERY failed (RBAC, timeout, network error).
+	// If a field is in this array, its value should be ignored.
+	// If empty/nil, all detections succeeded.
+	// Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
+	// stateful, helmManaged, networkIsolated, podSecurityLevel, serviceMesh
+	FailedDetections []string `json:"failedDetections,omitempty"`
+
 	// ========================================
 	// GITOPS MANAGEMENT
 	// ========================================
