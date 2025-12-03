@@ -476,6 +476,49 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
         Owns(&tektonv1.PipelineRun{}).  // Watch owned PipelineRuns
         Complete(r)
 }
+
+// ========================================
+// STARTUP VALIDATION (ADR-030: Crash-if-Missing)
+// ========================================
+
+// CheckTektonAvailable validates Tekton Pipelines is installed.
+// Called from main.go BEFORE starting the manager.
+// MUST crash if Tekton is not available - this is a required dependency.
+func CheckTektonAvailable(ctx context.Context, restMapper meta.RESTMapper) error {
+    // Check if Pipeline CRD exists
+    _, err := restMapper.RESTMapping(
+        schema.GroupKind{Group: "tekton.dev", Kind: "Pipeline"},
+        "v1",
+    )
+    if err != nil {
+        return fmt.Errorf("Tekton Pipelines not installed or not accessible: %w", err)
+    }
+
+    // Check if PipelineRun CRD exists
+    _, err = restMapper.RESTMapping(
+        schema.GroupKind{Group: "tekton.dev", Kind: "PipelineRun"},
+        "v1",
+    )
+    if err != nil {
+        return fmt.Errorf("Tekton Pipelines CRDs incomplete: %w", err)
+    }
+
+    return nil
+}
+
+// Usage in cmd/workflowexecution/main.go:
+//
+// func main() {
+//     // ... setup manager ...
+//
+//     // REQUIRED: Validate Tekton is installed (ADR-030)
+//     if err := controller.CheckTektonAvailable(ctx, mgr.GetRESTMapper()); err != nil {
+//         setupLog.Error(err, "Required dependency check failed")
+//         os.Exit(1)  // CRASH - Tekton is required
+//     }
+//
+//     // ... start manager ...
+// }
 ```
 
 ---

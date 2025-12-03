@@ -60,10 +60,53 @@ Orchestrates remediation workflows by creating Tekton PipelineRuns from OCI bund
 - **Port 9090**: Metrics endpoint (`/metrics` - with auth filter)
 - **Authentication**: Kubernetes TokenReviewer API (validates ServiceAccount tokens)
 
+### Startup Behavior (ADR-030)
+
+| Dependency | Behavior | Reason |
+|------------|----------|--------|
+| **Tekton Pipelines** | Crash at startup | Core execution engine |
+| **ConfigMap** | Use defaults if missing | All values have sane defaults |
+| **ServiceAccount** | Fail execution (not crash) | Per-namespace, checked at runtime |
+
+**Implementation**:
+```go
+func checkTektonAvailable(ctx context.Context, client client.Client) error {
+    // Try to list Pipeline CRDs - if not found, Tekton not installed
+    _, err := client.RESTMapper().RESTMapping(
+        schema.GroupKind{Group: "tekton.dev", Kind: "Pipeline"})
+    if err != nil {
+        return fmt.Errorf("Tekton Pipelines not installed: %w", err)
+    }
+    return nil
+}
+```
+
+### Configuration Defaults
+
+| Setting | Default | ConfigMap Key | Environment Override |
+|---------|---------|---------------|---------------------|
+| **Cooldown Period** | 5 minutes | `resource_locking.cooldown_period` | `WE_COOLDOWN_PERIOD` |
+| **Status Check Interval** | 10 seconds | `tekton.status_check_interval` | - |
+| **Health Port** | 8081 | `health.listen_addr` | - |
+| **Metrics Port** | 9090 | `metrics.listen_addr` | - |
+
+**Reference**: [CONFIG_STANDARDS.md](../../../configuration/CONFIG_STANDARDS.md)
+
+### Timeout Cascade
+
+| Layer | Timeout | Purpose |
+|-------|---------|---------|
+| **Tekton Pipeline** | Defined in Pipeline YAML | Step/Task execution limits |
+| **WorkflowExecution** | No override | Respects Pipeline-defined timeout |
+| **RemediationOrchestrator** | 60 minutes | Outer boundary for entire remediation cycle |
+
+**Behavior**: Tekton's Pipeline-defined timeout wins. If a PipelineRun exceeds its timeout, Tekton marks it `Failed` with reason `PipelineRunTimeout`. RO's 60-minute timeout is the maximum for the entire remediation (including analysis, approval, execution).
+
 ### ServiceAccount
 - **Name**: `kubernaut-workflow-runner`
-- **Namespace**: `kubernaut-system`
-- **Purpose**: Controller and PipelineRun execution
+- **Namespace**: Per target namespace (not `kubernaut-system`)
+- **Purpose**: PipelineRun execution with remediation permissions
+- **Failure**: If missing, execution fails with `ConfigurationError` reason
 
 ### Notes
 - CRD controllers do not expose REST APIs
