@@ -36,10 +36,27 @@ RemediationRequest creates KubernetesExecution
 RemediationRequest.status.overallPhase = "completed"
          ↓
    (24-hour retention begins)
+
+   === ALTERNATIVE PATH: WE Resource Lock (DD-RO-001) ===
+RemediationRequest creates WorkflowExecution
+         ↓
+   WorkflowExecution.status.phase = "Skipped"
+     (ResourceBusy or RecentlyRemediated)
+         ↓
+   (watch triggers)
+         ↓
+RemediationRequest.status.overallPhase = "Skipped"
+RemediationRequest.status.skipReason = "ResourceBusy"
+RemediationRequest.status.duplicateOf = "parent-rr-name"
+         ↓
+   (Parent RR tracks duplicates, bulk notification on completion)
 ```
 
 **Overall Phase States**:
-- `pending` → `processing` → `analyzing` → `executing` → `completed` / `failed` / `timeout`
+- `pending` → `processing` → `analyzing` → `executing` → `completed` / `failed` / `timeout` / `skipped`
+- `failed` → `recovering` → `analyzing` → `executing` → `completed` / `failed`
+
+**Note**: `skipped` is a terminal state for duplicate remediations when WorkflowExecution returns `Skipped` phase due to resource locking (see DD-RO-001).
 
 ### Reconciliation Flow
 
@@ -170,7 +187,8 @@ err = c.Watch(
 
 **Transition Criteria**:
 ```go
-if workflowExecution.Status.Phase == "completed" {
+switch workflowExecution.Status.Phase {
+case "Completed":
     // Create KubernetesExecution CRD
     createKubernetesExecution(ctx, alertRemediation, workflowExecution.Status)
 
@@ -179,12 +197,22 @@ if workflowExecution.Status.Phase == "completed" {
         phase = "completed"
         completionTime = metav1.Now()
     }
-} else if workflowExecution.Status.Phase == "failed" {
+
+case "Skipped":
+    // DD-RO-001: Handle resource lock deduplication (BR-ORCH-032)
+    handleWorkflowExecutionSkipped(ctx, alertRemediation, workflowExecution)
+    phase = "Skipped"
+    // Note: Individual notification deferred to bulk notification on parent completion
+
+case "Failed":
     phase = "failed"
     reason = "workflow_execution_failed"
-} else if timeoutExceeded(workflowExecution) {
-    phase = "timeout"
-    escalate("workflow_execution_timeout")
+
+default:
+    if timeoutExceeded(workflowExecution) {
+        phase = "timeout"
+        escalate("workflow_execution_timeout")
+    }
 }
 ```
 
@@ -311,6 +339,66 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 | **Overall Workflow** | 1 hour | Slack: #incident-response, PagerDuty: P1 |
 
 **No Requeue** (terminal state)
+
+---
+
+#### 8. **skipped** Phase (Terminal State - Duplicate/Resource Lock)
+
+**Business Requirements**: BR-ORCH-032, BR-ORCH-033, BR-ORCH-034
+**Design Decision Reference**: DD-RO-001 (Resource Lock Deduplication Handling)
+
+**Purpose**: Remediation was skipped because WorkflowExecution detected a resource lock (another workflow executing on the same target resource).
+
+**Trigger**: WorkflowExecution.status.phase = "Skipped" (with skipDetails)
+
+**Actions**:
+- Mark RemediationRequest as skipped with reason
+- Track relationship to parent (first/active) remediation
+- Update parent RR's duplicate tracking (count, refs)
+- **NO individual notification** (bulk notification on parent completion per BR-ORCH-034)
+
+**Skip Reasons** (from WorkflowExecution):
+| Reason | Description | Parent Reference |
+|--------|-------------|------------------|
+| `ResourceBusy` | Another workflow executing on same target | `skipDetails.conflictingWorkflow.remediationRequestRef` |
+| `RecentlyRemediated` | Target resource recently remediated (cooldown) | `skipDetails.recentRemediation.remediationRequestRef` |
+
+**Status Update**:
+```go
+// Update skipped RR status
+remediation.Status.OverallPhase = "Skipped"
+remediation.Status.SkipReason = we.Status.SkipDetails.Reason    // "ResourceBusy" | "RecentlyRemediated"
+remediation.Status.DuplicateOf = parentRRName                    // Reference to parent RR
+remediation.Status.Message = fmt.Sprintf("Skipped: %s - see %s", skipReason, parentRRName)
+
+// Update parent RR's duplicate tracking
+parentRR.Status.DuplicateCount++
+parentRR.Status.DuplicateRefs = append(parentRR.Status.DuplicateRefs, duplicateRRName)
+```
+
+**Bulk Notification on Parent Completion** (BR-ORCH-034):
+When the parent (first/active) RemediationRequest completes (success OR failure):
+```yaml
+kind: NotificationRequest
+spec:
+  eventType: "RemediationCompleted"
+  subject: "Remediation Completed: {workflowId}"
+  body: |
+    Target: {targetResource}
+    Result: ✅ Successful / ❌ Failed
+    Duration: {duration}
+
+    Duplicates Suppressed: {duplicateCount}
+    ├─ ResourceBusy: {resourceBusyCount}
+    └─ RecentlyRemediated: {recentlyRemediatedCount}
+  metadata:
+    duplicateCount: "{N}"
+    duplicateRefs: ["rr-002", "rr-003", ...]
+```
+
+**No Requeue** (terminal state)
+
+**Note**: This differs from Gateway-level deduplication. Gateway deduplicates signals with the same fingerprint. WE resource locking is a safety net for different fingerprints targeting the same resource (Layer 3 per DD-RO-001).
 
 ---
 

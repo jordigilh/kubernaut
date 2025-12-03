@@ -50,10 +50,22 @@ type RemediationRequestSpec struct {
     Deduplication DeduplicationInfo `json:"deduplication"`
 
     // Storm Detection (OPTIONAL)
-    IsStorm         bool   `json:"isStorm,omitempty"`
-    StormType       string `json:"stormType,omitempty"`       // "rate" or "pattern"
-    StormWindow     string `json:"stormWindow,omitempty"`     // e.g., "5m"
-    StormAlertCount int    `json:"stormAlertCount,omitempty"` // Number of alerts in storm
+    IsStorm         bool     `json:"isStorm,omitempty"`
+    StormType       string   `json:"stormType,omitempty"`       // "rate" or "pattern"
+    StormWindow     string   `json:"stormWindow,omitempty"`     // e.g., "5m"
+    StormAlertCount int      `json:"stormAlertCount,omitempty"` // Number of alerts in storm
+    AffectedResources []string `json:"affectedResources,omitempty"` // List of affected resources in storm
+
+    // ========================================
+    // TARGET RESOURCE IDENTIFICATION (REQUIRED)
+    // Added per Gateway contract alignment (December 2025)
+    // ========================================
+
+    // TargetResource identifies the Kubernetes resource that triggered this signal.
+    // Populated by Gateway from NormalizedSignal.Resource - REQUIRED.
+    // Used by SignalProcessing for context enrichment and RO for workflow routing.
+    // +kubebuilder:validation:Required
+    TargetResource ResourceIdentifier `json:"targetResource"`
 
     // ========================================
     // PROVIDER-SPECIFIC DATA
@@ -89,12 +101,26 @@ type RemediationRequestSpec struct {
 }
 
 // DeduplicationInfo tracks duplicate signal suppression
+// AUTHORITATIVE SOURCE: pkg/shared/types/deduplication.go (shared with SignalProcessing)
+// Updated per Gateway contract alignment (December 2025)
 type DeduplicationInfo struct {
-    IsDuplicate                   bool        `json:"isDuplicate"`
-    FirstSeen                     metav1.Time `json:"firstSeen"`
-    LastSeen                      metav1.Time `json:"lastSeen"`
-    OccurrenceCount               int         `json:"occurrenceCount"`
-    PreviousRemediationRequestRef string      `json:"previousRemediationRequestRef,omitempty"`
+    // True if this signal is a duplicate of an active remediation
+    IsDuplicate bool `json:"isDuplicate,omitempty"`
+
+    // Timestamp when this signal fingerprint was first seen
+    FirstOccurrence metav1.Time `json:"firstOccurrence"`
+
+    // Timestamp when this signal fingerprint was last seen
+    LastOccurrence metav1.Time `json:"lastOccurrence"`
+
+    // Total count of occurrences of this signal
+    OccurrenceCount int `json:"occurrenceCount"`
+
+    // Optional correlation ID for grouping related signals
+    CorrelationID string `json:"correlationId,omitempty"`
+
+    // Reference to previous RemediationRequest CRD (if duplicate)
+    PreviousRemediationRequestRef string `json:"previousRemediationRequestRef,omitempty"`
 }
 
 // TimeoutConfig allows per-remediation timeout customization
@@ -103,6 +129,21 @@ type TimeoutConfig struct {
     AIAnalysisTimeout            metav1.Duration `json:"aiAnalysisTimeout,omitempty"`            // Default: 10m
     WorkflowExecutionTimeout     metav1.Duration `json:"workflowExecutionTimeout,omitempty"`     // Default: 20m
     OverallWorkflowTimeout       metav1.Duration `json:"overallWorkflowTimeout,omitempty"`       // Default: 1h
+}
+
+// ResourceIdentifier uniquely identifies a Kubernetes resource.
+// Added per Gateway contract alignment (December 2025)
+// Used for target resource identification across CRDs.
+type ResourceIdentifier struct {
+    // Kind of the Kubernetes resource (e.g., "Pod", "Deployment", "Node", "StatefulSet")
+    Kind string `json:"kind"`
+
+    // Name of the Kubernetes resource instance
+    Name string `json:"name"`
+
+    // Namespace of the Kubernetes resource (empty for cluster-scoped resources like Node)
+    // +optional
+    Namespace string `json:"namespace,omitempty"`
 }
 ```
 
@@ -177,9 +218,28 @@ import (
 type RemediationRequestStatus struct {
     // Overall remediation state
     // UPDATED: Added "recovering" phase for failure recovery coordination
-    OverallPhase string      `json:"overallPhase"` // pending, processing, analyzing, executing, recovering, completed, failed, timeout
+    // UPDATED: Added "skipped" phase for resource lock deduplication (BR-ORCH-032, December 2025)
+    OverallPhase string      `json:"overallPhase"` // pending, processing, analyzing, executing, recovering, completed, failed, timeout, skipped
     StartTime    metav1.Time `json:"startTime"`
     CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+    // ========================================
+    // SKIPPED PHASE TRACKING (BR-ORCH-032/033/034, December 2025)
+    // When WorkflowExecution is skipped due to resource locking
+    // ========================================
+
+    // SkipReason indicates why this remediation was skipped
+    // Values: "ResourceBusy" (another workflow running) or "RecentlyRemediated" (cooldown active)
+    SkipReason string `json:"skipReason,omitempty"`
+
+    // DuplicateOf references the parent RemediationRequest that is actively handling this resource
+    DuplicateOf string `json:"duplicateOf,omitempty"`
+
+    // DuplicateCount tracks how many remediations were skipped in favor of this one (parent RR only)
+    DuplicateCount int `json:"duplicateCount,omitempty"`
+
+    // DuplicateRefs lists the names of skipped RemediationRequests (parent RR only)
+    DuplicateRefs []string `json:"duplicateRefs,omitempty"`
 
     // ========================================
     // RECOVERY TRACKING (Phase 1 Critical Fix)
@@ -672,6 +732,17 @@ status:
 - **Business Requirements**: See Section 5 "Recovery Orchestration" (to be added in C3)
 - **Controller Implementation**: [`controller-implementation.md`](./controller-implementation.md) (to be updated in C7)
 - **Integration Points**: [`integration-points.md`](./integration-points.md) (to be updated in C8)
+
+---
+
+## 📝 Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.3 | 2025-12-02 | **Contract Alignment Updates**: Updated DeduplicationInfo to use shared type (`pkg/shared/types/deduplication.go`) with `firstOccurrence`/`lastOccurrence` fields and `correlationId`. Added `TargetResource` field (required). Added `ResourceIdentifier` type. Added Skipped phase status fields (`skipReason`, `duplicateOf`, `duplicateCount`, `duplicateRefs`) per BR-ORCH-032/033/034. Added `AffectedResources` for storm aggregation. |
+| 1.2 | 2025-10-20 | Added "recovering" phase for failure recovery coordination |
+| 1.1 | 2025-10-15 | Added recovery tracking fields (C2, C4) |
+| 1.0 | 2025-10-09 | Initial CRD schema specification |
 
 ---
 

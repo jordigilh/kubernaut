@@ -4,7 +4,7 @@
 **Service Type**: CRD Controller
 **CRD**: RemediationRequest
 **Controller**: RemediationRequestReconciler
-**Version**: 1.2
+**Version**: 1.3
 **Last Updated**: December 1, 2025
 **Status**: In Development
 
@@ -26,6 +26,47 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 ---
 
 ## 🎯 Business Requirements
+
+### Category 0: V1.0 Core Requirements
+
+#### BR-ORCH-001: Approval Notification Creation
+
+**Description**: RemediationOrchestrator MUST create NotificationRequest CRDs when AIAnalysis enters the "Approving" phase (confidence between 60-79%), alerting operators that manual approval is required before workflow execution.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Without push notifications, operators must manually poll for pending approvals (`kubectl get aiapprovalrequest --watch`), resulting in 40-60% approval miss rate and 30-40% timeout rate. Push notifications reduce approval miss rate to <5% and timeout rate to <10%.
+
+**Implementation**:
+- Watch AIAnalysis CRD status changes
+- When `AIAnalysis.status.phase == "Approving"`:
+  - Check `RemediationRequest.status.approvalNotificationSent == false` (idempotency)
+  - Create NotificationRequest CRD with approval context
+  - Set `RemediationRequest.status.approvalNotificationSent = true`
+- NotificationRequest contains:
+  - Investigation summary
+  - Evidence collected
+  - Recommended actions with rationales
+  - Why approval is required
+  - Links to approve/reject
+
+**Acceptance Criteria**:
+- ✅ NotificationRequest created when AIAnalysis enters "Approving" phase
+- ✅ Idempotency: Only ONE notification per approval request (no duplicates on retries)
+- ✅ Notification contains complete approval context
+- ✅ OwnerReference set for cascade deletion
+- ✅ Approval miss rate reduced from 40-60% to <5%
+- ✅ End-to-end latency <5 seconds from AIAnalysis "Approving" to notification delivery
+
+**Test Coverage**:
+- Unit: Approval detection logic, idempotency flag handling
+- Integration: AIAnalysis status → NotificationRequest creation
+- E2E: Full approval notification workflow
+
+**Related ADRs**: ADR-018 (Approval Notification V1.0 Integration), ADR-017 (NotificationRequest Creator)
+**Related DDs**: None (V1.0 core feature)
+
+---
 
 ### Category 1: Workflow Data Pass-Through
 
@@ -270,6 +311,113 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 ---
 
+### Category 4: Resource Lock Deduplication (DD-RO-001)
+
+#### BR-ORCH-032: Handle WE Skipped Phase
+
+**Description**: RemediationOrchestrator MUST watch WorkflowExecution status and handle the `Skipped` phase when WE's resource locking mechanism prevents execution due to `ResourceBusy` or `RecentlyRemediated` reasons.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: WorkflowExecution implements resource-level locking (DD-WE-001) to prevent parallel and redundant workflow executions on the same Kubernetes resource. When WE skips execution, RO must update RemediationRequest status accordingly and track the relationship with the active remediation.
+
+**Implementation**:
+- Watch WorkflowExecution.status.phase for `Skipped` value
+- Extract skip reason from `status.skipDetails.reason` (`ResourceBusy` or `RecentlyRemediated`)
+- Extract parent RR reference from:
+  - `ResourceBusy`: `status.skipDetails.conflictingWorkflow.remediationRequestRef`
+  - `RecentlyRemediated`: `status.skipDetails.recentRemediation.remediationRequestRef`
+- Update RemediationRequest:
+  - `status.phase = "Skipped"`
+  - `status.skipReason = reason`
+  - `status.duplicateOf = parentRRName`
+  - `status.message = "Skipped: {reason} - see {parentRRName}"`
+
+**Acceptance Criteria**:
+- ✅ RO watches WorkflowExecution status changes
+- ✅ `Skipped` phase detected and handled
+- ✅ Skip reason (`ResourceBusy`, `RecentlyRemediated`) extracted and stored
+- ✅ Parent RR reference stored in `status.duplicateOf`
+- ✅ RemediationRequest phase set to `Skipped` (not `Failed`)
+- ✅ Audit trail clearly indicates skip reason
+
+**Test Coverage**:
+- Unit: Skip detection logic, status update logic
+- Integration: WE Skipped → RO handling flow
+- E2E: Full workflow with resource lock skip
+
+**Related DDs**: DD-RO-001 (Resource Lock Deduplication Handling), DD-WE-001 (Resource Locking Safety)
+
+---
+
+#### BR-ORCH-033: Track Duplicate Remediations
+
+**Description**: RemediationOrchestrator MUST track the relationship between skipped (duplicate) RemediationRequests and their parent (active) RemediationRequest, enabling audit trail and consolidated reporting.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: When multiple signals with different fingerprints target the same resource, Gateway creates separate RemediationRequests. WE's resource locking causes all but one to be skipped. RO must track these relationships for audit, metrics, and consolidated notifications.
+
+**Implementation**:
+- When handling Skipped phase (BR-ORCH-032):
+  - Update parent RR's `status.duplicateCount++`
+  - Append to parent RR's `status.duplicateRefs[]`
+- Handle race conditions with optimistic concurrency (resourceVersion)
+- Non-blocking: Continue even if parent tracking fails (log warning)
+
+**Acceptance Criteria**:
+- ✅ Parent RR tracks count of skipped duplicates
+- ✅ Parent RR tracks list of duplicate RR names
+- ✅ Duplicate tracking survives RO restarts (persisted in status)
+- ✅ Race conditions handled gracefully
+- ✅ Tracking failure does not block remediation workflow
+
+**Test Coverage**:
+- Unit: Duplicate tracking logic, race condition handling
+- Integration: Multiple RRs → one parent tracking
+- E2E: Full storm scenario with duplicate tracking
+
+**Related DDs**: DD-RO-001 (Resource Lock Deduplication Handling)
+
+---
+
+#### BR-ORCH-034: Bulk Notification for Duplicates
+
+**Description**: RemediationOrchestrator MUST send ONE consolidated notification when a parent RemediationRequest completes (success or failure), including summary of all skipped duplicates, to avoid notification spam.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Without consolidated notifications, 10 skipped RRs would generate 10 separate notifications, overwhelming operators. Bulk notification provides complete context (result + duplicate count) in a single message.
+
+**Implementation**:
+- When parent RR completes (WorkflowExecution Completed/Failed):
+  - Check `status.duplicateCount > 0`
+  - Build notification body with:
+    - Workflow result (success/failure)
+    - Target resource
+    - Duration
+    - Duplicate count with breakdown by skip reason
+    - First/last signal timestamps
+  - Create single NotificationRequest with consolidated content
+- Notification triggered on parent completion (not on each skip)
+
+**Acceptance Criteria**:
+- ✅ ONE notification sent when parent completes (not per-skip)
+- ✅ Notification includes duplicate count and skip reasons
+- ✅ Notification sent for both success AND failure outcomes
+- ✅ Duplicate RR names included in notification metadata
+- ✅ No notification spam (10 duplicates = 1 notification)
+
+**Test Coverage**:
+- Unit: Notification content building, trigger logic
+- Integration: Parent completion → bulk notification
+- E2E: Full storm scenario with consolidated notification
+
+**Related DDs**: DD-RO-001 (Resource Lock Deduplication Handling)
+**Related ADRs**: ADR-017 (NotificationRequest Creator)
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
@@ -293,7 +441,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 - [Controller Implementation](./controller-implementation.md)
 - [DD-TIMEOUT-001: Global Remediation Timeout](../../../architecture/decisions/DD-TIMEOUT-001-global-remediation-timeout.md)
 - [DD-CONTRACT-001: AIAnalysis ↔ WorkflowExecution Alignment](../../../architecture/decisions/DD-CONTRACT-001-aianalysis-workflowexecution-alignment.md)
-- [DD-RO-001: Notification Cancellation Handling](./DD-RO-001-NOTIFICATION-CANCELLATION-HANDLING.md)
+- [DD-RO-001: Resource Lock Deduplication Handling](../../../architecture/decisions/DD-RO-001-resource-lock-deduplication-handling.md)
 - [DD-NOT-005: NotificationRequest Spec Immutability](../06-notification/DD-NOT-005-SPEC-IMMUTABILITY.md)
 - [ADR-017: NotificationRequest Creator](../../../architecture/decisions/ADR-017-notification-crd-creator.md)
 - [ADR-040: RemediationApprovalRequest](../../../architecture/decisions/ADR-040-remediation-approval-request-architecture.md)
@@ -304,14 +452,16 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4 | 2025-12-02 | Added BR-ORCH-001 (Approval Notification Creation) - formalized from existing usage; Deprecated BR-ORCH-015 to BR-ORCH-021 as implementation details |
+| 1.3 | 2025-12-01 | Added BR-ORCH-032/033/034 for resource lock deduplication handling (DD-RO-001) |
 | 1.2 | 2025-12-01 | **BREAKING**: BR-ORCH-025 updated - RO does NOT call Data Storage API. HolmesGPT-API resolves workflow_id → containerImage during MCP search. RO passes through from AIAnalysis.status. Aligned with DD-CONTRACT-001 v1.2 (authoritative). |
 | 1.1 | 2025-11-28 | Added BR-ORCH-029/030/031 for notification handling (cancellation, status tracking, cascade cleanup) |
 | 1.0 | 2025-11-28 | Initial BR document with catalog integration and timeout requirements |
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: December 1, 2025
+**Document Version**: 1.4
+**Last Updated**: December 2, 2025
 **Maintained By**: Kubernaut Architecture Team
 **Status**: In Development
 

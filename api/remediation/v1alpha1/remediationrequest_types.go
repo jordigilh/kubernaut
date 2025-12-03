@@ -19,6 +19,8 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -55,10 +57,11 @@ type RemediationRequestSpec struct {
 	// +kubebuilder:validation:MaxLength=63
 	Environment string `json:"environment"`
 
-	// Priority assigned by Gateway (P0=critical, P1=high, P2=normal, P3=low)
-	// Used by downstream Rego policies for remediation decisions
-	// +kubebuilder:validation:Enum=P0;P1;P2;P3
-	// +kubebuilder:validation:Pattern="^P[0-3]$"
+	// Priority value provided by Rego policies - no enum enforcement
+	// Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
+	// Operators can define custom priority schemes via Rego policies
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	Priority string `json:"priority"`
 
 	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", "datadog-monitor", etc.
@@ -94,7 +97,8 @@ type RemediationRequestSpec struct {
 
 	// Deduplication Metadata
 	// Tracking information for duplicate signal suppression
-	Deduplication DeduplicationInfo `json:"deduplication"`
+	// Uses shared type for API contract alignment with SignalProcessing CRD
+	Deduplication sharedtypes.DeduplicationInfo `json:"deduplication"`
 
 	// Storm Detection
 	// True if this signal is part of a detected alert storm
@@ -156,24 +160,6 @@ type RemediationRequestSpec struct {
 	TimeoutConfig *TimeoutConfig `json:"timeoutConfig,omitempty"`
 }
 
-// DeduplicationInfo tracks duplicate signal suppression
-type DeduplicationInfo struct {
-	// True if this signal is a duplicate of an active remediation
-	IsDuplicate bool `json:"isDuplicate"`
-
-	// Timestamp when this signal fingerprint was first seen
-	FirstSeen metav1.Time `json:"firstSeen"`
-
-	// Timestamp when this signal fingerprint was last seen
-	LastSeen metav1.Time `json:"lastSeen"`
-
-	// Total count of occurrences of this signal
-	OccurrenceCount int `json:"occurrenceCount"`
-
-	// Reference to previous RemediationRequest CRD (if duplicate)
-	PreviousRemediationRequestRef string `json:"previousRemediationRequestRef,omitempty"`
-}
-
 // TimeoutConfig allows per-remediation timeout customization
 type TimeoutConfig struct {
 	// Timeout for RemediationProcessing phase (default: 5m)
@@ -208,7 +194,12 @@ type ResourceIdentifier struct {
 // RemediationRequestStatus defines the observed state of RemediationRequest.
 type RemediationRequestStatus struct {
 	// Phase tracking for orchestration
-	OverallPhase string `json:"overallPhase,omitempty"` // "pending", "processing", "analyzing", "executing", "completed", "failed"
+	// Valid values: "pending", "processing", "analyzing", "executing", "recovering",
+	//               "completed", "failed", "timeout", "Skipped"
+	OverallPhase string `json:"overallPhase,omitempty"`
+
+	// Human-readable message describing current status
+	Message string `json:"message,omitempty"`
 
 	// Timestamps
 	StartTime   *metav1.Time `json:"startTime,omitempty"`
@@ -222,6 +213,64 @@ type RemediationRequestStatus struct {
 	// Approval notification tracking (BR-ORCH-001)
 	// Prevents duplicate notifications when AIAnalysis requires approval
 	ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"`
+
+	// ========================================
+	// SKIPPED PHASE TRACKING (DD-RO-001)
+	// BR-ORCH-032, BR-ORCH-033, BR-ORCH-034
+	// ========================================
+
+	// SkipReason indicates why this remediation was skipped
+	// Valid values: "ResourceBusy" (another workflow executing on same target),
+	//               "RecentlyRemediated" (target recently remediated, cooldown period)
+	// Only set when OverallPhase = "Skipped"
+	SkipReason string `json:"skipReason,omitempty"`
+
+	// DuplicateOf references the parent RemediationRequest that this is a duplicate of
+	// Only set when OverallPhase = "Skipped" due to resource lock deduplication
+	DuplicateOf string `json:"duplicateOf,omitempty"`
+
+	// DuplicateCount tracks the number of duplicate remediations that were skipped
+	// because this RR's workflow was already executing (resource lock)
+	// Only populated on parent RRs that have duplicates
+	DuplicateCount int `json:"duplicateCount,omitempty"`
+
+	// DuplicateRefs lists the names of RemediationRequests that were skipped
+	// because they targeted the same resource as this RR
+	// Only populated on parent RRs that have duplicates
+	DuplicateRefs []string `json:"duplicateRefs,omitempty"`
+
+	// ========================================
+	// FAILURE/TIMEOUT TRACKING
+	// ========================================
+
+	// FailurePhase indicates which phase failed (e.g., "ai_analysis", "workflow_execution")
+	// Only set when OverallPhase = "failed"
+	FailurePhase *string `json:"failurePhase,omitempty"`
+
+	// FailureReason provides a human-readable reason for the failure
+	// Only set when OverallPhase = "failed"
+	FailureReason *string `json:"failureReason,omitempty"`
+
+	// TimeoutPhase indicates which phase timed out
+	// Only set when OverallPhase = "timeout"
+	TimeoutPhase *string `json:"timeoutPhase,omitempty"`
+
+	// TimeoutTime records when the timeout occurred
+	// Only set when OverallPhase = "timeout"
+	TimeoutTime *metav1.Time `json:"timeoutTime,omitempty"`
+
+	// RetentionExpiryTime indicates when this CRD should be cleaned up (24 hours after completion)
+	RetentionExpiryTime *metav1.Time `json:"retentionExpiryTime,omitempty"`
+
+	// ========================================
+	// RECOVERY TRACKING
+	// ========================================
+
+	// RecoveryAttempts tracks the number of recovery attempts for this remediation
+	RecoveryAttempts int `json:"recoveryAttempts,omitempty"`
+
+	// CurrentProcessingRef references the current SignalProcessing CRD (may differ during recovery)
+	CurrentProcessingRef *corev1.ObjectReference `json:"currentProcessingRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true
