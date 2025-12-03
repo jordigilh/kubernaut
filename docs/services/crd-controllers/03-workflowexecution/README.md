@@ -12,6 +12,82 @@
 
 ---
 
+## 📋 Prerequisites
+
+### Required
+
+| Dependency | Version | Purpose |
+|------------|---------|---------|
+| **Tekton Pipelines** | Latest stable | Workflow execution engine |
+| **Bundle Resolver** | Built-in | Resolves OCI bundle references |
+
+### Per-Namespace Setup
+
+```yaml
+# Required: ServiceAccount for workflow execution
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-workflow-runner
+  namespace: <target-namespace>
+---
+# Required: Role with permissions for remediation actions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-workflow-runner
+  namespace: <target-namespace>
+rules:
+  # Permissions defined by workflow requirements
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernaut-workflow-runner
+  namespace: <target-namespace>
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernaut-workflow-runner
+subjects:
+- kind: ServiceAccount
+  name: kubernaut-workflow-runner
+  namespace: <target-namespace>
+```
+
+### Optional: Signed Bundle Verification (V1.0)
+
+To require signed OCI bundles, deploy a Tekton VerificationPolicy:
+
+```yaml
+apiVersion: tekton.dev/v1alpha1
+kind: VerificationPolicy
+metadata:
+  name: require-signed-bundles
+  namespace: kubernaut-system
+spec:
+  resources:
+    - pattern: "ghcr.io/kubernaut/workflows/*"
+  authorities:
+    - key:
+        secretRef:
+          name: cosign-public-key
+          namespace: kubernaut-system
+```
+
+**Dependencies for signed bundles**:
+- Tekton Pipelines with Trusted Resources enabled (`enable-tekton-oci-bundles: "true"`)
+- Cosign public key in Secret `cosign-public-key`
+- Workflows signed with `cosign sign`
+
+---
+
 ## 🗂️ Documentation Index
 
 | Document | Purpose | Status |

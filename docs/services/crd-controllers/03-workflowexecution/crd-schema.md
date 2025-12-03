@@ -1,7 +1,7 @@
 ## CRD Schema Specification
 
-**Version**: 3.1
-**Last Updated**: 2025-12-01
+**Version**: 4.0
+**Last Updated**: 2025-12-02
 **Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043
 
 **Full Schema**: See [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
@@ -18,7 +18,7 @@
 | **DD-CONTRACT-001 v1.4** | **Enhanced Failure Details** + **Resource Locking** - Rich failure data + parallel execution prevention |
 | **ADR-043** | **OCI Bundle** - Workflow definition lives in container, not CRD |
 | **DD-WORKFLOW-003** | **Parameters** - UPPER_SNAKE_CASE keys for Tekton params |
-| **BR-WE-001** | **Defense-in-Depth** - Parameter validation before Tekton creation |
+| **DD-WE-001** | **Resource Locking** - Prevents parallel/redundant workflows on same target |
 
 ---
 
