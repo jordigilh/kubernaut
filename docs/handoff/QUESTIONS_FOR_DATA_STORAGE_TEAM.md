@@ -50,6 +50,16 @@ WHERE (workflow.detected_labels->>'gitOpsManaged' = 'true'
 **Validation**: `failedDetections` only accepts known field names:
 - `gitOpsManaged`, `pdbProtected`, `hpaEnabled`, `stateful`, `helmManaged`, `networkIsolated`, `podSecurityLevel`, `serviceMesh`
 
+**Key Distinction** (per SignalProcessing team):
+
+| Scenario | `pdbProtected` | `failedDetections` | SQL Filtering |
+|----------|----------------|-------------------|---------------|
+| PDB exists | `true` | `[]` | ✅ Apply filter |
+| No PDB | `false` | `[]` | ✅ Apply filter |
+| RBAC denied | `false` | `["pdbProtected"]` | ⚠️ Skip filter |
+
+**"Resource doesn't exist" ≠ detection failure** - it's a successful detection with result `false`. Only query errors (RBAC, timeout) go in `failedDetections`.
+
 **Authoritative Source**: DD-WORKFLOW-001 v2.1
 
 ---
@@ -90,7 +100,7 @@ WHERE (workflow.detected_labels->>'gitOpsManaged' = 'true'
 // pkg/shared/types/enrichment.go - ADD to DetectedLabels struct
 type DetectedLabels struct {
     // ... existing fields ...
-    
+
     // FailedDetections lists fields where detection failed (RBAC, timeout, etc.)
     // DD-WORKFLOW-001 v2.1: Consumers MUST skip these fields when filtering
     // Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, podSecurityLevel, serviceMesh
@@ -103,7 +113,7 @@ type DetectedLabels struct {
 // pkg/datastorage/models/workflow.go - ADD to DetectedLabels filter struct
 type DetectedLabels struct {
     // ... existing fields ...
-    
+
     // FailedDetections from incident - fields to skip during filtering
     FailedDetections []string `json:"failed_detections,omitempty"`
 }
@@ -130,6 +140,55 @@ type DetectedLabels struct {
    - If `failedDetections` is omitted from request, assume all detections succeeded?
    - Confirm: empty array = all detections succeeded
 
+---
+
+#### ✅ AIAnalysis Team Response (Dec 2, 2025)
+
+**Status**: ✅ **ALL QUESTIONS ANSWERED**
+
+**Authoritative Source**: DD-WORKFLOW-001 v2.1, Section "Detection Failure Handling"
+
+---
+
+##### A1: Who passes `failedDetections` to Data Storage?
+
+✅ **HolmesGPT-API passes it** as part of the workflow search request.
+
+**Data Flow**:
+```
+SignalProcessing → AIAnalysis → HolmesGPT-API → Data Storage
+                                    │
+                                    └── Search Request includes failedDetections
+```
+
+---
+
+##### A2: Filtering Semantics
+
+✅ **Option A is correct** - Skip the filter entirely (treat as "no preference")
+
+**Per DD-WORKFLOW-001 v2.1**:
+> "If a field name is in this array, its value should be ignored"
+
+**SQL**:
+```sql
+AND (
+    'pdbProtected' = ANY($failed_detections)  -- Skip if failed
+    OR workflow.detected_labels->>'pdbProtected' IS NULL
+    OR workflow.detected_labels->>'pdbProtected' = incident.detected_labels->>'pdbProtected'
+)
+```
+
+---
+
+##### A3: Backwards Compatibility
+
+✅ **Not applicable** - V1.0 pre-release, no backwards compatibility required.
+
+`failedDetections` is **mandatory** in V1.0. Empty array `[]` = all detections succeeded.
+
+---
+
 #### Timeline
 
 | Task | Estimate | Dependency |
@@ -141,7 +200,26 @@ type DetectedLabels struct {
 | Integration tests | 2 hours | Unit tests |
 | **Total** | **10 hours** | - |
 
-**Target Completion**: V1.0 (if answers to questions above confirm approach)
+**Target Completion**: V1.0 ✅ **APPROVED - PROCEEDING WITH IMPLEMENTATION**
+
+---
+
+#### ✅ Data Storage Team Acknowledgement (Dec 2, 2025)
+
+**Status**: ✅ **ALL ANSWERS RECEIVED - IMPLEMENTATION STARTING**
+
+All clarifying questions have been answered by the AI Analysis team. Implementation will proceed with:
+
+1. **Data Flow Confirmed**: HolmesGPT-API → Data Storage (search request includes `failedDetections`)
+2. **Filtering Semantics Confirmed**: Option A - Skip filter entirely (treat as "no preference")
+3. **Backwards Compatibility**: Not applicable - V1.0 pre-release, `failedDetections` is mandatory
+
+**Implementation Approach**:
+- Follow TDD methodology (RED → GREEN → REFACTOR)
+- Unit tests first, then integration tests
+- Per TESTING_GUIDELINES.md: Unit tests validate implementation correctness, integration tests validate behavior
+
+**Business Requirement**: BR-STORAGE-020 - failedDetections support in workflow search
 
 ---
 
