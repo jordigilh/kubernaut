@@ -1,8 +1,8 @@
 # AIAnalysis Rego Policy Examples
 
 **Status**: 🟡 DRAFT - For Design Discussion
-**Version**: 1.2
-**Date**: 2025-11-30
+**Version**: 1.4
+**Date**: 2025-12-02
 **Purpose**: Explore approval policy input/output schemas with sample policies
 
 ---
@@ -11,7 +11,9 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **1.2** | 2025-11-30 | Aligned with DD-WORKFLOW-001 v1.8: snake_case for all API fields; Updated input schema to use `git_ops_managed`, `pdb_protected`, etc. |
+| **1.4** | 2025-12-02 | Added `failed_detections` to input schema per DD-WORKFLOW-001 v2.1; Added detection failure handling policies; Key distinction: "Resource doesn't exist" ≠ detection failure |
+| 1.3 | 2025-12-02 | Added `target_in_owner_chain` and `warnings` to input schema (from HolmesGPT-API); Added data quality rules for label accuracy |
+| 1.2 | 2025-11-30 | Aligned with DD-WORKFLOW-001 v1.8: snake_case for all API fields; Updated input schema to use `git_ops_managed`, `pdb_protected`, etc. |
 | 1.1 | 2025-11-30 | Added `DetectedLabels` and `CustomLabels` to input schema; Added GitOps/constraint-aware policies |
 | 1.0 | 2025-11-29 | Initial draft with sample policies |
 
@@ -55,6 +57,19 @@ type ApprovalPolicyInput struct {
     // Value = list of label values
     // Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
     CustomLabels map[string][]string `json:"custom_labels"`
+
+    // ========================================
+    // DATA QUALITY INDICATORS (Dec 2025)
+    // From HolmesGPT-API response
+    // ========================================
+
+    // Whether RCA-identified target resource was found in OwnerChain
+    // If false, DetectedLabels may be from different scope than affected resource
+    // Use for stricter approval policies when label accuracy is uncertain
+    TargetInOwnerChain bool `json:"target_in_owner_chain"`
+
+    // Warnings from HolmesGPT-API (e.g., "Low confidence selection", "OwnerChain mismatch")
+    Warnings []string `json:"warnings"`
 }
 
 type TargetResourceInput struct {
@@ -64,8 +79,15 @@ type TargetResourceInput struct {
 }
 
 // DetectedLabelsInput contains auto-detected cluster characteristics
-// Field names use snake_case per DD-WORKFLOW-001 v1.8
+// Field names use snake_case per DD-WORKFLOW-001 v2.1
 type DetectedLabelsInput struct {
+    // Detection Metadata (DD-WORKFLOW-001 v2.1)
+    // Lists fields where detection failed (RBAC, timeout, etc.)
+    // If a field is in this array, ignore its value in policy decisions
+    // Valid values: git_ops_managed, pdb_protected, hpa_enabled, stateful,
+    //               helm_managed, network_isolated, pod_security_level, service_mesh
+    FailedDetections []string `json:"failed_detections"`
+
     // GitOps
     GitOpsManaged bool   `json:"git_ops_managed"` // ArgoCD/Flux detected
     GitOpsTool    string `json:"git_ops_tool"`    // "argocd", "flux", ""
@@ -84,6 +106,15 @@ type DetectedLabelsInput struct {
     ServiceMesh      string `json:"service_mesh"`       // "istio", "linkerd", ""
 }
 ```
+
+> **Detection Failure Semantics (DD-WORKFLOW-001 v2.1)**:
+> | Scenario | `pdb_protected` | `failed_detections` | Policy Implication |
+> |----------|-----------------|---------------------|-------------------|
+> | PDB exists | `true` | `[]` | ✅ Trust value |
+> | No PDB | `false` | `[]` | ✅ Trust value |
+> | RBAC denied | `false` | `["pdb_protected"]` | ⚠️ Ignore field |
+>
+> Key: "Resource doesn't exist" ≠ detection failure (successful detection with result `false`)
 
 ---
 
@@ -374,6 +405,31 @@ is_always_require_approval if {
 }
 
 # ========================================
+# DATA QUALITY RULES (Dec 2025)
+# Based on target_in_owner_chain from HolmesGPT-API
+# ========================================
+
+# If RCA target is NOT in OwnerChain, DetectedLabels may not be accurate
+# Require approval for production + label mismatch
+require_approval if {
+    input.environment == "production"
+    not input.target_in_owner_chain
+}
+
+# Auto-approve can proceed in non-prod even if labels might not match
+auto_approve if {
+    input.environment != "production"
+    not input.target_in_owner_chain
+    input.confidence >= 0.85
+}
+
+# If there are warnings, always require approval for risky actions
+require_approval if {
+    count(input.warnings) > 0
+    is_risky_action
+}
+
+# ========================================
 # OUTPUT
 # ========================================
 
@@ -405,6 +461,115 @@ reason := "Requires approval (default)" if {
     not input.detected_labels.git_ops_managed
     not input.detected_labels.pdb_protected
     not has_constraint("cost-constrained")
+}
+```
+
+---
+
+### 2b. Failed Detection Handling Policy (`failed_detections.rego`) - v1.4
+
+**Purpose**: Demonstrates handling of detection failures per DD-WORKFLOW-001 v2.1.
+
+> **Key Principle**: When a field is in `failed_detections`, its boolean value should be **ignored** in policy decisions. The detection failed (RBAC, timeout, etc.), so the value is unreliable.
+
+```rego
+package kubernaut.aianalysis.approval.failed_detections
+
+import future.keywords.if
+import future.keywords.in
+
+# Default: Require approval if any critical detection failed
+default require_approval := true
+default auto_approve := false
+
+# ========================================
+# DETECTION FAILURE HELPERS
+# ========================================
+
+# Check if a specific detection failed
+detection_failed(field) if {
+    field in input.detected_labels.failed_detections
+}
+
+# Check if any detection failed
+has_any_failed_detection if {
+    count(input.detected_labels.failed_detections) > 0
+}
+
+# ========================================
+# SAFE HANDLING OF FAILED DETECTIONS
+# ========================================
+
+# If PDB detection failed, require approval for any pod-disruptive action
+# (we don't know if there's a PDB or not)
+require_approval if {
+    detection_failed("pdb_protected")
+    is_pod_disruptive_action
+}
+
+# If GitOps detection failed, require approval for any state-changing action
+# (we don't know if GitOps sync will revert our changes)
+require_approval if {
+    detection_failed("git_ops_managed")
+    is_state_changing_action
+}
+
+# If stateful detection failed, require approval for data-risk actions
+# (we don't know if there are PVCs attached)
+require_approval if {
+    detection_failed("stateful")
+    is_data_risk_action
+}
+
+# ========================================
+# TRUSTING SUCCESSFUL DETECTIONS
+# ========================================
+
+# If PDB detection succeeded and says no PDB exists, allow pod disruption
+auto_approve if {
+    not detection_failed("pdb_protected")
+    not input.detected_labels.pdb_protected
+    is_pod_disruptive_action
+    input.confidence >= 0.85
+}
+
+# If GitOps detection succeeded and says not GitOps-managed, allow direct changes
+auto_approve if {
+    not detection_failed("git_ops_managed")
+    not input.detected_labels.git_ops_managed
+    is_state_changing_action
+    input.confidence >= 0.85
+}
+
+# ========================================
+# ACTION CLASSIFICATIONS
+# ========================================
+
+is_pod_disruptive_action if {
+    input.action in ["restart-pod", "delete-pod", "restart-deployment", "drain-node"]
+}
+
+is_state_changing_action if {
+    input.action in ["scale-up-replicas", "scale-down-replicas", "rollback-deployment"]
+}
+
+is_data_risk_action if {
+    input.action in ["delete-pod", "delete-pvc", "scale-down-replicas"]
+}
+
+# ========================================
+# OUTPUT
+# ========================================
+
+reason := sprintf("Detection failed for '%s': requiring approval for %s (cannot verify safety)", 
+    [input.detected_labels.failed_detections[0], input.action]) if {
+    require_approval
+    has_any_failed_detection
+}
+
+reason := sprintf("All detections succeeded: auto-approving %s", [input.action]) if {
+    auto_approve
+    not has_any_failed_detection
 }
 ```
 
@@ -702,6 +867,17 @@ time_context := "After hours" if { not is_business_hours }
 | EC-COMBO-02 | PDB + high risk tolerance | `{detected_labels: {pdb_protected: true}, custom_labels: {"risk": ["tolerance=high"]}, action: "restart-pod"}` | `require_approval: true` (PDB takes precedence) |
 | EC-COMBO-03 | No labels (empty) | `{detected_labels: {}, custom_labels: {}}` | Default rules only |
 
+### Data Quality Edge Cases (v1.3 - Dec 2025)
+
+| ID | Scenario | Input | Expected Output |
+|----|----------|-------|-----------------|
+| EC-DQ-01 | Production + OwnerChain mismatch | `{environment: "production", target_in_owner_chain: false, action: "restart-pod"}` | `require_approval: true` (labels may not apply) |
+| EC-DQ-02 | Non-production + OwnerChain mismatch | `{environment: "staging", target_in_owner_chain: false, confidence: 0.90}` | `auto_approve: true` (non-prod is permissive) |
+| EC-DQ-03 | Warnings + risky action | `{warnings: ["Low confidence selection"], action: "restart-deployment"}` | `require_approval: true` |
+| EC-DQ-04 | Warnings + safe action | `{warnings: ["OwnerChain incomplete"], action: "collect-diagnostics"}` | `auto_approve: true` (safe action) |
+| EC-DQ-05 | OwnerChain OK + no warnings | `{target_in_owner_chain: true, warnings: [], confidence: 0.85}` | Follow standard rules |
+| EC-DQ-06 | OwnerChain mismatch + warnings + production | `{environment: "production", target_in_owner_chain: false, warnings: ["DetectedLabels may not apply"]}` | `require_approval: true` (multiple indicators) |
+
 ---
 
 ## Policy Selection Strategy
@@ -744,10 +920,11 @@ data:
 
 ---
 
-## Changelog
+## Related Documents
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2025-11-29 | Initial draft with sample policies |
-
-
+| Document | Purpose |
+|----------|---------|
+| [integration-points.md](./integration-points.md) | Rego policy input schema from HolmesGPT-API |
+| [crd-schema.md](./crd-schema.md) | AIAnalysis status fields populated from Rego |
+| [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Label schema (snake_case convention) |
+| [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) | `target_in_owner_chain` and `warnings` source |

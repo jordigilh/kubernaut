@@ -1,8 +1,8 @@
 # Implementation Checklist
 
-**Version**: v2.0
+**Version**: v2.2
 **Status**: ✅ Complete - V1.0 Aligned
-**Last Updated**: 2025-11-30
+**Last Updated**: 2025-12-02
 
 ---
 
@@ -10,6 +10,8 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **v2.2** | 2025-12-02 | Added `FailedDetections` handling tasks per DD-WORKFLOW-001 v2.1; Added Rego policy input for failed detections |
+| v2.1 | 2025-12-02 | Added Go client generation from OpenAPI spec; Added `TargetInOwnerChain` and `Warnings` handling from HAPI response; Updated endpoints to correct paths |
 | v2.0 | 2025-11-30 | **V1.0 ALIGNMENT**: Updated to 31 BRs (per BR_MAPPING.md v1.2); Updated to 4-phase flow (Pending → Validating → Investigating → Ready/Failed); Removed AIApprovalRequest references; Added DetectedLabels/CustomLabels/OwnerChain phases |
 | v1.0 | 2025-10-15 | Initial specification |
 
@@ -119,8 +121,10 @@
   - [ ] Validate DetectedLabels presence
   - [ ] Validate CustomLabels structure (map[string][]string)
   - [ ] Validate OwnerChain structure
-  - [ ] Validate EnrichmentQuality threshold (>0.8)
+  - [ ] Validate required fields (Environment, BusinessPriority as free-text)
 - [ ] **REFACTOR**: Add detailed validation error messages
+
+> **Note**: `EnrichmentQuality` validation removed (Dec 2025) - field no longer exists
 
 ### Investigating Phase
 
@@ -134,8 +138,10 @@
   - [ ] **Parse HolmesGPT-API response**:
     - Root Cause Analysis (RCA)
     - Workflow Selection (workflow ID, parameters, confidence)
-    - Remediation actions
+    - `TargetInOwnerChain` → store in `status.targetInOwnerChain`
+    - `Warnings[]` → store in `status.warnings`, emit K8s events
   - [ ] **Evaluate Rego approval policies** (BR-AI-030)
+    - Include `targetInOwnerChain` in Rego input for approval decisions
   - [ ] **Set approvalRequired flag** based on Rego evaluation
 - [ ] **REFACTOR**: Enhanced error handling
   - [ ] HolmesGPT-API timeout handling (30s default)
@@ -156,19 +162,47 @@
 
 ### HolmesGPT-API Integration
 
+- [ ] **Generate Go client from OpenAPI spec** (prerequisite):
+  ```bash
+  # Use ogen for native OpenAPI 3.1.0 support
+  # Install: go install github.com/ogen-go/ogen/cmd/ogen@latest
+  mkdir -p pkg/clients/holmesgpt
+  ogen -package holmesgpt -target pkg/clients/holmesgpt \
+      holmesgpt-api/api/openapi.json
+  ```
+  - [ ] Verify generated types include `IncidentResponse`, `RecoveryResponse`
+  - [ ] Verify `TargetInOwnerChain` and `Warnings` fields present
+
 - [ ] **Integration RED**: Write tests for HolmesGPT-API client (fail)
 - [ ] **Integration GREEN**: Implement HolmesGPT-API client (tests pass)
-  - [ ] Investigation endpoint (`/investigate`)
-  - [ ] Recovery analysis endpoint (`/recovery/analyze`)
-  - [ ] Health check endpoint
+  - [ ] Investigation endpoint (`/api/v1/incident/analyze`)
+  - [ ] Recovery analysis endpoint (`/api/v1/recovery/analyze`)
+  - [ ] Health check endpoint (`/health`)
 - [ ] **Integration REFACTOR**: Enhance with error handling and retries
+  - [ ] Handle `TargetInOwnerChain=false` → store in status, consider in Rego
+  - [ ] Handle `Warnings[]` → store in status, emit as events, track metrics
+
+### FailedDetections Handling (DD-WORKFLOW-001 v2.1)
+
+- [ ] **FailedDetections RED**: Write tests for detection failure handling
+  - [ ] Test: Field in `FailedDetections` → value is ignored in Rego
+  - [ ] Test: Empty `FailedDetections` → all values trusted
+  - [ ] Test: Invalid field name in `FailedDetections` → validation error
+- [ ] **FailedDetections GREEN**: Implement detection failure handling
+  - [ ] Parse `FailedDetections` from HolmesGPT-API response
+  - [ ] Include `failed_detections` in Rego policy input
+  - [ ] Emit metrics for detection failures (`aianalysis_detection_failures_total`)
+- [ ] **FailedDetections REFACTOR**: Add logging and events
+  - [ ] Log detection failures at WARN level
+  - [ ] Emit K8s event: "DetectionFailed" with affected fields
 
 ### Rego Policy Integration
 
 - [ ] **Rego RED**: Write tests for Rego policy evaluation (fail)
 - [ ] **Rego GREEN**: Implement Rego evaluator (tests pass)
   - [ ] Load policies from ConfigMap (`ai-approval-policies` in `kubernaut-system`)
-  - [ ] Evaluate with ApprovalPolicyInput schema (per [REGO_POLICY_EXAMPLES.md](./REGO_POLICY_EXAMPLES.md))
+  - [ ] Evaluate with ApprovalPolicyInput schema (per [REGO_POLICY_EXAMPLES.md](./REGO_POLICY_EXAMPLES.md) v1.4)
+  - [ ] Handle `failed_detections` in policy input (ignore affected field values)
   - [ ] Return approval decision
 - [ ] **Rego REFACTOR**: Add policy caching and refresh
 

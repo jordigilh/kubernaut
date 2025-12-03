@@ -1,7 +1,7 @@
 # AI Analysis Service
 
-**Version**: v2.3
-**Status**: ✅ Design Complete (V1.0 scope) - Ready for Implementation Plan
+**Version**: v2.5
+**Status**: ✅ Design Complete (V1.0 scope) - Ready for Implementation
 **Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
 **Service Host Port**: 8084 (Kind extraPortMappings per [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md))
@@ -10,6 +10,7 @@
 **Controller**: AIAnalysisReconciler
 **Priority**: **P0 - HIGH**
 **Effort**: 2 weeks
+**Go Client**: `pkg/clients/holmesgpt/` (generated with `ogen` from OpenAPI 3.1.0)
 
 ---
 
@@ -17,6 +18,8 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| **v2.5** | 2025-12-02 | **FailedDetections**: Added `failedDetections` field to DetectedLabels per DD-WORKFLOW-001 v2.1; Updated crd-schema, integration-points, implementation-checklist, REGO_POLICY_EXAMPLES | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+| v2.4 | 2025-12-02 | **SPEC ALIGNMENT**: Aligned with handoff Q&A; Fixed HolmesGPT-API port (8080), endpoints, schemas; Removed deprecated fields (RiskTolerance, BusinessCategory, EnrichmentQuality); Added TargetInOwnerChain/Warnings; Go client generated | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
 | v2.3 | 2025-11-30 | **V1.0 COMPLETE**: All spec files updated (finalizers, metrics, database, checklist); Legacy implementation plans archived | This session |
 | v2.2 | 2025-11-30 | **FIXED**: Port allocation (8081 health, 8084 host per DD-TEST-001); BR count 31→31; Added TESTING_GUIDELINES reference | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) |
 | v2.0 | 2025-11-30 | **REGENERATED**: Complete spec from Go types; V1.0 scope clarifications; DetectedLabels, CustomLabels, OwnerChain; Recovery flow with PreviousExecutions slice | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) |
@@ -30,7 +33,7 @@
 | Document | Purpose | Status |
 |----------|---------|--------|
 | **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ✅ Complete (v2.0) |
-| **[CRD Schema](./crd-schema.md)** | AIAnalysis CRD types, validation, examples | ✅ Complete (v2.0) |
+| **[CRD Schema](./crd-schema.md)** | AIAnalysis CRD types, validation, examples | ✅ **Updated (v2.3)** |
 | **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ✅ Complete (v2.0) |
 | **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ✅ Complete (v2.0) |
 | **[AI HolmesGPT & Approval](./ai-holmesgpt-approval.md)** | HolmesGPT integration, Rego policies, approval workflow | ✅ Complete (v2.0) |
@@ -40,11 +43,11 @@
 | **[Observability & Logging](./observability-logging.md)** | Structured logging, distributed tracing | ✅ Ports Fixed |
 | **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards | ✅ Complete (v2.0) |
 | **[Database Integration](./database-integration.md)** | Audit storage via Data Storage Service | ✅ Complete (v2.0) |
-| **[Integration Points](./integration-points.md)** | Upstream/downstream services | ✅ Complete (v2.0) |
+| **[Integration Points](./integration-points.md)** | Upstream/downstream services, HolmesGPT-API contract | ✅ **Updated (v2.2)** |
 | **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path | ✅ Ports Fixed |
-| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks | ✅ Complete (v2.0) |
+| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks | ✅ **Updated (v2.2)** |
 | **[BR Mapping](./BR_MAPPING.md)** | Business requirements mapping | ✅ Authoritative (v1.3) |
-| **[Rego Policy Examples](./REGO_POLICY_EXAMPLES.md)** | Approval policy input schema (v1.2) | ✅ Complete |
+| **[Rego Policy Examples](./REGO_POLICY_EXAMPLES.md)** | Approval policy input schema (v1.4) | ✅ **Updated** |
 
 ---
 

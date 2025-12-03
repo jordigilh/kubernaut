@@ -3,6 +3,9 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | **v2.3** | 2025-12-02 | **SCHEMA UPDATE**: Added `FailedDetections []string` to DetectedLabels per DD-WORKFLOW-001 v2.1; Detection failure handling with enum validation | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v2.2 | 2025-12-02 | **GAP FIXES**: Environment/BusinessPriority changed to free-text; RiskTolerance/BusinessCategory removed; EnrichmentQuality removed; Updated SignalContextInput to match Go types | [RO_CONTRACT_GAPS.md](../../../handoff/AIANALYSIS_TO_RO_TEAM.md) |
+> | v2.1 | 2025-12-02 | Added `TargetInOwnerChain` and `Warnings` fields to status (from HolmesGPT-API response) | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
 > | v2.0 | 2025-11-30 | **REGENERATED**: Complete schema from Go types; Added DetectedLabels, CustomLabels, OwnerChain; Removed businessContext, investigationScope, HistoricalContext; Updated PreviousExecutions to slice; V1.0 approval flow clarification | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) |
 > | v1.0 | 2025-11-28 | Initial CRD schema | - |
 
@@ -159,32 +162,45 @@ type SignalContextInput struct {
     SignalType string `json:"signalType"`
 
     // Environment classification
-    // +kubebuilder:validation:Enum=production;staging;development
+    // GAP-C3-01 FIX: Changed from enum to free-text (values defined by Rego policies)
+    // Examples: "production", "staging", "development", "qa-eu", "canary"
+    // +kubebuilder:validation:MinLength=1
+    // +kubebuilder:validation:MaxLength=63
     Environment string `json:"environment"`
 
     // Business priority
-    // +kubebuilder:validation:Enum=P0;P1;P2;P3
+    // GAP-C3-01 RELATED: Changed from enum to free-text for consistency
+    // Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
+    // +kubebuilder:validation:MinLength=1
+    // +kubebuilder:validation:MaxLength=63
     BusinessPriority string `json:"businessPriority"`
 
-    // Risk tolerance for this signal (customer-derived via Rego)
-    // +kubebuilder:validation:Enum=low;medium;high
-    RiskTolerance string `json:"riskTolerance,omitempty"`
+    // GAP-C3-02 FIX: RiskTolerance REMOVED - now in CustomLabels via Rego policies
+    // Per DD-WORKFLOW-001 v1.4: risk_tolerance is customer-derived, not system-controlled
 
-    // Business category (customer-derived via Rego)
-    BusinessCategory string `json:"businessCategory,omitempty"`
+    // GAP-C3-03 FIX: BusinessCategory REMOVED - now in CustomLabels via Rego policies
+    // Per DD-WORKFLOW-001 v1.4: business_category is customer-derived, not mandatory
 
     // Target resource identification
     TargetResource TargetResource `json:"targetResource"`
 
     // Complete enrichment results from SignalProcessing
+    // GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
     // +kubebuilder:validation:Required
-    EnrichmentResults EnrichmentResults `json:"enrichmentResults"`
+    EnrichmentResults sharedtypes.EnrichmentResults `json:"enrichmentResults"`
 }
 ```
+
+> **⚠️ IMPORTANT CHANGES (Dec 2025)**:
+> - `Environment` and `BusinessPriority` are now **free-text** (not enum)
+> - `RiskTolerance` and `BusinessCategory` fields **REMOVED** - use `CustomLabels` via Rego
+> - `EnrichmentResults` uses shared types from `pkg/shared/types/enrichment.go`
 
 ---
 
 ## EnrichmentResults (DD-WORKFLOW-001 v1.8)
+
+**Source of Truth**: `pkg/shared/types/enrichment.go` (shared across CRDs)
 
 ```go
 // EnrichmentResults contains all enrichment data from SignalProcessing
@@ -211,14 +227,18 @@ type EnrichmentResults struct {
     // Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
     CustomLabels map[string][]string `json:"customLabels,omitempty"`
 
-    // Overall enrichment quality score (0.0-1.0)
-    // CONSUMER: Remediation Orchestrator (RO) - NOT for LLM/HolmesGPT
-    // PURPOSE: RO uses this to detect degraded mode (< 0.8) and notify operators
-    // +kubebuilder:validation:Minimum=0.0
-    // +kubebuilder:validation:Maximum=1.0
-    EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
+    // NOTE: EnrichmentQuality REMOVED (Dec 2025)
+    // - SignalProcessing is not implementing this field
+    // - SignalProcessing uses boolean `DegradedMode` flag instead
+    // - RO checks phase completion, not quality scores
 }
 ```
+
+> **Note**: `EnrichmentQuality` field was removed in Dec 2025:
+> - SignalProcessing uses a boolean `status.degradedMode` flag (not a float score)
+> - `DegradedMode = true` when **K8s API is unavailable** → falls back to signal labels
+> - RO checks `SignalProcessing.status.phase == "completed"`, not quality
+> - AIAnalysis uses `TargetInOwnerChain` from HolmesGPT-API for Rego approval policies
 
 ### DetectedLabels (9 Fields)
 
@@ -228,10 +248,20 @@ type EnrichmentResults struct {
 // HolmesGPT-API uses for:
 //   - Workflow filtering (deterministic SQL WHERE)
 //   - LLM context (natural language in prompt)
-// DD-WORKFLOW-001 v1.8: Dual-use architecture
+// DD-WORKFLOW-001 v2.1: Detection failure handling with FailedDetections
 //   - LLM Prompt: ALWAYS included
 //   - Workflow Filtering: CONDITIONAL (only when OwnerChain validates)
+//   - Skip filtering for fields in FailedDetections
 type DetectedLabels struct {
+    // ========================================
+    // DETECTION METADATA (DD-WORKFLOW-001 v2.1)
+    // ========================================
+    // Lists fields where detection failed (RBAC, timeout, etc.)
+    // If a field is in this array, ignore its value
+    // If empty/nil, all detections succeeded
+    // Validated: only accepts known field names
+    FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged pdbProtected hpaEnabled stateful helmManaged networkIsolated podSecurityLevel serviceMesh"`
+
     // ========================================
     // GITOPS MANAGEMENT
     // ========================================
@@ -257,6 +287,15 @@ type DetectedLabels struct {
     PodSecurityLevel string `json:"podSecurityLevel,omitempty"` // "privileged", "baseline", "restricted"
     ServiceMesh      string `json:"serviceMesh,omitempty"`      // "istio", "linkerd"
 }
+
+// Detection Failure Handling (DD-WORKFLOW-001 v2.1):
+// | Scenario            | pdbProtected | FailedDetections      | Meaning                    |
+// |---------------------|--------------|----------------------|----------------------------|
+// | PDB exists for pod  | true         | []                   | ✅ Has PDB protection      |
+// | No PDB for pod      | false        | []                   | ✅ No PDB protection       |
+// | RBAC denied query   | false        | ["pdbProtected"]     | ⚠️ Unknown - skip filter   |
+//
+// Key: "Resource doesn't exist" ≠ detection failure - it's a successful detection with result false.
 ```
 
 ### OwnerChainEntry (DD-WORKFLOW-001 v1.8)
@@ -358,6 +397,16 @@ type AIAnalysisStatus struct {
     TokensUsed        int    `json:"tokensUsed,omitempty"`
     InvestigationTime int64  `json:"investigationTime,omitempty"`
 
+    // ========================================
+    // HAPI RESPONSE METADATA (Dec 2025)
+    // ========================================
+    // Whether the RCA-identified target resource was found in OwnerChain
+    // If false, DetectedLabels may be from different scope than affected resource
+    // Used for: Rego policy input, audit trail, operator notifications, metrics
+    TargetInOwnerChain *bool    `json:"targetInOwnerChain,omitempty"`
+    // Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain validation, low confidence)
+    Warnings           []string `json:"warnings,omitempty"`
+
     // Recovery status (DD-RECOVERY-002)
     RecoveryStatus *RecoveryStatus `json:"recoveryStatus,omitempty"`
 
@@ -451,9 +500,10 @@ spec:
       fingerprint: "sha256:abc123def456"
       severity: critical
       signalType: OOMKilled
-      environment: production
-      businessPriority: P0
-      riskTolerance: low  # Customer-derived via Rego
+      environment: production           # Free-text (not enum)
+      businessPriority: P0              # Free-text (not enum)
+      # NOTE: riskTolerance REMOVED - use customLabels["constraint"]
+      # NOTE: businessCategory REMOVED - use customLabels["business"]
       targetResource:
         kind: Pod
         name: payment-api-7d8f9c6b5-x2k4m
@@ -478,13 +528,16 @@ spec:
           name: payment-api-7d8f9c6b5
         - namespace: production
           kind: Deployment
-            name: payment-api
+          name: payment-api
         customLabels:
           constraint:
           - cost-constrained
+          - risk-tolerance=low          # Customer-derived via Rego
           team:
           - name=payments
-        enrichmentQuality: 0.95
+          business:
+          - category=payment-service    # Customer-derived via Rego
+        # NOTE: enrichmentQuality REMOVED (Dec 2025)
     analysisTypes:
     - investigation
     - root-cause
@@ -494,6 +547,8 @@ spec:
 status:
   phase: Completed
   rootCause: "Memory limit exceeded due to traffic spike"
+  targetInOwnerChain: true              # From HolmesGPT-API response
+  warnings: []                          # No warnings
   selectedWorkflow:
     workflowId: oomkill-increase-memory
     version: "1.0.0"
@@ -526,9 +581,33 @@ spec:
 
   analysisRequest:
     signalContext:
-      # Same as original...
+      fingerprint: "sha256:abc123def456"
+      severity: critical
+      signalType: OOMKilled
+      environment: production
+      businessPriority: P0
+      targetResource:
+        kind: Pod
+        name: payment-api-7d8f9c6b5-x2k4m
+        namespace: production
       enrichmentResults:
         # Reused from original SignalProcessing (no re-enrichment)
+        detectedLabels:
+          gitOpsManaged: true
+          pdbProtected: true
+        ownerChain:
+        - namespace: production
+          kind: ReplicaSet
+          name: payment-api-7d8f9c6b5
+        - namespace: production
+          kind: Deployment
+          name: payment-api
+        customLabels:
+          constraint:
+          - cost-constrained
+    analysisTypes:
+    - recovery-analysis
+    - workflow-selection
 
   isRecoveryAttempt: true
   recoveryAttemptNumber: 2
@@ -551,10 +630,12 @@ spec:
       message: "RBAC denied: cannot patch deployments"
       failedAt: "2025-11-30T10:15:00Z"
       executionTime: "45s"
-  # Second attempt can reference first if needed
 
 status:
   phase: Completed
+  targetInOwnerChain: true
+  warnings:
+  - "Previous execution failed with RBAC error"
   recoveryStatus:
     previousAttemptAssessment:
       failureUnderstood: true
