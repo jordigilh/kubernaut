@@ -469,6 +469,8 @@ The following contract gaps (identified by RO team) were fixed in `api/signalpro
 
 ## 🎯 **Business Requirements**
 
+> **Authoritative Source**: [BUSINESS_REQUIREMENTS.md](BUSINESS_REQUIREMENTS.md) - Full requirement definitions with acceptance criteria
+
 ### **Primary Business Requirements**
 
 | BR ID | Description | Success Criteria |
@@ -486,7 +488,7 @@ The following contract gaps (identified by RO team) were fixed in `api/signalpro
 | **BR-SP-081** | Multi-dimensional Categorization | businessUnit, serviceOwner, criticality, sla |
 | **BR-SP-090** | Categorization Audit Trail | Log all decisions via Data Storage API |
 | **BR-SP-100** | OwnerChain Traversal | Build K8s ownership chain (Pod → ReplicaSet → Deployment) |
-| **BR-SP-101** | DetectedLabels Auto-Detection | Detect 9 cluster characteristics from K8s resources |
+| **BR-SP-101** | DetectedLabels Auto-Detection | Detect 8 cluster characteristics from K8s resources |
 | **BR-SP-102** | CustomLabels Rego Extraction | Extract customer labels via sandboxed OPA policies |
 | **BR-SP-103** | FailedDetections Tracking | Track query failures (RBAC, timeout) per DD-WORKFLOW-001 v2.1 |
 | **BR-SP-104** | Mandatory Label Protection | Block customer Rego from overriding 5 system labels |
@@ -2415,7 +2417,7 @@ func isClusterScoped(kind string) bool {
 
 #### **Day 8: DetectedLabels Auto-Detection**
 
-**Purpose**: Auto-detect 9 cluster characteristics from K8s resources
+**Purpose**: Auto-detect 8 cluster characteristics from K8s resources
 
 **File**: `pkg/signalprocessing/detection/labels.go`
 
