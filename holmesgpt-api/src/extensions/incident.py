@@ -26,7 +26,7 @@ Separate from recovery.py which handles failed remediation retry scenarios.
 
 import logging
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, HTTPException, status
 from datetime import datetime
 
@@ -54,51 +54,64 @@ def _build_cluster_context_section(detected_labels: Dict[str, Any]) -> str:
     This helps the LLM understand the cluster environment and make
     appropriate workflow recommendations.
 
-    Design Decision: DD-RECOVERY-003
+    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+
+    DD-WORKFLOW-001 v2.1: Honor failedDetections
+    - Fields in failedDetections are EXCLUDED from cluster context
+    - Prevents LLM from receiving misleading information about unknown cluster state
+
+    Key Distinction (per SignalProcessing team):
+    - "Resource doesn't exist" (pdbProtected=false, failedDetections=[]) = valid, use it
+    - "Detection failed" (pdbProtected=false, failedDetections=["pdbProtected"]) = unknown, skip it
     """
     if not detected_labels:
         return "No special cluster characteristics detected."
 
+    # DD-WORKFLOW-001 v2.1: Get fields where detection failed
+    failed_fields = set(detected_labels.get('failedDetections', []))
+
     sections = []
 
-    # GitOps
-    if detected_labels.get("gitOpsManaged"):
+    # GitOps - skip if gitOpsManaged detection failed
+    if 'gitOpsManaged' not in failed_fields and detected_labels.get("gitOpsManaged"):
         tool = detected_labels.get("gitOpsTool", "unknown")
         sections.append(f"This namespace is managed by GitOps ({tool}). "
                        "DO NOT make direct changes - recommend GitOps-aware workflows.")
 
-    # Protection
-    if detected_labels.get("pdbProtected"):
+    # Protection - skip if respective detection failed
+    if 'pdbProtected' not in failed_fields and detected_labels.get("pdbProtected"):
         sections.append("A PodDisruptionBudget protects this workload. "
                        "Workflows must respect PDB constraints.")
 
-    if detected_labels.get("hpaEnabled"):
+    if 'hpaEnabled' not in failed_fields and detected_labels.get("hpaEnabled"):
         sections.append("HorizontalPodAutoscaler is active. "
                        "Manual scaling may conflict with HPA - prefer HPA-aware workflows.")
 
-    # Workload type
-    if detected_labels.get("stateful"):
+    # Workload type - skip if respective detection failed
+    if 'stateful' not in failed_fields and detected_labels.get("stateful"):
         sections.append("This is a STATEFUL workload (StatefulSet or has PVCs). "
                        "Use stateful-aware remediation workflows.")
 
-    if detected_labels.get("helmManaged"):
+    if 'helmManaged' not in failed_fields and detected_labels.get("helmManaged"):
         sections.append("This resource is managed by Helm. "
                        "Consider Helm-compatible workflows.")
 
-    # Security
-    if detected_labels.get("networkIsolated"):
+    # Security - skip if respective detection failed
+    if 'networkIsolated' not in failed_fields and detected_labels.get("networkIsolated"):
         sections.append("NetworkPolicy restricts traffic in this namespace. "
                        "Workflows may need network exceptions.")
 
-    pss = detected_labels.get("podSecurityLevel", "")
-    if pss == "restricted":
-        sections.append("Pod Security Standard is RESTRICTED. "
-                       "Workflows must not require privileged access.")
+    if 'podSecurityLevel' not in failed_fields:
+        pss = detected_labels.get("podSecurityLevel", "")
+        if pss == "restricted":
+            sections.append("Pod Security Standard is RESTRICTED. "
+                           "Workflows must not require privileged access.")
 
-    mesh = detected_labels.get("serviceMesh", "")
-    if mesh:
-        sections.append(f"Service mesh ({mesh}) is present. "
-                       "Consider service mesh-aware workflows.")
+    if 'serviceMesh' not in failed_fields:
+        mesh = detected_labels.get("serviceMesh", "")
+        if mesh:
+            sections.append(f"Service mesh ({mesh}) is present. "
+                           "Consider service mesh-aware workflows.")
 
     return "\n".join(sections) if sections else "No special cluster characteristics detected."
 
@@ -107,22 +120,57 @@ def _build_mcp_filter_instructions(detected_labels: Dict[str, Any]) -> str:
     """
     Build MCP workflow search filter instructions based on DetectedLabels.
 
-    Design Decision: DD-RECOVERY-003
+    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+
+    DD-WORKFLOW-001 v2.1: Honor failedDetections
+    - Fields in failedDetections are EXCLUDED from filter instructions
+    - Prevents LLM from filtering on unknown values (e.g., RBAC denied)
+
+    Key Distinction (per SignalProcessing team):
+    | Scenario    | pdbProtected | failedDetections     | Meaning                    |
+    |-------------|--------------|----------------------|----------------------------|
+    | PDB exists  | true         | []                   | ✅ Has PDB - use for filter |
+    | No PDB      | false        | []                   | ✅ No PDB - use for filter  |
+    | RBAC denied | false        | ["pdbProtected"]     | ⚠️ Unknown - skip filter    |
     """
     if not detected_labels:
         return ""
 
     import json
 
-    filters = {
-        "gitops_managed": str(detected_labels.get('gitOpsManaged', False)).lower(),
-        "pdb_protected": str(detected_labels.get('pdbProtected', False)).lower(),
-        "stateful": str(detected_labels.get('stateful', False)).lower(),
-        "helm_managed": str(detected_labels.get('helmManaged', False)).lower(),
-        "gitops_tool": detected_labels.get('gitOpsTool', ''),
-        "service_mesh": detected_labels.get('serviceMesh', ''),
-        "pod_security_level": detected_labels.get('podSecurityLevel', '')
+    # DD-WORKFLOW-001 v2.1: Get fields where detection failed
+    failed_fields = set(detected_labels.get('failedDetections', []))
+
+    # Build filters, excluding failed detections
+    # Map from DetectedLabels field names to filter names
+    field_mapping = {
+        'gitOpsManaged': 'gitops_managed',
+        'pdbProtected': 'pdb_protected',
+        'stateful': 'stateful',
+        'helmManaged': 'helm_managed',
+        'gitOpsTool': 'gitops_tool',
+        'serviceMesh': 'service_mesh',
+        'podSecurityLevel': 'pod_security_level',
     }
+
+    filters = {}
+    for label_field, filter_name in field_mapping.items():
+        # Skip fields where detection failed
+        if label_field in failed_fields:
+            continue
+        # Also skip gitOpsTool if gitOpsManaged detection failed
+        if label_field == 'gitOpsTool' and 'gitOpsManaged' in failed_fields:
+            continue
+
+        value = detected_labels.get(label_field)
+        if value is None:
+            continue
+
+        # Convert booleans to lowercase strings
+        if isinstance(value, bool):
+            filters[filter_name] = str(value).lower()
+        elif value:  # Only include non-empty string values
+            filters[filter_name] = value
 
     # Remove empty string values
     filters = {k: v for k, v in filters.items() if v}
@@ -722,13 +770,15 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
             config=config
         )
 
-        # Parse investigation result
-        result = _parse_investigation_result(investigation_result, request_data)
+        # Parse investigation result with OwnerChain for validation (DD-WORKFLOW-001 v1.7)
+        result = _parse_investigation_result(investigation_result, request_data, owner_chain=owner_chain)
 
         logger.info({
             "event": "incident_analysis_completed",
             "incident_id": incident_id,
-            "has_workflow": result.get("selected_workflow") is not None
+            "has_workflow": result.get("selected_workflow") is not None,
+            "target_in_owner_chain": result.get("target_in_owner_chain", True),
+            "warnings_count": len(result.get("warnings", []))
         })
 
         return result
@@ -742,8 +792,22 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
         raise
 
 
-def _parse_investigation_result(investigation: InvestigationResult, request_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse HolmesGPT investigation result into IncidentResponse format"""
+def _parse_investigation_result(
+    investigation: InvestigationResult,
+    request_data: Dict[str, Any],
+    owner_chain: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Parse HolmesGPT investigation result into IncidentResponse format
+
+    Business Requirement: BR-HAPI-002 (Incident analysis response schema)
+    Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
+
+    Args:
+        investigation: HolmesGPT investigation result
+        request_data: Original request data
+        owner_chain: OwnerChain from enrichment results for target validation
+    """
     incident_id = request_data.get("incident_id", "unknown")
 
     # Extract analysis text
@@ -769,18 +833,92 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
         selected_workflow = None
         confidence = 0.0
 
+    # OwnerChain validation (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
+    target_in_owner_chain = True
+    warnings: List[str] = []
+
+    # Check if RCA-identified target is in OwnerChain
+    rca_target = rca.get("affectedResource") or rca.get("affected_resource")
+    if rca_target and owner_chain:
+        target_in_owner_chain = _is_target_in_owner_chain(rca_target, owner_chain, request_data)
+        if not target_in_owner_chain:
+            warnings.append(
+                "Target resource not found in OwnerChain - DetectedLabels may not apply to affected resource"
+            )
+            logger.warning({
+                "event": "target_not_in_owner_chain",
+                "incident_id": incident_id,
+                "rca_target": rca_target,
+                "owner_chain_length": len(owner_chain),
+                "message": "DD-WORKFLOW-001 v1.7: RCA target not in OwnerChain, DetectedLabels may be from different scope"
+            })
+
+    # Generate warnings for other conditions
+    if selected_workflow is None:
+        warnings.append("No workflows matched the search criteria")
+    elif confidence < 0.7:
+        warnings.append(f"Low confidence selection ({confidence:.0%}) - manual review recommended")
+
     return {
         "incident_id": incident_id,
         "analysis": analysis,
         "root_cause_analysis": rca,
         "selected_workflow": selected_workflow,
         "confidence": confidence,
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "target_in_owner_chain": target_in_owner_chain,
+        "warnings": warnings
     }
 
 
-@router.post("/incident/analyze", status_code=status.HTTP_200_OK)
-async def incident_analyze_endpoint(request: IncidentRequest):
+def _is_target_in_owner_chain(
+    rca_target: Dict[str, Any],
+    owner_chain: List[Dict[str, Any]],
+    request_data: Dict[str, Any]
+) -> bool:
+    """
+    Check if RCA-identified target resource is in the OwnerChain.
+
+    DD-WORKFLOW-001 v1.7: OwnerChain validation ensures DetectedLabels
+    are applicable to the actual affected resource.
+
+    Args:
+        rca_target: The resource identified by RCA (kind, name, namespace)
+        owner_chain: List of owner resources from enrichment
+        request_data: Original request for source resource comparison
+
+    Returns:
+        True if target is in OwnerChain or is the source resource, False otherwise
+    """
+    # Extract target identifiers
+    target_kind = rca_target.get("kind", "").lower()
+    target_name = rca_target.get("name", "").lower()
+    target_namespace = rca_target.get("namespace", "").lower()
+
+    # Check if target matches the source resource (always valid)
+    source_kind = request_data.get("resource_kind", "").lower()
+    source_name = request_data.get("resource_name", "").lower()
+    source_namespace = request_data.get("resource_namespace", "").lower()
+
+    if target_kind == source_kind and target_name == source_name:
+        if not target_namespace or target_namespace == source_namespace:
+            return True
+
+    # Check if target is in OwnerChain
+    for owner in owner_chain:
+        owner_kind = owner.get("kind", "").lower()
+        owner_name = owner.get("name", "").lower()
+        owner_namespace = owner.get("namespace", "").lower()
+
+        if target_kind == owner_kind and target_name == owner_name:
+            if not target_namespace or target_namespace == owner_namespace:
+                return True
+
+    return False
+
+
+@router.post("/incident/analyze", status_code=status.HTTP_200_OK, response_model=IncidentResponse)
+async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentResponse:
     """
     Analyze initial incident and provide RCA + workflow selection
 

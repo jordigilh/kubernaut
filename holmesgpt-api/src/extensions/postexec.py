@@ -76,7 +76,7 @@ async def analyze_postexecution(request_data: Dict[str, Any]) -> Dict[str, Any]:
                 if isinstance(value, str):
                     return float(value.rstrip("%")) / 100.0
                 return float(value)
-            
+
             pre_cpu = parse_cpu(pre_state.get("cpu_usage", 0))
             post_cpu = parse_cpu(post_state.get("cpu_usage", 0))
 
@@ -109,13 +109,13 @@ async def analyze_postexecution(request_data: Dict[str, Any]) -> Dict[str, Any]:
     recommendations = []
     if not objectives_met and execution_success:
         recommendations.append("Consider additional scaling or alternative remediation")
-    
+
     # Parse CPU usage for recommendation check
     def parse_cpu(value):
         if isinstance(value, str):
             return float(value.rstrip("%")) / 100.0
         return float(value) if value else 0.0
-    
+
     if parse_cpu(post_state.get("cpu_usage", 0)) > 0.6:
         recommendations.append("Monitor for potential oscillation")
 
@@ -154,8 +154,8 @@ async def analyze_postexecution(request_data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-@router.post("/postexec/analyze", status_code=status.HTTP_200_OK)
-async def postexec_analyze_endpoint(request: PostExecRequest):
+@router.post("/postexec/analyze", status_code=status.HTTP_200_OK, response_model=PostExecResponse)
+async def postexec_analyze_endpoint(request: PostExecRequest) -> PostExecResponse:
     """
     Analyze execution effectiveness and provide assessment
 

@@ -268,51 +268,64 @@ def _build_cluster_context_section(detected_labels: Dict[str, Any]) -> str:
     This helps the LLM understand the cluster environment and make
     appropriate workflow recommendations.
 
-    Design Decision: DD-RECOVERY-003
+    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+
+    DD-WORKFLOW-001 v2.1: Honor failedDetections
+    - Fields in failedDetections are EXCLUDED from cluster context
+    - Prevents LLM from receiving misleading information about unknown cluster state
+
+    Key Distinction (per SignalProcessing team):
+    - "Resource doesn't exist" (pdbProtected=false, failedDetections=[]) = valid, use it
+    - "Detection failed" (pdbProtected=false, failedDetections=["pdbProtected"]) = unknown, skip it
     """
     if not detected_labels:
         return "No special cluster characteristics detected."
 
+    # DD-WORKFLOW-001 v2.1: Get fields where detection failed
+    failed_fields = set(detected_labels.get('failedDetections', []))
+
     sections = []
 
-    # GitOps
-    if detected_labels.get("gitOpsManaged"):
+    # GitOps - skip if gitOpsManaged detection failed
+    if 'gitOpsManaged' not in failed_fields and detected_labels.get("gitOpsManaged"):
         tool = detected_labels.get("gitOpsTool", "unknown")
         sections.append(f"This namespace is managed by GitOps ({tool}). "
                        "DO NOT make direct changes - recommend GitOps-aware workflows.")
 
-    # Protection
-    if detected_labels.get("pdbProtected"):
+    # Protection - skip if respective detection failed
+    if 'pdbProtected' not in failed_fields and detected_labels.get("pdbProtected"):
         sections.append("A PodDisruptionBudget protects this workload. "
                        "Workflows must respect PDB constraints.")
 
-    if detected_labels.get("hpaEnabled"):
+    if 'hpaEnabled' not in failed_fields and detected_labels.get("hpaEnabled"):
         sections.append("HorizontalPodAutoscaler is active. "
                        "Manual scaling may conflict with HPA - prefer HPA-aware workflows.")
 
-    # Workload type
-    if detected_labels.get("stateful"):
+    # Workload type - skip if respective detection failed
+    if 'stateful' not in failed_fields and detected_labels.get("stateful"):
         sections.append("This is a STATEFUL workload (StatefulSet or has PVCs). "
                        "Use stateful-aware remediation workflows.")
 
-    if detected_labels.get("helmManaged"):
+    if 'helmManaged' not in failed_fields and detected_labels.get("helmManaged"):
         sections.append("This resource is managed by Helm. "
                        "Consider Helm-compatible workflows.")
 
-    # Security
-    if detected_labels.get("networkIsolated"):
+    # Security - skip if respective detection failed
+    if 'networkIsolated' not in failed_fields and detected_labels.get("networkIsolated"):
         sections.append("NetworkPolicy restricts traffic in this namespace. "
                        "Workflows may need network exceptions.")
 
-    pss = detected_labels.get("podSecurityLevel", "")
-    if pss == "restricted":
-        sections.append("Pod Security Standard is RESTRICTED. "
-                       "Workflows must not require privileged access.")
+    if 'podSecurityLevel' not in failed_fields:
+        pss = detected_labels.get("podSecurityLevel", "")
+        if pss == "restricted":
+            sections.append("Pod Security Standard is RESTRICTED. "
+                           "Workflows must not require privileged access.")
 
-    mesh = detected_labels.get("serviceMesh", "")
-    if mesh:
-        sections.append(f"Service mesh ({mesh}) is present. "
-                       "Consider service mesh-aware workflows.")
+    if 'serviceMesh' not in failed_fields:
+        mesh = detected_labels.get("serviceMesh", "")
+        if mesh:
+            sections.append(f"Service mesh ({mesh}) is present. "
+                           "Consider service mesh-aware workflows.")
 
     return "\n".join(sections) if sections else "No special cluster characteristics detected."
 
@@ -321,22 +334,57 @@ def _build_mcp_filter_instructions(detected_labels: Dict[str, Any]) -> str:
     """
     Build MCP workflow search filter instructions based on DetectedLabels.
 
-    Design Decision: DD-RECOVERY-003
+    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+
+    DD-WORKFLOW-001 v2.1: Honor failedDetections
+    - Fields in failedDetections are EXCLUDED from filter instructions
+    - Prevents LLM from filtering on unknown values (e.g., RBAC denied)
+
+    Key Distinction (per SignalProcessing team):
+    | Scenario    | pdbProtected | failedDetections     | Meaning                    |
+    |-------------|--------------|----------------------|----------------------------|
+    | PDB exists  | true         | []                   | ✅ Has PDB - use for filter |
+    | No PDB      | false        | []                   | ✅ No PDB - use for filter  |
+    | RBAC denied | false        | ["pdbProtected"]     | ⚠️ Unknown - skip filter    |
     """
     if not detected_labels:
         return ""
 
     import json
 
-    filters = {
-        "gitops_managed": str(detected_labels.get('gitOpsManaged', False)).lower(),
-        "pdb_protected": str(detected_labels.get('pdbProtected', False)).lower(),
-        "stateful": str(detected_labels.get('stateful', False)).lower(),
-        "helm_managed": str(detected_labels.get('helmManaged', False)).lower(),
-        "gitops_tool": detected_labels.get('gitOpsTool', ''),
-        "service_mesh": detected_labels.get('serviceMesh', ''),
-        "pod_security_level": detected_labels.get('podSecurityLevel', '')
+    # DD-WORKFLOW-001 v2.1: Get fields where detection failed
+    failed_fields = set(detected_labels.get('failedDetections', []))
+
+    # Build filters, excluding failed detections
+    # Map from DetectedLabels field names to filter names
+    field_mapping = {
+        'gitOpsManaged': 'gitops_managed',
+        'pdbProtected': 'pdb_protected',
+        'stateful': 'stateful',
+        'helmManaged': 'helm_managed',
+        'gitOpsTool': 'gitops_tool',
+        'serviceMesh': 'service_mesh',
+        'podSecurityLevel': 'pod_security_level',
     }
+
+    filters = {}
+    for label_field, filter_name in field_mapping.items():
+        # Skip fields where detection failed
+        if label_field in failed_fields:
+            continue
+        # Also skip gitOpsTool if gitOpsManaged detection failed
+        if label_field == 'gitOpsTool' and 'gitOpsManaged' in failed_fields:
+            continue
+
+        value = detected_labels.get(label_field)
+        if value is None:
+            continue
+
+        # Convert booleans to lowercase strings
+        if isinstance(value, bool):
+            filters[filter_name] = str(value).lower()
+        elif value:  # Only include non-empty string values
+            filters[filter_name] = value
 
     # Remove empty string values
     filters = {k: v for k, v in filters.items() if v}
@@ -1640,8 +1688,8 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
         raise
 
 
-@router.post("/recovery/analyze", status_code=status.HTTP_200_OK)
-async def recovery_analyze_endpoint(request: RecoveryRequest):
+@router.post("/recovery/analyze", status_code=status.HTTP_200_OK, response_model=RecoveryResponse)
+async def recovery_analyze_endpoint(request: RecoveryRequest) -> RecoveryResponse:
     """
     Analyze failed action and provide recovery strategies
 

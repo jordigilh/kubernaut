@@ -50,8 +50,8 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 # LLM Configuration
-REAL_LLM_ENDPOINT = os.getenv("REAL_LLM_ENDPOINT", "http://localhost:11434")
-REAL_LLM_MODEL = os.getenv("REAL_LLM_MODEL", "qwen2.5:32b-instruct-q4_K_M")
+REAL_LLM_ENDPOINT = os.getenv("REAL_LLM_ENDPOINT", "http://localhost:8443")
+REAL_LLM_MODEL = os.getenv("REAL_LLM_MODEL", "bartowski/Qwen2.5-32B-Instruct-GGUF/Qwen2.5-32B-Instruct-Q4_K_M.gguf")
 
 
 def is_llm_available() -> bool:
@@ -100,10 +100,12 @@ pytestmark = [
 @pytest.fixture(scope="module")
 def real_llm_client():
     """Configure FastAPI test client with real LLM."""
-    # Set environment for real LLM (Ollama)
+    # Set environment for real LLM
+    # The local model exposes an OpenAI-compatible API at localhost:8443
     os.environ["LLM_ENDPOINT"] = REAL_LLM_ENDPOINT
     os.environ["LLM_MODEL"] = REAL_LLM_MODEL
-    os.environ["LLM_PROVIDER"] = "ollama"  # Ollama provider
+    os.environ["LLM_PROVIDER"] = "openai"  # OpenAI-compatible endpoint
+    os.environ["OPENAI_API_KEY"] = "dummy-key-for-local-model"  # Required by HolmesGPT SDK
     os.environ["DATA_STORAGE_URL"] = "http://localhost:18094"  # DD-TEST-001 port
 
     # Import after setting environment

@@ -92,6 +92,58 @@ logger = logging.getLogger(__name__)
 CLUSTER_SCOPED_KINDS = {"Node", "PersistentVolume", "ClusterRole", "ClusterRoleBinding", "Namespace", "StorageClass"}
 
 
+def strip_failed_detections(detected_labels: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Strip fields where detection failed from DetectedLabels.
+
+    Business Requirement: BR-HAPI-194 - Honor failedDetections in workflow filtering
+    Design Decision: DD-WORKFLOW-001 v2.1 - DetectedLabels failedDetections field
+
+    Key Distinction (per SignalProcessing team):
+    | Scenario    | pdbProtected | failedDetections     | Meaning                    |
+    |-------------|--------------|----------------------|----------------------------|
+    | PDB exists  | true         | []                   | ✅ Has PDB - use for filter |
+    | No PDB      | false        | []                   | ✅ No PDB - use for filter  |
+    | RBAC denied | false        | ["pdbProtected"]     | ⚠️ Unknown - skip filter    |
+
+    "Resource doesn't exist" ≠ detection failure - it's a successful detection with result `false`.
+
+    Args:
+        detected_labels: DetectedLabels dict potentially containing failedDetections
+
+    Returns:
+        New dict with:
+        - failedDetections meta field removed
+        - Fields listed in failedDetections removed
+        - All other fields preserved
+    """
+    if not detected_labels:
+        return {}
+
+    # Get list of failed detection field names
+    failed_fields = set(detected_labels.get("failedDetections", []))
+
+    # Build clean dict: exclude failedDetections key and any fields that failed
+    clean_labels = {}
+    for key, value in detected_labels.items():
+        # Skip the meta field itself
+        if key == "failedDetections":
+            continue
+        # Skip fields where detection failed
+        if key in failed_fields:
+            logger.debug(f"🔕 Stripping failed detection: {key} (detection failed)")
+            continue
+        # Keep reliable fields
+        clean_labels[key] = value
+
+    if failed_fields:
+        logger.info(
+            f"📋 DD-WORKFLOW-001 v2.1: Stripped {len(failed_fields)} failed detections: {sorted(failed_fields)}"
+        )
+
+    return clean_labels
+
+
 def _resources_match(r1: Dict[str, str], r2: Dict[str, Any]) -> bool:
     """
     Check if two resource references match (kind + namespace + name).
@@ -600,14 +652,21 @@ class SearchWorkflowCatalogTool(Tool):
             # DetectedLabels are ONLY included when relationship is PROVEN
             # Uses owner_chain from SignalProcessing for deterministic validation
             # Default: EXCLUDE (prevents query failures from wrong labels)
+            #
+            # DD-WORKFLOW-001 v2.1: Strip fields where detection failed
+            # Fields in failedDetections are removed before sending to Data Storage
+            # This prevents filtering on unknown values (e.g., RBAC denied)
             if self._detected_labels:
                 if should_include_detected_labels(
                     self._source_resource,
                     rca_resource,
                     self._owner_chain
                 ):
-                    search_filters["detected_labels"] = self._detected_labels
-                # Logging is handled inside should_include_detected_labels()
+                    # Strip failed detections before passing to Data Storage
+                    clean_labels = strip_failed_detections(self._detected_labels)
+                    if clean_labels:  # Only include if there are reliable labels
+                        search_filters["detected_labels"] = clean_labels
+                # Logging is handled inside should_include_detected_labels() and strip_failed_detections()
 
             # DD-WORKFLOW-014 v2.1: Include remediation_id in JSON body
             # This enables Data Storage Service to generate audit events

@@ -43,6 +43,13 @@ CustomLabels = Dict[str, List[str]]
 # DETECTED LABELS MODELS (DD-RECOVERY-003)
 # ========================================
 
+# Valid field names for failedDetections validation
+DETECTED_LABELS_FIELD_NAMES = {
+    "gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled",
+    "stateful", "helmManaged", "networkIsolated", "podSecurityLevel", "serviceMesh"
+}
+
+
 class DetectedLabels(BaseModel):
     """
     Auto-detected cluster characteristics from SignalProcessing.
@@ -51,8 +58,21 @@ class DetectedLabels(BaseModel):
     1. LLM context (natural language) - help LLM understand cluster environment
     2. MCP workflow filtering - filter workflows to only compatible ones
 
-    Design Decision: DD-RECOVERY-003
+    Design Decision: DD-WORKFLOW-001 v2.1, DD-RECOVERY-003
+
+    Breaking Change (Dec 2, 2025):
+    - Added `failedDetections` field to track which detections failed
+    - Avoids the `*bool` anti-pattern where null means "unknown"
+    - Consumer logic: if field is in failedDetections, ignore its value
     """
+    # Detection failure tracking (DD-WORKFLOW-001 v2.1)
+    failedDetections: List[str] = Field(
+        default_factory=list,
+        description="Field names where detection failed. Consumer should ignore values of these fields. "
+                    "Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, "
+                    "networkIsolated, podSecurityLevel, serviceMesh"
+    )
+
     # GitOps Management
     gitOpsManaged: bool = Field(default=False, description="Whether namespace is managed by GitOps")
     gitOpsTool: str = Field(default="", description="GitOps tool: 'argocd', 'flux', or ''")
@@ -69,6 +89,18 @@ class DetectedLabels(BaseModel):
     networkIsolated: bool = Field(default=False, description="Whether NetworkPolicy restricts traffic")
     podSecurityLevel: str = Field(default="", description="Pod Security Standard: 'privileged', 'baseline', 'restricted', ''")
     serviceMesh: str = Field(default="", description="Service mesh: 'istio', 'linkerd', ''")
+
+    @field_validator('failedDetections')
+    @classmethod
+    def validate_failed_detections(cls, v: List[str]) -> List[str]:
+        """Validate that failedDetections only contains known field names."""
+        invalid_fields = set(v) - DETECTED_LABELS_FIELD_NAMES
+        if invalid_fields:
+            raise ValueError(
+                f"Invalid field names in failedDetections: {invalid_fields}. "
+                f"Valid values: {DETECTED_LABELS_FIELD_NAMES}"
+            )
+        return v
 
 
 class EnrichmentResults(BaseModel):
@@ -153,10 +185,30 @@ class IncidentRequest(BaseModel):
 
 
 class IncidentResponse(BaseModel):
-    """Response model for incident analysis endpoint"""
-    incident_id: str
-    analysis: str
-    root_cause_analysis: Dict[str, Any]
-    selected_workflow: Optional[Dict[str, Any]]
-    confidence: float
-    timestamp: str
+    """
+    Response model for incident analysis endpoint
+
+    Business Requirement: BR-HAPI-002 (Incident analysis response schema)
+    Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
+
+    New fields (per AIAnalysis team request, Dec 2, 2025):
+    - target_in_owner_chain: Whether RCA target was found in OwnerChain
+    - warnings: Non-fatal warnings for transparency
+    """
+    incident_id: str = Field(..., description="Incident identifier from request")
+    analysis: str = Field(..., description="Natural language analysis from LLM")
+    root_cause_analysis: Dict[str, Any] = Field(..., description="Structured RCA with summary, severity, contributing_factors")
+    selected_workflow: Optional[Dict[str, Any]] = Field(None, description="Selected workflow with workflow_id, containerImage, confidence, parameters")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence in analysis")
+    timestamp: str = Field(..., description="ISO timestamp of analysis completion")
+
+    # OwnerChain validation fields (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
+    target_in_owner_chain: bool = Field(
+        default=True,
+        description="Whether RCA-identified target resource was found in OwnerChain. "
+                    "If false, DetectedLabels may be from different scope than affected resource."
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)"
+    )

@@ -17,29 +17,77 @@
 
 | Endpoint | Purpose | Status |
 |----------|---------|--------|
-| `POST /api/v1/recovery/analyze` | Recovery strategy analysis | ✅ Production |
+| `POST /api/v1/incident/analyze` | Initial incident analysis and workflow selection | ✅ Production |
+| `POST /api/v1/recovery/analyze` | Recovery strategy analysis (after failed remediation) | ✅ Production |
 | `POST /api/v1/postexec/analyze` | Post-execution effectiveness analysis | ✅ Production |
 | `GET /health` | Liveness probe | ✅ Production |
 | `GET /ready` | Readiness probe | ✅ Production |
+| `GET /metrics` | Prometheus metrics | ✅ Production |
 
 ## Current Status
 
-**Version**: v1.0 (Minimal Service Architecture)
-**Tests**: 104/104 passing (100%)
+**Version**: v3.3 (Production-Ready)
+**Tests**: 445/445 passing (100%)
 **Confidence**: 98%
+
+### Test Summary by Tier
+
+| Tier | Tests | Time | LLM | Purpose |
+|------|-------|------|-----|---------|
+| **Unit** | 362 | ~30s | None | Business logic validation |
+| **Integration** | 71 | ~20s | Mock server | Data Storage API contract |
+| **E2E** | 12 | ~12s | Mock server | Full workflow validation |
+| **Smoke** | 4 | 10-20 min | Real LLM | Optional - prompt engineering validation |
+| **Total** | **445** | ~1 min | - | - |
+
+### Running Tests
+
+```bash
+cd holmesgpt-api
+
+# Unit tests (no dependencies)
+python3 -m pytest tests/unit/ -v
+
+# Integration tests (requires Data Storage infrastructure)
+./tests/integration/setup_workflow_catalog_integration.sh
+python3 -m pytest tests/integration/ -v
+./tests/integration/teardown_workflow_catalog_integration.sh
+
+# E2E tests (uses mock LLM - fast!)
+python3 -m pytest tests/e2e/test_workflow_selection_e2e.py -v
+
+# Smoke tests (requires real LLM - optional, slow)
+# Requires: Ollama with qwen2.5:14b-instruct-q4_K_M (16k+ context)
+python3 -m pytest tests/smoke/ -v -m smoke
+```
+
+### CI/CD Recommendation
+
+- **Always run**: Unit + E2E (mock LLM) - ~45 seconds
+- **On PR**: Add Integration tests - ~2 minutes total
+- **Nightly/Weekly**: Smoke tests with real LLM - ~30 minutes
 
 ### Test Coverage by Module
 
 | Module | Tests | Status |
 |--------|-------|--------|
-| **Core Business Logic** | 74 | ✅ 100% |
-| - Recovery Analysis | 20 | ✅ 100% |
-| - PostExec Analysis | 20 | ✅ 100% |
-| - Models | 20 | ✅ 100% |
+| **Core Business Logic** | 200+ | ✅ 100% |
+| - Recovery Analysis | 50+ | ✅ 100% |
+| - Incident Analysis | 50+ | ✅ 100% |
+| - PostExec Analysis | 30+ | ✅ 100% |
+| - Models | 40+ | ✅ 100% |
 | - Health | 14 | ✅ 100% |
-| **Infrastructure** | 30 | ✅ 100% |
-| - Authentication | 13 | ✅ 100% |
-| - SDK Integration | 17 | ✅ 100% |
+| **Infrastructure** | 100+ | ✅ 100% |
+| - RFC 7807 Error Handling | 20+ | ✅ 100% |
+| - Workflow Catalog Toolset | 50+ | ✅ 100% |
+| - Custom Labels Pass-through | 30+ | ✅ 100% |
+| **Integration** | 71 | ✅ 100% |
+| - Data Storage API Contract | 33 | ✅ 100% |
+| - Label Schema (DD-WORKFLOW-001) | 38 | ✅ 100% |
+| **E2E** | 12 | ✅ 100% |
+| - Workflow Selection Flow | 6 | ✅ 100% |
+| - Error Handling | 3 | ✅ 100% |
+| - Audit Trail | 3 | ✅ 100% |
 
 ## Business Requirements
 
@@ -87,17 +135,25 @@ pip install -r requirements.txt
 pip install -r requirements-test.txt
 
 # Run tests
-pytest -v
+python3 -m pytest tests/unit/ -v          # Unit tests only
+python3 -m pytest tests/e2e/test_workflow_selection_e2e.py -v  # E2E with mock LLM
 
-# Run service (dev mode)
-DEV_MODE=true AUTH_ENABLED=false uvicorn src.main:app --reload
+# Run service (requires LLM configuration)
+LLM_ENDPOINT=http://localhost:11434 \
+LLM_MODEL=ollama/qwen2.5:14b-instruct-q4_K_M \
+AUTH_ENABLED=false \
+uvicorn src.main:app --reload
 ```
 
 ### Production
 
 ```bash
-# Run with authentication
-AUTH_ENABLED=true uvicorn src.main:app --host 0.0.0.0 --port 8080
+# Run with authentication and real LLM
+AUTH_ENABLED=true \
+LLM_ENDPOINT=https://api.openai.com/v1 \
+LLM_MODEL=gpt-4o \
+OPENAI_API_KEY=$OPENAI_API_KEY \
+uvicorn src.main:app --host 0.0.0.0 --port 8080
 ```
 
 ## Documentation

@@ -33,6 +33,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "e2e: mark test as E2E test"
     )
+    config.addinivalue_line(
+        "markers", "requires_data_storage: mark test as requiring real Data Storage service"
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
