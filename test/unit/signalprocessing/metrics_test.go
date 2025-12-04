@@ -19,6 +19,7 @@ package signalprocessing
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 )
@@ -27,7 +28,9 @@ var _ = Describe("Metrics", func() {
 	var m *metrics.Metrics
 
 	BeforeEach(func() {
-		m = metrics.NewMetrics()
+		// Use a fresh registry per test to avoid "already registered" errors
+		reg := prometheus.NewRegistry()
+		m = metrics.NewMetricsWithRegistry(reg)
 	})
 
 	// Test 1: NewMetrics should create all required metrics

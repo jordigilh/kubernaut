@@ -144,3 +144,75 @@ func NewMetrics() *Metrics {
 	}
 }
 
+// NewMetricsWithRegistry creates metrics registered with a custom registry.
+// Used in tests to avoid "already registered" errors with the global registry.
+func NewMetricsWithRegistry(reg *prometheus.Registry) *Metrics {
+	factory := promauto.With(reg)
+
+	return &Metrics{
+		ReconciliationTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "reconciliation_total",
+				Help:      "Total number of reconciliation operations by phase and status",
+			},
+			[]string{"phase", "status"},
+		),
+
+		ReconciliationDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "reconciliation_duration_seconds",
+				Help:      "Duration of reconciliation operations by phase",
+				Buckets:   prometheus.DefBuckets,
+			},
+			[]string{"phase"},
+		),
+
+		CategorizationConfidence: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "categorization_confidence",
+				Help:      "Confidence scores for categorization by classifier type",
+				Buckets:   []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0},
+			},
+			[]string{"classifier"},
+		),
+
+		EnrichmentDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "enrichment_duration_seconds",
+				Help:      "Duration of K8s context enrichment by resource kind. SLO: <2s P95",
+				Buckets:   []float64{0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0},
+			},
+			[]string{"resource_kind"},
+		),
+
+		RegoEvaluationDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "rego_evaluation_duration_seconds",
+				Help:      "Duration of Rego policy evaluation by policy type. SLO: <100ms P95",
+				Buckets:   []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0},
+			},
+			[]string{"policy"},
+		),
+
+		RegoHotReloadTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "rego_hot_reload_total",
+				Help:      "Total number of Rego policy hot-reload events by status",
+			},
+			[]string{"status"},
+		),
+	}
+}
+
