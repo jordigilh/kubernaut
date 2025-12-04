@@ -1,6 +1,6 @@
 # Cross-Team Questions & Coordination
 
-**Last Updated**: December 2, 2025
+**Last Updated**: December 3, 2025
 **Purpose**: Centralized Q&A hub for cross-team coordination and integration alignment
 
 ---
@@ -33,6 +33,19 @@ This directory contains questions and coordination documents across teams for:
 - API contract finalization (lock down by Dec 5)
 - Service deferrals: Effectiveness Monitor → V1.1 (DD-017), Dynamic Toolset → V2.0 (DD-016)
 - Integration testing coordination: AIAnalysis depends on SignalProcessing CRDs
+
+---
+
+## 📋 **Documentation Standardization Requests** (Dec 2-3, 2025)
+
+| Team | Document | Priority | Status | Effort | Topics |
+|------|----------|----------|--------|--------|--------|
+| **Data Storage** | [DOCUMENTATION_STANDARDIZATION_REQUEST.md](./DOCUMENTATION_STANDARDIZATION_REQUEST.md) | ✅ **DONE** | ✅ **v2.1 COMPLETE** | 2-3 hours | Doc Index, File Organization, Implementation Structure |
+| **Gateway** | [DOCUMENTATION_STANDARDIZATION_REQUEST.md](./DOCUMENTATION_STANDARDIZATION_REQUEST.md) | ✅ **DONE** | ✅ **v1.5 COMPLETE** | 1-2 hours | Doc Index, File Organization, Implementation Structure |
+| **HolmesGPT API** | [DOCUMENTATION_STANDARDIZATION_REQUEST_HOLMESGPT_API.md](./DOCUMENTATION_STANDARDIZATION_REQUEST_HOLMESGPT_API.md) | 🟢 **P3** | ⏳ **PENDING** | 30 min | Add Implementation Structure only |
+
+**Status**: 89% compliance (8/9 services) - P1 items completed ahead of schedule! 🎉
+**Remaining**: HolmesGPT API (2/3 sections - only needs Implementation Structure, P3 optional)
 
 ---
 
@@ -210,6 +223,8 @@ This directory contains questions and coordination documents across teams for:
 
 | Document | From → To | Status |
 |----------|-----------|--------|
+| [DOCUMENTATION_STANDARDIZATION_REQUEST.md](./DOCUMENTATION_STANDARDIZATION_REQUEST.md) | Doc Team → DS/GW | ✅ Complete |
+| [DOCUMENTATION_STANDARDIZATION_REQUEST_HOLMESGPT_API.md](./DOCUMENTATION_STANDARDIZATION_REQUEST_HOLMESGPT_API.md) | Doc Team → HGPT | ⏳ Pending (P3) |
 | [QUESTIONS_FOR_WORKFLOW_ENGINE_TEAM.md](./QUESTIONS_FOR_WORKFLOW_ENGINE_TEAM.md) | HAPI → WE | ✅ Resolved |
 | [QUESTIONS_FOR_DATA_STORAGE_TEAM.md](./QUESTIONS_FOR_DATA_STORAGE_TEAM.md) | HAPI → DS | ✅ Resolved |
 | [QUESTIONS_FOR_SIGNALPROCESSING_TEAM.md](./QUESTIONS_FOR_SIGNALPROCESSING_TEAM.md) | HAPI → SP | ✅ Resolved |

@@ -1,53 +1,162 @@
-# Notification Controller - Production-Ready CRD Controller
+# Notification Controller
 
-**Version**: 1.2.0
-**Status**: Production-Ready (ADR-034 Audit Integration + E2E Complete)
-**Architecture**: CRD-based declarative notification delivery
-**BR Coverage**: 100% (12/12 BRs implemented)
-**Test Coverage**: 249 tests (140 unit + 97 integration + 12 E2E) - 100% pass rate
-
----
-
-## 📝 **Version History**
-
-### **Version 1.2.0** (2025-12-01)
-- ✅ **Comprehensive Test Implementation**: 249 tests (140 unit + 97 integration + 12 E2E) - 100% pass rate
-- ✅ **E2E Kind-Based Testing**: 12 E2E tests with Kind cluster (file delivery + metrics validation)
-- ✅ **DD-TEST-001 Compliance**: Notification metrics on dedicated ports (30186/9186) to prevent collisions
-- ✅ **Production-Ready Validation**: All 3 test tiers passing, stable in CI/CD, zero flaky tests
-- ✅ **HostPath File Delivery**: Clean E2E file validation without production image pollution
-- ✅ **Parallel Test Execution**: 4 concurrent processes for race condition detection
-- 📊 **Test Coverage**: Unit 70%+, Integration >50%, E2E <10% (defense-in-depth pyramid)
-
-### **Version 1.1.0** (2025-11-21)
-- ✅ **ADR-034 Unified Audit Table Integration**: All notification events written to unified `audit_events` table
-- ✅ **Fire-and-Forget Audit Writes**: <1ms audit overhead, zero impact on delivery performance
-- ✅ **Zero Audit Loss**: DLQ fallback with Redis Streams ensures no audit data lost
-- ✅ **End-to-End Correlation**: Query complete workflow trail via `correlation_id`
-- ✅ **Enhanced Testing**: Expanded integration test coverage for audit scenarios
-- ✅ **BR-NOT-062, BR-NOT-063 Complete**: Unified audit table + graceful degradation
-
-### **Version 1.0.1** (2025-10-20)
-- ✅ **Enhanced 5-category error handling** with exponential backoff (Category B, E)
-- ✅ **Added EventuallyWithRetry anti-flaky patterns** to integration tests
-- ✅ **Created 4 edge case test categories** (rate limiting, config changes, large payloads, concurrent delivery)
-- ✅ **Documented 2 production runbooks** with Prometheus automation
-  - [HIGH_FAILURE_RATE.md](./runbooks/HIGH_FAILURE_RATE.md) - For notification failure rates >10%
-  - [STUCK_NOTIFICATIONS.md](./runbooks/STUCK_NOTIFICATIONS.md) - For notifications stuck >10min
-- 📊 **Expected improvements**: >99% notification success rate, <1% test flakiness, -50% delivery MTTR
-
-### **Version 1.0.0** (2025-10-12)
-- Initial production-ready release
-- 9/9 Business Requirements implemented
-- 85 unit test scenarios, 5 integration test scenarios
-- Complete CRD controller implementation
-- Security hardening and observability
+**Version**: v1.3.0
+**Status**: ✅ Production-Ready (249 tests, 100% pass rate)
+**Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
+**Metrics Port**: 9186 (`/metrics` - with auth filter, DD-TEST-001 compliant)
+**CRD**: NotificationRequest
+**CRD API Group**: `notification.kubernaut.ai/v1alpha1`
+**Controller**: NotificationRequestReconciler
+**Priority**: **P0 - CRITICAL** (Essential for remediation feedback)
+**Effort**: 2 weeks (complete)
 
 ---
 
-## 📋 **Overview**
+## 🗂️ Documentation Index
 
-The Notification Controller is a Kubernetes CRD controller that delivers notifications to multiple channels (console, Slack) with guaranteed delivery, complete audit trails, and graceful degradation.
+| Document | Purpose | Lines | Status |
+|----------|---------|-------|--------|
+| **[Overview](./overview.md)** | Service purpose, architecture, key features | ~298 | ✅ Complete |
+| **[API Specification](./api-specification.md)** | NotificationRequest CRD types, validation, examples | ~571 | ✅ Complete |
+| **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, delivery orchestration | ~594 | ✅ Complete |
+| **[Audit Trace Specification](./audit-trace-specification.md)** | ADR-034 unified audit table integration | ~500 | ✅ Complete |
+| **[Testing Strategy](./testing-strategy.md)** | Unit/Integration/E2E tests, defense-in-depth patterns | ~1,425 | ✅ Complete |
+| **[Security Configuration](./security-configuration.md)** | RBAC, data sanitization, container security | ~852 | ✅ Complete |
+| **[Observability & Logging](./observability-logging.md)** | Structured logging, correlation IDs, metrics | ~541 | ✅ Complete |
+| **[Database Integration](./database-integration.md)** | ADR-034 audit storage, fire-and-forget pattern | ~606 | ✅ Complete |
+| **[Integration Points](./integration-points.md)** | RemediationOrchestrator coordination, external channels | ~549 | ✅ Complete |
+| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~339 | ✅ Complete |
+| **[Business Requirements](./BUSINESS_REQUIREMENTS.md)** | 12 BRs with acceptance criteria and test mapping | ~638 | ✅ Complete |
+
+**Total**: ~6,913 lines across 11 core specification documents
+**Status**: ✅ **100% Complete** - Production-ready with comprehensive documentation
+
+**Additional Documentation**:
+- **[Production Runbooks](./runbooks/)** - HIGH_FAILURE_RATE.md, STUCK_NOTIFICATIONS.md
+- **[Testing Documentation](./testing/)** - BR-COVERAGE-MATRIX.md, TEST-EXECUTION-SUMMARY.md
+- **[Implementation Guides](./implementation/)** - Phase-by-phase implementation plans
+
+---
+
+## 📁 File Organization
+
+```
+06-notification/
+├── 📄 README.md (you are here)              - Service index & navigation
+├── 📘 overview.md                           - High-level architecture ✅ (298 lines)
+├── 🔧 api-specification.md                  - CRD type definitions ✅ (571 lines)
+├── ⚙️  controller-implementation.md         - Reconciler logic ✅ (594 lines)
+├── 📝 audit-trace-specification.md          - ADR-034 audit integration ✅ (500 lines)
+├── 🧪 testing-strategy.md                   - Test patterns ✅ (1,425 lines)
+├── 🔒 security-configuration.md             - Security & sanitization ✅ (852 lines)
+├── 📊 observability-logging.md              - Logging & metrics ✅ (541 lines)
+├── 💾 database-integration.md               - Audit storage ✅ (606 lines)
+├── 🔗 integration-points.md                 - Service coordination ✅ (549 lines)
+├── ✅ implementation-checklist.md           - APDC-TDD phases ✅ (339 lines)
+├── 📋 BUSINESS_REQUIREMENTS.md              - 12 BRs with test mapping ✅ (638 lines)
+├── 📚 runbooks/                             - Production operational guides
+│   ├── HIGH_FAILURE_RATE.md                - Failure rate >10% runbook
+│   └── STUCK_NOTIFICATIONS.md              - Stuck notifications >10min runbook
+├── 🧪 testing/                              - Test documentation
+│   ├── BR-COVERAGE-MATRIX.md               - BR-to-test traceability
+│   └── TEST-EXECUTION-SUMMARY.md           - Test execution guide
+└── 📁 implementation/                       - Implementation phase guides
+    ├── IMPLEMENTATION_PLAN_V1.0.md         - Original implementation plan
+    ├── IMPLEMENTATION_PLAN_V3.0.md         - ADR-034 audit integration
+    └── design/                              - Design documents
+        └── ERROR_HANDLING_PHILOSOPHY.md    - Retry & circuit breaker design
+```
+
+**Legend**:
+- ✅ = Complete documentation
+- 📋 = Core specification document
+- 🧪 = Test-related documentation
+- 📚 = Operational documentation
+
+---
+
+## 🏗️ Implementation Structure
+
+### **Binary Location**
+- **Directory**: `cmd/notification/`
+- **Entry Point**: `cmd/notification/main.go`
+- **Build Command**: `go build -o bin/notification-controller ./cmd/notification`
+
+### **Controller Location**
+- **Controller**: `internal/controller/notification/notificationrequest_controller.go`
+- **CRD Types**: `api/notification/v1alpha1/notificationrequest_types.go`
+
+### **Business Logic**
+- **Package**: `pkg/notification/`
+  - `delivery/` - Channel-specific delivery implementations (console, slack, file)
+  - `status/` - CRD status management
+  - `sanitization/` - Secret pattern redaction (22 patterns)
+  - `retry/` - Exponential backoff & circuit breakers
+  - `metrics/` - Prometheus metrics
+- **Tests**:
+  - `test/unit/notification/` - 140 unit tests
+  - `test/integration/notification/` - 97 integration tests
+  - `test/e2e/notification/` - 12 E2E tests (Kind-based)
+
+**See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
+
+---
+
+## 🚀 Quick Start
+
+### **For New Developers**
+1. **Understand the Service**: Start with [Overview](./overview.md) (5 min read)
+2. **Review the CRD**: See [API Specification](./api-specification.md) (10 min read)
+3. **Understand Delivery Flow**: Read controller phase transitions (5 min read)
+
+### **For Implementers**
+1. **Check Integration**: Start with [Integration Points](./integration-points.md)
+2. **Follow Checklist**: Use [Implementation Checklist](./implementation-checklist.md)
+3. **Review Patterns**: Reference [Controller Implementation](./controller-implementation.md)
+
+### **For Operators**
+1. **Deployment**: See [Production Deployment Guide](./PRODUCTION_DEPLOYMENT_GUIDE.md)
+2. **Troubleshooting**: Check [Production Runbooks](./runbooks/)
+3. **Monitoring**: Review [Observability & Logging](./observability-logging.md)
+
+---
+
+## 📋 Prerequisites
+
+### Required
+
+| Dependency | Version | Purpose |
+|------------|---------|---------|
+| **Kubernetes** | 1.27+ | CRD and controller-runtime support |
+| **kubectl** | Latest | CRD management and debugging |
+| **Data Storage Service** | v1.0+ | ADR-034 unified audit table |
+
+### Optional
+
+| Dependency | Purpose |
+|------------|---------|
+| **Slack Webhook** | Slack channel delivery (v1.0) |
+| **Email SMTP Server** | Email delivery (v2.0) |
+| **PagerDuty API Key** | PagerDuty integration (v2.0) |
+
+### Deployment Namespace
+
+**Default Namespace**: `kubernaut-system` (where NotificationRequest CRDs are created)
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-system
+  labels:
+    kubernaut.ai/component: notification-controller
+```
+
+---
+
+## 📋 Overview
+
+The Notification Controller is a Kubernetes CRD controller that delivers notifications to multiple channels (console, Slack, email) with guaranteed delivery, complete audit trails, and graceful degradation.
 
 ### **Key Features**
 
@@ -61,9 +170,20 @@ The Notification Controller is a Kubernetes CRD controller that delivers notific
 - ✅ **Observability**: 10 Prometheus metrics + structured logging + audit correlation
 - ✅ **Security**: Non-root user, minimum RBAC permissions
 
+### **Supported Channels**
+
+| Channel | Status | Priority | Use Case |
+|---------|--------|----------|----------|
+| **Console** | ✅ V1.0 | P0 | Development, debugging, audit trail |
+| **Slack** | ✅ V1.0 | P0 | Team notifications, workflow updates |
+| **Email** | ⏸️ V2.0 | P1 | Formal notifications, external stakeholders |
+| **Teams** | ⏸️ V2.0 | P1 | Microsoft-centric organizations |
+| **SMS** | ⏸️ V2.0 | P2 | Critical on-call alerts |
+| **Webhook** | ⏸️ V2.0 | P2 | Custom integrations |
+
 ---
 
-## 🏗️ **Architecture**
+## 🏗️ Architecture
 
 ### **CRD-Based Declarative Approach**
 
@@ -122,19 +242,15 @@ The Notification Controller is a Kubernetes CRD controller that delivers notific
 | **Status Manager** | Updates CRD status, records attempts | `pkg/notification/status/manager.go` |
 | **Console Delivery** | Logs to console output | `pkg/notification/delivery/console.go` |
 | **Slack Delivery** | Sends to Slack webhook | `pkg/notification/delivery/slack.go` |
-| **Sanitizer** | Redacts secrets from content | `pkg/notification/sanitization/sanitizer.go` |
+| **File Delivery** | E2E test validation (HostPath volumes) | `pkg/notification/delivery/file.go` |
+| **Sanitizer** | Redacts 22 secret patterns from content | `pkg/notification/sanitization/sanitizer.go` |
 | **Retry Policy** | Exponential backoff + circuit breaker | `pkg/notification/retry/policy.go` |
-| **Metrics** | Prometheus metrics | `pkg/notification/metrics/metrics.go` |
+| **Metrics** | 10 Prometheus metrics | `pkg/notification/metrics/metrics.go` |
+| **Audit Helpers** | ADR-034 audit event creation | `internal/controller/notification/audit.go` |
 
 ---
 
-## 🚀 **Quick Start**
-
-### **Prerequisites**
-
-- Kubernetes 1.27+ cluster
-- `kubectl` CLI installed
-- Slack webhook URL (optional, for Slack delivery)
+## 🚀 Quick Start
 
 ### **Installation**
 
@@ -148,11 +264,11 @@ kubectl apply -k deploy/notification/
 # 3. (Optional) Create Slack webhook secret
 kubectl create secret generic notification-slack-webhook \
   --from-literal=webhook-url="https://hooks.slack.com/services/YOUR/WEBHOOK/URL" \
-  -n kubernaut-notifications
+  -n kubernaut-system
 
 # 4. Verify controller is running
-kubectl get pods -n kubernaut-notifications
-kubectl logs -f deployment/notification-controller -n kubernaut-notifications
+kubectl get pods -n kubernaut-system
+kubectl logs -f deployment/notification-controller -n kubernaut-system
 ```
 
 ### **Creating a Notification**
@@ -162,11 +278,11 @@ apiVersion: notification.kubernaut.ai/v1alpha1
 kind: NotificationRequest
 metadata:
   name: example-notification
-  namespace: kubernaut-notifications
+  namespace: kubernaut-system
 spec:
-  subject: "Production Alert"
-  body: "Service X has high error rate"
-  type: alert
+  subject: "Production Alert: High Memory Usage"
+  body: "Service api-server has exceeded 90% memory threshold"
+  type: escalation
   priority: high
   channels:
     - console
@@ -175,12 +291,26 @@ spec:
 
 ```bash
 kubectl apply -f notification.yaml
-kubectl get notificationrequest example-notification -n kubernaut-notifications -o yaml
+kubectl get notificationrequest example-notification -n kubernaut-system -o yaml
+```
+
+**Expected Output**:
+```yaml
+status:
+  phase: Sent
+  deliveryAttempts:
+    - channel: console
+      timestamp: "2025-12-02T10:30:00Z"
+      status: success
+    - channel: slack
+      timestamp: "2025-12-02T10:30:01Z"
+      status: success
+  completionTime: "2025-12-02T10:30:01Z"
 ```
 
 ---
 
-## 📊 **Business Requirements Compliance**
+## 📊 Business Requirements Compliance
 
 | BR | Description | Implementation | Coverage |
 |----|-------------|---------------|----------|
@@ -195,20 +325,22 @@ kubectl get notificationrequest example-notification -n kubernaut-notifications 
 | **BR-NOT-058** | TLS Security | Valid certificates only (permanent failures) | 100% |
 | **BR-NOT-062** | Unified Audit Table | ADR-034 unified `audit_events` table | 100% |
 | **BR-NOT-063** | Audit Graceful Degradation | Fire-and-forget + DLQ fallback | 100% |
+| **BR-NOT-064** | Event Correlation | Remediation ID propagation | 100% |
 
-**Overall BR Coverage**: **96.4%** ✅ (11/11 BRs, avg 96.4%)
+**Overall BR Coverage**: **96.3%** ✅ (12/12 BRs, avg 96.3%)
 
-See [BR Coverage Matrix](./testing/BR-COVERAGE-MATRIX.md) for detailed test mapping.
+See [BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md) for detailed BR specifications.
 
 ---
 
-## 🔧 **Configuration**
+## 🔧 Configuration
 
 ### **Environment Variables**
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
 | `SLACK_WEBHOOK_URL` | Slack webhook URL | No | None (disables Slack) |
+| `E2E_FILE_OUTPUT` | File output directory for E2E tests | No | None (disables file delivery) |
 
 **Note**: Slack webhook URL should be provided via Kubernetes Secret for production deployments.
 
@@ -217,16 +349,20 @@ See [BR Coverage Matrix](./testing/BR-COVERAGE-MATRIX.md) for detailed test mapp
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `--leader-elect` | Enable leader election | `false` |
-| `--metrics-bind-address` | Metrics server address | `:8080` |
+| `--metrics-bind-address` | Metrics server address | `:9186` |
 | `--health-probe-bind-address` | Health probe address | `:8081` |
+
+**Port Allocation** (per DD-TEST-001):
+- **Health/Ready**: 8081 (no conflicts)
+- **Metrics**: 9186 (NodePort 30186 in E2E tests)
 
 ---
 
-## 📈 **Observability**
+## 📈 Observability
 
 ### **Prometheus Metrics**
 
-The controller exposes 10 comprehensive Prometheus metrics on `:8080/metrics`:
+The controller exposes 10 comprehensive Prometheus metrics on `:9186/metrics`:
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
@@ -248,17 +384,20 @@ The controller exposes 10 comprehensive Prometheus metrics on `:8080/metrics`:
 
 ### **Structured Logging**
 
-All logs are structured JSON with the following fields:
+All logs are structured JSON with correlation fields:
 - `timestamp`: ISO 8601 timestamp
 - `level`: log level (info, warn, error)
 - `msg`: log message
 - `notification`: NotificationRequest name
 - `phase`: current phase
 - `channel`: delivery channel (if applicable)
+- `correlation_id`: Remediation ID for audit trail
+
+See [Observability & Logging](./observability-logging.md) for complete logging standards.
 
 ---
 
-## 🔒 **Security**
+## 🔒 Security
 
 ### **RBAC Permissions**
 
@@ -279,55 +418,74 @@ The controller requires **minimum permissions**:
 - **No privilege escalation**: `allowPrivilegeEscalation: false`
 - **Seccomp profile**: `RuntimeDefault`
 - **Dropped capabilities**: ALL
+- **Read-only root filesystem**: `readOnlyRootFilesystem: true`
 
 ### **Data Sanitization**
 
 The controller automatically redacts **22 secret patterns** from notification content:
 - Kubernetes Secrets
-- AWS credentials
-- GCP credentials
-- Azure credentials
-- Database passwords
-- API keys
-- OAuth tokens
-- Private keys
+- AWS credentials (access keys, secret keys)
+- GCP credentials (service account JSON)
+- Azure credentials (connection strings)
+- Database passwords (PostgreSQL, MySQL, MongoDB)
+- API keys (generic, provider-specific)
+- OAuth tokens (Bearer, GitHub, GitLab)
+- Private keys (SSH, TLS certificates)
+- JWT tokens
 - And more...
 
-See [Sanitization Patterns](./implementation/design/ERROR_HANDLING_PHILOSOPHY.md) for full list.
+See [Security Configuration](./security-configuration.md) for complete sanitization pattern list.
 
 ---
 
-## 🧪 **Testing**
+## 🧪 Testing
 
-### **Test Coverage**
+### **Test Coverage** (v1.2.0)
 
-| Test Type | Scenarios | Coverage | Status |
-|-----------|-----------|----------|--------|
-| **Unit Tests** | 85 | ~92% code coverage | ✅ Passing |
-| **Integration Tests** | 5 | ~60% BR coverage | ✅ Designed |
-| **E2E Tests** | 1 | ~15% BR coverage | ⏳ Deferred |
+| Test Type | Count | Coverage | Status |
+|-----------|-------|----------|--------|
+| **Unit Tests** | 140 | 70%+ code coverage | ✅ 100% passing |
+| **Integration Tests** | 97 | >50% BR coverage | ✅ 100% passing |
+| **E2E Tests** | 12 | <10% BR coverage | ✅ 100% passing |
+| **TOTAL** | **249** | **96.3% BR coverage** | **✅ Production-Ready** |
 
-**Overall BR Coverage**: **93.3%** ✅
-
-### **Running Tests**
+### **Test Execution**
 
 ```bash
 # Unit tests
+make test-unit-notification
 go test ./test/unit/notification/... -v
 
-# Integration tests (requires KIND cluster)
+# Integration tests
+make test-integration-notification
 go test ./test/integration/notification/... -v
+
+# E2E tests (requires Kind cluster)
+make test-e2e-notification
+go test ./test/e2e/notification/... -v
+
+# All notification tests
+make test-notification-all
 
 # With coverage
 go test ./test/unit/notification/... -v -coverprofile=coverage.out
 go tool cover -html=coverage.out
 ```
 
-See [Test Execution Summary](./testing/TEST-EXECUTION-SUMMARY.md) for detailed instructions.
+### **E2E Testing Infrastructure** (DD-NOT-002 v3.0)
+
+**Kind-Based E2E Tests**:
+- ✅ Real Kubernetes cluster (Kind)
+- ✅ HostPath volumes for file delivery validation
+- ✅ NodePort metrics exposure (30186 → localhost:9186)
+- ✅ Parallel test execution (4 concurrent processes)
+- ✅ Zero flaky tests (process-isolated temp directories)
+
+See [Testing Strategy](./testing-strategy.md) for complete test patterns and anti-patterns.
 
 ---
 
-## 🔄 **Retry and Error Handling**
+## 🔄 Retry and Error Handling
 
 ### **Exponential Backoff**
 
@@ -354,6 +512,7 @@ Failed deliveries are automatically retried with exponential backoff:
 | **Permanent** | 401 Unauthorized | ❌ No | Mark as failed |
 | **Permanent** | 404 Not Found | ❌ No | Mark as failed |
 | **Permanent** | Invalid webhook URL | ❌ No | Mark as failed |
+| **Permanent** | TLS certificate error | ❌ No | Mark as failed (BR-NOT-058) |
 
 ### **Circuit Breaker**
 
@@ -363,69 +522,71 @@ Per-channel circuit breakers prevent cascading failures:
 - **Open**: 5+ failures → stop requests for 60s
 - **Half-Open**: Allow 1 test request → Close if success, Open if failure
 
-**Isolation**: Console delivery continues even if Slack circuit breaker is open.
+**Isolation**: Console delivery continues even if Slack circuit breaker is open (BR-NOT-055).
 
-See [Error Handling Philosophy](./implementation/design/ERROR_HANDLING_PHILOSOPHY.md) for complete details.
+See [Controller Implementation](./controller-implementation.md) for retry policy details.
 
 ---
 
-## 🛠️ **Troubleshooting**
+## 🛠️ Troubleshooting
 
-### **Production Runbooks** (v3.1 Enhancement)
+### **Production Runbooks**
 
 For operational issues, refer to comprehensive production runbooks:
 
 - **[HIGH_FAILURE_RATE.md](./runbooks/HIGH_FAILURE_RATE.md)** - Notification failure rate >10%
-  - Trigger: `(failed_deliveries / total_deliveries) > 0.10` for 5 minutes
-  - Symptoms: Operators not receiving notifications, AIApprovalRequests timing out
-  - Common causes: Invalid Slack webhook (60%), rate limiting (30%), network issues (10%)
-  - MTTR Target: 15 minutes
+  - **Trigger**: `(failed_deliveries / total_deliveries) > 0.10` for 5 minutes
+  - **Symptoms**: Operators not receiving notifications, workflow updates missing
+  - **Common causes**: Invalid Slack webhook (60%), rate limiting (30%), network issues (10%)
+  - **MTTR Target**: 15 minutes
 
 - **[STUCK_NOTIFICATIONS.md](./runbooks/STUCK_NOTIFICATIONS.md)** - Notifications stuck >10 minutes
-  - Trigger: P99 delivery latency >600 seconds
-  - Symptoms: Delayed notifications, stuck in "Delivering" phase
-  - Common causes: Slack API slow (50%), reconciliation blocked (30%), status conflicts (15%)
-  - MTTR Target: 20 minutes
+  - **Trigger**: P99 delivery latency >600 seconds
+  - **Symptoms**: Delayed notifications, stuck in "Sending" phase
+  - **Common causes**: Slack API slow (50%), reconciliation blocked (30%), status conflicts (15%)
+  - **MTTR Target**: 20 minutes
 
 Both runbooks include:
-- ✅ Prometheus alert definitions
+- ✅ Prometheus alert definitions (ready to deploy)
 - ✅ Diagnostic queries (kubectl + PromQL)
 - ✅ Root cause analysis decision trees
 - ✅ Step-by-step remediation procedures
 - ✅ Automation strategies (auto-remediation, escalation)
 - ✅ Success criteria and validation steps
 
-### **Controller Not Starting**
+### **Common Issues**
+
+#### **Controller Not Starting**
 
 ```bash
 # Check pod status
-kubectl get pods -n kubernaut-notifications
+kubectl get pods -n kubernaut-system -l app=notification-controller
 
 # Check controller logs
-kubectl logs -f deployment/notification-controller -n kubernaut-notifications
+kubectl logs -f deployment/notification-controller -n kubernaut-system
 
 # Check RBAC permissions
-kubectl auth can-i get notificationrequests --as=system:serviceaccount:kubernaut-notifications:notification-controller
+kubectl auth can-i get notificationrequests --as=system:serviceaccount:kubernaut-system:notification-controller
 ```
 
-### **Notifications Not Delivered**
+#### **Notifications Not Delivered**
 
 ```bash
 # Check NotificationRequest status
-kubectl get notificationrequest <name> -n kubernaut-notifications -o yaml
+kubectl get notificationrequest <name> -n kubernaut-system -o yaml
 
 # Check delivery attempts
-kubectl get notificationrequest <name> -n kubernaut-notifications -o jsonpath='{.status.deliveryAttempts}'
+kubectl get notificationrequest <name> -n kubernaut-system -o jsonpath='{.status.deliveryAttempts}'
 
 # Check controller logs for errors
-kubectl logs -f deployment/notification-controller -n kubernaut-notifications | grep ERROR
+kubectl logs -f deployment/notification-controller -n kubernaut-system | grep ERROR
 ```
 
-### **Slack Delivery Failing**
+#### **Slack Delivery Failing**
 
 ```bash
 # Verify Slack webhook secret exists
-kubectl get secret notification-slack-webhook -n kubernaut-notifications
+kubectl get secret notification-slack-webhook -n kubernaut-system
 
 # Test webhook URL manually
 curl -X POST -H 'Content-Type: application/json' \
@@ -433,65 +594,44 @@ curl -X POST -H 'Content-Type: application/json' \
   https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 
 # Check circuit breaker state
-kubectl logs -f deployment/notification-controller -n kubernaut-notifications | grep "circuit breaker"
+kubectl logs -f deployment/notification-controller -n kubernaut-system | grep "circuit breaker"
 ```
 
 ---
 
-## 📚 **Documentation**
-
-### **Production Runbooks** (v3.1 - NEW)
-- [HIGH_FAILURE_RATE.md](./runbooks/HIGH_FAILURE_RATE.md) - High notification failure rate (>10%)
-- [STUCK_NOTIFICATIONS.md](./runbooks/STUCK_NOTIFICATIONS.md) - Stuck notifications (>10min)
-
-### **Architecture & Design**
-- [Implementation Plan V3.0](./implementation/IMPLEMENTATION_PLAN_V3.0.md) - Complete implementation guide
-- [CRD Controller Design](./implementation/CRD_CONTROLLER_DESIGN.md) - Controller architecture
-- [Error Handling Philosophy](./implementation/design/ERROR_HANDLING_PHILOSOPHY.md) - Retry + circuit breaker patterns
-- [E2E Deferral Decision](./implementation/E2E_DEFERRAL_DECISION.md) - E2E testing strategy
-
-### **Testing**
-- [BR Coverage Matrix](./testing/BR-COVERAGE-MATRIX.md) - Per-BR test mapping
-- [Test Execution Summary](./testing/TEST-EXECUTION-SUMMARY.md) - Test pyramid + execution guide
-- [Integration Test README](../../../test/integration/notification/README.md) - Integration test guide
-
-### **Deployment**
-- [Day 10 Summary](./implementation/phase0/06-day10-deployment-manifests.md) - Deployment manifest guide
-- [Kubernetes Manifests](../../../deploy/notification/) - Production deployment files
-
-### **Business Requirements**
-- [Updated BRs (CRD)](./UPDATED_BUSINESS_REQUIREMENTS_CRD.md) - Complete BR specifications
-- [BR Notification Integration Triage](../../05-remediationorchestrator/BR_NOTIFICATION_INTEGRATION_TRIAGE.md) - Integration with RemediationOrchestrator
-
-### **Architectural Decisions**
-- [ADR-017: NotificationRequest CRD Creator](../../decisions/ADR-017-notification-crd-creator.md) - RemediationOrchestrator responsibility
-
----
-
-## 🤝 **Integration**
+## 🤝 Integration
 
 ### **RemediationOrchestrator Integration**
 
-The `RemediationOrchestrator` is responsible for creating `NotificationRequest` CRDs (per ADR-017).
+The `RemediationOrchestrator` is the **primary consumer** of NotificationRequest CRDs (per ADR-017).
 
 **Trigger Events**:
-- Remediation workflow started
-- Remediation workflow completed (success/failure)
-- Remediation escalation required
-- Remediation rollback performed
+- Workflow execution failed (manual review required)
+- Workflow skipped (ResourceBusy, PreviousExecutionFailed)
+- Remediation completed (success/failure)
+- Approval required (human-in-the-loop)
 
-**Example Integration**:
+**Integration Example**:
 ```go
 // In RemediationOrchestrator reconciler
 notification := &notificationv1alpha1.NotificationRequest{
     ObjectMeta: metav1.ObjectMeta{
         Name:      fmt.Sprintf("remediation-%s", remediation.Name),
-        Namespace: "kubernaut-notifications",
+        Namespace: "kubernaut-system",
+        OwnerReferences: []metav1.OwnerReference{
+            {
+                APIVersion: remediation.APIVersion,
+                Kind:       remediation.Kind,
+                Name:       remediation.Name,
+                UID:        remediation.UID,
+                Controller: pointer.Bool(true),
+            },
+        },
     },
     Spec: notificationv1alpha1.NotificationRequestSpec{
         Subject:  fmt.Sprintf("Remediation %s", remediation.Status.Phase),
-        Body:     fmt.Sprintf("Remediation workflow for alert %s", remediation.Spec.AlertName),
-        Type:     notificationv1alpha1.NotificationTypeAlert,
+        Body:     buildNotificationBody(remediation),
+        Type:     notificationv1alpha1.NotificationTypeEscalation,
         Priority: determinePriority(remediation.Spec.Severity),
         Channels: []notificationv1alpha1.Channel{
             notificationv1alpha1.ChannelConsole,
@@ -502,9 +642,18 @@ notification := &notificationv1alpha1.NotificationRequest{
 err := r.Create(ctx, notification)
 ```
 
+**Integration Documentation**:
+- [Integration Points](./integration-points.md) - Complete integration patterns
+- [RO Notification Integration Plan](../05-remediationorchestrator/NOTIFICATION_INTEGRATION_PLAN.md) - RO-specific integration
+- [ADR-017: NotificationRequest CRD Creator](../../../architecture/decisions/ADR-017-notification-crd-creator.md) - Responsibility definition
+
+**Cross-Team Q&A**:
+- [WE→Notification Questions](../../../../docs/handoff/QUESTIONS_FROM_WORKFLOW_ENGINE_TEAM.md#questions-for-notification-team) - 5 questions answered
+- [DD-RO-001: Notification Cancellation Handling](../05-remediationorchestrator/DD-RO-001-NOTIFICATION-CANCELLATION-HANDLING.md) - Deletion behavior
+
 ---
 
-## 📊 **Performance**
+## 📊 Performance
 
 ### **Resource Usage**
 
@@ -515,7 +664,7 @@ err := r.Create(ctx, notification)
 
 ### **Throughput**
 
-- **Notification Processing**: ~100 notifications/second (theoretical)
+- **Notification Processing**: ~100 notifications/second (theoretical, CRD reconciliation limited)
 - **Actual Throughput**: Limited by Slack webhook rate limits (~1/second)
 - **Reconciliation Interval**: Every 10 seconds (Kubernetes default)
 
@@ -525,89 +674,170 @@ err := r.Create(ctx, notification)
 |-----------|----------------|-------------|
 | **Console Delivery** | <100ms | <500ms |
 | **Slack Delivery** | ~1-3s | ~10s |
+| **Audit Write** | <1ms | <5ms (fire-and-forget) |
 | **Status Update** | <500ms | <2s |
 
+**Audit Performance** (BR-NOT-063):
+- Fire-and-forget pattern: <1ms overhead
+- Zero impact on notification delivery latency
+- DLQ fallback: 100% audit event capture
+
 ---
 
-## 🔮 **Future Enhancements**
+## 📝 Version History
 
-### **Planned Features** (Post-V1)
+### **Version 1.3.0** (2025-12-02) - **CURRENT**
+- ✅ **Documentation Standardization**: README restructured to match service template (RO, WE pattern)
+- ✅ **Documentation Index**: Added comprehensive doc navigation with line counts
+- ✅ **File Organization**: Visual tree with all core specification docs
+- ✅ **Implementation Structure**: Added binary/controller/pkg location guide
+- ✅ **Enhanced Quick Start**: Separated guidance for developers/implementers/operators
+- ✅ **Cross-Team Q&A**: Completed 5 WorkflowExecution team questions with integration examples
 
-1. **Additional Channels**:
-   - Email (SMTP)
-   - PagerDuty
-   - Microsoft Teams
+### **Version 1.2.0** (2025-12-01)
+- ✅ **Comprehensive Test Implementation**: 249 tests (140 unit + 97 integration + 12 E2E) - 100% pass rate
+- ✅ **E2E Kind-Based Testing**: 12 E2E tests with Kind cluster (file delivery + metrics validation)
+- ✅ **DD-TEST-001 Compliance**: Notification metrics on dedicated ports (30186/9186) to prevent collisions
+- ✅ **Production-Ready Validation**: All 3 test tiers passing, stable in CI/CD, zero flaky tests
+- ✅ **HostPath File Delivery**: Clean E2E file validation without production image pollution
+- ✅ **Parallel Test Execution**: 4 concurrent processes for race condition detection
+- 📊 **Test Coverage**: Unit 70%+, Integration >50%, E2E <10% (defense-in-depth pyramid)
+
+### **Version 1.1.0** (2025-11-21)
+- ✅ **ADR-034 Unified Audit Table Integration**: All notification events written to unified `audit_events` table
+- ✅ **Fire-and-Forget Audit Writes**: <1ms audit overhead, zero impact on delivery performance
+- ✅ **Zero Audit Loss**: DLQ fallback with Redis Streams ensures no audit data lost
+- ✅ **End-to-End Correlation**: Query complete workflow trail via `correlation_id`
+- ✅ **Enhanced Testing**: Expanded integration test coverage for audit scenarios
+- ✅ **BR-NOT-062, BR-NOT-063, BR-NOT-064 Complete**: Unified audit table + graceful degradation + correlation
+
+### **Version 1.0.1** (2025-10-20)
+- ✅ **Enhanced 5-category error handling** with exponential backoff
+- ✅ **Added EventuallyWithRetry anti-flaky patterns** to integration tests
+- ✅ **Created 4 edge case test categories** (rate limiting, config changes, large payloads, concurrent delivery)
+- ✅ **Documented 2 production runbooks** with Prometheus automation
+- 📊 **Expected improvements**: >99% notification success rate, <1% test flakiness, -50% delivery MTTR
+
+### **Version 1.0.0** (2025-10-12)
+- Initial production-ready release
+- 9/9 Business Requirements implemented
+- 85 unit test scenarios, 5 integration test scenarios
+- Complete CRD controller implementation
+- Security hardening and observability
+
+---
+
+## 🔮 Future Enhancements
+
+### **V2.0 Planned Features**
+
+1. **Additional Channels** (BR-NOT-065 to BR-NOT-068):
+   - Email (SMTP) with HTML templates
+   - PagerDuty incidents
+   - Microsoft Teams with Adaptive Cards
+   - SMS via Twilio/SNS
    - Custom webhooks
 
-2. **Advanced Routing**:
-   - Per-namespace notification policies
-   - Time-of-day routing
-   - On-call rotation integration
+2. **Advanced Routing** (BR-NOT-065 to BR-NOT-068):
+   - Alertmanager-compatible routing configuration
+   - Label-based channel selection
+   - ConfigMap hot-reload for routing rules
+   - Multi-channel fanout
 
-3. **E2E Testing**:
-   - Real Slack delivery validation
-   - Complete system integration tests
-   - Production readiness validation
-
-4. **Performance Optimization**:
+3. **Performance Optimization**:
    - Batch notification delivery
-   - Connection pooling
+   - Connection pooling for external services
    - Caching for frequently accessed secrets
+
+4. **Enhanced Observability**:
+   - Grafana dashboards (pre-built)
+   - Alert rules for SLO violations
+   - Distributed tracing with OpenTelemetry
 
 ---
 
-## 📞 **Support**
+## 📞 Support
 
 ### **Getting Help**
 
-- **Documentation**: Start with this README and the [Implementation Plan](./implementation/IMPLEMENTATION_PLAN_V1.0.md)
-- **Issues**: Check [Troubleshooting](#-troubleshooting) section
-- **Testing**: See [Test Execution Summary](./testing/TEST-EXECUTION-SUMMARY.md)
+- **Documentation**: Start with [Overview](./overview.md) for architecture understanding
+- **Issues**: Check [Troubleshooting](#-troubleshooting) section and production runbooks
+- **Testing**: See [Testing Strategy](./testing-strategy.md) for test patterns
+- **Integration**: Review [Integration Points](./integration-points.md) for service coordination
 
 ### **Contributing**
 
-This controller follows strict **TDD (Test-Driven Development)** methodology:
+This controller follows strict **APDC-Enhanced TDD** methodology:
 
-1. Write tests first (RED phase)
-2. Implement minimum code to pass (GREEN phase)
-3. Refactor for quality (REFACTOR phase)
+1. **Analysis**: Understand business context and existing patterns
+2. **Plan**: Design implementation with clear success criteria
+3. **Do**: Execute TDD (RED → GREEN → REFACTOR)
+4. **Check**: Validate business outcomes and quality
 
-See [Implementation Plan V3.0](./implementation/IMPLEMENTATION_PLAN_V1.0.md) for development workflow.
-
----
-
-## 📄 **License**
-
-See [LICENSE](../../../LICENSE) file in repository root.
+See [Implementation Checklist](./implementation-checklist.md) for APDC-TDD workflow.
 
 ---
 
-## ✅ **Production Readiness Checklist**
+## 📄 License
 
-- [x] **Implementation**: 100% (9/9 BRs complete)
-- [x] **Unit Tests**: 85 scenarios, 92% code coverage
-- [x] **Integration Tests**: 8 scenarios (5 core + 3 edge cases), 100% BR coverage
-- [x] **Edge Case Tests**: 4 categories (rate limiting, config changes, large payloads, concurrent delivery)
-- [x] **Deployment Manifests**: 5 files, production-ready
-- [x] **Security Hardening**: Non-root, RBAC, seccomp
-- [x] **Observability**: 10 Prometheus metrics, health probes
-- [x] **Documentation**: 16 documents, comprehensive (including 2 production runbooks)
-- [x] **Production Runbooks**: 2 runbooks with automation (HIGH_FAILURE_RATE, STUCK_NOTIFICATIONS)
-- [ ] **Build Pipeline**: Dockerfile + build scripts (Day 12)
-- [ ] **Integration Test Execution**: Validate in KIND (Day 12)
-- [ ] **Production Validation**: Final CHECK phase (Day 12)
-
-**Status**: **99% Production-Ready** (pending Day 12 validation)
-
-**v3.1 Enhancements**:
-- Enhanced error handling with Categories B & E
-- Anti-flaky test patterns (EventuallyWithRetry)
-- Edge case test coverage
-- Production runbooks with Prometheus automation
+See [LICENSE](../../../../../LICENSE) file in repository root.
 
 ---
 
-**Version**: 1.0.1
-**Last Updated**: 2025-10-20
-**Status**: Production-Ready (99% complete - v3.1 enhancements) ✅
-**Next**: Day 12 - Build pipeline + integration test execution
+## ✅ Production Readiness Status
+
+### **Implementation** ✅
+- [x] 100% BR coverage (12/12 BRs implemented)
+- [x] All 3 channels operational (console, slack, file for E2E)
+- [x] Exponential backoff retry with circuit breakers
+- [x] Data sanitization (22 secret patterns)
+- [x] ADR-034 unified audit table integration
+
+### **Testing** ✅
+- [x] 140 unit tests (70%+ coverage)
+- [x] 97 integration tests (>50% coverage - microservices architecture)
+- [x] 12 E2E tests (<10% coverage - Kind-based)
+- [x] Zero flaky tests
+- [x] 100% pass rate in CI/CD
+- [x] Parallel execution (4 concurrent processes)
+
+### **Security** ✅
+- [x] Non-root container (UID 65532)
+- [x] Minimum RBAC permissions
+- [x] Read-only root filesystem
+- [x] Seccomp profile: RuntimeDefault
+- [x] No privilege escalation
+- [x] Secret sanitization (22 patterns)
+
+### **Observability** ✅
+- [x] 10 Prometheus metrics
+- [x] Health probes (/healthz, /readyz)
+- [x] Structured logging with correlation IDs
+- [x] ADR-034 audit events
+- [x] 2 production runbooks with automation
+
+### **Documentation** ✅
+- [x] 11 core specification documents (6,913 lines)
+- [x] Production runbooks (2)
+- [x] Test documentation (BR coverage, execution guide)
+- [x] Integration examples for RO
+- [x] Troubleshooting guides
+
+### **Deployment** ✅
+- [x] Kubernetes manifests (production-ready)
+- [x] Dockerfile (UBI9-based, security-hardened)
+- [x] ConfigMap for controller configuration
+- [x] Secret management patterns
+- [x] DD-TEST-001 port compliance (9186/30186)
+
+**Status**: **✅ 100% PRODUCTION-READY** (v1.2.0, December 1, 2025)
+
+**Next Steps**: Ready for V1.0 integration with Remediation Orchestrator
+
+---
+
+**Version**: v1.3.0
+**Last Updated**: December 2, 2025
+**Status**: ✅ Production-Ready ✅
+**Maintainer**: Notification Service Team
+

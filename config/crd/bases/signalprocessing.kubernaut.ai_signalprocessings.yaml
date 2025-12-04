@@ -338,6 +338,27 @@ spec:
                       SignalProcessing detects these from K8s resources automatically
                       Used by HolmesGPT-API for: workflow filtering + LLM context
                     properties:
+                      failedDetections:
+                        description: |-
+                          ========================================
+                          DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.2)
+                          ========================================
+                          Lists field names where detection QUERY failed (RBAC, timeout, network error).
+                          If a field is in this array, its value should be ignored.
+                          If empty/nil, all detections succeeded.
+                          Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
+                          stateful, helmManaged, networkIsolated, serviceMesh
+                        enum:
+                        - gitOpsManaged
+                        - pdbProtected
+                        - hpaEnabled
+                        - stateful
+                        - helmManaged
+                        - networkIsolated
+                        - serviceMesh
+                        items:
+                          type: string
+                        type: array
                       gitOpsManaged:
                         description: |-
                           ========================================
@@ -374,14 +395,6 @@ spec:
                           ========================================
                           True if PodDisruptionBudget exists for this workload
                         type: boolean
-                      podSecurityLevel:
-                        description: Pod Security Standard level from namespace label
-                        enum:
-                        - privileged
-                        - baseline
-                        - restricted
-                        - ""
-                        type: string
                       serviceMesh:
                         description: Service mesh if detected (from sidecar or namespace
                           labels)

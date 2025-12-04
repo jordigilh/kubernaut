@@ -167,14 +167,14 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		s.logger.Info("Audit record queued to DLQ for async processing",
 			"notification_id", audit.NotificationID)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	if err := json.NewEncoder(w).Encode(map[string]string{
-		"status":  "accepted",
-		"message": "audit record queued for processing",
-	}); err != nil {
-		s.logger.Error(err, "failed to encode DLQ response")
-	}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		if err := json.NewEncoder(w).Encode(map[string]string{
+			"status":  "accepted",
+			"message": "audit record queued for processing",
+		}); err != nil {
+			s.logger.Error(err, "failed to encode DLQ response")
+		}
 		return
 	}
 

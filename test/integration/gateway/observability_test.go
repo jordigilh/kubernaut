@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"time"
 
@@ -249,18 +250,18 @@ var _ = Describe("Observability Integration Tests", func() {
 			uniqueID := time.Now().UnixNano()
 			alertName := fmt.Sprintf("StormTest-p%d-%d", processID, uniqueID)
 
-			// Send 5 different alerts with same alertname, staggered to ensure they hit within storm window
-			// Stagger by 200ms each to ensure alerts arrive within the 1-second storm detection window
-			// Without staggering, all alerts arrive in < 1ms and the storm window expires before detection
+			// Send 12 different alerts with same alertname, staggered to ensure they hit within storm window
+			// Storm threshold is 10 alerts/minute, so 12 alerts within window should trigger storm detection
+			// Stagger by 50ms each to ensure alerts arrive within the 1-second storm detection window
 			var wg sync.WaitGroup
-			for i := 0; i < 5; i++ {
+			for i := 0; i < 12; i++ {
 				wg.Add(1)
 				go func(index int) {
 					defer wg.Done()
 					defer GinkgoRecover()
 
 					// Stagger alerts by 50ms to ensure they trigger storm detection
-					// Storm threshold is 2 alerts/minute, so 5 alerts in 250ms should trigger
+					// Storm threshold is 10 alerts/minute, so 12 alerts in 600ms should trigger
 					time.Sleep(time.Duration(index*50) * time.Millisecond)
 
 					payload := GeneratePrometheusAlert(PrometheusAlertOptions{
@@ -272,7 +273,8 @@ var _ = Describe("Observability Integration Tests", func() {
 							Name: fmt.Sprintf("storm-pod-%d-%d", uniqueID, index), // DIFFERENT pod for each alert
 						},
 					})
-					SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+					resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+					GinkgoWriter.Printf("📨 Alert %d: HTTP %d\n", index, resp.StatusCode)
 				}(i)
 			}
 			wg.Wait()
@@ -280,6 +282,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Wait for storm detection and metrics to update
 			// Storm detection happens async, use Eventually for parallel execution robustness
 			var stormCount float64
+			var debugOnce sync.Once
 			Eventually(func() float64 {
 				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
 				if err != nil {
@@ -288,9 +291,17 @@ var _ = Describe("Observability Integration Tests", func() {
 				}
 				stormCount = GetMetricSum(metrics, "gateway_signal_storms_detected_total")
 
-				// Debug: Print storm metric value
+				// Debug: Print storm metric value and all storm-related metrics once
 				if stormCount < 1 {
 					GinkgoWriter.Printf("Storm metric value: %f (waiting for >= 1)\n", stormCount)
+					debugOnce.Do(func() {
+						GinkgoWriter.Printf("🔍 Total metrics in response: %d\n", len(metrics))
+						for name, metric := range metrics {
+							if strings.Contains(name, "storm") || strings.Contains(name, "signal") {
+								GinkgoWriter.Printf("🔍 Available metric: %s = %v\n", name, metric.Values)
+							}
+						}
+					})
 				}
 				return stormCount
 			}, "90s", "500ms").Should(BeNumerically(">=", 1),

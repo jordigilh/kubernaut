@@ -1123,7 +1123,7 @@ func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.Norma
 	logger.V(1).Info("Duplicate signal detected",
 		"fingerprint", signal.Fingerprint,
 		"count", metadata.Count,
-		"firstSeen", metadata.FirstSeen,
+		"firstOccurrence", metadata.FirstOccurrence,
 	)
 
 	return NewDuplicateResponse(signal.Fingerprint, metadata)

@@ -69,19 +69,18 @@ spec:
                   signalContext:
                     description: Signal context from SignalProcessing enrichment
                     properties:
-                      businessCategory:
-                        description: Business category
-                        type: string
                       businessPriority:
-                        description: Business priority
-                        enum:
-                        - P0
-                        - P1
-                        - P2
-                        - P3
+                        description: |-
+                          Business priority
+                          GAP-C3-01 RELATED: Changed from enum to free-text for consistency
+                          Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
+                        maxLength: 63
+                        minLength: 1
                         type: string
                       enrichmentResults:
-                        description: Complete enrichment results from SignalProcessing
+                        description: |-
+                          Complete enrichment results from SignalProcessing
+                          GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
                         properties:
                           customLabels:
                             additionalProperties:
@@ -101,6 +100,27 @@ spec:
                               SignalProcessing detects these from K8s resources automatically
                               Used by HolmesGPT-API for: workflow filtering + LLM context
                             properties:
+                              failedDetections:
+                                description: |-
+                                  ========================================
+                                  DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.2)
+                                  ========================================
+                                  Lists field names where detection QUERY failed (RBAC, timeout, network error).
+                                  If a field is in this array, its value should be ignored.
+                                  If empty/nil, all detections succeeded.
+                                  Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
+                                  stateful, helmManaged, networkIsolated, serviceMesh
+                                enum:
+                                - gitOpsManaged
+                                - pdbProtected
+                                - hpaEnabled
+                                - stateful
+                                - helmManaged
+                                - networkIsolated
+                                - serviceMesh
+                                items:
+                                  type: string
+                                type: array
                               gitOpsManaged:
                                 description: |-
                                   ========================================
@@ -138,15 +158,6 @@ spec:
                                   ========================================
                                   True if PodDisruptionBudget exists for this workload
                                 type: boolean
-                              podSecurityLevel:
-                                description: Pod Security Standard level from namespace
-                                  label
-                                enum:
-                                - privileged
-                                - baseline
-                                - restricted
-                                - ""
-                                type: string
                               serviceMesh:
                                 description: Service mesh if detected (from sidecar
                                   or namespace labels)
@@ -170,28 +181,83 @@ spec:
                             - pdbProtected
                             - stateful
                             type: object
-                          enrichmentQuality:
-                            description: |-
-                              Overall enrichment quality score (0.0-1.0)
-                              1.0 = all enrichments successful, 0.0 = all failed
-                              CONSUMER: Remediation Orchestrator (RO) - NOT for LLM/HolmesGPT
-                              PURPOSE: RO uses this to detect degraded mode (< 0.8) and notify operators
-                            maximum: 1
-                            minimum: 0
-                            type: number
                           kubernetesContext:
                             description: Kubernetes resource context (pod status,
                               node conditions, etc.)
                             properties:
+                              deploymentDetails:
+                                description: Deployment/workload context
+                                properties:
+                                  availableReplicas:
+                                    format: int32
+                                    type: integer
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  name:
+                                    type: string
+                                  readyReplicas:
+                                    format: int32
+                                    type: integer
+                                  replicas:
+                                    format: int32
+                                    type: integer
+                                  strategy:
+                                    type: string
+                                required:
+                                - availableReplicas
+                                - name
+                                - readyReplicas
+                                - replicas
+                                - strategy
+                                type: object
                               namespace:
+                                description: Namespace information
                                 type: string
                               namespaceLabels:
                                 additionalProperties:
                                   type: string
                                 type: object
                               nodeDetails:
-                                description: NodeDetails contains node-level context
+                                description: Node context
                                 properties:
+                                  allocatable:
+                                    description: ResourceList contains resource quantities.
+                                    properties:
+                                      cpu:
+                                        type: string
+                                      memory:
+                                        type: string
+                                    required:
+                                    - cpu
+                                    - memory
+                                    type: object
+                                  capacity:
+                                    description: ResourceList contains resource quantities.
+                                    properties:
+                                      cpu:
+                                        type: string
+                                      memory:
+                                        type: string
+                                    required:
+                                    - cpu
+                                    - memory
+                                    type: object
+                                  conditions:
+                                    items:
+                                      description: NodeCondition contains node condition
+                                        status.
+                                      properties:
+                                        status:
+                                          type: string
+                                        type:
+                                          type: string
+                                      required:
+                                      - status
+                                      - type
+                                      type: object
+                                    type: array
                                   labels:
                                     additionalProperties:
                                       type: string
@@ -199,11 +265,41 @@ spec:
                                   name:
                                     type: string
                                 required:
+                                - allocatable
+                                - capacity
                                 - name
                                 type: object
                               podDetails:
-                                description: PodDetails contains pod-level context
+                                description: Pod context
                                 properties:
+                                  annotations:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  containers:
+                                    items:
+                                      description: ContainerStatus contains container-level
+                                        status.
+                                      properties:
+                                        image:
+                                          type: string
+                                        name:
+                                          type: string
+                                        ready:
+                                          type: boolean
+                                        restartCount:
+                                          format: int32
+                                          type: integer
+                                        state:
+                                          type: string
+                                      required:
+                                      - image
+                                      - name
+                                      - ready
+                                      - restartCount
+                                      - state
+                                      type: object
+                                    type: array
                                   creationTimestamp:
                                     type: string
                                   labels:
@@ -223,6 +319,91 @@ spec:
                                 - phase
                                 - restartCount
                                 type: object
+                              relatedConfigMaps:
+                                items:
+                                  description: ConfigMapSummary contains ConfigMap
+                                    targeting information.
+                                  properties:
+                                    keys:
+                                      items:
+                                        type: string
+                                      type: array
+                                    name:
+                                      type: string
+                                  required:
+                                  - keys
+                                  - name
+                                  type: object
+                                type: array
+                              relatedIngresses:
+                                items:
+                                  description: IngressSummary contains ingress targeting
+                                    information.
+                                  properties:
+                                    hosts:
+                                      items:
+                                        type: string
+                                      type: array
+                                    name:
+                                      type: string
+                                    rules:
+                                      items:
+                                        description: IngressRule contains ingress
+                                          rule configuration.
+                                        properties:
+                                          host:
+                                            type: string
+                                          path:
+                                            type: string
+                                        required:
+                                        - host
+                                        - path
+                                        type: object
+                                      type: array
+                                  required:
+                                  - hosts
+                                  - name
+                                  type: object
+                                type: array
+                              relatedServices:
+                                description: Related resources (targeting data only)
+                                items:
+                                  description: ServiceSummary contains service targeting
+                                    information.
+                                  properties:
+                                    clusterIP:
+                                      type: string
+                                    name:
+                                      type: string
+                                    ports:
+                                      items:
+                                        description: ServicePort contains service
+                                          port configuration.
+                                        properties:
+                                          name:
+                                            type: string
+                                          port:
+                                            format: int32
+                                            type: integer
+                                          protocol:
+                                            type: string
+                                          targetPort:
+                                            type: string
+                                        required:
+                                        - name
+                                        - port
+                                        - protocol
+                                        - targetPort
+                                        type: object
+                                      type: array
+                                    type:
+                                      type: string
+                                  required:
+                                  - clusterIP
+                                  - name
+                                  - type
+                                  type: object
+                                type: array
                             required:
                             - namespace
                             type: object
@@ -237,9 +418,9 @@ spec:
                               identifies a different resource than the original signal source
                             items:
                               description: "OwnerChainEntry represents a single entry
-                                in the K8s ownership chain\nDD-WORKFLOW-001 v1.7:
+                                in the K8s ownership chain.\nDD-WORKFLOW-001 v1.8:
                                 SignalProcessing traverses ownerReferences to build
-                                this\nExample chain for a Pod owned by Deployment:\n\n\t[0]:
+                                this.\nExample chain for a Pod owned by Deployment:\n\n\t[0]:
                                 {Namespace: \"prod\", Kind: \"ReplicaSet\", Name:
                                 \"api-7d8f9c6b5\"}\n\t[1]: {Namespace: \"prod\", Kind:
                                 \"Deployment\", Name: \"api\"}"
@@ -262,22 +443,16 @@ spec:
                             type: array
                         type: object
                       environment:
-                        description: Environment classification
-                        enum:
-                        - production
-                        - staging
-                        - development
+                        description: |-
+                          Environment classification
+                          GAP-C3-01 FIX: Changed from enum to free-text (values defined by Rego policies)
+                          Examples: "production", "staging", "development", "qa-eu", "canary"
+                        maxLength: 63
+                        minLength: 1
                         type: string
                       fingerprint:
                         description: Signal fingerprint for correlation
                         maxLength: 64
-                        type: string
-                      riskTolerance:
-                        description: Risk tolerance for this signal
-                        enum:
-                        - low
-                        - medium
-                        - high
                         type: string
                       severity:
                         description: 'Signal severity: critical, warning, info'
@@ -798,10 +973,25 @@ spec:
                 description: Timestamps
                 format: date-time
                 type: string
+              targetInOwnerChain:
+                description: |-
+                  ========================================
+                  HAPI RESPONSE METADATA (Dec 2025)
+                  ========================================
+                  Whether the RCA-identified target resource was found in OwnerChain
+                  If false, DetectedLabels may be from different scope than affected resource
+                  Used for: Rego policy input, audit trail, operator notifications, metrics
+                type: boolean
               tokensUsed:
                 description: LLM tokens consumed
                 minimum: 0
                 type: integer
+              warnings:
+                description: Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain
+                  validation, low confidence)
+                items:
+                  type: string
+                type: array
             required:
             - approvalRequired
             - phase

@@ -362,8 +362,8 @@ func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClie
 				TTL: 5 * time.Second, // Production: 5 minutes
 			},
 			Storm: gatewayconfig.StormSettings{
-				RateThreshold:     2,               // Production: 10 alerts/minute
-				PatternThreshold:  2,               // Production: 5 similar alerts
+				RateThreshold:     10,              // Production: 10 alerts/minute (test needs 3+ for env classification tests)
+				PatternThreshold:  5,               // Production: 5 similar alerts
 				AggregationWindow: 1 * time.Second, // Test: 1s, Production: 1m
 			},
 			Environment: gatewayconfig.EnvironmentSettings{
@@ -504,10 +504,12 @@ func GeneratePrometheusAlert(opts PrometheusAlertOptions) []byte {
 		"severity":  opts.Severity,
 	}
 
-	// Add resource labels if provided
+	// Add resource labels using the format expected by Prometheus adapter
+	// The adapter extracts Kind/Name from specific labels: pod, deployment, statefulset, etc.
 	if opts.Resource.Kind != "" {
-		labels["resource_kind"] = opts.Resource.Kind
-		labels["resource_name"] = opts.Resource.Name
+		// Use lowercase kind as label key (e.g., "pod", "deployment", "node")
+		kindLabel := strings.ToLower(opts.Resource.Kind)
+		labels[kindLabel] = opts.Resource.Name // e.g., "pod": "my-pod-name"
 	}
 
 	// Merge custom labels

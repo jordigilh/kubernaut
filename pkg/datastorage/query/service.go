@@ -22,9 +22,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/go-logr/logr"
 )
 
 // ListOptions defines filtering and pagination options

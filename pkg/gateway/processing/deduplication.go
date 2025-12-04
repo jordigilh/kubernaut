@@ -283,8 +283,8 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		Fingerprint:           signal.Fingerprint,
 		Count:                 inProgressCRD.Spec.Deduplication.OccurrenceCount + 1,
 		RemediationRequestRef: fmt.Sprintf("%s/%s", inProgressCRD.Namespace, inProgressCRD.Name),
-		FirstSeen:             inProgressCRD.Spec.Deduplication.FirstSeen.Format(time.RFC3339),
-		LastSeen:              time.Now().Format(time.RFC3339),
+		FirstOccurrence:       inProgressCRD.Spec.Deduplication.FirstOccurrence.Format(time.RFC3339),
+		LastOccurrence:        time.Now().Format(time.RFC3339),
 	}
 
 	s.logger.V(1).Info("Duplicate detected (in-progress CRD found)",
@@ -390,7 +390,7 @@ func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, sign
 
 	// Update lastSeen timestamp
 	now := time.Now().Format(time.RFC3339Nano)
-	if err := redisClient.HSet(ctx, key, "lastSeen", now).Err(); err != nil {
+	if err := redisClient.HSet(ctx, key, "lastOccurrence", now).Err(); err != nil {
 		return false, nil, fmt.Errorf("failed to update lastSeen: %w", err)
 	}
 
@@ -400,12 +400,13 @@ func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, sign
 	}
 
 	// Retrieve metadata for response
+	// Uses renamed fields per RO API Contract Alignment
 	metadata := &DeduplicationMetadata{
 		Fingerprint:           signal.Fingerprint,
 		Count:                 int(count),
 		RemediationRequestRef: redisClient.HGet(ctx, key, "remediationRequestRef").Val(),
-		FirstSeen:             redisClient.HGet(ctx, key, "firstSeen").Val(),
-		LastSeen:              now,
+		FirstOccurrence:       redisClient.HGet(ctx, key, "firstOccurrence").Val(),
+		LastOccurrence:        now,
 	}
 
 	return true, metadata, nil
@@ -418,8 +419,8 @@ func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, sign
 // - alertName: Human-readable alert name (for debugging)
 // - namespace: Kubernetes namespace (for filtering queries)
 // - resource: Resource name (for identifying affected workload)
-// - firstSeen: When alert first appeared (ISO 8601 timestamp)
-// - lastSeen: Most recent occurrence (initially same as firstSeen)
+// - firstOccurrence: When alert first appeared (ISO 8601 timestamp) - renamed per RO API Contract Alignment
+// - lastOccurrence: Most recent occurrence (initially same as firstOccurrence) - renamed per RO API Contract Alignment
 // - count: Number of occurrences (initially 1)
 // - remediationRequestRef: Name of created RemediationRequest CRD
 //
@@ -473,13 +474,14 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	redisClient := s.redisClient.GetClient()
 
 	// Store as Redis hash with pipeline for atomicity
+	// Uses renamed fields per RO API Contract Alignment
 	pipe := redisClient.Pipeline()
 	pipe.HSet(ctx, key, "fingerprint", signal.Fingerprint)
 	pipe.HSet(ctx, key, "alertName", signal.AlertName)
 	pipe.HSet(ctx, key, "namespace", signal.Namespace)
 	pipe.HSet(ctx, key, "resource", signal.Resource.Name)
-	pipe.HSet(ctx, key, "firstSeen", now)
-	pipe.HSet(ctx, key, "lastSeen", now)
+	pipe.HSet(ctx, key, "firstOccurrence", now)
+	pipe.HSet(ctx, key, "lastOccurrence", now)
 	pipe.HSet(ctx, key, "count", 1)
 	pipe.HSet(ctx, key, "remediationRequestRef", remediationRequestRef)
 	pipe.Expire(ctx, key, s.ttl) // Auto-expire after 5 minutes
@@ -534,9 +536,10 @@ func (s *DeduplicationService) updateDuplicateInRedis(ctx context.Context, signa
 	redisClient := s.redisClient.GetClient()
 
 	// Update duplicate metadata with pipeline for atomicity
+	// Uses renamed fields per RO API Contract Alignment
 	pipe := redisClient.Pipeline()
 	pipe.HIncrBy(ctx, key, "count", 1) // Increment count atomically
-	pipe.HSet(ctx, key, "lastSeen", now)
+	pipe.HSet(ctx, key, "lastOccurrence", now)
 	pipe.Expire(ctx, key, s.ttl) // BR-GATEWAY-003: Refresh TTL
 
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -570,14 +573,16 @@ type DeduplicationMetadata struct {
 	// Used in HTTP 202 response to inform caller which CRD was updated
 	RemediationRequestRef string
 
-	// FirstSeen is when the alert first appeared (ISO 8601 timestamp)
+	// FirstOccurrence is when the alert first appeared (ISO 8601 timestamp)
 	// Example: "2025-10-09T10:00:00Z"
-	FirstSeen string
+	// Renamed from FirstSeen per RO API Contract Alignment
+	FirstOccurrence string
 
-	// LastSeen is the most recent occurrence (ISO 8601 timestamp)
+	// LastOccurrence is the most recent occurrence (ISO 8601 timestamp)
 	// Updated every time Check() detects a duplicate
 	// Example: "2025-10-09T10:04:30Z"
-	LastSeen string
+	// Renamed from LastSeen per RO API Contract Alignment
+	LastOccurrence string
 }
 
 // Record stores a fingerprint in Redis for deduplication tracking
@@ -597,10 +602,11 @@ func (s *DeduplicationService) Record(ctx context.Context, fingerprint string, c
 	redisClient := s.redisClient.GetClient()
 
 	// Store as Redis hash with pipeline for atomicity (same as Store() method)
+	// Uses renamed fields per RO API Contract Alignment
 	pipe := redisClient.Pipeline()
 	pipe.HSet(ctx, key, "fingerprint", fingerprint)
-	pipe.HSet(ctx, key, "firstSeen", now)
-	pipe.HSet(ctx, key, "lastSeen", now)
+	pipe.HSet(ctx, key, "firstOccurrence", now)
+	pipe.HSet(ctx, key, "lastOccurrence", now)
 	pipe.HSet(ctx, key, "count", 1)
 	pipe.HSet(ctx, key, "remediationRequestRef", crdName)
 	pipe.Expire(ctx, key, s.ttl) // Auto-expire after TTL

@@ -68,4 +68,3 @@ func ParseTimeParam(param string) (time.Time, error) {
 
 	return time.Time{}, fmt.Errorf("invalid time format: %s (expected: 24h, 7d, or RFC3339 timestamp)", param)
 }
-

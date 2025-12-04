@@ -261,4 +261,3 @@ func newZapLogger(opts Options) *zap.Logger {
 
 	return logger
 }
-

@@ -218,4 +218,3 @@ func (p *Parser) ExtractExecutionBundle(schema *models.WorkflowSchema) *string {
 	}
 	return nil
 }
-

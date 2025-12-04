@@ -21,9 +21,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/go-logr/logr"
 )
 
 // Validator handles input validation and sanitization

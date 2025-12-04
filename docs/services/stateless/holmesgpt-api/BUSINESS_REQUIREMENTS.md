@@ -477,7 +477,9 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
-- **Total**: 104 test specs (100% passing)
+- **Total**: 492 test specs (377 unit + 71 integration + 40 E2E + 4 smoke) - 100% passing
+
+> **Note**: Test count updated December 2025 after multiple feature additions.
 - **Coverage**: 95% confidence
 - **Files**:
   - `test_recovery.py`: 27 tests (Recovery strategy analysis)
@@ -618,7 +620,7 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 
 ## 🔗 Related Documentation
 
-- [IMPLEMENTATION_PLAN_V3.0.md](./IMPLEMENTATION_PLAN_V3.0.md) - Complete implementation plan
+- [IMPLEMENTATION_PLAN_V3.0.md](./implementation/IMPLEMENTATION_PLAN_V3.0.md) - Complete implementation plan
 - [api-specification.md](./api-specification.md) - API specification with examples
 - [overview.md](./overview.md) - Service architecture and design decisions
 - [DD-HOLMESGPT-012](../../../architecture/decisions/DD-HOLMESGPT-012-Minimal-Internal-Service-Architecture.md) - Minimal service architecture decision

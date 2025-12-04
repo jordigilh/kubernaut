@@ -16,22 +16,22 @@
 | Document | Purpose | Lines | Status |
 |----------|---------|-------|--------|
 | **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ~380 | ✅ Complete |
-| **[CRD Schema](./crd-schema.md)** | RemediationRequest CRD types, validation, examples | ~675 | ✅ Complete |
-| **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ~1,055 | ✅ Complete |
-| **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ~320 | 🟡 Thin (adequate) |
+| **[CRD Schema](./crd-schema.md)** | RemediationRequest CRD types, validation, examples | ~748 | ✅ Complete |
+| **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ~1,516 | ✅ Complete |
+| **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ~499 | ✅ Complete |
 | **[Data Handling Architecture](./data-handling-architecture.md)** | Targeting Data Pattern (unique to central controller) | ~320 | ✅ Complete |
 | **[Finalizers & Lifecycle](./finalizers-lifecycle.md)** | Cleanup patterns, CRD lifecycle management, monitoring | ~785 | ✅ Complete |
-| **[Testing Strategy](./testing-strategy.md)** | Unit/Integration/E2E tests, mock patterns, anti-patterns | ~1,610 | ✅ **Complete (BEST IN CLASS)** |
-| **[Security Configuration](./security-configuration.md)** | RBAC, network policies, secret handling, security context | ~40 | 🚧 **Placeholder (needs expansion)** |
-| **[Observability & Logging](./observability-logging.md)** | Structured logging, distributed tracing, correlation IDs | ~930 | ✅ Complete |
-| **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards, alert rules | ~405 | ✅ Complete |
-| **[Database Integration](./database-integration.md)** | Audit storage, PostgreSQL schema, vector DB | ~51 | 🚧 **Placeholder (needs expansion)** |
-| **[Integration Points](./integration-points.md)** | Upstream/downstream services, external dependencies | ~570 | ✅ Complete |
-| **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path, reusability analysis | ~3 | 🚧 **Placeholder (CRITICAL)** |
-| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~160 | ✅ Complete |
+| **[Testing Strategy](./testing-strategy.md)** | Unit/Integration/E2E tests, mock patterns, anti-patterns | ~1,611 | ✅ **Complete (BEST IN CLASS)** |
+| **[Security Configuration](./security-configuration.md)** | RBAC, network policies, secret handling, security context | ~596 | ✅ Complete |
+| **[Observability & Logging](./observability-logging.md)** | Structured logging, distributed tracing, correlation IDs | ~928 | ✅ Complete |
+| **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards, alert rules | ~406 | ✅ Complete |
+| **[Database Integration](./database-integration.md)** | Audit storage, PostgreSQL schema, vector DB | ~586 | ✅ Complete |
+| **[Integration Points](./integration-points.md)** | Upstream/downstream services, external dependencies | ~724 | ✅ Complete |
+| **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path, reusability analysis | ~617 | ✅ Complete |
+| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~159 | ✅ Complete |
 
-**Total**: ~8,168 lines across 14 documents
-**Status**: 🟡 85% Complete - 3 stub files need expansion (migration, security, database)
+**Total**: ~9,875 lines across 14 core specification documents
+**Status**: ✅ **100% Complete** - All specification documents fully written
 
 ---
 
@@ -40,27 +40,25 @@
 ```
 05-remediationorchestrator/
 ├── 📄 README.md (you are here)              - Service index & navigation
-├── 📘 overview.md                           - High-level architecture
-├── 🔧 crd-schema.md                         - CRD type definitions
-├── ⚙️  controller-implementation.md         - Reconciler logic ✅ (1,055 lines)
-├── 🔄 reconciliation-phases.md              - Phase details & coordination 🟡 (320 lines)
-├── 🎯 data-handling-architecture.md         - Targeting Data Pattern (unique)
-├── 🧹 finalizers-lifecycle.md               - Cleanup & lifecycle management
-├── 🧪 testing-strategy.md                   - Test patterns ✅ **BEST IN CLASS (1,610 lines)**
-├── 🔒 security-configuration.md             - Security patterns 🚧 **STUB (40 lines)**
-├── 📊 observability-logging.md              - Logging & tracing ✅ (930 lines)
-├── 📈 metrics-slos.md                       - Prometheus & Grafana ✅ (405 lines)
-├── 💾 database-integration.md               - Audit storage & schema 🚧 **STUB (51 lines)**
-├── 🔗 integration-points.md                 - Service coordination ✅ (570 lines)
-├── 🔀 migration-current-state.md            - Existing code & migration 🚧 **CRITICAL STUB (3 lines)**
-└── ✅ implementation-checklist.md           - APDC-TDD phases & tasks ✅ (160 lines)
+├── 📘 overview.md                           - High-level architecture ✅ (380 lines)
+├── 🔧 crd-schema.md                         - CRD type definitions ✅ (748 lines)
+├── ⚙️  controller-implementation.md         - Reconciler logic ✅ (1,516 lines)
+├── 🔄 reconciliation-phases.md              - Phase details & coordination ✅ (499 lines)
+├── 🎯 data-handling-architecture.md         - Targeting Data Pattern (unique) ✅ (320 lines)
+├── 🧹 finalizers-lifecycle.md               - Cleanup & lifecycle management ✅ (785 lines)
+├── 🧪 testing-strategy.md                   - Test patterns ✅ **BEST IN CLASS (1,611 lines)**
+├── 🔒 security-configuration.md             - Security patterns ✅ (596 lines)
+├── 📊 observability-logging.md              - Logging & tracing ✅ (928 lines)
+├── 📈 metrics-slos.md                       - Prometheus & Grafana ✅ (406 lines)
+├── 💾 database-integration.md               - Audit storage & schema ✅ (586 lines)
+├── 🔗 integration-points.md                 - Service coordination ✅ (724 lines)
+├── 🔀 migration-current-state.md            - Existing code & migration ✅ (617 lines)
+└── ✅ implementation-checklist.md           - APDC-TDD phases & tasks ✅ (159 lines)
 ```
 
 **Legend**:
 - **(COMMON PATTERN)** = Duplicated across all CRD services with service-specific adaptations
 - ✅ = Complete documentation
-- 🚧 = Placeholder/stub - needs expansion
-- 🟡 = Thin - adequate but could be enhanced
 - 🎯 = Central controller unique file (Targeting Data Pattern)
 - **BEST IN CLASS** = Highest quality documentation across all services
 
@@ -123,10 +121,14 @@
 
 | Category | Range | Description |
 |----------|-------|-------------|
-| **Primary** | BR-REM-001 to BR-REM-050 | Central orchestration of remediation lifecycle |
-| **Orchestration** | BR-REM-010 to BR-REM-025 | State machine, phase coordination |
-| **Data Handling** | BR-REM-030 to BR-REM-040 | Targeting Data Pattern for child CRDs |
-| **Escalation** | BR-REM-045 to BR-REM-050 | Notification integration for manual intervention |
+| **Core** | BR-ORCH-001 to BR-ORCH-034 | Core orchestration (approval, workflow, timeout, notification, deduplication) |
+| **Approval** | BR-ORCH-001, BR-ORCH-026 | Approval notification creation and orchestration |
+| **Workflow** | BR-ORCH-025 | Workflow data pass-through from AIAnalysis to WorkflowExecution |
+| **Timeout** | BR-ORCH-027, BR-ORCH-028 | Global and per-phase timeout management |
+| **Notification** | BR-ORCH-029 to BR-ORCH-031 | Notification handling, cancellation, status tracking |
+| **Deduplication** | BR-ORCH-032 to BR-ORCH-034 | WE Skipped phase handling, duplicate tracking, bulk notification |
+
+**See**: [BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md) and [BR_MAPPING.md](./BR_MAPPING.md) for detailed requirements.
 
 ---
 
@@ -145,28 +147,35 @@
 
 ## 🏗️ Implementation Status
 
-### Existing Code (Verified)
-- **Location**: New implementation (no existing RemediationRequest controller)
-- **Reusability**: 0% (new central orchestrator)
-- **Tests**: None (new implementation)
+### Existing Code (Per migration-current-state.md)
+- **Location**: `internal/controller/remediation/remediationrequest_controller.go`
+- **Status**: ~30% implemented (SignalProcessing creation functional)
+- **Entry Point**: `cmd/remediationorchestrator/main.go` ✅
 
-### Gap Analysis
-- ❌ RemediationRequest CRD schema (need to create)
-- ❌ RemediationRequestReconciler controller (need to create)
-- ❌ Targeting Data Pattern implementation
-- ❌ Child CRD creation and ownership management
-- ❌ State machine for phase coordination
-- ❌ Watch-based sibling status coordination
-- ❌ CRD lifecycle management (owner refs, finalizers for central controller)
-- ❌ Notification Service integration for escalation
+### What Exists (✅)
+- ✅ RemediationRequest CRD schema
+- ✅ RemediationRequestReconciler controller (basic)
+- ✅ SignalProcessing CRD creation logic
+- ✅ Field mapping from RemediationRequest to SignalProcessing
+- ✅ Owner reference management
+- ✅ RBAC permissions (for RR and SP)
 
-### Migration Effort
-- **CRD Design**: 2 days (RemediationRequest schema with targeting data)
-- **Controller Implementation**: 4-5 days (state machine, child creation, watch coordination)
-- **Targeting Data Pattern**: 2 days (immutable data snapshot, child references)
-- **Escalation Integration**: 2 days (Notification Service calls)
-- **Testing**: 3 days (E2E orchestration scenarios)
-- **Total**: ~2 weeks
+### What's Missing (❌)
+- ❌ AIAnalysis CRD creation (after SP completes)
+- ❌ WorkflowExecution CRD creation (after AI completes)
+- ❌ Status watching & phase progression
+- ❌ RBAC for AIAnalysis and WorkflowExecution
+- ❌ Error handling & retry logic
+- ❌ Prometheus metrics
+- ❌ Notification Service integration
+
+### Remaining Effort (Per migration-current-state.md)
+- **AIAnalysis Integration**: 1-2 days
+- **WorkflowExecution Integration**: 1-2 days
+- **Status & Error Handling**: 2 days
+- **Observability & Metrics**: 1 day
+- **Testing & Documentation**: 2 days
+- **Total**: ~8-10 days remaining
 
 ---
 
@@ -244,6 +253,15 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📝 Version History
 
+### **Version 1.2** (2025-12-03)
+- ✅ **README audit**: Updated documentation index with accurate line counts
+- ✅ **Confirmed all 14 specification documents are complete** (not stubs)
+- ✅ **Added dedicated BR files** (BR-ORCH-001, BR-ORCH-025-034)
+- ✅ **Added BR_MAPPING.md** for test coverage tracking
+- ✅ **API contract alignment** with Gateway, SP, AI, WE teams (see docs/handoff/)
+- ✅ **Added DD-RO-001** for resource lock deduplication handling
+- 📊 **Total documentation**: ~9,875 lines across 14 specification documents
+
 ### **Version 1.1** (2025-10-20)
 - ✅ **Added V1.0 approval notification CRD schema field** (BR-ORCH-001)
 - ✅ **Added Phase 3.5: Approval Notification Triggering to reconciliation phases**
@@ -262,22 +280,20 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📝 Document Maintenance
 
-**Last Updated**: 2025-10-20
-**Document Structure Version**: 1.1
-**Status**: ✅ 100% Complete (V1.0 approval notification integration)
+**Last Updated**: 2025-12-03
+**Document Structure Version**: 1.2
+**Status**: ✅ **100% Complete** - All specification documents fully written
 
 **Completion Status**:
-- ✅ **Core Documentation**: 100% complete (11/14 files)
-- ✅ **Testing Strategy**: **BEST IN CLASS** (1,610 lines)
-- ✅ **Controller Implementation**: Exceptional (1,055 lines)
-- 🚧 **Critical Stubs**: 3 files need expansion (migration, security, database)
-- 🟡 **Enhancement**: 1 file thin but adequate (reconciliation-phases)
+- ✅ **Core Documentation**: 100% complete (14/14 files)
+- ✅ **Testing Strategy**: **BEST IN CLASS** (1,611 lines)
+- ✅ **Controller Implementation**: Exceptional (1,516 lines)
+- ✅ **Security Configuration**: Complete (596 lines)
+- ✅ **Database Integration**: Complete (586 lines)
+- ✅ **Migration & Current State**: Complete (617 lines)
+- ✅ **Reconciliation Phases**: Complete (499 lines)
 
-**Next Steps**:
-1. **CRITICAL**: Expand `migration-current-state.md` (3 → 150+ lines)
-2. **MEDIUM**: Expand `security-configuration.md` (40 → 500+ lines)
-3. **MEDIUM**: Expand `database-integration.md` (51 → 200+ lines)
-4. **LOW**: Enhance `reconciliation-phases.md` (320 → 500+ lines)
+**Total Documentation**: ~9,875 lines across 14 specification documents
 
 **Common Pattern Updates**: When updating common patterns (testing, security, observability, metrics), update all 5 CRD services.
 

@@ -340,10 +340,10 @@ const (
     // AIAnalysis accessible via Kind NodePort
     AIAnalysisHealthURL  = "http://localhost:8184/healthz"
     AIAnalysisMetricsURL = "http://localhost:9184/metrics"
-    
+
     // HolmesGPT-API in-cluster (accessed via kubectl port-forward or NodePort)
     HolmesGPTAPIURL = "http://localhost:8080"
-    
+
     // Data Storage via NodePort
     DataStorageURL = "http://localhost:8081"
 )

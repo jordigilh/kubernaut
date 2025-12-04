@@ -71,7 +71,7 @@ func NewCRDUpdater(k8sClient *k8s.Client, logger logr.Logger) *CRDUpdater {
 // This method:
 // 1. Fetches the current CRD from Kubernetes (to get resourceVersion)
 // 2. Increments Spec.Deduplication.OccurrenceCount
-// 3. Updates Spec.Deduplication.LastSeen timestamp
+// 3. Updates Spec.Deduplication.LastOccurrence timestamp (per RO API Contract Alignment)
 // 4. Calls K8s API to update the CRD
 // 5. Retries on conflict (optimistic concurrency control)
 //
@@ -105,8 +105,9 @@ func (u *CRDUpdater) IncrementOccurrenceCount(ctx context.Context, namespace, na
 		}
 
 		// Step 2: Update deduplication fields
+		// Uses shared type field names (per RO team API Contract Alignment)
 		crd.Spec.Deduplication.OccurrenceCount++
-		crd.Spec.Deduplication.LastSeen = metav1.Now()
+		crd.Spec.Deduplication.LastOccurrence = metav1.Now()
 
 		u.logger.V(1).Info("Updating CRD occurrence count",
 			"namespace", namespace,

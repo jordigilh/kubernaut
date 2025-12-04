@@ -19,6 +19,8 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -100,26 +102,32 @@ type SignalContextInput struct {
 	SignalType string `json:"signalType"`
 
 	// Environment classification
-	// +kubebuilder:validation:Enum=production;staging;development
+	// GAP-C3-01 FIX: Changed from enum to free-text (values defined by Rego policies)
+	// Examples: "production", "staging", "development", "qa-eu", "canary"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	Environment string `json:"environment"`
 
 	// Business priority
-	// +kubebuilder:validation:Enum=P0;P1;P2;P3
+	// GAP-C3-01 RELATED: Changed from enum to free-text for consistency
+	// Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	BusinessPriority string `json:"businessPriority"`
 
-	// Risk tolerance for this signal
-	// +kubebuilder:validation:Enum=low;medium;high
-	RiskTolerance string `json:"riskTolerance,omitempty"`
+	// GAP-C3-02 FIX: RiskTolerance REMOVED - now in CustomLabels via Rego policies
+	// Per DD-WORKFLOW-001 v1.4: risk_tolerance is customer-derived, not system-controlled
 
-	// Business category
-	BusinessCategory string `json:"businessCategory,omitempty"`
+	// GAP-C3-03 FIX: BusinessCategory REMOVED - now in CustomLabels via Rego policies
+	// Per DD-WORKFLOW-001 v1.4: business_category is customer-derived, not mandatory
 
 	// Target resource identification
 	TargetResource TargetResource `json:"targetResource"`
 
 	// Complete enrichment results from SignalProcessing
+	// GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
 	// +kubebuilder:validation:Required
-	EnrichmentResults EnrichmentResults `json:"enrichmentResults"`
+	EnrichmentResults sharedtypes.EnrichmentResults `json:"enrichmentResults"`
 }
 
 // TargetResource identifies the Kubernetes resource being remediated
@@ -132,125 +140,57 @@ type TargetResource struct {
 	Namespace string `json:"namespace"`
 }
 
-// EnrichmentResults contains all enrichment data from SignalProcessing
-// DD-CONTRACT-002: Matches SignalProcessing.Status.EnrichmentResults
-type EnrichmentResults struct {
-	// Kubernetes resource context (pod status, node conditions, etc.)
-	KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
+// ========================================
+// TYPE ALIASES FOR CONVENIENCE (GAP-C3-04 FIX)
+// ========================================
+// These aliases allow AIAnalysis code to reference types without
+// the sharedtypes prefix while maintaining single source of truth.
+// Authoritative types in pkg/shared/types/enrichment.go
 
-	// Auto-detected cluster characteristics - NO CONFIG NEEDED
-	// SignalProcessing detects these from K8s resources automatically
-	// Used by HolmesGPT-API for: workflow filtering + LLM context
-	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
+// EnrichmentResults alias - use sharedtypes.EnrichmentResults in new code
+type EnrichmentResults = sharedtypes.EnrichmentResults
 
-	// OwnerChain: K8s ownership traversal from signal source resource
-	// DD-WORKFLOW-001 v1.7: Used by HolmesGPT-API for 100% safe DetectedLabels validation
-	// SignalProcessing traverses metadata.ownerReferences to build this chain
-	// Example: Pod → ReplicaSet → Deployment
-	// Empty chain = orphan resource (no owners)
-	// HolmesGPT-API uses this to validate DetectedLabels applicability when RCA
-	// identifies a different resource than the original signal source
-	OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
+// OwnerChainEntry alias - use sharedtypes.OwnerChainEntry in new code
+type OwnerChainEntry = sharedtypes.OwnerChainEntry
 
-	// Custom labels from Rego policies - CUSTOMER DEFINED
-	// Key = subdomain/category (e.g., "constraint", "team", "region")
-	// Value = list of label values (boolean keys or "key=value" pairs)
-	// Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
-	// Passed through to HolmesGPT-API for workflow filtering + LLM context
-	CustomLabels map[string][]string `json:"customLabels,omitempty"`
+// DetectedLabels alias - use sharedtypes.DetectedLabels in new code
+type DetectedLabels = sharedtypes.DetectedLabels
 
-	// Overall enrichment quality score (0.0-1.0)
-	// 1.0 = all enrichments successful, 0.0 = all failed
-	// CONSUMER: Remediation Orchestrator (RO) - NOT for LLM/HolmesGPT
-	// PURPOSE: RO uses this to detect degraded mode (< 0.8) and notify operators
-	// +kubebuilder:validation:Minimum=0.0
-	// +kubebuilder:validation:Maximum=1.0
-	EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
-}
+// KubernetesContext alias - use sharedtypes.KubernetesContext in new code
+type KubernetesContext = sharedtypes.KubernetesContext
 
-// OwnerChainEntry represents a single entry in the K8s ownership chain
-// DD-WORKFLOW-001 v1.7: SignalProcessing traverses ownerReferences to build this
-// Example chain for a Pod owned by Deployment:
-//
-//	[0]: {Namespace: "prod", Kind: "ReplicaSet", Name: "api-7d8f9c6b5"}
-//	[1]: {Namespace: "prod", Kind: "Deployment", Name: "api"}
-type OwnerChainEntry struct {
-	// Namespace of the owner resource (empty for cluster-scoped resources like Node)
-	Namespace string `json:"namespace,omitempty"`
-	// Kind of the owner resource (e.g., ReplicaSet, Deployment, StatefulSet, DaemonSet)
-	Kind string `json:"kind"`
-	// Name of the owner resource
-	Name string `json:"name"`
-}
+// PodDetails alias - use sharedtypes.PodDetails in new code
+type PodDetails = sharedtypes.PodDetails
 
-// DetectedLabels contains auto-detected cluster characteristics
-// SignalProcessing populates these automatically from K8s resources
-// Used by HolmesGPT-API for:
-//   - Workflow filtering (deterministic SQL WHERE)
-//   - LLM context (natural language in prompt)
-type DetectedLabels struct {
-	// ========================================
-	// GITOPS MANAGEMENT
-	// ========================================
-	// True if namespace/deployment is managed by GitOps controller
-	// Detection: ArgoCD annotations, Flux labels
-	GitOpsManaged bool `json:"gitOpsManaged"`
-	// GitOps tool managing this resource
-	// +kubebuilder:validation:Enum=argocd;flux;""
-	GitOpsTool string `json:"gitOpsTool,omitempty"`
+// NodeDetails alias - use sharedtypes.NodeDetails in new code
+type NodeDetails = sharedtypes.NodeDetails
 
-	// ========================================
-	// WORKLOAD PROTECTION
-	// ========================================
-	// True if PodDisruptionBudget exists for this workload
-	PDBProtected bool `json:"pdbProtected"`
-	// True if HorizontalPodAutoscaler targets this workload
-	HPAEnabled bool `json:"hpaEnabled"`
+// DeploymentDetails alias - use sharedtypes.DeploymentDetails in new code
+type DeploymentDetails = sharedtypes.DeploymentDetails
 
-	// ========================================
-	// WORKLOAD CHARACTERISTICS
-	// ========================================
-	// True if StatefulSet or has PVCs attached
-	Stateful bool `json:"stateful"`
-	// True if managed by Helm (has helm.sh/chart label)
-	HelmManaged bool `json:"helmManaged"`
+// ContainerStatus alias - use sharedtypes.ContainerStatus in new code
+type ContainerStatus = sharedtypes.ContainerStatus
 
-	// ========================================
-	// SECURITY POSTURE
-	// ========================================
-	// True if NetworkPolicy exists in namespace
-	NetworkIsolated bool `json:"networkIsolated"`
-	// Pod Security Standard level from namespace label
-	// +kubebuilder:validation:Enum=privileged;baseline;restricted;""
-	PodSecurityLevel string `json:"podSecurityLevel,omitempty"`
-	// Service mesh if detected (from sidecar or namespace labels)
-	// +kubebuilder:validation:Enum=istio;linkerd;""
-	ServiceMesh string `json:"serviceMesh,omitempty"`
-}
+// ResourceList alias - use sharedtypes.ResourceList in new code
+type ResourceList = sharedtypes.ResourceList
 
-// KubernetesContext contains Kubernetes resource context
-// Imported structure matching SignalProcessing types
-type KubernetesContext struct {
-	Namespace       string            `json:"namespace"`
-	NamespaceLabels map[string]string `json:"namespaceLabels,omitempty"`
-	PodDetails      *PodDetails       `json:"podDetails,omitempty"`
-	NodeDetails     *NodeDetails      `json:"nodeDetails,omitempty"`
-}
+// NodeCondition alias - use sharedtypes.NodeCondition in new code
+type NodeCondition = sharedtypes.NodeCondition
 
-// PodDetails contains pod-level context
-type PodDetails struct {
-	Name              string            `json:"name"`
-	Phase             string            `json:"phase"`
-	Labels            map[string]string `json:"labels,omitempty"`
-	RestartCount      int32             `json:"restartCount"`
-	CreationTimestamp string            `json:"creationTimestamp"`
-}
+// ServiceSummary alias - use sharedtypes.ServiceSummary in new code
+type ServiceSummary = sharedtypes.ServiceSummary
 
-// NodeDetails contains node-level context
-type NodeDetails struct {
-	Name   string            `json:"name"`
-	Labels map[string]string `json:"labels,omitempty"`
-}
+// ServicePort alias - use sharedtypes.ServicePort in new code
+type ServicePort = sharedtypes.ServicePort
+
+// IngressSummary alias - use sharedtypes.IngressSummary in new code
+type IngressSummary = sharedtypes.IngressSummary
+
+// IngressRule alias - use sharedtypes.IngressRule in new code
+type IngressRule = sharedtypes.IngressRule
+
+// ConfigMapSummary alias - use sharedtypes.ConfigMapSummary in new code
+type ConfigMapSummary = sharedtypes.ConfigMapSummary
 
 // ========================================
 // RECOVERY CONTEXT (DD-RECOVERY-002)
@@ -430,6 +370,16 @@ type AIAnalysisStatus struct {
 	// Investigation duration in seconds
 	// +kubebuilder:validation:Minimum=0
 	InvestigationTime int64 `json:"investigationTime,omitempty"`
+
+	// ========================================
+	// HAPI RESPONSE METADATA (Dec 2025)
+	// ========================================
+	// Whether the RCA-identified target resource was found in OwnerChain
+	// If false, DetectedLabels may be from different scope than affected resource
+	// Used for: Rego policy input, audit trail, operator notifications, metrics
+	TargetInOwnerChain *bool `json:"targetInOwnerChain,omitempty"`
+	// Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain validation, low confidence)
+	Warnings []string `json:"warnings,omitempty"`
 
 	// ========================================
 	// RECOVERY STATUS (DD-RECOVERY-002)

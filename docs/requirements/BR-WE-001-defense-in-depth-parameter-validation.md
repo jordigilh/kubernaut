@@ -4,8 +4,31 @@
 **Category**: Workflow Engine Service
 **Priority**: P2
 **Target Version**: V1
-**Status**: ✅ Approved
+**Status**: ❌ **CANCELLED** (December 1, 2025)
 **Date**: December 1, 2025
+
+---
+
+## ❌ CANCELLATION NOTICE
+
+**Cancelled**: December 1, 2025
+**Reason**: Validation responsibility consolidated to HolmesGPT-API only.
+
+**Rationale**:
+1. If validation fails at WE, the entire RCA flow must restart (expensive)
+2. If validation fails at HAPI, LLM can self-correct in the same session (cheap)
+3. Edge cases (HAPI bugs, API bypass) should be addressed at source, not duplicated
+4. Simplifies architecture - WE doesn't need Data Storage access for schema
+
+**Replacement**: BR-HAPI-191 is now the **sole** parameter validation requirement.
+
+**Updated Documents**:
+- DD-HAPI-002 v1.1: Removed WE validation layer
+- WE CRD Schema: No `ValidateParameters` function needed
+
+---
+
+## Original Requirement (ARCHIVED)
 
 ---
 

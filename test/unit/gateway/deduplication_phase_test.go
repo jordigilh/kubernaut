@@ -17,11 +17,11 @@ limitations under the License.
 package gateway
 
 import (
-	"github.com/go-logr/logr"
 	"context"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // DD-GATEWAY-009: CRD Phase-Based Deduplication Unit Tests
@@ -112,10 +113,10 @@ var _ = Describe("DD-GATEWAY-009: CRD Phase-Based Deduplication", func() {
 				},
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				Deduplication: remediationv1alpha1.DeduplicationInfo{
-					OccurrenceCount: 1,
-					FirstSeen:       metav1.NewTime(time.Now().Add(-5 * time.Minute)),
-					LastSeen:        metav1.NewTime(time.Now()),
+				Deduplication: sharedtypes.DeduplicationInfo{
+					OccurrenceCount:  1,
+					FirstOccurrence:  metav1.NewTime(time.Now().Add(-5 * time.Minute)),
+					LastOccurrence:   metav1.NewTime(time.Now()),
 				},
 			},
 			Status: remediationv1alpha1.RemediationRequestStatus{

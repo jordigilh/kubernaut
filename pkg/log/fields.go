@@ -108,13 +108,13 @@ const (
 	OutcomeSkipped = "skipped"
 
 	// Phases (DD-007 graceful shutdown)
-	PhaseStartup           = "startup"
-	PhaseRunning           = "running"
-	PhaseShutdown          = "shutdown"
-	PhaseEndpointRemoval   = "endpoint_removal"
-	PhaseDrainingConns     = "draining_connections"
-	PhaseClosingResources  = "closing_resources"
-	PhaseShutdownComplete  = "shutdown_complete"
+	PhaseStartup          = "startup"
+	PhaseRunning          = "running"
+	PhaseShutdown         = "shutdown"
+	PhaseEndpointRemoval  = "endpoint_removal"
+	PhaseDrainingConns    = "draining_connections"
+	PhaseClosingResources = "closing_resources"
+	PhaseShutdownComplete = "shutdown_complete"
 
 	// Statuses
 	StatusHealthy   = "healthy"
@@ -123,4 +123,3 @@ const (
 	StatusReady     = "ready"
 	StatusNotReady  = "not_ready"
 )
-

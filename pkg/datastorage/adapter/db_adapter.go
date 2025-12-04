@@ -81,8 +81,8 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 	sqlQuery, args, err := builder.Build()
 	if err != nil {
 		d.logger.Error(err, "Failed to build SQL query",
-		"filters", filters,
-	)
+			"filters", filters,
+		)
 		return nil, fmt.Errorf("query builder error: %w", err)
 	}
 
@@ -99,8 +99,8 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 	rows, err := d.db.Query(pgQuery, args...)
 	if err != nil {
 		d.logger.Error(err, "Failed to execute SQL query",
-		"sql", pgQuery,
-	)
+			"sql", pgQuery,
+		)
 		return nil, fmt.Errorf("database query error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -187,8 +187,8 @@ func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
 	sqlQuery, args, err := builder.BuildCount()
 	if err != nil {
 		d.logger.Error(err, "Failed to build COUNT query",
-		"filters", filters,
-	)
+			"filters", filters,
+		)
 		return 0, fmt.Errorf("count query builder error: %w", err)
 	}
 
@@ -205,8 +205,8 @@ func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
 	err = d.db.QueryRow(pgQuery, args...).Scan(&count)
 	if err != nil {
 		d.logger.Error(err, "Failed to execute COUNT query",
-		"sql", pgQuery,
-	)
+			"sql", pgQuery,
+		)
 		return 0, fmt.Errorf("count query error: %w", err)
 	}
 
@@ -236,8 +236,8 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 	rows, err := d.db.Query(sqlQuery, id)
 	if err != nil {
 		d.logger.Error(err, "Failed to execute Get query",
-		"id", id,
-	)
+			"id", id,
+		)
 		return nil, fmt.Errorf("database query error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -267,8 +267,8 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 	// Scan row
 	if err := rows.Scan(valuePtrs...); err != nil {
 		d.logger.Error(err, "Failed to scan row",
-		"id", id,
-	)
+			"id", id,
+		)
 		return nil, fmt.Errorf("row scan error: %w", err)
 	}
 
@@ -284,4 +284,3 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 
 	return result, nil
 }
-

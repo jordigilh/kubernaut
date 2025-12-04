@@ -291,4 +291,3 @@ type RemediationApprovalRequestList struct {
 func init() {
 	SchemeBuilder.Register(&RemediationApprovalRequest{}, &RemediationApprovalRequestList{})
 }
-

@@ -1,8 +1,11 @@
 # Gateway Service - Testing Strategy
 
-**Version**: v1.0
-**Last Updated**: October 4, 2025
-**Status**: ✅ Design Complete
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.2 | 2025-12-03 | Updated integration test infrastructure (envtest for most, Kind for E2E) | Test infrastructure fixes |
+> | v1.1 | 2025-11-27 | Added resource validation tests (BR-GATEWAY-TARGET-RESOURCE-VALIDATION) | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) |
+> | v1.0 | 2025-10-04 | Initial testing strategy | - |
 
 ---
 

@@ -569,7 +569,7 @@ System must have comprehensive test coverage for Data Storage Service tool integ
 - [DD-CONTEXT-001: Context Enrichment Placement](../../../../architecture/decisions/DD-CONTEXT-001-Context-Enrichment-Placement.md)
 - [DD-CONTEXT-001-ACTION_PLAN](../../../../architecture/decisions/DD-CONTEXT-001-ACTION_PLAN.md)
 - [DD-CONTEXT-001-QUICK_START](../../../../architecture/decisions/DD-CONTEXT-001-QUICK_START.md)
-- [IMPLEMENTATION_PLAN_V3.0.md](IMPLEMENTATION_PLAN_V3.0.md) - v3.1
+- [IMPLEMENTATION_PLAN_V3.0.md](implementation/IMPLEMENTATION_PLAN_V3.0.md) - v3.1
 
 ---
 

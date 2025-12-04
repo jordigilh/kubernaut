@@ -20,7 +20,6 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
-
 )
 
 // ========================================
@@ -57,8 +56,8 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interfac
 	rows, err := d.db.Query(sqlQuery, workflowID)
 	if err != nil {
 		d.logger.Error(err, "Failed to execute success rate aggregation",
-		"workflow_id", workflowID,
-	)
+			"workflow_id", workflowID,
+		)
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
@@ -80,8 +79,8 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interfac
 
 	if err := rows.Scan(&totalCount, &successCount, &failureCount, &successRate); err != nil {
 		d.logger.Error(err, "Failed to scan aggregation results",
-		"workflow_id", workflowID,
-	)
+			"workflow_id", workflowID,
+		)
 		return nil, fmt.Errorf("result scan error: %w", err)
 	}
 
@@ -260,8 +259,8 @@ func (d *DBAdapter) AggregateIncidentTrend(period string) (map[string]interface{
 	rows, err := d.db.Query(sqlQuery)
 	if err != nil {
 		d.logger.Error(err, "Failed to execute incident trend aggregation",
-		"period", period,
-	)
+			"period", period,
+		)
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()

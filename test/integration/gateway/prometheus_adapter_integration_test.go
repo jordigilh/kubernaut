@@ -21,8 +21,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -68,10 +70,11 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		logger = zap.NewNop()
 
 		// Generate unique namespace names to avoid parallel test interference
-		uniqueSuffix := fmt.Sprintf("p%d-%d", GinkgoParallelProcess(), GinkgoRandomSeed())
-		prodNamespace = fmt.Sprintf("production-%s", uniqueSuffix)
+		// Use timestamp to ensure uniqueness per test (GinkgoRandomSeed is same for all tests in a run)
+		uniqueSuffix := fmt.Sprintf("p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
+		prodNamespace = fmt.Sprintf("prod-%s", uniqueSuffix)
 		stagingNamespace = fmt.Sprintf("staging-%s", uniqueSuffix)
-		devNamespace = fmt.Sprintf("development-%s", uniqueSuffix)
+		devNamespace = fmt.Sprintf("dev-%s", uniqueSuffix)
 
 		// Setup test infrastructure using helpers
 		redisClient = SetupRedisTestClient(ctx)
@@ -81,7 +84,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for integration tests")
 
-		// Clean Redis before each test
+		// Clean Redis for this DB only (each parallel process has its own DB)
 		err := redisClient.Client.FlushDB(ctx).Err()
 		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
@@ -456,7 +459,16 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 				resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				defer resp.Body.Close()
+
+				// Read response body for debugging
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				GinkgoWriter.Printf("🔍 %s: HTTP %d - %s\n", tc.namespace, resp.StatusCode, string(bodyBytes))
+
+				// Check HTTP status - should be 201 for new CRD or 202 for duplicate
+				Expect(resp.StatusCode).To(BeNumerically(">=", 200))
+				Expect(resp.StatusCode).To(BeNumerically("<", 300),
+					"Alert for %s should succeed (got HTTP %d): %s", tc.namespace, resp.StatusCode, string(bodyBytes))
 
 				// BUSINESS OUTCOME: CRD has correct environment and priority based on namespace
 				// Use Eventually to handle async CRD creation

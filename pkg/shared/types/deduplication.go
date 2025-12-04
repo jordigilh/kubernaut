@@ -26,4 +26,3 @@ type DeduplicationInfo struct {
 	// Reference to previous RemediationRequest CRD (if duplicate)
 	PreviousRemediationRequestRef string `json:"previousRemediationRequestRef,omitempty"`
 }
-

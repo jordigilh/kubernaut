@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgconn" // DD-010: Migrated from lib/pq
 	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5/pgconn" // DD-010: Migrated from lib/pq
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"

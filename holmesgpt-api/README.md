@@ -27,18 +27,18 @@
 ## Current Status
 
 **Version**: v3.3 (Production-Ready)
-**Tests**: 445/445 passing (100%)
+**Tests**: 492/492 passing (100%)
 **Confidence**: 98%
 
 ### Test Summary by Tier
 
 | Tier | Tests | Time | LLM | Purpose |
 |------|-------|------|-----|---------|
-| **Unit** | 362 | ~30s | None | Business logic validation |
+| **Unit** | 377 | ~30s | None | Business logic validation |
 | **Integration** | 71 | ~20s | Mock server | Data Storage API contract |
-| **E2E** | 12 | ~12s | Mock server | Full workflow validation |
+| **E2E** | 40 | ~12s | Mock server | Full workflow validation |
 | **Smoke** | 4 | 10-20 min | Real LLM | Optional - prompt engineering validation |
-| **Total** | **445** | ~1 min | - | - |
+| **Total** | **492** | ~1 min | - | - |
 
 ### Running Tests
 

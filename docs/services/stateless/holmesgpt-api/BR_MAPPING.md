@@ -244,7 +244,9 @@ This document maps high-level business requirements to their detailed sub-requir
 | `test_context_api_integration.py` | BR-HAPI-046 to 050 (Context API Tool) | 1 integration | 90% |
 | `test_real_llm_integration.py` | BR-HAPI-026 to 030 (Multi-provider LLM) | 1 integration | 90% |
 
-**Total Unit Tests**: 104 scenarios (100% passing)
+**Total Unit Tests**: 377 scenarios (100% passing)
+
+> **Note**: Test count updated December 2025 after `failedDetections`, `target_in_owner_chain`, and `warnings[]` features.
 **Total Integration Tests**: 3 scenarios
 **Overall Confidence**: 95% (Production-Ready with 2 pending enhancements)
 
@@ -294,7 +296,7 @@ The following BRs are deferred to v2.0 and only needed if the service becomes ex
 ## 🔗 Related Documentation
 
 - [BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md) - Detailed BR descriptions
-- [IMPLEMENTATION_PLAN_V3.0.md](./IMPLEMENTATION_PLAN_V3.0.md) - Complete implementation plan
+- [IMPLEMENTATION_PLAN_V3.0.md](./implementation/IMPLEMENTATION_PLAN_V3.0.md) - Complete implementation plan
 - [api-specification.md](./api-specification.md) - API specification with examples
 - [overview.md](./overview.md) - Service architecture and design decisions
 

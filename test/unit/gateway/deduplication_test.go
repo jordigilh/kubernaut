@@ -139,8 +139,8 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 				"Count must be at least 1")
 			Expect(metadata.RemediationRequestRef).To(Equal(rrName),
 				"CRD reference must be stored for duplicate responses")
-			Expect(metadata.FirstSeen).NotTo(BeEmpty(),
-				"First seen timestamp must be recorded")
+			Expect(metadata.FirstOccurrence).NotTo(BeEmpty(),
+				"First occurrence timestamp must be recorded")
 
 			// Business capability verified:
 			// CRD created → Fingerprint stored → Ready to detect duplicates
@@ -218,7 +218,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 			_, metadata1, err := dedupService.Check(ctx, testSignal)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(metadata1).NotTo(BeNil())
-			firstSeenOriginal := metadata1.FirstSeen
+			firstOccurrenceOriginal := metadata1.FirstOccurrence
 
 			// Wait briefly and check for duplicate again
 			time.Sleep(100 * time.Millisecond)
@@ -226,13 +226,13 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// BUSINESS OUTCOME: Timestamps enable alert duration tracking
-			Expect(metadata2.FirstSeen).To(Equal(firstSeenOriginal),
-				"FirstSeen must remain unchanged (identifies when issue started)")
-			Expect(metadata2.LastSeen).NotTo(Equal(metadata2.FirstSeen),
-				"LastSeen must be updated (identifies ongoing issue)")
+			Expect(metadata2.FirstOccurrence).To(Equal(firstOccurrenceOriginal),
+				"FirstOccurrence must remain unchanged (identifies when issue started)")
+			Expect(metadata2.LastOccurrence).NotTo(Equal(metadata2.FirstOccurrence),
+				"LastOccurrence must be updated (identifies ongoing issue)")
 
 			// Business capability verified:
-			// FirstSeen = when issue started, LastSeen = most recent occurrence
+			// FirstOccurrence = when issue started, LastOccurrence = most recent occurrence
 			// Operations can calculate: "payment-api OOM ongoing for 5 minutes"
 		})
 

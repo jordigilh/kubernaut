@@ -407,12 +407,12 @@ func validateConfig(cfg *Config) error {
     if cfg.Database.Host == "" {
         return fmt.Errorf("database.host is required")
     }
-    
+
     // Dependency checks
     if !tektonCRDsExist() {
         return fmt.Errorf("Tekton Pipelines not installed")
     }
-    
+
     return nil
 }
 ```

@@ -1,10 +1,17 @@
 # Gateway Service - Business Requirements
 
-**Version**: v1.1
-**Last Updated**: November 11, 2025
-**Service Type**: Stateless HTTP API Service
+**Version**: v1.2
+**Last Updated**: 2025-12-03
+**Status**: ✅ APPROVED
+**Owner**: Gateway Team
 **Total BRs**: 74 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-180)
-**Changelog**: 5 BRs deprecated and moved to Signal Processing Service (BR-GATEWAY-007, 014, 015, 016, 017) - see DD-CATEGORIZATION-001
+
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.2 | 2025-12-03 | Added BR-GATEWAY-TARGET-RESOURCE-VALIDATION for resource info validation | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) |
+> | v1.1 | 2025-11-11 | 5 BRs deprecated (007, 014-017) - moved to Signal Processing | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+> | v1.0 | 2025-10-04 | Initial business requirements | - |
 
 ---
 

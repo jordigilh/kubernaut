@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package v1alpha1 contains API Schema definitions for the workflowexecution v1alpha1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=workflowexecution.kubernaut.io
+// +groupName=workflowexecution.kubernaut.ai
 package v1alpha1
 
 import (
@@ -26,7 +26,8 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "workflowexecution.kubernaut.io", Version: "v1alpha1"}
+	// Updated from kubernaut.io to kubernaut.ai per DD-CRD-001
+	GroupVersion = schema.GroupVersion{Group: "workflowexecution.kubernaut.ai", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

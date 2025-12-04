@@ -141,10 +141,10 @@ func correlationIDMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         correlationID := extractCorrelationID(r)
         ctx := context.WithValue(r.Context(), "correlation_id", correlationID)
-        
+
         // Set response header for downstream tracking
         w.Header().Set(CorrelationIDHeader, correlationID)
-        
+
         next.ServeHTTP(w, r.WithContext(ctx))
     })
 }
@@ -155,13 +155,13 @@ func correlationIDMiddleware(next http.Handler) http.Handler {
 ```go
 func (s *Server) handleWrite(w http.ResponseWriter, r *http.Request) {
     correlationID := r.Context().Value("correlation_id").(string)
-    
+
     logger := s.logger.With(
         zap.String("correlation_id", correlationID),
         zap.String("method", r.Method),
         zap.String("path", r.URL.Path),
     )
-    
+
     logger.Info("processing write request")
     // ... handle request
     logger.Info("write request completed")
@@ -175,10 +175,10 @@ When calling other services, pass the correlation ID:
 ```go
 func (c *EmbeddingClient) GenerateEmbedding(ctx context.Context, text string) (*pgvector.Vector, error) {
     correlationID := ctx.Value("correlation_id").(string)
-    
+
     req, _ := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/embed", body)
     req.Header.Set("X-Correlation-ID", correlationID)
-    
+
     // ... make request
 }
 ```
@@ -244,7 +244,7 @@ func initTracer() (*trace.TracerProvider, error) {
     if err != nil {
         return nil, err
     }
-    
+
     tp := trace.NewTracerProvider(
         trace.WithBatcher(exporter),
         trace.WithResource(resource.NewWithAttributes(
@@ -252,7 +252,7 @@ func initTracer() (*trace.TracerProvider, error) {
             semconv.ServiceNameKey.String("data-storage-service"),
         )),
     )
-    
+
     otel.SetTracerProvider(tp)
     return tp, nil
 }
@@ -264,20 +264,20 @@ func initTracer() (*trace.TracerProvider, error) {
 func (r *Repository) Write(ctx context.Context, audit *models.Audit) error {
     ctx, span := otel.Tracer("data-storage").Start(ctx, "repository.write")
     defer span.End()
-    
+
     span.SetAttributes(
         attribute.String("table", "notification_audit"),
         attribute.String("remediation_id", audit.RemediationID),
     )
-    
+
     // ... perform write
-    
+
     if err != nil {
         span.RecordError(err)
         span.SetStatus(codes.Error, err.Error())
         return err
     }
-    
+
     span.SetStatus(codes.Ok, "write successful")
     return nil
 }

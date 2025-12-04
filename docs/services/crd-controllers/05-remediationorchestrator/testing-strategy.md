@@ -18,7 +18,7 @@ Following Kubernaut's defense-in-depth testing strategy:
 
 **Test Directory**: [test/unit/](../../../test/unit/)
 **Service Tests**: Create `test/unit/remediation/controller_test.go`
-**Coverage Target**: 71% of business requirements (BR-AR-001 to BR-AR-070)
+**Coverage Target**: 70%+ of defined business requirements (BR-ORCH-001, BR-ORCH-025-034)
 **Confidence**: 85-90%
 **Execution**: `make test`
 
@@ -74,7 +74,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("BR-AR-001: RemediationRequest Remediation Orchestrator", func() {
+var _ = Describe("BR-ORCH-001: RemediationRequest Remediation Orchestrator", func() {
     var (
         // Fake K8s client for compile-time API safety
         fakeK8sClient      client.Client
@@ -125,560 +125,358 @@ var _ = Describe("BR-AR-001: RemediationRequest Remediation Orchestrator", func(
         }
     })
 
-    Context("BR-AR-010: RemediationProcessing Child CRD Creation Phase", func() {
-        It("should create SignalProcessing CRD with correct owner reference", func() {
-            // Setup RemediationRequest parent CRD
-            ar := &alertremediationv1.RemediationRequest{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "test-remediation-001",
-                    Namespace: "kubernaut-system",
-                    UID:       "parent-uid-123",
-                },
-                Spec: alertremediationv1.RemediationRequestSpec{
-                    AlertData: alertremediationv1.AlertData{
-                        Fingerprint: "alert-fingerprint-abc123",
-                        Namespace:   "production",
-                        Severity:    "critical",
-                        Labels: map[string]string{
-                            "alertname": "HighMemoryUsage",
-                        },
-                    },
-                    RemediationConfig: alertremediationv1.RemediationConfig{
-                        AutoRemediate:     true,
-                        RequireApproval:   false,
-                        EscalateOnFailure: true,
-                    },
-                },
-            }
+    // ✅ BEST PRACTICE: Use DescribeTable for child CRD creation scenarios (supports BR-ORCH-025)
+    Context("Child CRD Creation Phase (supports BR-ORCH-025)", func() {
+        DescribeTable("child CRD creation with correct owner references",
+            func(parentName string, childType string, expectedPhase string, preExistingChild bool) {
+                // Setup RemediationRequest parent CRD
+                ar := testutil.NewRemediationRequest(parentName, "kubernaut-system")
+                ar.Spec.AlertData = alertremediationv1.AlertData{
+                    Fingerprint: "alert-fingerprint-abc123",
+                    Namespace:   "production",
+                    Severity:    "critical",
+                }
 
-            // Create RemediationRequest CRD
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
+                if preExistingChild {
+                    // Pre-create child CRD to test idempotency
+                    child := testutil.NewChildCRD(childType, "pre-existing-"+childType, "kubernaut-system")
+                    child.OwnerReferences = testutil.NewOwnerReference(ar)
+                    Expect(fakeK8sClient.Create(ctx, child)).To(Succeed())
+                }
 
-            // Execute reconciliation
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
 
-            // Validate RemediationProcessing child CRD creation
-            Expect(err).ToNot(HaveOccurred())
-            Expect(result.Requeue).To(BeTrue(), "should requeue to watch child status")
-            Expect(ar.Status.Phase).To(Equal("processing"))
+                Expect(err).ToNot(HaveOccurred())
+                Expect(result.Requeue).To(BeTrue(), "should requeue to watch child status")
+                Expect(ar.Status.Phase).To(Equal(expectedPhase))
 
-            // Verify SignalProcessing CRD was created
-            apList := &alertprocessorv1.RemediationProcessingList{}
-            Expect(fakeK8sClient.List(ctx, apList, client.InNamespace("kubernaut-system"))).To(Succeed())
-            Expect(apList.Items).To(HaveLen(1))
+                // Verify child CRD exists with correct owner reference
+                childList := testutil.ListChildCRDs(fakeK8sClient, childType, "kubernaut-system")
+                Expect(childList).To(HaveLen(1))
+                Expect(childList[0].OwnerReferences).To(HaveLen(1))
+                Expect(childList[0].OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+                Expect(*childList[0].OwnerReferences[0].Controller).To(BeTrue())
+            },
+            // SignalProcessing child CRD creation scenarios
+            Entry("creates SignalProcessing CRD for new remediation",
+                "test-new-sp", "SignalProcessing", "processing", false),
+            Entry("reuses existing SignalProcessing CRD (idempotency)",
+                "test-existing-sp", "SignalProcessing", "processing", true),
 
-            ap := apList.Items[0]
-            Expect(ap.Name).To(ContainSubstring("ap-"))
-            Expect(ap.Spec.Alert.Fingerprint).To(Equal("alert-fingerprint-abc123"))
+            // AIAnalysis child CRD creation scenarios
+            Entry("creates AIAnalysis CRD after SignalProcessing completes",
+                "test-new-ai", "AIAnalysis", "analyzing", false),
+            Entry("reuses existing AIAnalysis CRD (idempotency)",
+                "test-existing-ai", "AIAnalysis", "analyzing", true),
 
-            // Validate owner reference for cascade deletion
-            Expect(ap.OwnerReferences).To(HaveLen(1))
-            Expect(ap.OwnerReferences[0].APIVersion).To(Equal("remediation.kubernaut.io/v1"))
-            Expect(ap.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
-            Expect(ap.OwnerReferences[0].Name).To(Equal("test-remediation-001"))
-            Expect(ap.OwnerReferences[0].UID).To(Equal(ar.UID))
-            Expect(*ap.OwnerReferences[0].Controller).To(BeTrue())
-            Expect(*ap.OwnerReferences[0].BlockOwnerDeletion).To(BeTrue())
+            // WorkflowExecution child CRD creation scenarios
+            Entry("creates WorkflowExecution CRD after AIAnalysis completes",
+                "test-new-we", "WorkflowExecution", "executing", false),
+            Entry("reuses existing WorkflowExecution CRD (idempotency)",
+                "test-existing-we", "WorkflowExecution", "executing", true),
+        )
 
-            // Verify status reference recorded
-            Expect(ar.Status.ChildCRDs.RemediationProcessing).ToNot(BeEmpty())
-            Expect(ar.Status.ChildCRDs.RemediationProcessing).To(Equal(ap.Name))
-        })
+        DescribeTable("child CRD status watch triggers phase transitions",
+            func(currentPhase string, childType string, childStatus string, expectedPhase string, shouldCaptureResults bool) {
+                ar := testutil.NewRemediationRequest("test-watch-"+childType, "kubernaut-system")
+                ar.Status.Phase = currentPhase
+                testutil.SetChildCRDRef(ar, childType, childType+"-test-123")
 
-        It("BR-AR-011: should handle duplicate SignalProcessing CRD gracefully", func() {
-            ar := testutil.NewRemediationRequest("test-duplicate-ap", "kubernaut-system")
+                // Create child CRD with specified status
+                child := testutil.NewChildCRDWithStatus(childType, childType+"-test-123", "kubernaut-system", childStatus)
+                Expect(fakeK8sClient.Create(ctx, child)).To(Succeed())
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
 
-            // Pre-create RemediationProcessing with same parent
-            ap := testutil.NewRemediationProcessing("pre-existing-ap", "kubernaut-system")
-            ap.OwnerReferences = []metav1.OwnerReference{
-                {
-                    APIVersion:         "remediation.kubernaut.io/v1",
-                    Kind:               "RemediationRequest",
-                    Name:               ar.Name,
-                    UID:                ar.UID,
-                    Controller:         pointerBool(true),
-                    BlockOwnerDeletion: pointerBool(true),
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, ap)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
 
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
+                Expect(err).ToNot(HaveOccurred())
+                Expect(result.Requeue).To(BeTrue())
+                Expect(ar.Status.Phase).To(Equal(expectedPhase))
 
-            // Should succeed and use existing RemediationProcessing
-            Expect(err).ToNot(HaveOccurred())
-            Expect(ar.Status.Phase).To(Equal("processing"))
-            Expect(ar.Status.ChildCRDs.RemediationProcessing).To(Equal("pre-existing-ap"))
+                if shouldCaptureResults {
+                    Expect(testutil.GetPhaseResults(ar, childType)).ToNot(BeNil())
+                }
+            },
+            // SignalProcessing → analyzing transitions
+            Entry("SignalProcessing completed triggers analyzing phase",
+                "processing", "SignalProcessing", "completed", "analyzing", true),
+            Entry("SignalProcessing failed triggers failed phase",
+                "processing", "SignalProcessing", "failed", "failed", false),
 
-            // Verify no duplicate created
-            apList := &alertprocessorv1.RemediationProcessingList{}
-            Expect(fakeK8sClient.List(ctx, apList)).To(Succeed())
-            Expect(apList.Items).To(HaveLen(1))
-        })
+            // AIAnalysis → executing transitions (BR-ORCH-026)
+            Entry("AIAnalysis approved triggers executing phase",
+                "analyzing", "AIAnalysis", "approved", "executing", true),
+            Entry("AIAnalysis requires_approval triggers approval notification (BR-ORCH-001)",
+                "analyzing", "AIAnalysis", "requires_approval", "awaiting_approval", false),
+            Entry("AIAnalysis failed triggers failed phase",
+                "analyzing", "AIAnalysis", "failed", "failed", false),
 
-        It("BR-AR-012: should watch RemediationProcessing status and transition when completed", func() {
-            ar := testutil.NewRemediationRequest("test-ap-watch", "kubernaut-system")
-            ar.Status.Phase = "processing"
-            ar.Status.ChildCRDs.RemediationProcessing = "ap-test-123"
-
-            // Create completed RemediationProcessing child
-            ap := &alertprocessorv1.RemediationProcessing{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "ap-test-123",
-                    Namespace: "kubernaut-system",
-                },
-                Status: alertprocessorv1.RemediationProcessingStatus{
-                    Phase: "completed",
-                    EnrichmentResults: alertprocessorv1.EnrichmentResults{
-                        EnrichmentQuality: 0.92,
-                    },
-                    EnvironmentClassification: alertprocessorv1.EnvironmentClassification{
-                        Environment:      "production",
-                        BusinessPriority: "P0",
-                        Confidence:       0.95,
-                    },
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, ap)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
-
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
-
-            // Validate transition to next phase
-            Expect(err).ToNot(HaveOccurred())
-            Expect(result.Requeue).To(BeTrue())
-            Expect(ar.Status.Phase).To(Equal("analyzing"))
-
-            // Verify RemediationProcessing status captured
-            Expect(ar.Status.ProcessingPhaseResults).ToNot(BeNil())
-            Expect(ar.Status.ProcessingPhaseResults.EnrichmentQuality).To(Equal(float64(0.92)))
-            Expect(ar.Status.ProcessingPhaseResults.Environment).To(Equal("production"))
-        })
+            // WorkflowExecution → completed transitions
+            Entry("WorkflowExecution succeeded triggers completed phase",
+                "executing", "WorkflowExecution", "succeeded", "completed", true),
+            Entry("WorkflowExecution skipped triggers skipped phase (BR-ORCH-032)",
+                "executing", "WorkflowExecution", "skipped", "skipped", false),
+            Entry("WorkflowExecution failed triggers failed phase",
+                "executing", "WorkflowExecution", "failed", "failed", false),
+        )
     })
 
-    Context("BR-AR-020: AIAnalysis Child CRD Creation Phase", func() {
-        It("should create AIAnalysis CRD after RemediationProcessing completes", func() {
-            ar := testutil.NewRemediationRequest("test-ai-creation", "kubernaut-system")
-            ar.Status.Phase = "analyzing"
-            ar.Status.ChildCRDs.RemediationProcessing = "ap-completed-123"
-            ar.Status.ProcessingPhaseResults = &alertremediationv1.ProcessingPhaseResults{
-                Environment:      "production",
-                EnrichmentQuality: 0.92,
-            }
+    // ✅ BEST PRACTICE: Use DescribeTable for approval notification scenarios (BR-ORCH-001)
+    Context("Approval Notification Creation (BR-ORCH-001)", func() {
+        DescribeTable("creates NotificationRequest when approval is required",
+            func(approvalReason string, urgency string, expectedChannels []string) {
+                ar := testutil.NewRemediationRequest("test-approval-"+approvalReason, "kubernaut-system")
+                ar.Status.Phase = "analyzing"
+                ar.Status.ChildCRDs.AIAnalysis = "ai-requires-approval"
 
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
+                // Create AIAnalysis requiring approval
+                ai := testutil.NewAIAnalysisRequiringApproval("ai-requires-approval", "kubernaut-system", approvalReason)
+                Expect(fakeK8sClient.Create(ctx, ai)).To(Succeed())
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
 
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
 
-            // Validate AIAnalysis child CRD creation
-            Expect(err).ToNot(HaveOccurred())
-            Expect(result.Requeue).To(BeTrue())
+                Expect(err).ToNot(HaveOccurred())
+                Expect(result.Requeue).To(BeTrue())
+                Expect(ar.Status.Phase).To(Equal("awaiting_approval"))
 
-            // Verify AIAnalysis CRD was created with owner reference
-            aiList := &aianalysisv1.AIAnalysisList{}
-            Expect(fakeK8sClient.List(ctx, aiList)).To(Succeed())
-            Expect(aiList.Items).To(HaveLen(1))
-
-            ai := aiList.Items[0]
-            Expect(ai.Name).To(ContainSubstring("ai-"))
-            Expect(ai.Spec.AlertData.Fingerprint).To(Equal(ar.Spec.AlertData.Fingerprint))
-
-            // Validate owner reference
-            Expect(ai.OwnerReferences).To(HaveLen(1))
-            Expect(ai.OwnerReferences[0].Name).To(Equal(ar.Name))
-            Expect(ai.OwnerReferences[0].UID).To(Equal(ar.UID))
-
-            // Verify status reference
-            Expect(ar.Status.ChildCRDs.AIAnalysis).To(Equal(ai.Name))
-        })
-
-        It("BR-AR-021: should transition to executing after AIAnalysis approval", func() {
-            ar := testutil.NewRemediationRequest("test-ai-approval", "kubernaut-system")
-            ar.Status.Phase = "analyzing"
-            ar.Status.ChildCRDs.AIAnalysis = "ai-test-456"
-
-            // Create approved AIAnalysis child
-            ai := &aianalysisv1.AIAnalysis{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "ai-test-456",
-                    Namespace: "kubernaut-system",
-                },
-                Status: aianalysisv1.AIAnalysisStatus{
-                    Phase: "approved",
-                    InvestigationResults: &aianalysisv1.InvestigationResults{
-                        RootCause: "Pod memory limit insufficient for workload",
-                        Confidence: 0.88,
-                        RecommendedActions: []aianalysisv1.Action{
-                            {Type: "update-resource-limits", Confidence: 0.92},
-                            {Type: "scale-deployment", Confidence: 0.85},
-                        },
-                    },
-                    ApprovalDecision: &aianalysisv1.ApprovalDecision{
-                        ApprovalStatus: "approved",
-                        AutoApproved:   true,
-                        Reason:         "Rego policy auto-approval",
-                    },
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, ai)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
-
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
-
-            // Validate transition to executing phase
-            Expect(err).ToNot(HaveOccurred())
-            Expect(result.Requeue).To(BeTrue())
-            Expect(ar.Status.Phase).To(Equal("executing"))
-
-            // Verify AIAnalysis results captured
-            Expect(ar.Status.AnalysisPhaseResults).ToNot(BeNil())
-            Expect(ar.Status.AnalysisPhaseResults.RootCause).To(Equal("Pod memory limit insufficient for workload"))
-            Expect(ar.Status.AnalysisPhaseResults.Confidence).To(Equal(float64(0.88)))
-            Expect(ar.Status.AnalysisPhaseResults.ApprovalStatus).To(Equal("approved"))
-        })
-
-        It("BR-AR-022: should escalate when AIAnalysis requires manual approval", func() {
-            ar := testutil.NewRemediationRequest("test-manual-approval", "kubernaut-system")
-            ar.Status.Phase = "analyzing"
-            ar.Status.ChildCRDs.AIAnalysis = "ai-manual-789"
-
-            // Create AIAnalysis requiring manual approval
-            ai := &aianalysisv1.AIAnalysis{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "ai-manual-789",
-                    Namespace: "kubernaut-system",
-                },
-                Status: aianalysisv1.AIAnalysisStatus{
-                    Phase: "awaiting-approval",
-                    ApprovalDecision: &aianalysisv1.ApprovalDecision{
-                        ApprovalStatus: "pending",
-                        AutoApproved:   false,
-                        Reason:         "Requires manual approval: high-risk action in production",
-                    },
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, ai)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
-
-            // Mock Notification Service call
-            mockNotificationService.On("SendEscalation", ctx, testutil.MatchNotification()).Return(nil)
-
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
-
-            // Validate escalation
-            Expect(err).ToNot(HaveOccurred())
-            Expect(ar.Status.Phase).To(Equal("escalated"))
-            Expect(ar.Status.EscalationReason).To(ContainSubstring("manual approval required"))
-
-            // Verify Notification Service was called
-            mockNotificationService.AssertNumberOfCalls(GinkgoT(), "SendEscalation", 1)
-        })
+                // Verify NotificationRequest CRD was created
+                nrList := testutil.ListNotificationRequests(fakeK8sClient, "kubernaut-system")
+                Expect(nrList).To(HaveLen(1))
+                Expect(nrList[0].Spec.NotificationType).To(Equal("approval_required"))
+                Expect(nrList[0].Spec.Channels).To(ContainElements(expectedChannels))
+            },
+            Entry("high_risk_action requires approval via all channels",
+                "high_risk_action", "high", []string{"slack", "email", "pagerduty"}),
+            Entry("production_environment requires approval via slack and email",
+                "production_environment", "medium", []string{"slack", "email"}),
+            Entry("policy_required requires approval via slack",
+                "policy_required", "low", []string{"slack"}),
+        )
     })
 
-    Context("BR-AR-030: WorkflowExecution Child CRD Creation Phase", func() {
-        It("should create WorkflowExecution CRD after AIAnalysis approval", func() {
-            ar := testutil.NewRemediationRequest("test-workflow-creation", "kubernaut-system")
-            ar.Status.Phase = "executing"
-            ar.Status.ChildCRDs.AIAnalysis = "ai-approved-123"
-            ar.Status.AnalysisPhaseResults = &alertremediationv1.AnalysisPhaseResults{
-                RootCause:  "Memory limit insufficient",
-                Confidence: 0.88,
-                RecommendedActions: []alertremediationv1.Action{
-                    {Type: "update-resource-limits", Confidence: 0.92},
-                    {Type: "scale-deployment", Confidence: 0.85},
-                },
-            }
+    // ✅ BEST PRACTICE: Use DescribeTable for workflow execution scenarios (BR-ORCH-025, BR-ORCH-032)
+    Context("WorkflowExecution Phase (supports BR-ORCH-025, BR-ORCH-032)", func() {
+        DescribeTable("WorkflowExecution outcome handling",
+            func(weStatus string, expectedPhase string, shouldCreateNotification bool, notificationType string) {
+                ar := testutil.NewRemediationRequest("test-we-"+weStatus, "kubernaut-system")
+                ar.Status.Phase = "executing"
+                ar.Status.ChildCRDs.WorkflowExecution = "we-test-123"
 
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
+                // Create WorkflowExecution with specified status
+                we := testutil.NewWorkflowExecutionWithStatus("we-test-123", "kubernaut-system", weStatus)
+                Expect(fakeK8sClient.Create(ctx, we)).To(Succeed())
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
 
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
 
-            // Validate WorkflowExecution child CRD creation
-            Expect(err).ToNot(HaveOccurred())
-            Expect(result.Requeue).To(BeTrue())
+                Expect(err).ToNot(HaveOccurred())
+                Expect(result.Requeue).To(BeFalse()) // Terminal state
+                Expect(ar.Status.Phase).To(Equal(expectedPhase))
 
-            // Verify WorkflowExecution CRD was created with owner reference
-            wfList := &workflowexecutionv1.WorkflowExecutionList{}
-            Expect(fakeK8sClient.List(ctx, wfList)).To(Succeed())
-            Expect(wfList.Items).To(HaveLen(1))
+                // Verify notification creation if expected
+                nrList := testutil.ListNotificationRequests(fakeK8sClient, "kubernaut-system")
+                if shouldCreateNotification {
+                    Expect(nrList).To(HaveLen(1))
+                    Expect(nrList[0].Spec.NotificationType).To(Equal(notificationType))
+                } else {
+                    Expect(nrList).To(HaveLen(0))
+                }
+            },
+            Entry("succeeded workflow completes remediation",
+                "succeeded", "completed", true, "remediation_completed"),
+            Entry("failed workflow marks remediation as failed",
+                "failed", "failed", true, "remediation_failed"),
+            Entry("skipped workflow marks remediation as skipped (BR-ORCH-032)",
+                "skipped", "skipped", false, ""), // Bulk notification handled by parent
+        )
 
-            wf := wfList.Items[0]
-            Expect(wf.Name).To(ContainSubstring("wf-"))
-            Expect(wf.Spec.Steps).To(HaveLen(2))
-            Expect(wf.Spec.Steps[0].Action).To(Equal("update-resource-limits"))
-            Expect(wf.Spec.Steps[1].Action).To(Equal("scale-deployment"))
+        DescribeTable("WorkflowExecution Skipped phase handling (BR-ORCH-032, BR-ORCH-033)",
+            func(skipReason string, shouldTrackDuplicate bool, expectedDuplicateOf string) {
+                ar := testutil.NewRemediationRequest("test-skipped-"+skipReason, "kubernaut-system")
+                ar.Status.Phase = "executing"
+                ar.Status.ChildCRDs.WorkflowExecution = "we-skipped-123"
 
-            // Validate owner reference
-            Expect(wf.OwnerReferences).To(HaveLen(1))
-            Expect(wf.OwnerReferences[0].Name).To(Equal(ar.Name))
+                // Create skipped WorkflowExecution with specific reason
+                we := testutil.NewSkippedWorkflowExecution("we-skipped-123", "kubernaut-system", skipReason, expectedDuplicateOf)
+                Expect(fakeK8sClient.Create(ctx, we)).To(Succeed())
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
 
-            // Verify status reference
-            Expect(ar.Status.ChildCRDs.WorkflowExecution).To(Equal(wf.Name))
-        })
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
 
-        It("BR-AR-031: should transition to completed after WorkflowExecution succeeds", func() {
-            ar := testutil.NewRemediationRequest("test-workflow-complete", "kubernaut-system")
-            ar.Status.Phase = "executing"
-            ar.Status.ChildCRDs.WorkflowExecution = "wf-test-456"
+                Expect(err).ToNot(HaveOccurred())
+                Expect(ar.Status.Phase).To(Equal("skipped"))
+                Expect(ar.Status.SkipReason).To(Equal(skipReason))
 
-            // Create completed WorkflowExecution child
-            wf := &workflowexecutionv1.WorkflowExecution{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "wf-test-456",
-                    Namespace: "kubernaut-system",
-                },
-                Status: workflowexecutionv1.WorkflowExecutionStatus{
-                    Phase: "completed",
-                    ExecutionResults: &workflowexecutionv1.ExecutionResults{
-                        Success:        true,
-                        StepsCompleted: 2,
-                        StepsTotal:     2,
-                        ExecutionTime:  "45.2s",
-                    },
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, wf)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
-
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
-
-            // Validate successful completion
-            Expect(err).ToNot(HaveOccurred())
-            Expect(result.Requeue).To(BeFalse(), "terminal state should not requeue")
-            Expect(ar.Status.Phase).To(Equal("completed"))
-
-            // Verify WorkflowExecution results captured
-            Expect(ar.Status.ExecutionPhaseResults).ToNot(BeNil())
-            Expect(ar.Status.ExecutionPhaseResults.Success).To(BeTrue())
-            Expect(ar.Status.ExecutionPhaseResults.StepsCompleted).To(Equal(int32(2)))
-
-            // Verify end-to-end metrics
-            Expect(ar.Status.EndToEndTime).ToNot(BeEmpty())
-            Expect(ar.Status.CompletionTimestamp).ToNot(BeNil())
-        })
-
-        It("BR-AR-032: should escalate when WorkflowExecution fails", func() {
-            ar := testutil.NewRemediationRequest("test-workflow-fail", "kubernaut-system")
-            ar.Status.Phase = "executing"
-            ar.Status.ChildCRDs.WorkflowExecution = "wf-failed-789"
-            ar.Spec.RemediationConfig.EscalateOnFailure = true
-
-            // Create failed WorkflowExecution child
-            wf := &workflowexecutionv1.WorkflowExecution{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "wf-failed-789",
-                    Namespace: "kubernaut-system",
-                },
-                Status: workflowexecutionv1.WorkflowExecutionStatus{
-                    Phase: "failed",
-                    ExecutionResults: &workflowexecutionv1.ExecutionResults{
-                        Success:        false,
-                        StepsCompleted: 1,
-                        StepsTotal:     2,
-                        ErrorMessage:   "Step 2 failed: RBAC permission denied",
-                    },
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, wf)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
-
-            // Mock Notification Service call
-            mockNotificationService.On("SendEscalation", ctx, testutil.MatchNotification()).Return(nil)
-
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
-
-            // Validate escalation
-            Expect(err).ToNot(HaveOccurred())
-            Expect(ar.Status.Phase).To(Equal("escalated"))
-            Expect(ar.Status.EscalationReason).To(ContainSubstring("workflow execution failed"))
-
-            // Verify Notification Service was called
-            mockNotificationService.AssertCalled(GinkgoT(), "SendEscalation", ctx, testutil.MatchNotification())
-        })
+                if shouldTrackDuplicate {
+                    Expect(ar.Status.DuplicateOf).To(Equal(expectedDuplicateOf))
+                }
+            },
+            Entry("ResourceBusy tracks duplicate of active remediation",
+                "ResourceBusy", true, "active-remediation-001"),
+            Entry("RecentlyRemediated tracks duplicate of recent remediation",
+                "RecentlyRemediated", true, "recent-remediation-002"),
+        )
     })
 
-    Context("BR-AR-040: Phase Timeout Detection", func() {
-        It("should detect timeout in RemediationProcessing phase and escalate", func() {
-            ar := testutil.NewRemediationRequest("test-timeout-processing", "kubernaut-system")
-            ar.Spec.PhaseTimeouts = alertremediationv1.PhaseTimeouts{
-                Processing: 60 * time.Second,
-            }
-            ar.Status.Phase = "processing"
-            ar.Status.PhaseStartTime = metav1.NewTime(time.Now().Add(-90 * time.Second))  // Started 90s ago
-            ar.Status.ChildCRDs.RemediationProcessing = "ap-stuck-123"
+    // ✅ BEST PRACTICE: Use DescribeTable for timeout detection scenarios (BR-ORCH-027, BR-ORCH-028)
+    Context("Phase Timeout Detection (BR-ORCH-027, BR-ORCH-028)", func() {
+        DescribeTable("per-phase timeout detection and escalation",
+            func(phase string, childType string, childStatus string, timeoutDuration time.Duration, elapsedTime time.Duration, shouldTimeout bool) {
+                ar := testutil.NewRemediationRequest("test-timeout-"+phase, "kubernaut-system")
+                ar.Spec.PhaseTimeouts = testutil.NewPhaseTimeouts(phase, timeoutDuration)
+                ar.Status.Phase = phase
+                ar.Status.PhaseStartTime = metav1.NewTime(time.Now().Add(-elapsedTime))
+                testutil.SetChildCRDRef(ar, childType, childType+"-stuck-123")
 
-            // Create stuck RemediationProcessing child (not completed)
-            ap := &alertprocessorv1.RemediationProcessing{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "ap-stuck-123",
-                    Namespace: "kubernaut-system",
-                },
-                Status: alertprocessorv1.RemediationProcessingStatus{
-                    Phase: "enriching",  // Still processing
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, ap)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
+                // Create stuck child CRD (not completed)
+                child := testutil.NewChildCRDWithStatus(childType, childType+"-stuck-123", "kubernaut-system", childStatus)
+                Expect(fakeK8sClient.Create(ctx, child)).To(Succeed())
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
 
-            // Mock Notification Service call
-            mockNotificationService.On("SendEscalation", ctx, testutil.MatchNotification()).Return(nil)
+                if shouldTimeout {
+                    mockNotificationService.On("SendEscalation", ctx, testutil.MatchNotification()).Return(nil)
+                }
 
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
 
-            // Validate timeout detection and escalation
-            Expect(err).ToNot(HaveOccurred())
-            Expect(ar.Status.Phase).To(Equal("escalated"))
-            Expect(ar.Status.EscalationReason).To(ContainSubstring("phase timeout: processing"))
-            Expect(ar.Status.TimeoutDetected).To(BeTrue())
+                Expect(err).ToNot(HaveOccurred())
+                if shouldTimeout {
+                    Expect(ar.Status.Phase).To(Equal("timed_out"))
+                    Expect(ar.Status.TimeoutPhase).To(Equal(phase))
+                    mockNotificationService.AssertCalled(GinkgoT(), "SendEscalation", ctx, testutil.MatchNotification())
+                } else {
+                    Expect(ar.Status.Phase).To(Equal(phase)) // No change
+                }
+            },
+            // Processing phase timeout scenarios (BR-ORCH-028)
+            Entry("processing phase times out after 60s",
+                "processing", "SignalProcessing", "enriching", 60*time.Second, 90*time.Second, true),
+            Entry("processing phase does not timeout before deadline",
+                "processing", "SignalProcessing", "enriching", 60*time.Second, 30*time.Second, false),
 
-            // Verify Notification Service was called with timeout context
-            mockNotificationService.AssertCalled(GinkgoT(), "SendEscalation", ctx, testutil.MatchNotification())
-        })
+            // Analyzing phase timeout scenarios (BR-ORCH-028)
+            Entry("analyzing phase times out after 120s",
+                "analyzing", "AIAnalysis", "investigating", 120*time.Second, 180*time.Second, true),
+            Entry("analyzing phase does not timeout before deadline",
+                "analyzing", "AIAnalysis", "investigating", 120*time.Second, 60*time.Second, false),
 
-        It("BR-AR-041: should detect timeout in AIAnalysis phase", func() {
-            ar := testutil.NewRemediationRequest("test-timeout-analysis", "kubernaut-system")
-            ar.Spec.PhaseTimeouts = alertremediationv1.PhaseTimeouts{
-                Analyzing: 120 * time.Second,
-            }
-            ar.Status.Phase = "analyzing"
-            ar.Status.PhaseStartTime = metav1.NewTime(time.Now().Add(-180 * time.Second))
-            ar.Status.ChildCRDs.AIAnalysis = "ai-stuck-456"
+            // Executing phase timeout scenarios (BR-ORCH-028)
+            Entry("executing phase times out after 300s",
+                "executing", "WorkflowExecution", "running", 300*time.Second, 400*time.Second, true),
+            Entry("executing phase does not timeout before deadline",
+                "executing", "WorkflowExecution", "running", 300*time.Second, 100*time.Second, false),
+        )
 
-            // Create stuck AIAnalysis child
-            ai := &aianalysisv1.AIAnalysis{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "ai-stuck-456",
-                    Namespace: "kubernaut-system",
-                },
-                Status: aianalysisv1.AIAnalysisStatus{
-                    Phase: "investigating",  // Still analyzing
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, ai)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
+        DescribeTable("global remediation timeout (BR-ORCH-027)",
+            func(globalTimeout time.Duration, elapsedTime time.Duration, shouldTimeout bool) {
+                ar := testutil.NewRemediationRequest("test-global-timeout", "kubernaut-system")
+                ar.Spec.GlobalTimeout = globalTimeout
+                ar.Status.Phase = "executing"
+                ar.ObjectMeta.CreationTimestamp = metav1.NewTime(time.Now().Add(-elapsedTime))
 
-            mockNotificationService.On("SendEscalation", ctx, testutil.MatchNotification()).Return(nil)
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
 
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
+                if shouldTimeout {
+                    mockNotificationService.On("SendEscalation", ctx, testutil.MatchNotification()).Return(nil)
+                }
 
-            Expect(err).ToNot(HaveOccurred())
-            Expect(ar.Status.Phase).To(Equal("escalated"))
-            Expect(ar.Status.EscalationReason).To(ContainSubstring("phase timeout: analyzing"))
-        })
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
 
-        It("BR-AR-042: should detect timeout in WorkflowExecution phase", func() {
-            ar := testutil.NewRemediationRequest("test-timeout-workflow", "kubernaut-system")
-            ar.Spec.PhaseTimeouts = alertremediationv1.PhaseTimeouts{
-                Executing: 300 * time.Second,  // 5 minutes
-            }
-            ar.Status.Phase = "executing"
-            ar.Status.PhaseStartTime = metav1.NewTime(time.Now().Add(-360 * time.Second))  // 6 minutes ago
-            ar.Status.ChildCRDs.WorkflowExecution = "wf-stuck-789"
-
-            // Create stuck WorkflowExecution child
-            wf := &workflowexecutionv1.WorkflowExecution{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "wf-stuck-789",
-                    Namespace: "kubernaut-system",
-                },
-                Status: workflowexecutionv1.WorkflowExecutionStatus{
-                    Phase: "running",  // Still executing
-                    CurrentStep: "step-2",
-                },
-            }
-            Expect(fakeK8sClient.Create(ctx, wf)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
-
-            mockNotificationService.On("SendEscalation", ctx, testutil.MatchNotification()).Return(nil)
-
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
-
-            Expect(err).ToNot(HaveOccurred())
-            Expect(ar.Status.Phase).To(Equal("escalated"))
-            Expect(ar.Status.EscalationReason).To(ContainSubstring("phase timeout: executing"))
-        })
+                Expect(err).ToNot(HaveOccurred())
+                if shouldTimeout {
+                    Expect(ar.Status.Phase).To(Equal("timed_out"))
+                    Expect(ar.Status.TimeoutPhase).To(Equal("global"))
+                }
+            },
+            Entry("global timeout at 15 minutes exceeded",
+                15*time.Minute, 20*time.Minute, true),
+            Entry("global timeout at 15 minutes not exceeded",
+                15*time.Minute, 10*time.Minute, false),
+        )
     })
 
-    Context("BR-AR-050: Cascade Deletion", func() {
-        It("should delete all child CRDs when RemediationRequest is deleted", func() {
-            ar := testutil.NewRemediationRequest("test-cascade-delete", "kubernaut-system")
-            ar.Status.ChildCRDs = alertremediationv1.ChildCRDs{
-                RemediationProcessing:   "ap-child-123",
-                AIAnalysis:        "ai-child-456",
-                WorkflowExecution: "wf-child-789",
-            }
+    // ✅ BEST PRACTICE: Use DescribeTable for cascade deletion scenarios (BR-ORCH-031)
+    Context("Cascade Deletion (supports BR-ORCH-031)", func() {
+        DescribeTable("cascade deletion cleans up all child CRDs",
+            func(childCRDs []string, expectedDeleteCount int) {
+                ar := testutil.NewRemediationRequest("test-cascade-delete", "kubernaut-system")
 
-            // Create child CRDs with owner references
-            ap := testutil.NewRemediationProcessingWithOwner("ap-child-123", "kubernaut-system", ar)
-            ai := testutil.NewAIAnalysisWithOwner("ai-child-456", "kubernaut-system", ar)
-            wf := testutil.NewWorkflowExecutionWithOwner("wf-child-789", "kubernaut-system", ar)
+                // Create child CRDs with owner references
+                for _, childName := range childCRDs {
+                    child := testutil.NewChildCRDWithOwner(childName, "kubernaut-system", ar)
+                    Expect(fakeK8sClient.Create(ctx, child)).To(Succeed())
+                }
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
 
-            Expect(fakeK8sClient.Create(ctx, ap)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ai)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, wf)).To(Succeed())
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
+                // Delete parent RemediationRequest
+                Expect(fakeK8sClient.Delete(ctx, ar)).To(Succeed())
 
-            // Delete parent RemediationRequest
-            Expect(fakeK8sClient.Delete(ctx, ar)).To(Succeed())
+                // Verify children are marked for deletion (Kubernetes garbage collection)
+                for _, childName := range childCRDs {
+                    child := testutil.GetChildCRD(fakeK8sClient, childName, "kubernaut-system")
+                    Expect(child == nil || child.GetDeletionTimestamp() != nil).To(BeTrue())
+                }
+            },
+            Entry("deletes all 3 child CRDs",
+                []string{"sp-child-123", "ai-child-456", "we-child-789"}, 3),
+            Entry("deletes partial child CRDs (only SignalProcessing created)",
+                []string{"sp-child-only"}, 1),
+            Entry("handles no child CRDs gracefully",
+                []string{}, 0),
+        )
 
-            // Kubernetes garbage collection should delete children
-            // (Fake client may need explicit verification)
+        DescribeTable("finalizer cleanup removes all children (BR-ORCH-031)",
+            func(finalizerName string, childCount int) {
+                ar := testutil.NewRemediationRequest("test-finalizer-cleanup", "kubernaut-system")
+                ar.Finalizers = []string{finalizerName}
 
-            // Verify children are marked for deletion or removed
-            deletedAP := &alertprocessorv1.RemediationProcessing{}
-            err := fakeK8sClient.Get(ctx, client.ObjectKey{Name: "ap-child-123", Namespace: "kubernaut-system"}, deletedAP)
-            Expect(apierrors.IsNotFound(err) || deletedAP.DeletionTimestamp != nil).To(BeTrue())
+                // Create child CRDs based on count
+                childCRDs := testutil.CreateChildCRDsForParent(fakeK8sClient, ar, childCount)
+                Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
 
-            deletedAI := &aianalysisv1.AIAnalysis{}
-            err = fakeK8sClient.Get(ctx, client.ObjectKey{Name: "ai-child-456", Namespace: "kubernaut-system"}, deletedAI)
-            Expect(apierrors.IsNotFound(err) || deletedAI.DeletionTimestamp != nil).To(BeTrue())
+                // Set DeletionTimestamp to trigger finalizer
+                ar.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+                Expect(fakeK8sClient.Update(ctx, ar)).To(Succeed())
 
-            deletedWF := &workflowexecutionv1.WorkflowExecution{}
-            err = fakeK8sClient.Get(ctx, client.ObjectKey{Name: "wf-child-789", Namespace: "kubernaut-system"}, deletedWF)
-            Expect(apierrors.IsNotFound(err) || deletedWF.DeletionTimestamp != nil).To(BeTrue())
-        })
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
 
-        It("BR-AR-051: should clean up child CRDs via finalizer", func() {
-            ar := testutil.NewRemediationRequest("test-finalizer-cleanup", "kubernaut-system")
-            ar.Finalizers = []string{"remediation.kubernaut.io/alertremediation-cleanup"}
-            ar.Status.ChildCRDs = alertremediationv1.ChildCRDs{
-                RemediationProcessing:   "ap-finalizer-123",
-                AIAnalysis:        "ai-finalizer-456",
-                WorkflowExecution: "wf-finalizer-789",
-            }
+                Expect(err).ToNot(HaveOccurred())
 
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
-
-            // Set DeletionTimestamp to trigger finalizer
-            ar.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-            Expect(fakeK8sClient.Update(ctx, ar)).To(Succeed())
-
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
-
-            // Validate finalizer cleanup
-            Expect(err).ToNot(HaveOccurred())
-
-            // Verify finalizer removed after cleanup
-            updatedAR := &alertremediationv1.RemediationRequest{}
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKeyFromObject(ar), updatedAR)).To(Succeed())
-            Expect(updatedAR.Finalizers).To(BeEmpty())
-        })
+                // Verify finalizer removed after cleanup
+                updatedAR := &alertremediationv1.RemediationRequest{}
+                Expect(fakeK8sClient.Get(ctx, client.ObjectKeyFromObject(ar), updatedAR)).To(Succeed())
+                Expect(updatedAR.Finalizers).To(BeEmpty())
+            },
+            Entry("removes finalizer with all 3 children",
+                "remediation.kubernaut.io/alertremediation-cleanup", 3),
+            Entry("removes finalizer with partial children",
+                "remediation.kubernaut.io/alertremediation-cleanup", 1),
+            Entry("removes finalizer with no children",
+                "remediation.kubernaut.io/alertremediation-cleanup", 0),
+        )
     })
 
-    Context("BR-AR-060: Performance and Metrics", func() {
-        It("should complete full remediation cycle within performance targets", func() {
-            startTime := time.Now()
+    // ✅ BEST PRACTICE: Use DescribeTable for performance testing scenarios
+    Context("Performance and Metrics", func() {
+        DescribeTable("performance targets for reconciliation phases",
+            func(phase string, maxDuration time.Duration) {
+                ar := testutil.NewRemediationRequest("perf-test-"+phase, "kubernaut-system")
+                ar.Status.Phase = phase
 
-            ar := testutil.NewRemediationRequest("perf-test", "kubernaut-system")
+                startTime := time.Now()
+                result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(ar))
+                elapsed := time.Since(startTime)
 
-            Expect(fakeK8sClient.Create(ctx, ar)).To(Succeed())
-
-            // Simulate all phases with immediate completions
-            for ar.Status.Phase != "completed" && ar.Status.Phase != "escalated" {
-                // Create/update child CRDs to simulate progress
-                switch ar.Status.Phase {
-                case "processing":
-                    ap := testutil.NewRemediationProcessing(ar.Status.ChildCRDs.RemediationProcessing, "kubernaut-system")
+                Expect(err).ToNot(HaveOccurred())
+                Expect(elapsed).To(BeNumerically("<", maxDuration), "phase %s exceeded performance target", phase)
+            },
+            Entry("pending phase reconciliation < 500ms", "pending", 500*time.Millisecond),
+            Entry("processing phase reconciliation < 500ms", "processing", 500*time.Millisecond),
+            Entry("analyzing phase reconciliation < 500ms", "analyzing", 500*time.Millisecond),
+            Entry("executing phase reconciliation < 500ms", "executing", 500*time.Millisecond),
+        )
                     ap.Status.Phase = "completed"
                     fakeK8sClient.Create(ctx, ap)
                 case "analyzing":
@@ -1038,12 +836,12 @@ var _ = Describe("BR-E2E-AR-001: Complete Auto-Remediation Workflow", func() {
 
 ### Test Coverage Requirements
 
-**Business Requirement Mapping**:
-- **BR-AR-001 to BR-AR-015**: RemediationProcessing child CRD orchestration (Unit + Integration)
-- **BR-AR-016 to BR-AR-030**: AIAnalysis child CRD orchestration (Unit + Integration)
-- **BR-AR-031 to BR-AR-045**: WorkflowExecution child CRD orchestration (Unit + Integration)
-- **BR-AR-046 to BR-AR-060**: Phase timeout detection, cascade deletion (Unit + Integration)
-- **BR-AR-061 to BR-AR-070**: End-to-end orchestration, escalation logic (Integration + E2E)
+**Business Requirement Mapping** (11 defined BRs):
+- **BR-ORCH-001**: Approval notification creation (Unit + Integration)
+- **BR-ORCH-025, BR-ORCH-026**: Workflow data pass-through, approval orchestration (Unit + Integration)
+- **BR-ORCH-027, BR-ORCH-028**: Global and per-phase timeout management (Unit + Integration)
+- **BR-ORCH-029, BR-ORCH-030, BR-ORCH-031**: Notification handling, cascade cleanup (Unit + Integration)
+- **BR-ORCH-032, BR-ORCH-033, BR-ORCH-034**: WE Skipped phase handling, duplicate tracking (Unit + Integration + E2E)
 
 ### Mock Usage Decision Matrix
 
@@ -1305,18 +1103,18 @@ Expect(ar.Status.EndToEndTime).To(MatchRegexp(`\d+(\.\d+)?[ms]`))
 
 ### RemediationOrchestrator: Requirement-Driven Coverage
 
-**Business Requirement Analysis** (BR-AR-001 to BR-AR-070):
+**Business Requirement Analysis** (11 defined BRs: BR-ORCH-001, BR-ORCH-025-034):
 
-| Orchestration Dimension | Realistic Values | Test Strategy |
-|---|---|---|
-| **Phase Transitions** | pending → processing → analyzing → planning → executing → completed (6 sequential) | Test transition rules |
-| **Child CRD Types** | RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecutor (4 types) | Test creation and coordination |
-| **Failure Scenarios** | child timeout, child failure, manual escalation, approval required (4 scenarios) | Test error handling |
-| **Notification Triggers** | phase completion, timeout, escalation, final result (4 triggers) | Test notification logic |
+| Orchestration Dimension | Realistic Values | Test Strategy | Related BRs |
+|---|---|---|---|
+| **Phase Transitions** | pending → processing → analyzing → executing → completed (5 sequential) | Test transition rules | BR-ORCH-025, BR-ORCH-026 |
+| **Child CRD Types** | SignalProcessing, AIAnalysis, WorkflowExecution (3 types) | Test creation and coordination | BR-ORCH-025 |
+| **Failure Scenarios** | child timeout, child failure, manual escalation, approval required, WE Skipped (5 scenarios) | Test error handling | BR-ORCH-027, BR-ORCH-028, BR-ORCH-032 |
+| **Notification Triggers** | approval required, timeout, escalation, bulk duplicate (4 triggers) | Test notification logic | BR-ORCH-001, BR-ORCH-029-031, BR-ORCH-034 |
 
-**Total Possible Combinations**: 6 × 4 × 4 × 4 = 384 combinations
-**Distinct Business Behaviors**: 34 behaviors (per BR-AR-001 to BR-AR-070)
-**Tests Needed**: ~50 tests (covering 34 distinct behaviors with edge cases)
+**Total Possible Combinations**: 5 × 3 × 5 × 4 = 300 combinations
+**Distinct Business Behaviors**: 11 BRs with multiple sub-behaviors
+**Tests Needed**: ~40 tests (covering all defined BRs with edge cases)
 
 ---
 
@@ -1325,8 +1123,8 @@ Expect(ar.Status.EndToEndTime).To(MatchRegexp(`\d+(\.\d+)?[ms]`))
 **BEST PRACTICE**: Use Ginkgo's `DescribeTable` for phase transition and child CRD coordination testing.
 
 ```go
-// ✅ GOOD: Tests distinct phase transitions using data table
-var _ = Describe("BR-AR-045: Phase Transition Logic", func() {
+// ✅ GOOD: Tests distinct phase transitions using data table (supports BR-ORCH-025, BR-ORCH-026)
+var _ = Describe("Phase Transition Logic", func() {
     DescribeTable("RemediationRequest phase transitions based on child CRD results",
         func(currentPhase string, childResult string, expectedNextPhase string, shouldCreateChildCRD bool, expectedChildType string) {
             // Single test function handles all phase transitions
@@ -1345,41 +1143,33 @@ var _ = Describe("BR-AR-045: Phase Transition Logic", func() {
                 Expect(result.ChildCRDCreated).To(Equal(expectedChildType))
             }
         },
-        // BR-AR-045.1: pending → processing (create RemediationProcessing)
-        Entry("pending to processing creates RemediationProcessing child CRD",
-            "pending", "", "processing", true, "RemediationProcessing"),
+        // Phase 1: pending → processing (create SignalProcessing) - supports BR-ORCH-025
+        Entry("pending to processing creates SignalProcessing child CRD",
+            "pending", "", "processing", true, "SignalProcessing"),
 
-        // BR-AR-045.2: processing → analyzing (RemediationProcessing success, create AIAnalysis)
-        Entry("processing to analyzing on RemediationProcessing completion",
+        // Phase 2: processing → analyzing (SignalProcessing success, create AIAnalysis) - supports BR-ORCH-025
+        Entry("processing to analyzing on SignalProcessing completion",
             "processing", "success", "analyzing", true, "AIAnalysis"),
 
-        // BR-AR-045.3: analyzing → planning (AIAnalysis success, create WorkflowExecution)
-        Entry("analyzing to planning on AIAnalysis completion",
-            "analyzing", "success", "planning", true, "WorkflowExecution"),
+        // Phase 3: analyzing → executing (AIAnalysis success, create WorkflowExecution) - supports BR-ORCH-026
+        Entry("analyzing to executing on AIAnalysis completion",
+            "analyzing", "success", "executing", true, "WorkflowExecution"),
 
-        // BR-AR-045.4: planning → executing (WorkflowExecution success, create KubernetesExecutor)
-        Entry("planning to executing on WorkflowExecution completion",
-            "planning", "success", "executing", true, "KubernetesExecutor"),
-
-        // BR-AR-045.5: executing → completed (KubernetesExecutor success, no child CRD)
-        Entry("executing to completed on KubernetesExecutor completion",
+        // Phase 4: executing → completed (WorkflowExecution success, no child CRD)
+        Entry("executing to completed on WorkflowExecution completion",
             "executing", "success", "completed", false, ""),
 
-        // BR-AR-045.6: processing → escalated (RemediationProcessing failure)
-        Entry("processing to escalated on RemediationProcessing failure",
-            "processing", "failure", "escalated", false, ""),
+        // Failure: processing → failed (SignalProcessing failure)
+        Entry("processing to failed on SignalProcessing failure",
+            "processing", "failure", "failed", false, ""),
 
-        // BR-AR-045.7: analyzing → escalated (AIAnalysis failure)
-        Entry("analyzing to escalated on AIAnalysis failure",
-            "analyzing", "failure", "escalated", false, ""),
+        // Failure: analyzing → failed (AIAnalysis failure)
+        Entry("analyzing to failed on AIAnalysis failure",
+            "analyzing", "failure", "failed", false, ""),
 
-        // BR-AR-045.8: planning → escalated (WorkflowExecution failure)
-        Entry("planning to escalated on WorkflowExecution failure",
-            "planning", "failure", "escalated", false, ""),
-
-        // BR-AR-045.9: executing → escalated (KubernetesExecutor failure)
-        Entry("executing to escalated on KubernetesExecutor failure",
-            "executing", "failure", "escalated", false, ""),
+        // Skipped: executing → skipped (WorkflowExecution Skipped) - supports BR-ORCH-032
+        Entry("executing to skipped on WorkflowExecution Skipped phase",
+            "executing", "skipped", "skipped", false, ""),
     )
 })
 ```
@@ -1418,7 +1208,7 @@ It("should create child CRD with name 'ar-test-3-rp'", func() {})
 Ask these 4 questions:
 
 1. **Does this test validate a distinct phase transition or child CRD coordination rule?**
-   - ✅ YES: Processing → Escalated on RemediationProcessing failure (BR-AR-045.6)
+   - ✅ YES: Processing → Failed on SignalProcessing failure (phase transition rule)
    - ❌ NO: Testing processing → analyzing with different alert fingerprints (same logic)
 
 2. **Does this orchestration scenario actually occur in production?**
@@ -1439,12 +1229,12 @@ Ask these 4 questions:
 
 ### RemediationOrchestrator Test Coverage Example with DescribeTable
 
-**BR-AR-050: Timeout Detection (6 distinct timeout scenarios)**
+**BR-ORCH-027, BR-ORCH-028: Timeout Detection (6 distinct timeout scenarios)**
 
 ```go
-Describe("BR-AR-050: Phase Timeout Detection", func() {
-    // ANALYSIS: 6 phases × 5 timeout durations × 3 detection intervals = 90 combinations
-    // REQUIREMENT ANALYSIS: Only 6 distinct timeout detection behaviors per BR-AR-050
+Describe("Phase Timeout Detection (BR-ORCH-027, BR-ORCH-028)", func() {
+    // ANALYSIS: 4 phases × 5 timeout durations × 3 detection intervals = 60 combinations
+    // REQUIREMENT ANALYSIS: 6 distinct timeout detection behaviors per BR-ORCH-027/028
     // TEST STRATEGY: Use DescribeTable for 6 timeout scenarios + 2 edge cases
 
     DescribeTable("Timeout detection for each orchestration phase",

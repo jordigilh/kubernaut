@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jmoiron/sqlx"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dualwrite"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
@@ -30,7 +31,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
-	"github.com/go-logr/logr"
 )
 
 // Client defines the Data Storage service interface

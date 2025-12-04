@@ -208,4 +208,3 @@ func NewSchemaValidationError(field, message string) *SchemaValidationError {
 		Message: message,
 	}
 }
-

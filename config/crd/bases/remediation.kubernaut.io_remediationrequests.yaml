@@ -51,8 +51,12 @@ spec:
                 description: |-
                   Deduplication Metadata
                   Tracking information for duplicate signal suppression
+                  Uses shared type for API contract alignment with SignalProcessing CRD
                 properties:
-                  firstSeen:
+                  correlationId:
+                    description: Optional correlation ID for grouping related signals
+                    type: string
+                  firstOccurrence:
                     description: Timestamp when this signal fingerprint was first
                       seen
                     format: date-time
@@ -60,7 +64,7 @@ spec:
                   isDuplicate:
                     description: True if this signal is a duplicate of an active remediation
                     type: boolean
-                  lastSeen:
+                  lastOccurrence:
                     description: Timestamp when this signal fingerprint was last seen
                     format: date-time
                     type: string
@@ -72,9 +76,8 @@ spec:
                       duplicate)
                     type: string
                 required:
-                - firstSeen
-                - isDuplicate
-                - lastSeen
+                - firstOccurrence
+                - lastOccurrence
                 - occurrenceCount
                 type: object
               environment:
@@ -104,14 +107,11 @@ spec:
                 type: string
               priority:
                 description: |-
-                  Priority assigned by Gateway (P0=critical, P1=high, P2=normal, P3=low)
-                  Used by downstream Rego policies for remediation decisions
-                enum:
-                - P0
-                - P1
-                - P2
-                - P3
-                pattern: ^P[0-3]$
+                  Priority value provided by Rego policies - no enum enforcement
+                  Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
+                  Operators can define custom priority schemes via Rego policies
+                maxLength: 63
+                minLength: 1
                 type: string
               providerData:
                 description: |-
@@ -310,9 +310,92 @@ spec:
               completedAt:
                 format: date-time
                 type: string
-              overallPhase:
-                description: Phase tracking for orchestration
+              currentProcessingRef:
+                description: CurrentProcessingRef references the current SignalProcessing
+                  CRD (may differ during recovery)
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              duplicateCount:
+                description: |-
+                  DuplicateCount tracks the number of duplicate remediations that were skipped
+                  because this RR's workflow was already executing (resource lock)
+                  Only populated on parent RRs that have duplicates
+                type: integer
+              duplicateOf:
+                description: |-
+                  DuplicateOf references the parent RemediationRequest that this is a duplicate of
+                  Only set when OverallPhase = "Skipped" due to resource lock deduplication
                 type: string
+              duplicateRefs:
+                description: |-
+                  DuplicateRefs lists the names of RemediationRequests that were skipped
+                  because they targeted the same resource as this RR
+                  Only populated on parent RRs that have duplicates
+                items:
+                  type: string
+                type: array
+              failurePhase:
+                description: |-
+                  FailurePhase indicates which phase failed (e.g., "ai_analysis", "workflow_execution")
+                  Only set when OverallPhase = "failed"
+                type: string
+              failureReason:
+                description: |-
+                  FailureReason provides a human-readable reason for the failure
+                  Only set when OverallPhase = "failed"
+                type: string
+              message:
+                description: Human-readable message describing current status
+                type: string
+              overallPhase:
+                description: |-
+                  Phase tracking for orchestration
+                  Valid values: "pending", "processing", "analyzing", "executing", "recovering",
+                                "completed", "failed", "timeout", "Skipped"
+                type: string
+              recoveryAttempts:
+                description: RecoveryAttempts tracks the number of recovery attempts
+                  for this remediation
+                type: integer
               remediationProcessingRef:
                 description: References to downstream CRDs
                 properties:
@@ -356,8 +439,31 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              retentionExpiryTime:
+                description: RetentionExpiryTime indicates when this CRD should be
+                  cleaned up (24 hours after completion)
+                format: date-time
+                type: string
+              skipReason:
+                description: |-
+                  SkipReason indicates why this remediation was skipped
+                  Valid values: "ResourceBusy" (another workflow executing on same target),
+                                "RecentlyRemediated" (target recently remediated, cooldown period)
+                  Only set when OverallPhase = "Skipped"
+                type: string
               startTime:
                 description: Timestamps
+                format: date-time
+                type: string
+              timeoutPhase:
+                description: |-
+                  TimeoutPhase indicates which phase timed out
+                  Only set when OverallPhase = "timeout"
+                type: string
+              timeoutTime:
+                description: |-
+                  TimeoutTime records when the timeout occurred
+                  Only set when OverallPhase = "timeout"
                 format: date-time
                 type: string
               workflowExecutionRef:
