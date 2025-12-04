@@ -270,12 +270,84 @@ var _ = AfterSuite(func() {
 
 ### **Port Allocation** (per DD-TEST-001)
 
-| Service | Integration Tier | E2E Tier |
-|---------|------------------|----------|
-| **AIAnalysis** | API: 18084 | API: 28084 |
-| **HolmesGPT-API** | API: 18080 | API: 28080 |
-| **Data Storage** | PostgreSQL: 15433, API: 18090 | PostgreSQL: 25433, API: 28090 |
-| **MockLLMServer** | API: 11434 | API: 11434 |
+#### **AIAnalysis Controller Ports**
+
+| Port Type | Port | Purpose |
+|-----------|------|---------|
+| **Health/Ready** | 8081 | `/healthz`, `/readyz` (no auth) |
+| **Metrics** | 9090 | `/metrics` (auth filter) |
+| **Host Port** | 8084 | Kind extraPortMappings |
+| **NodePort (API)** | 30084 | E2E tests API access |
+| **NodePort (Metrics)** | 30184 | E2E Prometheus scraping |
+| **NodePort (Health)** | 30284 | E2E health checks |
+
+#### **Kind Configuration**
+
+**File**: `test/infrastructure/kind-aianalysis-config.yaml`
+
+```bash
+# Create KIND cluster for AIAnalysis E2E tests
+kind create cluster --name aianalysis-e2e \
+    --config test/infrastructure/kind-aianalysis-config.yaml
+
+# Verify port mappings
+docker port aianalysis-e2e-control-plane
+# Expected:
+# 30084/tcp -> 0.0.0.0:8084  (API)
+# 30184/tcp -> 0.0.0.0:9184  (Metrics)
+# 30284/tcp -> 0.0.0.0:8184  (Health)
+```
+
+#### **NodePort Service Template**
+
+```yaml
+# deploy/manifests/aianalysis-nodeport-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: aianalysis-controller-nodeport
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  selector:
+    app: aianalysis-controller
+  ports:
+  - name: health
+    port: 8081
+    targetPort: 8081
+    nodePort: 30284
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    nodePort: 30184
+```
+
+#### **Dependency Ports** (Integration & E2E)
+
+| Service | Integration Tier | E2E Tier (Kind NodePort) |
+|---------|------------------|--------------------------|
+| **AIAnalysis** | — | Host: 8084, NodePort: 30084 |
+| **HolmesGPT-API** | Podman: 18080 | In-cluster: 8080 |
+| **Data Storage** | Podman: 18090 | NodePort: 30081 |
+| **PostgreSQL** | Podman: 15433 | In-cluster: 5432 |
+| **MockLLMServer** | Port: 11434 | Port: 11434 |
+
+#### **E2E Test URL Configuration**
+
+```go
+// test/e2e/aianalysis/config.go
+const (
+    // AIAnalysis accessible via Kind NodePort
+    AIAnalysisHealthURL  = "http://localhost:8184/healthz"
+    AIAnalysisMetricsURL = "http://localhost:9184/metrics"
+    
+    // HolmesGPT-API in-cluster (accessed via kubectl port-forward or NodePort)
+    HolmesGPTAPIURL = "http://localhost:8080"
+    
+    // Data Storage via NodePort
+    DataStorageURL = "http://localhost:8081"
+)
+```
 
 ---
 
