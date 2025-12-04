@@ -60,9 +60,9 @@ var _ = Describe("BR-SP-080, BR-SP-081: Business Classifier", func() {
 			Entry("owner from standard annotation",
 				map[string]string{"owner": "team-alpha@example.com"},
 				"team-alpha@example.com"),
-			Entry("owner from kubernaut annotation",
-				map[string]string{"kubernaut.io/owner": "team-beta@example.com"},
-				"team-beta@example.com"),
+		Entry("owner from kubernaut annotation",
+			map[string]string{"kubernaut.ai/owner": "team-beta@example.com"},
+			"team-beta@example.com"),
 			Entry("no owner annotation defaults to unknown",
 				map[string]string{},
 				"unknown"),
@@ -114,9 +114,9 @@ var _ = Describe("BR-SP-080, BR-SP-081: Business Classifier", func() {
 			Entry("explicit SLA annotation",
 				map[string]string{"sla": "gold"},
 				"", "gold"),
-			Entry("kubernaut SLA annotation",
-				map[string]string{"kubernaut.io/sla": "platinum"},
-				"", "platinum"),
+		Entry("kubernaut SLA annotation",
+			map[string]string{"kubernaut.ai/sla": "platinum"},
+			"", "platinum"),
 			Entry("critical criticality implies gold SLA",
 				map[string]string{},
 				"critical", "gold"),
@@ -157,4 +157,3 @@ var _ = Describe("BR-SP-080, BR-SP-081: Business Classifier", func() {
 		})
 	})
 })
-
