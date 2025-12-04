@@ -47,7 +47,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Signal Processing** | 9090 | 8081 | 30082 | 30182 | 8082 |
 | **Remediation Orchestrator** | 9090 | 8081 | 30083 | 30183 | 8083 |
 | **AIAnalysis** | 9090 | 8081 | 30084 | 30184 | 8084 |
-| **Remediation Execution** | 9090 | 8081 | 30085 | 30185 | 8085 |
+| **WorkflowExecution** | 9090 | 8081 | 30085 | 30185 | 8085 |
 | **Notification** | 9090 | 8081 | 30086 | 30186 | 8086 |
 
 ### **Kind NodePort Allocation for E2E Tests (AUTHORITATIVE)**
@@ -58,7 +58,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Signal Processing** | 8082 | 30082 | 30182 | `test/infrastructure/kind-signalprocessing-config.yaml` |
 | **Remediation Orchestrator** | 8083 | 30083 | 30183 | `test/infrastructure/kind-remediationorchestrator-config.yaml` |
 | **AIAnalysis** | 8084 | 30084 | 30184 | `test/infrastructure/kind-aianalysis-config.yaml` |
-| **Remediation Execution** | 8085 | 30085 | 30185 | `test/infrastructure/kind-remediationexecution-config.yaml` |
+| **WorkflowExecution** | 8085 | 30085 | 30185 | `test/infrastructure/kind-workflowexecution-config.yaml` |
 | **Notification** | 8086 | 30086 | 30186 | `test/infrastructure/kind-notification-config.yaml` |
 | **Data Storage** | 8081 | 30081 | 30181 | `test/infrastructure/kind-datastorage-config.yaml` |
 | **Toolset** | 8087 | 30087 | 30187 | `test/infrastructure/kind-toolset-config.yaml` |
@@ -387,7 +387,7 @@ extraPortMappings:
 | **Signal Processing** | 8082 | 30082 | 9182 | 30182 |
 | **Remediation Orchestrator** | 8083 | 30083 | 9183 | 30183 |
 | **AIAnalysis** | 8084 | 30084 | 9184 | 30184 |
-| **Remediation Execution** | 8085 | 30085 | 9185 | 30185 |
+| **WorkflowExecution** | 8085 | 30085 | 9185 | 30185 |
 | **Notification** | 8086 | 30086 | 9186 | 30186 |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 |
 

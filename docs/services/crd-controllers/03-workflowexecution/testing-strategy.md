@@ -527,6 +527,29 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 **Confidence**: 90-95%
 **Execution**: `make test-e2e-workflowexecution`
 
+### Port Allocation (DD-TEST-001)
+
+**Reference**: [DD-TEST-001-port-allocation-strategy.md](../../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
+
+| Port Type | Value | Purpose |
+|-----------|-------|---------|
+| **NodePort** | 30085 | Service access in Kind cluster |
+| **Metrics NodePort** | 30185 | Prometheus metrics endpoint |
+| **Host Port** | 8085 | localhost access for tests |
+| **Metrics Host Port** | 9185 | localhost metrics access |
+
+**Kind Config**: `test/infrastructure/kind-workflowexecution-config.yaml`
+
+```yaml
+extraPortMappings:
+- containerPort: 30085
+  hostPort: 8085
+  protocol: TCP
+- containerPort: 30185
+  hostPort: 9185
+  protocol: TCP
+```
+
 **Note**: E2E tests in this service include **Business Requirement Tests** (BR-WE-*) because they validate end-to-end business outcomes.
 
 **Test Scenarios** (BR-labeled = Business Requirement):

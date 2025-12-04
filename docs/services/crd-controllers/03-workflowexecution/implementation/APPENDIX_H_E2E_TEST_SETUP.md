@@ -35,9 +35,13 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
   extraPortMappings:
-  # Metrics endpoint (always needed for controllers)
-  - containerPort: 30188
-    hostPort: 9188
+  # Service endpoint (per DD-TEST-001)
+  - containerPort: 30085
+    hostPort: 8085
+    protocol: TCP
+  # Metrics endpoint (per DD-TEST-001)
+  - containerPort: 30185
+    hostPort: 9185
     protocol: TCP
   kubeadmConfigPatches:
   - |
@@ -55,9 +59,9 @@ nodes:
 
 **Reference**: [DD-TEST-001](../../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
 
-| Service | Internal Health | Internal Metrics | NodePort | Metrics NodePort |
-|---------|-----------------|------------------|----------|------------------|
-| WorkflowExecution | 8081 | 9090 | 30088 | 30188 |
+| Service | Internal Health | Internal Metrics | NodePort | Metrics NodePort | Host Port | Metrics Host |
+|---------|-----------------|------------------|----------|------------------|-----------|--------------|
+| WorkflowExecution | 8081 | 9090 | 30085 | 30185 | 8085 | 9185 |
 
 ---
 
@@ -90,7 +94,8 @@ import (
 const (
 	clusterName     = "wfe-e2e"
 	namespace       = "kubernaut-system"
-	metricsPort     = 9188
+	hostPort        = 8085   // DD-TEST-001 allocation
+	metricsPort     = 9185   // DD-TEST-001 allocation
 	testTimeout     = 10 * time.Minute
 )
 

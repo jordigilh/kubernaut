@@ -31,6 +31,10 @@
 | **Execution Namespace** | `kubernaut-workflows` |
 | **Tekton Version** | Latest stable |
 | **Test Environment** | KIND + Tekton Pipelines |
+| **E2E NodePort** | 30085 (DD-TEST-001) |
+| **E2E Metrics NodePort** | 30185 (DD-TEST-001) |
+| **E2E Host Port** | 8085 |
+| **E2E Metrics Host** | 9185 |
 
 **Methodology**: APDC-TDD with Defense-in-Depth Testing
 **Parallel Execution**: 4 concurrent processes for all test tiers
