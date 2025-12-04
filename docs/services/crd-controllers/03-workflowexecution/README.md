@@ -220,9 +220,8 @@ spec:
 
 | Category | Range | Description |
 |----------|-------|-------------|
-| **Primary** | BR-WE-001 to BR-WE-008 | Core workflow execution and Tekton integration |
+| **Core Execution** | BR-WE-001 to BR-WE-008 | Tekton PipelineRun creation, status monitoring, audit |
 | **Resource Locking** | BR-WE-009 to BR-WE-011 | **Resource locking safety** ([DD-WE-001](../../../architecture/decisions/DD-WE-001-resource-locking-safety.md)) |
-| **Failure Handling** | BR-WE-012 to BR-WE-015 | Failure details, natural language summaries |
 
 **Key Safety Features (v4.0)**:
 - **BR-WE-009**: Prevent parallel execution on same target resource

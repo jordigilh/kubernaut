@@ -384,7 +384,7 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 - [WorkflowExecution Overview](./overview.md)
 - [CRD Schema](./crd-schema.md)
-- [Implementation Plan v2.0](./implementation/IMPLEMENTATION_PLAN_V2.0.md)
+- [Implementation Plan v3.0](./implementation/IMPLEMENTATION_PLAN_V3.0.md)
 - [DD-CONTRACT-001: AIAnalysis ↔ WorkflowExecution Alignment](../../../architecture/decisions/DD-CONTRACT-001-aianalysis-workflowexecution-alignment.md)
 - [ADR-043: Workflow Schema Definition](../../../architecture/decisions/ADR-043-workflow-schema-definition-standard.md)
 - [DD-WORKFLOW-003: Parameterized Actions](../../../architecture/decisions/DD-WORKFLOW-003-parameterized-actions.md)
