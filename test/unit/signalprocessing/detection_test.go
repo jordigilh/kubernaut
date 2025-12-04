@@ -44,13 +44,13 @@ var _ = Describe("BR-SP-101: DetectedLabels Detector", func() {
 	// ========================================
 	Describe("GitOps Detection", func() {
 		DescribeTable("should detect GitOps management",
-			func(annotations map[string]string, labels map[string]string, expectedManaged bool, expectedTool string) {
+			func(annotations map[string]string, objLabels map[string]string, expectedManaged bool, expectedTool string) {
 				deploy := &appsv1.Deployment{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "web-app",
 						Namespace:   "default",
 						Annotations: annotations,
-						Labels:      labels,
+						Labels:      objLabels,
 					},
 				}
 				fakeClient := fake.NewClientBuilder().
@@ -67,10 +67,10 @@ var _ = Describe("BR-SP-101: DetectedLabels Detector", func() {
 					},
 				}
 
-				labels := detector.DetectLabels(ctx, k8sCtx)
+				result := detector.DetectLabels(ctx, k8sCtx)
 
-				Expect(labels.GitOpsManaged).To(Equal(expectedManaged))
-				Expect(labels.GitOpsTool).To(Equal(expectedTool))
+				Expect(result.GitOpsManaged).To(Equal(expectedManaged))
+				Expect(result.GitOpsTool).To(Equal(expectedTool))
 			},
 			Entry("TC-DL-001a: ArgoCD managed deployment",
 				map[string]string{"argocd.argoproj.io/instance": "web-app"}, nil, true, "argocd"),
