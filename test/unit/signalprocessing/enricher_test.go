@@ -189,4 +189,3 @@ var _ = Describe("BR-SP-051/052: K8s Enricher", func() {
 		Expect(result.Node).To(BeNil())
 	})
 })
-

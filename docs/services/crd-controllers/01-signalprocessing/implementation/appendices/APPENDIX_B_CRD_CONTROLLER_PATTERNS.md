@@ -1,6 +1,6 @@
 # Appendix B: CRD Controller Patterns
 
-**Part of**: Signal Processing Implementation Plan V1.22
+**Part of**: Signal Processing Implementation Plan V1.23
 **Parent Document**: [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md)
 **Last Updated**: 2025-12-04
 **Template Source**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0

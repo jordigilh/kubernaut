@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.6 | 2025-12-04 | Fixed test pattern violations: All examples now use DescribeTable, BR references added to all Describe() blocks | [03-testing-strategy.mdc](../../../.cursor/rules/03-testing-strategy.mdc), [TESTING_GUIDELINES.md](../../../development/business-requirements/TESTING_GUIDELINES.md) |
 > | v1.5 | 2025-12-03 | Removed TC-DL-008 (podSecurityLevel removed in DD-WORKFLOW-001 v2.2), updated BR range | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.4 | 2025-11-30 | Added 5 more Rego security wrapper tests (TC-CL-008 to TC-CL-012) for 100% confidence | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.3 | 2025-11-30 | Added label detection test scenarios (OwnerChain, DetectedLabels, CustomLabels) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
@@ -88,33 +89,43 @@ test/e2e/signalprocessing/            # Signal Processing E2E tests
 
 ```go
 // test/unit/signalprocessing/ownerchain_test.go
-var _ = Describe("OwnerChain Builder", func() {
-    Context("when pod has Deployment owner chain", func() {
-        It("should build Pod→RS→Deployment chain", func() {
-            // Given: Pod owned by ReplicaSet owned by Deployment
-            pod := createTestPod("web-app-xyz", "default",
-                withOwnerRef("ReplicaSet", "web-app-abc", true))
-            rs := createTestReplicaSet("web-app-abc", "default",
-                withOwnerRef("Deployment", "web-app", true))
-            deploy := createTestDeployment("web-app", "default")
+// ✅ CORRECT: Use DescribeTable for 6 similar test scenarios (per 03-testing-strategy.mdc)
+var _ = Describe("BR-SP-100: OwnerChain Builder", func() {
+    var (
+        ctx     context.Context
+        builder *ownerchain.Builder
+    )
 
-            client := fake.NewClientBuilder().
-                WithObjects(pod, rs, deploy).
-                Build()
-
-            builder := ownerchain.NewBuilder(client, logr.Discard())
-
-            // When
-            chain, err := builder.Build(ctx, "default", "Pod", "web-app-xyz")
-
-            // Then
-            Expect(err).ToNot(HaveOccurred())
-            Expect(chain).To(HaveLen(3))
-            Expect(chain[0].Kind).To(Equal("Pod"))
-            Expect(chain[1].Kind).To(Equal("ReplicaSet"))
-            Expect(chain[2].Kind).To(Equal("Deployment"))
-        })
+    BeforeEach(func() {
+        ctx = context.Background()
     })
+
+    DescribeTable("should build owner chain for various resource types",
+        func(setupFn func() client.Client, namespace, kind, name string, expectedLen int, expectedKinds []string) {
+            fakeClient := setupFn()
+            builder = ownerchain.NewBuilder(fakeClient, logr.Discard())
+
+            chain, err := builder.Build(ctx, namespace, kind, name)
+
+            Expect(err).ToNot(HaveOccurred())
+            Expect(chain).To(HaveLen(expectedLen))
+            for i, expectedKind := range expectedKinds {
+                Expect(chain[i].Kind).To(Equal(expectedKind))
+            }
+        },
+        Entry("TC-OC-001: Pod→RS→Deployment chain",
+            setupDeploymentChain, "default", "Pod", "web-app-xyz", 3, []string{"Pod", "ReplicaSet", "Deployment"}),
+        Entry("TC-OC-002: StatefulSet Pod",
+            setupStatefulSetChain, "default", "Pod", "db-0", 2, []string{"Pod", "StatefulSet"}),
+        Entry("TC-OC-003: DaemonSet Pod",
+            setupDaemonSetChain, "kube-system", "Pod", "fluentd-xyz", 2, []string{"Pod", "DaemonSet"}),
+        Entry("TC-OC-004: Node (cluster-scoped)",
+            setupNodeOnly, "", "Node", "worker-1", 1, []string{"Node"}),
+        Entry("TC-OC-005: Orphan Pod (no owner)",
+            setupOrphanPod, "default", "Pod", "orphan-pod", 1, []string{"Pod"}),
+        Entry("TC-OC-006: Max depth reached (10 levels)",
+            setupDeepChain, "default", "Pod", "deep-pod", 10, nil), // nil = just check length
+    )
 })
 ```
 
@@ -133,29 +144,70 @@ var _ = Describe("OwnerChain Builder", func() {
 
 ```go
 // test/unit/signalprocessing/detected_labels_test.go
-var _ = Describe("DetectedLabels", func() {
-    Context("GitOps detection", func() {
-        It("should detect ArgoCD from annotations", func() {
-            // Given: Deployment with ArgoCD annotation
-            deploy := createTestDeployment("web-app", "default",
-                withAnnotation("argocd.argoproj.io/instance", "my-app"))
+// ✅ CORRECT: Use DescribeTable for 8 similar detection scenarios (per 03-testing-strategy.mdc)
+var _ = Describe("BR-SP-101: DetectedLabels", func() {
+    var (
+        ctx      context.Context
+        detector *detection.LabelDetector
+    )
 
-            k8sCtx := &signalprocessingv1.KubernetesContext{
-                DeploymentDetails: &signalprocessingv1.DeploymentDetails{
-                    Annotations: deploy.Annotations,
-                },
-            }
+    BeforeEach(func() {
+        ctx = context.Background()
+    })
 
-            detector := detection.NewLabelDetector(fakeClient, logr.Discard())
+    DescribeTable("should detect labels from K8s context",
+        func(setupFn func() (*signalprocessingv1.KubernetesContext, client.Client), 
+             checkFn func(labels *sharedtypes.DetectedLabels)) {
+            k8sCtx, fakeClient := setupFn()
+            detector = detection.NewLabelDetector(fakeClient, logr.Discard())
 
-            // When
             labels := detector.DetectLabels(ctx, k8sCtx)
 
-            // Then
-            Expect(labels.GitOpsManaged).To(BeTrue())
-            Expect(labels.GitOpsTool).To(Equal("argocd"))
-        })
-    })
+            checkFn(labels)
+        },
+        Entry("TC-DL-001: ArgoCD from annotations",
+            setupArgoCDDeployment,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.GitOpsManaged).To(BeTrue())
+                Expect(l.GitOpsTool).To(Equal("argocd"))
+            }),
+        Entry("TC-DL-002: Flux from labels",
+            setupFluxDeployment,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.GitOpsManaged).To(BeTrue())
+                Expect(l.GitOpsTool).To(Equal("flux"))
+            }),
+        Entry("TC-DL-003: PDB protection",
+            setupDeploymentWithPDB,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.PDBProtected).To(BeTrue())
+            }),
+        Entry("TC-DL-004: HPA enabled",
+            setupDeploymentWithHPA,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.HPAEnabled).To(BeTrue())
+            }),
+        Entry("TC-DL-005: StatefulSet",
+            setupStatefulSetPod,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.Stateful).To(BeTrue())
+            }),
+        Entry("TC-DL-006: Helm managed",
+            setupHelmDeployment,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.HelmManaged).To(BeTrue())
+            }),
+        Entry("TC-DL-007: NetworkPolicy",
+            setupNamespaceWithNetworkPolicy,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.NetworkIsolated).To(BeTrue())
+            }),
+        Entry("TC-DL-008: Istio service mesh",
+            setupIstioInjectedPod,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.ServiceMesh).To(Equal("istio"))
+            }),
+    )
 })
 ```
 
@@ -178,32 +230,64 @@ var _ = Describe("DetectedLabels", func() {
 
 ```go
 // test/unit/signalprocessing/custom_labels_test.go
-var _ = Describe("CustomLabels Rego", func() {
-    Context("security wrapper", func() {
-        It("should block customer override of mandatory labels", func() {
-            // Given: Policy that tries to set signal-type
-            policy := `
-                package signalprocessing.labels
-                labels["kubernaut.io/signal-type"] = "hacked"
-                labels["kubernaut.io/team"] = "payments"
-            `
+// ✅ CORRECT: Use DescribeTable for 12 similar Rego test scenarios (per 03-testing-strategy.mdc)
+var _ = Describe("BR-SP-102, BR-SP-103: CustomLabels Rego", func() {
+    var (
+        ctx    context.Context
+        engine *rego.Engine
+    )
 
-            engine := rego.NewEngine(fakeClient, logr.Discard())
+    BeforeEach(func() {
+        ctx = context.Background()
+        engine = rego.NewEngine(fakeClient, logr.Discard())
+    })
+
+    DescribeTable("should evaluate Rego policies and apply security wrapper",
+        func(policy string, expectedAllowedKeys []string, expectedBlockedKeys []string) {
             engine.SetTestPolicy(policy)
-
             input := &rego.Input{
                 Namespace: rego.NamespaceContext{Name: "default"},
             }
 
-            // When
-            customLabels, err := engine.EvaluatePolicy(ctx, input)
+            customLabels, err := engine.EvaluatePolicyWithSecurityWrapper(ctx, input)
 
-            // Then
             Expect(err).ToNot(HaveOccurred())
-            Expect(customLabels).ToNot(HaveKey("kubernaut.io/signal-type")) // Blocked
-            Expect(customLabels["kubernaut.io"]).To(ContainElement("team=payments")) // Allowed
-        })
-    })
+            for _, key := range expectedBlockedKeys {
+                Expect(customLabels).ToNot(HaveKey(key), "expected %s to be blocked", key)
+            }
+            for _, key := range expectedAllowedKeys {
+                Expect(customLabels).To(HaveKey(key), "expected %s to be allowed", key)
+            }
+        },
+        Entry("TC-CL-001: extracts team from ns label",
+            `package signalprocessing.labels
+             labels["kubernaut.io/team"] = "payments" if { true }`,
+            []string{"kubernaut.io/team"}, []string{}),
+        Entry("TC-CL-004: blocks signal-type override",
+            `package signalprocessing.labels
+             labels["kubernaut.io/signal-type"] = "hacked" if { true }`,
+            []string{}, []string{"kubernaut.io/signal-type"}),
+        Entry("TC-CL-005: blocks severity override",
+            `package signalprocessing.labels
+             labels["kubernaut.io/severity"] = "critical" if { true }`,
+            []string{}, []string{"kubernaut.io/severity"}),
+        Entry("TC-CL-009: blocks environment override",
+            `package signalprocessing.labels
+             labels["kubernaut.io/environment"] = "production" if { true }`,
+            []string{}, []string{"kubernaut.io/environment"}),
+        Entry("TC-CL-010: blocks priority override",
+            `package signalprocessing.labels
+             labels["kubernaut.io/priority"] = "P0" if { true }`,
+            []string{}, []string{"kubernaut.io/priority"}),
+        Entry("TC-CL-012: 2 mandatory stripped, 2 custom kept",
+            `package signalprocessing.labels
+             labels["kubernaut.io/environment"] = "prod" if { true }
+             labels["kubernaut.io/priority"] = "P0" if { true }
+             labels["kubernaut.io/team"] = "payments" if { true }
+             labels["kubernaut.io/cost-center"] = "cc-123" if { true }`,
+            []string{"kubernaut.io/team", "kubernaut.io/cost-center"},
+            []string{"kubernaut.io/environment", "kubernaut.io/priority"}),
+    )
 })
 ```
 
