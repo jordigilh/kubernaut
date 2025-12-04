@@ -45,16 +45,27 @@
 | [Cross-Team Validation](#-cross-team-validation) | Multi-team dependency sign-off |
 | [Design Decisions](#-design-decisions) | Architectural choices |
 | [Risk Assessment](#️-risk-assessment-matrix) | Risk identification and mitigation |
-| [Days 1-2](#days-1-2-foundation--crd-setup) | Foundation + CRD Setup |
-| [Days 3-4](#days-3-4-resource-locking--tekton-integration) | Resource Locking + Tekton Integration |
-| [Days 5-6](#days-5-6-pipelinerun-creation--status-sync) | PipelineRun Creation + Status Sync |
-| [Days 7-8](#days-7-8-failure-handling--audit) | Failure Handling + Audit |
-| [Days 9-10](#days-9-10-testing) | Testing (Unit + Integration + E2E) |
-| [Day 11](#day-11-documentation) | Documentation |
-| [Day 12](#day-12-production-readiness) | Production Readiness |
+| **Day-by-Day Breakdown** | |
+| ├─ [Days 1-2](#days-1-2-foundation--crd-setup) | Foundation + CRD Setup |
+| ├─ [Days 3-4](#days-3-4-resource-locking--tekton-integration) | Resource Locking + Tekton Integration |
+| ├─ [Days 5-6](#days-5-6-pipelinerun-creation--status-sync) | PipelineRun Creation + Status Sync |
+| ├─ [Days 7-8](#days-7-8-failure-handling--audit) | Failure Handling + Audit |
+| ├─ [Days 9-10](#days-9-10-testing) | Testing (Unit + Integration + E2E) |
+| ├─ [Day 11](#day-11-documentation) | Documentation |
+| └─ [Day 12](#day-12-production-readiness) | Production Readiness |
 | [BR Coverage Matrix](#br-coverage-matrix) | Business requirement test mapping |
 | [Appendix A: Code Examples](#appendix-a-code-examples) | Complete code patterns |
 | [Appendix B: CRD Controller Patterns](#appendix-b-crd-controller-patterns) | Reconciliation patterns |
+| **Quality & Operations** | |
+| ├─ [Performance Targets](#performance-targets) | Latency, throughput metrics |
+| ├─ [Common Pitfalls](#common-pitfalls-to-avoid) | Do's and don'ts |
+| ├─ [Success Criteria](#success-criteria) | Completion checklist |
+| └─ [Makefile Targets](#makefile-targets) | Development commands |
+| **Supplementary Documents** | |
+| ├─ [Appendix A: Error Handling](./APPENDIX_A_ERROR_HANDLING.md) | 5 error categories |
+| ├─ [Appendix B: Runbooks](./APPENDIX_B_PRODUCTION_RUNBOOKS.md) | 5 production runbooks |
+| ├─ [Appendix C: Test Scenarios](./APPENDIX_C_TEST_SCENARIOS.md) | ~100 test scenarios |
+| └─ [Appendix D: EOD Templates](./APPENDIX_D_EOD_TEMPLATES.md) | Daily progress templates |
 
 ---
 
@@ -256,13 +267,13 @@ func pipelineRunName(targetResource string) string {
 // cmd/workflowexecution/main.go
 func main() {
     // ... setup manager ...
-    
+
     // REQUIRED: Validate Tekton is installed (ADR-030)
     if err := controller.CheckTektonAvailable(ctx, mgr.GetRESTMapper()); err != nil {
         setupLog.Error(err, "Required dependency check failed")
         os.Exit(1)  // CRASH - Tekton is required
     }
-    
+
     // ... start manager ...
 }
 ```
@@ -484,7 +495,7 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(
     }, &pr); err != nil {
         // Handle not found (deleted externally)
     }
-    
+
     // Map status
     switch {
     case pr.Status.GetCondition(apis.ConditionSucceeded).IsTrue():
@@ -529,12 +540,12 @@ func (r *WorkflowExecutionReconciler) reconcileTerminal(
     wfe *workflowexecutionv1.WorkflowExecution,
 ) (ctrl.Result, error) {
     elapsed := time.Since(wfe.Status.CompletionTime.Time)
-    
+
     if elapsed < r.CooldownPeriod {
         remaining := r.CooldownPeriod - elapsed
         return ctrl.Result{RequeueAfter: remaining}, nil
     }
-    
+
     // Delete PipelineRun to release lock
     prName := pipelineRunName(wfe.Spec.TargetResource)
     return r.deletePipelineRun(ctx, prName)
@@ -576,7 +587,7 @@ func (r *WorkflowExecutionReconciler) extractFailureDetails(
 ) *workflowexecutionv1.FailureDetails {
     // Find failed TaskRun
     failedTask := findFailedTask(pr)
-    
+
     return &workflowexecutionv1.FailureDetails{
         FailedTaskName:         failedTask.Name,
         Reason:                 mapTektonReasonToK8s(failedTask.Status),
@@ -666,7 +677,7 @@ var _ = Describe("BR-WE-001: PipelineRun Creation", func() {
     It("should create PipelineRun with bundle resolver", func() {
         wfe := newTestWFE("test-wfe", "production/deployment/app")
         pr := reconciler.buildPipelineRun(wfe)
-        
+
         Expect(pr.Name).To(Equal(pipelineRunName(wfe.Spec.TargetResource)))
         Expect(pr.Namespace).To(Equal("kubernaut-workflows"))
         Expect(pr.Spec.PipelineRef.ResolverRef.Resolver).To(Equal("bundles"))
@@ -697,7 +708,7 @@ var _ = Describe("Integration: Resource Locking", func() {
         // Create first WFE
         wfe1 := createWFE("wfe-1", "production/deployment/app")
         Eventually(wfePhase(wfe1)).Should(Equal("Running"))
-        
+
         // Create second WFE - should be Skipped
         wfe2 := createWFE("wfe-2", "production/deployment/app")
         Eventually(wfePhase(wfe2)).Should(Equal("Skipped"))
@@ -920,7 +931,154 @@ Labels: map[string]string{
 
 ---
 
+## Performance Targets
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| PipelineRun creation latency (P95) | < 5s | `pipelinerun_creation_duration_seconds` |
+| Status sync latency | < 10s | Time from PR status change to WFE update |
+| Lock check latency (P99) | < 50ms | Indexed CRD query |
+| Memory usage | < 256MB | Per replica |
+| CPU usage | < 0.5 cores | Average |
+| Reconcile throughput | > 100/min | Under normal load |
+
+---
+
+## Common Pitfalls to Avoid
+
+### ❌ Don't Do This:
+
+1. **Skip resource locking tests**: Causes duplicate remediations in production
+2. **Hardcode execution namespace**: Use configurable `ExecutionNamespace`
+3. **Ignore AlreadyExists error**: Must handle race condition by marking Skipped
+4. **Delete PR before cooldown**: Allows wasteful sequential executions
+5. **Retry execution failures**: Cluster state unknown, requires manual review
+6. **Use OwnerReference for PR**: Cross-namespace, use labels + finalizer instead
+7. **Skip Tekton availability check**: Controller should crash-if-missing (ADR-030)
+8. **Ignore WasExecutionFailure flag**: Critical for recovery decisions
+
+### ✅ Do This Instead:
+
+1. **Test all locking scenarios**: ResourceBusy, RecentlyRemediated, race conditions
+2. **Configure namespace via ConfigMap**: Per ADR-030 configuration standards
+3. **Handle AlreadyExists gracefully**: Mark WFE as Skipped with reason
+4. **Wait for cooldown expiry**: Then delete PR to release lock
+5. **Mark execution failures as terminal**: Set WasExecutionFailure=true
+6. **Use labels for cross-namespace tracking**: `kubernaut.ai/workflow-execution`
+7. **Check Tekton at startup**: Use `CheckTektonAvailable()` function
+8. **Include WasExecutionFailure in FailureDetails**: For RO/AIAnalysis decisions
+
+---
+
+## Success Criteria
+
+### Implementation Complete When:
+
+- [ ] All BR-WE-001 to BR-WE-011 implemented
+- [ ] Build passes without errors
+- [ ] Zero lint errors
+- [ ] Unit test coverage > 70%
+- [ ] Integration tests pass with EnvTest
+- [ ] E2E tests pass with KIND + Tekton
+- [ ] All 10+ metrics exposed
+- [ ] Health checks functional
+- [ ] Documentation complete
+- [ ] Production readiness validated (Day 12)
+
+### Quality Indicators:
+
+- **Code Quality**: No lint errors, follows Go idioms, consistent patterns
+- **Test Quality**: Table-driven tests, clear assertions, BR mapping
+- **Test Organization**: Unit/Integration/E2E separation per testing-strategy.md
+- **Documentation Quality**: All spec docs current, cross-references valid
+- **Production Readiness**: Score > 95/109 on Day 12 assessment
+
+---
+
+## Makefile Targets
+
+```makefile
+# Testing (with parallel execution - 4 concurrent processes standard)
+.PHONY: test-unit-workflowexecution
+test-unit-workflowexecution:
+	go test -v -p 4 ./test/unit/workflowexecution/...
+
+.PHONY: test-integration-workflowexecution
+test-integration-workflowexecution:
+	go test -v -p 4 ./test/integration/workflowexecution/...
+
+.PHONY: test-e2e-workflowexecution
+test-e2e-workflowexecution:
+	go test -v -p 4 ./test/e2e/workflowexecution/...
+
+# Testing with Ginkgo (preferred - parallel with 4 procs)
+.PHONY: test-unit-ginkgo-workflowexecution
+test-unit-ginkgo-workflowexecution:
+	ginkgo -p -procs=4 -v ./test/unit/workflowexecution/...
+
+.PHONY: test-integration-ginkgo-workflowexecution
+test-integration-ginkgo-workflowexecution:
+	ginkgo -p -procs=4 -v ./test/integration/workflowexecution/...
+
+# All tests
+.PHONY: test-all-workflowexecution
+test-all-workflowexecution:
+	ginkgo -p -procs=4 -v ./test/unit/workflowexecution/... ./test/integration/workflowexecution/... ./test/e2e/workflowexecution/...
+
+# Coverage
+.PHONY: test-coverage-workflowexecution
+test-coverage-workflowexecution:
+	go test -cover -coverprofile=coverage.out -p 4 ./internal/controller/...
+	go tool cover -html=coverage.out
+
+# Build
+.PHONY: build-workflowexecution
+build-workflowexecution:
+	go build -o bin/workflow-execution ./cmd/workflowexecution
+
+# Linting
+.PHONY: lint-workflowexecution
+lint-workflowexecution:
+	golangci-lint run ./internal/controller/... ./cmd/workflowexecution/...
+
+# CRD generation
+.PHONY: generate-workflowexecution
+generate-workflowexecution:
+	controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./api/workflowexecution/..."
+	controller-gen crd paths="./api/workflowexecution/..." output:crd:artifacts:config=config/crd/bases
+
+# Deployment
+.PHONY: deploy-kind-workflowexecution
+deploy-kind-workflowexecution:
+	kubectl apply -f config/crd/bases/workflowexecution.kubernaut.ai_workflowexecutions.yaml
+	kubectl apply -f deploy/workflowexecution/
+```
+
+---
+
+## 📚 Appendices (Supplementary Documents)
+
+This implementation plan is split into multiple files for manageability. All appendices are cross-referenced:
+
+| Appendix | File | Purpose |
+|----------|------|---------|
+| **A** | [APPENDIX_A_ERROR_HANDLING.md](./APPENDIX_A_ERROR_HANDLING.md) | Error Handling Philosophy (5 categories) |
+| **B** | [APPENDIX_B_PRODUCTION_RUNBOOKS.md](./APPENDIX_B_PRODUCTION_RUNBOOKS.md) | Production Runbooks (5 runbooks) |
+| **C** | [APPENDIX_C_TEST_SCENARIOS.md](./APPENDIX_C_TEST_SCENARIOS.md) | Test Scenarios (~100 tests detailed) |
+| **D** | [APPENDIX_D_EOD_TEMPLATES.md](./APPENDIX_D_EOD_TEMPLATES.md) | EOD Documentation Templates |
+
+### Appendix Summary
+
+- **Appendix A**: Defines 5 error categories (Validation, External, Permission, Execution, System) with code examples, retry strategies, and metrics
+- **Appendix B**: Contains 5 production runbooks (RB-WE-001 to RB-WE-005) with alerts, diagnosis, and resolution steps
+- **Appendix C**: Details 65 unit tests, 25 integration tests, and 10 E2E tests with table-driven patterns
+- **Appendix D**: Provides Day 1, Day 4, Day 7, and Day 12 EOD documentation templates
+
+---
+
 ## References
+
+### Specification Documents
 
 | Document | Purpose |
 |----------|---------|
@@ -930,18 +1088,57 @@ Labels: map[string]string{
 | [testing-strategy.md](../testing-strategy.md) | Test patterns |
 | [security-configuration.md](../security-configuration.md) | RBAC |
 | [BUSINESS_REQUIREMENTS.md](../BUSINESS_REQUIREMENTS.md) | BR-WE-001 to BR-WE-011 |
+
+### Architecture Decisions
+
+| Document | Purpose |
+|----------|---------|
 | [DD-WE-001](../../../../architecture/decisions/DD-WE-001-resource-locking-safety.md) | Resource Locking |
 | [DD-WE-002](../../../../architecture/decisions/DD-WE-002-dedicated-execution-namespace.md) | Execution Namespace |
 | [DD-WE-003](../../../../architecture/decisions/DD-WE-003-resource-lock-persistence.md) | Lock Persistence |
 | [ADR-044](../../../../architecture/decisions/ADR-044-workflow-execution-engine-delegation.md) | Tekton Delegation |
-| [CONFIG_STANDARDS.md](../../../../configuration/CONFIG_STANDARDS.md) | Configuration |
+| [ADR-030](../../../../architecture/decisions/ADR-030-service-configuration-management.md) | Configuration Standards |
+
+### Cross-Team
+
+| Document | Purpose |
+|----------|---------|
+| [DD-CONTRACT-001](../../../../architecture/decisions/DD-CONTRACT-001-aianalysis-workflowexecution-alignment.md) | AIAnalysis ↔ WE Contract |
+| [CONFIG_STANDARDS.md](../../../../configuration/CONFIG_STANDARDS.md) | Centralized Configuration |
+
+### Template
+
+| Document | Purpose |
+|----------|---------|
+| [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](../../../../services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md) | Implementation Plan Template (v3.0) |
+
+---
+
+## Revision History
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| v3.0 | 2025-12-03 | Complete rewrite for Tekton + Resource Locking | AI Assistant |
+| v2.0 | 2025-12-02 | Updated for `.ai` API group, BR-WE-* prefix | AI Assistant |
+| v1.0 | 2025-11-28 | Initial plan | AI Assistant |
 
 ---
 
 **Implementation Plan Status**: ✅ Ready for Implementation
 
+**Template Compliance**: 100% aligned with [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](../../../../services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md) v3.0
+
+**Document Structure**:
+- Main plan: ~1,000 lines (core content)
+- Appendix A: ~300 lines (error handling)
+- Appendix B: ~400 lines (runbooks)
+- Appendix C: ~400 lines (test scenarios)
+- Appendix D: ~350 lines (EOD templates)
+- **Total**: ~2,450 lines across 5 documents
+
 **Next Steps**:
 1. Review with team
 2. Create PR for Day 1 deliverables
 3. Begin implementation following APDC-TDD methodology
+4. Update EOD templates daily
 
