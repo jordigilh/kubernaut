@@ -1,7 +1,7 @@
 ## Testing Strategy
 
-**Version**: v2.0
-**Last Updated**: 2025-11-30
+**Version**: v2.1
+**Last Updated**: 2025-12-04
 
 ---
 
@@ -9,6 +9,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **v2.1** | 2025-12-04 | **TESTING_GUIDELINES Alignment**: Added Quality Gates, Success Metrics; Removed V1.1 deferred code (BR-AI-040, BR-AI-050); Fixed BR range references |
 | v2.0 | 2025-11-30 | Added TESTING_GUIDELINES.md reference; Updated port allocation per DD-TEST-001 |
 | v1.0 | 2025-10-15 | Initial specification |
 
@@ -204,80 +205,18 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
         )
     })
 
-    // ⚠️ V1.1 DEFERRED: AIApprovalRequest CRD is out of V1.0 scope (per BR_MAPPING.md v1.3)
-    // V1.0 uses approval signaling to RO instead
-    Context("V1.1-DEFERRED: AIApprovalRequest CRD Creation for Manual Approval", func() {
-        It("should create AIApprovalRequest CRD when manual approval required", func() {
-            // Setup AIAnalysis requiring manual approval
-            aia := testutil.NewTestAIAnalysis("aia-manual-approval")
-            aia.Spec.TargetingData.Environment = "production"
-            aia.Status.Phase = "Approving"
-            aia.Status.Recommendations = []aianalysisv1.Recommendation{
-                {Action: "restart-pod", Confidence: 0.92},
-            }
-            Expect(fakeK8sClient.Create(ctx, aia)).To(Succeed())
-
-            // Reconcile to create AIApprovalRequest
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(aia))
-            Expect(err).ToNot(HaveOccurred())
-
-            // Verify AIApprovalRequest created with owner reference
-            var approvalRequest approvalv1.AIApprovalRequest
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKey{
-                Name:      "aia-manual-approval-approval",
-                Namespace: "default",
-            }, &approvalRequest)).To(Succeed())
-
-            Expect(approvalRequest.OwnerReferences).To(HaveLen(1))
-            Expect(approvalRequest.OwnerReferences[0].Name).To(Equal("aia-manual-approval"))
-            Expect(approvalRequest.Spec.Recommendations).To(HaveLen(1))
-        })
-    })
-
-    // ⚠️ V1.1 DEFERRED: AIApprovalRequest CRD is out of V1.0 scope (per BR_MAPPING.md v1.3)
-    // V1.0 uses approval signaling to RO instead
-    Context("V1.1-DEFERRED: AIApprovalRequest Watch for Approval Decision", func() {
-        It("should transition to Ready when AIApprovalRequest approved", func() {
-            // Create AIAnalysis + AIApprovalRequest
-            aia := testutil.NewTestAIAnalysis("aia-watch-approval")
-            aia.Status.Phase = "Approving"
-            aia.Status.ApprovalStatus = "PendingApproval"
-            Expect(fakeK8sClient.Create(ctx, aia)).To(Succeed())
-
-            approvalRequest := &approvalv1.AIApprovalRequest{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "aia-watch-approval-approval",
-                    Namespace: "default",
-                    OwnerReferences: []metav1.OwnerReference{
-                        {
-                            APIVersion: aianalysisv1.GroupVersion.String(),
-                            Kind:       "AIAnalysis",
-                            Name:       "aia-watch-approval",
-                            UID:        aia.UID,
-                        },
-                    },
-                },
-                Spec: approvalv1.AIApprovalRequestSpec{},
-            }
-            Expect(fakeK8sClient.Create(ctx, approvalRequest)).To(Succeed())
-
-            // Simulate operator approval
-            approvalRequest.Status.Decision = "Approved"
-            approvalRequest.Status.ApprovedBy = "operator@example.com"
-            approvalRequest.Status.ApprovedAt = metav1.Now()
-            Expect(fakeK8sClient.Status().Update(ctx, approvalRequest)).To(Succeed())
-
-            // Reconcile to process approval
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(aia))
-            Expect(err).ToNot(HaveOccurred())
-
-            // Verify AIAnalysis transitioned to Ready
-            var updatedAIA aianalysisv1.AIAnalysis
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKeyFromObject(aia), &updatedAIA)).To(Succeed())
-            Expect(updatedAIA.Status.Phase).To(Equal("Ready"))
-            Expect(updatedAIA.Status.ApprovalStatus).To(Equal("Approved"))
-        })
-    })
+    // ═══════════════════════════════════════════════════════════════════════════
+    // V1.1 DEFERRED TESTS: AIApprovalRequest CRD
+    // ═══════════════════════════════════════════════════════════════════════════
+    // The following test scenarios are OUT OF V1.0 SCOPE per BR_MAPPING.md v1.3:
+    //   - BR-AI-040: AIApprovalRequest CRD Creation for Manual Approval
+    //   - BR-AI-050: AIApprovalRequest Watch for Approval Decision
+    //
+    // V1.0 Approach: Approval signaling to RO via status.approvalRequired flag
+    // V1.1 Scope: Will implement dedicated AIApprovalRequest CRD workflow
+    //
+    // Reference: docs/services/crd-controllers/02-aianalysis/BR_MAPPING.md
+    // ═══════════════════════════════════════════════════════════════════════════
 })
 ```
 
@@ -798,5 +737,62 @@ It("should handle HolmesGPT API timeouts gracefully", func() {
 // E2E test: Rego policy + approval + workflow execution (complete AI-driven flow)
 // Each level adds unique AI workflow value
 ```
+
+---
+
+## 🎯 Quality Gates (per TESTING_GUIDELINES.md)
+
+### Business Requirement Tests Must:
+- [ ] **Map to documented business requirements** (BR-AI-XXX IDs from [BR_MAPPING.md](./BR_MAPPING.md))
+- [ ] **Be understandable by non-technical stakeholders** (describe business outcome, not implementation)
+- [ ] **Measure business value** (accuracy, performance, cost reduction)
+- [ ] **Use realistic data and scenarios** (production-like alert fingerprints, confidence scores)
+- [ ] **Validate end-to-end outcomes** (investigation → recommendation → approval decision)
+- [ ] **Include business success criteria** (SLA compliance, auto-approval rate targets)
+
+### Unit Tests Must:
+- [ ] **Focus on implementation correctness** (Rego policy logic, confidence scoring)
+- [ ] **Execute quickly** (<10ms per test average)
+- [ ] **Have minimal external dependencies** (mock HolmesGPT API only)
+- [ ] **Test edge cases and error conditions** (timeout, malformed response, low confidence)
+- [ ] **Provide clear developer feedback** (specific assertion messages)
+- [ ] **Maintain high code coverage** (70%+ for core AI logic)
+
+### Integration Tests Must:
+- [ ] **Validate CRD lifecycle** (create → reconcile → status update)
+- [ ] **Test real Kubernetes API interactions** (with envtest or Kind)
+- [ ] **Cover cross-component coordination** (AIAnalysis ↔ SignalProcessing data flow)
+- [ ] **Use Eventually() for async operations** (30s timeout, 100ms poll)
+
+---
+
+## 📊 Success Metrics (per TESTING_GUIDELINES.md)
+
+### Target Metrics
+
+| Metric | Target | Measurement Command |
+|--------|--------|---------------------|
+| **Unit Test Execution** | <10ms average per test | `go test -v ./pkg/aianalysis/... -json \| jq '.Elapsed'` |
+| **Unit Test Coverage** | 70%+ | `make coverage-aianalysis` |
+| **BR Test Ratio** | 90%+ tests validate BRs | Manual audit: `grep -c "BR-AI-" test/unit/aianalysis/*_test.go` |
+| **Integration Coverage** | >50% CRD operations | `make test-integration-aianalysis --coverage` |
+| **E2E Critical Paths** | 100% coverage | 3 scenarios: auto-approve, manual-approve, rejection |
+
+### AI-Specific Metrics
+
+| Metric | Target | Purpose |
+|--------|--------|---------|
+| **Rego Policy Coverage** | 100% of rules | All approval decision paths tested |
+| **Confidence Threshold Tests** | 3 boundary tests | 0.79, 0.80, 0.90 thresholds |
+| **HolmesGPT Mock Realism** | Production-like responses | Token counts, latency simulation |
+| **FailedDetections Validation** | All 7 valid fields | `gitOpsManaged`, `pdbProtected`, etc. |
+
+### Quality Indicators
+
+| Indicator | Good | Warning | Critical |
+|-----------|------|---------|----------|
+| **Test Flakiness** | <1% | 1-5% | >5% |
+| **Mock Complexity** | <30 lines | 30-50 lines | >50 lines (move to integration) |
+| **Test Readability** | Understood in 2 min | 2-5 min | >5 min (refactor needed) |
 
 ---
