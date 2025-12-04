@@ -1,22 +1,56 @@
 ## Testing Strategy
 
-**Version**: 4.0
-**Last Updated**: 2025-12-02
+**Version**: 5.0
+**Last Updated**: 2025-12-03
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
-**Status**: ✅ Updated for Tekton Architecture
+**Status**: ✅ Aligned with TESTING_GUIDELINES.md
 
 ---
 
 ## Changelog
 
+### Version 5.0 (2025-12-03)
+- ✅ **Fixed**: Aligned with [TESTING_GUIDELINES.md](../../../../development/business-requirements/TESTING_GUIDELINES.md)
+- ✅ **Separated**: Business Requirement Tests (BR-*) from Unit Tests
+- ✅ **Added**: True business outcome tests (SLAs, efficiency, reliability)
+- ✅ **Renamed**: Implementation-focused tests no longer use BR-* prefix
+
 ### Version 4.0 (2025-12-02)
-- ✅ **Rewritten**: Complete rewrite for Tekton PipelineRun architecture
-- ✅ **Removed**: All KubernetesExecution/step orchestration test patterns
-- ✅ **Updated**: Tests focus on PipelineRun creation and resource locking
+- Rewritten for Tekton PipelineRun architecture
 
 ---
 
-**Testing Framework Reference**: [.cursor/rules/03-testing-strategy.mdc](../../../.cursor/rules/03-testing-strategy.mdc)
+**Testing Framework References**:
+- [TESTING_GUIDELINES.md](../../../../development/business-requirements/TESTING_GUIDELINES.md) - When to use BR vs Unit tests
+- [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc) - Defense-in-depth strategy
+
+---
+
+## 🎯 Test Type Decision Framework
+
+Per [TESTING_GUIDELINES.md](../../../../development/business-requirements/TESTING_GUIDELINES.md):
+
+```
+📝 QUESTION: What are you trying to validate?
+
+├─ 💼 "Does it solve the business problem?"
+│  └─ ► BUSINESS REQUIREMENT TEST (BR-WE-*)
+│
+└─ 🔧 "Does the code work correctly?"
+   └─ ► UNIT TEST (no BR prefix)
+```
+
+### Test Type Comparison
+
+| Aspect | Business Requirement Tests | Unit Tests |
+|--------|----------------------------|------------|
+| **Purpose** | Validate business value delivery | Validate implementation correctness |
+| **Focus** | External behavior & outcomes | Internal code mechanics |
+| **Naming** | BR-WE-XXX prefix | Function/method name |
+| **Audience** | Business stakeholders + developers | Developers only |
+| **Metrics** | SLAs, efficiency, reliability | Coverage, edge cases |
+
+---
 
 ### Testing Pyramid
 
@@ -25,28 +59,157 @@ Following Kubernaut's defense-in-depth testing strategy:
 | Test Type | Target Coverage | Focus | Confidence |
 |-----------|----------------|-------|------------|
 | **Unit Tests** | 70%+ | Controller logic, PipelineRun building, resource locking | 85-90% |
-| **Integration Tests** | >50% | CRD interactions, Tekton PipelineRun creation, status sync | 80-85% |
-| **E2E Tests** | 10-15% | Complete workflow execution with Tekton, resource locking | 90-95% |
+| **Integration Tests** | ~20% | CRD interactions, Tekton PipelineRun creation, status sync | 80-85% |
+| **E2E / BR Tests** | ~10% | Complete workflow execution, business SLAs | 90-95% |
 
-**Rationale**: WorkflowExecution delegates step orchestration to Tekton, so tests focus on:
+**WorkflowExecution Focus Areas**:
 1. **PipelineRun creation** - Bundle resolver, parameter passing
 2. **Status synchronization** - Mapping Tekton conditions to WE phases
 3. **Resource locking** - Parallel execution prevention, cooldown
 
 ---
 
-### Unit Tests (Primary Coverage Layer)
+## 💼 Business Requirement Tests (BR-WE-*)
 
-**Test Directory**: [test/unit/workflowexecution/](../../../test/unit/workflowexecution/)
-**Coverage Target**: 70%
-**Confidence**: 85-90%
-**Execution**: `make test-unit-workflowexecution`
+**Purpose**: Validate business value delivery - SLAs, efficiency, reliability
+**Audience**: Business stakeholders + developers
+**Directory**: `test/e2e/workflowexecution/` (alongside E2E tests)
+**Execution**: `make test-e2e-workflowexecution`
 
-**Testing Strategy**: Use fake K8s client for compile-time API safety. Mock external Tekton APIs.
+### ✅ BR Tests Focus On:
+- User-facing outcomes (remediation completes)
+- Performance SLAs (execution time)
+- Business efficiency (no wasted executions)
+- Reliability (failures reported correctly)
 
-**Core Test Patterns**:
+### BR Test Examples
 
 ```go
+// test/e2e/workflowexecution/business_requirements_test.go
+package workflowexecution_e2e
+
+import (
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    "time"
+)
+
+var _ = Describe("BR-WE-001: Workflow Remediation Completes Successfully", func() {
+    // BUSINESS VALUE: System can automatically remediate issues
+    // STAKEHOLDER: Operations team needs automated issue resolution
+
+    It("should complete remediation within 30-second SLA", func() {
+        // Given: A pod with memory pressure
+        createPodWithMemoryPressure("test-pod", "default")
+
+        // When: WorkflowExecution is created for memory increase
+        startTime := time.Now()
+        wfe := createWorkflowExecution("increase-memory", "default/pod/test-pod")
+
+        // Then: Workflow completes within SLA
+        Eventually(func() string {
+            return getWFEPhase(wfe.Name)
+        }, 30*time.Second).Should(Equal("Completed"))
+
+        duration := time.Since(startTime)
+        Expect(duration).To(BeNumerically("<", 30*time.Second))
+
+        // Business outcome: Pod memory increased
+        Expect(getPodMemoryLimit("test-pod")).To(BeNumerically(">", originalMemory))
+    })
+})
+
+var _ = Describe("BR-WE-009: Prevent Wasteful Duplicate Remediations", func() {
+    // BUSINESS VALUE: No wasted compute/time on redundant operations
+    // STAKEHOLDER: Finance team cares about operational efficiency
+
+    It("should prevent parallel remediations on same resource (cost savings)", func() {
+        // Given: 10 identical remediation requests arrive simultaneously
+        target := "production/deployment/payment-service"
+        var wfes []string
+        for i := 0; i < 10; i++ {
+            wfes = append(wfes, createWorkflowExecution("disk-cleanup", target).Name)
+        }
+
+        // Then: Only 1 should execute, 9 should be skipped
+        executedCount := 0
+        skippedCount := 0
+        for _, name := range wfes {
+            phase := getWFEPhase(name)
+            if phase == "Running" || phase == "Completed" {
+                executedCount++
+            } else if phase == "Skipped" {
+                skippedCount++
+            }
+        }
+
+        // Business outcome: 90% cost reduction in duplicate scenarios
+        Expect(executedCount).To(Equal(1))
+        Expect(skippedCount).To(Equal(9))
+    })
+
+    It("should prevent redundant sequential remediations (cooldown)", func() {
+        // Given: Workflow just completed on target
+        target := "production/deployment/app"
+        wfe1 := createWorkflowExecution("restart-pod", target)
+        Eventually(getWFEPhase(wfe1.Name)).Should(Equal("Completed"))
+
+        // When: Same workflow requested again immediately
+        wfe2 := createWorkflowExecution("restart-pod", target)
+
+        // Then: Second is skipped (within cooldown)
+        Eventually(getWFEPhase(wfe2.Name)).Should(Equal("Skipped"))
+        Expect(getWFESkipReason(wfe2.Name)).To(Equal("RecentlyRemediated"))
+    })
+})
+
+var _ = Describe("BR-WE-004: Failure Details Enable Recovery Decisions", func() {
+    // BUSINESS VALUE: Operations can understand and act on failures
+    // STAKEHOLDER: On-call engineers need actionable failure information
+
+    It("should provide human-readable failure explanation", func() {
+        // Given: A workflow that will fail (insufficient permissions)
+        wfe := createWorkflowExecution("scale-deployment", "restricted/deployment/app")
+
+        // When: Workflow fails
+        Eventually(getWFEPhase(wfe.Name)).Should(Equal("Failed"))
+
+        // Then: Failure details are actionable
+        details := getWFEFailureDetails(wfe.Name)
+        Expect(details.Reason).To(Equal("PermissionDenied"))
+        Expect(details.NaturalLanguageSummary).To(ContainSubstring("ServiceAccount"))
+        Expect(details.NaturalLanguageSummary).To(ContainSubstring("RBAC"))
+
+        // Business outcome: On-call can take immediate action
+    })
+})
+```
+
+---
+
+## 🔧 Unit Tests (Implementation Correctness)
+
+**Purpose**: Validate internal code mechanics work correctly
+**Audience**: Developers only
+**Directory**: `test/unit/workflowexecution/`
+**Coverage Target**: 70%
+**Execution**: `make test-unit-workflowexecution`
+
+### ✅ Unit Tests Focus On:
+- Function/method behavior
+- Error handling & edge cases
+- Internal logic validation
+- Interface compliance
+
+### ❌ Unit Tests Should NOT:
+- Use BR-* prefixes (those are for business tests)
+- Test business outcomes
+- Validate SLAs
+
+### Unit Test Examples
+
+```go
+// test/unit/workflowexecution/controller_test.go
 package workflowexecution
 
 import (
@@ -65,7 +228,11 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("BR-WE-001: PipelineRun Creation", func() {
+// ============================================================
+// PipelineRun Building Tests (Implementation Correctness)
+// ============================================================
+
+var _ = Describe("buildPipelineRun", func() {
     var (
         fakeK8sClient client.Client
         scheme        *runtime.Scheme
@@ -82,13 +249,14 @@ var _ = Describe("BR-WE-001: PipelineRun Creation", func() {
             Build()
 
         reconciler = &controller.WorkflowExecutionReconciler{
-            Client: fakeK8sClient,
-            Scheme: scheme,
+            Client:             fakeK8sClient,
+            Scheme:             scheme,
+            ExecutionNamespace: "kubernaut-workflows",
         }
     })
 
-    Context("PipelineRun Building", func() {
-        It("should create PipelineRun with bundle resolver", func() {
+    Context("bundle resolver configuration", func() {
+        It("should use bundles resolver with OCI image", func() {
             wfe := &workflowexecutionv1.WorkflowExecution{
                 ObjectMeta: metav1.ObjectMeta{
                     Name:      "wfe-test",
@@ -100,44 +268,27 @@ var _ = Describe("BR-WE-001: PipelineRun Creation", func() {
                         ContainerImage: "ghcr.io/kubernaut/workflows/increase-memory@sha256:abc123",
                     },
                     TargetResource: "production/deployment/payment-service",
-                    Parameters: map[string]string{
-                        "NAMESPACE":       "production",
-                        "DEPLOYMENT_NAME": "payment-service",
-                    },
                 },
             }
-            Expect(fakeK8sClient.Create(ctx, wfe)).To(Succeed())
 
-            // Reconcile should create PipelineRun
-            _, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(wfe))
-            Expect(err).ToNot(HaveOccurred())
+            pr := reconciler.BuildPipelineRun(wfe)
 
-            // Verify PipelineRun created with bundle resolver
-            var prList tektonv1.PipelineRunList
-            Expect(fakeK8sClient.List(ctx, &prList)).To(Succeed())
-            Expect(prList.Items).To(HaveLen(1))
-
-            pr := prList.Items[0]
             Expect(pr.Spec.PipelineRef.ResolverRef.Resolver).To(Equal("bundles"))
+            Expect(pr.Spec.PipelineRef.ResolverRef.Params).To(ContainElement(
+                HaveField("Name", "bundle"),
+            ))
         })
+    })
 
-        It("should pass parameters to PipelineRun", func() {
+    Context("parameter conversion", func() {
+        It("should convert map to Tekton params", func() {
             wfe := testutil.NewTestWorkflowExecution("wfe-params-test")
             wfe.Spec.Parameters = map[string]string{
-                "NAMESPACE":          "production",
+                "NAMESPACE":           "production",
                 "MEMORY_INCREMENT_MB": "256",
             }
-            Expect(fakeK8sClient.Create(ctx, wfe)).To(Succeed())
 
-            _, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(wfe))
-            Expect(err).ToNot(HaveOccurred())
-
-            // Verify parameters passed
-            var pr tektonv1.PipelineRun
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKey{
-                Name:      wfe.Name,
-                Namespace: wfe.Namespace,
-            }, &pr)).To(Succeed())
+            pr := reconciler.BuildPipelineRun(wfe)
 
             paramMap := make(map[string]string)
             for _, p := range pr.Spec.Params {
@@ -147,9 +298,25 @@ var _ = Describe("BR-WE-001: PipelineRun Creation", func() {
             Expect(paramMap["MEMORY_INCREMENT_MB"]).To(Equal("256"))
         })
     })
+
+    Context("execution namespace", func() {
+        It("should create PipelineRun in configured namespace", func() {
+            wfe := testutil.NewTestWorkflowExecution("wfe-ns-test")
+            wfe.Namespace = "source-namespace"
+
+            pr := reconciler.BuildPipelineRun(wfe)
+
+            Expect(pr.Namespace).To(Equal("kubernaut-workflows"))
+            Expect(pr.Namespace).ToNot(Equal(wfe.Namespace))
+        })
+    })
 })
 
-var _ = Describe("BR-WE-009: Resource Locking", func() {
+// ============================================================
+// Resource Lock Checking Tests (Internal Logic)
+// ============================================================
+
+var _ = Describe("checkResourceLock", func() {
     var (
         fakeK8sClient client.Client
         reconciler    *controller.WorkflowExecutionReconciler
@@ -158,75 +325,69 @@ var _ = Describe("BR-WE-009: Resource Locking", func() {
 
     BeforeEach(func() {
         ctx = context.Background()
-        // ... setup
+        // ... setup with indexed field
     })
 
-    Context("Parallel Execution Prevention", func() {
-        It("should skip when another workflow targets same resource", func() {
-            // Create first WFE (running)
+    Context("parallel execution detection", func() {
+        It("should return blocked when Running WFE exists for target", func() {
+            // Create running WFE
             wfe1 := testutil.NewTestWorkflowExecution("wfe-running")
             wfe1.Spec.TargetResource = "production/deployment/payment-service"
             wfe1.Status.Phase = workflowexecutionv1.PhaseRunning
             Expect(fakeK8sClient.Create(ctx, wfe1)).To(Succeed())
 
-            // Create second WFE targeting same resource
-            wfe2 := testutil.NewTestWorkflowExecution("wfe-blocked")
-            wfe2.Spec.TargetResource = "production/deployment/payment-service"
-            Expect(fakeK8sClient.Create(ctx, wfe2)).To(Succeed())
+            // Check lock
+            blocked, reason := reconciler.CheckResourceLock(ctx, "production/deployment/payment-service")
 
-            // Reconcile second WFE - should be skipped
-            _, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(wfe2))
-            Expect(err).ToNot(HaveOccurred())
+            Expect(blocked).To(BeTrue())
+            Expect(reason).To(Equal("ResourceBusy"))
+        })
 
-            // Verify skipped with ResourceBusy reason
-            var updated workflowexecutionv1.WorkflowExecution
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKeyFromObject(wfe2), &updated)).To(Succeed())
-            Expect(updated.Status.Phase).To(Equal(workflowexecutionv1.PhaseSkipped))
-            Expect(updated.Status.SkipDetails.Reason).To(Equal("ResourceBusy"))
+        It("should return not blocked when no Running WFE for target", func() {
+            blocked, _ := reconciler.CheckResourceLock(ctx, "other/deployment/app")
+
+            Expect(blocked).To(BeFalse())
         })
     })
 
-    Context("Cooldown Prevention", func() {
-        It("should skip when same workflow ran recently", func() {
-            // Create completed WFE
-            wfe1 := testutil.NewTestWorkflowExecution("wfe-completed")
-            wfe1.Spec.TargetResource = "production/deployment/payment-service"
-            wfe1.Spec.WorkflowRef.WorkflowID = "increase-memory"
-            wfe1.Status.Phase = workflowexecutionv1.PhaseCompleted
-            wfe1.Status.CompletionTime = &metav1.Time{Time: time.Now().Add(-1 * time.Minute)}
-            Expect(fakeK8sClient.Create(ctx, wfe1)).To(Succeed())
+    Context("cooldown detection", func() {
+        It("should detect recent completion within cooldown period", func() {
+            // Create completed WFE 1 minute ago
+            wfe := testutil.NewTestWorkflowExecution("wfe-completed")
+            wfe.Spec.TargetResource = "production/deployment/payment-service"
+            wfe.Spec.WorkflowRef.WorkflowID = "increase-memory"
+            wfe.Status.Phase = workflowexecutionv1.PhaseCompleted
+            wfe.Status.CompletionTime = &metav1.Time{Time: time.Now().Add(-1 * time.Minute)}
+            Expect(fakeK8sClient.Create(ctx, wfe)).To(Succeed())
 
-            // Create new WFE with same workflow + target
-            wfe2 := testutil.NewTestWorkflowExecution("wfe-cooldown")
-            wfe2.Spec.TargetResource = "production/deployment/payment-service"
-            wfe2.Spec.WorkflowRef.WorkflowID = "increase-memory"
-            Expect(fakeK8sClient.Create(ctx, wfe2)).To(Succeed())
+            blocked, reason := reconciler.CheckCooldown(ctx, "production/deployment/payment-service", "increase-memory")
 
-            // Reconcile - should be skipped (cooldown)
-            _, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(wfe2))
-            Expect(err).ToNot(HaveOccurred())
+            Expect(blocked).To(BeTrue())
+            Expect(reason).To(Equal("RecentlyRemediated"))
+        })
 
-            var updated workflowexecutionv1.WorkflowExecution
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKeyFromObject(wfe2), &updated)).To(Succeed())
-            Expect(updated.Status.Phase).To(Equal(workflowexecutionv1.PhaseSkipped))
-            Expect(updated.Status.SkipDetails.Reason).To(Equal("RecentlyRemediated"))
+        It("should allow execution after cooldown expires", func() {
+            // Create completed WFE 10 minutes ago (default cooldown is 5 min)
+            wfe := testutil.NewTestWorkflowExecution("wfe-old")
+            wfe.Spec.TargetResource = "production/deployment/payment-service"
+            wfe.Status.CompletionTime = &metav1.Time{Time: time.Now().Add(-10 * time.Minute)}
+            Expect(fakeK8sClient.Create(ctx, wfe)).To(Succeed())
+
+            blocked, _ := reconciler.CheckCooldown(ctx, "production/deployment/payment-service", "any-workflow")
+
+            Expect(blocked).To(BeFalse())
         })
     })
 })
 
-var _ = Describe("BR-WE-003: Status Synchronization", func() {
-    Context("PipelineRun Status Mapping", func() {
-        It("should map PipelineRun success to Completed phase", func() {
-            wfe := testutil.NewTestWorkflowExecution("wfe-success")
-            wfe.Status.Phase = workflowexecutionv1.PhaseRunning
-            Expect(fakeK8sClient.Create(ctx, wfe)).To(Succeed())
+// ============================================================
+// Status Mapping Tests (Internal Logic)
+// ============================================================
 
-            // Create completed PipelineRun
+var _ = Describe("mapPipelineRunStatus", func() {
+    Context("Tekton condition mapping", func() {
+        It("should map Succeeded=True to Completed phase", func() {
             pr := &tektonv1.PipelineRun{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      wfe.Name,
-                    Namespace: wfe.Namespace,
-                },
                 Status: tektonv1.PipelineRunStatus{
                     Status: duckv1.Status{
                         Conditions: duckv1.Conditions{
@@ -235,63 +396,92 @@ var _ = Describe("BR-WE-003: Status Synchronization", func() {
                     },
                 },
             }
-            Expect(fakeK8sClient.Create(ctx, pr)).To(Succeed())
 
-            // Reconcile - should update to Completed
-            _, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(wfe))
-            Expect(err).ToNot(HaveOccurred())
+            phase, outcome := controller.MapPipelineRunStatus(pr)
 
-            var updated workflowexecutionv1.WorkflowExecution
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)).To(Succeed())
-            Expect(updated.Status.Phase).To(Equal(workflowexecutionv1.PhaseCompleted))
-            Expect(updated.Status.Outcome).To(Equal(workflowexecutionv1.OutcomeSuccess))
+            Expect(phase).To(Equal(workflowexecutionv1.PhaseCompleted))
+            Expect(outcome).To(Equal(workflowexecutionv1.OutcomeSuccess))
         })
 
-        It("should map PipelineRun failure to Failed phase with details", func() {
-            wfe := testutil.NewTestWorkflowExecution("wfe-failure")
-            wfe.Status.Phase = workflowexecutionv1.PhaseRunning
-            Expect(fakeK8sClient.Create(ctx, wfe)).To(Succeed())
-
-            // Create failed PipelineRun
+        It("should map Succeeded=False to Failed phase", func() {
             pr := &tektonv1.PipelineRun{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      wfe.Name,
-                    Namespace: wfe.Namespace,
-                },
                 Status: tektonv1.PipelineRunStatus{
                     Status: duckv1.Status{
                         Conditions: duckv1.Conditions{
-                            {
-                                Type:    "Succeeded",
-                                Status:  "False",
-                                Reason:  "TaskRunFailed",
-                                Message: "Task increase-memory failed: exit code 1",
-                            },
+                            {Type: "Succeeded", Status: "False", Reason: "TaskRunFailed"},
                         },
                     },
                 },
             }
-            Expect(fakeK8sClient.Create(ctx, pr)).To(Succeed())
 
-            _, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(wfe))
-            Expect(err).ToNot(HaveOccurred())
+            phase, outcome := controller.MapPipelineRunStatus(pr)
 
-            var updated workflowexecutionv1.WorkflowExecution
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)).To(Succeed())
-            Expect(updated.Status.Phase).To(Equal(workflowexecutionv1.PhaseFailed))
-            Expect(updated.Status.FailureDetails).ToNot(BeNil())
-            Expect(updated.Status.FailureDetails.Reason).To(Equal("TaskRunFailed"))
+            Expect(phase).To(Equal(workflowexecutionv1.PhaseFailed))
+            Expect(outcome).To(Equal(workflowexecutionv1.OutcomeFailure))
         })
+
+        It("should map Succeeded=Unknown to Running phase", func() {
+            pr := &tektonv1.PipelineRun{
+                Status: tektonv1.PipelineRunStatus{
+                    Status: duckv1.Status{
+                        Conditions: duckv1.Conditions{
+                            {Type: "Succeeded", Status: "Unknown"},
+                        },
+                    },
+                },
+            }
+
+            phase, _ := controller.MapPipelineRunStatus(pr)
+
+            Expect(phase).To(Equal(workflowexecutionv1.PhaseRunning))
+        })
+    })
+})
+
+// ============================================================
+// Failure Details Extraction Tests (Internal Logic)
+// ============================================================
+
+var _ = Describe("extractFailureDetails", func() {
+    It("should extract reason and message from PipelineRun", func() {
+        pr := &tektonv1.PipelineRun{
+            Status: tektonv1.PipelineRunStatus{
+                Status: duckv1.Status{
+                    Conditions: duckv1.Conditions{
+                        {
+                            Type:    "Succeeded",
+                            Status:  "False",
+                            Reason:  "TaskRunFailed",
+                            Message: "Task increase-memory failed: exit code 1",
+                        },
+                    },
+                },
+            },
+        }
+
+        details := controller.ExtractFailureDetails(pr)
+
+        Expect(details.Reason).To(Equal("TaskRunFailed"))
+        Expect(details.Message).To(ContainSubstring("exit code 1"))
+        Expect(details.WasExecutionFailure).To(BeTrue())
+    })
+
+    It("should generate natural language summary", func() {
+        pr := createFailedPipelineRunWithReason("PermissionDenied", "ServiceAccount lacks RBAC")
+
+        details := controller.ExtractFailureDetails(pr)
+
+        Expect(details.NaturalLanguageSummary).To(ContainSubstring("permission"))
     })
 })
 ```
 
 ---
 
-### Integration Tests
+## Integration Tests
 
-**Test Directory**: [test/integration/workflowexecution/](../../../test/integration/workflowexecution/)
-**Coverage Target**: 50%
+**Test Directory**: `test/integration/workflowexecution/`
+**Coverage Target**: ~20%
 **Confidence**: 80-85%
 **Execution**: `make test-integration-workflowexecution`
 
@@ -299,34 +489,90 @@ var _ = Describe("BR-WE-003: Status Synchronization", func() {
 - Real Tekton PipelineRun creation with EnvTest
 - Status synchronization from PipelineRun to WorkflowExecution
 - Resource locking with concurrent reconciliations
+- CRD lifecycle (create, update, finalize)
+
+```go
+// test/integration/workflowexecution/lifecycle_test.go
+var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
+    Context("PipelineRun creation", func() {
+        It("should create PipelineRun in dedicated namespace", func() {
+            wfe := createWFE("wfe-integration", "default/deployment/app")
+            
+            Eventually(func() bool {
+                return pipelineRunExists("kubernaut-workflows", pipelineRunName(wfe.Spec.TargetResource))
+            }, 10*time.Second).Should(BeTrue())
+        })
+    })
+
+    Context("Status synchronization", func() {
+        It("should update WFE status when PipelineRun completes", func() {
+            wfe := createWFE("wfe-sync", "default/deployment/app")
+            Eventually(getWFEPhase(wfe.Name)).Should(Equal("Running"))
+
+            // Complete the PipelineRun
+            completePipelineRun(pipelineRunName(wfe.Spec.TargetResource))
+
+            Eventually(getWFEPhase(wfe.Name)).Should(Equal("Completed"))
+        })
+    })
+})
+```
 
 ---
 
-### E2E Tests
+## E2E Tests + Business Requirement Tests
 
-**Test Directory**: [test/e2e/workflowexecution/](../../../test/e2e/workflowexecution/)
-**Coverage Target**: 15%
+**Test Directory**: `test/e2e/workflowexecution/`
+**Coverage Target**: ~10%
 **Confidence**: 90-95%
 **Execution**: `make test-e2e-workflowexecution`
 
-**Test Scenarios**:
-1. Complete workflow execution with Tekton (Kind + Tekton Pipelines)
-2. Resource locking prevents parallel execution
-3. Cooldown prevents redundant sequential execution
-4. Failure details extraction from failed PipelineRun
+**Note**: E2E tests in this service include **Business Requirement Tests** (BR-WE-*) because they validate end-to-end business outcomes.
+
+**Test Scenarios** (BR-labeled = Business Requirement):
+| Scenario | BR ID | Test Type |
+|----------|-------|-----------|
+| Complete remediation within SLA | BR-WE-001 | Business Requirement |
+| Prevent parallel executions | BR-WE-009 | Business Requirement |
+| Prevent redundant sequential executions | BR-WE-010 | Business Requirement |
+| Failure details enable recovery | BR-WE-004 | Business Requirement |
+| Full workflow with Tekton | - | Technical E2E |
 
 ---
 
-### Test Level Selection
+## Test Level Selection Matrix
 
-| Scenario | Test Level | Rationale |
-|----------|-----------|-----------|
-| PipelineRun building logic | Unit | Pure logic, no K8s API needed |
-| Parameter conversion | Unit | Deterministic mapping |
-| Resource lock checking | Unit | In-memory lock checks |
-| PipelineRun creation | Integration | Requires real K8s API |
-| Status sync from Tekton | Integration | Requires Tekton CRDs |
-| Full workflow with Tekton | E2E | Requires running Tekton |
+| What to Test | Test Type | Naming Convention | Why |
+|--------------|-----------|-------------------|-----|
+| Business outcomes (SLAs, efficiency) | BR Test (E2E) | `BR-WE-XXX: description` | Validates business value |
+| PipelineRun building logic | Unit | `buildPipelineRun` | Pure logic, no K8s API |
+| Parameter conversion | Unit | `convertParameters` | Deterministic mapping |
+| Resource lock checking | Unit | `checkResourceLock` | In-memory checks |
+| CRD creation in K8s API | Integration | `WorkflowExecution CRD Lifecycle` | Requires real K8s API |
+| Status sync from Tekton | Integration | `Status synchronization` | Requires Tekton CRDs |
+| Full workflow execution | E2E/BR | `BR-WE-001: Workflow Remediation` | Requires running Tekton |
+
+---
+
+## Summary: BR vs Unit Test Assignment
+
+| BR ID | Description | Test Type | Rationale |
+|-------|-------------|-----------|-----------|
+| BR-WE-001 | PipelineRun creation | **Unit** + **BR E2E** | Unit tests implementation, BR tests business outcome |
+| BR-WE-002 | Parameter passing | **Unit** | Implementation detail |
+| BR-WE-003 | Status monitoring | **Unit** + **Integration** | Implementation + API interaction |
+| BR-WE-004 | Failure details | **Unit** + **BR E2E** | Unit tests extraction, BR tests actionability |
+| BR-WE-005 | K8s events | **Unit** | Implementation detail |
+| BR-WE-006 | Phase updates | **Unit** | Implementation detail |
+| BR-WE-007 | Audit trail | **Integration** | Requires real Data Storage |
+| BR-WE-008 | Finalizer cleanup | **Unit** + **Integration** | Logic + K8s API |
+| BR-WE-009 | Parallel prevention | **Unit** + **BR E2E** | Unit tests logic, BR tests cost savings |
+| BR-WE-010 | Cooldown | **Unit** + **BR E2E** | Unit tests logic, BR tests efficiency |
+| BR-WE-011 | Target resource | **Unit** | Validation logic |
+
+**Key Insight**: Each BR may have BOTH:
+- **Unit tests**: Test the implementation mechanics (no BR prefix)
+- **BR tests**: Test the business outcome (BR-WE-XXX prefix, in E2E suite)
 
 ---
 
