@@ -1,22 +1,120 @@
 # Data Storage Service - Documentation Hub
 
-**Version**: 2.0 (ADR-033 Multi-Dimensional Success Tracking)
-**Last Updated**: November 5, 2025
+**Version**: 2.1 (ADR-039 Documentation Standardization)
+**Last Updated**: December 4, 2025
 **Service Type**: Stateless HTTP API (Write & Query + Analytics)
-**Status**: ✅ **PRODUCTION READY** (Days 1-15 Complete)
+**Status**: ✅ **PRODUCTION READY** (727 tests: 551U + 163I + 13E2E)
+**HTTP Port**: 8080 (REST API + Health)
+**Metrics Port**: 9090 (`/metrics`)
 
 ---
 
-## 📋 Quick Navigation
+## 🗂️ Documentation Index
 
-### Core Documentation
-1. **[overview.md](./overview.md)** - Service architecture, responsibilities, and design decisions
-2. **[api-specification.md](./api-specification.md)** - REST API endpoints with schemas
-3. **[GETTING_STARTED.md](#getting-started)** - Quick start guide (this page)
+| Document | Purpose | Lines | Status |
+|----------|---------|-------|--------|
+| **[Overview](./overview.md)** | Service purpose, architecture, design decisions | ~594 | ✅ Complete |
+| **[API Specification](./api-specification.md)** | REST API endpoints, schemas, examples | ~1,249 | ✅ Complete |
+| **[Testing Strategy](./testing-strategy.md)** | Unit/Integration/E2E tests, defense-in-depth | ~1,365 | ✅ Complete |
+| **[Security Configuration](./security-configuration.md)** | RBAC, validation, container security | ~629 | ✅ Complete |
+| **[Observability & Logging](./observability-logging.md)** | Structured logging, correlation IDs | ~436 | ✅ Complete |
+| **[Metrics & SLOs](./metrics-slos.md)** | SLIs, SLOs, Prometheus metrics, alerts | ~400 | ✅ Complete |
+| **[Integration Points](./integration-points.md)** | Service coordination, PostgreSQL, Vector DB | ~1,143 | ✅ Complete |
+| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, validation steps | ~378 | ✅ Complete |
+| **[Business Requirements](./BUSINESS_REQUIREMENTS.md)** | 31 BRs with acceptance criteria | ~701 | ✅ Complete |
+| **[BR Mapping](./BR_MAPPING.md)** | BR-to-test traceability matrix | ~288 | ✅ Complete |
+| **[Performance Requirements](./performance-requirements.md)** | Latency targets, throughput, scaling | ~440 | ✅ Complete |
+| **[Embedding Requirements](./embedding-requirements.md)** | Vector embeddings, semantic search | ~417 | ✅ Complete |
 
-### Implementation Documentation
-4. **[implementation/](./implementation/)** - Complete implementation history and design decisions
-5. **[observability/](./observability/)** - Monitoring, alerting, and operational guides
+**Total**: ~8,040 lines across 12 core specification documents
+**Status**: ✅ **100% Complete** - Production-ready HTTP API with comprehensive documentation
+
+**Additional Documentation**:
+- **[Observability Runbooks](./observability/)** - ALERTING_RUNBOOK.md, PROMETHEUS_QUERIES.md
+- **[OpenAPI Specifications](./openapi/)** - v1.yaml, v2.yaml, v3.yaml
+- **[Event Data Schemas](./schemas/)** - PostgreSQL audit schemas
+- **[Implementation Guides](./implementation/)** - Phase-by-phase implementation plans
+
+---
+
+## 📁 File Organization
+
+```
+data-storage/
+├── 📄 README.md (you are here)              - Service index & navigation
+├── 📘 overview.md                           - High-level architecture ✅ (594 lines)
+├── 🔧 api-specification.md                  - REST API definitions ✅ (1,249 lines)
+├── 🧪 testing-strategy.md                   - Test patterns ✅ (1,365 lines)
+├── 🔒 security-configuration.md             - Security & validation ✅ (629 lines)
+├── 📊 observability-logging.md              - Logging & debugging ✅ (436 lines)
+├── 📈 metrics-slos.md                       - SLIs/SLOs & alerts ✅ (400 lines)
+├── 🔗 integration-points.md                 - Service coordination ✅ (1,143 lines)
+├── ✅ implementation-checklist.md           - APDC-TDD phases ✅ (378 lines)
+├── 📋 BUSINESS_REQUIREMENTS.md              - 31 BRs with test mapping ✅ (701 lines)
+├── 📋 BR_MAPPING.md                         - BR-to-test traceability ✅ (288 lines)
+├── ⚡ performance-requirements.md           - Latency & throughput ✅ (440 lines)
+├── 🔍 embedding-requirements.md             - Vector embeddings ✅ (417 lines)
+├── 📚 observability/                        - Production operational guides
+│   ├── ALERTING_RUNBOOK.md                 - Alert troubleshooting (750+ lines)
+│   ├── PROMETHEUS_QUERIES.md               - 50+ query examples (730+ lines)
+│   ├── DEPLOYMENT_CONFIGURATION.md         - Observability setup (680+ lines)
+│   └── grafana-dashboard.json              - Pre-built Grafana dashboard
+├── 🔧 openapi/                              - REST API specifications
+│   ├── v1.yaml                             - OpenAPI 3.0 spec (legacy)
+│   ├── v2.yaml                             - OpenAPI 3.0 spec (current)
+│   └── v3.yaml                             - OpenAPI 3.0 spec (latest)
+├── 📊 schemas/                              - Database schemas
+│   └── event_data/                          - Audit event schemas
+│       └── README.md                        - Schema documentation
+├── 🧪 api/                                  - OpenAPI documentation
+│   └── audit-write-api.openapi.yaml        - Audit write API spec
+└── 📁 implementation/                       - Implementation phase guides
+    ├── 00-GETTING-STARTED.md               - Developer onboarding
+    ├── sessions/                            - Session artifacts
+    ├── testing/                             - Test documentation
+    │   └── BR-COVERAGE-MATRIX.md           - BR-to-test traceability
+    ├── archive/                             - Versioned implementation plans
+    └── design/                              - Design documents (DD-STORAGE-XXX)
+```
+
+**Legend**:
+- ✅ = Complete documentation
+- 📋 = Core specification document
+- 🧪 = Test-related documentation
+- 📚 = Operational documentation
+- 🔧 = API/Schema documentation
+
+---
+
+## 🏗️ Implementation Structure
+
+### **Binary Location**
+- **Directory**: `cmd/datastorage/`
+- **Entry Point**: `cmd/datastorage/main.go`
+- **Build Command**: `go build -o bin/data-storage-service ./cmd/datastorage`
+
+### **Business Logic**
+- **Package**: `pkg/datastorage/`
+  - `repository/` - PostgreSQL repository implementations
+  - `server/` - HTTP server and handlers
+  - `models/` - Request/response types
+  - `validation/` - Request validation
+  - `dlq/` - Dead letter queue (Redis)
+  - `audit/` - Self-auditing (DD-STORAGE-012)
+  - `embedding/` - Vector embedding generation
+- **Shared Types**: `pkg/shared/types/` - Shared types across services
+
+### **Tests**
+- `test/unit/datastorage/` - **551 unit tests** (70%+ coverage)
+- `test/integration/datastorage/` - **163 integration tests** (PostgreSQL + Podman)
+- `test/e2e/datastorage/` - **13 E2E tests** (Kind cluster)
+
+### **Infrastructure**
+- `migrations/` - PostgreSQL schema migrations (Goose)
+- `docker/data-storage-service.Dockerfile` - Container image
+- `deploy/data-storage/` - Kubernetes manifests
+
+**See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
 
 ---
 
@@ -868,9 +966,9 @@ curl http://localhost:9090/metrics | grep datastorage
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 13, 2025
+**Last Updated**: December 4, 2025
 **Status**: ✅ Production Ready
-**Version**: 2.0
+**Version**: 2.1
 
 ---
 
@@ -879,8 +977,26 @@ curl http://localhost:9090/metrics | grep datastorage
 - **Service**: Data Storage Service
 - **Type**: Stateless HTTP API (Write & Query)
 - **Status**: ✅ Production Ready
-- **Test Coverage**: 171+ tests (100% passing)
+- **Test Coverage**: 727 tests (551U + 163I + 13E2E, 100% passing)
 - **Observability**: 11 Prometheus metrics + Grafana dashboard
 - **Performance**: < 0.01% metrics overhead
 - **Dependencies**: PostgreSQL 16+ with pgvector 0.5.1+
-- **Documentation**: Complete with API reference, troubleshooting, and runbooks
+- **Documentation**: 8,040+ lines across 12 core specification documents
+
+---
+
+## 📜 Version History
+
+### **Version 2.1** (2025-12-04) - **CURRENT**
+- ✅ **Documentation Standardization**: README restructured to match ADR-039 template
+- ✅ **Documentation Index**: Added comprehensive doc catalog with line counts (12 documents)
+- ✅ **File Organization**: Visual tree showing OpenAPI, schemas, implementation docs
+- ✅ **Implementation Structure**: Added binary/pkg/test location guide (727 tests)
+- ✅ **Enhanced Navigation**: Consistent structure with all V1.0 services
+- ✅ **New Documents**: Added `observability-logging.md` and `metrics-slos.md`
+- ✅ **File Cleanup**: Moved 38 implementation artifacts to `implementation/` subdirectory
+
+### **Version 2.0** (2025-11-05)
+- ✅ **ADR-033 Compliance**: Multi-dimensional success tracking
+- ✅ **Self-Auditing**: DD-STORAGE-012 internal audit monitoring
+- ✅ **Production Ready**: Complete observability and alerting
