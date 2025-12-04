@@ -12,7 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // BR-SP-102: CustomLabels Rego Extraction
