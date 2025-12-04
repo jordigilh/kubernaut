@@ -95,8 +95,9 @@ func (b *BusinessClassifier) Classify(ctx context.Context, namespaceLabels map[s
 	}
 
 	// Extract service owner from annotations
+	// Label domain: kubernaut.ai/ (per NOTICE_LABEL_DOMAIN_AND_NOTIFICATION_ROUTING.md)
 	if annotations != nil {
-		if owner := annotations["kubernaut.io/owner"]; owner != "" {
+		if owner := annotations["kubernaut.ai/owner"]; owner != "" {
 			result.ServiceOwner = owner
 			confidenceBoost += 0.1
 		} else if owner := annotations["owner"]; owner != "" {
@@ -105,7 +106,7 @@ func (b *BusinessClassifier) Classify(ctx context.Context, namespaceLabels map[s
 		}
 
 		// Extract SLA from annotations
-		if sla := annotations["kubernaut.io/sla"]; sla != "" {
+		if sla := annotations["kubernaut.ai/sla"]; sla != "" {
 			result.SLARequirement = sla
 			confidenceBoost += 0.1
 		} else if sla := annotations["sla"]; sla != "" {
@@ -118,7 +119,7 @@ func (b *BusinessClassifier) Classify(ctx context.Context, namespaceLabels map[s
 	if result.SLARequirement == "bronze" {
 		hasSLAAnnotation := false
 		if annotations != nil {
-			hasSLAAnnotation = annotations["sla"] != "" || annotations["kubernaut.io/sla"] != ""
+			hasSLAAnnotation = annotations["sla"] != "" || annotations["kubernaut.ai/sla"] != ""
 		}
 		if !hasSLAAnnotation {
 			switch result.Criticality {
@@ -145,4 +146,3 @@ func (b *BusinessClassifier) Classify(ctx context.Context, namespaceLabels map[s
 
 	return result
 }
-
