@@ -147,7 +147,7 @@ func (e *EnrichmentConfig) Validate() error {
 		return fmt.Errorf("timeout must be at least 1s, got %v", e.Timeout)
 	}
 	if e.CacheTTL < 0 {
-		return fmt.Errorf("cache_ttl must be >= 0, got %v", e.CacheTTL)
+		return fmt.Errorf("cache_ttl cannot be negative, got %v", e.CacheTTL)
 	}
 	return nil
 }
@@ -155,12 +155,12 @@ func (e *EnrichmentConfig) Validate() error {
 // Validate validates classifier configuration.
 func (cl *ClassifierConfig) Validate() error {
 	if cl.RegoConfigMapName == "" {
-		return fmt.Errorf("rego_configmap_name is required")
+		return fmt.Errorf("rego_configmap_name must be specified")
 	}
 	if cl.RegoConfigMapKey == "" {
-		return fmt.Errorf("rego_configmap_key is required")
+		return fmt.Errorf("rego_configmap_key must be specified")
 	}
-	if cl.HotReloadInterval > 0 && cl.HotReloadInterval < 10*time.Second {
+	if cl.HotReloadInterval < 10*time.Second {
 		return fmt.Errorf("hot_reload_interval must be at least 10s, got %v", cl.HotReloadInterval)
 	}
 	return nil
@@ -169,25 +169,21 @@ func (cl *ClassifierConfig) Validate() error {
 // Validate validates audit configuration.
 func (a *AuditConfig) Validate() error {
 	if a.DataStorageURL == "" {
-		return fmt.Errorf("data_storage_url is required")
+		return fmt.Errorf("data_storage_url must be specified")
 	}
-	if _, err := url.Parse(a.DataStorageURL); err != nil {
-		return fmt.Errorf("data_storage_url is invalid: %w", err)
+	// Validate URL format - url.Parse is lenient, so also check for scheme
+	parsedURL, err := url.Parse(a.DataStorageURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return fmt.Errorf("data_storage_url is not a valid URL: %s", a.DataStorageURL)
 	}
 	if a.Timeout < time.Second {
 		return fmt.Errorf("timeout must be at least 1s, got %v", a.Timeout)
 	}
-	if a.BufferSize < 100 {
-		return fmt.Errorf("buffer_size must be at least 100, got %d", a.BufferSize)
+	if a.BufferSize < 100 || a.BufferSize > 10000 {
+		return fmt.Errorf("buffer_size must be between 100 and 10000, got %d", a.BufferSize)
 	}
-	if a.BufferSize > 10000 {
-		return fmt.Errorf("buffer_size must be at most 10000, got %d", a.BufferSize)
-	}
-	if a.FlushInterval < time.Second {
-		return fmt.Errorf("flush_interval must be at least 1s, got %v", a.FlushInterval)
-	}
-	if a.FlushInterval > 30*time.Second {
-		return fmt.Errorf("flush_interval must be at most 30s, got %v", a.FlushInterval)
+	if a.FlushInterval < time.Second || a.FlushInterval > 30*time.Second {
+		return fmt.Errorf("flush_interval must be between 1s and 30s, got %v", a.FlushInterval)
 	}
 	return nil
 }

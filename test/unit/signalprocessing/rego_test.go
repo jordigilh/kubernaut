@@ -118,7 +118,10 @@ custom_labels := {"simple": ["value"]} if { true }
 			input := map[string]interface{}{}
 			result, err := engine.EvaluateWithTimeout(ctx, input, rego.DefaultTimeout)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
+
+			// Business-meaningful assertion: verify actual result content
+			Expect(result).To(HaveKey("simple"))
+			Expect(result["simple"]).To(ContainElement("value"))
 		})
 
 		// Test 5: Should strip system labels from output (security wrapper)
@@ -132,9 +135,9 @@ default custom_labels := {}
 
 # Attempt to override system labels (should be stripped)
 custom_labels := {
-    "environment": ["production"],    
-    "priority": ["P0"],               
-    "custom": ["allowed"]             
+    "environment": ["production"],
+    "priority": ["P0"],
+    "custom": ["allowed"]
 } if { true }
 `
 			var err error
@@ -154,4 +157,3 @@ custom_labels := {
 		})
 	})
 })
-

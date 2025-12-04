@@ -34,7 +34,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 )
 
-var _ = Describe("K8s Enricher", func() {
+// BR-SP-051/052: K8s Context Enrichment - validates namespace, pod, node context fetching
+var _ = Describe("BR-SP-051/052: K8s Enricher", func() {
 	var (
 		ctx      context.Context
 		scheme   *runtime.Scheme
@@ -100,7 +101,8 @@ var _ = Describe("K8s Enricher", func() {
 		}
 	})
 
-	// Test 1: BR-SP-001 - Pod signal enrichment
+	// Test 1: BR-SP-051 - Pod signal enrichment
+	// BR-SP-051: Enricher must fetch namespace, pod, and node context for pod signals
 	It("should enrich Pod signal with namespace, pod, and node context", func() {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -128,6 +130,7 @@ var _ = Describe("K8s Enricher", func() {
 	})
 
 	// Test 2: Graceful degradation - missing pod
+	// BR-SP-053: Enricher must gracefully degrade when pod not found (partial context)
 	It("should return partial context when pod is not found", func() {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -150,6 +153,7 @@ var _ = Describe("K8s Enricher", func() {
 	})
 
 	// Test 3: Error when namespace not found
+	// BR-SP-051: Enricher must return error when required namespace not found
 	It("should return error when namespace is not found", func() {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -164,11 +168,9 @@ var _ = Describe("K8s Enricher", func() {
 		Expect(result).To(BeNil())
 	})
 
-	// Test 4: Deployment signal enrichment
-	It("should enrich Deployment signal with namespace and deployment context", func() {
-		deployment := &corev1.Pod{} // We'll use a more realistic approach later
-		_ = deployment
-
+	// Test 4: Namespace-only signal enrichment (for cluster-level or namespace-level signals)
+	// BR-SP-052: Enricher should support namespace-only context when pod info unavailable
+	It("should enrich namespace-only signal with namespace context", func() {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(testNs).
@@ -180,7 +182,11 @@ var _ = Describe("K8s Enricher", func() {
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).NotTo(BeNil())
+		// Verify namespace labels are populated
 		Expect(result.NamespaceLabels).To(HaveKeyWithValue("env", "production"))
+		// Verify pod/node are NOT populated (namespace-only enrichment)
+		Expect(result.Pod).To(BeNil())
+		Expect(result.Node).To(BeNil())
 	})
 })
 

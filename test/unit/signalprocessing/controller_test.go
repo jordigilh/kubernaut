@@ -31,7 +31,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 )
 
-var _ = Describe("SignalProcessing Controller", func() {
+// BR-SP-051: Core Controller - validates basic reconciliation lifecycle
+var _ = Describe("BR-SP-051: SignalProcessing Controller", func() {
 	var (
 		ctx        context.Context
 		reconciler *signalprocessing.SignalProcessingReconciler
@@ -46,6 +47,7 @@ var _ = Describe("SignalProcessing Controller", func() {
 
 	// Test 1: Reconciler should handle non-existent resource gracefully
 	// ADR-004: Fake K8s Client for unit tests
+	// BR-SP-051: Controller must handle missing resources without error
 	It("should handle non-existent resource gracefully", func() {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -68,6 +70,7 @@ var _ = Describe("SignalProcessing Controller", func() {
 	})
 
 	// Test 2: Reconciler should initialize status for new resource
+	// BR-SP-051: Controller must initialize status phase to "enriching"
 	It("should initialize status for new resource", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
@@ -125,6 +128,7 @@ var _ = Describe("SignalProcessing Controller", func() {
 	})
 
 	// Test 3: Reconciler should skip completed resources
+	// BR-SP-051: Controller must be idempotent - skip already completed resources
 	It("should skip completed resources", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
@@ -173,4 +177,3 @@ var _ = Describe("SignalProcessing Controller", func() {
 		Expect(result.Requeue).To(BeFalse())
 	})
 })
-
