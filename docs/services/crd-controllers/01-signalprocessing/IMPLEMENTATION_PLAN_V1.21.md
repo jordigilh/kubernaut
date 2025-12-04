@@ -1,13 +1,19 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.20.md`
-**Version**: v1.20
-**Last Updated**: 2025-12-03
+**Filename**: `IMPLEMENTATION_PLAN_V1.21.md`
+**Version**: v1.21
+**Last Updated**: 2025-12-04
 **Timeline**: 14-17 days (quality-focused, includes label detection)
 **Status**: ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Production-Ready Standard (100% Confidence - All Dependencies Validated)
 
 **Change Log**:
+- **v1.21** (2025-12-04): Template v3.0 Full Compliance + Implementation Start
+  - ✅ **Template Reference Updated**: v2.8 → v3.0 in "Based on" section
+  - ✅ **HANDOFF/RESPONSE Pattern**: Added documentation section (Template v3.0)
+  - ✅ **Pre-Implementation ADR/DD Validation**: Added checklist section (Template v3.0)
+  - ✅ **testing-strategy.md Aligned**: TC-DL-008 removed (podSecurityLevel), BR range updated
+  - 📏 **Implementation**: Day 1 ready to start
 - **v1.20** (2025-12-03): DD-WORKFLOW-001 v2.2 - PodSecurityLevel Removed + All 8 Detections in V1.0
   - ✅ **PodSecurityLevel REMOVED**: PSP deprecated K8s 1.21, removed 1.25; PSS is namespace-level (inconsistent)
   - ✅ **DetectedLabels Scope**: All 8 detections in V1.0 (NetworkIsolated, ServiceMesh no longer deferred)
@@ -185,7 +191,7 @@
 ## 🎯 **Quick Reference**
 
 **Use this plan for**: Signal Processing CRD Controller implementation
-**Based on**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.8 + DD-006 Controller Scaffolding
+**Based on**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0 + DD-006 Controller Scaffolding
 **Methodology**: APDC-TDD with Defense-in-Depth Testing (Unit → Integration → E2E)
 **Parallel Execution**: **4 concurrent processes** for all test tiers (standard)
 **Test Environment**: ENVTEST (confirmed)
@@ -650,6 +656,49 @@ The following contract gaps (identified by RO team) were fixed in `api/signalpro
 - [x] Integration points documented with examples
 
 **Confidence**: 100% (all contracts verified)
+
+### **HANDOFF/RESPONSE Pattern** (Template v3.0)
+
+**File Naming Convention**:
+- `HANDOFF_REQUEST_[TOPIC].md` - Request sent to another team
+- `RESPONSE_[TOPIC].md` - Response received from that team
+- Handoff documents are in `docs/handoff/` directory
+
+**SignalProcessing Handoff Files**:
+```
+docs/handoff/
+├── AIANALYSIS_TO_SIGNALPROCESSING_TEAM.md    ← From AIAnalysis team
+├── NOTICE_AIANALYSIS_PATH_CORRECTION.md       ← Path correction notice
+├── QUESTIONS_FOR_SIGNALPROCESSING_TEAM.md     ← HolmesGPT-API questions
+└── V1.0-TIMELINE-QUESTIONS.md                 ← Timeline coordination
+```
+
+### 📋 **Pre-Implementation ADR/DD Validation** (Template v3.0)
+
+**Validation Status**: ✅ **VALIDATED** - All referenced documents exist
+
+**CRD Controller Standards**:
+- [x] DD-006: Controller Scaffolding Strategy
+- [x] DD-013: K8s Client Initialization Standard
+- [x] DD-CRD-001: API Group Domain Selection (`.kubernaut.ai`)
+- [x] ADR-004: Fake K8s Client (for unit tests)
+
+**Universal Standards**:
+- [x] DD-004: RFC 7807 Error Responses
+- [x] DD-005: Observability Standards (v2.0)
+- [x] DD-007: Kubernetes-Aware Graceful Shutdown
+- [x] DD-014: Binary Version Logging Standard
+- [x] ADR-015: Alert to Signal Naming Migration
+
+**Testing Standards**:
+- [x] DD-TEST-001: Port Allocation Strategy
+- [x] DD-WORKFLOW-001: Mandatory Label Schema (v2.2)
+
+**Audit Standards** (P1 per DD-AUDIT-003):
+- [x] DD-AUDIT-003: Service Audit Trace Requirements
+- [x] ADR-032: Data Access Layer Isolation
+- [x] ADR-034: Unified Audit Table Design
+- [x] ADR-038: Async Buffered Audit Ingestion
 
 ---
 
