@@ -339,7 +339,7 @@ func CleanupWFE(
 		Namespace: namespace,
 	}, wfe); err == nil {
 		c.Delete(ctx, wfe)
-		
+
 		// Wait for deletion
 		Eventually(func() bool {
 			err := c.Get(ctx, types.NamespacedName{
@@ -420,7 +420,7 @@ var _ = Describe("E2E Test: Complete Workflow Execution", func() {
 			})
 
 			By("Verifying transition to Running")
-			wfe = WaitForWFEPhase(ctx, k8sClient, namespace, wfeName, 
+			wfe = WaitForWFEPhase(ctx, k8sClient, namespace, wfeName,
 				workflowexecutionv1.PhaseRunning, 30*time.Second)
 
 			By("Verifying PipelineRun created in dedicated namespace")
@@ -659,7 +659,7 @@ func InstallTekton(ctx context.Context, kubeconfigPath string, w io.Writer) erro
 	}
 
 	// Wait for Tekton to be ready
-	return waitForDeployment(ctx, kubeconfigPath, "tekton-pipelines", 
+	return waitForDeployment(ctx, kubeconfigPath, "tekton-pipelines",
 		"tekton-pipelines-controller", 120*time.Second, w)
 }
 
@@ -731,9 +731,9 @@ roleRef:
 	return cmd.Run()
 }
 
-func waitForDeployment(ctx context.Context, kubeconfigPath, namespace, name string, 
+func waitForDeployment(ctx context.Context, kubeconfigPath, namespace, name string,
 	timeout time.Duration, w io.Writer) error {
-	
+
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
