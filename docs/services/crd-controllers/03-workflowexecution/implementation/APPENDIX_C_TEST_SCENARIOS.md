@@ -62,7 +62,7 @@ var _ = Describe("pipelineRunName", func() {
         Entry("with special chars", "ns/deploy/app-v2.1", "wfe-"),
         Entry("very long input", strings.Repeat("a", 500), "wfe-"),
     )
-    
+
     It("should be deterministic", func() {
         name1 := pipelineRunName("production/deployment/app")
         name2 := pipelineRunName("production/deployment/app")
@@ -98,48 +98,48 @@ var _ = Describe("pipelineRunName", func() {
 ```go
 var _ = Describe("buildPipelineRun", func() {
     var reconciler *WorkflowExecutionReconciler
-    
+
     BeforeEach(func() {
         reconciler = &WorkflowExecutionReconciler{
             ExecutionNamespace: "kubernaut-workflows",
             ServiceAccountName: "kubernaut-workflow-runner",
         }
     })
-    
+
     Context("bundle resolver configuration", func() {
         It("should use bundles resolver", func() {
             wfe := newTestWFE("test", "production/deployment/app")
             wfe.Spec.WorkflowRef.ContainerImage = "ghcr.io/kubernaut/workflows/disk-cleanup@sha256:abc"
-            
+
             pr := reconciler.buildPipelineRun(wfe)
-            
+
             Expect(pr.Spec.PipelineRef.ResolverRef.Resolver).To(Equal("bundles"))
             Expect(pr.Spec.PipelineRef.ResolverRef.Params).To(ContainElement(
                 HaveField("Name", "bundle"),
             ))
         })
     })
-    
+
     DescribeTable("should handle parameters correctly",
         func(params map[string]string, expectedCount int) {
             wfe := newTestWFE("test", "production/deployment/app")
             wfe.Spec.Parameters = params
-            
+
             pr := reconciler.buildPipelineRun(wfe)
-            
+
             Expect(len(pr.Spec.Params)).To(Equal(expectedCount))
         },
         Entry("no parameters", map[string]string{}, 0),
         Entry("single parameter", map[string]string{"KEY": "value"}, 1),
         Entry("multiple parameters", map[string]string{"A": "1", "B": "2", "C": "3"}, 3),
     )
-    
+
     It("should create in execution namespace", func() {
         wfe := newTestWFE("test", "production/deployment/app")
         wfe.Namespace = "source-namespace"
-        
+
         pr := reconciler.buildPipelineRun(wfe)
-        
+
         Expect(pr.Namespace).To(Equal("kubernaut-workflows"))
         Expect(pr.Namespace).ToNot(Equal(wfe.Namespace))
     })
@@ -177,23 +177,23 @@ var _ = Describe("checkResourceLock", func() {
         reconciler *WorkflowExecutionReconciler
         ctx        context.Context
     )
-    
+
     BeforeEach(func() {
         ctx = context.Background()
         scheme := testutil.NewTestScheme()
         fakeClient = fake.NewClientBuilder().
             WithScheme(scheme).
-            WithIndex(&workflowexecutionv1.WorkflowExecution{}, 
-                "spec.targetResource", 
+            WithIndex(&workflowexecutionv1.WorkflowExecution{},
+                "spec.targetResource",
                 targetResourceIndexer).
             Build()
-        
+
         reconciler = &WorkflowExecutionReconciler{
             Client:         fakeClient,
             CooldownPeriod: 5 * time.Minute,
         }
     })
-    
+
     Context("parallel execution prevention", func() {
         It("should block when Running WFE exists for target", func() {
             // Create running WFE
@@ -201,20 +201,20 @@ var _ = Describe("checkResourceLock", func() {
             wfe.Status.Phase = workflowexecutionv1.PhaseRunning
             Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
             Expect(fakeClient.Status().Update(ctx, wfe)).To(Succeed())
-            
+
             blocked, reason := reconciler.checkResourceLock(ctx, "production/deployment/app")
-            
+
             Expect(blocked).To(BeTrue())
             Expect(reason).To(Equal("ResourceBusy"))
         })
-        
+
         It("should not block when no Running WFE exists", func() {
             blocked, _ := reconciler.checkResourceLock(ctx, "unique/deployment/app")
-            
+
             Expect(blocked).To(BeFalse())
         })
     })
-    
+
     Context("cooldown enforcement", func() {
         DescribeTable("should enforce cooldown period",
             func(completedAgo time.Duration, expectBlocked bool) {
@@ -225,9 +225,9 @@ var _ = Describe("checkResourceLock", func() {
                 }
                 Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
                 Expect(fakeClient.Status().Update(ctx, wfe)).To(Succeed())
-                
+
                 blocked, _ := reconciler.checkResourceLock(ctx, "production/deployment/app")
-                
+
                 Expect(blocked).To(Equal(expectBlocked))
             },
             Entry("1 minute ago (within cooldown)", 1*time.Minute, true),

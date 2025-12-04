@@ -37,8 +37,8 @@ groups:
       - alert: WorkflowExecutionHighErrorRate
         expr: |
           (
-            sum(rate(workflowexecution_errors_total[5m])) 
-            / 
+            sum(rate(workflowexecution_errors_total[5m]))
+            /
             sum(rate(workflowexecution_phase_transitions_total[5m]))
           ) > 0.1
         for: 5m
@@ -303,8 +303,8 @@ kubectl rollout status -n tekton-pipelines deploy/tekton-pipelines-controller
 - alert: WorkflowExecutionHighSkipRate
   expr: |
     (
-      sum(rate(workflowexecution_skip_total[5m])) 
-      / 
+      sum(rate(workflowexecution_skip_total[5m]))
+      /
       sum(rate(workflowexecution_phase_transitions_total{phase="Pending"}[5m]))
     ) > 0.5
   for: 10m

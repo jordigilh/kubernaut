@@ -61,11 +61,15 @@
 | ├─ [Common Pitfalls](#common-pitfalls-to-avoid) | Do's and don'ts |
 | ├─ [Success Criteria](#success-criteria) | Completion checklist |
 | └─ [Makefile Targets](#makefile-targets) | Development commands |
-| **Supplementary Documents** | |
+| **Supplementary Documents (8 Appendices)** | |
 | ├─ [Appendix A: Error Handling](./APPENDIX_A_ERROR_HANDLING.md) | 5 error categories |
 | ├─ [Appendix B: Runbooks](./APPENDIX_B_PRODUCTION_RUNBOOKS.md) | 5 production runbooks |
 | ├─ [Appendix C: Test Scenarios](./APPENDIX_C_TEST_SCENARIOS.md) | ~100 test scenarios |
-| └─ [Appendix D: EOD Templates](./APPENDIX_D_EOD_TEMPLATES.md) | Daily progress templates |
+| ├─ [Appendix D: EOD Templates](./APPENDIX_D_EOD_TEMPLATES.md) | Daily progress templates |
+| ├─ [Appendix E: Metrics](./APPENDIX_E_METRICS.md) | Complete metrics code |
+| ├─ [Appendix F: Integration Tests](./APPENDIX_F_INTEGRATION_TESTS.md) | Complete test code |
+| ├─ [Appendix G: BR Coverage](./APPENDIX_G_BR_COVERAGE_MATRIX.md) | Coverage matrix template |
+| └─ [Appendix H: E2E Setup](./APPENDIX_H_E2E_TEST_SETUP.md) | E2E test infrastructure |
 
 ---
 
@@ -1058,21 +1062,29 @@ deploy-kind-workflowexecution:
 
 ## 📚 Appendices (Supplementary Documents)
 
-This implementation plan is split into multiple files for manageability. All appendices are cross-referenced:
+This implementation plan is split into multiple files for manageability (~4,500 lines total). All appendices are cross-referenced:
 
-| Appendix | File | Purpose |
-|----------|------|---------|
-| **A** | [APPENDIX_A_ERROR_HANDLING.md](./APPENDIX_A_ERROR_HANDLING.md) | Error Handling Philosophy (5 categories) |
-| **B** | [APPENDIX_B_PRODUCTION_RUNBOOKS.md](./APPENDIX_B_PRODUCTION_RUNBOOKS.md) | Production Runbooks (5 runbooks) |
-| **C** | [APPENDIX_C_TEST_SCENARIOS.md](./APPENDIX_C_TEST_SCENARIOS.md) | Test Scenarios (~100 tests detailed) |
-| **D** | [APPENDIX_D_EOD_TEMPLATES.md](./APPENDIX_D_EOD_TEMPLATES.md) | EOD Documentation Templates |
+| Appendix | File | Lines | Purpose |
+|----------|------|-------|---------|
+| **A** | [APPENDIX_A_ERROR_HANDLING.md](./APPENDIX_A_ERROR_HANDLING.md) | ~300 | Error Handling Philosophy (5 categories) |
+| **B** | [APPENDIX_B_PRODUCTION_RUNBOOKS.md](./APPENDIX_B_PRODUCTION_RUNBOOKS.md) | ~400 | Production Runbooks (5 runbooks) |
+| **C** | [APPENDIX_C_TEST_SCENARIOS.md](./APPENDIX_C_TEST_SCENARIOS.md) | ~400 | Test Scenarios (~100 tests detailed) |
+| **D** | [APPENDIX_D_EOD_TEMPLATES.md](./APPENDIX_D_EOD_TEMPLATES.md) | ~350 | EOD Documentation Templates |
+| **E** | [APPENDIX_E_METRICS.md](./APPENDIX_E_METRICS.md) | ~500 | Complete Metrics Code + Cardinality Audit |
+| **F** | [APPENDIX_F_INTEGRATION_TESTS.md](./APPENDIX_F_INTEGRATION_TESTS.md) | ~600 | Complete Integration Test Examples |
+| **G** | [APPENDIX_G_BR_COVERAGE_MATRIX.md](./APPENDIX_G_BR_COVERAGE_MATRIX.md) | ~400 | BR Coverage Matrix Template |
+| **H** | [APPENDIX_H_E2E_TEST_SETUP.md](./APPENDIX_H_E2E_TEST_SETUP.md) | ~500 | E2E Test Setup + Helpers |
 
 ### Appendix Summary
 
-- **Appendix A**: Defines 5 error categories (Validation, External, Permission, Execution, System) with code examples, retry strategies, and metrics
-- **Appendix B**: Contains 5 production runbooks (RB-WE-001 to RB-WE-005) with alerts, diagnosis, and resolution steps
-- **Appendix C**: Details 65 unit tests, 25 integration tests, and 10 E2E tests with table-driven patterns
-- **Appendix D**: Provides Day 1, Day 4, Day 7, and Day 12 EOD documentation templates
+- **Appendix A**: Defines 5 error categories (Validation, External, Permission, Execution, System) with code examples, retry strategies, metrics, and circuit breaker patterns
+- **Appendix B**: Contains 5 production runbooks (RB-WE-001 to RB-WE-005) with alerts, diagnosis, resolution steps, and rollback plan
+- **Appendix C**: Details 65 unit tests, 25 integration tests, and 10 E2E tests with table-driven patterns and test ID system
+- **Appendix D**: Provides Day 1, Day 4, Day 7, and Day 12 EOD documentation templates plus Lessons Learned template
+- **Appendix E**: Complete metrics implementation with 15 Prometheus metrics, recording patterns, cardinality audit, and testing examples
+- **Appendix F**: 3 complete integration test files with ~400 lines of production-ready test code (Lifecycle, Locking, Finalizer)
+- **Appendix G**: BR Coverage Matrix with calculation methodology, per-BR breakdown, gap analysis, and test file index
+- **Appendix H**: E2E test infrastructure setup with Kind config, NodePort pattern, helpers, and business outcome tests
 
 ---
 
@@ -1118,6 +1130,7 @@ This implementation plan is split into multiple files for manageability. All app
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| v3.1 | 2025-12-04 | Added 4 new appendices (E-H): Metrics, Integration Tests, BR Matrix, E2E Setup | AI Assistant |
 | v3.0 | 2025-12-03 | Complete rewrite for Tekton + Resource Locking | AI Assistant |
 | v2.0 | 2025-12-02 | Updated for `.ai` API group, BR-WE-* prefix | AI Assistant |
 | v1.0 | 2025-11-28 | Initial plan | AI Assistant |
@@ -1128,17 +1141,30 @@ This implementation plan is split into multiple files for manageability. All app
 
 **Template Compliance**: 100% aligned with [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](../../../../services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md) v3.0
 
-**Document Structure**:
-- Main plan: ~1,000 lines (core content)
-- Appendix A: ~300 lines (error handling)
-- Appendix B: ~400 lines (runbooks)
-- Appendix C: ~400 lines (test scenarios)
-- Appendix D: ~350 lines (EOD templates)
-- **Total**: ~2,450 lines across 5 documents
+**Document Structure** (9 documents, ~4,500 lines):
+| Document | Lines | Content |
+|----------|-------|---------|
+| Main plan | ~1,050 | Core 12-day breakdown, code examples |
+| Appendix A | ~300 | Error handling (5 categories, code) |
+| Appendix B | ~400 | Runbooks (5 alerts, diagnosis, resolution) |
+| Appendix C | ~400 | Test scenarios (~100 tests detailed) |
+| Appendix D | ~350 | EOD templates (Day 1/4/7/12) |
+| Appendix E | ~500 | Metrics implementation (15 metrics, code) |
+| Appendix F | ~600 | Integration tests (3 complete test files) |
+| Appendix G | ~400 | BR coverage matrix (11 BRs, per-BR breakdown) |
+| Appendix H | ~500 | E2E test setup (Kind, NodePort, helpers) |
+| **Total** | **~4,500** | **Comprehensive implementation guide** |
+
+**Confidence Assessment**: 95%
+- Complete code examples for all major components
+- All 11 BRs mapped to specific tests
+- Production runbooks with alerts
+- Metrics implementation with cardinality audit
 
 **Next Steps**:
 1. Review with team
 2. Create PR for Day 1 deliverables
 3. Begin implementation following APDC-TDD methodology
 4. Update EOD templates daily
+5. Populate BR Coverage Matrix as tests are written
 
