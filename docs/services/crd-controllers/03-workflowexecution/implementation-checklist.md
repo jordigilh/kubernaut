@@ -1,13 +1,18 @@
 ## Implementation Checklist
 
-**Version**: 3.0
-**Last Updated**: 2025-12-02
+**Version**: 3.1
+**Last Updated**: 2025-12-03
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Status**: ✅ Updated for Tekton Architecture
+
+> **📋 Full Implementation Plan**: See [IMPLEMENTATION_PLAN_V3.0.md](implementation/IMPLEMENTATION_PLAN_V3.0.md) for detailed 12-day breakdown.
 
 ---
 
 ## Changelog
+
+### Version 3.1 (2025-12-03)
+- ✅ **Added**: Link to IMPLEMENTATION_PLAN_V3.0.md
 
 ### Version 3.0 (2025-12-02)
 - ✅ **Updated**: API group references to `.ai`
