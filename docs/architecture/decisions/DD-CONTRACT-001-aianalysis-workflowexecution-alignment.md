@@ -1,8 +1,8 @@
 # DD-CONTRACT-001: AIAnalysis ↔ WorkflowExecution Contract Alignment
 
 **Status**: ✅ Approved
-**Version**: 1.3
-**Date**: 2025-12-01
+**Version**: 1.2
+**Date**: 2025-11-28
 **Confidence**: 98%
 
 ---
@@ -348,172 +348,6 @@ func (r *Reconciler) createWorkflowExecution(
 
 ---
 
-## Recovery Data Flow (v1.3)
-
-### Key Principle: RO Mediates All Communication
-
-**AIAnalysis and WorkflowExecution have NO direct relationship.** The RemediationOrchestrator (RO) is the sole coordinator:
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        RO AS THE ONLY COORDINATOR                             │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  RemediationRequest                                                          │
-│        │                                                                     │
-│        │ owns (ownerRef)                                                     │
-│        ▼                                                                     │
-│  ┌──────────────┐                     ┌────────────────────┐                │
-│  │  AIAnalysis  │◀────── RO ─────────▶│ WorkflowExecution  │                │
-│  └──────────────┘       creates       └────────────────────┘                │
-│        │                 &                      │                            │
-│        │               watches                  │                            │
-│        │                                        │                            │
-│        ▼                                        ▼                            │
-│  status.selectedWorkflow              status.failureDetails                  │
-│        │                                        │                            │
-│        │                                        │                            │
-│        └────────────────► RO ◄─────────────────┘                            │
-│                           │                                                  │
-│                           │ On WE failure:                                   │
-│                           │ 1. Read WE.status.failureDetails                 │
-│                           │ 2. Create NEW AIAnalysis with:                   │
-│                           │    - isRecoveryAttempt=true                      │
-│                           │    - previousExecutions[] populated              │
-│                           │    - Natural language summary included           │
-│                           │                                                  │
-│  NO DIRECT LINK: AIAnalysis and WE never reference each other               │
-│                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-### WorkflowExecution Failure Output (v3.0)
-
-When a workflow fails, WE populates `status.failureDetails`:
-
-```yaml
-# WorkflowExecution.status (on failure)
-status:
-  phase: Failed
-  failureDetails:
-    failedTaskIndex: 1
-    failedTaskName: "apply-memory-increase"
-    failedStepName: "kubectl-patch"
-    reason: "Forbidden"                    # K8s-style reason code
-    message: "RBAC denied: cannot patch deployments.apps"
-    exitCode: 1
-    failedAt: "2025-12-01T10:15:45Z"
-    executionTimeBeforeFailure: "45s"
-    naturalLanguageSummary: |
-      Task 'apply-memory-increase' (step 2 of 3) failed after 45s with Forbidden error.
-      The service account 'kubernaut-workflow-runner' lacks required RBAC permissions.
-      Recommendation: Grant patch permission or use an alternative workflow.
-```
-
-### RO Recovery Flow
-
-When RO detects `WorkflowExecution.Status.Phase == "Failed"`:
-
-```go
-// pkg/remediationorchestrator/reconciler.go
-func (r *Reconciler) handleWorkflowExecutionFailed(
-    ctx context.Context,
-    rr *v1alpha1.RemediationRequest,
-    we *v1alpha1.WorkflowExecution,
-    originalAIA *v1alpha1.AIAnalysis,
-) error {
-    // Check max retry limit
-    recoveryAttemptNum := len(originalAIA.Spec.PreviousExecutions) + 1
-    if recoveryAttemptNum > rr.Spec.MaxRecoveryAttempts {
-        // Mark as permanently failed
-        return r.markRemediationFailed(ctx, rr, "Max recovery attempts exceeded")
-    }
-
-    // Build previous execution record from WE failure details
-    prevExec := v1alpha1.PreviousExecution{
-        WorkflowExecutionRef: we.Name,
-        OriginalRCA: v1alpha1.OriginalRCA{
-            Summary:    originalAIA.Status.RootCause,
-            SignalType: originalAIA.Spec.AnalysisRequest.SignalContext.SignalType,
-            Severity:   originalAIA.Spec.AnalysisRequest.SignalContext.Severity,
-        },
-        SelectedWorkflow: v1alpha1.SelectedWorkflowSummary{
-            WorkflowID:     we.Spec.WorkflowRef.WorkflowID,
-            Version:        we.Spec.WorkflowRef.Version,
-            ContainerImage: we.Spec.WorkflowRef.ContainerImage,
-            Rationale:      we.Spec.Rationale,
-        },
-        Failure: v1alpha1.ExecutionFailure{
-            FailedStepIndex:   we.Status.FailureDetails.FailedTaskIndex,
-            FailedStepName:    we.Status.FailureDetails.FailedTaskName,
-            Reason:            we.Status.FailureDetails.Reason,
-            Message:           we.Status.FailureDetails.Message,
-            ExitCode:          we.Status.FailureDetails.ExitCode,
-            FailedAt:          we.Status.FailureDetails.FailedAt,
-            ExecutionTime:     we.Status.FailureDetails.ExecutionTimeBeforeFailure,
-        },
-        // Include natural language for LLM context
-        NaturalLanguageSummary: we.Status.FailureDetails.NaturalLanguageSummary,
-    }
-
-    // Accumulate all previous executions (not just the last one)
-    allPreviousExecutions := append(originalAIA.Spec.PreviousExecutions, prevExec)
-
-    // Create recovery AIAnalysis
-    recoveryAIA := &v1alpha1.AIAnalysis{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("aianalysis-recovery-%s-%d", rr.Name, recoveryAttemptNum),
-            Namespace: rr.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(rr, v1alpha1.GroupVersion.WithKind("RemediationRequest")),
-            },
-        },
-        Spec: v1alpha1.AIAnalysisSpec{
-            RemediationRequestRef: corev1.ObjectReference{
-                Name:      rr.Name,
-                Namespace: rr.Namespace,
-            },
-            RemediationID:         rr.Name,
-            AnalysisRequest:       originalAIA.Spec.AnalysisRequest, // Reuse enriched context
-            IsRecoveryAttempt:     true,
-            RecoveryAttemptNumber: recoveryAttemptNum,
-            PreviousExecutions:    allPreviousExecutions,
-        },
-    }
-
-    return r.Create(ctx, recoveryAIA)
-}
-```
-
-### Data Contract: WE → RO → AIAnalysis
-
-| WE Status Field | RO Mapping | AIAnalysis Spec Field |
-|-----------------|------------|----------------------|
-| `failureDetails.failedTaskIndex` | Direct | `previousExecutions[].failure.failedStepIndex` |
-| `failureDetails.failedTaskName` | Direct | `previousExecutions[].failure.failedStepName` |
-| `failureDetails.reason` | Direct | `previousExecutions[].failure.reason` |
-| `failureDetails.message` | Direct | `previousExecutions[].failure.message` |
-| `failureDetails.exitCode` | Direct | `previousExecutions[].failure.exitCode` |
-| `failureDetails.failedAt` | Direct | `previousExecutions[].failure.failedAt` |
-| `failureDetails.executionTimeBeforeFailure` | Direct | `previousExecutions[].failure.executionTime` |
-| `failureDetails.naturalLanguageSummary` | Direct | `previousExecutions[].naturalLanguageSummary` |
-
-### Failure Reason Codes
-
-Standardized K8s-style reason codes for deterministic recovery decisions:
-
-| Reason Code | Description | Recovery Hint |
-|-------------|-------------|---------------|
-| `OOMKilled` | Container killed due to memory limits | Increase task memory or use lighter workflow |
-| `DeadlineExceeded` | Timeout reached | Increase timeout or use faster workflow |
-| `Forbidden` | RBAC/permission failure | Grant permissions or use alternative workflow |
-| `ResourceExhausted` | Cluster resource limits | Wait for resources or reduce resource requests |
-| `ConfigurationError` | Invalid parameters | Fix parameters (should be caught by validation) |
-| `ImagePullBackOff` | Cannot pull container image | Fix image reference or credentials |
-| `Unknown` | Unclassified failure | Manual investigation required |
-
----
-
 ## Approval Integration (ADR-040, ADR-017, ADR-018)
 
 ### Key Principle: AIAnalysis Completes, RO Orchestrates
@@ -611,14 +445,10 @@ When RO detects `AIAnalysis.Status.approvalRequired == true`:
 | **DD-TIMEOUT-001** | Global Remediation Timeout (approval timeout: 15m default) |
 | **DD-WORKFLOW-003** | Parameterized Actions (UPPER_SNAKE_CASE parameters) |
 | **DD-WORKFLOW-005** | Automated Schema Extraction (V1.0/V1.1 registration) |
-| **DD-RECOVERY-002** | Direct AIAnalysis Recovery Flow |
-| **DD-RECOVERY-003** | Recovery Prompt Design (K8s reason codes) |
 | **BR-AI-075** | Workflow Selection Output Format |
 | **BR-AI-076** | Approval Context for Low Confidence |
 | **BR-ORCH-025** | Catalog Lookup Before WorkflowExecution |
 | **BR-ORCH-026** | Approval Orchestration |
-| **BR-WE-001** | Defense-in-Depth Parameter Validation |
-| **BR-HAPI-260** | Primary Parameter Validation (HolmesGPT-API) |
 
 ---
 
@@ -651,7 +481,6 @@ When RO detects `AIAnalysis.Status.approvalRequired == true`:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.3 | 2025-12-01 | **Recovery Data Flow**: Added comprehensive recovery flow documentation. WE now provides `status.failureDetails` with structured failure information (`failedTaskIndex`, `failedTaskName`, `reason` enum, `naturalLanguageSummary`). Documented RO as sole coordinator between AIAnalysis and WE (no direct relationship). Added K8s-style failure reason codes. Added WE→RO→AIAnalysis data mapping table. Added RO recovery logic code example. |
 | 1.2 | 2025-11-28 | **BREAKING**: HolmesGPT-API now resolves `workflow_id → containerImage` during MCP search. Added `containerImage` and `containerDigest` to `SelectedWorkflow`. RO no longer calls catalog - passes through from AIAnalysis. Updated data flow diagram. Removed catalog client code. |
 | 1.1 | 2025-11-28 | **Approval flow clarification**: AIAnalysis completes with `approvalRequired: true`, RO orchestrates approval (creates NotificationRequest + RemediationApprovalRequest). Removed "Approving" phase from AIAnalysis. Added approval flow diagram and service responsibilities. |
 | 1.0 | 2025-11-28 | Initial DD: AIAnalysis ↔ WorkflowExecution contract alignment |

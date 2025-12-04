@@ -1,10 +1,32 @@
 # DD-HAPI-002: Workflow Parameter Validation Architecture
 
 **Date**: December 1, 2025
-**Status**: ✅ APPROVED
+**Status**: ✅ APPROVED (Updated v1.1)
 **Deciders**: Architecture Team, Workflow Engine Team, HolmesGPT-API Team
-**Version**: 1.0
+**Version**: 1.1
 **Related**: DD-WORKFLOW-002, DD-HAPI-001, BR-HAPI-191
+
+---
+
+## ⚠️ v1.1 UPDATE (December 1, 2025)
+
+**Change**: Removed Workflow Engine validation layer.
+
+**New Architecture**: HolmesGPT-API is the **sole** parameter validator.
+
+| Layer | Responsibility | Status |
+|-------|---------------|--------|
+| **HolmesGPT-API** | Schema validation with LLM self-correction | ✅ **SOLE VALIDATOR** |
+| ~~Workflow Engine~~ | ~~Defense-in-depth re-validation~~ | ❌ **REMOVED** |
+| **Tekton Tasks** | Runtime K8s state validation | ✅ Unchanged |
+
+**Rationale**:
+1. If validation fails at WE → must restart entire RCA flow (expensive, poor UX)
+2. If validation fails at HAPI → LLM can self-correct in same session (cheap, good UX)
+3. Edge cases (HAPI bugs, API bypass) should be fixed at source, not duplicated
+4. Simplifies WE architecture - no Data Storage dependency for schema access
+
+**Cancelled**: BR-WE-001 (Defense-in-Depth Parameter Validation)
 
 ---
 
@@ -54,15 +76,15 @@ Workflow Engine re-validates parameters before creating Tekton resources as a sa
 
 ---
 
-## Architecture
+## Architecture (v1.1 - Simplified)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        PARAMETER VALIDATION FLOW                            │
+│                    PARAMETER VALIDATION FLOW (v1.1)                         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  HolmesGPT-API - LLM Chat Session (PRIMARY - 95% of issues)          │  │
+│  │  HolmesGPT-API - LLM Chat Session (SOLE VALIDATOR)                    │  │
 │  │                                                                       │  │
 │  │  1. LLM performs RCA                                                  │  │
 │  │  2. LLM calls search_workflow_catalog → selects workflow             │  │
@@ -88,6 +110,7 @@ Workflow Engine re-validates parameters before creating Tekton resources as a sa
 │  │     │  │             │    │   Retry (max 3 attempts)        │    │  │  │
 │  │     │  └─────────────┘    └─────────────────────────────────┘    │  │  │
 │  │     │                                                             │  │  │
+│  │     │  If 3 attempts fail → return needs_human_review: true       │  │  │
 │  │     └─────────────────────────────────────────────────────────────┘  │  │
 │  │  5. Return validated workflow + parameters                           │  │
 │  │                                                                       │  │
@@ -103,13 +126,11 @@ Workflow Engine re-validates parameters before creating Tekton resources as a sa
 │                                         │                                   │
 │                                         ▼                                   │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Workflow Engine (DEFENSE-IN-DEPTH - 5% edge cases)                   │  │
+│  │  Workflow Engine (NO VALIDATION - pass-through to Tekton)             │  │
 │  │                                                                       │  │
-│  │  Re-validate before creating Tekton resources:                        │  │
-│  │  • Required parameters present                                        │  │
-│  │  • Type validation                                                    │  │
-│  │  • Enum validation                                                    │  │
-│  │  • Catches LLM self-correction failures                              │  │
+│  │  ✅ Trusts HAPI validation                                            │  │
+│  │  ✅ Creates Tekton PipelineRun with parameters as-is                  │  │
+│  │  ✅ No Data Storage dependency                                        │  │
 │  │                                                                       │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                         │                                   │
@@ -376,5 +397,6 @@ See: `docs/requirements/BR-HAPI-191-workflow-parameter-validation.md`
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2025-12-01 | **SIMPLIFIED**: Removed WE validation layer. HAPI is now sole validator. BR-WE-001 cancelled. |
 | 1.0 | 2025-12-01 | Initial decision - HolmesGPT-API primary, WE defense-in-depth |
 

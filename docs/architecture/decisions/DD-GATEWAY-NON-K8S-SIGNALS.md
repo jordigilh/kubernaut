@@ -89,7 +89,7 @@ type AWSResource struct {
 type RemediationRequestSpec struct {
     // Existing Kubernetes resource identification (required for TargetType=kubernetes)
     TargetResource ResourceIdentifier `json:"targetResource"`
-    
+
     // Generic resource identifier for non-Kubernetes targets (V2.0)
     // Examples:
     //   AWS: "arn:aws:ec2:us-east-1:123456789:instance/i-1234567890abcdef0"
@@ -97,7 +97,7 @@ type RemediationRequestSpec struct {
     //   Azure: "/subscriptions/.../resourceGroups/.../providers/Microsoft.Compute/virtualMachines/vm-01"
     // +kubebuilder:validation:MaxLength=2048
     ResourceID string `json:"resourceId,omitempty"`
-    
+
     // Target system type (already exists)
     // +kubebuilder:validation:Enum=kubernetes;aws;azure;gcp;datadog
     TargetType string `json:"targetType"`

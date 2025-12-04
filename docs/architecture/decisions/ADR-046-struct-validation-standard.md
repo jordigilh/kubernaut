@@ -1,14 +1,17 @@
-# ADR-044: Struct Validation Standard (go-playground/validator)
+# ADR-046: Struct Validation Standard (go-playground/validator)
 
 **Status**: Approved
 **Date**: 2025-11-28
 **Deciders**: Architecture Team
 **Related**: ADR-043, DD-STORAGE-008, DD-WORKFLOW-005
-**Version**: 1.0
+**Version**: 1.1
 
 ---
 
 ## Changelog
+
+### Version 1.1 (2025-12-04)
+- Renumbered from ADR-044 to ADR-046 to resolve conflict with ADR-044 (Workflow Execution Engine Delegation)
 
 ### Version 1.0 (2025-11-28)
 - Initial ADR creation
