@@ -251,6 +251,9 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	r.Recorder.Event(wfe, "Normal", "PipelineRunCreated",
 		fmt.Sprintf("Created PipelineRun %s in namespace %s", pr.Name, r.ExecutionNamespace))
 
+	// Record audit event (BR-WE-007)
+	r.recordPipelineRunCreated(ctx, wfe, pr.Name)
+
 	// Requeue to check PipelineRun status
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
@@ -324,6 +327,9 @@ func (r *WorkflowExecutionReconciler) reconcileTerminal(ctx context.Context, wfe
 		if err := r.Status().Update(ctx, wfe); err != nil {
 			return ctrl.Result{}, err
 		}
+
+		// Record audit event (BR-WE-007)
+		r.recordLockReleased(ctx, wfe)
 	}
 
 	// No more reconciliation needed
@@ -351,6 +357,9 @@ func (r *WorkflowExecutionReconciler) reconcileDelete(ctx context.Context, wfe *
 		}
 
 		log.Info("Deleted PipelineRun during finalization", "pipelineRun", prName)
+
+		// Record audit event before removing finalizer (BR-WE-007)
+		r.recordDeleted(ctx, wfe)
 
 		// Remove finalizer
 		controllerutil.RemoveFinalizer(wfe, workflowExecutionFinalizer)

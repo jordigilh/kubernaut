@@ -57,7 +57,7 @@ var _ = Describe("HolmesGPTClient", func() {
                 mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
                     Expect(r.URL.Path).To(Equal("/api/v1/incident/analyze"))
                     Expect(r.Method).To(Equal(http.MethodPost))
-                    
+
                     w.Header().Set("Content-Type", "application/json")
                     w.WriteHeader(http.StatusOK)
                     w.Write([]byte(`{
@@ -67,7 +67,7 @@ var _ = Describe("HolmesGPTClient", func() {
                         "warnings": []
                     }`))
                 }))
-                
+
                 hgClient = client.NewHolmesGPTClient(client.Config{
                     BaseURL: mockServer.URL,
                 })
@@ -205,7 +205,7 @@ var _ = Describe("InvestigatingHandler", func() {
         DescribeTable("retries on transient errors",
             func(statusCode int, shouldRetry bool) {
                 mockClient.SetResponse(nil, &client.APIError{StatusCode: statusCode})
-                
+
                 analysis := validAIAnalysis()
                 analysis.Status.Phase = aianalysisv1.PhaseInvestigating
                 analysis.Status.RetryCount = 0
@@ -288,7 +288,7 @@ func NewHolmesGPTClient(cfg Config) *HolmesGPTClient {
     if timeout == 0 {
         timeout = 60 * time.Second
     }
-    
+
     return &HolmesGPTClient{
         baseURL: cfg.BaseURL,
         httpClient: &http.Client{
@@ -328,7 +328,7 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
         return nil, fmt.Errorf("failed to marshal request: %w", err)
     }
 
-    httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, 
+    httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
         c.baseURL+"/api/v1/incident/analyze", bytes.NewReader(body))
     if err != nil {
         return nil, fmt.Errorf("failed to create request: %w", err)
@@ -442,7 +442,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 
 func (h *InvestigatingHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *client.IncidentRequest {
     spec := &analysis.Spec.SignalContext
-    
+
     req := &client.IncidentRequest{
         Context: fmt.Sprintf("Incident in %s environment, target: %s/%s/%s",
             spec.Environment,

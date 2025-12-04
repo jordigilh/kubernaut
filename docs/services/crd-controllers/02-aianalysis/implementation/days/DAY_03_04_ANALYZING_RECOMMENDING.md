@@ -82,11 +82,11 @@ var _ = Describe("RegoEvaluator", func() {
             // Production + data quality issues = approval required
             Entry("production + target not in chain", "production", false, nil, true),
             Entry("production + failed detections", "production", true, []string{"gitOpsManaged"}, true),
-            
+
             // Non-production = auto-approve
             Entry("development + any state", "development", false, []string{"gitOpsManaged"}, false),
             Entry("staging + any state", "staging", true, nil, false),
-            
+
             // Production + good data = auto-approve
             Entry("production + clean state", "production", true, nil, false),
         )
@@ -583,7 +583,7 @@ func (h *RecommendingHandler) Handle(ctx context.Context, analysis *aianalysisv1
     // Mark as completed
     analysis.Status.Phase = aianalysisv1.PhaseCompleted
     analysis.Status.CompletedAt = metav1.Now()
-    
+
     return ctrl.Result{}, nil // Final phase - no requeue
 }
 
@@ -602,7 +602,7 @@ func (h *RecommendingHandler) buildRecoveryRequest(analysis *aianalysisv1.AIAnal
 func (h *RecommendingHandler) storeRecommendations(analysis *aianalysisv1.AIAnalysis, resp *client.RecoveryResponse) {
     // Store primary recommendations
     for _, rec := range resp.RecommendedWorkflows {
-        analysis.Status.Recommendations = append(analysis.Status.Recommendations, 
+        analysis.Status.Recommendations = append(analysis.Status.Recommendations,
             aianalysisv1.WorkflowRecommendation{
                 WorkflowID:  rec.WorkflowID,
                 DisplayName: rec.DisplayName,

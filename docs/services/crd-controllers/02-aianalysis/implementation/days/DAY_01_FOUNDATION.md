@@ -276,7 +276,7 @@ import (
 type PhaseHandler interface {
     // Handle processes the AIAnalysis and returns reconcile result
     Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error)
-    
+
     // Phase returns the phase this handler processes
     Phase() aianalysisv1.Phase
 }

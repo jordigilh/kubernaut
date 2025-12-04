@@ -96,7 +96,7 @@ var (
     testEnv   *envtest.Environment
     ctx       context.Context
     cancel    context.CancelFunc
-    
+
     // MockLLMServer process
     mockLLMProcess *exec.Cmd
     mockLLMURL     string
@@ -214,9 +214,9 @@ var _ = Describe("ValidatingHandler", func() {
             analysis := &aianalysisv1.AIAnalysis{
                 Spec: spec,
             }
-            
+
             err := handler.ValidateSpec(ctx, analysis)
-            
+
             if expectValid {
                 Expect(err).NotTo(HaveOccurred(), "Expected valid spec: %s", description)
             } else {
@@ -235,7 +235,7 @@ var _ = Describe("ValidatingHandler", func() {
             minimalAIAnalysisSpec(),
             true, "",
         ),
-        
+
         // Edge Cases: Missing required fields
         Entry("missing signalContext - BR-AI-002",
             "signalContext is required",
@@ -252,7 +252,7 @@ var _ = Describe("ValidatingHandler", func() {
             specWithoutTargetResource(),
             false, "targetResource is required",
         ),
-        
+
         // Edge Cases: Invalid values
         Entry("empty environment string - BR-AI-003",
             "environment cannot be empty",
@@ -264,7 +264,7 @@ var _ = Describe("ValidatingHandler", func() {
             specWithLongEnvironment(64),
             false, "environment exceeds maximum length",
         ),
-        
+
         // Edge Cases: FailedDetections validation
         Entry("valid FailedDetections - DD-WORKFLOW-001",
             "known field names in FailedDetections",
@@ -276,7 +276,7 @@ var _ = Describe("ValidatingHandler", func() {
             specWithFailedDetections([]string{"unknownField"}),
             false, "invalid FailedDetections field: unknownField",
         ),
-        
+
         // Edge Cases: nil handling
         Entry("nil detectedLabels - graceful handling",
             "nil detectedLabels is valid",
@@ -300,9 +300,9 @@ var _ = Describe("ValidatingHandler", func() {
                     },
                 },
             }
-            
+
             err := handler.ValidateEnrichmentResults(ctx, analysis)
-            
+
             if expectValid {
                 Expect(err).NotTo(HaveOccurred())
             } else {
@@ -404,12 +404,12 @@ var _ = Describe("InvestigatingHandler", func() {
     DescribeTable("processes HolmesGPT-API responses",
         func(description string, response *holmesgpt.IncidentResponse, apiErr error, expectedPhase string, expectError bool) {
             mockClient.SetResponse(response, apiErr)
-            
+
             analysis := validAIAnalysis()
             analysis.Status.Phase = aianalysisv1.PhaseInvestigating
-            
+
             result, err := handler.Handle(ctx, analysis)
-            
+
             if expectError {
                 Expect(err).To(HaveOccurred(), "Expected error: %s", description)
             } else {
@@ -447,7 +447,7 @@ var _ = Describe("InvestigatingHandler", func() {
             aianalysisv1.PhaseAnalyzing,
             false,
         ),
-        
+
         // Error Cases: Transient errors (Category B)
         Entry("HolmesGPT-API 503 - retry - BR-AI-009",
             "service unavailable triggers retry",
@@ -470,7 +470,7 @@ var _ = Describe("InvestigatingHandler", func() {
             aianalysisv1.PhaseInvestigating,
             true,
         ),
-        
+
         // Error Cases: Permanent errors (Category C)
         Entry("HolmesGPT-API 401 - auth failure - BR-AI-010",
             "authentication failure is permanent",
@@ -492,13 +492,13 @@ var _ = Describe("InvestigatingHandler", func() {
     DescribeTable("implements retry with exponential backoff",
         func(retryCount int, expectedMinDelay, expectedMaxDelay time.Duration) {
             mockClient.SetResponse(nil, &holmesgpt.APIError{StatusCode: 503})
-            
+
             analysis := validAIAnalysis()
             analysis.Status.Phase = aianalysisv1.PhaseInvestigating
             analysis.Status.RetryCount = retryCount
-            
+
             result, _ := handler.Handle(ctx, analysis)
-            
+
             Expect(result.RequeueAfter).To(BeNumerically(">=", expectedMinDelay))
             Expect(result.RequeueAfter).To(BeNumerically("<=", expectedMaxDelay))
         },

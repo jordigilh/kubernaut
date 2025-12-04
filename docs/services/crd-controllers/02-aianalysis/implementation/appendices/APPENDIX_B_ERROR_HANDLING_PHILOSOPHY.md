@@ -85,7 +85,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
                 // Max retries exceeded - permanent failure
                 return h.handlePermanentFailure(ctx, analysis, err, "HolmesGPT-API max retries exceeded")
             }
-            
+
             // Calculate backoff delay
             delay := CalculateBackoff(retryCount)
             h.Log.Info("HolmesGPT-API transient error, scheduling retry",
@@ -94,13 +94,13 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
                 "nextRetryIn", delay.String(),
             )
             h.Metrics.IncrementHolmesGPTError("transient")
-            
+
             // Update status with retry info
             analysis.Status.RetryCount = retryCount + 1
             analysis.Status.LastRetryTime = metav1.Now()
             return ctrl.Result{RequeueAfter: delay}, nil
         }
-        
+
         // Permanent error - fail immediately
         return h.handlePermanentFailure(ctx, analysis, err, "HolmesGPT-API permanent error")
     }
@@ -143,16 +143,16 @@ func (h *InvestigatingHandler) handleAuthError(ctx context.Context, analysis *ai
         "namespace", analysis.Namespace,
     )
     h.Metrics.IncrementAuthError("holmesgpt_api")
-    
+
     // Create Event for visibility
     h.Recorder.Event(analysis, corev1.EventTypeWarning, "AuthenticationFailed",
         fmt.Sprintf("HolmesGPT-API authentication failed: %v", err))
-    
+
     // Update status to Failed
     analysis.Status.Phase = aianalysisv1.PhaseFailed
     analysis.Status.Message = fmt.Sprintf("Authentication failed: %v. Check HolmesGPT-API credentials.", err)
     analysis.Status.FailedAt = metav1.Now()
-    
+
     return ctrl.Result{}, nil // Don't requeue - manual fix required
 }
 ```
@@ -176,10 +176,10 @@ func (r *AIAnalysisReconciler) updateStatusWithRetry(ctx context.Context, analys
         if err := r.Get(ctx, client.ObjectKeyFromObject(analysis), latest); err != nil {
             return err
         }
-        
+
         // Copy our status changes to the latest version
         latest.Status = analysis.Status
-        
+
         // Attempt update
         if err := r.Status().Update(ctx, latest); err != nil {
             if apierrors.IsConflict(err) {
@@ -216,11 +216,11 @@ func (h *AnalyzingHandler) evaluateRegoPolicy(ctx context.Context, analysis *aia
             "policyName", "approval.rego",
         )
         h.Metrics.IncrementRegoPolicyFailure(classifyRegoError(err))
-        
+
         // Graceful degradation: default to manual approval (safe)
         h.Recorder.Event(analysis, corev1.EventTypeWarning, "RegoPolicyFailed",
             fmt.Sprintf("Rego policy evaluation failed: %v. Defaulting to manual approval.", err))
-        
+
         return &PolicyResult{
             ApprovalRequired: true,  // Safe default
             Reason:           "Rego policy evaluation failed - manual review required",
@@ -270,15 +270,15 @@ const (
 func CalculateBackoff(attemptCount int) time.Duration {
     // Calculate exponential backoff: baseDelay * 2^attemptCount
     delay := time.Duration(float64(BaseDelay) * math.Pow(2, float64(attemptCount)))
-    
+
     // Cap at maximum delay
     if delay > MaxDelay {
         delay = MaxDelay
     }
-    
+
     // Add jitter (±10%) to prevent thundering herd
     jitter := time.Duration(float64(delay) * (0.9 + 0.2*rand.Float64()))
-    
+
     return jitter
 }
 
@@ -334,7 +334,7 @@ type CircuitBreaker struct {
     failureCount    int
     successCount    int
     lastFailureTime time.Time
-    
+
     // Configuration
     failureThreshold int           // Failures before opening
     successThreshold int           // Successes to close
@@ -353,7 +353,7 @@ func NewCircuitBreaker() *CircuitBreaker {
 func (cb *CircuitBreaker) Execute(fn func() error) error {
     cb.mu.Lock()
     defer cb.mu.Unlock()
-    
+
     switch cb.state {
     case StateOpen:
         // Check if timeout elapsed
@@ -364,15 +364,15 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
             return ErrCircuitOpen
         }
     }
-    
+
     // Execute the function
     err := fn()
-    
+
     if err != nil {
         cb.recordFailure()
         return err
     }
-    
+
     cb.recordSuccess()
     return nil
 }
@@ -380,7 +380,7 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 func (cb *CircuitBreaker) recordFailure() {
     cb.failureCount++
     cb.lastFailureTime = time.Now()
-    
+
     if cb.failureCount >= cb.failureThreshold {
         cb.state = StateOpen
     }
@@ -436,7 +436,7 @@ package errors
 
 import (
     "fmt"
-    
+
     pkgerrors "github.com/pkg/errors"
 )
 
@@ -460,14 +460,14 @@ func Wrapf(err error, format string, args ...interface{}) error {
 func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) error {
     response, err := h.holmesGPTClient.Investigate(ctx, analysis.Spec.AnalysisRequest)
     if err != nil {
-        return errors.Wrapf(err, "failed to investigate AIAnalysis %s/%s", 
+        return errors.Wrapf(err, "failed to investigate AIAnalysis %s/%s",
             analysis.Namespace, analysis.Name)
     }
-    
+
     if err := h.processResponse(ctx, analysis, response); err != nil {
         return errors.Wrap(err, "failed to process HolmesGPT response")
     }
-    
+
     return nil
 }
 ```
@@ -480,7 +480,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
     // Create child context with timeout
     ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
     defer cancel()
-    
+
     // Pass context to all downstream calls
     response, err := h.holmesGPTClient.Investigate(ctx, analysis.Spec.AnalysisRequest)
     if err != nil {
@@ -509,10 +509,10 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
         "aianalysis", req.NamespacedName,
         "reconcileID", uuid.New().String(),
     )
-    
+
     // Info level: Normal operations
     log.Info("Starting reconciliation")
-    
+
     // Error level: Failures (always include error)
     if err != nil {
         log.Error(err, "Reconciliation failed",
@@ -520,7 +520,7 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
             "retryCount", analysis.Status.RetryCount,
         )
     }
-    
+
     // Debug level: Detailed debugging (use V(1) for debug)
     log.V(1).Info("Processing phase",
         "currentPhase", analysis.Status.Phase,

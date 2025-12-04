@@ -41,7 +41,7 @@ func TestAIAnalysisE2E(t *testing.T) {
 var _ = BeforeSuite(func() {
     // Verify KIND cluster is running with correct port mappings
     By("Verifying KIND cluster")
-    
+
     // Check health endpoint is accessible via NodePort
     resp, err := http.Get("http://localhost:8184/healthz")
     Expect(err).NotTo(HaveOccurred())
@@ -77,9 +77,9 @@ var _ = Describe("Health Endpoints E2E", func() {
             resp, err := http.Get(HealthURL)
             Expect(err).NotTo(HaveOccurred())
             defer resp.Body.Close()
-            
+
             Expect(resp.StatusCode).To(Equal(http.StatusOK))
-            
+
             body, _ := io.ReadAll(resp.Body)
             Expect(string(body)).To(ContainSubstring("ok"))
         })
@@ -90,7 +90,7 @@ var _ = Describe("Health Endpoints E2E", func() {
             resp, err := http.Get(ReadyURL)
             Expect(err).NotTo(HaveOccurred())
             defer resp.Body.Close()
-            
+
             Expect(resp.StatusCode).To(Equal(http.StatusOK))
         })
 
@@ -98,7 +98,7 @@ var _ = Describe("Health Endpoints E2E", func() {
             resp, err := http.Get(ReadyURL + "?verbose=true")
             Expect(err).NotTo(HaveOccurred())
             defer resp.Body.Close()
-            
+
             body, _ := io.ReadAll(resp.Body)
             // Should show dependency health
             Expect(string(body)).To(ContainSubstring("holmesgpt"))
@@ -128,7 +128,7 @@ var _ = Describe("Metrics Endpoint E2E", func() {
             resp, err := http.Get(MetricsURL)
             Expect(err).NotTo(HaveOccurred())
             defer resp.Body.Close()
-            
+
             Expect(resp.StatusCode).To(Equal(http.StatusOK))
             Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/plain"))
         })
@@ -137,10 +137,10 @@ var _ = Describe("Metrics Endpoint E2E", func() {
             resp, err := http.Get(MetricsURL)
             Expect(err).NotTo(HaveOccurred())
             defer resp.Body.Close()
-            
+
             body, _ := io.ReadAll(resp.Body)
             metricsText := string(body)
-            
+
             // Verify expected metrics exist
             expectedMetrics := []string{
                 "aianalysis_reconciliations_total",
@@ -148,7 +148,7 @@ var _ = Describe("Metrics Endpoint E2E", func() {
                 "aianalysis_holmesgpt_api_calls_total",
                 "aianalysis_errors_total",
             }
-            
+
             for _, metric := range expectedMetrics {
                 Expect(metricsText).To(ContainSubstring(metric),
                     "Missing metric: %s", metric)
@@ -159,9 +159,9 @@ var _ = Describe("Metrics Endpoint E2E", func() {
             resp, err := http.Get(MetricsURL)
             Expect(err).NotTo(HaveOccurred())
             defer resp.Body.Close()
-            
+
             body, _ := io.ReadAll(resp.Body)
-            
+
             // Standard Go metrics
             Expect(string(body)).To(ContainSubstring("go_goroutines"))
             Expect(string(body)).To(ContainSubstring("go_memstats"))
@@ -265,16 +265,16 @@ var _ = Describe("Full User Journey E2E", func() {
 
             By("Verifying final status")
             Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-            
+
             // Production should require approval
             Expect(analysis.Status.ApprovalRequired).To(BeTrue())
-            
+
             // Should have recommendations
             Expect(analysis.Status.Recommendations).NotTo(BeEmpty())
-            
+
             // Should have completion timestamp
             Expect(analysis.Status.CompletedAt).NotTo(BeZero())
-            
+
             // Should capture targetInOwnerChain
             Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil())
         })

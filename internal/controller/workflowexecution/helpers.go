@@ -142,6 +142,9 @@ func (r *WorkflowExecutionReconciler) markFailed(ctx context.Context, wfe *workf
 	r.Recorder.Event(wfe, "Warning", "Failed", message)
 	RecordPhaseTransition(wfe.Namespace, workflowexecutionv1alpha1.PhaseFailed)
 
+	// Record audit event (BR-WE-007)
+	r.recordFailed(ctx, wfe)
+
 	log.Info("WorkflowExecution failed", "reason", reason, "message", message)
 	return ctrl.Result{RequeueAfter: r.CooldownPeriod}, nil
 }
@@ -169,6 +172,9 @@ func (r *WorkflowExecutionReconciler) markSkipped(ctx context.Context, wfe *work
 	r.Recorder.Event(wfe, "Normal", "Skipped",
 		fmt.Sprintf("Skipped: %s (blocking workflow: %s)", reason, conflicting.Name))
 	RecordSkip(wfe.Namespace, reason)
+
+	// Record audit event (BR-WE-007)
+	r.recordSkipped(ctx, wfe)
 
 	log.Info("WorkflowExecution skipped", "reason", reason, "blockingWorkflow", conflicting.Name)
 	return ctrl.Result{}, nil
@@ -205,6 +211,9 @@ func (r *WorkflowExecutionReconciler) markSkippedRecentlyRemediated(ctx context.
 		fmt.Sprintf("Skipped: recently remediated by %s", recent.Name))
 	RecordSkip(wfe.Namespace, workflowexecutionv1alpha1.SkipReasonRecentlyRemediated)
 
+	// Record audit event (BR-WE-007)
+	r.recordSkipped(ctx, wfe)
+
 	log.Info("WorkflowExecution skipped (recently remediated)",
 		"recentWorkflow", recent.Name, "cooldownRemaining", cooldownRemaining.String())
 	return ctrl.Result{}, nil
@@ -233,6 +242,9 @@ func (r *WorkflowExecutionReconciler) markCompleted(ctx context.Context, wfe *wo
 		fmt.Sprintf("Workflow completed successfully in %s", wfe.Status.Duration))
 	RecordPhaseTransition(wfe.Namespace, workflowexecutionv1alpha1.PhaseCompleted)
 	RecordDuration(wfe.Namespace, wfe.Spec.WorkflowRef.WorkflowID, workflowexecutionv1alpha1.PhaseCompleted, wfe.Status.StartTime.Time)
+
+	// Record audit event (BR-WE-007)
+	r.recordCompleted(ctx, wfe)
 
 	log.Info("WorkflowExecution completed", "duration", wfe.Status.Duration)
 	return ctrl.Result{RequeueAfter: r.CooldownPeriod}, nil
@@ -356,6 +368,9 @@ func (r *WorkflowExecutionReconciler) markFailedWithDetails(ctx context.Context,
 	r.Recorder.Event(wfe, "Warning", "Failed",
 		fmt.Sprintf("Workflow failed at task '%s': %s", details.FailedTaskName, details.Reason))
 	RecordPhaseTransition(wfe.Namespace, workflowexecutionv1alpha1.PhaseFailed)
+
+	// Record audit event (BR-WE-007)
+	r.recordFailed(ctx, wfe)
 
 	log.Info("WorkflowExecution failed with details",
 		"reason", details.Reason,
