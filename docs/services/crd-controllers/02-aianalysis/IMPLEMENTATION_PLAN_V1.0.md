@@ -9,6 +9,11 @@
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.2** (2025-12-04): Expanded plan with appendices and day-by-day breakdown
+  - ✅ **Appendices**: Created 4 detailed appendix documents
+  - ✅ **Day-by-Day**: Created 5 detailed day breakdown documents
+  - ✅ **Port Allocation**: Added complete Kind config and NodePort details
+  - 📏 **Plan size**: ~2,600 lines (core) + ~1,800 lines (appendices) + ~2,400 lines (days)
 - **v1.1** (2025-12-04): Template v3.0 full alignment
   - ✅ **Edge Case Categories**: Added template section ⭐ V3.0
   - ✅ **Metrics Validation Commands**: Added Day 7 template ⭐ V3.0
@@ -62,6 +67,42 @@
 | ├─ [Team Handoff Notes](#-team-handoff-notes-template--v30) | ~2550 | Day 10 deliverable ⭐ V3.0 |
 | └─ [CRD API Group Standard](#-crd-api-group-standard--v30) | ~2600 | DD-CRD-001 reference ⭐ V3.0 |
 | [References](#-references) | ~2700 | ADR/DD documents |
+
+---
+
+## 📂 **Expanded Plan Structure**
+
+This plan is organized into a core document and supporting files for easier navigation.
+
+### **Appendices** (Detailed Reference)
+
+| Document | Purpose |
+|----------|---------|
+| [APPENDIX_A_EOD_TEMPLATES.md](implementation/appendices/APPENDIX_A_EOD_TEMPLATES.md) | End-of-Day documentation templates |
+| [APPENDIX_B_ERROR_HANDLING_PHILOSOPHY.md](implementation/appendices/APPENDIX_B_ERROR_HANDLING_PHILOSOPHY.md) | 5 error categories (A-E), retry logic, circuit breaker |
+| [APPENDIX_C_CONFIDENCE_METHODOLOGY.md](implementation/appendices/APPENDIX_C_CONFIDENCE_METHODOLOGY.md) | Confidence calculation formula and scoring |
+| [APPENDIX_D_TESTING_PATTERNS.md](implementation/appendices/APPENDIX_D_TESTING_PATTERNS.md) | Table-driven tests, mocks, fixtures |
+
+### **Day-by-Day Breakdown** (Detailed Implementation)
+
+| Document | Days | Focus |
+|----------|------|-------|
+| [DAY_01_FOUNDATION.md](implementation/days/DAY_01_FOUNDATION.md) | Day 1 | Package structure, reconciler, ValidatingHandler |
+| [DAY_02_INVESTIGATING_HANDLER.md](implementation/days/DAY_02_INVESTIGATING_HANDLER.md) | Day 2 | HolmesGPT-API client, InvestigatingHandler |
+| [DAY_03_04_ANALYZING_RECOMMENDING.md](implementation/days/DAY_03_04_ANALYZING_RECOMMENDING.md) | Days 3-4 | Rego evaluator, AnalyzingHandler, RecommendingHandler, **Midpoint** |
+| [DAY_05_07_INTEGRATION_TESTING.md](implementation/days/DAY_05_07_INTEGRATION_TESTING.md) | Days 5-7 | Error handling, metrics, KIND integration tests |
+| [DAY_08_10_E2E_POLISH.md](implementation/days/DAY_08_10_E2E_POLISH.md) | Days 8-10 | E2E tests, production polish, **Final checkpoint** |
+
+### **EOD Documents** (Created During Implementation)
+
+**Directory**: `implementation/phase0/`
+
+| Document | When Created |
+|----------|--------------|
+| `01-day1-complete.md` | End of Day 1 |
+| `02-day4-midpoint.md` | End of Day 4 (Midpoint) |
+| `03-day7-complete.md` | End of Day 7 (Integration Complete) |
+| `04-implementation-complete.md` | End of Day 10 (Final) |
 
 ---
 
