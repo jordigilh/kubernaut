@@ -113,118 +113,115 @@ This appendix provides the Business Requirements Coverage Matrix for the Workflo
 
 ---
 
-### **BR-WE-004: Report Execution Results**
+### **BR-WE-004: Owner Reference for Cascade Deletion**
 
-**Requirement**: The controller MUST populate WorkflowExecution.Status with detailed failure information including Reason, Message, NaturalLanguageSummary, and WasExecutionFailure flag.
-
-#### Unit Tests
-- **File**: `test/unit/workflowexecution/failure_test.go`
-- **Tests**:
-  - `It("should extract failure reason from PipelineRun")` - Lines TBD
-  - `It("should generate natural language summary")` - Lines TBD
-  - `It("should set WasExecutionFailure=true for during-execution failures")` - Lines TBD
-  - `It("should set WasExecutionFailure=false for pre-execution failures")` - Lines TBD
-  - `DescribeTable("should map Tekton reasons to K8s-style reasons")` - Lines TBD (8 entries)
-- **Coverage**: 0/12 test cases 🚧
-
-#### Integration Tests
-- **File**: `test/integration/workflowexecution/lifecycle_test.go`
-- **Tests**:
-  - `It("should transition to Failed with details when PipelineRun fails")` - Lines TBD
-- **Coverage**: 0/1 integration test 🚧
-
-**Status**: 🚧 **0% Coverage** (pending implementation)
-
----
-
-### **BR-WE-005: Synchronize PipelineRun Status**
-
-**Requirement**: The controller MUST watch PipelineRun status and synchronize it to WorkflowExecution.Status.Phase.
+**Requirement**: WorkflowExecution Controller MUST set owner reference on created PipelineRun to enable cascade deletion when WorkflowExecution is deleted.
 
 #### Unit Tests
-- **File**: `test/unit/workflowexecution/status_sync_test.go`
+- **File**: `test/unit/workflowexecution/owner_ref_test.go`
 - **Tests**:
-  - `DescribeTable("should map PipelineRun status to WFE phase")` - Lines TBD
-    - Entry: "Unknown → Running"
-    - Entry: "True → Completed"
-    - Entry: "False → Failed"
-    - Entry: "Cancelled → Failed"
-- **Coverage**: 0/4 test cases 🚧
-
-#### Integration Tests
-- **File**: `test/integration/workflowexecution/lifecycle_test.go`
-- **Tests**:
-  - Status synchronization verified in lifecycle tests
-- **Coverage**: 0/2 integration tests 🚧
-
-**Status**: 🚧 **0% Coverage** (pending implementation)
-
----
-
-### **BR-WE-006: Use Deterministic PipelineRun Naming**
-
-**Requirement**: The controller MUST use deterministic PipelineRun naming (sha256 hash of targetResource) to enable idempotent creation and race condition prevention.
-
-#### Unit Tests
-- **File**: `test/unit/workflowexecution/naming_test.go`
-- **Tests**:
-  - `It("should be deterministic")` - Lines TBD
-  - `It("should produce valid K8s name")` - Lines TBD
-  - `DescribeTable("should generate deterministic names")` - Lines TBD (3 entries)
-- **Coverage**: 0/5 test cases 🚧
-
-#### Integration Tests
-- **File**: `test/integration/workflowexecution/locking_test.go`
-- **Tests**:
-  - Naming verified in race condition test
-- **Coverage**: 0/1 integration test 🚧
-
-**Status**: 🚧 **0% Coverage** (pending implementation)
-
----
-
-### **BR-WE-007: Implement Finalizer for Cleanup**
-
-**Requirement**: The controller MUST use a finalizer to ensure PipelineRun cleanup when WorkflowExecution is deleted.
-
-#### Unit Tests
-- **File**: `test/unit/workflowexecution/finalizer_test.go`
-- **Tests**:
-  - `It("should add finalizer on create")` - Lines TBD
-  - `It("should remove finalizer after cleanup")` - Lines TBD
-  - `It("should handle delete during Running")` - Lines TBD
+  - `It("should set owner reference on PipelineRun")` - Lines TBD
+  - `It("should set controller=true in owner reference")` - Lines TBD
+  - `It("should reference correct WorkflowExecution")` - Lines TBD
 - **Coverage**: 0/3 test cases 🚧
 
 #### Integration Tests
-- **File**: `test/integration/workflowexecution/finalizer_test.go`
+- **File**: `test/integration/workflowexecution/lifecycle_test.go`
 - **Tests**:
-  - `It("should add finalizer when WFE is created")` - Lines TBD
-  - `It("should cleanup PipelineRun when WFE is deleted while Running")` - Lines TBD
-- **Coverage**: 0/2 integration tests 🚧
+  - `It("should cascade delete PipelineRun when WFE deleted")` - Lines TBD
+- **Coverage**: 0/1 integration test 🚧
 
 **Status**: 🚧 **0% Coverage** (pending implementation)
 
 ---
 
-### **BR-WE-008: Audit Trail Creation**
+### **BR-WE-005: Audit Events for Execution Lifecycle**
 
-**Requirement**: The controller MUST record audit events for key state transitions (Created, Started, Completed, Failed, Skipped).
+**Requirement**: WorkflowExecution Controller MUST emit audit events for key lifecycle transitions (created, running, completed, failed) to support compliance and debugging.
 
 #### Unit Tests
 - **File**: `test/unit/workflowexecution/audit_test.go`
 - **Tests**:
-  - `DescribeTable("should record audit events")` - Lines TBD (5 entries)
-    - Entry: "on creation"
-    - Entry: "on PipelineRun start"
-    - Entry: "on completion"
-    - Entry: "on failure"
-    - Entry: "on skip"
+  - `DescribeTable("should emit events for phase transitions")` - Lines TBD
+    - Entry: "Pending → Running"
+    - Entry: "Running → Completed"
+    - Entry: "Running → Failed"
+    - Entry: "Pending → Skipped"
+  - `It("should include correlation_id in audit")` - Lines TBD
 - **Coverage**: 0/5 test cases 🚧
 
 #### Integration Tests
-- **File**: `test/integration/workflowexecution/audit_test.go`
+- **File**: `test/integration/workflowexecution/lifecycle_test.go`
 - **Tests**:
+  - Events verified via K8s event recorder
   - Audit verified via Data Storage API calls
+- **Coverage**: 0/2 integration tests 🚧
+
+**Status**: 🚧 **0% Coverage** (pending implementation)
+
+---
+
+### **BR-WE-006: ServiceAccount Configuration**
+
+**Requirement**: WorkflowExecution Controller MUST support optional ServiceAccountName configuration for PipelineRun execution.
+
+#### Unit Tests
+- **File**: `test/unit/workflowexecution/service_account_test.go`
+- **Tests**:
+  - `It("should use ServiceAccountName from spec when provided")` - Lines TBD
+  - `It("should use default ServiceAccountName when not specified")` - Lines TBD
+  - `It("should propagate ServiceAccountName to PipelineRun")` - Lines TBD
+- **Coverage**: 0/3 test cases 🚧
+
+#### Integration Tests
+- **File**: `test/integration/workflowexecution/lifecycle_test.go`
+- **Tests**:
+  - ServiceAccountName verified in created PipelineRun
+- **Coverage**: 0/1 integration test 🚧
+
+**Status**: 🚧 **0% Coverage** (pending implementation)
+
+---
+
+### **BR-WE-007: Handle Externally Deleted PipelineRun**
+
+**Requirement**: WorkflowExecution Controller MUST gracefully handle PipelineRun deletion by external actors (operators, garbage collection) and mark WorkflowExecution as Failed.
+
+#### Unit Tests
+- **File**: `test/unit/workflowexecution/external_deletion_test.go`
+- **Tests**:
+  - `It("should handle NotFound error when getting PipelineRun")` - Lines TBD
+  - `It("should mark WFE as Failed when PipelineRun deleted externally")` - Lines TBD
+  - `It("should set message indicating external deletion")` - Lines TBD
+- **Coverage**: 0/3 test cases 🚧
+
+#### Integration Tests
+- **File**: `test/integration/workflowexecution/lifecycle_test.go`
+- **Tests**:
+  - `It("should handle external PipelineRun deletion")` - Lines TBD
+- **Coverage**: 0/1 integration test 🚧
+
+**Status**: 🚧 **0% Coverage** (pending implementation)
+
+---
+
+### **BR-WE-008: Prometheus Metrics for Execution Outcomes**
+
+**Requirement**: WorkflowExecution Controller MUST expose Prometheus metrics for execution outcomes (success/failure counts, duration histograms) on port 9090.
+
+#### Unit Tests
+- **File**: `test/unit/workflowexecution/metrics_test.go`
+- **Tests**:
+  - `It("should record workflowexecution_total on completion")` - Lines TBD
+  - `It("should record workflowexecution_duration_seconds histogram")` - Lines TBD
+  - `It("should include outcome and workflow_id labels")` - Lines TBD
+  - `It("should record pipelinerun_creation_total counter")` - Lines TBD
+- **Coverage**: 0/4 test cases 🚧
+
+#### Integration Tests
+- **File**: `test/integration/workflowexecution/metrics_test.go`
+- **Tests**:
+  - Metrics verified via Prometheus scrape endpoint
 - **Coverage**: 0/1 integration test 🚧
 
 **Status**: 🚧 **0% Coverage** (pending implementation)
@@ -323,11 +320,11 @@ This appendix provides the Business Requirements Coverage Matrix for the Workflo
 | BR-WE-001 | PipelineRun Creation | All tests pending |
 | BR-WE-002 | Parameter Passing | All tests pending |
 | BR-WE-003 | Dedicated Namespace | All tests pending |
-| BR-WE-004 | Result Reporting | All tests pending |
-| BR-WE-005 | Status Sync | All tests pending |
-| BR-WE-006 | Deterministic Naming | All tests pending |
-| BR-WE-007 | Finalizer | All tests pending |
-| BR-WE-008 | Audit Trail | All tests pending |
+| BR-WE-004 | Owner Reference for Cascade Deletion | All tests pending |
+| BR-WE-005 | Audit Events for Execution Lifecycle | All tests pending |
+| BR-WE-006 | ServiceAccount Configuration | All tests pending |
+| BR-WE-007 | Handle Externally Deleted PipelineRun | All tests pending |
+| BR-WE-008 | Prometheus Metrics for Execution Outcomes | All tests pending |
 | BR-WE-009 | Parallel Prevention | All tests pending |
 | BR-WE-010 | Cooldown | All tests pending |
 | BR-WE-011 | Race Conditions | All tests pending |
@@ -360,11 +357,11 @@ This appendix provides the Business Requirements Coverage Matrix for the Workflo
 
 ### Unit Tests
 - `test/unit/workflowexecution/pipelinerun_test.go` - BR-WE-001, BR-WE-002, BR-WE-003
-- `test/unit/workflowexecution/failure_test.go` - BR-WE-004
-- `test/unit/workflowexecution/status_sync_test.go` - BR-WE-005
-- `test/unit/workflowexecution/naming_test.go` - BR-WE-006
-- `test/unit/workflowexecution/finalizer_test.go` - BR-WE-007
-- `test/unit/workflowexecution/audit_test.go` - BR-WE-008
+- `test/unit/workflowexecution/owner_ref_test.go` - BR-WE-004 (Owner Reference)
+- `test/unit/workflowexecution/audit_test.go` - BR-WE-005 (Audit Events)
+- `test/unit/workflowexecution/service_account_test.go` - BR-WE-006 (ServiceAccount)
+- `test/unit/workflowexecution/external_deletion_test.go` - BR-WE-007 (External Deletion)
+- `test/unit/workflowexecution/metrics_test.go` - BR-WE-008 (Metrics)
 - `test/unit/workflowexecution/lock_test.go` - BR-WE-009, BR-WE-010
 - `test/unit/workflowexecution/reconcile_pending_test.go` - BR-WE-011
 
@@ -372,8 +369,9 @@ This appendix provides the Business Requirements Coverage Matrix for the Workflo
 - `test/integration/workflowexecution/suite_test.go` - Setup and teardown
 - `test/integration/workflowexecution/lifecycle_test.go` - BR-WE-001 to BR-WE-005
 - `test/integration/workflowexecution/locking_test.go` - BR-WE-009 to BR-WE-011
-- `test/integration/workflowexecution/finalizer_test.go` - BR-WE-007
-- `test/integration/workflowexecution/audit_test.go` - BR-WE-008
+- `test/integration/workflowexecution/finalizer_test.go` - BR-WE-004 (Owner Reference cascade)
+- `test/integration/workflowexecution/audit_test.go` - BR-WE-005 (Audit Events)
+- `test/integration/workflowexecution/metrics_test.go` - BR-WE-008 (Metrics)
 
 ### E2E Tests
 - `test/e2e/workflowexecution/workflow_test.go` - BR-WE-001, BR-WE-004, BR-WE-005

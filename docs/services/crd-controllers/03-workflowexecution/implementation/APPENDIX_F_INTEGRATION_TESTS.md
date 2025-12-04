@@ -724,7 +724,7 @@ func randomString(length int) string {
 
 **File**: `test/integration/workflowexecution/finalizer_test.go`
 
-**BR Coverage**: BR-WE-007 (Finalizer Lifecycle)
+**BR Coverage**: BR-WE-004 (Owner Reference Cascade Deletion) + BR-WE-007 (External PipelineRun Deletion Handling)
 
 ```go
 package workflowexecution

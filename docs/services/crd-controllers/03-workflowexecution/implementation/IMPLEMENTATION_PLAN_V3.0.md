@@ -839,11 +839,11 @@ var _ = Describe("Integration: Resource Locking", func() {
 | BR-WE-001 | Create PipelineRun from OCI Bundle | ✅ | ✅ | ✅ |
 | BR-WE-002 | Pass Parameters to Execution Engine | ✅ | ✅ | ✅ |
 | BR-WE-003 | Monitor Execution Status | ✅ | ✅ | ✅ |
-| BR-WE-004 | Extract Failure Details | ✅ | ✅ | ⬜ |
-| BR-WE-005 | Emit Kubernetes Events | ✅ | ✅ | ⬜ |
-| BR-WE-006 | Update Status Phases | ✅ | ✅ | ✅ |
-| BR-WE-007 | Audit Trail | ✅ | ✅ | ⬜ |
-| BR-WE-008 | Finalizer Cleanup | ✅ | ✅ | ✅ |
+| BR-WE-004 | Owner Reference for Cascade Deletion | ✅ | ✅ | ✅ |
+| BR-WE-005 | Audit Events for Execution Lifecycle | ✅ | ✅ | ⬜ |
+| BR-WE-006 | ServiceAccount Configuration | ✅ | ✅ | ⬜ |
+| BR-WE-007 | Handle Externally Deleted PipelineRun | ✅ | ✅ | ⬜ |
+| BR-WE-008 | Prometheus Metrics for Execution Outcomes | ✅ | ✅ | ⬜ |
 | BR-WE-009 | Prevent Parallel Execution | ✅ | ✅ | ✅ |
 | BR-WE-010 | Cooldown Period | ✅ | ✅ | ✅ |
 | BR-WE-011 | Target Resource Identification | ✅ | ✅ | ✅ |

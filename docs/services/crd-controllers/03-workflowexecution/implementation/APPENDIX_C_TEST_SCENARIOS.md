@@ -363,7 +363,7 @@ var _ = Describe("checkResourceLock", func() {
 |----|----|----|------------------|
 | E2E-04 | BR-WE-001 | Complete within SLA | < 30s total time |
 | E2E-05 | BR-WE-009 | Cost savings | 90% skipped in duplicate scenario |
-| E2E-06 | BR-WE-004 | Actionable failures | Natural language summary present |
+| E2E-06 | BR-WE-004 | Cascade deletion | PipelineRun deleted when WFE deleted |
 
 ---
 

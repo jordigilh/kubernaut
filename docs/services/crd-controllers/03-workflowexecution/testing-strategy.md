@@ -497,7 +497,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
     Context("PipelineRun creation", func() {
         It("should create PipelineRun in dedicated namespace", func() {
             wfe := createWFE("wfe-integration", "default/deployment/app")
-            
+
             Eventually(func() bool {
                 return pipelineRunExists("kubernaut-workflows", pipelineRunName(wfe.Spec.TargetResource))
             }, 10*time.Second).Should(BeTrue())

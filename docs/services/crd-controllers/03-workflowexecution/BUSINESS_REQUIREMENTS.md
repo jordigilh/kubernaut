@@ -182,32 +182,6 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
-#### BR-WE-008: Prometheus Metrics for Execution Outcomes
-
-**Description**: WorkflowExecution Controller MUST expose Prometheus metrics for execution outcomes (success/failure counts, duration histograms) on port 9090.
-
-**Priority**: P1 (HIGH)
-
-**Rationale**: Metrics enable SLO tracking, alerting, and capacity planning. Essential for production observability.
-
-**Implementation**:
-- `workflowexecution_total{outcome, workflow_id}` - Counter
-- `workflowexecution_duration_seconds{outcome, workflow_id}` - Histogram
-- `workflowexecution_pipelinerun_creation_total` - Counter
-- Expose on `:9090/metrics`
-
-**Acceptance Criteria**:
-- ✅ Metrics exposed on /metrics endpoint
-- ✅ Metrics updated on execution completion
-- ✅ Labels include outcome and workflow_id
-- ✅ Duration histogram with appropriate buckets
-
-**Test Coverage**:
-- Unit: Metrics recording logic
-- Integration: Prometheus scrape validation
-
----
-
 ### Category 4: Error Handling
 
 #### BR-WE-006: ServiceAccount Configuration
@@ -256,6 +230,32 @@ Kubernaut is **NOT** a workflow execution engine. We:
 **Test Coverage**:
 - Unit: NotFound handling
 - Integration: Simulated external deletion
+
+---
+
+#### BR-WE-008: Prometheus Metrics for Execution Outcomes
+
+**Description**: WorkflowExecution Controller MUST expose Prometheus metrics for execution outcomes (success/failure counts, duration histograms) on port 9090.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Metrics enable SLO tracking, alerting, and capacity planning. Essential for production observability.
+
+**Implementation**:
+- `workflowexecution_total{outcome, workflow_id}` - Counter
+- `workflowexecution_duration_seconds{outcome, workflow_id}` - Histogram
+- `workflowexecution_pipelinerun_creation_total` - Counter
+- Expose on `:9090/metrics`
+
+**Acceptance Criteria**:
+- ✅ Metrics exposed on /metrics endpoint
+- ✅ Metrics updated on execution completion
+- ✅ Labels include outcome and workflow_id
+- ✅ Duration histogram with appropriate buckets
+
+**Test Coverage**:
+- Unit: Metrics recording logic
+- Integration: Prometheus scrape validation
 
 ---
 
