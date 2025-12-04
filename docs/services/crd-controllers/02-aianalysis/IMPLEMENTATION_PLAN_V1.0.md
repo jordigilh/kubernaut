@@ -1,14 +1,22 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.0
-**Last Updated**: 2025-12-03
+**Version**: v1.1
+**Last Updated**: 2025-12-04
 **Timeline**: 10 days (2 calendar weeks)
 **Status**: 📋 DRAFT - Ready for Review
 **Quality Level**: Matches SignalProcessing V1.19 and Template V3.0 standards
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.1** (2025-12-04): Template v3.0 full alignment
+  - ✅ **Edge Case Categories**: Added template section ⭐ V3.0
+  - ✅ **Metrics Validation Commands**: Added Day 7 template ⭐ V3.0
+  - ✅ **Lessons Learned Template**: Added Day 10 deliverable ⭐ V3.0
+  - ✅ **Technical Debt Template**: Added Day 10 deliverable ⭐ V3.0
+  - ✅ **Team Handoff Notes Template**: Added Day 10 deliverable ⭐ V3.0
+  - ✅ **CRD API Group Standard**: Added reference section ⭐ V3.0
+  - 📏 **Plan size**: ~3,800 lines
 - **v1.0** (2025-12-03): Initial implementation plan
   - ✅ **Template v3.0 Compliance**: Cross-team validation, risk mitigation tracking
   - ✅ **Rego Policy Testing Strategy**: Adapted from SignalProcessing V1.19
@@ -34,19 +42,26 @@
 | Section | Line | Purpose |
 |---------|------|---------|
 | [Quick Reference](#-quick-reference) | ~30 | Plan overview |
-| [Service Overview](#-service-overview) | ~60 | AIAnalysis service context |
-| [Prerequisites Checklist](#-prerequisites-checklist) | ~120 | Pre-Day 1 requirements |
-| [Cross-Team Validation](#-cross-team-validation--v30) | ~200 | Multi-team dependency sign-off |
-| [Integration Test Environment](#-integration-test-environment-decision) | ~320 | KIND decision and MockLLMServer |
-| [Pre-Implementation Design Decisions](#-pre-implementation-design-decisions) | ~400 | Ambiguous requirement resolution |
-| [Risk Assessment Matrix](#️-risk-assessment-matrix) | ~500 | Risk identification and mitigation |
-| [Files Affected](#-files-affected-section) | ~600 | New/modified/deleted files |
-| [Timeline Overview](#-timeline-overview) | ~700 | 10-day phase breakdown |
-| [Day-by-Day Breakdown](#-day-by-day-breakdown) | ~750 | Detailed daily tasks |
-| [Rego Policy Testing Strategy](#-rego-policy-testing-strategy) | ~1800 | Approval policy testing |
-| [Business Requirements Coverage](#-business-requirements-coverage-matrix) | ~2000 | BR-AI-XXX mapping |
-| [Production Readiness Checklist](#-production-readiness-checklist) | ~2200 | Deployment checklist |
-| [References](#-references) | ~2400 | ADR/DD documents |
+| [Service Overview](#-service-overview) | ~70 | AIAnalysis service context |
+| [Prerequisites Checklist](#-prerequisites-checklist) | ~130 | Pre-Day 1 requirements |
+| [Cross-Team Validation](#-cross-team-validation--v30) | ~210 | Multi-team dependency sign-off |
+| [Integration Test Environment](#-integration-test-environment-decision) | ~330 | KIND decision and MockLLMServer |
+| [Pre-Implementation Design Decisions](#-pre-implementation-design-decisions) | ~410 | Ambiguous requirement resolution |
+| [Risk Assessment Matrix](#️-risk-assessment-matrix) | ~510 | Risk identification and mitigation |
+| [Files Affected](#-files-affected-section) | ~610 | New/modified/deleted files |
+| [Timeline Overview](#-timeline-overview) | ~710 | 10-day phase breakdown |
+| [Day-by-Day Breakdown](#-day-by-day-breakdown) | ~760 | Detailed daily tasks |
+| [Rego Policy Testing Strategy](#-rego-policy-testing-strategy) | ~1850 | Approval policy testing |
+| [Business Requirements Coverage](#-business-requirements-coverage-matrix) | ~2050 | BR-AI-XXX mapping |
+| [Production Readiness Checklist](#-production-readiness-checklist) | ~2250 | Deployment checklist |
+| **V3.0 Templates** | | |
+| ├─ [Edge Case Categories](#-edge-case-categories-template--v30) | ~2350 | Days 6-7 test coverage ⭐ V3.0 |
+| ├─ [Metrics Validation Commands](#-metrics-validation-commands-template--v30) | ~2400 | Day 5 validation ⭐ V3.0 |
+| ├─ [Lessons Learned](#-lessons-learned-template--v30) | ~2450 | Day 10 deliverable ⭐ V3.0 |
+| ├─ [Technical Debt](#-technical-debt-template--v30) | ~2500 | Day 10 deliverable ⭐ V3.0 |
+| ├─ [Team Handoff Notes](#-team-handoff-notes-template--v30) | ~2550 | Day 10 deliverable ⭐ V3.0 |
+| └─ [CRD API Group Standard](#-crd-api-group-standard--v30) | ~2600 | DD-CRD-001 reference ⭐ V3.0 |
+| [References](#-references) | ~2700 | ADR/DD documents |
 
 ---
 
@@ -2202,6 +2217,239 @@ var _ = Describe("Rego Policy Integration", func() {
 
 ---
 
+## 🎯 **Edge Case Categories Template** ⭐ V3.0
+
+> **Purpose**: Ensure comprehensive edge case testing for AIAnalysis
+> **Reference**: Template V3.0, SignalProcessing V1.19 patterns
+
+| Category | Description | AIAnalysis Test Pattern |
+|----------|-------------|------------------------|
+| **Configuration Changes** | Rego policy updated during reconciliation | Start analysis, update ConfigMap, verify policy reload |
+| **Rate Limiting** | HolmesGPT-API rate limits | Mock 429 responses, verify exponential backoff |
+| **Large Payloads** | EnrichmentResults exceeds typical size | Create large KubernetesContext, verify no OOM |
+| **Concurrent Operations** | Multiple AIAnalysis CRDs reconciling | Parallel reconciliations, verify no race conditions |
+| **Partial Failures** | HolmesGPT returns partial response | Mock incomplete response, verify graceful degradation |
+| **Context Cancellation** | Reconciliation cancelled mid-investigation | Cancel context, verify cleanup and status update |
+| **FailedDetections Handling** | DetectedLabels has failed fields | Mock RBAC failure, verify `failedDetections` propagation |
+| **Recovery Flow Edge Cases** | Recovery attempt with stale context | Verify fresh enrichment used, not cached |
+
+### **AIAnalysis Edge Case Test Pattern**
+```go
+var _ = Describe("Edge Cases", func() {
+    Context("when Rego policy is updated during reconciliation", func() {
+        BeforeEach(func() {
+            // Setup: Create AIAnalysis in Investigating phase
+            // Trigger: Update ConfigMap with new policy
+        })
+
+        It("should use the new policy for approval evaluation", func() {
+            // Verify: New policy applied, old decision not cached
+        })
+    })
+
+    Context("when HolmesGPT-API returns 429 rate limit", func() {
+        It("should apply exponential backoff and retry", func() {
+            // Mock: Return 429 for first 2 calls, success on 3rd
+            // Verify: Delays increase (1s, 2s, 4s), eventually succeeds
+        })
+    })
+
+    Context("when DetectedLabels has FailedDetections", func() {
+        It("should propagate failed fields to HolmesGPT-API request", func() {
+            // Setup: DetectedLabels with FailedDetections: ["gitOpsManaged"]
+            // Verify: HolmesGPT request includes failedDetections array
+        })
+    })
+})
+```
+
+---
+
+## 📊 **Metrics Validation Commands Template** ⭐ V3.0
+
+```bash
+# Start AIAnalysis controller locally (for validation)
+go run ./cmd/aianalysis/main.go \
+    --metrics-bind-address=:9090 \
+    --health-probe-bind-address=:8081
+
+# Verify metrics endpoint
+curl -s localhost:9090/metrics | grep aianalysis_
+
+# Expected AIAnalysis metrics:
+# aianalysis_reconciliations_total{phase="validating",status="success"} 0
+# aianalysis_reconciliations_total{phase="investigating",status="success"} 0
+# aianalysis_reconciliations_total{phase="analyzing",status="success"} 0
+# aianalysis_reconciliations_total{phase="recommending",status="success"} 0
+# aianalysis_holmesgpt_api_duration_seconds_bucket{endpoint="/incident/analyze",le="1"} 0
+# aianalysis_rego_policy_evaluation_duration_seconds_bucket{policy="approval",le="0.1"} 0
+# aianalysis_errors_total{error_type="holmesgpt_timeout"} 0
+# aianalysis_errors_total{error_type="rego_policy_failure"} 0
+# aianalysis_approval_decisions_total{decision="auto_approve"} 0
+# aianalysis_approval_decisions_total{decision="manual_review"} 0
+
+# Verify health endpoints
+curl -s localhost:8081/healthz  # Should return 200
+curl -s localhost:8081/readyz   # Should return 200
+
+# Create test AIAnalysis resource
+kubectl apply -f config/samples/aianalysis_v1alpha1_aianalysis.yaml
+
+# Verify metrics increment
+watch -n 1 'curl -s localhost:9090/metrics | grep aianalysis_reconciliations_total'
+```
+
+---
+
+## 📝 **Lessons Learned Template** ⭐ V3.0
+
+> **Purpose**: Capture insights for future implementations
+> **Location**: `docs/services/crd-controllers/02-aianalysis/implementation/LESSONS_LEARNED.md`
+
+### **What Worked Well**
+1. [To be completed at Day 10]
+   - **Evidence**: [How we know it worked]
+   - **Recommendation**: [Should we continue/expand this?]
+
+### **Technical Wins**
+1. [To be completed at Day 10]
+   - **Impact**: [Quantifiable impact if possible]
+
+### **Challenges Overcome**
+1. [To be completed at Day 10]
+   - **Solution**: [How we solved it]
+   - **Lesson**: [What we learned]
+
+### **What Would We Do Differently**
+1. [To be completed at Day 10]
+   - **Reason**: [Why this would be better]
+   - **Impact**: [Expected improvement]
+
+---
+
+## 🔧 **Technical Debt Template** ⭐ V3.0
+
+> **Purpose**: Track known issues for future resolution
+> **Location**: `docs/services/crd-controllers/02-aianalysis/implementation/TECHNICAL_DEBT.md`
+
+### **Minor Issues (Non-Blocking)**
+| Issue | Impact | Estimated Effort | Priority |
+|-------|--------|------------------|----------|
+| [To be completed at Day 10] | [Impact] | [Hours/Days] | P3 |
+
+### **Future Enhancements (Post-V1.0)**
+| Enhancement | Business Value | Estimated Effort | Target Version |
+|-------------|---------------|------------------|----------------|
+| AIApprovalRequest CRD | Dedicated approval workflow | 3-5 days | V1.1 |
+| Multi-provider LLM support | Vendor flexibility | 5-7 days | V2.0 |
+| Dynamic workflow generation | Advanced AI capabilities | 10+ days | V2.0+ |
+
+### **Known Limitations**
+1. **Single HolmesGPT-API Provider**: V1.0 supports only HolmesGPT-API, no fallback to other LLM providers
+2. **Synchronous Approval Flow**: V1.0 signals approval to RO, dedicated CRD workflow in V1.1
+3. **Predefined Workflows Only**: LLM selects from catalog, no dynamic workflow generation
+
+---
+
+## 🤝 **Team Handoff Notes Template** ⭐ V3.0
+
+### **Key Files to Review**
+| File | Purpose | Priority |
+|------|---------|----------|
+| `cmd/aianalysis/main.go` | Entry point, signal handling | High |
+| `internal/controller/aianalysis/reconciler.go` | Main reconciliation logic | High |
+| `pkg/aianalysis/phases/` | Phase handlers (validating, investigating, etc.) | High |
+| `pkg/aianalysis/rego/` | Rego policy engine | High |
+| `api/aianalysis/v1alpha1/aianalysis_types.go` | CRD type definitions | Medium |
+| `docs/.../ERROR_HANDLING_PHILOSOPHY.md` | Error handling guide | Medium |
+
+### **Running Locally**
+```bash
+# Terminal 1: Start KIND cluster with CRDs
+make kind-create
+make install
+
+# Terminal 2: Start HolmesGPT-API with MockLLMServer
+cd holmesgpt-api && python tests/mock_llm_server.py &
+uvicorn main:app --host 0.0.0.0 --port 8080
+
+# Terminal 3: Start AIAnalysis controller
+make run-aianalysis
+
+# Terminal 4: Create test AIAnalysis
+kubectl apply -f config/samples/aianalysis_v1alpha1_aianalysis.yaml
+kubectl get aianalysis -w
+```
+
+### **Debugging Tips**
+```bash
+# Common debugging commands
+kubectl logs -l app=aianalysis-controller -n kubernaut-system --tail=100
+
+# Force re-reconciliation
+kubectl annotate aianalysis <name> force-reconcile=$(date +%s) --overwrite
+
+# Check Rego policy ConfigMap
+kubectl get configmap ai-approval-policies -n kubernaut-system -o yaml
+
+# Check leader election
+kubectl get lease aianalysis-controller-leader -n kubernaut-system -o yaml
+
+# Profile memory/CPU
+kubectl top pod -l app=aianalysis-controller -n kubernaut-system
+```
+
+### **Common Issues and Solutions**
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| HolmesGPT-API connection failure | Phase stuck at `Investigating` | Check HolmesGPT-API pod health, verify port 8080 |
+| Rego policy not loading | All decisions default to manual | Check ConfigMap exists, verify Rego syntax |
+| FailedDetections validation error | CRD rejected on create | Ensure only valid field names in FailedDetections array |
+| Recovery flow not triggering | `isRecoveryAttempt` ignored | Verify WorkflowExecution failure status, check RO creates new AIAnalysis |
+
+---
+
+## 🔷 **CRD API Group Standard** ⭐ V3.0
+
+**Reference**: [DD-CRD-001: API Group Domain Selection](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md)
+
+### **Current Implementation**
+
+AIAnalysis CRD uses the `kubernaut.io` domain:
+
+```yaml
+apiVersion: aianalysis.kubernaut.io/v1alpha1
+kind: AIAnalysis
+```
+
+**Note**: Template v3.0 specifies `.kubernaut.ai` per DD-CRD-001, but existing CRD types use `.kubernaut.io`. This is a project-wide decision to be addressed separately.
+
+### **CRD Inventory (AIAnalysis Service)**
+
+| CRD | API Group | Purpose |
+|-----|-----------|---------|
+| AIAnalysis | `aianalysis.kubernaut.io/v1alpha1` | HolmesGPT RCA + workflow selection |
+
+### **RBAC Markers (Current)**
+
+```go
+//+kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses/finalizers,verbs=update
+```
+
+### **Industry Best Practices Analysis**
+
+| Project | API Group Strategy | Pattern |
+|---------|-------------------|---------|
+| **Tekton** | `tekton.dev/v1` | ✅ Unified - all CRDs under single domain |
+| **Istio** | `istio.io/v1` | ✅ Unified - network, security, config all under `istio.io` |
+| **Cert-Manager** | `cert-manager.io/v1` | ✅ Unified - certificates, issuers, challenges |
+| **ArgoCD** | `argoproj.io/v1alpha1` | ✅ Unified - applications, projects, rollouts |
+| **Kubernaut** | `[service].kubernaut.io/v1alpha1` | ✅ Unified - remediation workflow CRDs |
+
+---
+
 ## 📚 **References**
 
 ### **Authoritative Documents**
@@ -2234,6 +2482,7 @@ var _ = Describe("Rego Policy Integration", func() {
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| **v1.1** | 2025-12-04 | AIAnalysis Team | Template v3.0 full alignment (Edge Cases, Metrics Validation, Lessons Learned, Technical Debt, Team Handoff, CRD API Group) |
 | **v1.0** | 2025-12-03 | AIAnalysis Team | Initial implementation plan |
 
 ---
