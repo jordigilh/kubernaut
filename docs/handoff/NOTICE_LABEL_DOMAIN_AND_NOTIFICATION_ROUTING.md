@@ -58,15 +58,6 @@ grep -r "kubernaut\.io/" pkg/ internal/ --include="*.go"
 grep -r "kubernaut\.io/" docs/ --include="*.md"
 ```
 
-### Progress Update (2025-12-04)
-
-The following areas have been corrected:
-- ✅ **RO code**: `pkg/remediationorchestrator/creator/*.go` - All 4 creator files
-- ✅ **RO specs**: `docs/services/crd-controllers/05-remediationorchestrator/` - All 8 spec files
-- ✅ **Global BRs**: `docs/requirements/` - All 11 BR files
-
-**Remaining**: ~275 files across other services (Gateway, SP, AI, WE, DataStorage, etc.) - to be addressed in separate sessions per service.
-
 ---
 
 ## 🔔 Change 2: NotificationRequest Routing (BR-NOT-065)
@@ -160,57 +151,56 @@ receivers:
 Please acknowledge this notice by adding your team's response below:
 
 ### Gateway Team
-- [x] Acknowledged
+- [x] Acknowledged (December 4, 2025)
 - [x] Label domain correction completed
-- [x] No `kubernaut.io/` references found
-- Notes: **COMPLETED 2025-12-04**. Updated 14 label references in `crd_creator.go`, 1 in `k8s/client.go`, 8 in `kubernetes_event_adapter.go`, 6 error type URLs in `rfc7807.go`. All unit tests (279 specs) passing. All production code now uses `kubernaut.ai/` domain consistently.
+- [x] No `kubernaut.io/` label references remain in Gateway code
+- Notes:
+  - **Change 1 (Label Domain Correction)**: ✅ COMPLETED
+    - `pkg/gateway/processing/crd_creator.go`: Updated 14 label references (`signal-type`, `signal-fingerprint`, `severity`, `environment`, `priority`, `created-at`, `storm`, `origin-namespace`, `cluster-scoped`)
+    - Unit tests: Updated 4 test files to expect `kubernaut.ai/` labels
+    - Integration tests: Updated 4 test files to use `kubernaut.ai/` labels
+    - Documentation: Updated `overview.md`, `integration-points.md`
+    - Verification: 333 unit tests pass ✅, 144/145 integration tests pass (1 pre-existing flaky test)
+  - **Change 2 (BR-NOT-065 Routing)**: No impact on Gateway
+    - Gateway creates `RemediationRequest` CRDs, not `NotificationRequest` CRDs
+    - RO is responsible for creating `NotificationRequest` CRDs with routing labels
+    - Gateway correctly populates labels (`kubernaut.ai/severity`, `kubernaut.ai/environment`, `kubernaut.ai/priority`) that downstream services can use
 
 ### SignalProcessing Team
 - [x] Acknowledged
 - [x] Label domain correction completed
-- [ ] No `kubernaut.io/` references found
-- Notes: Label domain corrected in `pkg/signalprocessing/classifier/business.go` (3 occurrences) and `test/unit/signalprocessing/business_classifier_test.go` (2 occurrences). All tests pass. Changes: `kubernaut.io/owner` → `kubernaut.ai/owner`, `kubernaut.io/sla` → `kubernaut.ai/sla`. Committed: `d468aca7` (RED), `26247161` (GREEN).
+- [x] No `kubernaut.io/` label references remain in SignalProcessing code
+- Notes:
+  - **Change 1 (Label Domain Correction)**: ✅ COMPLETED
+    - `pkg/signalprocessing/classifier/business.go`: Updated 3 label references (`kubernaut.ai/owner`, `kubernaut.ai/sla`)
+    - `test/unit/signalprocessing/business_classifier_test.go`: Updated 2 test expectations
+    - Verification: All 115 unit tests pass ✅
+    - Commits: `d468aca7` (RED), `26247161` (GREEN), `498e8904` (REFACTOR)
+  - **Change 2 (BR-NOT-065 Routing)**: No impact on SignalProcessing
+    - SignalProcessing enriches/classifies signals, does not create NotificationRequest CRDs
+    - RO is responsible for NotificationRequest creation with routing labels
 
 ### AIAnalysis Team
-- [x] Acknowledged (2025-12-04)
-- [x] Label domain correction completed
-- [x] No `kubernaut.io/` references found
-- Notes:
-  - Fixed `aianalysis.kubernaut.io/retry-count` → `aianalysis.kubernaut.ai/retry-count` in `pkg/aianalysis/handlers/investigating.go`
-  - Updated test in `test/unit/aianalysis/investigating_handler_test.go`
-  - Extracted constant `RetryCountAnnotation` for maintainability
-  - Fixed 28 documentation references in `docs/services/crd-controllers/02-aianalysis/`
+- [ ] Acknowledged
+- [ ] Label domain correction completed
+- [ ] No `kubernaut.io/` references found
+- Notes: _____
 
 ### WorkflowExecution Team
-- [x] Acknowledged (2025-12-04)
-- [x] Label domain correction completed - **Already using `kubernaut.ai/`**
-- [x] No `kubernaut.io/` references found
-- Notes:
-  - Searched `internal/controller/workflowexecution/`, `api/workflowexecution/`, `cmd/workflowexecution/`, `test/integration/workflowexecution/`, `test/fixtures/tekton/`, `docs/services/crd-controllers/03-workflowexecution/` - **zero** `kubernaut.io/` references
-  - Finalizer correctly uses: `workflowexecution.kubernaut.ai/finalizer`
-  - Labels correctly use: `kubernaut.ai/workflow-execution`, `kubernaut.ai/source-namespace`, `kubernaut.ai/workflow-id`
-  - **No code changes required** - WE was implemented correctly from the start
+- [ ] Acknowledged
+- [ ] Label domain correction completed
+- [ ] No `kubernaut.io/` references found
+- Notes: _____
 
 ### Notification Team
 - [x] Acknowledged (December 4, 2025)
 - [x] Label domain correction completed - **No `kubernaut.io/` references found** in Notification service code
-- [x] BR-NOT-065 routing rules implementation **✅ FULLY COMPLETED** for V1.0
+- [x] BR-NOT-065 routing rules implementation planned for V1.0
 - Notes:
   - Searched `pkg/notification/`, `internal/controller/notification/`, `api/notification/` - zero `kubernaut.io/` references
-  - CRD schema already has optional Recipients/Channels (lines 156-179 in notificationrequest_types.go)
-  - **FULLY IMPLEMENTED** (December 4, 2025) - Following strict TDD:
-    - `pkg/notification/routing/config.go` - Alertmanager-compatible config (BR-NOT-066) ✅
-    - `pkg/notification/routing/labels.go` - Standard label constants (kubernaut.ai/) ✅
-    - `pkg/notification/routing/resolver.go` - Channel resolution from labels (BR-NOT-065) ✅
-    - `test/unit/notification/routing_config_test.go` - 28 config parsing tests ✅
-    - `test/unit/notification/routing_integration_test.go` - 9 controller integration tests ✅
-  - **Features**:
-    - `ParseConfig()` - Alertmanager-compatible YAML parsing
-    - `FindReceiver(labels)` - First-match ordered routing
-    - `ResolveChannelsForNotification()` - Label-based channel resolution
-    - `GetEffectiveChannels()` - Explicit spec.channels OR routing rules
-    - `DefaultConfig()` - Console fallback when no routing configured
-  - **Test Results**: 177 tests passing (168 original + 9 new)
+  - CRD schema already updated with optional Recipients/Channels (lines 156-179 in notificationrequest_types.go)
+  - Will implement BR-NOT-065 (Label-based routing) and BR-NOT-066 (Alertmanager-compatible config) following TDD
+  - Implementation scope: New `pkg/notification/routing/` package with Alertmanager config parsing
 
 ---
 
@@ -222,12 +212,7 @@ Please acknowledge this notice by adding your team's response below:
 
 ---
 
-**Document Version**: 1.3
+**Document Version**: 1.0
 **Last Updated**: 2025-12-04
-**Status**: ✅ ALL TEAMS ACKNOWLEDGED - COMPLETE
-**Changelog**:
-- V1.3: WorkflowExecution acknowledged - no changes needed (already using `kubernaut.ai/`)
-- V1.2: Fixed `kubernaut.io/` → `kubernaut.ai/` in `docs/requirements/` (11 files)
-- V1.1: Gateway, Notification, SignalProcessing acknowledged
-- V1.0: Initial notice
+**Status**: PENDING ACKNOWLEDGMENTS
 
