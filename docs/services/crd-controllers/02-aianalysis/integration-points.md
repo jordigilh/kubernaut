@@ -13,7 +13,7 @@
 | **v2.2** | 2025-12-02 | **SCHEMA UPDATE**: Added `failedDetections` to DetectedLabels data flow; HolmesGPT-API passes to Data Storage for filter skipping | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 | v2.1 | 2025-12-02 | **CRITICAL FIXES**: Port 8090→8080; Endpoints corrected; MCP removed (toolkit-based); Request/response schemas updated; Added `target_in_owner_chain` and `warnings` | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
 | v2.0 | 2025-11-30 | **REGENERATED**: Fixed RemediationProcessing→SignalProcessing; Added DetectedLabels/CustomLabels/OwnerChain flow; Updated HolmesGPT-API integration; Removed legacy enrichment patterns | DD-WORKFLOW-001 v1.8 |
-| v1.1 | 2025-10-16 | Added structured action format | BR-LLM-021 |
+| v1.1 | 2025-10-16 | Added structured action format | DD-CONTRACT-002 |
 | v1.0 | 2025-10-15 | Initial specification | - |
 
 ---

@@ -173,7 +173,7 @@ spec:
         kind: "Deployment"
         name: "payment-api"
 
-    enrichmentQuality: 0.95  # Used by RO for degraded mode detection
+    # NOTE: enrichmentQuality REMOVED (Dec 2025)
 ```
 
 ### Recovery Attempts (for Failed Workflow Recovery)

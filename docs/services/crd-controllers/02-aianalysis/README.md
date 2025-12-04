@@ -1,6 +1,6 @@
 # AI Analysis Service
 
-**Version**: v2.5
+**Version**: v2.6
 **Status**: ✅ Design Complete (V1.0 scope) - Ready for Implementation
 **Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
@@ -18,7 +18,8 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
-| **v2.5** | 2025-12-02 | **FailedDetections**: Added `failedDetections` field to DetectedLabels per DD-WORKFLOW-001 v2.1; Updated crd-schema, integration-points, implementation-checklist, REGO_POLICY_EXAMPLES | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+| **v2.6** | 2025-12-03 | **PodSecurityLevel Removed**: Removed `podSecurityLevel` from DetectedLabels (9→8 fields) per DD-WORKFLOW-001 v2.2; PSP deprecated in K8s 1.21, PSS is namespace-level | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [NOTICE](../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md) |
+| v2.5 | 2025-12-02 | **FailedDetections**: Added `failedDetections` field to DetectedLabels per DD-WORKFLOW-001 v2.1; Updated crd-schema, integration-points, implementation-checklist, REGO_POLICY_EXAMPLES | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 | v2.4 | 2025-12-02 | **SPEC ALIGNMENT**: Aligned with handoff Q&A; Fixed HolmesGPT-API port (8080), endpoints, schemas; Removed deprecated fields (RiskTolerance, BusinessCategory, EnrichmentQuality); Added TargetInOwnerChain/Warnings; Go client generated | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
 | v2.3 | 2025-11-30 | **V1.0 COMPLETE**: All spec files updated (finalizers, metrics, database, checklist); Legacy implementation plans archived | This session |
 | v2.2 | 2025-11-30 | **FIXED**: Port allocation (8081 health, 8084 host per DD-TEST-001); BR count 31→31; Added TESTING_GUIDELINES reference | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) |
@@ -33,7 +34,7 @@
 | Document | Purpose | Status |
 |----------|---------|--------|
 | **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ✅ Complete (v2.0) |
-| **[CRD Schema](./crd-schema.md)** | AIAnalysis CRD types, validation, examples | ✅ **Updated (v2.3)** |
+| **[CRD Schema](./crd-schema.md)** | AIAnalysis CRD types, validation, examples | ✅ **Updated (v2.4)** |
 | **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ✅ Complete (v2.0) |
 | **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ✅ Complete (v2.0) |
 | **[AI HolmesGPT & Approval](./ai-holmesgpt-approval.md)** | HolmesGPT integration, Rego policies, approval workflow | ✅ Complete (v2.0) |

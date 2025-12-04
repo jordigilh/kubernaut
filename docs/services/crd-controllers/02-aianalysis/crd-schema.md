@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | **v2.3** | 2025-12-02 | **SCHEMA UPDATE**: Added `FailedDetections []string` to DetectedLabels per DD-WORKFLOW-001 v2.1; Detection failure handling with enum validation | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | **v2.4** | 2025-12-03 | **SCHEMA UPDATE**: Removed `podSecurityLevel` from DetectedLabels (9→8 fields) per DD-WORKFLOW-001 v2.2; PSP deprecated in K8s 1.21, PSS is namespace-level | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [NOTICE](../../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md) |
+> | v2.3 | 2025-12-02 | **SCHEMA UPDATE**: Added `FailedDetections []string` to DetectedLabels per DD-WORKFLOW-001 v2.1; Detection failure handling with enum validation | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v2.2 | 2025-12-02 | **GAP FIXES**: Environment/BusinessPriority changed to free-text; RiskTolerance/BusinessCategory removed; EnrichmentQuality removed; Updated SignalContextInput to match Go types | [RO_CONTRACT_GAPS.md](../../../handoff/AIANALYSIS_TO_RO_TEAM.md) |
 > | v2.1 | 2025-12-02 | Added `TargetInOwnerChain` and `Warnings` fields to status (from HolmesGPT-API response) | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
 > | v2.0 | 2025-11-30 | **REGENERATED**: Complete schema from Go types; Added DetectedLabels, CustomLabels, OwnerChain; Removed businessContext, investigationScope, HistoricalContext; Updated PreviousExecutions to slice; V1.0 approval flow clarification | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) |
@@ -240,7 +241,7 @@ type EnrichmentResults struct {
 > - RO checks `SignalProcessing.status.phase == "completed"`, not quality
 > - AIAnalysis uses `TargetInOwnerChain` from HolmesGPT-API for Rego approval policies
 
-### DetectedLabels (9 Fields)
+### DetectedLabels (8 Fields)
 
 ```go
 // DetectedLabels contains auto-detected cluster characteristics
@@ -248,19 +249,20 @@ type EnrichmentResults struct {
 // HolmesGPT-API uses for:
 //   - Workflow filtering (deterministic SQL WHERE)
 //   - LLM context (natural language in prompt)
-// DD-WORKFLOW-001 v2.1: Detection failure handling with FailedDetections
+// DD-WORKFLOW-001 v2.2: Detection failure handling with FailedDetections
 //   - LLM Prompt: ALWAYS included
 //   - Workflow Filtering: CONDITIONAL (only when OwnerChain validates)
 //   - Skip filtering for fields in FailedDetections
+//   - podSecurityLevel REMOVED (PSP deprecated K8s 1.21, PSS is namespace-level)
 type DetectedLabels struct {
     // ========================================
-    // DETECTION METADATA (DD-WORKFLOW-001 v2.1)
+    // DETECTION METADATA (DD-WORKFLOW-001 v2.2)
     // ========================================
     // Lists fields where detection failed (RBAC, timeout, etc.)
     // If a field is in this array, ignore its value
     // If empty/nil, all detections succeeded
-    // Validated: only accepts known field names
-    FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged pdbProtected hpaEnabled stateful helmManaged networkIsolated podSecurityLevel serviceMesh"`
+    // Validated: only accepts known field names (8 fields)
+    FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged pdbProtected hpaEnabled stateful helmManaged networkIsolated serviceMesh"`
 
     // ========================================
     // GITOPS MANAGEMENT
@@ -283,9 +285,10 @@ type DetectedLabels struct {
     // ========================================
     // SECURITY POSTURE
     // ========================================
-    NetworkIsolated  bool   `json:"networkIsolated"`            // NetworkPolicy exists
-    PodSecurityLevel string `json:"podSecurityLevel,omitempty"` // "privileged", "baseline", "restricted"
-    ServiceMesh      string `json:"serviceMesh,omitempty"`      // "istio", "linkerd"
+    NetworkIsolated bool   `json:"networkIsolated"`       // NetworkPolicy exists
+    // NOTE: podSecurityLevel REMOVED in DD-WORKFLOW-001 v2.2
+    // Reason: PSP deprecated in K8s 1.21, removed in 1.25; PSS is namespace-level
+    ServiceMesh     string `json:"serviceMesh,omitempty"` // "istio", "linkerd"
 }
 
 // Detection Failure Handling (DD-WORKFLOW-001 v2.1):

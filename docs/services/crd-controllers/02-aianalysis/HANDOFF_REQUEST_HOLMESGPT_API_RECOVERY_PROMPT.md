@@ -6,7 +6,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| **3.1** | Nov 30, 2025 | AIAnalysis Team | Fixed `customLabels` type: `Dict[str, str]` → `Dict[str, List[str]]` (subdomain-based) |
+| **3.2** | Dec 3, 2025 | AIAnalysis Team | **NOTICE**: `podSecurityLevel` field removed from DetectedLabels per DD-WORKFLOW-001 v2.2 (PSP deprecated K8s 1.21) |
+| 3.1 | Nov 30, 2025 | AIAnalysis Team | Fixed `customLabels` type: `Dict[str, str]` → `Dict[str, List[str]]` (subdomain-based) |
 | 3.0 | Nov 30, 2025 | HolmesGPT-API Team | **MAJOR**: Removed DEV_MODE anti-pattern, added mock LLM server, removed legacy backward compatibility |
 | 2.0 | Nov 30, 2025 | AIAnalysis Team | Added DetectedLabels for workflow filtering |
 | 1.0 | Nov 29, 2025 | AIAnalysis Team | Initial recovery prompt design |
@@ -14,6 +15,16 @@
 ---
 
 ## 📢 Changelog
+
+### ⚠️ v3.2 (Dec 3, 2025) - podSecurityLevel Removed
+
+> **NOTICE**: The `podSecurityLevel` field has been removed from `DetectedLabels` per DD-WORKFLOW-001 v2.2.
+> Examples in this document still show the old schema for historical context.
+> See: [NOTICE_PODSECURITYLEVEL_REMOVED.md](../../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md)
+
+| Removed | Reason |
+|---------|--------|
+| `podSecurityLevel` | PSP deprecated in K8s 1.21, removed in 1.25; PSS is namespace-level |
 
 ### ✨ v3.0 (Nov 30, 2025) - Architecture Cleanup
 

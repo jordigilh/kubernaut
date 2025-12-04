@@ -204,7 +204,9 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
         )
     })
 
-    Context("BR-AI-040: AIApprovalRequest CRD Creation for Manual Approval", func() {
+    // ⚠️ V1.1 DEFERRED: AIApprovalRequest CRD is out of V1.0 scope (per BR_MAPPING.md v1.3)
+    // V1.0 uses approval signaling to RO instead
+    Context("V1.1-DEFERRED: AIApprovalRequest CRD Creation for Manual Approval", func() {
         It("should create AIApprovalRequest CRD when manual approval required", func() {
             // Setup AIAnalysis requiring manual approval
             aia := testutil.NewTestAIAnalysis("aia-manual-approval")
@@ -232,7 +234,9 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
         })
     })
 
-    Context("BR-AI-050: AIApprovalRequest Watch for Approval Decision", func() {
+    // ⚠️ V1.1 DEFERRED: AIApprovalRequest CRD is out of V1.0 scope (per BR_MAPPING.md v1.3)
+    // V1.0 uses approval signaling to RO instead
+    Context("V1.1-DEFERRED: AIApprovalRequest Watch for Approval Decision", func() {
         It("should transition to Ready when AIApprovalRequest approved", func() {
             // Create AIAnalysis + AIApprovalRequest
             aia := testutil.NewTestAIAnalysis("aia-watch-approval")
@@ -491,7 +495,12 @@ Expect(aia.Status.Recommendations).To(HaveLen(3))
 
 ### AIAnalysis: Requirement-Driven Coverage
 
-**Business Requirement Analysis** (BR-AI-010 to BR-AI-050):
+**Business Requirement Analysis** (31 V1.0 BRs per BR_MAPPING.md v1.3):
+- BR-AI-001 to BR-AI-020: Core AI Investigation & Analysis (15 BRs)
+- BR-AI-021 to BR-AI-033: Quality Assurance + Data Management (8 BRs)
+- BR-AI-075 to BR-AI-076: Workflow Selection (2 BRs)
+- BR-AI-080 to BR-AI-083: Recovery Flow (4 BRs)
+- BR-AI-026 to BR-AI-030: Approval & Policy (5 BRs) — *Note: BR-AI-051-053 deferred to V2.0+*
 
 | AI Dimension | Realistic Values | Test Strategy |
 |---|---|---|
@@ -501,8 +510,8 @@ Expect(aia.Status.Recommendations).To(HaveLen(3))
 | **Investigation Depth** | quick, standard, deep | Test different HolmesGPT analysis levels |
 
 **Total Possible Combinations**: 10 × 4 × 3 × 3 = 360 combinations
-**Distinct Business Behaviors**: 15 behaviors (per BR-AI-010 to BR-AI-050)
-**Tests Needed**: ~25 tests (covering 15 distinct behaviors with boundaries)
+**Distinct Business Behaviors**: 31 behaviors (per BR_MAPPING.md v1.3)
+**Tests Needed**: ~41 unit tests (see Test Count Summary in implementation plan)
 
 ---
 
