@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.5 | 2025-12-03 | Removed TC-DL-008 (podSecurityLevel removed in DD-WORKFLOW-001 v2.2), updated BR range | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.4 | 2025-11-30 | Added 5 more Rego security wrapper tests (TC-CL-008 to TC-CL-012) for 100% confidence | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.3 | 2025-11-30 | Added label detection test scenarios (OwnerChain, DetectedLabels, CustomLabels) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 > | v1.2 | 2025-11-28 | Added ADR-004, DD-TEST-002 refs, fixed test paths, updated coverage targets | [ADR-004](../../../architecture/decisions/ADR-004-fake-kubernetes-client.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md) |
@@ -32,7 +33,7 @@ Following Kubernaut's defense-in-depth testing strategy:
 
 **Test Directory**: [test/unit/](../../../test/unit/)
 **Service Tests**: Create `test/unit/signalprocessing/controller_test.go`
-**Coverage Target**: 70%+ of business requirements (BR-SP-001 to BR-SP-050)
+**Coverage Target**: 70%+ of business requirements (BR-SP-001 to BR-SP-104)
 **Confidence**: 85-90%
 **Execution**: `make test`
 
@@ -70,7 +71,7 @@ test/e2e/signalprocessing/            # Signal Processing E2E tests
 └── suite_test.go                    # E2E test suite setup
 ```
 
-### Label Detection Test Scenarios (DD-WORKFLOW-001 v1.8) ⭐ NEW
+### Label Detection Test Scenarios (DD-WORKFLOW-001 v2.2) ⭐ UPDATED
 
 **Reference**: [implementation-checklist.md](./implementation-checklist.md) Phase 3.25
 
@@ -128,8 +129,7 @@ var _ = Describe("OwnerChain Builder", func() {
 | TC-DL-005 | StatefulSet Pod | `stateful: true` | BR-SP-101 |
 | TC-DL-006 | Helm-managed Deployment | `helmManaged: true` | BR-SP-101 |
 | TC-DL-007 | Namespace with NetworkPolicy | `networkIsolated: true` | BR-SP-101 |
-| TC-DL-008 | PSS namespace (restricted) | `podSecurityLevel: "restricted"` | BR-SP-101 |
-| TC-DL-009 | Istio-injected Pod | `serviceMesh: "istio"` | BR-SP-101 |
+| TC-DL-008 | Istio-injected Pod | `serviceMesh: "istio"` | BR-SP-101 |
 
 ```go
 // test/unit/signalprocessing/detected_labels_test.go
@@ -825,7 +825,7 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 
 ### SignalProcessing: Requirement-Driven Coverage
 
-**Business Requirement Analysis** (BR-SP-001 to BR-SP-050):
+**Business Requirement Analysis** (BR-SP-001 to BR-SP-104):
 
 | Input Dimension | Realistic Values | Test Strategy |
 |---|---|---|
@@ -835,7 +835,7 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 | **Context Depth** | detailed, standard, minimal | Test enrichment quality differences |
 
 **Total Possible Combinations**: 4 × 3 × 3 × 3 = 108 combinations
-**Distinct Business Behaviors**: 12 behaviors (per BR-SP-001 to BR-SP-050)
+**Distinct Business Behaviors**: 19 behaviors (per BR-SP-001 to BR-SP-104)
 **Tests Needed**: ~20 tests (covering 12 distinct behaviors with boundaries)
 
 ---
