@@ -1,4 +1,4 @@
-package dlq_test
+package dlq
 
 import (
 	"context"

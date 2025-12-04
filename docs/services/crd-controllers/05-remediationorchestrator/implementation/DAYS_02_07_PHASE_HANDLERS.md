@@ -78,8 +78,8 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 			Name:      name,
 			Namespace: rr.Namespace,
 			Labels: map[string]string{
-				"kubernaut.io/remediation-request": rr.Name,
-				"kubernaut.io/component":           "signal-processing",
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/component":           "signal-processing",
 			},
 		},
 		Spec: signalprocessingv1.SignalProcessingSpec{
@@ -221,8 +221,8 @@ func (c *AIAnalysisCreator) Create(ctx context.Context, rr *remediationv1.Remedi
 			Name:      name,
 			Namespace: rr.Namespace,
 			Labels: map[string]string{
-				"kubernaut.io/remediation-request": rr.Name,
-				"kubernaut.io/component":           "ai-analysis",
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/component":           "ai-analysis",
 			},
 		},
 		Spec: aianalysisv1.AIAnalysisSpec{
@@ -368,8 +368,8 @@ func (c *WorkflowExecutionCreator) Create(ctx context.Context, rr *remediationv1
 			Name:      name,
 			Namespace: rr.Namespace,
 			Labels: map[string]string{
-				"kubernaut.io/remediation-request": rr.Name,
-				"kubernaut.io/component":           "workflow-execution",
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/component":           "workflow-execution",
 			},
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
@@ -497,8 +497,8 @@ func (c *NotificationCreator) CreateApprovalNotification(ctx context.Context, rr
 			Name:      name,
 			Namespace: rr.Namespace,
 			Labels: map[string]string{
-				"kubernaut.io/remediation-request": rr.Name,
-				"kubernaut.io/notification-type":   "approval",
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/notification-type":   "approval",
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
@@ -555,8 +555,8 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(ctx context.Contex
 			Name:      name,
 			Namespace: rr.Namespace,
 			Labels: map[string]string{
-				"kubernaut.io/remediation-request": rr.Name,
-				"kubernaut.io/notification-type":   "bulk-duplicate",
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/notification-type":   "bulk-duplicate",
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
@@ -988,8 +988,8 @@ func (m *Manager) Escalate(ctx context.Context, rr *remediationv1.RemediationReq
 			Name:      name,
 			Namespace: rr.Namespace,
 			Labels: map[string]string{
-				"kubernaut.io/remediation-request": rr.Name,
-				"kubernaut.io/notification-type":   "escalation",
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/notification-type":   "escalation",
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,8 +21,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 )
 
@@ -31,14 +35,20 @@ type Reconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	Config remediationorchestrator.OrchestratorConfig
+
+	// Child CRD creators
+	spCreator *creator.SignalProcessingCreator
+	aiCreator *creator.AIAnalysisCreator
 }
 
 // NewReconciler creates a new Reconciler with the given dependencies.
 func NewReconciler(c client.Client, scheme *runtime.Scheme, config remediationorchestrator.OrchestratorConfig) *Reconciler {
 	return &Reconciler{
-		Client: c,
-		Scheme: scheme,
-		Config: config,
+		Client:    c,
+		Scheme:    scheme,
+		Config:    config,
+		spCreator: creator.NewSignalProcessingCreator(c, scheme),
+		aiCreator: creator.NewAIAnalysisCreator(c, scheme),
 	}
 }
 
@@ -134,17 +144,30 @@ func (r *Reconciler) processPhase(ctx context.Context, rr *remediationv1.Remedia
 // This creates the SignalProcessing CRD.
 func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("Handling Pending phase, transitioning to Processing")
+	logger.Info("Handling Pending phase, creating SignalProcessing CRD")
 
-	// Transition to Processing phase
+	// Create SignalProcessing CRD
+	spName, err := r.spCreator.Create(ctx, rr)
+	if err != nil {
+		logger.Error(err, "Failed to create SignalProcessing CRD")
+		return ctrl.Result{}, err
+	}
+
+	// Update status with reference to SignalProcessing
 	rr.Status.OverallPhase = string(phase.Processing)
+	rr.Status.RemediationProcessingRef = &corev1.ObjectReference{
+		APIVersion: signalprocessingv1.GroupVersion.String(),
+		Kind:       "SignalProcessing",
+		Name:       spName,
+		Namespace:  rr.Namespace,
+	}
 
 	if err := r.Status().Update(ctx, rr); err != nil {
 		logger.Error(err, "Failed to update status to Processing")
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Transitioned to Processing phase")
+	logger.Info("Transitioned to Processing phase", "signalProcessing", spName)
 	return ctrl.Result{Requeue: true}, nil
 }
 
@@ -154,12 +177,88 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Handling Processing phase")
 
-	// TODO: Day 2-7 implementation
-	// - Check SignalProcessing CRD status
-	// - Create SignalProcessing if not exists
-	// - Transition to Analyzing when SP is complete
+	// Get SignalProcessing CRD reference
+	if rr.Status.RemediationProcessingRef == nil {
+		// This shouldn't happen - recreate if missing
+		logger.Info("SignalProcessing reference missing, recreating")
+		return r.handlePendingPhase(ctx, rr)
+	}
 
-	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	// Fetch SignalProcessing status
+	sp := &signalprocessingv1.SignalProcessing{}
+	spKey := client.ObjectKey{
+		Name:      rr.Status.RemediationProcessingRef.Name,
+		Namespace: rr.Namespace,
+	}
+	if err := r.Get(ctx, spKey, sp); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info("SignalProcessing CRD not found, recreating")
+			return r.handlePendingPhase(ctx, rr)
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Check SignalProcessing status
+	switch sp.Status.Phase {
+	case "Completed":
+		logger.Info("SignalProcessing completed, transitioning to Analyzing")
+		return r.transitionToAnalyzing(ctx, rr, sp)
+	case "Failed":
+		logger.Info("SignalProcessing failed, transitioning to Failed")
+		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing failed")
+	default:
+		// Still in progress, requeue
+		logger.V(1).Info("SignalProcessing still in progress", "phase", sp.Status.Phase)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+}
+
+// transitionToAnalyzing creates AIAnalysis CRD and updates status.
+func (r *Reconciler) transitionToAnalyzing(ctx context.Context, rr *remediationv1.RemediationRequest, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// Create AIAnalysis CRD
+	aiName, err := r.aiCreator.Create(ctx, rr, sp)
+	if err != nil {
+		logger.Error(err, "Failed to create AIAnalysis CRD")
+		return ctrl.Result{}, err
+	}
+
+	// Update status
+	rr.Status.OverallPhase = string(phase.Analyzing)
+	rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+		APIVersion: aianalysisv1.GroupVersion.String(),
+		Kind:       "AIAnalysis",
+		Name:       aiName,
+		Namespace:  rr.Namespace,
+	}
+
+	if err := r.Status().Update(ctx, rr); err != nil {
+		logger.Error(err, "Failed to update status to Analyzing")
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Transitioned to Analyzing phase", "aiAnalysis", aiName)
+	return ctrl.Result{Requeue: true}, nil
+}
+
+// transitionToFailed updates status to Failed with phase and reason.
+func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase, reason string) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	rr.Status.OverallPhase = string(phase.Failed)
+	rr.Status.FailurePhase = &failurePhase
+	rr.Status.FailureReason = &reason
+	now := metav1.Now()
+	rr.Status.CompletedAt = &now
+
+	if err := r.Status().Update(ctx, rr); err != nil {
+		logger.Error(err, "Failed to update status to Failed")
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Transitioned to Failed phase", "failurePhase", failurePhase, "reason", reason)
+	return ctrl.Result{}, nil
 }
 
 // handleAnalyzingPhase handles the Analyzing phase.
@@ -213,4 +312,3 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 func (r *Reconciler) isTerminalPhase(p string) bool {
 	return phase.IsTerminal(phase.Phase(p))
 }
-

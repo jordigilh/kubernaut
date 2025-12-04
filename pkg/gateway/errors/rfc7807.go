@@ -22,12 +22,12 @@ type RFC7807Error struct {
 // BR-041: RFC 7807 error format
 // These URIs identify the problem type and can link to documentation
 const (
-	ErrorTypeValidationError      = "https://kubernaut.io/errors/validation-error"
-	ErrorTypeUnsupportedMediaType = "https://kubernaut.io/errors/unsupported-media-type"
-	ErrorTypeMethodNotAllowed     = "https://kubernaut.io/errors/method-not-allowed"
-	ErrorTypeInternalError        = "https://kubernaut.io/errors/internal-error"
-	ErrorTypeServiceUnavailable   = "https://kubernaut.io/errors/service-unavailable"
-	ErrorTypeUnknown              = "https://kubernaut.io/errors/unknown"
+	ErrorTypeValidationError      = "https://kubernaut.ai/errors/validation-error"
+	ErrorTypeUnsupportedMediaType = "https://kubernaut.ai/errors/unsupported-media-type"
+	ErrorTypeMethodNotAllowed     = "https://kubernaut.ai/errors/method-not-allowed"
+	ErrorTypeInternalError        = "https://kubernaut.ai/errors/internal-error"
+	ErrorTypeServiceUnavailable   = "https://kubernaut.ai/errors/service-unavailable"
+	ErrorTypeUnknown              = "https://kubernaut.ai/errors/unknown"
 )
 
 // Error title constants

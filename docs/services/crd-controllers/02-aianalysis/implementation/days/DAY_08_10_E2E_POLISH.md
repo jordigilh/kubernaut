@@ -24,7 +24,7 @@
 
 ```go
 // test/e2e/aianalysis/suite_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "testing"
@@ -54,7 +54,7 @@ var _ = BeforeSuite(func() {
 
 ```go
 // test/e2e/aianalysis/health_endpoints_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "io"
@@ -111,7 +111,7 @@ var _ = Describe("Health Endpoints E2E", func() {
 
 ```go
 // test/e2e/aianalysis/metrics_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "io"
@@ -174,7 +174,7 @@ var _ = Describe("Metrics Endpoint E2E", func() {
 
 ```go
 // test/e2e/aianalysis/full_flow_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "context"

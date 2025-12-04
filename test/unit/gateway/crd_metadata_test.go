@@ -130,7 +130,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rr.Spec.Priority).To(Equal("P0"),
 				"Notification service needs priority to decide: phone call vs Slack vs email")
-			Expect(rr.Labels["kubernaut.io/priority"]).To(Equal("P0"),
+			Expect(rr.Labels["kubernaut.ai/priority"]).To(Equal("P0"),
 				"Label enables notification service to filter/query by priority")
 
 			// Business capability verified:
@@ -208,7 +208,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rr.Spec.Environment).To(Equal("production"),
 				"Notification service needs environment to emphasize urgency")
-			Expect(rr.Labels["kubernaut.io/environment"]).To(Equal("production"),
+			Expect(rr.Labels["kubernaut.ai/environment"]).To(Equal("production"),
 				"Label enables notification service to filter production vs staging alerts")
 
 			// Business capability verified:

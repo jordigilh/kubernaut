@@ -16,8 +16,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
 )
 
 // BR-SP-101: DetectedLabels Auto-Detection
@@ -480,4 +480,3 @@ var _ = Describe("BR-SP-101: DetectedLabels Detector", func() {
 		})
 	})
 })
-

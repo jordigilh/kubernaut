@@ -1,0 +1,78 @@
+---
+# Simple "Hello World" Tekton Pipeline for E2E Testing
+# This pipeline validates the WorkflowExecution controller's Tekton integration
+#
+# Usage:
+#   1. Bundle this into an OCI image: tkn bundle push ghcr.io/kubernaut/test-workflows/hello-world:v1.0.0 -f hello-world-pipeline.yaml
+#   2. Create a WorkflowExecution referencing this bundle
+#   3. Verify PipelineRun completes successfully
+#
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: workflow
+  labels:
+    kubernaut.ai/workflow-type: test
+    kubernaut.ai/version: v1.0.0
+spec:
+  description: |
+    A simple hello-world pipeline for testing the WorkflowExecution controller.
+    Accepts optional parameters and logs them, then exits successfully.
+
+  params:
+    - name: TARGET_RESOURCE
+      type: string
+      description: "The target resource being remediated (e.g., 'default/deployment/my-app')"
+      default: "test/deployment/hello"
+
+    - name: MESSAGE
+      type: string
+      description: "Optional message to echo"
+      default: "Hello from Kubernaut WorkflowExecution!"
+
+    - name: DELAY_SECONDS
+      type: string
+      description: "Optional delay before completion (for testing running state)"
+      default: "2"
+
+  tasks:
+    - name: hello-world
+      taskSpec:
+        params:
+          - name: target
+            type: string
+          - name: message
+            type: string
+          - name: delay
+            type: string
+        steps:
+          - name: echo-info
+            image: alpine:3.19
+            script: |
+              #!/bin/sh
+              set -e
+
+              echo "============================================"
+              echo "🚀 Kubernaut WorkflowExecution Test Pipeline"
+              echo "============================================"
+              echo ""
+              echo "Target Resource: $(params.target)"
+              echo "Message: $(params.message)"
+              echo "Delay: $(params.delay) seconds"
+              echo ""
+              echo "Starting workflow execution..."
+
+              # Simulate some work
+              sleep $(params.delay)
+
+              echo ""
+              echo "✅ Workflow completed successfully!"
+              echo "============================================"
+      params:
+        - name: target
+          value: $(params.TARGET_RESOURCE)
+        - name: message
+          value: $(params.MESSAGE)
+        - name: delay
+          value: $(params.DELAY_SECONDS)
+

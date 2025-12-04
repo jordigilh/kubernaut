@@ -156,7 +156,7 @@ var _ = Describe("BR-SP-101: DetectedLabels", func() {
     })
 
     DescribeTable("should detect labels from K8s context",
-        func(setupFn func() (*signalprocessingv1.KubernetesContext, client.Client), 
+        func(setupFn func() (*signalprocessingv1.KubernetesContext, client.Client),
              checkFn func(labels *sharedtypes.DetectedLabels)) {
             k8sCtx, fakeClient := setupFn()
             detector = detection.NewLabelDetector(fakeClient, logr.Discard())

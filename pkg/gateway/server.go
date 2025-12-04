@@ -1458,10 +1458,10 @@ func (s *Server) monitorWindowExpiration(ctx context.Context, windowID string) {
 
 	select {
 	case <-time.After(windowDuration):
-		s.logger.Info("Storm aggregation window expired, cleaning up",
+	s.logger.Info("Storm aggregation window expired, cleaning up",
 			"windowID", windowID)
-		// Cleanup: Window resources are already in CRD, just remove Redis keys
-		// Note: Resources have 2x TTL for retrieval, will auto-expire
+	// Cleanup: Window resources are already in CRD, just remove Redis keys
+	// Note: Resources have 2x TTL for retrieval, will auto-expire
 
 	case <-ctx.Done():
 		s.logger.Info("Window expiration monitor cancelled (shutdown)",

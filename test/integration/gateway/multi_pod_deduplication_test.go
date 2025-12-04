@@ -207,7 +207,7 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 						Name:      crdName,
 						Namespace: testNs,
 						Labels: map[string]string{
-							"kubernaut.io/signal-fingerprint": signal.Fingerprint[:min(len(signal.Fingerprint), 63)],
+							"kubernaut.ai/signal-fingerprint": signal.Fingerprint[:min(len(signal.Fingerprint), 63)],
 						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{

@@ -247,15 +247,15 @@ func getErrorTypeString(err error) string {
 //
 // CRD structure:
 //
-//	apiVersion: remediation.kubernaut.io/v1alpha1
+//	apiVersion: remediation.kubernaut.ai/v1alpha1
 //	kind: RemediationRequest
 //	metadata:
 //	  name: rr-<fingerprint-prefix>
 //	  namespace: <signal-namespace>
 //	  labels:
-//	    kubernaut.io/signal-type: prometheus-alert
-//	    kubernaut.io/signal-fingerprint: <full-fingerprint>
-//	    kubernaut.io/severity: critical
+//	    kubernaut.ai/signal-type: prometheus-alert
+//	    kubernaut.ai/signal-fingerprint: <full-fingerprint>
+//	    kubernaut.ai/severity: critical
 //	spec:
 //	  signalFingerprint: <fingerprint>
 //	  signalName: HighMemoryUsage
@@ -320,16 +320,16 @@ func (c *CRDCreator) CreateRemediationRequest(
 				"app.kubernetes.io/component":  "remediation",
 
 				// Kubernaut-specific labels for filtering and routing
-				"kubernaut.io/signal-type": signal.SourceType,
+				"kubernaut.ai/signal-type": signal.SourceType,
 				// Truncate fingerprint to 63 chars (K8s label value max length)
-				"kubernaut.io/signal-fingerprint": signal.Fingerprint[:min(len(signal.Fingerprint), 63)],
-				"kubernaut.io/severity":           signal.Severity,
-				"kubernaut.io/environment":        environment,
-				"kubernaut.io/priority":           priority,
+				"kubernaut.ai/signal-fingerprint": signal.Fingerprint[:min(len(signal.Fingerprint), 63)],
+				"kubernaut.ai/severity":           signal.Severity,
+				"kubernaut.ai/environment":        environment,
+				"kubernaut.ai/priority":           priority,
 			},
 			Annotations: map[string]string{
 				// Timestamp for audit trail (RFC3339 format)
-				"kubernaut.io/created-at": time.Now().UTC().Format(time.RFC3339),
+				"kubernaut.ai/created-at": time.Now().UTC().Format(time.RFC3339),
 			},
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
@@ -383,9 +383,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 	}
 
 	// BR-GATEWAY-016: Add storm label if this is an aggregated storm CRD
-	// This enables filtering storm CRDs: kubectl get remediationrequests -l kubernaut.io/storm=true
+	// This enables filtering storm CRDs: kubectl get remediationrequests -l kubernaut.ai/storm=true
 	if signal.IsStorm {
-		rr.Labels["kubernaut.io/storm"] = "true"
+		rr.Labels["kubernaut.ai/storm"] = "true"
 	}
 
 	// Create CRD in Kubernetes with retry logic
@@ -430,8 +430,8 @@ func (c *CRDCreator) CreateRemediationRequest(
 			rr.Namespace = c.fallbackNamespace
 
 			// Add labels to preserve origin namespace information for cluster-scoped signals
-			rr.Labels["kubernaut.io/origin-namespace"] = signal.Namespace
-			rr.Labels["kubernaut.io/cluster-scoped"] = "true"
+			rr.Labels["kubernaut.ai/origin-namespace"] = signal.Namespace
+			rr.Labels["kubernaut.ai/cluster-scoped"] = "true"
 
 			// Retry creation in fallback namespace with retry logic
 			// BR-GATEWAY-112: Retry logic for transient K8s API errors

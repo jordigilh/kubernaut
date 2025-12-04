@@ -173,4 +173,3 @@ func isClusterScoped(kind string) bool {
 	}
 	return clusterScoped[kind]
 }
-

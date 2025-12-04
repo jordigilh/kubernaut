@@ -14,52 +14,29 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package main is the entry point for the WorkflowExecution controller
+// Ports: Health=8081, Metrics=9090 (per DD-TEST-001)
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
-	"time"
 
-	"github.com/go-logr/zapr"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
-	zaplog "go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/api/meta"
+
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-
-	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
-	"github.com/jordigilh/kubernaut/pkg/audit"
-	//+kubebuilder:scaffold:imports
 )
-
-// ============================================================================
-// WorkflowExecution Controller Entry Point
-// Version: 1.0 - Tekton Delegation Architecture (ADR-044)
-// ============================================================================
-//
-// Architecture Overview:
-// - Creates Tekton PipelineRun from OCI bundle references
-// - Watches PipelineRun status and updates WorkflowExecution status
-// - Implements resource locking to prevent parallel workflows (DD-WE-001)
-// - Writes audit trail for execution lifecycle
-//
-// Key Design Decisions:
-// - ADR-044: Tekton handles step orchestration
-// - ADR-030: Crash if critical dependencies missing (Tekton CRDs)
-// - DD-WE-002: All PipelineRuns run in dedicated kubernaut-workflows namespace
-// - DD-WE-003: Deterministic PipelineRun naming for race condition prevention
-// ============================================================================
 
 var (
 	scheme   = runtime.NewScheme()
@@ -68,30 +45,23 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(workflowexecutionv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(workflowexecutionv1.AddToScheme(scheme))
 	utilruntime.Must(tektonv1.AddToScheme(scheme))
-	//+kubebuilder:scaffold:scheme
 }
 
 func main() {
 	var metricsAddr string
-	var enableLeaderElection bool
 	var probeAddr string
+	var enableLeaderElection bool
 	var executionNamespace string
-	var serviceAccountName string
-	var cooldownPeriod time.Duration
 
+	// Port allocation per DD-TEST-001
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
+		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&executionNamespace, "execution-namespace", "kubernaut-workflows",
-		"The namespace where Tekton PipelineRuns are created (DD-WE-002).")
-	flag.StringVar(&serviceAccountName, "service-account-name", workflowexecution.DefaultServiceAccountName,
-		"The ServiceAccount used for PipelineRun execution.")
-	flag.DurationVar(&cooldownPeriod, "cooldown-period", workflowexecution.DefaultCooldownPeriod,
-		"Duration to prevent redundant sequential executions on the same target (DD-WE-001).")
+		"The namespace where PipelineRuns will be created (DD-WE-002)")
 
 	opts := zap.Options{
 		Development: true,
@@ -101,17 +71,16 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// ========================================
-	// DD-014: Binary Version Logging
-	// ========================================
-	setupLog.Info("Starting WorkflowExecution Controller",
-		"version", "1.0.0",
-		"executionNamespace", executionNamespace,
-		"serviceAccountName", serviceAccountName,
-		"cooldownPeriod", cooldownPeriod.String(),
-	)
+	// Check if Tekton CRDs are available (ADR-030: crash-if-missing)
+	setupLog.Info("checking Tekton availability")
+	restConfig := ctrl.GetConfigOrDie()
+	if err := checkTektonAvailable(restConfig); err != nil {
+		setupLog.Error(err, "Tekton CRDs not available - controller requires Tekton Pipelines to be installed")
+		os.Exit(1)
+	}
+	setupLog.Info("Tekton CRDs available")
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: metricsAddr,
@@ -125,89 +94,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ========================================
-	// ADR-030: Crash if Tekton CRDs not available
-	// Critical dependency check at startup
-	// ========================================
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := checkTektonAvailable(ctx, mgr.GetRESTMapper()); err != nil {
-		setupLog.Error(err, "CRITICAL: Tekton Pipelines CRDs not found. "+
-			"WorkflowExecution Controller requires Tekton Pipelines to be installed. "+
-			"Please install Tekton Pipelines before starting this controller.",
-			"tektonInstallUrl", "https://tekton.dev/docs/pipelines/install/",
-		)
+	// Create metrics
+	metrics := workflowexecution.NewMetrics()
+	if err := metrics.Register(); err != nil {
+		setupLog.Error(err, "unable to register metrics")
 		os.Exit(1)
 	}
-	setupLog.Info("Tekton Pipelines CRDs verified successfully")
 
-	// ========================================
-	// Initialize Audit Store (ADR-034)
-	// ========================================
-	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
-	if dataStorageURL == "" {
-		dataStorageURL = "http://datastorage-service.kubernaut.svc.cluster.local:8080"
-		setupLog.Info("DATA_STORAGE_URL not set, using default", "url", dataStorageURL)
-	}
-
-	httpClient := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-	dataStorageClient := audit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
-
-	auditConfig := audit.Config{
-		BufferSize:    10000,
-		BatchSize:     100,
-		FlushInterval: 5 * time.Second,
-		MaxRetries:    3,
-	}
-
-	zapLogger, err := zaplog.NewProduction()
-	if err != nil {
-		setupLog.Error(err, "Failed to create zap logger for audit store")
-		os.Exit(1)
-	}
-	auditLogger := zapr.NewLogger(zapLogger.Named("audit"))
-
-	auditStore, err := audit.NewBufferedStore(dataStorageClient, auditConfig, "workflowexecution-controller", auditLogger)
-	if err != nil {
-		setupLog.Error(err, "Failed to create audit store")
-		os.Exit(1)
-	}
-	setupLog.Info("Audit store initialized",
-		"bufferSize", auditConfig.BufferSize,
-		"batchSize", auditConfig.BatchSize,
+	// Create reconciler
+	reconciler := workflowexecution.NewWorkflowExecutionReconciler(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		executionNamespace,
 	)
-
-	// ========================================
-	// Initialize Metrics (DD-005)
-	// ========================================
-	workflowexecution.InitMetrics()
-	setupLog.Info("WorkflowExecution metrics initialized")
-
-	// ========================================
-	// Setup Controller
-	// ========================================
-	reconciler := &workflowexecution.WorkflowExecutionReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		Recorder:           mgr.GetEventRecorderFor("workflowexecution-controller"),
-		ExecutionNamespace: executionNamespace,
-		ServiceAccountName: serviceAccountName,
-		CooldownPeriod:     cooldownPeriod,
-		AuditStore:         auditStore,
-	}
 
 	if err = reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
 		os.Exit(1)
 	}
-	//+kubebuilder:scaffold:builder
 
-	// ========================================
-	// Health and Ready Checks
-	// ========================================
+	// Add health checks
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
@@ -217,56 +123,40 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ========================================
-	// Start Manager
-	// ========================================
-	setupLog.Info("starting manager")
-
-	sigCtx := ctrl.SetupSignalHandler()
-
-	if err := mgr.Start(sigCtx); err != nil {
+	setupLog.Info("starting manager",
+		"metricsAddr", metricsAddr,
+		"probeAddr", probeAddr,
+		"executionNamespace", executionNamespace,
+	)
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-
-	// ========================================
-	// Graceful Shutdown (DD-007)
-	// ========================================
-	setupLog.Info("Shutting down WorkflowExecution controller, flushing remaining audit events")
-	if err := auditStore.Close(); err != nil {
-		setupLog.Error(err, "Failed to close audit store gracefully")
-		os.Exit(1)
-	}
-	setupLog.Info("Audit store closed successfully, all events flushed")
 }
 
-// checkTektonAvailable verifies that Tekton Pipeline CRDs are registered
-// in the cluster's API server. This is a fail-fast check per ADR-030.
-func checkTektonAvailable(ctx context.Context, mapper meta.RESTMapper) error {
-	// Check for PipelineRun CRD
-	pipelineRunGVK := schema.GroupVersionKind{
-		Group:   "tekton.dev",
-		Version: "v1",
-		Kind:    "PipelineRun",
-	}
-
-	_, err := mapper.RESTMapping(pipelineRunGVK.GroupKind(), pipelineRunGVK.Version)
+// checkTektonAvailable verifies that Tekton CRDs are installed
+// Per ADR-030: Controller should crash at startup if required dependencies are missing
+func checkTektonAvailable(cfg *rest.Config) error {
+	// Use discovery client to check if Tekton CRDs exist
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("tekton.dev/v1 PipelineRun CRD not found: %w", err)
+		return err
 	}
 
-	// Check for Pipeline CRD (used for bundle resolution)
-	pipelineGVK := schema.GroupVersionKind{
-		Group:   "tekton.dev",
-		Version: "v1",
-		Kind:    "Pipeline",
-	}
-
-	_, err = mapper.RESTMapping(pipelineGVK.GroupKind(), pipelineGVK.Version)
+	// Check for PipelineRun resource
+	_, resources, err := discoveryClient.ServerGroupsAndResources()
 	if err != nil {
-		return fmt.Errorf("tekton.dev/v1 Pipeline CRD not found: %w", err)
+		return err
 	}
 
-	return nil
+	for _, resourceList := range resources {
+		for _, resource := range resourceList.APIResources {
+			if resource.Kind == "PipelineRun" {
+				return nil // Tekton is available
+			}
+		}
+	}
+
+	return fmt.Errorf("Tekton PipelineRun CRD not found - please install Tekton Pipelines")
 }
 

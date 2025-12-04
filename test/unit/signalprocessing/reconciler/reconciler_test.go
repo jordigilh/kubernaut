@@ -17,6 +17,7 @@ import (
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // BR-SP-051: Phase State Machine
@@ -68,7 +69,7 @@ var _ = Describe("BR-SP-051 to BR-SP-102: SignalProcessing Reconciler", func() {
 			// Verify status was updated
 			updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-sp"}, updatedSP)).To(Succeed())
-			Expect(updatedSP.Status.Phase).To(Equal(signalprocessingv1alpha1.SignalProcessingPhase("enriching")))
+			Expect(updatedSP.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseEnriching))
 			Expect(updatedSP.Status.StartTime).ToNot(BeNil())
 		})
 
@@ -191,7 +192,7 @@ var _ = Describe("BR-SP-051 to BR-SP-102: SignalProcessing Reconciler", func() {
 	Describe("Priority Classification Phase", func() {
 		It("should classify priority based on signal severity", func() {
 			sp := createSignalProcessingWithEnrichment("test-sp", "default", "classifying")
-			sp.Spec.Signal.Severity = "critical"
+			sp.Spec.Severity = "critical"
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -302,12 +303,8 @@ var _ = Describe("BR-SP-051 to BR-SP-102: SignalProcessing Reconciler", func() {
 	Describe("Full Workflow", func() {
 		It("should process SignalProcessing through all phases to completion", func() {
 			sp := createSignalProcessing("test-sp", "default", "")
-			sp.Spec.Signal = signalprocessingv1alpha1.Signal{
-				SignalName: "pod-crash-loop",
-				Severity:   "critical",
-				Namespace:  "default",
-				PodName:    "test-pod",
-			}
+			sp.Spec.SignalName = "pod-crash-loop"
+			sp.Spec.Severity = "critical"
 			pod := createTestPod("test-pod", "default")
 			ns := createTestNamespace("default", map[string]string{"environment": "production", "team": "payments"})
 
@@ -332,7 +329,7 @@ var _ = Describe("BR-SP-051 to BR-SP-102: SignalProcessing Reconciler", func() {
 				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
 				Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-sp"}, updatedSP)).To(Succeed())
 
-				if updatedSP.Status.Phase == "completed" || !result.Requeue {
+				if updatedSP.Status.Phase == signalprocessingv1alpha1.PhaseCompleted || !result.Requeue {
 					break
 				}
 			}
@@ -340,7 +337,7 @@ var _ = Describe("BR-SP-051 to BR-SP-102: SignalProcessing Reconciler", func() {
 			// Verify final state
 			finalSP := &signalprocessingv1alpha1.SignalProcessing{}
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "test-sp"}, finalSP)).To(Succeed())
-			Expect(finalSP.Status.Phase).To(Equal(signalprocessingv1alpha1.SignalProcessingPhase("completed")))
+			Expect(finalSP.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 			Expect(finalSP.Status.EnrichmentResults).ToNot(BeNil())
 			Expect(finalSP.Status.ClassificationResults).ToNot(BeNil())
 			Expect(finalSP.Status.ClassificationResults.Environment).To(Equal("production"))
@@ -380,10 +377,21 @@ func createSignalProcessing(name, namespace string, phase string) *signalprocess
 			Namespace: namespace,
 		},
 		Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-			Signal: signalprocessingv1alpha1.Signal{
-				SignalName: "test-signal",
-				Severity:   "warning",
-				Namespace:  namespace,
+			SignalFingerprint: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+			SignalName:        "test-signal",
+			Severity:          "warning",
+			Environment:       "development",
+			Priority:          "P2",
+			SignalType:        "prometheus",
+			TargetType:        "kubernetes",
+			TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+				Namespace: namespace,
+				Kind:      "Pod",
+				Name:      "test-pod",
+			},
+			ReceivedTime: metav1.Now(),
+			Deduplication: sharedtypes.DeduplicationInfo{
+				CorrelationID: "test-correlation-id",
 			},
 		},
 	}
@@ -395,10 +403,10 @@ func createSignalProcessing(name, namespace string, phase string) *signalprocess
 
 func createSignalProcessingWithEnrichment(name, namespace, phase string) *signalprocessingv1alpha1.SignalProcessing {
 	sp := createSignalProcessing(name, namespace, phase)
-	sp.Status.EnrichmentResults = &signalprocessingv1alpha1.EnrichmentResults{
-		KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+	sp.Status.EnrichmentResults = &sharedtypes.EnrichmentResults{
+		KubernetesContext: &sharedtypes.KubernetesContext{
 			Namespace: namespace,
-			PodDetails: &signalprocessingv1alpha1.PodDetails{
+			PodDetails: &sharedtypes.PodDetails{
 				Name: "test-pod",
 			},
 		},
@@ -480,4 +488,3 @@ var _ = BeforeSuite(func() {
 	SetDefaultEventuallyTimeout(30 * time.Second)
 	SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
 })
-

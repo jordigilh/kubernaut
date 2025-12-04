@@ -305,7 +305,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			// Filter for CRDs with the correct origin-namespace label to avoid picking up old CRDs
 			err2 := k8sClient.Client.List(context.Background(), rrList,
 				client.InNamespace("kubernaut-system"),
-				client.MatchingLabels{"kubernaut.io/origin-namespace": nonExistentNamespace})
+				client.MatchingLabels{"kubernaut.ai/origin-namespace": nonExistentNamespace})
 			if err2 == nil && len(rrList.Items) > 0 {
 				createdCRD = &rrList.Items[0]
 				return true
@@ -318,9 +318,9 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		Expect(createdCRD).ToNot(BeNil(), "CRD should be created")
 		Expect(createdCRD.Namespace).To(Equal("kubernaut-system"),
 			"CRD should be in kubernaut-system namespace")
-		Expect(createdCRD.Labels["kubernaut.io/cluster-scoped"]).To(Equal("true"),
+		Expect(createdCRD.Labels["kubernaut.ai/cluster-scoped"]).To(Equal("true"),
 			"CRD should have cluster-scoped label")
-		Expect(createdCRD.Labels["kubernaut.io/origin-namespace"]).To(Equal(nonExistentNamespace),
+		Expect(createdCRD.Labels["kubernaut.ai/origin-namespace"]).To(Equal(nonExistentNamespace),
 			"CRD should preserve origin namespace in label")
 
 		// BUSINESS OUTCOME VERIFIED:

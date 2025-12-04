@@ -306,7 +306,7 @@ WHERE event_type = 'workflow.catalog.search_completed'
 **Correlation Chain**:
 ```
 AIAnalysis Controller
-  → generates remediation_id (kubernaut.io/correlation-id label)
+  → generates remediation_id (kubernaut.ai/correlation-id label)
   → calls HolmesGPT API with remediation_id
 
 HolmesGPT API

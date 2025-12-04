@@ -874,8 +874,8 @@ func (c *NotificationCreator) CreateApprovalNotification(ctx context.Context, rr
                 *metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
             },
             Labels: map[string]string{
-                "kubernaut.io/notification-type": "approval_required",
-                "kubernaut.io/remediation":       rr.Name,
+                "kubernaut.ai/notification-type": "approval_required",
+                "kubernaut.ai/remediation":       rr.Name,
             },
         },
         Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -1143,7 +1143,7 @@ func (h *FinalizerHandler) cancelPendingNotifications(ctx context.Context, rr *r
     notificationList := &notificationv1alpha1.NotificationRequestList{}
     if err := h.client.List(ctx, notificationList,
         client.InNamespace(rr.Namespace),
-        client.MatchingLabels{"kubernaut.io/remediation": rr.Name},
+        client.MatchingLabels{"kubernaut.ai/remediation": rr.Name},
     ); err != nil {
         return err
     }

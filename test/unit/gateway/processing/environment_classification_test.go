@@ -51,7 +51,7 @@ var _ = Describe("Environment Classification", func() {
 	// ============================================================================
 
 	Context("BR-GATEWAY-011: Namespace Label Classification", func() {
-		It("should classify environment from kubernaut.io/environment label", func() {
+		It("should classify environment from kubernaut.ai/environment label", func() {
 			// Arrange: Create namespace with environment label
 			ns := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{

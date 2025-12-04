@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -13,7 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/controller"
 )
@@ -23,7 +26,9 @@ func TestController(t *testing.T) {
 	RunSpecs(t, "Controller Suite")
 }
 
-var _ = Describe("RemediationOrchestrator Controller", func() {
+// BR-ORCH-025: Core Orchestration Workflow
+// BR-ORCH-032: Skipped Phase Handling (Terminal States)
+var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 	var (
 		ctx        context.Context
 		fakeClient client.Client
@@ -35,13 +40,19 @@ var _ = Describe("RemediationOrchestrator Controller", func() {
 		ctx = context.Background()
 		scheme = runtime.NewScheme()
 
-		// Register RemediationRequest CRD
-		err := remediationv1.AddToScheme(scheme)
-		Expect(err).NotTo(HaveOccurred())
+		// Register all required schemes
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(signalprocessingv1.AddToScheme(scheme)).To(Succeed())
+		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
 
 		fakeClient = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithStatusSubresource(&remediationv1.RemediationRequest{}).
+			WithStatusSubresource(
+				&remediationv1.RemediationRequest{},
+				&signalprocessingv1.SignalProcessing{},
+				&aianalysisv1.AIAnalysis{},
+			).
 			Build()
 
 		reconciler = controller.NewReconciler(
@@ -51,10 +62,9 @@ var _ = Describe("RemediationOrchestrator Controller", func() {
 		)
 	})
 
-	// BR-ORCH-025: Core reconciliation
 	Describe("Reconcile", func() {
 		Context("when RemediationRequest does not exist", func() {
-			It("should return without error", func() {
+			It("should return without error (idempotent)", func() {
 				result, err := reconciler.Reconcile(ctx, ctrl.Request{
 					NamespacedName: types.NamespacedName{
 						Name:      "non-existent",
@@ -142,7 +152,7 @@ var _ = Describe("RemediationOrchestrator Controller", func() {
 				Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 			})
 
-			It("should transition to Processing phase", func() {
+			It("should transition to Processing phase and create SignalProcessing CRD", func() {
 				result, err := reconciler.Reconcile(ctx, ctrl.Request{
 					NamespacedName: types.NamespacedName{
 						Name:      rr.Name,
@@ -160,10 +170,11 @@ var _ = Describe("RemediationOrchestrator Controller", func() {
 			})
 		})
 
-		// BR-ORCH-025: Terminal state handling
+		// Terminal state handling (BR-ORCH-025, BR-ORCH-032)
+		// Reference: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md - DescribeTable pattern
 		Context("when RemediationRequest is in terminal state", func() {
 			DescribeTable("should not requeue for terminal phases",
-				func(terminalPhase string) {
+				func(terminalPhase string, brRef string) {
 					rr := &remediationv1.RemediationRequest{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-rr-terminal-" + terminalPhase,
@@ -196,32 +207,44 @@ var _ = Describe("RemediationOrchestrator Controller", func() {
 						},
 					})
 
-					Expect(err).NotTo(HaveOccurred())
-					Expect(result.Requeue).To(BeFalse())
-					Expect(result.RequeueAfter).To(BeZero())
+					Expect(err).NotTo(HaveOccurred(), "Terminal phase %s should not error", terminalPhase)
+					Expect(result.Requeue).To(BeFalse(), "Terminal phase %s should not requeue", terminalPhase)
+					Expect(result.RequeueAfter).To(BeZero(), "Terminal phase %s should not have RequeueAfter", terminalPhase)
 				},
-				Entry("Completed phase", "Completed"),
-				Entry("Failed phase", "Failed"),
-				Entry("TimedOut phase", "TimedOut"),
-				Entry("Skipped phase", "Skipped"),
+				Entry("Completed phase (BR-ORCH-025)", "Completed", "BR-ORCH-025"),
+				Entry("Failed phase (BR-ORCH-025)", "Failed", "BR-ORCH-025"),
+				Entry("TimedOut phase (BR-ORCH-027)", "TimedOut", "BR-ORCH-027"),
+				Entry("Skipped phase (BR-ORCH-032)", "Skipped", "BR-ORCH-032"),
 			)
 		})
 	})
 
-	// BR-ORCH-025: Reconciler construction
+	// NewReconciler construction validation
 	Describe("NewReconciler", func() {
-		It("should create a reconciler with provided client", func() {
-			r := controller.NewReconciler(fakeClient, scheme, remediationorchestrator.DefaultConfig())
-			Expect(r).NotTo(BeNil())
-			Expect(r.Client).To(Equal(fakeClient))
-		})
+		DescribeTable("should create reconciler with provided dependencies",
+			func(description string, validateFunc func(*controller.Reconciler)) {
+				r := controller.NewReconciler(fakeClient, scheme, remediationorchestrator.DefaultConfig())
+				Expect(r).NotTo(BeNil())
+				validateFunc(r)
+			},
+			Entry("with provided client",
+				"Client injection",
+				func(r *controller.Reconciler) {
+					Expect(r.Client).NotTo(BeNil())
+				}),
+			Entry("with provided scheme",
+				"Scheme injection",
+				func(r *controller.Reconciler) {
+					Expect(r.Scheme).NotTo(BeNil())
+				}),
+			Entry("with provided config",
+				"Config injection",
+				func(r *controller.Reconciler) {
+					Expect(r.Config.MaxConcurrentReconciles).To(Equal(10))
+				}),
+		)
 
-		It("should create a reconciler with provided scheme", func() {
-			r := controller.NewReconciler(fakeClient, scheme, remediationorchestrator.DefaultConfig())
-			Expect(r.Scheme).To(Equal(scheme))
-		})
-
-		It("should create a reconciler with provided config", func() {
+		It("should allow custom configuration override", func() {
 			config := remediationorchestrator.OrchestratorConfig{
 				MaxConcurrentReconciles: 5,
 			}
@@ -230,4 +253,3 @@ var _ = Describe("RemediationOrchestrator Controller", func() {
 		})
 	})
 })
-

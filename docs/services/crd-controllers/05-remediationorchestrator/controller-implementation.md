@@ -543,7 +543,7 @@ func (r *RemediationRequestReconciler) finalizeRemediation(
     return r.recordAudit(ctx, remediation)
 }
 
-const remediationFinalizerName = "kubernaut.io/remediation-retention"
+const remediationFinalizerName = "kubernaut.ai/remediation-retention"
 ```
 
 ---

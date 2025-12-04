@@ -413,7 +413,7 @@ Each signal goes through:
    - **Namespace Handling**: Creates CRD in signal's origin namespace
    - **Fallback Behavior**: If namespace doesn't exist → creates in `kubernaut-system`
    - **Cluster-Scoped Signals**: NodeNotReady, ClusterMemoryPressure → `kubernaut-system`
-   - **Labels Added**: `kubernaut.io/origin-namespace`, `kubernaut.io/cluster-scoped`
+   - **Labels Added**: `kubernaut.ai/origin-namespace`, `kubernaut.ai/cluster-scoped`
 9. **Response** - ~1ms
 
 **Total**: 20-50ms (p95)
@@ -445,8 +445,8 @@ Labels: (standard labels only)
 Signal namespace: "" (empty - e.g., NodeNotReady)
 CRD created in: "kubernaut-system"
 Labels:
-  - kubernaut.io/origin-namespace: ""
-  - kubernaut.io/cluster-scoped: "true"
+  - kubernaut.ai/origin-namespace: ""
+  - kubernaut.ai/cluster-scoped: "true"
 ```
 
 **Scenario 3: Invalid Namespace (Deleted After Alert)**
@@ -454,8 +454,8 @@ Labels:
 Signal namespace: "deleted-app"
 CRD created in: "storm-ttl-1762470354788403000"  # Auto-detected Gateway namespace
 Labels:
-  - kubernaut.io/origin-namespace: "deleted-app"
-  - kubernaut.io/cluster-scoped: "true"
+  - kubernaut.ai/origin-namespace: "deleted-app"
+  - kubernaut.ai/cluster-scoped: "true"
 ```
 
 ### CRD Fallback Namespace Strategy (v2.25 - Configurable)
@@ -501,8 +501,8 @@ Gateway running in: "kubernaut-system"
 Signal namespace: "deleted-app"
 CRD created in: "kubernaut-system"  # Auto-detected
 Labels:
-  - kubernaut.io/origin-namespace: "deleted-app"
-  - kubernaut.io/cluster-scoped: "true"
+  - kubernaut.ai/origin-namespace: "deleted-app"
+  - kubernaut.ai/cluster-scoped: "true"
 ```
 
 **Example (E2E Test)**:
@@ -511,8 +511,8 @@ Gateway running in: "storm-ttl-1762470354788403000"
 Signal namespace: "production"
 CRD created in: "storm-ttl-1762470354788403000"  # Auto-detected test namespace
 Labels:
-  - kubernaut.io/origin-namespace: "production"
-  - kubernaut.io/cluster-scoped: "true"
+  - kubernaut.ai/origin-namespace: "production"
+  - kubernaut.ai/cluster-scoped: "true"
 ```
 
 ### Querying Fallback CRDs
@@ -521,17 +521,17 @@ Labels:
 ```bash
 # Production (Gateway in kubernaut-system)
 kubectl get remediationrequests -n kubernaut-system \
-  -l kubernaut.io/cluster-scoped=true
+  -l kubernaut.ai/cluster-scoped=true
 
 # E2E Test (Gateway in test namespace)
 kubectl get remediationrequests -n storm-ttl-1762470354788403000 \
-  -l kubernaut.io/cluster-scoped=true
+  -l kubernaut.ai/cluster-scoped=true
 ```
 
 **Find CRDs by origin namespace**:
 ```bash
 kubectl get remediationrequests -A \
-  -l kubernaut.io/origin-namespace=production
+  -l kubernaut.ai/origin-namespace=production
 ```
 
 ### Rationale

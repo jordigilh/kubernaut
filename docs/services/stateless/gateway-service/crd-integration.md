@@ -226,7 +226,7 @@ func buildDatadogProviderData(signal *NormalizedSignal) json.RawMessage {
 ### Normal Alert CRD Example
 
 ```yaml
-apiVersion: remediation.kubernaut.io/v1
+apiVersion: remediation.kubernaut.ai/v1
 kind: RemediationRequest
 metadata:
   name: remediation-abc123
@@ -265,7 +265,7 @@ status:
 ### Storm Alert CRD Example
 
 ```yaml
-apiVersion: remediation.kubernaut.io/v1
+apiVersion: remediation.kubernaut.ai/v1
 kind: RemediationRequest
 metadata:
   name: remediation-storm-xyz

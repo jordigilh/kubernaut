@@ -149,7 +149,7 @@ func CalculateBackoff(attemptCount int) time.Duration {
     if backoff > maxBackoff {
         backoff = maxBackoff
     }
-    
+
     // Add ±10% jitter to prevent thundering herd
     jitter := time.Duration(float64(backoff) * jitterFraction * (rand.Float64()*2 - 1))
     return backoff + jitter
@@ -169,7 +169,7 @@ func IsRetryableError(err error) bool {
     if errors.Is(err, context.DeadlineExceeded) {
         return true
     }
-    
+
     // K8s API transient errors
     if apierrors.IsServerTimeout(err) ||
        apierrors.IsTooManyRequests(err) ||
@@ -177,7 +177,7 @@ func IsRetryableError(err error) bool {
        apierrors.IsInternalError(err) {
         return true
     }
-    
+
     // Permanent errors should NOT retry
     if apierrors.IsNotFound(err) ||
        apierrors.IsBadRequest(err) ||
@@ -185,7 +185,7 @@ func IsRetryableError(err error) bool {
        apierrors.IsForbidden(err) {
         return false
     }
-    
+
     return false
 }
 ```
@@ -201,7 +201,7 @@ package errors
 
 import (
     "fmt"
-    
+
     pkgerrors "github.com/pkg/errors"
 )
 

@@ -153,10 +153,12 @@ type NotificationRequestSpec struct {
 	// +kubebuilder:default=medium
 	Priority NotificationPriority `json:"priority"`
 
-	// List of recipients for this notification
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinItems=1
-	Recipients []Recipient `json:"recipients"`
+	// List of recipients for this notification.
+	// Optional: If not specified, Notification Service routing rules (BR-NOT-065)
+	// will determine recipients based on CRD labels (type, severity, environment, namespace).
+	// If specified, these recipients are used in addition to routing rule matches.
+	// +optional
+	Recipients []Recipient `json:"recipients,omitempty"`
 
 	// Subject line for notification
 	// +kubebuilder:validation:Required
@@ -169,10 +171,12 @@ type NotificationRequestSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Body string `json:"body"`
 
-	// Delivery channels to use
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinItems=1
-	Channels []Channel `json:"channels"`
+	// Delivery channels to use.
+	// Optional: If not specified, Notification Service routing rules (BR-NOT-065)
+	// will determine channels based on CRD labels (type, severity, environment, namespace).
+	// If specified, these channels are used in addition to routing rule matches.
+	// +optional
+	Channels []Channel `json:"channels,omitempty"`
 
 	// Metadata for context (key-value pairs)
 	// Examples: remediationRequestName, cluster, namespace, severity, alertName

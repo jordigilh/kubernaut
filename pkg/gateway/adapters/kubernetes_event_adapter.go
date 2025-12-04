@@ -300,14 +300,14 @@ func (a *KubernetesEventAdapter) extractLabels(event kubernetesEvent) map[string
 
 	// Add source component as label
 	if event.Source.Component != "" {
-		labels["kubernaut.io/event-source"] = event.Source.Component
+		labels["kubernaut.ai/event-source"] = event.Source.Component
 	}
 
 	// Add event type as label
-	labels["kubernaut.io/event-type"] = strings.ToLower(event.Type)
+	labels["kubernaut.ai/event-type"] = strings.ToLower(event.Type)
 
 	// Add resource kind as label (for filtering)
-	labels["kubernaut.io/resource-kind"] = strings.ToLower(event.InvolvedObject.Kind)
+	labels["kubernaut.ai/resource-kind"] = strings.ToLower(event.InvolvedObject.Kind)
 
 	return labels
 }
@@ -323,25 +323,25 @@ func (a *KubernetesEventAdapter) extractAnnotations(event kubernetesEvent) map[s
 
 	// Add event message
 	if event.Message != "" {
-		annotations["kubernaut.io/event-message"] = event.Message
+		annotations["kubernaut.ai/event-message"] = event.Message
 	}
 
 	// Add event count
 	if event.Count > 0 {
-		annotations["kubernaut.io/event-count"] = fmt.Sprintf("%d", event.Count)
+		annotations["kubernaut.ai/event-count"] = fmt.Sprintf("%d", event.Count)
 	}
 
 	// Add source host
 	if event.Source.Host != "" {
-		annotations["kubernaut.io/source-host"] = event.Source.Host
+		annotations["kubernaut.ai/source-host"] = event.Source.Host
 	}
 
 	// Add timestamps
 	if !event.FirstTimestamp.IsZero() {
-		annotations["kubernaut.io/first-timestamp"] = event.FirstTimestamp.Format(time.RFC3339)
+		annotations["kubernaut.ai/first-timestamp"] = event.FirstTimestamp.Format(time.RFC3339)
 	}
 	if !event.LastTimestamp.IsZero() {
-		annotations["kubernaut.io/last-timestamp"] = event.LastTimestamp.Format(time.RFC3339)
+		annotations["kubernaut.ai/last-timestamp"] = event.LastTimestamp.Format(time.RFC3339)
 	}
 
 	return annotations

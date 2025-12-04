@@ -71,7 +71,7 @@ func TestAIAnalysis(t *testing.T) {
 
 ```go
 // test/integration/aianalysis/suite_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "context"
@@ -560,7 +560,7 @@ func responseWithWarnings(warnings []string) *holmesgpt.IncidentResponse {
 
 ```go
 // test/integration/aianalysis/reconciliation_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "time"
@@ -642,7 +642,7 @@ var _ = Describe("AIAnalysis Reconciliation Loop", func() {
 
 ```go
 // test/integration/aianalysis/holmesgpt_integration_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     . "github.com/onsi/ginkgo/v2"
@@ -704,7 +704,7 @@ var _ = Describe("HolmesGPT-API Integration", func() {
 
 ```go
 // test/e2e/aianalysis/health_endpoints_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "net/http"

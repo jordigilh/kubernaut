@@ -237,7 +237,7 @@ Eventually(func() int {
     spList := &signalprocessingv1alpha1.SignalProcessingList{}
     err := k8sClient.List(ctx, spList,
         client.InNamespace(namespace),
-        client.MatchingLabels{"kubernaut.io/remediation": rrName})
+        client.MatchingLabels{"kubernaut.ai/remediation": rrName})
     if err != nil {
         return 0
     }

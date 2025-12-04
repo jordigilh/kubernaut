@@ -13,6 +13,35 @@
 **Design References**: [ADR-018 Approval Notifications](../../../architecture/decisions/ADR-018-approval-notification-v1-integration.md)
 
 **Version History**:
+- **v1.2.1** (2025-12-04): 🔧 **IMPLEMENTATION PROGRESS - TESTING GUIDE COMPLIANCE**
+  - ✅ **Test Data Factory**: Created `pkg/testutil/remediation_factory.go` (500 lines)
+    - `NewRemediationRequest`, `NewSignalProcessing`, `NewCompletedSignalProcessing`
+    - `NewAIAnalysis`, `NewCompletedAIAnalysis`, `NewAIAnalysisRequiringApproval`
+    - `NewWorkflowExecution`, `NewCompletedWorkflowExecution`, `NewSkippedWorkflowExecution`
+    - `NewNotificationRequest`, `NewApprovalNotificationRequest`
+    - Helper functions: `NewOwnerReference`, `NewObjectReference`
+  - ✅ **WorkflowExecution Creator**: Implemented `pkg/remediationorchestrator/creator/workflowexecution.go`
+    - BR-ORCH-025 data pass-through
+    - BR-ORCH-031 cascade deletion
+    - BR-ORCH-032 resource lock support
+    - TargetResource format: "namespace/kind/name" (namespaced) or "kind/name" (cluster-scoped)
+  - ✅ **NotificationRequest Creator**: Implemented `pkg/remediationorchestrator/creator/notificationrequest.go`
+    - BR-ORCH-001: Approval notification creation
+    - BR-ORCH-029: Completion notification handling
+    - BR-ORCH-030: Failure notification handling
+    - BR-ORCH-034: Duplicate/skipped notification handling
+  - ✅ **Testing Guide Compliance**: Refactored all test files to use `DescribeTable`
+    - `signalprocessing_test.go`: 16 table entries (consolidated from 6 individual tests)
+    - `aianalysis_test.go`: 12 table entries (consolidated from 7 individual tests)
+    - `workflowexecution_test.go`: 18 table entries + cluster-scoped test + idempotency
+    - `notificationrequest_test.go`: 42 table entries across 4 notification types
+    - `phase/types_test.go`: 45 table entries (IsTerminal, CanTransition, Validate)
+    - `types_test.go`: 23 table entries (PhaseTimeouts, OrchestratorConfig, ChildCRDRefs)
+    - `controller/reconciler_test.go`: 11 tests (terminal states, NewReconciler)
+  - ✅ **BR Prefix in Describe Names**: All top-level Describe blocks use `BR-ORCH-XXX: [Description]`
+  - ✅ **Total Tests**: 163 passing tests across 6 test files
+  - 📏 **Implementation Status**: Days 1-3 complete, Days 4-7 in progress
+
 - **v1.2.0** (2025-12-04): 🎯 **MODULAR STRUCTURE + COMPLETE TEMPLATE COMPLIANCE**
   - ✅ **Modular Organization**: Split into main plan + 13 breakout files (11,025 lines total)
   - ✅ **Day Breakouts**: DAY_01_FOUNDATION.md, DAYS_02_07_PHASE_HANDLERS.md, DAYS_08_16_TESTING.md
@@ -2130,15 +2159,38 @@ Days 2-16 follow the same APDC pattern covering:
 
 ## 🔑 Key Files
 
-- **Controller**: `internal/controller/remediation/remediationrequest_controller.go`
-- **State Machine**: `pkg/remediationorchestrator/statemachine/machine.go`
-- **Targeting Manager**: `pkg/remediationorchestrator/targeting/manager.go`
-- **Child Creator**: `pkg/remediationorchestrator/children/creator.go`
-- **Status Aggregator**: `pkg/remediationorchestrator/status/aggregator.go`
-- **Timeout Detector**: `pkg/remediationorchestrator/timeout/detector.go`
-- **Escalation Manager**: `pkg/remediationorchestrator/escalation/manager.go`
-- **Tests**: `test/integration/remediationorchestrator/suite_test.go`
-- **Main**: `cmd/remediationorchestrator/main.go`
+### Implemented (v1.2.1)
+| File | Status | Description |
+|------|--------|-------------|
+| `pkg/remediationorchestrator/types.go` | ✅ | Config, timeouts, child refs, reconcile result |
+| `pkg/remediationorchestrator/phase/types.go` | ✅ | Phase constants, IsTerminal, CanTransition, Validate |
+| `pkg/remediationorchestrator/controller/reconciler.go` | ✅ | Core reconciler, phase handling |
+| `pkg/remediationorchestrator/creator/signalprocessing.go` | ✅ | SignalProcessing CRD creation |
+| `pkg/remediationorchestrator/creator/aianalysis.go` | ✅ | AIAnalysis CRD creation |
+| `pkg/remediationorchestrator/creator/workflowexecution.go` | ✅ | WorkflowExecution CRD creation |
+| `pkg/remediationorchestrator/creator/notificationrequest.go` | ✅ | Notification CRD creation (all types) |
+| `pkg/testutil/remediation_factory.go` | ✅ | Test data factory (all CRD types) |
+| `cmd/remediationorchestrator/main.go` | ✅ | Entry point |
+
+### Test Files (v1.2.1 - DescribeTable compliance)
+| File | Tests | Status |
+|------|-------|--------|
+| `pkg/remediationorchestrator/types_test.go` | 23 | ✅ |
+| `pkg/remediationorchestrator/phase/types_test.go` | 45 | ✅ |
+| `pkg/remediationorchestrator/controller/reconciler_test.go` | 11 | ✅ |
+| `pkg/remediationorchestrator/creator/signalprocessing_test.go` | 17 | ✅ |
+| `pkg/remediationorchestrator/creator/aianalysis_test.go` | 13 | ✅ |
+| `pkg/remediationorchestrator/creator/workflowexecution_test.go` | 21 | ✅ |
+| `pkg/remediationorchestrator/creator/notificationrequest_test.go` | 33 | ✅ |
+| **Total** | **163** | ✅ |
+
+### Planned (Days 4-16)
+| File | Day | Description |
+|------|-----|-------------|
+| `pkg/remediationorchestrator/status/aggregator.go` | Day 5 | Multi-CRD status collection |
+| `pkg/remediationorchestrator/timeout/detector.go` | Day 6 | BR-ORCH-027, BR-ORCH-028 |
+| `pkg/remediationorchestrator/escalation/manager.go` | Day 7 | Failed/timeout escalation |
+| `test/integration/remediationorchestrator/suite_test.go` | Days 8-15 | Integration tests |
 
 ---
 

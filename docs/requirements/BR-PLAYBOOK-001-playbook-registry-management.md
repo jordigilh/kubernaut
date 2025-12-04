@@ -108,7 +108,7 @@ ADR-033 introduces the **Remediation Playbook Catalog** with a Hybrid Model (90%
 **Desired Flow with BR-PLAYBOOK-001**:
 ```
 1. Team creates playbook YAML:
-   apiVersion: playbook.kubernaut.io/v1
+   apiVersion: playbook.kubernaut.ai/v1
    kind: RemediationPlaybook
    metadata:
      name: pod-oom-recovery

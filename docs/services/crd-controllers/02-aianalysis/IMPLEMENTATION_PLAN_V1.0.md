@@ -1,7 +1,7 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.1
+**Version**: v1.3
 **Last Updated**: 2025-12-04
 **Timeline**: 10 days (2 calendar weeks)
 **Status**: 📋 DRAFT - Ready for Review
@@ -9,6 +9,11 @@
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.3** (2025-12-04): Test package naming compliance fix
+  - ✅ **Package Naming Fix**: Changed all `package aianalysis_test` → `package aianalysis`
+  - ✅ **Compliance**: Now compliant with TEST_PACKAGE_NAMING_STANDARD.md (white-box testing)
+  - ✅ **Files Fixed**: DAY_05_07, DAY_08_10, APPENDIX_D (12 violations corrected)
+  - 📏 **Authority**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0 lines 2586-2619
 - **v1.2** (2025-12-04): Expanded plan with appendices and day-by-day breakdown
   - ✅ **Appendices**: Created 4 detailed appendix documents
   - ✅ **Day-by-Day**: Created 5 detailed day breakdown documents
@@ -114,7 +119,7 @@ This plan is organized into a core document and supporting files for easier navi
 |-----------|-------|
 | **Service Name** | AI Analysis |
 | **CRD** | `AIAnalysis` |
-| **API Group** | `kubernaut.io/v1alpha1` |
+| **API Group** | `kubernaut.ai/v1alpha1` |
 | **Controller** | `AIAnalysisReconciler` |
 | **Binary** | `cmd/aianalysis/main.go` |
 | **Package** | `pkg/aianalysis/` |
@@ -862,7 +867,7 @@ import (
 )
 
 const (
-    FinalizerName = "aianalysis.kubernaut.io/finalizer"
+    FinalizerName = "aianalysis.kubernaut.ai/finalizer"
 )
 
 // AIAnalysisReconciler reconciles a AIAnalysis object
@@ -2531,7 +2536,7 @@ kubectl top pod -l app=aianalysis-controller -n kubernaut-system
 AIAnalysis CRD uses the `kubernaut.io` domain:
 
 ```yaml
-apiVersion: aianalysis.kubernaut.io/v1alpha1
+apiVersion: aianalysis.kubernaut.ai/v1alpha1
 kind: AIAnalysis
 ```
 
@@ -2541,7 +2546,7 @@ kind: AIAnalysis
 
 | CRD | API Group | Purpose |
 |-----|-----------|---------|
-| AIAnalysis | `aianalysis.kubernaut.io/v1alpha1` | HolmesGPT RCA + workflow selection |
+| AIAnalysis | `aianalysis.kubernaut.ai/v1alpha1` | HolmesGPT RCA + workflow selection |
 
 ### **RBAC Markers (Current)**
 
@@ -2559,7 +2564,7 @@ kind: AIAnalysis
 | **Istio** | `istio.io/v1` | ✅ Unified - network, security, config all under `istio.io` |
 | **Cert-Manager** | `cert-manager.io/v1` | ✅ Unified - certificates, issuers, challenges |
 | **ArgoCD** | `argoproj.io/v1alpha1` | ✅ Unified - applications, projects, rollouts |
-| **Kubernaut** | `[service].kubernaut.io/v1alpha1` | ✅ Unified - remediation workflow CRDs |
+| **Kubernaut** | `[service].kubernaut.ai/v1alpha1` | ✅ Unified - remediation workflow CRDs |
 
 ---
 

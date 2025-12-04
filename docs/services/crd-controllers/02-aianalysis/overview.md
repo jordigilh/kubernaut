@@ -295,7 +295,7 @@ RemediationRequest (root orchestrator)
 | Aspect | Value |
 |--------|-------|
 | **Service** | AI Analysis Controller |
-| **CRD** | `aianalysis.kubernaut.io/v1alpha1` |
+| **CRD** | `aianalysis.kubernaut.ai/v1alpha1` |
 | **Package** | `internal/controller/aianalysis/` |
 | **Phases** | Pending → Investigating → Analyzing → Completed |
 | **Health Port** | 8081 (`/healthz`, `/readyz`) |

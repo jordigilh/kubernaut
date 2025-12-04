@@ -9,6 +9,7 @@ rules:
   resources:
   - configmaps
   - deployments
+  - namespaces
   - nodes
   - pods
   - replicasets
@@ -17,13 +18,6 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
 - apiGroups:
   - apps
   resources:
@@ -119,6 +113,8 @@ rules:
   - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - workflowexecution.kubernaut.ai

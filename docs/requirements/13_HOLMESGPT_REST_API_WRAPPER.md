@@ -538,7 +538,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: holmesgpt-api
-        image: registry.kubernaut.io/holmesgpt-api:1.0.0
+        image: registry.kubernaut.ai/holmesgpt-api:1.0.0
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

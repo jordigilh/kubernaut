@@ -137,10 +137,10 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 				"Should be managed by gateway-service")
 
 			// BUSINESS VALIDATION 3: CRD has Kubernaut-specific labels
-			Expect(crd.Labels).To(HaveKey("kubernaut.io/signal-type"), "Should have signal-type label")
-			Expect(crd.Labels).To(HaveKey("kubernaut.io/severity"), "Should have severity label")
-			Expect(crd.Labels).To(HaveKey("kubernaut.io/environment"), "Should have environment label")
-			Expect(crd.Labels).To(HaveKey("kubernaut.io/priority"), "Should have priority label")
+			Expect(crd.Labels).To(HaveKey("kubernaut.ai/signal-type"), "Should have signal-type label")
+			Expect(crd.Labels).To(HaveKey("kubernaut.ai/severity"), "Should have severity label")
+			Expect(crd.Labels).To(HaveKey("kubernaut.ai/environment"), "Should have environment label")
+			Expect(crd.Labels).To(HaveKey("kubernaut.ai/priority"), "Should have priority label")
 		})
 
 		It("should create CRD with complete metadata for Kubernetes API queries", func() {
@@ -165,10 +165,10 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			var crd remediationv1alpha1.RemediationRequest
 			Eventually(func() error {
 				crdList := &remediationv1alpha1.RemediationRequestList{}
-				// Query by severity label (simulates: kubectl get rr -l kubernaut.io/severity=critical)
+				// Query by severity label (simulates: kubectl get rr -l kubernaut.ai/severity=critical)
 				err := k8sClient.Client.List(ctx, crdList,
 					client.InNamespace(testNamespace),
-					client.MatchingLabels{"kubernaut.io/severity": "critical"})
+					client.MatchingLabels{"kubernaut.ai/severity": "critical"})
 				if err != nil {
 					return err
 				}
@@ -180,15 +180,15 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			}, "30s", "500ms").Should(Succeed(), "Should query CRD by label")
 
 			// BUSINESS VALIDATION: Labels enable Kubernetes API queries
-			Expect(crd.Labels["kubernaut.io/severity"]).To(Equal("critical"),
+			Expect(crd.Labels["kubernaut.ai/severity"]).To(Equal("critical"),
 				"Severity label for kubectl queries")
-			Expect(crd.Labels["kubernaut.io/environment"]).To(Equal("production"),
+			Expect(crd.Labels["kubernaut.ai/environment"]).To(Equal("production"),
 				"Environment label for kubectl queries")
-			Expect(crd.Labels["kubernaut.io/priority"]).To(Equal("P0"),
+			Expect(crd.Labels["kubernaut.ai/priority"]).To(Equal("P0"),
 				"Priority label for kubectl queries (critical + production = P0)")
 
 			// BUSINESS VALIDATION: Annotations for audit trail
-			Expect(crd.Annotations).To(HaveKey("kubernaut.io/created-at"),
+			Expect(crd.Annotations).To(HaveKey("kubernaut.ai/created-at"),
 				"Should have creation timestamp for audit")
 		})
 	})
@@ -248,9 +248,9 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			Expect(fallbackCRD).ToNot(BeNil(), "Fallback CRD should exist")
 			Expect(fallbackCRD.Namespace).To(Equal("kubernaut-system"),
 				"Should be in kubernaut-system namespace")
-			Expect(fallbackCRD.Labels["kubernaut.io/cluster-scoped"]).To(Equal("true"),
+			Expect(fallbackCRD.Labels["kubernaut.ai/cluster-scoped"]).To(Equal("true"),
 				"Should have cluster-scoped label")
-			Expect(fallbackCRD.Labels["kubernaut.io/origin-namespace"]).To(Equal(invalidNamespace),
+			Expect(fallbackCRD.Labels["kubernaut.ai/origin-namespace"]).To(Equal(invalidNamespace),
 				"Should preserve origin namespace in label")
 		})
 	})

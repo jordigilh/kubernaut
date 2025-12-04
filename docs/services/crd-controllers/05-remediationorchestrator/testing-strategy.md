@@ -450,11 +450,11 @@ var _ = Describe("BR-ORCH-001: RemediationRequest Remediation Orchestrator", fun
                 Expect(updatedAR.Finalizers).To(BeEmpty())
             },
             Entry("removes finalizer with all 3 children",
-                "remediation.kubernaut.io/alertremediation-cleanup", 3),
+                "remediation.kubernaut.ai/alertremediation-cleanup", 3),
             Entry("removes finalizer with partial children",
-                "remediation.kubernaut.io/alertremediation-cleanup", 1),
+                "remediation.kubernaut.ai/alertremediation-cleanup", 1),
             Entry("removes finalizer with no children",
-                "remediation.kubernaut.io/alertremediation-cleanup", 0),
+                "remediation.kubernaut.ai/alertremediation-cleanup", 0),
         )
     })
 

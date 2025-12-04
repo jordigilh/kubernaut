@@ -382,6 +382,16 @@ type AIAnalysisStatus struct {
 	Warnings []string `json:"warnings,omitempty"`
 
 	// ========================================
+	// OPERATIONAL STATUS
+	// ========================================
+	// DegradedMode indicates if the analysis ran with degraded capabilities
+	// (e.g., Rego policy evaluation failed, using safe defaults)
+	DegradedMode bool `json:"degradedMode,omitempty"`
+	// TotalAnalysisTime is the total duration of the analysis in seconds
+	// +kubebuilder:validation:Minimum=0
+	TotalAnalysisTime int64 `json:"totalAnalysisTime,omitempty"`
+
+	// ========================================
 	// RECOVERY STATUS (DD-RECOVERY-002)
 	// ========================================
 	// Recovery-specific status fields (only populated for recovery attempts)

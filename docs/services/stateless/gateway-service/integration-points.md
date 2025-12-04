@@ -150,10 +150,10 @@ metadata:
   name: remediation-abc123
   namespace: kubernaut-system
   labels:
-    kubernaut.io/alert-name: HighMemoryUsage
-    kubernaut.io/environment: prod
-    kubernaut.io/priority: P0
-    kubernaut.io/signal-type: prometheus
+    kubernaut.ai/alert-name: HighMemoryUsage
+    kubernaut.ai/environment: prod
+    kubernaut.ai/priority: P0
+    kubernaut.ai/signal-type: prometheus
 spec:
   # Core identification
   alertFingerprint: "a1b2c3d4e5..."
@@ -206,8 +206,8 @@ metadata:
   name: remediation-storm-xyz
   namespace: kubernaut-system
   labels:
-    kubernaut.io/alert-name: PodOOMKilled
-    kubernaut.io/storm: "true"
+    kubernaut.ai/alert-name: PodOOMKilled
+    kubernaut.ai/storm: "true"
 spec:
   isStorm: true
   stormType: "rate"  # or "pattern"

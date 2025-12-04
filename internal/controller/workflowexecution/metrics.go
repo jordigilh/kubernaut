@@ -14,200 +14,272 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package workflowexecution provides metrics for the WorkflowExecution controller
+// TDD GREEN: Implementation driven by failing tests in metrics_test.go
 package workflowexecution
 
 import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-// ============================================================================
-// Prometheus Metrics for WorkflowExecution Controller
-// BR-WE-008: Prometheus Metrics for Execution Outcomes
-// ============================================================================
-
-var (
-	// phaseTransitionsTotal counts phase transitions by namespace and phase
-	phaseTransitionsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "workflowexecution_phase_transitions_total",
-			Help: "Total number of WorkflowExecution phase transitions",
-		},
-		[]string{"namespace", "phase"},
-	)
-
-	// phaseDurationSeconds measures duration in each phase
-	phaseDurationSeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "workflowexecution_phase_duration_seconds",
-			Help:    "Duration of WorkflowExecution in each phase",
-			Buckets: prometheus.ExponentialBuckets(1, 2, 12), // 1s to ~68m
-		},
-		[]string{"namespace", "workflow_id", "outcome"},
-	)
-
-	// skipTotal counts skipped executions by namespace and reason
-	skipTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "workflowexecution_skip_total",
-			Help: "Total number of skipped WorkflowExecutions",
-		},
-		[]string{"namespace", "reason"},
-	)
-
-	// pipelineRunCreationTotal counts PipelineRun creation attempts
-	pipelineRunCreationTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "workflowexecution_pipelinerun_creation_total",
-			Help: "Total number of PipelineRun creation attempts",
-		},
-		[]string{"outcome"},
-	)
-
-	// pipelineRunCreationDurationSeconds measures time to create PipelineRun
-	pipelineRunCreationDurationSeconds = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "workflowexecution_pipelinerun_creation_duration_seconds",
-			Help:    "Time to create a Tekton PipelineRun",
-			Buckets: prometheus.ExponentialBuckets(0.01, 2, 10), // 10ms to ~10s
-		},
-	)
-
-	// reconcileTotal counts reconciliation attempts
-	reconcileTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "workflowexecution_reconcile_total",
-			Help: "Total number of reconciliation attempts",
-		},
-		[]string{"namespace", "result"},
-	)
-
-	// reconcileDurationSeconds measures reconciliation duration
-	reconcileDurationSeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "workflowexecution_reconcile_duration_seconds",
-			Help:    "Duration of WorkflowExecution reconciliation",
-			Buckets: prometheus.ExponentialBuckets(0.001, 2, 15), // 1ms to ~33s
-		},
-		[]string{"namespace"},
-	)
-
-	// activeExecutions tracks currently running WorkflowExecutions
-	activeExecutions = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "workflowexecution_active_executions",
-			Help: "Number of currently running WorkflowExecutions",
-		},
-		[]string{"namespace"},
-	)
-
-	// resourceLockCheckDurationSeconds measures lock check performance
-	resourceLockCheckDurationSeconds = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "workflowexecution_resource_lock_check_duration_seconds",
-			Help:    "Duration of resource lock checks (DD-WE-001)",
-			Buckets: prometheus.ExponentialBuckets(0.0001, 2, 10), // 0.1ms to ~100ms
-		},
-	)
-
-	// cooldownSkipsTotal counts cooldown-triggered skips
-	cooldownSkipsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "workflowexecution_cooldown_skips_total",
-			Help: "Total number of executions skipped due to cooldown period",
-		},
-		[]string{"namespace", "workflow_id"},
-	)
+const (
+	// MetricsNamespace is the Prometheus namespace for all metrics
+	MetricsNamespace = "kubernaut"
+	// MetricsSubsystem is the Prometheus subsystem
+	MetricsSubsystem = "workflowexecution"
 )
 
-func init() {
-	// Register all metrics with controller-runtime's registry
-	metrics.Registry.MustRegister(
-		phaseTransitionsTotal,
-		phaseDurationSeconds,
-		skipTotal,
-		pipelineRunCreationTotal,
-		pipelineRunCreationDurationSeconds,
-		reconcileTotal,
-		reconcileDurationSeconds,
-		activeExecutions,
-		resourceLockCheckDurationSeconds,
-		cooldownSkipsTotal,
+// Metrics holds all Prometheus metrics for WorkflowExecution controller
+// TDD: Struct fields defined by test requirements
+type Metrics struct {
+	// PhaseTransitions counts phase transitions
+	// Labels: namespace, workflow_id, from_phase, to_phase
+	PhaseTransitions *prometheus.CounterVec
+
+	// ExecutionDuration tracks execution duration histogram
+	// Labels: namespace, workflow_id, outcome
+	ExecutionDuration *prometheus.HistogramVec
+
+	// PipelineRunCreations counts PipelineRun creation attempts
+	// Labels: namespace, workflow_id, result (success/failure)
+	PipelineRunCreations *prometheus.CounterVec
+
+	// SkippedTotal counts skipped executions
+	// Labels: namespace, workflow_id, reason
+	SkippedTotal *prometheus.CounterVec
+
+	// FailedTotal counts failed executions
+	// Labels: namespace, workflow_id, reason
+	FailedTotal *prometheus.CounterVec
+
+	// CompletedTotal counts completed executions
+	// Labels: namespace, workflow_id
+	CompletedTotal *prometheus.CounterVec
+
+	// ActiveExecutions tracks currently active executions
+	ActiveExecutions prometheus.Gauge
+
+	// ReconcileTotal counts reconcile operations
+	// Labels: namespace, result (success/error)
+	ReconcileTotal *prometheus.CounterVec
+
+	// ReconcileDuration tracks reconcile duration histogram
+	ReconcileDuration prometheus.Histogram
+
+	// registry holds all metrics for cleanup
+	registry *prometheus.Registry
+}
+
+// NewMetrics creates and registers all Prometheus metrics
+// TDD GREEN: Constructor defined by test requirements
+func NewMetrics() *Metrics {
+	m := &Metrics{
+		PhaseTransitions: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "phase_transitions_total",
+				Help:      "Total number of phase transitions",
+			},
+			[]string{"namespace", "workflow_id", "from_phase", "to_phase"},
+		),
+
+		ExecutionDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "execution_duration_seconds",
+				Help:      "Histogram of workflow execution duration in seconds",
+				Buckets:   []float64{1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600},
+			},
+			[]string{"namespace", "workflow_id", "outcome"},
+		),
+
+		PipelineRunCreations: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "pipelinerun_creations_total",
+				Help:      "Total number of PipelineRun creation attempts",
+			},
+			[]string{"namespace", "workflow_id", "result"},
+		),
+
+		SkippedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "skipped_total",
+				Help:      "Total number of skipped executions",
+			},
+			[]string{"namespace", "workflow_id", "reason"},
+		),
+
+		FailedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "failed_total",
+				Help:      "Total number of failed executions",
+			},
+			[]string{"namespace", "workflow_id", "reason"},
+		),
+
+		CompletedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "completed_total",
+				Help:      "Total number of completed executions",
+			},
+			[]string{"namespace", "workflow_id"},
+		),
+
+		ActiveExecutions: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "active_executions",
+				Help:      "Number of currently active workflow executions",
+			},
+		),
+
+		ReconcileTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "reconcile_total",
+				Help:      "Total number of reconcile operations",
+			},
+			[]string{"namespace", "result"},
+		),
+
+		ReconcileDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: MetricsNamespace,
+				Subsystem: MetricsSubsystem,
+				Name:      "reconcile_duration_seconds",
+				Help:      "Histogram of reconcile duration in seconds",
+				Buckets:   []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+			},
+		),
+	}
+
+	// Create a new registry for testing isolation
+	m.registry = prometheus.NewRegistry()
+	m.registry.MustRegister(
+		m.PhaseTransitions,
+		m.ExecutionDuration,
+		m.PipelineRunCreations,
+		m.SkippedTotal,
+		m.FailedTotal,
+		m.CompletedTotal,
+		m.ActiveExecutions,
+		m.ReconcileTotal,
+		m.ReconcileDuration,
 	)
+
+	return m
 }
 
-// InitMetrics initializes metrics with zero values to ensure they appear in Prometheus
-func InitMetrics() {
-	// Initialize phase transitions
-	phaseTransitionsTotal.WithLabelValues("default", "Pending").Add(0)
-	phaseTransitionsTotal.WithLabelValues("default", "Running").Add(0)
-	phaseTransitionsTotal.WithLabelValues("default", "Completed").Add(0)
-	phaseTransitionsTotal.WithLabelValues("default", "Failed").Add(0)
-	phaseTransitionsTotal.WithLabelValues("default", "Skipped").Add(0)
-
-	// Initialize skip reasons
-	skipTotal.WithLabelValues("default", "ResourceBusy").Add(0)
-	skipTotal.WithLabelValues("default", "RecentlyRemediated").Add(0)
-
-	// Initialize PipelineRun creation outcomes
-	pipelineRunCreationTotal.WithLabelValues("success").Add(0)
-	pipelineRunCreationTotal.WithLabelValues("failure").Add(0)
-
-	// Initialize reconcile results
-	reconcileTotal.WithLabelValues("default", "success").Add(0)
-	reconcileTotal.WithLabelValues("default", "error").Add(0)
-	reconcileTotal.WithLabelValues("default", "requeue").Add(0)
+// Unregister removes all metrics from registry (for test cleanup)
+func (m *Metrics) Unregister() {
+	if m.registry == nil {
+		return
+	}
+	m.registry.Unregister(m.PhaseTransitions)
+	m.registry.Unregister(m.ExecutionDuration)
+	m.registry.Unregister(m.PipelineRunCreations)
+	m.registry.Unregister(m.SkippedTotal)
+	m.registry.Unregister(m.FailedTotal)
+	m.registry.Unregister(m.CompletedTotal)
+	m.registry.Unregister(m.ActiveExecutions)
+	m.registry.Unregister(m.ReconcileTotal)
+	m.registry.Unregister(m.ReconcileDuration)
 }
 
-// ============================================================================
-// Metric Recording Functions
-// ============================================================================
+// =============================================================================
+// TDD GREEN: Recording methods defined by test requirements
+// =============================================================================
 
 // RecordPhaseTransition records a phase transition
-func RecordPhaseTransition(namespace, phase string) {
-	phaseTransitionsTotal.WithLabelValues(namespace, phase).Inc()
+func (m *Metrics) RecordPhaseTransition(namespace, workflowID, fromPhase, toPhase string) {
+	m.PhaseTransitions.WithLabelValues(namespace, workflowID, fromPhase, toPhase).Inc()
 }
 
-// RecordDuration records the duration of a completed execution
-func RecordDuration(namespace, workflowID, outcome string, startTime time.Time) {
-	duration := time.Since(startTime).Seconds()
-	phaseDurationSeconds.WithLabelValues(namespace, workflowID, outcome).Observe(duration)
-}
-
-// RecordSkip records a skipped execution
-func RecordSkip(namespace, reason string) {
-	skipTotal.WithLabelValues(namespace, reason).Inc()
+// RecordExecutionDuration records the execution duration
+func (m *Metrics) RecordExecutionDuration(namespace, workflowID, outcome string, duration time.Duration) {
+	m.ExecutionDuration.WithLabelValues(namespace, workflowID, outcome).Observe(duration.Seconds())
 }
 
 // RecordPipelineRunCreation records a PipelineRun creation attempt
-func RecordPipelineRunCreation(outcome string) {
-	pipelineRunCreationTotal.WithLabelValues(outcome).Inc()
+func (m *Metrics) RecordPipelineRunCreation(namespace, workflowID string, success bool) {
+	result := "failure"
+	if success {
+		result = "success"
+	}
+	m.PipelineRunCreations.WithLabelValues(namespace, workflowID, result).Inc()
 }
 
-// RecordReconcile records a reconciliation result
-func RecordReconcile(namespace, result string) {
-	reconcileTotal.WithLabelValues(namespace, result).Inc()
+// RecordSkipped records a skipped execution
+func (m *Metrics) RecordSkipped(namespace, workflowID, reason string) {
+	m.SkippedTotal.WithLabelValues(namespace, workflowID, reason).Inc()
 }
 
-// RecordReconcileDuration records reconciliation duration
-func RecordReconcileDuration(namespace string, duration time.Duration) {
-	reconcileDurationSeconds.WithLabelValues(namespace).Observe(duration.Seconds())
+// RecordFailed records a failed execution
+func (m *Metrics) RecordFailed(namespace, workflowID, reason string) {
+	m.FailedTotal.WithLabelValues(namespace, workflowID, reason).Inc()
 }
 
-// SetActiveExecutions sets the number of active executions in a namespace
-func SetActiveExecutions(namespace string, count float64) {
-	activeExecutions.WithLabelValues(namespace).Set(count)
+// RecordCompleted records a completed execution
+func (m *Metrics) RecordCompleted(namespace, workflowID string) {
+	m.CompletedTotal.WithLabelValues(namespace, workflowID).Inc()
 }
 
-// RecordResourceLockCheck records the duration of a resource lock check
-func RecordResourceLockCheck(duration time.Duration) {
-	resourceLockCheckDurationSeconds.Observe(duration.Seconds())
+// SetActiveExecutions sets the active execution count
+func (m *Metrics) SetActiveExecutions(count int) {
+	m.ActiveExecutions.Set(float64(count))
 }
 
-// RecordCooldownSkip records a cooldown-triggered skip
-func RecordCooldownSkip(namespace, workflowID string) {
-	cooldownSkipsTotal.WithLabelValues(namespace, workflowID).Inc()
+// RecordReconcile records a reconcile operation
+func (m *Metrics) RecordReconcile(namespace string, success bool) {
+	result := "error"
+	if success {
+		result = "success"
+	}
+	m.ReconcileTotal.WithLabelValues(namespace, result).Inc()
+}
+
+// RecordReconcileDuration records reconcile duration
+func (m *Metrics) RecordReconcileDuration(duration time.Duration) {
+	m.ReconcileDuration.Observe(duration.Seconds())
+}
+
+// Register registers all metrics with the default prometheus registry
+// Used in production (not in tests)
+func (m *Metrics) Register() error {
+	collectors := []prometheus.Collector{
+		m.PhaseTransitions,
+		m.ExecutionDuration,
+		m.PipelineRunCreations,
+		m.SkippedTotal,
+		m.FailedTotal,
+		m.CompletedTotal,
+		m.ActiveExecutions,
+		m.ReconcileTotal,
+		m.ReconcileDuration,
+	}
+
+	for _, c := range collectors {
+		if err := prometheus.Register(c); err != nil {
+			// Ignore already registered errors
+			if _, ok := err.(prometheus.AlreadyRegisteredError); !ok {
+				return err
+			}
+		}
+	}
+	return nil
 }
 

@@ -22,7 +22,7 @@
 Following Kubernetes finalizer naming convention:
 
 ```go
-const aiAnalysisFinalizer = "aianalysis.kubernaut.io/cleanup"
+const aiAnalysisFinalizer = "aianalysis.kubernaut.ai/cleanup"
 ```
 
 **Naming Pattern**: `{api-group}/{resource}-cleanup`
@@ -53,7 +53,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const aiAnalysisFinalizer = "aianalysis.kubernaut.io/cleanup"
+const aiAnalysisFinalizer = "aianalysis.kubernaut.ai/cleanup"
 
 type AIAnalysisReconciler struct {
     client.Client
@@ -227,7 +227,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const aiAnalysisFinalizer = "aianalysis.kubernaut.io/cleanup"
+const aiAnalysisFinalizer = "aianalysis.kubernaut.ai/cleanup"
 
 var _ = Describe("AIAnalysis Finalizer", func() {
     var (

@@ -6,7 +6,7 @@
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
 **Service Host Port**: 8084 (Kind extraPortMappings per [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md))
 **CRD**: AIAnalysis
-**CRD API Group**: `kubernaut.io/v1alpha1`
+**CRD API Group**: `kubernaut.ai/v1alpha1`
 **Controller**: AIAnalysisReconciler
 **Priority**: **P0 - HIGH**
 **Effort**: 2 weeks

@@ -109,7 +109,7 @@ var _ = Describe("DD-GATEWAY-009: CRD Phase-Based Deduplication", func() {
 				Name:      name,
 				Namespace: namespace,
 				Labels: map[string]string{
-					"kubernaut.io/signal-fingerprint": fingerprint,
+					"kubernaut.ai/signal-fingerprint": fingerprint,
 				},
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{

@@ -12,7 +12,7 @@
 
 **Source of Truth**: `api/aianalysis/v1alpha1/aianalysis_types.go`
 
-**API Group**: `kubernaut.io/v1alpha1` (unified API group for all Kubernaut CRDs)
+**API Group**: `kubernaut.ai/v1alpha1` (unified API group for all Kubernaut CRDs)
 
 **Location**: `api/aianalysis/v1alpha1/aianalysis_types.go`
 
@@ -480,19 +480,19 @@ sequenceDiagram
 ## Example: Initial Incident
 
 ```yaml
-apiVersion: kubernaut.io/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: AIAnalysis
 metadata:
   name: aianalysis-abc123
   namespace: kubernaut-system
   ownerReferences:
-  - apiVersion: kubernaut.io/v1alpha1
+  - apiVersion: kubernaut.ai/v1alpha1
     kind: RemediationRequest
     name: remediation-abc12345
     controller: true
 spec:
   remediationRequestRef:
-    apiVersion: kubernaut.io/v1alpha1
+    apiVersion: kubernaut.ai/v1alpha1
     kind: RemediationRequest
     name: remediation-abc12345
     namespace: kubernaut-system
@@ -571,7 +571,7 @@ status:
 ## Example: Recovery Attempt
 
 ```yaml
-apiVersion: kubernaut.io/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: AIAnalysis
 metadata:
   name: aianalysis-recovery-abc123-2

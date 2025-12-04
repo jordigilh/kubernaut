@@ -121,7 +121,7 @@ import (
 )
 
 const (
-    aiAnalysisFinalizer      = "aianalysis.kubernaut.io/cleanup"
+    aiAnalysisFinalizer      = "aianalysis.kubernaut.ai/cleanup"
     defaultInvestigateTimeout = 60 * time.Second
     defaultAnalyzeTimeout     = 5 * time.Second
 )

@@ -837,6 +837,14 @@ spec:
                   - type
                   type: object
                 type: array
+              degradedMode:
+                description: |-
+                  ========================================
+                  OPERATIONAL STATUS
+                  ========================================
+                  DegradedMode indicates if the analysis ran with degraded capabilities
+                  (e.g., Rego policy evaluation failed, using safe defaults)
+                type: boolean
               investigationId:
                 description: |-
                   ========================================
@@ -984,6 +992,12 @@ spec:
                 type: boolean
               tokensUsed:
                 description: LLM tokens consumed
+                minimum: 0
+                type: integer
+              totalAnalysisTime:
+                description: TotalAnalysisTime is the total duration of the analysis
+                  in seconds
+                format: int64
                 minimum: 0
                 type: integer
               warnings:

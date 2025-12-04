@@ -92,7 +92,7 @@ func (c *Client) UpdateRemediationRequest(ctx context.Context, rr *remediationv1
 //
 // This method queries Kubernetes API for CRDs with matching label:
 //
-//	kubernaut.io/signal-fingerprint: <fingerprint>
+//	kubernaut.ai/signal-fingerprint: <fingerprint>
 //
 // Use case: Deduplication check (find existing RemediationRequest for same alert)
 //
@@ -128,7 +128,7 @@ func (c *Client) ListRemediationRequestsByFingerprint(ctx context.Context, finge
 	// - Storm detection fails due to inconsistent cache state between pods
 	err := c.client.List(ctx, &list,
 		client.MatchingLabels{
-			"kubernaut.io/signal-fingerprint": fingerprintLabel,
+			"kubernaut.ai/signal-fingerprint": fingerprintLabel,
 		},
 		client.MatchingFields{}, // Forces direct API call, bypasses cache
 	)

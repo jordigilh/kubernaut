@@ -221,7 +221,7 @@ var _ = Describe("Metrics", func() {
 
 ```go
 // test/integration/aianalysis/setup_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "context"
@@ -308,7 +308,7 @@ var _ = AfterSuite(func() {
 
 ```go
 // test/integration/aianalysis/reconciliation_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     "time"
@@ -443,7 +443,7 @@ var _ = Describe("AIAnalysis Full Reconciliation", func() {
 
 ```go
 // test/integration/aianalysis/holmesgpt_integration_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     . "github.com/onsi/ginkgo/v2"
@@ -506,7 +506,7 @@ var _ = Describe("HolmesGPT-API Integration", func() {
 
 ```go
 // test/integration/aianalysis/rego_integration_test.go
-package aianalysis_test
+package aianalysis
 
 import (
     . "github.com/onsi/ginkgo/v2"

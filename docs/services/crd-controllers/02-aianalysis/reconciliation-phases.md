@@ -53,7 +53,7 @@ Pending → Investigating → Analyzing → Completed
    - Check parent references
 
 2. **Add Finalizer**
-   - Add `aianalysis.kubernaut.io/cleanup` finalizer
+   - Add `aianalysis.kubernaut.ai/cleanup` finalizer
    - Enables cleanup on deletion
 
 3. **Initialize Status**
@@ -143,7 +143,7 @@ if investigationResponse != nil && investigationResponse.WorkflowRecommendation 
 ```yaml
 metadata:
   annotations:
-    aianalysis.kubernaut.io/investigating-timeout: "90s"  # Override default 60s
+    aianalysis.kubernaut.ai/investigating-timeout: "90s"  # Override default 60s
 ```
 
 ### Error Handling
@@ -357,14 +357,14 @@ RemediationOrchestrator creates WorkflowExecution (if approved)
 ```yaml
 metadata:
   annotations:
-    aianalysis.kubernaut.io/investigating-timeout: "120s"  # Extended for complex investigations
+    aianalysis.kubernaut.ai/investigating-timeout: "120s"  # Extended for complex investigations
 ```
 
 ### Timeout Implementation
 
 ```go
 func getPhaseTimeout(aiAnalysis *AIAnalysis) time.Duration {
-    if timeout, ok := aiAnalysis.Annotations["aianalysis.kubernaut.io/investigating-timeout"]; ok {
+    if timeout, ok := aiAnalysis.Annotations["aianalysis.kubernaut.ai/investigating-timeout"]; ok {
         if d, err := time.ParseDuration(timeout); err == nil {
             return d
         }

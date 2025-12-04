@@ -177,20 +177,78 @@ type EnrichmentConfiguration struct {
 	EnableHistorical bool `json:"enableHistorical,omitempty"`
 }
 
+// SignalProcessingPhase represents the current phase of SignalProcessing reconciliation.
+// BR-SP-051: Phase State Machine
+// +kubebuilder:validation:Enum=pending;enriching;classifying;completed;failed
+type SignalProcessingPhase string
+
+const (
+	// PhasePending is the initial state when SignalProcessing is created.
+	PhasePending SignalProcessingPhase = "pending"
+	// PhaseEnriching is when K8s context enrichment is in progress.
+	PhaseEnriching SignalProcessingPhase = "enriching"
+	// PhaseClassifying is when environment/priority classification is in progress.
+	PhaseClassifying SignalProcessingPhase = "classifying"
+	// PhaseCompleted is the terminal success state.
+	PhaseCompleted SignalProcessingPhase = "completed"
+	// PhaseFailed is the terminal error state.
+	PhaseFailed SignalProcessingPhase = "failed"
+)
+
 // SignalProcessingStatus defines the observed state of SignalProcessing.
 // DD-CONTRACT-002: Structured types replace unstructured ContextData map[string]string
 type SignalProcessingStatus struct {
-	// Phase tracking: "pending", "enriching", "completed", "failed"
-	Phase string `json:"phase,omitempty"`
+	// Phase tracking: "pending", "enriching", "classifying", "completed", "failed"
+	Phase SignalProcessingPhase `json:"phase,omitempty"`
 
 	// Structured enrichment results (DD-CONTRACT-002)
 	// Replaces ContextData map[string]string anti-pattern
 	// GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
-	EnrichmentResults sharedtypes.EnrichmentResults `json:"enrichmentResults,omitempty"`
+	EnrichmentResults *sharedtypes.EnrichmentResults `json:"enrichmentResults,omitempty"`
+
+	// Classification results from environment/priority classifiers
+	// BR-SP-053: Environment Classification
+	// BR-SP-054: Priority Classification
+	// BR-SP-080, BR-SP-081: Business Classification
+	ClassificationResults *ClassificationResults `json:"classificationResults,omitempty"`
 
 	// Timestamps
 	StartTime   *metav1.Time `json:"startTime,omitempty"`
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+}
+
+// ClassificationResults holds the output of all classification phases.
+// BR-SP-053: Environment Classification
+// BR-SP-054: Priority Classification
+// BR-SP-080: Confidence Scoring
+// BR-SP-081: Business Categorization
+type ClassificationResults struct {
+	// Environment classification (e.g., "production", "staging", "development")
+	Environment string `json:"environment,omitempty"`
+
+	// Environment confidence (0.0 - 1.0)
+	EnvironmentConfidence float64 `json:"environmentConfidence,omitempty"`
+
+	// Priority classification (e.g., "P1", "P2", "P3")
+	Priority string `json:"priority,omitempty"`
+
+	// Priority confidence (0.0 - 1.0)
+	PriorityConfidence float64 `json:"priorityConfidence,omitempty"`
+
+	// Business unit assignment
+	BusinessUnit string `json:"businessUnit,omitempty"`
+
+	// Service owner
+	ServiceOwner string `json:"serviceOwner,omitempty"`
+
+	// Criticality level
+	Criticality string `json:"criticality,omitempty"`
+
+	// SLA requirement
+	SLARequirement string `json:"slaRequirement,omitempty"`
+
+	// Overall confidence (0.0 - 1.0)
+	OverallConfidence float64 `json:"overallConfidence,omitempty"`
 }
 
 // ========================================

@@ -97,7 +97,11 @@ spec:
                 minLength: 1
                 type: string
               channels:
-                description: Delivery channels to use
+                description: |-
+                  Delivery channels to use.
+                  Optional: If not specified, Notification Service routing rules (BR-NOT-065)
+                  will determine channels based on CRD labels (type, severity, environment, namespace).
+                  If specified, these channels are used in addition to routing rule matches.
                 items:
                   enum:
                   - email
@@ -107,7 +111,6 @@ spec:
                   - webhook
                   - console
                   type: string
-                minItems: 1
                 type: array
               metadata:
                 additionalProperties:
@@ -126,7 +129,11 @@ spec:
                 - low
                 type: string
               recipients:
-                description: List of recipients for this notification
+                description: |-
+                  List of recipients for this notification.
+                  Optional: If not specified, Notification Service routing rules (BR-NOT-065)
+                  will determine recipients based on CRD labels (type, severity, environment, namespace).
+                  If specified, these recipients are used in addition to routing rule matches.
                 items:
                   description: Recipient represents a notification recipient
                   properties:
@@ -150,7 +157,6 @@ spec:
                       description: Webhook URL (for webhook channel)
                       type: string
                   type: object
-                minItems: 1
                 type: array
               retentionDays:
                 default: 7
@@ -200,9 +206,7 @@ spec:
                 type: string
             required:
             - body
-            - channels
             - priority
-            - recipients
             - subject
             - type
             type: object

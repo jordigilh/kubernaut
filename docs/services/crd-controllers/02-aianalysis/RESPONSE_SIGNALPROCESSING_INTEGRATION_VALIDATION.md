@@ -154,7 +154,7 @@ When implementing integration tests, validate:
 
 ```yaml
 # 1. RO creates AIAnalysis with correct structure
-apiVersion: aianalysis.kubernaut.io/v1alpha1
+apiVersion: aianalysis.kubernaut.ai/v1alpha1
 kind: AIAnalysis
 spec:
   analysisRequest:

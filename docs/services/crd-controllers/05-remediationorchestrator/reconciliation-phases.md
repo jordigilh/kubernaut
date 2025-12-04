@@ -249,7 +249,7 @@ err = c.Watch(
 **Cleanup Process**:
 ```go
 // Finalizer pattern for 24-hour retention
-const remediationFinalizerName = "kubernaut.io/remediation-retention"
+const remediationFinalizerName = "kubernaut.ai/remediation-retention"
 
 func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     var remediation remediationv1.RemediationRequest

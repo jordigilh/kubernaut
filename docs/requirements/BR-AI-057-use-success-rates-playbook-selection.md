@@ -85,14 +85,14 @@ ADR-033 introduces **data-driven playbook selection** as the primary AI capabili
    - Priority: P0
 3. ✅ LLM decides to query for playbooks (tool call)
 4. ✅ LLM calls tool: get_playbooks(description="High memory usage causing pod restarts",
-                                    labels=["kubernaut.io/incident-type:pod-oom-killer",
-                                            "kubernaut.io/environment:production",
-                                            "kubernaut.io/priority:P0"])
+                                    labels=["kubernaut.ai/incident-type:pod-oom-killer",
+                                            "kubernaut.ai/environment:production",
+                                            "kubernaut.ai/priority:P0"])
 5. ✅ HolmesGPT API queries Context API:
    GET /api/v1/context/playbooks?description=High+memory+usage+causing+pod+restarts
-                                 &labels=kubernaut.io/incident-type:pod-oom-killer
-                                 &labels=kubernaut.io/environment:production
-                                 &labels=kubernaut.io/priority:P0
+                                 &labels=kubernaut.ai/incident-type:pod-oom-killer
+                                 &labels=kubernaut.ai/environment:production
+                                 &labels=kubernaut.ai/priority:P0
 6. ✅ Context API returns (minimal 4-field schema per DD-CONTEXT-005):
    {
      "playbooks": [
@@ -132,7 +132,7 @@ ADR-033 introduces **data-driven playbook selection** as the primary AI capabili
 ```
 1. AIAnalysis Controller sends investigation request to HolmesGPT API
 2. LLM calls tool: get_playbooks(description="rare database failure",
-                                 labels=["kubernaut.io/incident-type:database-failure"])
+                                 labels=["kubernaut.ai/incident-type:database-failure"])
 3. ✅ Context API returns playbooks (including new ones):
    {
      "playbooks": [
@@ -163,8 +163,8 @@ ADR-033 introduces **data-driven playbook selection** as the primary AI capabili
 ```
 1. AIAnalysis Controller sends investigation request to HolmesGPT API
 2. LLM calls tool: get_playbooks(description="pod memory pressure",
-                                 labels=["kubernaut.io/incident-type:pod-oom-killer",
-                                         "kubernaut.io/environment:production"])
+                                 labels=["kubernaut.ai/incident-type:pod-oom-killer",
+                                         "kubernaut.ai/environment:production"])
 3. ✅ Context API returns multiple playbooks:
    {
      "playbooks": [
@@ -232,7 +232,7 @@ class ContextPlaybookTool(Tool):
                 ToolParameter(
                     name="labels",
                     type="array",
-                    description="Label filters (e.g., kubernaut.io/environment:production)",
+                    description="Label filters (e.g., kubernaut.ai/environment:production)",
                     required=False
                 ),
                 ToolParameter(

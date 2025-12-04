@@ -461,11 +461,11 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ---
 
-### Category 9: Channel Routing (V1.1+)
+### Category 9: Channel Routing (V1.0)
 
 #### BR-NOT-065: Channel Routing Based on Labels
 
-**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification labels (type, environment, severity, namespace) using configurable routing rules.
+**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification labels (type, environment, severity, namespace) using configurable routing rules. CRD creators (e.g., RemediationOrchestrator) do NOT need to specify Recipients or Channels - routing rules determine these based on labels.
 
 **Priority**: P0 (CRITICAL)
 

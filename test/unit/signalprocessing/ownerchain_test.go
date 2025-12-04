@@ -304,4 +304,3 @@ func createDeepChain(depth int) []runtime.Object {
 func boolPtr(b bool) *bool {
 	return &b
 }
-

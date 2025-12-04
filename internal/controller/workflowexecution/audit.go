@@ -14,252 +14,195 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package workflowexecution provides audit trail for the WorkflowExecution controller
+// TDD GREEN: Implementation driven by failing tests in audit_test.go
 package workflowexecution
 
 import (
-	"context"
-	"encoding/json"
+	"time"
 
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/audit"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
-// ============================================================================
-// Audit Trail Implementation (BR-WE-007, ADR-034)
-// ============================================================================
-
-// Event type constants following pattern: <service>.<category>.<action>
+// Audit event type constants
 const (
-	// Lifecycle events
-	eventTypeCompleted = "workflowexecution.lifecycle.completed"
-	eventTypeFailed    = "workflowexecution.lifecycle.failed"
-	eventTypeSkipped   = "workflowexecution.lifecycle.skipped"
-	eventTypeDeleted   = "workflowexecution.lifecycle.deleted"
-
-	// PipelineRun events
-	eventTypePipelineRunCreated = "workflowexecution.pipelinerun.created"
-
-	// Lock events
-	eventTypeLockReleased = "workflowexecution.lock.released"
+	AuditEventTypeCreated            = "Created"
+	AuditEventTypePhaseTransition    = "PhaseTransition"
+	AuditEventTypeCompleted          = "Completed"
+	AuditEventTypeFailed             = "Failed"
+	AuditEventTypeSkipped            = "Skipped"
+	AuditEventTypePipelineRunCreated = "PipelineRunCreated"
+	AuditEventTypeDeleted            = "Deleted"
 )
 
-// Event category constants
-const (
-	categoryLifecycle   = "lifecycle"
-	categoryPipelineRun = "pipelinerun"
-	categoryLock        = "lock"
-)
+// AuditEvent represents an audit event for WorkflowExecution lifecycle
+// TDD: Fields defined by test requirements
+type AuditEvent struct {
+	// EventType identifies the type of audit event
+	EventType string `json:"eventType"`
 
-// Event action constants
-const (
-	actionCreated   = "created"
-	actionCompleted = "completed"
-	actionFailed    = "failed"
-	actionSkipped   = "skipped"
-	actionReleased  = "released"
-	actionDeleted   = "deleted"
-)
+	// Timestamp when the event occurred
+	Timestamp time.Time `json:"timestamp"`
 
-// WFEAuditData contains workflow-execution-specific data for audit events
-type WFEAuditData struct {
-	WorkflowID       string                 `json:"workflow_id"`
-	WorkflowVersion  string                 `json:"workflow_version"`
-	ContainerImage   string                 `json:"container_image,omitempty"`
-	TargetResource   string                 `json:"target_resource"`
-	Confidence       float64                `json:"confidence,omitempty"`
-	Rationale        string                 `json:"rationale,omitempty"`
-	PipelineRunName  string                 `json:"pipelinerun_name,omitempty"`
-	Duration         string                 `json:"duration,omitempty"`
-	FromPhase        string                 `json:"from_phase,omitempty"`
-	ToPhase          string                 `json:"to_phase,omitempty"`
-	FailureReason    string                 `json:"failure_reason,omitempty"`
-	SkipReason       string                 `json:"skip_reason,omitempty"`
-	AdditionalFields map[string]interface{} `json:"additional_fields,omitempty"`
+	// ResourceName is the name of the WorkflowExecution
+	ResourceName string `json:"resourceName"`
+
+	// ResourceNamespace is the namespace of the WorkflowExecution
+	ResourceNamespace string `json:"resourceNamespace"`
+
+	// ResourceUID is the unique identifier
+	ResourceUID string `json:"resourceUid"`
+
+	// WorkflowID from the WorkflowRef
+	WorkflowID string `json:"workflowId"`
+
+	// TargetResource being remediated
+	TargetResource string `json:"targetResource"`
+
+	// Phase transition details
+	FromPhase string `json:"fromPhase,omitempty"`
+	ToPhase   string `json:"toPhase,omitempty"`
+
+	// Outcome (Success, Failure, Skipped)
+	Outcome string `json:"outcome,omitempty"`
+
+	// Duration of execution
+	Duration string `json:"duration,omitempty"`
+
+	// Failure details
+	FailureReason  string `json:"failureReason,omitempty"`
+	FailureMessage string `json:"failureMessage,omitempty"`
+
+	// Skip details
+	SkipReason string `json:"skipReason,omitempty"`
+
+	// PipelineRun reference
+	PipelineRunName string `json:"pipelineRunName,omitempty"`
 }
 
-// buildAuditEvent creates an AuditEvent from WorkflowExecution
-func (r *WorkflowExecutionReconciler) buildAuditEvent(wfe *workflowexecutionv1alpha1.WorkflowExecution, eventType, category, action, outcome string, data *WFEAuditData) *audit.AuditEvent {
-	event := audit.NewAuditEvent()
+// AuditHelper provides methods to build audit events
+// TDD: Struct defined by test requirements
+type AuditHelper struct{}
 
-	// Required fields
-	event.EventType = eventType
-	event.EventCategory = category
-	event.EventAction = action
-	event.EventOutcome = outcome
-	event.ActorType = "service"
-	event.ActorID = "workflowexecution-controller"
-	event.ResourceType = "WorkflowExecution"
-	event.ResourceID = wfe.Name
-	event.CorrelationID = getCorrelationID(wfe)
+// NewAuditHelper creates a new audit helper
+// TDD GREEN: Constructor defined by test requirements
+func NewAuditHelper() *AuditHelper {
+	return &AuditHelper{}
+}
 
-	// Optional fields
-	resourceName := wfe.Name
-	event.ResourceName = &resourceName
+// BuildCreatedEvent creates an audit event for WFE creation
+func (h *AuditHelper) BuildCreatedEvent(wfe *workflowexecutionv1.WorkflowExecution) *AuditEvent {
+	return &AuditEvent{
+		EventType:         AuditEventTypeCreated,
+		Timestamp:         time.Now(),
+		ResourceName:      wfe.Name,
+		ResourceNamespace: wfe.Namespace,
+		ResourceUID:       string(wfe.UID),
+		WorkflowID:        wfe.Spec.WorkflowRef.WorkflowID,
+		TargetResource:    wfe.Spec.TargetResource,
+	}
+}
 
-	namespace := wfe.Namespace
-	event.Namespace = &namespace
+// BuildPhaseTransitionEvent creates an audit event for phase transition
+func (h *AuditHelper) BuildPhaseTransitionEvent(wfe *workflowexecutionv1.WorkflowExecution, fromPhase, toPhase string) *AuditEvent {
+	return &AuditEvent{
+		EventType:         AuditEventTypePhaseTransition,
+		Timestamp:         time.Now(),
+		ResourceName:      wfe.Name,
+		ResourceNamespace: wfe.Namespace,
+		ResourceUID:       string(wfe.UID),
+		WorkflowID:        wfe.Spec.WorkflowRef.WorkflowID,
+		TargetResource:    wfe.Spec.TargetResource,
+		FromPhase:         fromPhase,
+		ToPhase:           toPhase,
+	}
+}
 
-	// Set duration if available
-	if wfe.Status.StartTime != nil && wfe.Status.CompletionTime != nil {
-		duration := int(wfe.Status.CompletionTime.Sub(wfe.Status.StartTime.Time).Milliseconds())
-		event.DurationMs = &duration
+// BuildCompletedEvent creates an audit event for successful completion
+func (h *AuditHelper) BuildCompletedEvent(wfe *workflowexecutionv1.WorkflowExecution) *AuditEvent {
+	return &AuditEvent{
+		EventType:         AuditEventTypeCompleted,
+		Timestamp:         time.Now(),
+		ResourceName:      wfe.Name,
+		ResourceNamespace: wfe.Namespace,
+		ResourceUID:       string(wfe.UID),
+		WorkflowID:        wfe.Spec.WorkflowRef.WorkflowID,
+		TargetResource:    wfe.Spec.TargetResource,
+		Outcome:           "Success",
+		Duration:          wfe.Status.Duration,
+	}
+}
+
+// BuildFailedEvent creates an audit event for failure
+func (h *AuditHelper) BuildFailedEvent(wfe *workflowexecutionv1.WorkflowExecution) *AuditEvent {
+	event := &AuditEvent{
+		EventType:         AuditEventTypeFailed,
+		Timestamp:         time.Now(),
+		ResourceName:      wfe.Name,
+		ResourceNamespace: wfe.Namespace,
+		ResourceUID:       string(wfe.UID),
+		WorkflowID:        wfe.Spec.WorkflowRef.WorkflowID,
+		TargetResource:    wfe.Spec.TargetResource,
+		Outcome:           "Failure",
 	}
 
-	// Set event data as JSON
-	if data != nil {
-		jsonData, err := json.Marshal(data)
-		if err == nil {
-			event.EventData = jsonData
-		}
+	if wfe.Status.FailureDetails != nil {
+		event.FailureReason = wfe.Status.FailureDetails.Reason
+		event.FailureMessage = wfe.Status.FailureDetails.Message
 	}
 
 	return event
 }
 
-// recordAuditEvent writes an audit event to the audit store
-// Uses fire-and-forget pattern per ADR-034 - audit failures don't block reconciliation
-func (r *WorkflowExecutionReconciler) recordAuditEvent(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, eventType, category, action, outcome string, data *WFEAuditData) {
-	log := log.FromContext(ctx)
-
-	if r.AuditStore == nil {
-		log.V(1).Info("Audit store not configured, skipping audit event", "eventType", eventType)
-		return
+// BuildSkippedEvent creates an audit event for skipped execution
+func (h *AuditHelper) BuildSkippedEvent(wfe *workflowexecutionv1.WorkflowExecution) *AuditEvent {
+	event := &AuditEvent{
+		EventType:         AuditEventTypeSkipped,
+		Timestamp:         time.Now(),
+		ResourceName:      wfe.Name,
+		ResourceNamespace: wfe.Namespace,
+		ResourceUID:       string(wfe.UID),
+		WorkflowID:        wfe.Spec.WorkflowRef.WorkflowID,
+		TargetResource:    wfe.Spec.TargetResource,
+		Outcome:           "Skipped",
 	}
-
-	event := r.buildAuditEvent(wfe, eventType, category, action, outcome, data)
-
-	// Fire-and-forget audit write (per ADR-034)
-	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
-		// Log but don't fail reconciliation
-		log.Error(err, "Failed to write audit event (non-blocking)",
-			"eventType", eventType,
-			"resourceName", wfe.Name)
-	}
-}
-
-// recordPipelineRunCreated records PipelineRun creation
-func (r *WorkflowExecutionReconciler) recordPipelineRunCreated(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, prName string) {
-	r.recordAuditEvent(ctx, wfe, eventTypePipelineRunCreated, categoryPipelineRun, actionCreated, "success", &WFEAuditData{
-		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
-		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		TargetResource:  wfe.Spec.TargetResource,
-		PipelineRunName: prName,
-		AdditionalFields: map[string]interface{}{
-			"execution_namespace": r.ExecutionNamespace,
-			"service_account":     r.ServiceAccountName,
-		},
-	})
-}
-
-// recordCompleted records successful completion
-func (r *WorkflowExecutionReconciler) recordCompleted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
-	r.recordAuditEvent(ctx, wfe, eventTypeCompleted, categoryLifecycle, actionCompleted, "success", &WFEAuditData{
-		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
-		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		TargetResource:  wfe.Spec.TargetResource,
-		Duration:        wfe.Status.Duration,
-		PipelineRunName: getPipelineRunName(wfe),
-	})
-}
-
-// recordFailed records execution failure
-func (r *WorkflowExecutionReconciler) recordFailed(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
-	additionalFields := map[string]interface{}{}
-
-	if wfe.Status.FailureDetails != nil {
-		additionalFields["failed_task_name"] = wfe.Status.FailureDetails.FailedTaskName
-		additionalFields["failed_task_index"] = wfe.Status.FailureDetails.FailedTaskIndex
-		additionalFields["exit_code"] = wfe.Status.FailureDetails.ExitCode
-		additionalFields["natural_language_summary"] = wfe.Status.FailureDetails.NaturalLanguageSummary
-		additionalFields["was_execution_failure"] = wfe.Status.FailureDetails.WasExecutionFailure
-	}
-
-	r.recordAuditEvent(ctx, wfe, eventTypeFailed, categoryLifecycle, actionFailed, "failure", &WFEAuditData{
-		WorkflowID:       wfe.Spec.WorkflowRef.WorkflowID,
-		WorkflowVersion:  wfe.Spec.WorkflowRef.Version,
-		TargetResource:   wfe.Spec.TargetResource,
-		Duration:         wfe.Status.Duration,
-		FailureReason:    wfe.Status.FailureReason,
-		AdditionalFields: additionalFields,
-	})
-}
-
-// recordSkipped records skipped execution
-func (r *WorkflowExecutionReconciler) recordSkipped(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
-	additionalFields := map[string]interface{}{}
-	skipReason := ""
 
 	if wfe.Status.SkipDetails != nil {
-		skipReason = wfe.Status.SkipDetails.Reason
-		additionalFields["skip_message"] = wfe.Status.SkipDetails.Message
-
-		if wfe.Status.SkipDetails.ConflictingWorkflow != nil {
-			additionalFields["conflicting_workflow_name"] = wfe.Status.SkipDetails.ConflictingWorkflow.Name
-			additionalFields["conflicting_workflow_id"] = wfe.Status.SkipDetails.ConflictingWorkflow.WorkflowID
-		}
-
-		if wfe.Status.SkipDetails.RecentRemediation != nil {
-			additionalFields["recent_workflow_name"] = wfe.Status.SkipDetails.RecentRemediation.Name
-			additionalFields["recent_workflow_outcome"] = wfe.Status.SkipDetails.RecentRemediation.Outcome
-			additionalFields["cooldown_remaining"] = wfe.Status.SkipDetails.RecentRemediation.CooldownRemaining
-		}
+		event.SkipReason = wfe.Status.SkipDetails.Reason
 	}
 
-	r.recordAuditEvent(ctx, wfe, eventTypeSkipped, categoryLifecycle, actionSkipped, "skipped", &WFEAuditData{
-		WorkflowID:       wfe.Spec.WorkflowRef.WorkflowID,
-		WorkflowVersion:  wfe.Spec.WorkflowRef.Version,
-		TargetResource:   wfe.Spec.TargetResource,
-		SkipReason:       skipReason,
-		AdditionalFields: additionalFields,
-	})
+	return event
 }
 
-// recordLockReleased records resource lock release after cooldown
-func (r *WorkflowExecutionReconciler) recordLockReleased(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
-	r.recordAuditEvent(ctx, wfe, eventTypeLockReleased, categoryLock, actionReleased, "success", &WFEAuditData{
-		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
-		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		TargetResource:  wfe.Spec.TargetResource,
-		AdditionalFields: map[string]interface{}{
-			"cooldown_period": r.CooldownPeriod.String(),
-		},
-	})
-}
-
-// recordDeleted records WorkflowExecution deletion
-func (r *WorkflowExecutionReconciler) recordDeleted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
-	r.recordAuditEvent(ctx, wfe, eventTypeDeleted, categoryLifecycle, actionDeleted, "success", &WFEAuditData{
-		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
-		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		TargetResource:  wfe.Spec.TargetResource,
-		AdditionalFields: map[string]interface{}{
-			"final_phase": wfe.Status.Phase,
-		},
-	})
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-// getCorrelationID extracts or generates a correlation ID for tracing
-func getCorrelationID(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
-	// Try to get from annotations first
-	if wfe.Annotations != nil {
-		if id, ok := wfe.Annotations["kubernaut.ai/correlation-id"]; ok {
-			return id
-		}
+// BuildPipelineRunCreatedEvent creates an audit event for PipelineRun creation
+func (h *AuditHelper) BuildPipelineRunCreatedEvent(wfe *workflowexecutionv1.WorkflowExecution, pipelineRunName string) *AuditEvent {
+	return &AuditEvent{
+		EventType:         AuditEventTypePipelineRunCreated,
+		Timestamp:         time.Now(),
+		ResourceName:      wfe.Name,
+		ResourceNamespace: wfe.Namespace,
+		ResourceUID:       string(wfe.UID),
+		WorkflowID:        wfe.Spec.WorkflowRef.WorkflowID,
+		TargetResource:    wfe.Spec.TargetResource,
+		PipelineRunName:   pipelineRunName,
 	}
-	// Fall back to remediation request reference
-	return wfe.Spec.RemediationRequestRef.Name
 }
 
-// getPipelineRunName returns the PipelineRun name if available
-func getPipelineRunName(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
-	if wfe.Status.PipelineRunRef != nil {
-		return wfe.Status.PipelineRunRef.Name
+// BuildDeletedEvent creates an audit event for WFE deletion
+func (h *AuditHelper) BuildDeletedEvent(wfe *workflowexecutionv1.WorkflowExecution) *AuditEvent {
+	return &AuditEvent{
+		EventType:         AuditEventTypeDeleted,
+		Timestamp:         time.Now(),
+		ResourceName:      wfe.Name,
+		ResourceNamespace: wfe.Namespace,
+		ResourceUID:       string(wfe.UID),
+		WorkflowID:        wfe.Spec.WorkflowRef.WorkflowID,
+		TargetResource:    wfe.Spec.TargetResource,
 	}
-	return ""
 }
+
+// GetCorrelationID returns the correlation ID for tracing
+func (h *AuditHelper) GetCorrelationID(wfe *workflowexecutionv1.WorkflowExecution) string {
+	return string(wfe.UID)
+}
+

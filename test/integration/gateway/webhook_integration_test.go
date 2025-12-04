@@ -193,7 +193,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				"Alert name enables AI to understand failure type")
 
 			// Verify fingerprint label matches response fingerprint (truncated to K8s 63-char limit)
-			fingerprintLabel := crd.Labels["kubernaut.io/signal-fingerprint"]
+			fingerprintLabel := crd.Labels["kubernaut.ai/signal-fingerprint"]
 			expectedLabel := fingerprint
 			if len(expectedLabel) > 63 {
 				expectedLabel = expectedLabel[:63] // K8s label value max length

@@ -423,9 +423,9 @@ metadata:
   name: remediation-abc123
   namespace: kubernaut-system
   labels:
-    kubernaut.io/alert-name: HighMemoryUsage
-    kubernaut.io/environment: prod
-    kubernaut.io/priority: P0
+    kubernaut.ai/alert-name: HighMemoryUsage
+    kubernaut.ai/environment: prod
+    kubernaut.ai/priority: P0
 spec:
   alertFingerprint: "a1b2c3d4..."
   alertName: "HighMemoryUsage"

@@ -57,4 +57,3 @@
 //
 // The Builder is safe for concurrent use. Each Build() call is independent.
 package ownerchain
-

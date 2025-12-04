@@ -1,4 +1,4 @@
-package sanitization_test
+package sanitization
 
 import (
 	"testing"

@@ -4494,12 +4494,12 @@ var (
 **Question 2**: What data does AIApprovalRequest contain?
 **Analysis**:
 ```yaml
-apiVersion: aianalysis.kubernaut.io/v1alpha1
+apiVersion: aianalysis.kubernaut.ai/v1alpha1
 kind: AIApprovalRequest
 metadata:
   name: aianalysis-sample-approval-12345
   ownerReferences:
-    - apiVersion: aianalysis.kubernaut.io/v1alpha1
+    - apiVersion: aianalysis.kubernaut.ai/v1alpha1
       kind: AIAnalysis
       name: aianalysis-sample
       controller: true
@@ -4761,11 +4761,11 @@ func (b *RequestBuilder) BuildApprovalRequest(ai *aianalysisv1alpha1.AIAnalysis)
 			Name:      fmt.Sprintf("%s-approval-%d", ai.Name, time.Now().Unix()),
 			Namespace: ai.Namespace,
 			Labels: map[string]string{
-				"aianalysis.kubernaut.io/name": ai.Name,
+				"aianalysis.kubernaut.ai/name": ai.Name,
 				"app.kubernetes.io/component":  "approval-workflow",
 			},
 			Annotations: map[string]string{
-				"aianalysis.kubernaut.io/alert-name": ai.Spec.AlertName,
+				"aianalysis.kubernaut.ai/alert-name": ai.Spec.AlertName,
 			},
 		},
 		Spec: aianalysisv1alpha1.AIApprovalRequestSpec{
@@ -5056,7 +5056,7 @@ func (r *AIAnalysisReconciler) findExistingApprovalRequest(ctx context.Context, 
 	approvalReqList := &aianalysisv1alpha1.AIApprovalRequestList{}
 	err := r.List(ctx, approvalReqList,
 		client.InNamespace(ai.Namespace),
-		client.MatchingLabels{"aianalysis.kubernaut.io/name": ai.Name})
+		client.MatchingLabels{"aianalysis.kubernaut.ai/name": ai.Name})
 
 	if err != nil {
 		log.Error(err, "Failed to list AIApprovalRequests")

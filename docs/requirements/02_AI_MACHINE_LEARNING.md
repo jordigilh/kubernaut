@@ -134,7 +134,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
   - **Compression**: Support gzip compression for stored data (not embedded)
 - **BR-AI-032**: MUST implement phase-specific timeouts for AI analysis workflows
   - **Default Timeouts**: investigating (15min), analyzing (10min), recommending (5min)
-  - **Configuration**: Configurable via annotations (`ai.kubernaut.io/<phase>-timeout`)
+  - **Configuration**: Configurable via annotations (`ai.kubernaut.ai/<phase>-timeout`)
   - **Detection**: Automatic phase timeout detection with failure handling
   - **Metrics**: Track timeout occurrences by phase and environment
 - **BR-AI-033**: MUST gracefully handle missing historical success rate data

@@ -76,7 +76,9 @@ func NewK8sEnricher(c client.Client, logger logr.Logger, m *metrics.Metrics, tim
 func (e *K8sEnricher) EnrichPodSignal(ctx context.Context, namespace, podName string) (*EnrichmentResult, error) {
 	startTime := time.Now()
 	defer func() {
-		e.metrics.EnrichmentDuration.WithLabelValues("Pod").Observe(time.Since(startTime).Seconds())
+		if e.metrics != nil {
+			e.metrics.EnrichmentDuration.WithLabelValues("Pod").Observe(time.Since(startTime).Seconds())
+		}
 	}()
 
 	// Apply timeout
@@ -119,7 +121,9 @@ func (e *K8sEnricher) EnrichPodSignal(ctx context.Context, namespace, podName st
 func (e *K8sEnricher) EnrichNamespaceOnly(ctx context.Context, namespace string) (*EnrichmentResult, error) {
 	startTime := time.Now()
 	defer func() {
-		e.metrics.EnrichmentDuration.WithLabelValues("Namespace").Observe(time.Since(startTime).Seconds())
+		if e.metrics != nil {
+			e.metrics.EnrichmentDuration.WithLabelValues("Namespace").Observe(time.Since(startTime).Seconds())
+		}
 	}()
 
 	// Apply timeout

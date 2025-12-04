@@ -433,7 +433,7 @@ status:
 When a `WorkflowExecution` fails, RO creates a new `AIAnalysis` with recovery context:
 
 ```yaml
-apiVersion: aianalysis.kubernaut.io/v1alpha1
+apiVersion: aianalysis.kubernaut.ai/v1alpha1
 kind: AIAnalysis
 metadata:
   name: "remediation-123-analysis-2"

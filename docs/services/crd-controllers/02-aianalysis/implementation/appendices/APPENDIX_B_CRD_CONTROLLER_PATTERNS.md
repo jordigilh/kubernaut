@@ -85,7 +85,7 @@ CREATE → ADD_FINALIZER → PROCESS → DELETE_REQUESTED → CLEANUP → REMOVE
 ### **Implementation**
 
 ```go
-const FinalizerName = "aianalysis.kubernaut.io/finalizer"
+const FinalizerName = "aianalysis.kubernaut.ai/finalizer"
 
 func (r *AIAnalysisReconciler) handleDeletion(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("aianalysis", analysis.Name)
