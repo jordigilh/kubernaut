@@ -61,3 +61,18 @@ func NewMetrics(registry *prometheus.Registry) *Metrics {
 
 	return m
 }
+
+// IncrementProcessingTotal increments the processing total counter.
+func (m *Metrics) IncrementProcessingTotal(phase, result string) {
+	m.ProcessingTotal.WithLabelValues(phase, result).Inc()
+}
+
+// RecordEnrichmentError records an enrichment error.
+func (m *Metrics) RecordEnrichmentError(errorType string) {
+	m.EnrichmentErrors.WithLabelValues(errorType).Inc()
+}
+
+// ObserveProcessingDuration records processing duration.
+func (m *Metrics) ObserveProcessingDuration(phase string, durationSeconds float64) {
+	m.ProcessingDuration.WithLabelValues(phase).Observe(durationSeconds)
+}
