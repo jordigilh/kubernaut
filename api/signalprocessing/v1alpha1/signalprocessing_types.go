@@ -193,6 +193,14 @@ type KubernetesContext struct {
 	Pod *PodDetails `json:"pod,omitempty"`
 	// Deployment details if target is managed by deployment
 	Deployment *DeploymentDetails `json:"deployment,omitempty"`
+	// StatefulSet details if target is a statefulset
+	StatefulSet *StatefulSetDetails `json:"statefulSet,omitempty"`
+	// DaemonSet details if target is a daemonset
+	DaemonSet *DaemonSetDetails `json:"daemonSet,omitempty"`
+	// ReplicaSet details if target is a replicaset
+	ReplicaSet *ReplicaSetDetails `json:"replicaSet,omitempty"`
+	// Service details if target is a service
+	Service *ServiceDetails `json:"service,omitempty"`
 	// Node details where the pod is running
 	Node *NodeDetails `json:"node,omitempty"`
 	// Owner chain from target to top-level controller
@@ -243,6 +251,76 @@ type DeploymentDetails struct {
 	AvailableReplicas int32 `json:"availableReplicas,omitempty"`
 	// Ready replicas
 	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
+}
+
+// StatefulSetDetails contains statefulset-specific information.
+type StatefulSetDetails struct {
+	// StatefulSet labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// StatefulSet annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Desired replicas
+	Replicas int32 `json:"replicas,omitempty"`
+	// Ready replicas
+	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
+	// Current replicas
+	CurrentReplicas int32 `json:"currentReplicas,omitempty"`
+}
+
+// DaemonSetDetails contains daemonset-specific information.
+type DaemonSetDetails struct {
+	// DaemonSet labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// DaemonSet annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Desired number of nodes
+	DesiredNumberScheduled int32 `json:"desiredNumberScheduled,omitempty"`
+	// Current number scheduled
+	CurrentNumberScheduled int32 `json:"currentNumberScheduled,omitempty"`
+	// Number ready
+	NumberReady int32 `json:"numberReady,omitempty"`
+}
+
+// ReplicaSetDetails contains replicaset-specific information.
+type ReplicaSetDetails struct {
+	// ReplicaSet labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// ReplicaSet annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Desired replicas
+	Replicas int32 `json:"replicas,omitempty"`
+	// Available replicas
+	AvailableReplicas int32 `json:"availableReplicas,omitempty"`
+	// Ready replicas
+	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
+}
+
+// ServiceDetails contains service-specific information.
+type ServiceDetails struct {
+	// Service labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// Service annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Service type (ClusterIP, NodePort, LoadBalancer, ExternalName)
+	Type string `json:"type,omitempty"`
+	// Cluster IP
+	ClusterIP string `json:"clusterIP,omitempty"`
+	// External IPs
+	ExternalIPs []string `json:"externalIPs,omitempty"`
+	// Ports
+	Ports []ServicePort `json:"ports,omitempty"`
+}
+
+// ServicePort contains service port information.
+type ServicePort struct {
+	// Port name
+	Name string `json:"name,omitempty"`
+	// Port number
+	Port int32 `json:"port"`
+	// Target port
+	TargetPort string `json:"targetPort,omitempty"`
+	// Protocol (TCP, UDP, SCTP)
+	Protocol string `json:"protocol,omitempty"`
 }
 
 // NodeDetails contains node-specific information.

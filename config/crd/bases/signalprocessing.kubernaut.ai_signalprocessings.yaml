@@ -306,6 +306,32 @@ spec:
                       type: string
                     description: Custom labels (extracted via Rego policies)
                     type: object
+                  daemonSet:
+                    description: DaemonSet details if target is a daemonset
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: DaemonSet annotations
+                        type: object
+                      currentNumberScheduled:
+                        description: Current number scheduled
+                        format: int32
+                        type: integer
+                      desiredNumberScheduled:
+                        description: Desired number of nodes
+                        format: int32
+                        type: integer
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: DaemonSet labels
+                        type: object
+                      numberReady:
+                        description: Number ready
+                        format: int32
+                        type: integer
+                    type: object
                   deployment:
                     description: Deployment details if target is managed by deployment
                     properties:
@@ -473,6 +499,106 @@ spec:
                       phase:
                         description: Pod phase
                         type: string
+                    type: object
+                  replicaSet:
+                    description: ReplicaSet details if target is a replicaset
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: ReplicaSet annotations
+                        type: object
+                      availableReplicas:
+                        description: Available replicas
+                        format: int32
+                        type: integer
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: ReplicaSet labels
+                        type: object
+                      readyReplicas:
+                        description: Ready replicas
+                        format: int32
+                        type: integer
+                      replicas:
+                        description: Desired replicas
+                        format: int32
+                        type: integer
+                    type: object
+                  service:
+                    description: Service details if target is a service
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Service annotations
+                        type: object
+                      clusterIP:
+                        description: Cluster IP
+                        type: string
+                      externalIPs:
+                        description: External IPs
+                        items:
+                          type: string
+                        type: array
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Service labels
+                        type: object
+                      ports:
+                        description: Ports
+                        items:
+                          description: ServicePort contains service port information.
+                          properties:
+                            name:
+                              description: Port name
+                              type: string
+                            port:
+                              description: Port number
+                              format: int32
+                              type: integer
+                            protocol:
+                              description: Protocol (TCP, UDP, SCTP)
+                              type: string
+                            targetPort:
+                              description: Target port
+                              type: string
+                          required:
+                          - port
+                          type: object
+                        type: array
+                      type:
+                        description: Service type (ClusterIP, NodePort, LoadBalancer,
+                          ExternalName)
+                        type: string
+                    type: object
+                  statefulSet:
+                    description: StatefulSet details if target is a statefulset
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: StatefulSet annotations
+                        type: object
+                      currentReplicas:
+                        description: Current replicas
+                        format: int32
+                        type: integer
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: StatefulSet labels
+                        type: object
+                      readyReplicas:
+                        description: Ready replicas
+                        format: int32
+                        type: integer
+                      replicas:
+                        description: Desired replicas
+                        format: int32
+                        type: integer
                     type: object
                 type: object
               phase:
