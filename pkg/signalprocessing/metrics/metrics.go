@@ -72,3 +72,8 @@ func (m *Metrics) RecordEnrichmentError(errorType string) {
 	m.EnrichmentErrors.WithLabelValues(errorType).Inc()
 }
 
+// ObserveProcessingDuration records processing duration.
+func (m *Metrics) ObserveProcessingDuration(phase string, durationSeconds float64) {
+	m.ProcessingDuration.WithLabelValues(phase).Observe(durationSeconds)
+}
+
