@@ -18,6 +18,7 @@ limitations under the License.
 package config
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -51,5 +52,8 @@ type AuditConfig struct {
 
 // Validate checks if the configuration is valid.
 func (c *Config) Validate() error {
+	if c.Enrichment.Timeout <= 0 {
+		return fmt.Errorf("enrichment timeout must be positive, got %v", c.Enrichment.Timeout)
+	}
 	return nil
 }
