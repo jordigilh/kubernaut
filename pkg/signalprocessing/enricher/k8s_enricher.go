@@ -14,7 +14,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package enricher provides K8s context enrichment for signal processing.
+// Package enricher provides Kubernetes context enrichment for signal processing.
+//
+// The K8sEnricher fetches Kubernetes resource details based on signal type,
+// following a signal-driven enrichment strategy:
+//
+//   - Pod signals: Namespace + Pod + Node context
+//   - Deployment signals: Namespace + Deployment context
+//   - Node signals: Node context only (no namespace)
+//   - Unknown resource types: Namespace context only (graceful fallback)
+//
+// Design Decisions:
+//   - DD-005 v2.0: Uses logr.Logger for unified logging
+//   - DD-017: Standard depth fetching (hardcoded, no configuration)
+//   - Graceful degradation: Returns partial context on non-critical failures
+//
+// Business Requirements:
+//   - BR-SP-001: K8s Context Enrichment (<2s P95)
+//
+// Per IMPLEMENTATION_PLAN_V1.21.md Day 3 specification.
 package enricher
 
 import (
