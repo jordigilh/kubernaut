@@ -110,4 +110,82 @@ var _ = Describe("Config.Validate", func() {
 			Expect(err.Error()).To(ContainSubstring("Rego ConfigMap name"))
 		})
 	})
+
+	// Test 4: Error handling for zero hot-reload interval
+	Context("when hot-reload interval is invalid", func() {
+		It("should return error for zero hot-reload interval", func() {
+			cfg := &config.Config{
+				Enrichment: config.EnrichmentConfig{
+					CacheTTL: 5 * time.Minute,
+					Timeout:  2 * time.Second,
+				},
+				Classifier: config.ClassifierConfig{
+					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapKey:  "policy.rego",
+					HotReloadInterval: 0, // Invalid
+				},
+				Audit: config.AuditConfig{
+					DataStorageURL: "http://data-storage:8080",
+					Timeout:        5 * time.Second,
+					BufferSize:     1000,
+					FlushInterval:  5 * time.Second,
+				},
+			}
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("hot-reload interval"))
+		})
+	})
+
+	// Test 5: Error handling for zero buffer size
+	Context("when audit buffer size is invalid", func() {
+		It("should return error for zero buffer size", func() {
+			cfg := &config.Config{
+				Enrichment: config.EnrichmentConfig{
+					CacheTTL: 5 * time.Minute,
+					Timeout:  2 * time.Second,
+				},
+				Classifier: config.ClassifierConfig{
+					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapKey:  "policy.rego",
+					HotReloadInterval: 30 * time.Second,
+				},
+				Audit: config.AuditConfig{
+					DataStorageURL: "http://data-storage:8080",
+					Timeout:        5 * time.Second,
+					BufferSize:     0, // Invalid
+					FlushInterval:  5 * time.Second,
+				},
+			}
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("buffer size"))
+		})
+	})
+
+	// Test 6: Error handling for zero flush interval
+	Context("when audit flush interval is invalid", func() {
+		It("should return error for zero flush interval", func() {
+			cfg := &config.Config{
+				Enrichment: config.EnrichmentConfig{
+					CacheTTL: 5 * time.Minute,
+					Timeout:  2 * time.Second,
+				},
+				Classifier: config.ClassifierConfig{
+					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapKey:  "policy.rego",
+					HotReloadInterval: 30 * time.Second,
+				},
+				Audit: config.AuditConfig{
+					DataStorageURL: "http://data-storage:8080",
+					Timeout:        5 * time.Second,
+					BufferSize:     1000,
+					FlushInterval:  0, // Invalid
+				},
+			}
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("flush interval"))
+		})
+	})
 })
