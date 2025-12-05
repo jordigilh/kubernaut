@@ -107,6 +107,33 @@ var _ = Describe("Metrics", func() {
 			Expect(invalidCount).To(Equal(float64(1)))
 		})
 	})
+
+	// Test 4: Duration recording
+	Context("when recording processing duration", func() {
+		It("should record duration in histogram", func() {
+			m.ObserveProcessingDuration("enriching", 0.5)
+			m.ObserveProcessingDuration("enriching", 1.5)
+
+			gatheredMetrics, err := registry.Gather()
+			Expect(err).NotTo(HaveOccurred())
+
+			var found bool
+			for _, mf := range gatheredMetrics {
+				if mf.GetName() == "signalprocessing_processing_duration_seconds" {
+					for _, metric := range mf.GetMetric() {
+						if getLabel(metric, "phase") == "enriching" {
+							// Histogram should have 2 samples
+							Expect(metric.GetHistogram().GetSampleCount()).To(Equal(uint64(2)))
+							// Sum should be 2.0 (0.5 + 1.5)
+							Expect(metric.GetHistogram().GetSampleSum()).To(Equal(float64(2.0)))
+							found = true
+						}
+					}
+				}
+			}
+			Expect(found).To(BeTrue(), "expected to find processing_duration_seconds metric with phase=enriching")
+		})
+	})
 })
 
 // getLabel extracts a label value from a metric.
