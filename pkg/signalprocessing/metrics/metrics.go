@@ -67,3 +67,8 @@ func (m *Metrics) IncrementProcessingTotal(phase, result string) {
 	m.ProcessingTotal.WithLabelValues(phase, result).Inc()
 }
 
+// RecordEnrichmentError records an enrichment error.
+func (m *Metrics) RecordEnrichmentError(errorType string) {
+	m.EnrichmentErrors.WithLabelValues(errorType).Inc()
+}
+
