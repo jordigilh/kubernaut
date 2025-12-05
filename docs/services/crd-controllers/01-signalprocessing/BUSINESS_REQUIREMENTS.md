@@ -149,16 +149,15 @@ This document defines all business requirements for the SignalProcessing CRD Con
 **Description**: The SignalProcessing controller MUST detect environment from namespace labels as the primary source.
 
 **Acceptance Criteria**:
-- [ ] Check `environment` label on namespace
-- [ ] Check `env` label on namespace (fallback)
-- [ ] Check `kubernaut.ai/environment` label on namespace
+- [ ] Check `kubernaut.ai/environment` label on namespace (ONLY this label)
 - [ ] Return environment value: `production`, `staging`, `development`, `test`
 - [ ] Case-insensitive matching
+- [ ] Confidence: 0.95 when label is present
 
-**Detection Priority**:
-1. `metadata.labels["environment"]`
-2. `metadata.labels["env"]`
-3. `metadata.labels["kubernaut.ai/environment"]`
+**Detection**:
+- `metadata.labels["kubernaut.ai/environment"]` (single authoritative source)
+
+**Rationale**: Using only `kubernaut.ai/` prefixed labels prevents accidentally capturing labels from other systems and ensures clear ownership of environment classification.
 
 **Test Coverage**: `environment_classifier_test.go` (Unit)
 
@@ -197,13 +196,15 @@ data:
 **Priority**: P1 (High)
 **Category**: Environment Classification
 
-**Description**: The SignalProcessing controller MUST use a configurable default environment when all detection methods fail.
+**Description**: The SignalProcessing controller MUST use a default environment when all detection methods fail.
 
 **Acceptance Criteria**:
-- [ ] Default to `development` if not configured
-- [ ] Allow override via config file (`default_environment`)
+- [ ] Default to `unknown` when no label or ConfigMap mapping found
 - [ ] Log warning when default is used
-- [ ] Never fail classification - always return a valid environment
+- [ ] Never fail classification - always return a value
+- [ ] Confidence: 0.0 for default (indicates no detection was possible)
+
+**Rationale**: Using `unknown` is more accurate than assuming `development` - organizations have varied environment taxonomies and `development` could mean different things to different customers.
 
 **Test Coverage**: `environment_classifier_test.go` (Unit)
 

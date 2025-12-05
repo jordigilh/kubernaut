@@ -1,6 +1,6 @@
 ## Controller Implementation
 
-**Version**: 4.1
+**Version**: 4.2
 **Last Updated**: 2025-12-05
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Status**: ✅ Updated for Tekton Architecture (ADR-044)
@@ -10,6 +10,13 @@
 ---
 
 ## Changelog
+
+### Version 4.2 (2025-12-05)
+- ✅ **Added**: TaskRun RBAC for extracting failure details from failed tasks
+- ✅ **Added**: PipelineRunStatusSummary population during Running phase for task progress visibility
+- ✅ **Clarified**: Duration calculation on phase completion (already in crd-schema.md)
+- ✅ **Added**: `reconcileRunning()` implementation with Tekton status mapping (Day 5)
+- ✅ **Added**: `markCompleted()` and `markFailed()` with FailureDetails extraction
 
 ### Version 4.1 (2025-12-05)
 - ✅ **Changed**: Cross-namespace watch uses predicate filter instead of namespace-scoped cache
@@ -101,6 +108,7 @@ type WorkflowExecutionReconciler struct {
 //+kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions/finalizers,verbs=update
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=create;get;list;watch;delete
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/status,verbs=get;list;watch
+//+kubebuilder:rbac:groups=tekton.dev,resources=taskruns,verbs=get;list;watch
 //+kubebuilder:rbac:groups=remediation.kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 

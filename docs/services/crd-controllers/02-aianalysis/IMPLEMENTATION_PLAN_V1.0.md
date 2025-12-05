@@ -1,7 +1,7 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.5
+**Version**: v1.8
 **Last Updated**: 2025-12-05
 **Timeline**: 10 days (2 calendar weeks)
 **Status**: 📋 DRAFT - Ready for Review
@@ -9,6 +9,22 @@
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.8** (2025-12-05): **BREAKING** Recommending phase removed per spec alignment
+  - ✅ **Spec Authority**: `reconciliation-phases.md` v2.0 defines 4 phases: `Pending → Investigating → Analyzing → Completed`
+  - ✅ **Recommending Removed**: Phase provided no value; workflow data already captured in Investigating
+  - ✅ **AnalyzingHandler**: Now transitions directly to `Completed` and populates `ApprovalContext`
+  - ✅ **Day 4 Repurposed**: Now covers ApprovalContext population + Midpoint checkpoint
+  - ❌ **RecommendingHandler**: Removed (logic merged into AnalyzingHandler)
+  - 📏 **Authority**: `docs/services/crd-controllers/02-aianalysis/reconciliation-phases.md` v2.0
+- **v1.7** (2025-12-05): PolicyInput schema implementation complete
+  - ✅ **Day 3 Complete**: AnalyzingHandler + Rego Policy Engine fully implemented
+  - ✅ **PolicyInput Schema**: Extended to match plan lines 1756-1785 (ApprovalInput)
+    - Signal context: `SignalType`, `Severity`, `BusinessPriority`
+    - Target resource: `Kind`, `Name`, `Namespace`
+    - Recovery context: `IsRecoveryAttempt`, `RecoveryAttemptNumber`
+  - ✅ **Recovery Rules**: Test policy includes 3+ attempt escalation, high severity + recovery
+  - ✅ **Tests**: 61 total tests passing (13 new recovery/signal context tests)
+  - 📏 **Files**: `pkg/aianalysis/rego/evaluator.go`, `pkg/aianalysis/handlers/analyzing.go`
 - **v1.6** (2025-12-05): OPA v1 Rego syntax documentation
   - ✅ **OPA v1 Syntax**: All Rego policies MUST use OPA v1 syntax (`if` keyword, `:=` operator)
   - ✅ **Import Statement**: Policies should use `import rego.v1` or explicit v1 syntax
@@ -19,15 +35,13 @@
   - ✅ **CRD Schema**: Added `AlternativeWorkflow` type and `AlternativeWorkflows []AlternativeWorkflow` to status
   - ✅ **Architecture Clarification**: `/incident/analyze` returns ALL data (RCA + workflow + alternatives) in one call
   - ✅ **Day 2 Enhancement**: InvestigatingHandler now captures full response (RCA, SelectedWorkflow, AlternativeWorkflows)
-  - ✅ **Day 4 Simplification**: RecommendingHandler becomes a status finalizer (no separate HAPI call)
   - ✅ **Key Principle**: "Alternatives are for CONTEXT, not EXECUTION" per HolmesGPT-API team
   - 📏 **Reference**: [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) Q12-Q13
 - **v1.4** (2025-12-05): CRD phase alignment - removed Validating phase
   - ✅ **Phase Alignment**: Removed `Validating` phase references (not in CRD spec)
-  - ✅ **CRD Spec Authority**: Phases are `Pending;Investigating;Analyzing;Recommending;Completed;Failed`
   - ✅ **Day 2 Update**: Validation logic moves to `Pending` → `Investigating` transition
   - ✅ **Day Structure**: Day 2 now covers PendingHandler with validation + InvestigatingHandler prep
-  - 📏 **Authority**: `api/aianalysis/v1alpha1/aianalysis_types.go` line 328
+  - 📏 **Authority**: `reconciliation-phases.md` v2.0
 - **v1.3** (2025-12-04): Test package naming compliance fix
   - ✅ **Package Naming Fix**: Changed all `package aianalysis_test` → `package aianalysis`
   - ✅ **Compliance**: Now compliant with TEST_PACKAGE_NAMING_STANDARD.md (white-box testing)
@@ -113,7 +127,7 @@ This plan is organized into a core document and supporting files for easier navi
 |----------|------|-------|
 | [DAY_01_FOUNDATION.md](implementation/days/DAY_01_FOUNDATION.md) | Day 1 | Package structure, reconciler, ValidatingHandler |
 | [DAY_02_INVESTIGATING_HANDLER.md](implementation/days/DAY_02_INVESTIGATING_HANDLER.md) | Day 2 | HolmesGPT-API client, InvestigatingHandler |
-| [DAY_03_04_ANALYZING_RECOMMENDING.md](implementation/days/DAY_03_04_ANALYZING_RECOMMENDING.md) | Days 3-4 | Rego evaluator, AnalyzingHandler, RecommendingHandler, **Midpoint** |
+| [DAY_03_04_ANALYZING_COMPLETION.md](implementation/days/DAY_03_04_ANALYZING_COMPLETION.md) | Days 3-4 | Rego evaluator, AnalyzingHandler, ApprovalContext, **Midpoint** |
 | [DAY_05_07_INTEGRATION_TESTING.md](implementation/days/DAY_05_07_INTEGRATION_TESTING.md) | Days 5-7 | Error handling, metrics, KIND integration tests |
 | [DAY_08_10_E2E_POLISH.md](implementation/days/DAY_08_10_E2E_POLISH.md) | Days 8-10 | E2E tests, production polish, **Final checkpoint** |
 

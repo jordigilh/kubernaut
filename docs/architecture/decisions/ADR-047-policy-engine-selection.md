@@ -319,7 +319,7 @@ classification := {
 def classify_environment(labels):
     """Classify environment from labels with fallback chain."""
     env_keys = ["environment", "env", "kubernaut.ai/environment"]
-    
+
     for key in env_keys:
         if key in labels and labels[key]:
             return {
@@ -327,7 +327,7 @@ def classify_environment(labels):
                 "confidence": 0.95,
                 "source": "label:" + key
             }
-    
+
     return {
         "environment": "development",
         "confidence": 0.4,

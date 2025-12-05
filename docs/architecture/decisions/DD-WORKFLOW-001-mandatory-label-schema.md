@@ -169,8 +169,10 @@ Labels are grouped by how they are populated:
 **Derivation**: Signal Processing applies Rego policies to derive these labels from K8s context (namespace labels, annotations, resource metadata). Users can customize derivation logic via Rego policy ConfigMaps.
 
 **Default Logic** (if no custom Rego):
-- `environment`: From namespace label `environment` or annotation `kubernaut.io/environment`
+- `environment`: From namespace label `kubernaut.ai/environment` (single authoritative source)
 - `priority`: Derived from `severity` + `environment` (critical + production → P0)
+
+**Rationale**: Using only `kubernaut.ai/` prefixed labels prevents accidentally capturing labels from other systems.
 
 ---
 

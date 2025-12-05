@@ -4,9 +4,17 @@
 **Parent Document**: [IMPLEMENTATION_PLAN_V1.0.md](../../IMPLEMENTATION_PLAN_V1.0.md)
 **Duration**: 12-16 hours (2 days)
 **Target Confidence**: 78% (Day 4 Midpoint)
-**Version**: v1.1
+**Version**: v1.3
 
 **Changelog**:
+- **v1.3** (2025-12-05): PolicyInput schema alignment with implementation plan
+  - ✅ **Extended PolicyInput**: Added all fields from IMPLEMENTATION_PLAN_V1.0.md lines 1756-1785
+    - Signal context: `SignalType`, `Severity`, `BusinessPriority`
+    - Target resource: `Kind`, `Name`, `Namespace`
+    - Recovery context: `IsRecoveryAttempt`, `RecoveryAttemptNumber`
+  - ✅ **Recovery Rules**: Test policy now includes recovery scenario rules (3+ attempts, high severity)
+  - ✅ **Tests Added**: 13 new tests for extended PolicyInput fields and recovery scenarios
+  - 📏 **Reference**: `pkg/aianalysis/rego/evaluator.go`, `test/unit/aianalysis/testdata/policies/approval.rego`
 - **v1.2** (2025-12-05): OPA v1 Rego syntax update
   - ✅ **OPA v1 Syntax**: All Rego policies MUST use `if` keyword and `:=` operator
   - ✅ **Import**: Use `import rego.v1` or `github.com/open-policy-agent/opa/v1/rego`

@@ -1,13 +1,19 @@
 ## Reconciliation Architecture
 
-**Version**: 4.0
-**Last Updated**: 2025-12-02
+**Version**: 4.1
+**Last Updated**: 2025-12-05
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Status**: ✅ Updated for Tekton Architecture (ADR-044)
 
 ---
 
 ## Changelog
+
+### Version 4.1 (2025-12-05)
+- ✅ **Added**: PipelineRunStatusSummary population during Running phase for task progress visibility
+- ✅ **Added**: Duration calculation on Completed/Failed phase transition
+- ✅ **Added**: TaskRun RBAC requirement for FailureDetails extraction
+- ✅ **Clarified**: PipelineRun fetched from ExecutionNamespace (DD-WE-002)
 
 ### Version 4.0 (2025-12-02)
 - ✅ **Rewritten**: Complete rewrite for Tekton PipelineRun delegation
@@ -126,15 +132,21 @@ if validationFailed   → phase = "Failed"
 - Fetch PipelineRun by `status.pipelineRunRef`
 - Handle NotFound (external deletion)
 
-**Step 2: Map Tekton Status to WFE Status** (BR-WE-003)
-- Tekton `Succeeded=True` → Phase `Completed`, Outcome `Success`
-- Tekton `Succeeded=False` → Phase `Failed`, extract `FailureDetails`
-- Tekton running → Requeue for status check
+**Step 2: Update PipelineRunStatusSummary** (v4.1)
+- Populate `wfe.Status.PipelineRunStatus` with current task progress
+- Provides visibility into workflow execution state
 
-**Step 3: Extract Failure Details** (BR-WE-004)
+**Step 3: Map Tekton Status to WFE Status** (BR-WE-003)
+- Tekton `Succeeded=True` → Phase `Completed`, Outcome `Success`, calculate `Duration`
+- Tekton `Succeeded=False` → Phase `Failed`, extract `FailureDetails`, calculate `Duration`
+- Tekton running → Update `PipelineRunStatus`, Requeue for status check
+
+**Step 4: Extract Failure Details** (BR-WE-004)
+- Fetch failed TaskRun from `pr.Status.ChildReferences` (requires TaskRun RBAC v4.1)
 - Parse Tekton condition message for task/step failure
 - Build `FailureDetails` struct with reason, message, task info
 - Generate `naturalLanguageSummary` for recovery context
+- Fallback to condition message if TaskRun access fails
 
 ```go
 func (r *WorkflowExecutionReconciler) reconcileRunning(
@@ -143,11 +155,11 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(
 ) (ctrl.Result, error) {
     log := log.FromContext(ctx)
 
-    // Get PipelineRun
+    // Get PipelineRun from execution namespace (DD-WE-002)
     var pr tektonv1.PipelineRun
     if err := r.Get(ctx, client.ObjectKey{
         Name:      wfe.Status.PipelineRunRef.Name,
-        Namespace: wfe.Namespace,
+        Namespace: r.ExecutionNamespace,  // "kubernaut-workflows"
     }, &pr); err != nil {
         if apierrors.IsNotFound(err) {
             // PipelineRun externally deleted
@@ -156,25 +168,30 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(
         return ctrl.Result{}, err
     }
 
-    // Check Tekton conditions
-    for _, cond := range pr.Status.Conditions {
-        if cond.Type == "Succeeded" {
-            switch cond.Status {
-            case "True":
-                // Success
-                return r.markCompleted(ctx, wfe, &pr)
-            case "False":
-                // Failure - extract details
-                return r.markFailedFromPipelineRun(ctx, wfe, &pr, cond)
-            default:
-                // Still running - requeue
-                log.V(1).Info("PipelineRun still running", "reason", cond.Reason)
-                return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-            }
+    // Update PipelineRunStatusSummary for visibility (v4.1)
+    wfe.Status.PipelineRunStatus = r.buildPipelineRunStatusSummary(&pr)
+
+    // Check Tekton conditions using knative APIs
+    succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
+    if succeededCond != nil {
+        switch {
+        case succeededCond.IsTrue():
+            // Success - calculate duration and mark completed
+            return r.markCompleted(ctx, wfe, &pr)
+        case succeededCond.IsFalse():
+            // Failure - extract details and mark failed
+            return r.markFailedFromPipelineRun(ctx, wfe, &pr)
+        default:
+            // Still running - update status and requeue
+            log.V(1).Info("PipelineRun still running", "reason", succeededCond.Reason)
         }
     }
 
-    // No Succeeded condition yet - requeue
+    // Update status with current progress
+    if err := r.Status().Update(ctx, wfe); err != nil {
+        return ctrl.Result{}, err
+    }
+
     return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 ```

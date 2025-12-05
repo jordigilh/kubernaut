@@ -186,9 +186,13 @@ type SignalProcessingStatus struct {
 // BR-SP-001: K8s Context Enrichment
 // DD-4: Supports degraded mode when K8s API enrichment fails
 type KubernetesContext struct {
-	// Namespace labels
+	// Namespace details (per plan specification)
+	Namespace *NamespaceContext `json:"namespace,omitempty"`
+	// NamespaceLabels - DEPRECATED: Use Namespace.Labels instead
+	// Kept for backward compatibility during migration
 	NamespaceLabels map[string]string `json:"namespaceLabels,omitempty"`
-	// Namespace annotations
+	// NamespaceAnnotations - DEPRECATED: Use Namespace.Annotations instead
+	// Kept for backward compatibility during migration
 	NamespaceAnnotations map[string]string `json:"namespaceAnnotations,omitempty"`
 	// Pod details if target is a pod
 	Pod *PodDetails `json:"pod,omitempty"`
@@ -216,6 +220,17 @@ type KubernetesContext struct {
 	// Confidence score for the enrichment quality (0.0-1.0)
 	// DD-4: Set to 0.5 in degraded mode
 	Confidence float64 `json:"confidence,omitempty"`
+}
+
+// NamespaceContext holds namespace details for classification.
+// Per plan specification for Environment Classifier input.
+type NamespaceContext struct {
+	// Namespace name
+	Name string `json:"name"`
+	// Namespace labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// Namespace annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // PodDetails contains pod-specific information.
