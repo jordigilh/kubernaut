@@ -1897,23 +1897,25 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, k8sCtx *Kubernetes
 ```rego
 package signalprocessing.environment
 
-# Primary: Namespace labels
-result = {"environment": env, "confidence": 0.95, "source": "namespace-labels"} {
-    env := input.namespace.labels["environment"]
+# Primary: Namespace labels (kubernaut.ai/environment)
+# Per BR-SP-051: Only kubernaut.ai/ prefixed labels
+result := {"environment": env, "confidence": 0.95, "source": "namespace-labels"} if {
+    env := input.namespace.labels["kubernaut.ai/environment"]
     env != ""
 }
 
-# Secondary: Signal labels
-result = {"environment": env, "confidence": 0.80, "source": "signal-labels"} {
-    not input.namespace.labels["environment"]
-    env := input.signal.labels["environment"]
+# Secondary: Signal labels (kubernaut.ai/environment)
+result := {"environment": env, "confidence": 0.80, "source": "signal-labels"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    env := input.signal.labels["kubernaut.ai/environment"]
     env != ""
 }
 
 # Default fallback
-result = {"environment": "unknown", "confidence": 0.0, "source": "default"} {
-    not input.namespace.labels["environment"]
-    not input.signal.labels["environment"]
+# Per BR-SP-053: Return "unknown" when detection fails
+result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    not input.signal.labels["kubernaut.ai/environment"]
 }
 ```
 
