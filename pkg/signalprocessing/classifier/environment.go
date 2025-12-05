@@ -23,7 +23,7 @@ limitations under the License.
 //	    logger    logr.Logger
 //	}
 //
-// Classification is performed using Rego policies loaded from file.
+// Priority order: namespace labels → ConfigMap (BR-SP-052) → signal labels → default
 // Graceful degradation returns "unknown" on policy errors.
 package classifier
 
@@ -31,84 +31,150 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 
 	"github.com/go-logr/logr"
 	"github.com/open-policy-agent/opa/v1/rego"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+const (
+	// ConfigMap names for BR-SP-052 fallback
+	environmentConfigMapName      = "kubernaut-environment-config"
+	environmentConfigMapNamespace = "kubernaut-system"
+	environmentConfigMapKey       = "mapping"
+
+	// Confidence levels per plan
+	namespaceLabelsConfidence = 0.95
+	configMapConfidence       = 0.75
+	signalLabelsConfidence    = 0.80
+	defaultConfidence         = 0.0
 )
 
 // EnvironmentClassifier determines environment using Rego policy.
 // Per IMPLEMENTATION_PLAN_V1.21.md Day 4 specification.
 type EnvironmentClassifier struct {
-	policyPath string
-	logger     logr.Logger
+	regoQuery *rego.PreparedEvalQuery // Prepared query for performance
+	k8sClient client.Client           // For ConfigMap fallback (BR-SP-052)
+	logger    logr.Logger
+
+	// ConfigMap cache
+	configMapMu      sync.RWMutex
+	configMapMapping map[string]string // pattern -> environment
 }
 
 // NewEnvironmentClassifier creates a new Rego-based environment classifier.
+// Per plan: query is prepared once at construction time for performance.
+//
+// BR-SP-051: Primary detection from namespace labels
+// BR-SP-052: ConfigMap fallback when labels absent
+// BR-SP-053: Default to "unknown" when all methods fail
+//
 // DD-005 v2.0: Uses logr.Logger
-func NewEnvironmentClassifier(policyPath string, logger logr.Logger) *EnvironmentClassifier {
-	return &EnvironmentClassifier{
-		policyPath: policyPath,
-		logger:     logger.WithName("environment-classifier"),
+func NewEnvironmentClassifier(ctx context.Context, policyPath string, k8sClient client.Client, logger logr.Logger) (*EnvironmentClassifier, error) {
+	log := logger.WithName("environment-classifier")
+
+	// Read policy file
+	policyContent, err := os.ReadFile(policyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read policy file %s: %w", policyPath, err)
 	}
+
+	// Prepare Rego query once (per plan specification)
+	query, err := rego.New(
+		rego.Query("data.signalprocessing.environment.result"),
+		rego.Module(filepath.Base(policyPath), string(policyContent)),
+	).PrepareForEval(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile Rego policy: %w", err)
+	}
+
+	classifier := &EnvironmentClassifier{
+		regoQuery:        &query,
+		k8sClient:        k8sClient,
+		logger:           log,
+		configMapMapping: make(map[string]string),
+	}
+
+	// Load ConfigMap mapping (BR-SP-052)
+	if err := classifier.loadConfigMapMapping(ctx); err != nil {
+		// Log warning but don't fail - ConfigMap is optional fallback
+		log.Info("ConfigMap mapping not loaded (will use defaults)",
+			"configMap", environmentConfigMapName,
+			"error", err)
+	}
+
+	return classifier, nil
 }
 
 // Classify determines environment using Rego policy.
-// Per plan: Priority order is namespace labels → signal labels → default
+// Per plan: Priority order is namespace labels → ConfigMap → signal labels → default
 //
-// BR-SP-051: Primary detection from namespace labels
-// BR-SP-053: Default to "unknown" when all methods fail
+// BR-SP-051: Primary detection from namespace labels (confidence 0.95)
+// BR-SP-052: ConfigMap fallback (confidence 0.75)
+// BR-SP-053: Default to "unknown" when all methods fail (confidence 0.0)
 //
 // Never fails - always returns a valid EnvironmentClassification (graceful degradation).
 func (c *EnvironmentClassifier) Classify(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
 	// Build input for Rego policy
 	input := c.buildRegoInput(k8sCtx, signal)
 
-	// Read policy file
-	policyContent, err := os.ReadFile(c.policyPath)
+	// Try Rego evaluation first
+	result, err := c.evaluateRego(ctx, input)
 	if err != nil {
-		// Graceful degradation - policy file not found
-		c.logger.Info("Policy file not found, returning default",
-			"path", c.policyPath,
+		c.logger.Info("Rego evaluation failed, trying ConfigMap fallback",
 			"error", err)
-		return c.defaultResult(), nil
+	} else if result.Environment != "unknown" {
+		// Rego found an environment
+		c.logger.V(1).Info("Environment classified via Rego",
+			"environment", result.Environment,
+			"confidence", result.Confidence,
+			"source", result.Source)
+		return result, nil
 	}
 
-	// Prepare Rego query
-	query, err := rego.New(
-		rego.Query("data.signalprocessing.environment.result"),
-		rego.Module("environment.rego", string(policyContent)),
-	).PrepareForEval(ctx)
-
-	if err != nil {
-		// Graceful degradation - policy syntax error
-		c.logger.Info("Policy compilation failed, returning default",
-			"error", err)
-		return c.defaultResult(), nil
+	// Try ConfigMap fallback (BR-SP-052)
+	if k8sCtx != nil && k8sCtx.Namespace != nil {
+		if env := c.tryConfigMapFallback(k8sCtx.Namespace.Name); env != "" {
+			result := &signalprocessingv1alpha1.EnvironmentClassification{
+				Environment: env,
+				Confidence:  configMapConfidence,
+				Source:      "configmap",
+			}
+			c.logger.V(1).Info("Environment classified via ConfigMap",
+				"namespace", k8sCtx.Namespace.Name,
+				"environment", env)
+			return result, nil
+		}
 	}
 
-	// Evaluate policy
-	results, err := query.Eval(ctx, rego.EvalInput(input))
+	// Default fallback (BR-SP-053)
+	c.logger.V(1).Info("No environment detected, returning default")
+	return c.defaultResult(), nil
+}
+
+// evaluateRego evaluates the prepared Rego query.
+func (c *EnvironmentClassifier) evaluateRego(ctx context.Context, input map[string]interface{}) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+	results, err := c.regoQuery.Eval(ctx, rego.EvalInput(input))
 	if err != nil {
-		// Graceful degradation - evaluation error
-		c.logger.Info("Policy evaluation error, returning default",
-			"error", err)
-		return c.defaultResult(), nil
+		return nil, fmt.Errorf("rego evaluation failed: %w", err)
 	}
 
 	// Check for results
 	if len(results) == 0 || len(results[0].Expressions) == 0 {
-		// Graceful degradation - no result
-		c.logger.V(1).Info("No policy result, returning default")
 		return c.defaultResult(), nil
 	}
 
 	// Extract result from Rego
 	resultMap, ok := results[0].Expressions[0].Value.(map[string]interface{})
 	if !ok {
-		// Graceful degradation - invalid result format
-		c.logger.Info("Invalid policy result format, returning default",
+		c.logger.Info("Invalid Rego result format",
 			"value", fmt.Sprintf("%T", results[0].Expressions[0].Value))
 		return c.defaultResult(), nil
 	}
@@ -118,18 +184,7 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, k8sCtx *signalproc
 	source, _ := resultMap["source"].(string)
 
 	// Handle confidence - Rego returns json.Number, not float64
-	var confidence float64
-	switch v := resultMap["confidence"].(type) {
-	case float64:
-		confidence = v
-	case int:
-		confidence = float64(v)
-	default:
-		// Try to parse as json.Number (Rego's default for numbers)
-		if num, ok := resultMap["confidence"].(interface{ Float64() (float64, error) }); ok {
-			confidence, _ = num.Float64()
-		}
-	}
+	confidence := c.extractConfidence(resultMap["confidence"])
 
 	if environment == "" {
 		environment = "unknown"
@@ -138,16 +193,32 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, k8sCtx *signalproc
 		source = "default"
 	}
 
-	c.logger.V(1).Info("Environment classified",
-		"environment", environment,
-		"confidence", confidence,
-		"source", source)
-
 	return &signalprocessingv1alpha1.EnvironmentClassification{
 		Environment: environment,
 		Confidence:  confidence,
 		Source:      source,
 	}, nil
+}
+
+// extractConfidence handles the various types Rego can return for numbers.
+func (c *EnvironmentClassifier) extractConfidence(v interface{}) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case int:
+		return float64(val)
+	case int64:
+		return float64(val)
+	default:
+		// Try json.Number interface
+		if num, ok := v.(interface{ Float64() (float64, error) }); ok {
+			f, err := num.Float64()
+			if err == nil {
+				return f
+			}
+		}
+		return defaultConfidence
+	}
 }
 
 // buildRegoInput constructs the input map for Rego policy evaluation.
@@ -169,27 +240,119 @@ func (c *EnvironmentClassifier) buildRegoInput(k8sCtx *signalprocessingv1alpha1.
 	if k8sCtx != nil && k8sCtx.Namespace != nil {
 		input["namespace"] = map[string]interface{}{
 			"name":   k8sCtx.Namespace.Name,
-			"labels": k8sCtx.Namespace.Labels,
+			"labels": ensureLabelsMap(k8sCtx.Namespace.Labels),
 		}
 	} else {
 		input["namespace"] = map[string]interface{}{
 			"name":   "",
-			"labels": map[string]string{},
+			"labels": map[string]interface{}{},
 		}
 	}
 
 	// Signal context
 	if signal != nil {
 		input["signal"] = map[string]interface{}{
-			"labels": signal.Labels,
+			"labels": ensureLabelsMap(signal.Labels),
 		}
 	} else {
 		input["signal"] = map[string]interface{}{
-			"labels": map[string]string{},
+			"labels": map[string]interface{}{},
 		}
 	}
 
 	return input
+}
+
+// ensureLabelsMap converts map[string]string to map[string]interface{} for Rego.
+func ensureLabelsMap(labels map[string]string) map[string]interface{} {
+	result := make(map[string]interface{})
+	for k, v := range labels {
+		result[k] = v
+	}
+	return result
+}
+
+// loadConfigMapMapping loads the namespace→environment mapping from ConfigMap.
+// BR-SP-052: ConfigMap-based environment mapping
+func (c *EnvironmentClassifier) loadConfigMapMapping(ctx context.Context) error {
+	if c.k8sClient == nil {
+		return fmt.Errorf("k8s client is nil")
+	}
+
+	configMap := &corev1.ConfigMap{}
+	key := types.NamespacedName{
+		Name:      environmentConfigMapName,
+		Namespace: environmentConfigMapNamespace,
+	}
+
+	if err := c.k8sClient.Get(ctx, key, configMap); err != nil {
+		return fmt.Errorf("failed to get ConfigMap %s/%s: %w", environmentConfigMapNamespace, environmentConfigMapName, err)
+	}
+
+	mappingData, ok := configMap.Data[environmentConfigMapKey]
+	if !ok {
+		return fmt.Errorf("ConfigMap %s missing key %s", environmentConfigMapName, environmentConfigMapKey)
+	}
+
+	c.configMapMu.Lock()
+	defer c.configMapMu.Unlock()
+
+	// Parse simple YAML format: "pattern: environment"
+	c.configMapMapping = make(map[string]string)
+	for _, line := range strings.Split(mappingData, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		pattern := strings.TrimSpace(parts[0])
+		env := strings.TrimSpace(parts[1])
+		if pattern != "" && env != "" {
+			c.configMapMapping[pattern] = env
+		}
+	}
+
+	c.logger.V(1).Info("Loaded ConfigMap mapping",
+		"patterns", len(c.configMapMapping))
+
+	return nil
+}
+
+// tryConfigMapFallback attempts to match namespace name against ConfigMap patterns.
+// BR-SP-052: Support namespace pattern → environment mapping
+func (c *EnvironmentClassifier) tryConfigMapFallback(namespaceName string) string {
+	c.configMapMu.RLock()
+	defer c.configMapMu.RUnlock()
+
+	for pattern, env := range c.configMapMapping {
+		if matchPattern(pattern, namespaceName) {
+			return env
+		}
+	}
+	return ""
+}
+
+// matchPattern matches a namespace name against a pattern with * wildcard.
+// Supports: "prod-*" matches "prod-payments", "prod-api", etc.
+func matchPattern(pattern, name string) bool {
+	// Simple glob matching with * wildcard
+	if !strings.Contains(pattern, "*") {
+		return pattern == name
+	}
+
+	// Split pattern by *
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 2 {
+		prefix := parts[0]
+		suffix := parts[1]
+		return strings.HasPrefix(name, prefix) && strings.HasSuffix(name, suffix)
+	}
+
+	// More complex patterns - fall back to exact match
+	return pattern == name
 }
 
 // defaultResult returns the default environment classification.
@@ -197,8 +360,13 @@ func (c *EnvironmentClassifier) buildRegoInput(k8sCtx *signalprocessingv1alpha1.
 func (c *EnvironmentClassifier) defaultResult() *signalprocessingv1alpha1.EnvironmentClassification {
 	return &signalprocessingv1alpha1.EnvironmentClassification{
 		Environment: "unknown",
-		Confidence:  0.0,
+		Confidence:  defaultConfidence,
 		Source:      "default",
 	}
 }
 
+// ReloadConfigMap reloads the ConfigMap mapping (for hot-reload support).
+// BR-SP-052: Hot-reload mapping without restart
+func (c *EnvironmentClassifier) ReloadConfigMap(ctx context.Context) error {
+	return c.loadConfigMapMapping(ctx)
+}
