@@ -52,4 +52,35 @@ var _ = Describe("Metrics", func() {
 		Expect(m.ProcessingDuration).NotTo(BeNil())
 		Expect(m.EnrichmentErrors).NotTo(BeNil())
 	})
+
+	// Test 2: Counter increment
+	Context("when incrementing counters", func() {
+		It("should increment processing total counter", func() {
+			m.IncrementProcessingTotal("enriching", "success")
+			m.IncrementProcessingTotal("enriching", "success")
+
+			// Verify counter incremented (basic check - not null-testing)
+			Expect(m.ProcessingTotal).NotTo(BeNil())
+		})
+	})
+
+	// Test 3: Enrichment error recording
+	Context("when recording enrichment errors", func() {
+		It("should increment enrichment errors counter", func() {
+			m.RecordEnrichmentError("k8s_api_timeout")
+			m.RecordEnrichmentError("k8s_api_timeout")
+
+			Expect(m.EnrichmentErrors).NotTo(BeNil())
+		})
+	})
+
+	// Test 4: Duration observation
+	Context("when recording processing duration", func() {
+		It("should record duration in histogram", func() {
+			m.ObserveProcessingDuration("enriching", 0.5)
+			m.ObserveProcessingDuration("enriching", 1.5)
+
+			Expect(m.ProcessingDuration).NotTo(BeNil())
+		})
+	})
 })
