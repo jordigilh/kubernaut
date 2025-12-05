@@ -58,4 +58,30 @@ var _ = Describe("Config.Validate", func() {
 		err := cfg.Validate()
 		Expect(err).NotTo(HaveOccurred())
 	})
+
+	// Test 2: Error handling for zero enrichment timeout
+	Context("when enrichment timeout is invalid", func() {
+		It("should return error for zero timeout", func() {
+			cfg := &config.Config{
+				Enrichment: config.EnrichmentConfig{
+					CacheTTL: 5 * time.Minute,
+					Timeout:  0, // Invalid
+				},
+				Classifier: config.ClassifierConfig{
+					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapKey:  "policy.rego",
+					HotReloadInterval: 30 * time.Second,
+				},
+				Audit: config.AuditConfig{
+					DataStorageURL: "http://data-storage:8080",
+					Timeout:        5 * time.Second,
+					BufferSize:     1000,
+					FlushInterval:  5 * time.Second,
+				},
+			}
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("enrichment timeout"))
+		})
+	})
 })
