@@ -167,22 +167,48 @@ Please acknowledge this notice by adding your team's response below:
     - Gateway correctly populates labels (`kubernaut.ai/severity`, `kubernaut.ai/environment`, `kubernaut.ai/priority`) that downstream services can use
 
 ### SignalProcessing Team
-- [ ] Acknowledged
-- [ ] Label domain correction completed
-- [ ] No `kubernaut.io/` references found
-- Notes: _____
+- [x] Acknowledged (December 5, 2025)
+- [x] Label domain correction completed
+- [x] No `kubernaut.io/` label references remain in SignalProcessing code
+- Notes:
+  - **Change 1 (Label Domain Correction)**: ✅ COMPLETED
+    - `pkg/signalprocessing/classifier/business.go`: Updated 3 label references (`kubernaut.ai/owner`, `kubernaut.ai/sla`)
+    - `test/unit/signalprocessing/business_classifier_test.go`: Updated 2 test expectations
+    - TDD Commits: `d468aca7` (RED), `26247161` (GREEN), `498e8904` (REFACTOR)
+    - Verification: All 115 unit tests pass ✅
+  - **Change 2 (BR-NOT-065 Routing)**: No impact on SignalProcessing
+    - SignalProcessing enriches/classifies signals, does not create `NotificationRequest` CRDs
+    - RO is responsible for creating `NotificationRequest` CRDs with routing labels
 
 ### AIAnalysis Team
-- [ ] Acknowledged
-- [ ] Label domain correction completed
-- [ ] No `kubernaut.io/` references found
-- Notes: _____
+- [x] Acknowledged (December 4, 2025)
+- [x] Label domain correction completed
+- [x] No `kubernaut.io/` references found
+- Notes:
+  - **Change 1 (Label Domain)**: ✅ COMPLETED
+    - Code: Fixed `aianalysis.kubernaut.io/retry-count` → `aianalysis.kubernaut.ai/retry-count` in `pkg/aianalysis/handlers/investigating.go`
+    - Tests: Updated `test/unit/aianalysis/investigating_handler_test.go`
+    - Refactor: Extracted `RetryCountAnnotation` constant for maintainability
+    - Documentation: Fixed 28 references in `docs/services/crd-controllers/02-aianalysis/`
+    - Verification: 90 unit tests pass ✅
+  - **Change 2 (BR-NOT-065 Routing)**: No impact on AIAnalysis
+    - AIAnalysis does not create `NotificationRequest` CRDs
+    - RO is responsible for creating `NotificationRequest` CRDs based on AIAnalysis status
 
 ### WorkflowExecution Team
-- [ ] Acknowledged
-- [ ] Label domain correction completed
-- [ ] No `kubernaut.io/` references found
-- Notes: _____
+- [x] Acknowledged (December 4, 2025)
+- [x] Label domain correction completed - **Already using `kubernaut.ai/`**
+- [x] No `kubernaut.io/` references found
+- Notes:
+  - **Change 1 (Label Domain)**: ✅ NO CHANGES REQUIRED
+    - Searched: `internal/controller/workflowexecution/`, `api/workflowexecution/`, `cmd/workflowexecution/`, `test/integration/workflowexecution/`, `test/fixtures/tekton/`, `docs/services/crd-controllers/03-workflowexecution/`
+    - Result: **Zero** `kubernaut.io/` references found
+    - Finalizer correctly uses: `workflowexecution.kubernaut.ai/finalizer`
+    - Labels correctly use: `kubernaut.ai/workflow-execution`, `kubernaut.ai/source-namespace`, `kubernaut.ai/workflow-id`
+    - WE was implemented correctly from the start using `kubernaut.ai/` domain
+  - **Change 2 (BR-NOT-065 Routing)**: No impact on WorkflowExecution
+    - WorkflowExecution does not create `NotificationRequest` CRDs
+    - RO is responsible for creating `NotificationRequest` CRDs based on WorkflowExecution status
 
 ### Notification Team
 - [x] Acknowledged (December 4, 2025)
@@ -216,9 +242,9 @@ Please acknowledge this notice by adding your team's response below:
 
 ---
 
-**Document Version**: 1.3
-**Last Updated**: 2025-12-04
-**Status**: GATEWAY + NOTIFICATION COMPLETE - PENDING SP, AI, WE
+**Document Version**: 1.6
+**Last Updated**: 2025-12-05
+**Status**: ✅ ALL TEAMS ACKNOWLEDGED - COMPLETE
 
 ---
 
@@ -226,6 +252,9 @@ Please acknowledge this notice by adding your team's response below:
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.6 | 2025-12-05 | **SignalProcessing Team**: Label domain correction completed (3 code refs, 2 tests, 115 unit tests pass) - **ALL TEAMS COMPLETE** |
+| 1.5 | 2025-12-04 | WorkflowExecution Team: Acknowledged - already using `kubernaut.ai/` domain, no changes required |
+| 1.4 | 2025-12-04 | AIAnalysis Team: Label domain correction completed (3 code refs + 28 docs, 90 unit tests pass) |
 | 1.3 | 2025-12-04 | Gateway Team: Label domain correction completed (14 labels in `crd_creator.go`, 333 unit tests pass) |
 | 1.2 | 2025-12-04 | Notification Team: BR-NOT-065 and BR-NOT-066 fully implemented with 37 tests |
 | 1.1 | 2025-12-04 | Notification Team: Initial acknowledgment and implementation plan |
