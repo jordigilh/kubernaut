@@ -62,3 +62,8 @@ func NewMetrics(registry *prometheus.Registry) *Metrics {
 	return m
 }
 
+// IncrementProcessingTotal increments the processing total counter.
+func (m *Metrics) IncrementProcessingTotal(phase, result string) {
+	m.ProcessingTotal.WithLabelValues(phase, result).Inc()
+}
+
