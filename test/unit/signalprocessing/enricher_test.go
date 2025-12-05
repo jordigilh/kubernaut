@@ -90,5 +90,43 @@ var _ = Describe("K8sEnricher.Enrich", func() {
 			Expect(result.NamespaceLabels).To(HaveKeyWithValue("environment", "production"))
 		})
 	})
+
+	// Test 2: Pod details enrichment
+	Context("when enriching pod details", func() {
+		It("should return pod labels and annotations", func() {
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-namespace",
+				},
+			}
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						"app":     "my-app",
+						"version": "v1.0",
+					},
+					Annotations: map[string]string{
+						"kubernaut.ai/owner": "team-alpha@example.com",
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(ns, pod).
+				Build()
+
+			e = enricher.NewK8sEnricher(fakeClient, ctrl.Log.WithName("test"))
+
+			result, err := e.Enrich(ctx, "test-namespace", "test-pod")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.PodLabels).To(HaveKeyWithValue("app", "my-app"))
+			Expect(result.PodLabels).To(HaveKeyWithValue("version", "v1.0"))
+			Expect(result.PodAnnotations).To(HaveKeyWithValue("kubernaut.ai/owner", "team-alpha@example.com"))
+		})
+	})
 })
 
