@@ -20,7 +20,6 @@ limitations under the License.
 package signalprocessing
 
 import (
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,11 +27,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
 )
-
-func TestConfig(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "SignalProcessing Config Suite")
-}
 
 // Unit Test: Config.Validate implementation correctness
 var _ = Describe("Config.Validate", func() {

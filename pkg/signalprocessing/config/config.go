@@ -20,13 +20,17 @@ limitations under the License.
 //   - EnrichmentConfig: K8s context enrichment settings (cache TTL, timeout)
 //   - ClassifierConfig: Rego-based classification settings (ConfigMap, hot-reload)
 //   - AuditConfig: Audit trail buffering settings (buffer size, flush interval)
+//   - ControllerConfig: Controller runtime settings (metrics, health probes, leader election)
 //
 // All configuration values are validated via Config.Validate() before use.
 package config
 
 import (
 	"fmt"
+	"os"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds the complete configuration for the SignalProcessing controller.
@@ -55,6 +59,39 @@ type AuditConfig struct {
 	Timeout        time.Duration
 	BufferSize     int
 	FlushInterval  time.Duration
+}
+
+// ControllerConfig holds controller runtime settings.
+type ControllerConfig struct {
+	MetricsAddr      string
+	HealthProbeAddr  string
+	LeaderElection   bool
+	LeaderElectionID string
+}
+
+// DefaultControllerConfig returns the default controller configuration.
+func DefaultControllerConfig() *ControllerConfig {
+	return &ControllerConfig{
+		MetricsAddr:      ":8080",
+		HealthProbeAddr:  ":8081",
+		LeaderElection:   false,
+		LeaderElectionID: "signalprocessing.kubernaut.ai",
+	}
+}
+
+// LoadFromFile loads configuration from a YAML file.
+func LoadFromFile(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	return &cfg, nil
 }
 
 // Validate checks if the configuration is valid.

@@ -19,19 +19,12 @@ limitations under the License.
 package signalprocessing
 
 import (
-	"testing"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 )
-
-func TestMetrics(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "SignalProcessing Metrics Suite")
-}
 
 // Unit Test: Metrics package implementation correctness
 var _ = Describe("Metrics", func() {

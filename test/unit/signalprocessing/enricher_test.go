@@ -21,14 +21,13 @@ package signalprocessing
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
-	corev1 "k8s.io/api/core/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,11 +38,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 )
-
-func TestEnricher(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "SignalProcessing Enricher Suite")
-}
 
 // Unit Test: K8sEnricher implementation correctness
 var _ = Describe("K8sEnricher", func() {
