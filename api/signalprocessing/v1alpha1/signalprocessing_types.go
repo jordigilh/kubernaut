@@ -184,6 +184,7 @@ type SignalProcessingStatus struct {
 
 // KubernetesContext holds enriched Kubernetes resource information.
 // BR-SP-001: K8s Context Enrichment
+// DD-4: Supports degraded mode when K8s API enrichment fails
 type KubernetesContext struct {
 	// Namespace labels
 	NamespaceLabels map[string]string `json:"namespaceLabels,omitempty"`
@@ -209,6 +210,12 @@ type KubernetesContext struct {
 	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
 	// Custom labels (extracted via Rego policies)
 	CustomLabels map[string]string `json:"customLabels,omitempty"`
+	// DegradedMode indicates context was built from signal labels (K8s API failed)
+	// DD-4: K8s Enrichment Failure Handling
+	DegradedMode bool `json:"degradedMode,omitempty"`
+	// Confidence score for the enrichment quality (0.0-1.0)
+	// DD-4: Set to 0.5 in degraded mode
+	Confidence float64 `json:"confidence,omitempty"`
 }
 
 // PodDetails contains pod-specific information.

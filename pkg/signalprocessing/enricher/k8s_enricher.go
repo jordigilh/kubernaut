@@ -42,7 +42,6 @@ package enricher
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -53,6 +52,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/cache"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 )
 
@@ -60,59 +60,20 @@ import (
 type K8sEnricher struct {
 	client  client.Client
 	logger  logr.Logger
+	cache   *cache.TTLCache
 	metrics *metrics.Metrics
 	timeout time.Duration
-	cache   *ttlCache
-}
-
-// ttlCache provides simple TTL-based caching for namespace lookups.
-type ttlCache struct {
-	mu      sync.RWMutex
-	entries map[string]*cacheEntry
-	ttl     time.Duration
-}
-
-type cacheEntry struct {
-	value     interface{}
-	expiresAt time.Time
-}
-
-func newTTLCache(ttl time.Duration) *ttlCache {
-	return &ttlCache{
-		entries: make(map[string]*cacheEntry),
-		ttl:     ttl,
-	}
-}
-
-func (c *ttlCache) Get(key string) (interface{}, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	entry, ok := c.entries[key]
-	if !ok || time.Now().After(entry.expiresAt) {
-		return nil, false
-	}
-	return entry.value, true
-}
-
-func (c *ttlCache) Set(key string, value interface{}) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.entries[key] = &cacheEntry{
-		value:     value,
-		expiresAt: time.Now().Add(c.ttl),
-	}
 }
 
 // NewK8sEnricher creates a new K8s context enricher.
+// Per IMPLEMENTATION_PLAN_V1.21.md Day 3 specification.
 func NewK8sEnricher(c client.Client, logger logr.Logger, m *metrics.Metrics, timeout time.Duration) *K8sEnricher {
 	return &K8sEnricher{
 		client:  c,
 		logger:  logger.WithName("k8s-enricher"),
+		cache:   cache.NewTTLCache(5 * time.Minute),
 		metrics: m,
 		timeout: timeout,
-		cache:   newTTLCache(5 * time.Minute),
 	}
 }
 
