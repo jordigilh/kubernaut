@@ -20,55 +20,79 @@ package signalprocessing
 
 import (
 	"context"
-	"time"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 )
 
-// Unit Tests: Environment Classifier
+// Unit Tests: Environment Classifier (Rego-based)
 // Per IMPLEMENTATION_PLAN_V1.21.md Day 4 specification
-// Ported from Gateway service to centralize classification
-var _ = Describe("Environment Classifier", func() {
+var _ = Describe("Environment Classifier (Rego)", func() {
 	var (
-		ctx        context.Context
+		ctx           context.Context
 		envClassifier *classifier.EnvironmentClassifier
-		logger     logr.Logger
-		scheme     *runtime.Scheme
+		logger        logr.Logger
+		policyDir     string
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		logger = logr.Discard()
-		scheme = runtime.NewScheme()
-		_ = corev1.AddToScheme(scheme)
+
+		// Create temp directory for test policies
+		var err error
+		policyDir, err = os.MkdirTemp("", "rego-test-*")
+		Expect(err).NotTo(HaveOccurred())
 	})
+
+	AfterEach(func() {
+		// Cleanup temp directory
+		if policyDir != "" {
+			os.RemoveAll(policyDir)
+		}
+	})
+
+	// Helper to create policy file
+	createPolicy := func(content string) string {
+		policyPath := filepath.Join(policyDir, "environment.rego")
+		err := os.WriteFile(policyPath, []byte(content), 0644)
+		Expect(err).NotTo(HaveOccurred())
+		return policyPath
+	}
+
+	// Standard Rego policy per plan specification (OPA v1 syntax with 'if' keyword)
+	standardPolicy := `
+package signalprocessing.environment
+
+# Primary: Namespace labels (kubernaut.ai/environment)
+# Confidence: 0.95
+result := {"environment": env, "confidence": 0.95, "source": "namespace-labels"} if {
+    env := input.namespace.labels["kubernaut.ai/environment"]
+    env != ""
+}
+
+# Default fallback
+# Confidence: 0.0
+result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+}
+`
 
 	// ============================================================================
 	// BR-SP-051: Environment from namespace labels (Primary)
 	// ============================================================================
 
-	Context("BR-SP-051: Namespace Label Classification", func() {
+	Context("BR-SP-051: Namespace Label Classification via Rego", func() {
 		It("should classify environment from kubernaut.ai/environment label", func() {
-			// Arrange: Create namespace with kubernaut.ai/environment label
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-namespace",
-					Labels: map[string]string{
-						"kubernaut.ai/environment": "production",
-					},
-				},
-			}
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+			// Arrange
+			policyPath := createPolicy(standardPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
 
 			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
 				Namespace: &signalprocessingv1alpha1.NamespaceContext{
@@ -80,20 +104,20 @@ var _ = Describe("Environment Classifier", func() {
 			}
 
 			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
 			// Assert
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.Environment).To(Equal("production"))
-			Expect(result.Confidence).To(BeNumerically(">=", 0.95))
-			Expect(result.Source).To(Equal("namespace-label"))
+			Expect(result.Confidence).To(Equal(0.95))
+			Expect(result.Source).To(Equal("namespace-labels"))
 		})
 
 		It("should classify staging environment", func() {
 			// Arrange
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+			policyPath := createPolicy(standardPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
 
 			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
 				Namespace: &signalprocessingv1alpha1.NamespaceContext{
@@ -105,18 +129,18 @@ var _ = Describe("Environment Classifier", func() {
 			}
 
 			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
 			// Assert
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Environment).To(Equal("staging"))
-			Expect(result.Confidence).To(BeNumerically(">=", 0.95))
+			Expect(result.Confidence).To(Equal(0.95))
 		})
 
 		It("should classify development environment", func() {
 			// Arrange
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+			policyPath := createPolicy(standardPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
 
 			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
 				Namespace: &signalprocessingv1alpha1.NamespaceContext{
@@ -128,7 +152,7 @@ var _ = Describe("Environment Classifier", func() {
 			}
 
 			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
 			// Assert
 			Expect(err).NotTo(HaveOccurred())
@@ -137,8 +161,8 @@ var _ = Describe("Environment Classifier", func() {
 
 		It("should classify test environment", func() {
 			// Arrange
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+			policyPath := createPolicy(standardPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
 
 			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
 				Namespace: &signalprocessingv1alpha1.NamespaceContext{
@@ -150,170 +174,11 @@ var _ = Describe("Environment Classifier", func() {
 			}
 
 			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
 			// Assert
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Environment).To(Equal("test"))
-		})
-
-		It("should handle case-insensitive environment values", func() {
-			// Arrange: Label with uppercase value
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
-
-			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
-				Namespace: &signalprocessingv1alpha1.NamespaceContext{
-					Name: "test-ns",
-					Labels: map[string]string{
-						"kubernaut.ai/environment": "PRODUCTION",
-					},
-				},
-			}
-
-			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
-
-			// Assert: Should normalize to lowercase
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Environment).To(Equal("production"))
-		})
-
-		It("should NOT use non-kubernaut.ai labels", func() {
-			// Arrange: Namespace has 'environment' label but NOT kubernaut.ai prefixed
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
-
-			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
-				Namespace: &signalprocessingv1alpha1.NamespaceContext{
-					Name: "test-ns",
-					Labels: map[string]string{
-						"environment": "production",  // NOT kubernaut.ai/ prefixed - should be ignored
-						"env":         "production",  // NOT kubernaut.ai/ prefixed - should be ignored
-					},
-				},
-			}
-
-			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
-
-			// Assert: Should return unknown (ignores non-kubernaut.ai labels)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Environment).To(Equal("unknown"))
-			Expect(result.Source).To(Equal("default"))
-		})
-	})
-
-	// ============================================================================
-	// BR-SP-052: ConfigMap environment override (Fallback)
-	// ============================================================================
-
-	Context("BR-SP-052: ConfigMap Fallback", func() {
-		It("should fall back to ConfigMap when namespace label is absent", func() {
-			// Arrange: Namespace without label, ConfigMap with mapping
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "unlabeled-ns",
-				},
-			}
-
-			cm := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "kubernaut-environment-overrides",
-					Namespace: "kubernaut-system",
-				},
-				Data: map[string]string{
-					"unlabeled-ns": "staging",
-				},
-			}
-
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns, cm).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
-
-			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
-				Namespace: &signalprocessingv1alpha1.NamespaceContext{
-					Name:   "unlabeled-ns",
-					Labels: map[string]string{}, // No kubernaut.ai/environment
-				},
-			}
-
-			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
-
-			// Assert
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Environment).To(Equal("staging"))
-			Expect(result.Confidence).To(BeNumerically(">=", 0.70))
-			Expect(result.Confidence).To(BeNumerically("<", 0.95))
-			Expect(result.Source).To(Equal("configmap"))
-		})
-
-		It("should prefer namespace label over ConfigMap", func() {
-			// Arrange: Namespace with label AND ConfigMap with different value
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "labeled-ns",
-					Labels: map[string]string{
-						"kubernaut.ai/environment": "production",
-					},
-				},
-			}
-
-			cm := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "kubernaut-environment-overrides",
-					Namespace: "kubernaut-system",
-				},
-				Data: map[string]string{
-					"labeled-ns": "staging", // Different from label
-				},
-			}
-
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns, cm).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
-
-			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
-				Namespace: &signalprocessingv1alpha1.NamespaceContext{
-					Name: "labeled-ns",
-					Labels: map[string]string{
-						"kubernaut.ai/environment": "production",
-					},
-				},
-			}
-
-			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
-
-			// Assert: Namespace label takes precedence
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Environment).To(Equal("production"))
-			Expect(result.Source).To(Equal("namespace-label"))
-		})
-
-		It("should work when ConfigMap does not exist", func() {
-			// Arrange: No ConfigMap, namespace without label
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-ns",
-				},
-			}
-
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
-
-			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
-				Namespace: &signalprocessingv1alpha1.NamespaceContext{
-					Name:   "test-ns",
-					Labels: map[string]string{},
-				},
-			}
-
-			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
-
-			// Assert: Should fall through to default
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Environment).To(Equal("unknown"))
 		})
 	})
 
@@ -321,11 +186,11 @@ var _ = Describe("Environment Classifier", func() {
 	// BR-SP-053: Default Environment (Last Resort)
 	// ============================================================================
 
-	Context("BR-SP-053: Default Environment", func() {
+	Context("BR-SP-053: Default Environment via Rego", func() {
 		It("should return unknown when namespace has no environment label", func() {
-			// Arrange: Namespace without kubernaut.ai/environment label
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+			// Arrange
+			policyPath := createPolicy(standardPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
 
 			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
 				Namespace: &signalprocessingv1alpha1.NamespaceContext{
@@ -335,7 +200,7 @@ var _ = Describe("Environment Classifier", func() {
 			}
 
 			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
 			// Assert
 			Expect(err).NotTo(HaveOccurred())
@@ -346,15 +211,15 @@ var _ = Describe("Environment Classifier", func() {
 
 		It("should return unknown when namespace is nil", func() {
 			// Arrange
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+			policyPath := createPolicy(standardPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
 
 			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
-				Namespace: nil, // No namespace info
+				Namespace: nil,
 			}
 
 			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
 			// Assert
 			Expect(err).NotTo(HaveOccurred())
@@ -363,9 +228,9 @@ var _ = Describe("Environment Classifier", func() {
 		})
 
 		It("should return unknown for empty kubernaut.ai/environment label value", func() {
-			// Arrange: Empty environment value
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+			// Arrange
+			policyPath := createPolicy(standardPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
 
 			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
 				Namespace: &signalprocessingv1alpha1.NamespaceContext{
@@ -377,7 +242,7 @@ var _ = Describe("Environment Classifier", func() {
 			}
 
 			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
 			// Assert
 			Expect(err).NotTo(HaveOccurred())
@@ -386,11 +251,11 @@ var _ = Describe("Environment Classifier", func() {
 
 		It("should never fail - always return a valid result", func() {
 			// Arrange: Worst case - nil context
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+			policyPath := createPolicy(standardPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
 
 			// Act
-			result, err := envClassifier.Classify(ctx, nil)
+			result, err := envClassifier.Classify(ctx, nil, nil)
 
 			// Assert: Should not fail, return default
 			Expect(err).NotTo(HaveOccurred())
@@ -400,67 +265,84 @@ var _ = Describe("Environment Classifier", func() {
 	})
 
 	// ============================================================================
-	// Caching and Performance
+	// Rego Policy Error Handling (Graceful Degradation)
 	// ============================================================================
 
-	Context("Caching and Performance", func() {
-		It("should cache namespace lookups to reduce K8s API calls", func() {
-			// Arrange
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "cached-ns",
-					Labels: map[string]string{
-						"kubernaut.ai/environment": "production",
-					},
-				},
-			}
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
-
-			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
-				Namespace: &signalprocessingv1alpha1.NamespaceContext{
-					Name: "cached-ns",
-					Labels: map[string]string{
-						"kubernaut.ai/environment": "production",
-					},
-				},
-			}
-
-			// Act: Call multiple times
-			result1, _ := envClassifier.Classify(ctx, k8sCtx)
-			result2, _ := envClassifier.Classify(ctx, k8sCtx)
-			result3, _ := envClassifier.Classify(ctx, k8sCtx)
-
-			// Assert: All should return same result (cache working)
-			Expect(result1.Environment).To(Equal("production"))
-			Expect(result2.Environment).To(Equal("production"))
-			Expect(result3.Environment).To(Equal("production"))
-		})
-
-		It("should allow custom cache TTL", func() {
-			// Arrange
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			customTTL := 5 * time.Second
-			envClassifier = classifier.NewEnvironmentClassifierWithTTL(k8sClient, logger, customTTL)
-
-			// Assert: Should create without error
-			Expect(envClassifier).NotTo(BeNil())
-		})
-	})
-
-	// ============================================================================
-	// Edge Cases
-	// ============================================================================
-
-	Context("Edge Cases", func() {
-		It("should handle custom environment values", func() {
-			// Arrange: Custom environment value (organization-specific)
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
+	Context("Rego Policy Error Handling", func() {
+		It("should gracefully degrade when policy file not found", func() {
+			// Arrange: Non-existent policy path
+			envClassifier = classifier.NewEnvironmentClassifier("/nonexistent/path/environment.rego", logger)
 
 			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
 				Namespace: &signalprocessingv1alpha1.NamespaceContext{
 					Name: "test-ns",
+					Labels: map[string]string{
+						"kubernaut.ai/environment": "production",
+					},
+				},
+			}
+
+			// Act
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
+
+			// Assert: Should not error, return default with degraded flag
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Environment).To(Equal("unknown"))
+			Expect(result.Source).To(Equal("default"))
+		})
+
+		It("should gracefully degrade when policy has syntax error", func() {
+			// Arrange: Invalid Rego syntax
+			invalidPolicy := `
+package signalprocessing.environment
+result = { this is not valid rego
+`
+			policyPath := createPolicy(invalidPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
+
+			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
+				Namespace: &signalprocessingv1alpha1.NamespaceContext{
+					Name: "test-ns",
+					Labels: map[string]string{
+						"kubernaut.ai/environment": "production",
+					},
+				},
+			}
+
+			// Act
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
+
+			// Assert: Should not error, return default
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Environment).To(Equal("unknown"))
+		})
+	})
+
+	// ============================================================================
+	// Custom Rego Policies
+	// ============================================================================
+
+	Context("Custom Rego Policies", func() {
+		It("should support custom environment values via Rego", func() {
+			// Arrange: Custom policy that accepts "canary" environment (OPA v1 syntax)
+			customPolicy := `
+package signalprocessing.environment
+
+result := {"environment": env, "confidence": 0.95, "source": "namespace-labels"} if {
+    env := input.namespace.labels["kubernaut.ai/environment"]
+    env != ""
+}
+
+result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+}
+`
+			policyPath := createPolicy(customPolicy)
+			envClassifier = classifier.NewEnvironmentClassifier(policyPath, logger)
+
+			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
+				Namespace: &signalprocessingv1alpha1.NamespaceContext{
+					Name: "canary-ns",
 					Labels: map[string]string{
 						"kubernaut.ai/environment": "canary",
 					},
@@ -468,23 +350,11 @@ var _ = Describe("Environment Classifier", func() {
 			}
 
 			// Act
-			result, err := envClassifier.Classify(ctx, k8sCtx)
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
-			// Assert: Should accept any non-empty value
+			// Assert
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Environment).To(Equal("canary"))
-		})
-
-		It("should clear cache", func() {
-			// Arrange
-			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			envClassifier = classifier.NewEnvironmentClassifier(k8sClient, logger)
-
-			// Act
-			envClassifier.ClearCache()
-
-			// Assert: Should not panic
-			Expect(envClassifier.GetCacheSize()).To(Equal(0))
 		})
 	})
 })
