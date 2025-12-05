@@ -1899,25 +1899,21 @@ package signalprocessing.environment
 
 # Primary: Namespace labels (kubernaut.ai/environment)
 # Per BR-SP-051: Only kubernaut.ai/ prefixed labels
-result := {"environment": env, "confidence": 0.95, "source": "namespace-labels"} if {
+# Per BR-SP-051: Case-insensitive matching via lower() function
+result := {"environment": lower(env), "confidence": 0.95, "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
     env != ""
 }
 
-# Secondary: Signal labels (kubernaut.ai/environment)
-result := {"environment": env, "confidence": 0.80, "source": "signal-labels"} if {
-    not input.namespace.labels["kubernaut.ai/environment"]
-    env := input.signal.labels["kubernaut.ai/environment"]
-    env != ""
-}
-
-# Default fallback
-# Per BR-SP-053: Return "unknown" when detection fails
+# Default fallback (when namespace label not present)
+# Returns "unknown" so Go code can try ConfigMap (BR-SP-052) and signal labels
 result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
-    not input.signal.labels["kubernaut.ai/environment"]
 }
 ```
+
+**Note**: Signal labels fallback (confidence 0.80) is handled in Go code after ConfigMap check
+to maintain correct priority order: namespace labels → ConfigMap → signal labels → default
 
 ---
 

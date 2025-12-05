@@ -81,30 +81,23 @@ var _ = Describe("Environment Classifier (Rego)", func() {
 	}
 
 	// Standard Rego policy per IMPLEMENTATION_PLAN_V1.21.md (OPA v1 syntax)
-	// Priority: namespace labels → signal labels → default
+	// Per plan (line 1864): Priority order is namespace labels → ConfigMap → signal labels → default
+	// Note: Rego only handles namespace labels. ConfigMap and signal labels are in Go.
+	// BR-SP-051: Case-insensitive matching via lower() function
 	standardPolicy := `
 package signalprocessing.environment
 
 # Primary: Namespace labels (kubernaut.ai/environment)
-# Per BR-SP-051: Confidence 0.95
-result := {"environment": env, "confidence": 0.95, "source": "namespace-labels"} if {
+# Per BR-SP-051: Confidence 0.95, case-insensitive
+result := {"environment": lower(env), "confidence": 0.95, "source": "namespace-labels"} if {
     env := input.namespace.labels["kubernaut.ai/environment"]
     env != ""
 }
 
-# Secondary: Signal labels (kubernaut.ai/environment)
-# Per plan: Confidence 0.80
-result := {"environment": env, "confidence": 0.80, "source": "signal-labels"} if {
-    not input.namespace.labels["kubernaut.ai/environment"]
-    env := input.signal.labels["kubernaut.ai/environment"]
-    env != ""
-}
-
-# Default fallback
-# Per BR-SP-053: Confidence 0.0
+# Default fallback (when namespace label not present)
+# Returns "unknown" so Go code can try ConfigMap and signal labels
 result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if {
     not input.namespace.labels["kubernaut.ai/environment"]
-    not input.signal.labels["kubernaut.ai/environment"]
 }
 `
 
@@ -296,21 +289,10 @@ result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if 
 		})
 
 		// EC-EC-03: Case sensitivity (should normalize)
+		// BR-SP-051: Case-insensitive matching - standard policy now includes lower()
 		It("EC-EC-03: should handle uppercase environment value", func() {
-			// Create policy that normalizes case
-			casePolicy := `
-package signalprocessing.environment
-
-result := {"environment": lower(env), "confidence": 0.95, "source": "namespace-labels"} if {
-    env := input.namespace.labels["kubernaut.ai/environment"]
-    env != ""
-}
-
-result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if {
-    not input.namespace.labels["kubernaut.ai/environment"]
-}
-`
-			policyPath := createPolicy(casePolicy)
+			// Standard policy now includes case normalization via lower()
+			policyPath := createPolicy(standardPolicy)
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			var err error
 			envClassifier, err = classifier.NewEnvironmentClassifier(ctx, policyPath, k8sClient, logger)
@@ -328,7 +310,7 @@ result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if 
 			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Environment).To(Equal("production")) // Normalized
+			Expect(result.Environment).To(Equal("production")) // Normalized by Rego lower()
 		})
 
 		// EC-EC-04: Empty K8sContext

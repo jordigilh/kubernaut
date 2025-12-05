@@ -113,50 +113,72 @@ func NewEnvironmentClassifier(ctx context.Context, policyPath string, k8sClient 
 	return classifier, nil
 }
 
-// Classify determines environment using Rego policy.
-// Per plan: Priority order is namespace labels → ConfigMap → signal labels → default
+// Classify determines environment using Rego policy and Go fallbacks.
+// Per plan (line 1864): Priority order is namespace labels → ConfigMap → signal labels → default
 //
-// BR-SP-051: Primary detection from namespace labels (confidence 0.95)
-// BR-SP-052: ConfigMap fallback (confidence 0.75)
-// BR-SP-053: Default to "unknown" when all methods fail (confidence 0.0)
+// 1. BR-SP-051: Primary detection from namespace labels (confidence 0.95) - via Rego
+// 2. BR-SP-052: ConfigMap fallback (confidence 0.75) - via Go
+// 3. Signal labels fallback (confidence 0.80) - via Go
+// 4. BR-SP-053: Default to "unknown" when all methods fail (confidence 0.0) - via Go
 //
 // Never fails - always returns a valid EnvironmentClassification (graceful degradation).
 func (c *EnvironmentClassifier) Classify(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
-	// Build input for Rego policy
+	// Build input for Rego policy (namespace labels only)
 	input := c.buildRegoInput(k8sCtx, signal)
 
-	// Try Rego evaluation first
+	// Step 1: Try namespace labels via Rego (confidence 0.95)
 	result, err := c.evaluateRego(ctx, input)
 	if err != nil {
-		c.logger.Info("Rego evaluation failed, trying ConfigMap fallback",
+		c.logger.Info("Rego evaluation failed, trying fallbacks",
 			"error", err)
 	} else if result.Environment != "unknown" {
-		// Rego found an environment
-		c.logger.V(1).Info("Environment classified via Rego",
+		// Rego found an environment from namespace labels
+		c.logger.V(1).Info("Environment classified via namespace labels",
 			"environment", result.Environment,
 			"confidence", result.Confidence,
 			"source", result.Source)
 		return result, nil
 	}
 
-	// Try ConfigMap fallback (BR-SP-052)
+	// Step 2: Try ConfigMap fallback (confidence 0.75) - BR-SP-052
 	if k8sCtx != nil && k8sCtx.Namespace != nil {
 		if env := c.tryConfigMapFallback(k8sCtx.Namespace.Name); env != "" {
 			result := &signalprocessingv1alpha1.EnvironmentClassification{
-				Environment: env,
+				Environment: strings.ToLower(env), // Case-insensitive per BR-SP-051
 				Confidence:  configMapConfidence,
 				Source:      "configmap",
 			}
 			c.logger.V(1).Info("Environment classified via ConfigMap",
 				"namespace", k8sCtx.Namespace.Name,
-				"environment", env)
+				"environment", result.Environment)
 			return result, nil
 		}
 	}
 
-	// Default fallback (BR-SP-053)
+	// Step 3: Try signal labels fallback (confidence 0.80)
+	if env := c.trySignalLabelsFallback(signal); env != "" {
+		result := &signalprocessingv1alpha1.EnvironmentClassification{
+			Environment: strings.ToLower(env), // Case-insensitive per BR-SP-051
+			Confidence:  signalLabelsConfidence,
+			Source:      "signal-labels",
+		}
+		c.logger.V(1).Info("Environment classified via signal labels",
+			"environment", result.Environment)
+		return result, nil
+	}
+
+	// Step 4: Default fallback (confidence 0.0) - BR-SP-053
 	c.logger.V(1).Info("No environment detected, returning default")
 	return c.defaultResult(), nil
+}
+
+// trySignalLabelsFallback checks signal labels for environment.
+// Per plan: Signal labels are checked after ConfigMap, before default.
+func (c *EnvironmentClassifier) trySignalLabelsFallback(signal *signalprocessingv1alpha1.SignalData) string {
+	if signal == nil || signal.Labels == nil {
+		return ""
+	}
+	return signal.Labels["kubernaut.ai/environment"]
 }
 
 // evaluateRego evaluates the prepared Rego query.
