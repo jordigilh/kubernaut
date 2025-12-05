@@ -15,6 +15,13 @@ limitations under the License.
 */
 
 // Package config provides configuration types for the SignalProcessing controller.
+//
+// Configuration Structure:
+//   - EnrichmentConfig: K8s context enrichment settings (cache TTL, timeout)
+//   - ClassifierConfig: Rego-based classification settings (ConfigMap, hot-reload)
+//   - AuditConfig: Audit trail buffering settings (buffer size, flush interval)
+//
+// All configuration values are validated via Config.Validate() before use.
 package config
 
 import (

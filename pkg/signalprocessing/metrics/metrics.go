@@ -15,6 +15,19 @@ limitations under the License.
 */
 
 // Package metrics provides Prometheus metrics for the SignalProcessing controller.
+//
+// Metrics exposed:
+//   - signalprocessing_processing_total: Counter for processing operations (labels: phase, result)
+//   - signalprocessing_processing_duration_seconds: Histogram for operation duration (labels: phase)
+//   - signalprocessing_enrichment_errors_total: Counter for enrichment errors (labels: error_type)
+//
+// Usage:
+//
+//	registry := prometheus.NewRegistry()
+//	m := metrics.NewMetrics(registry)
+//	m.IncrementProcessingTotal("enriching", "success")
+//	m.ObserveProcessingDuration("enriching", 0.5)
+//	m.RecordEnrichmentError("k8s_api_timeout")
 package metrics
 
 import (
