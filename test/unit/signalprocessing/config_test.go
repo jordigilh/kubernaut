@@ -162,4 +162,30 @@ var _ = Describe("Config.Validate", func() {
 			Expect(err.Error()).To(ContainSubstring("buffer size"))
 		})
 	})
+
+	// Test 6: Error handling for invalid flush interval
+	Context("when audit flush interval is invalid", func() {
+		It("should return error for zero flush interval", func() {
+			cfg := &config.Config{
+				Enrichment: config.EnrichmentConfig{
+					CacheTTL: 5 * time.Minute,
+					Timeout:  2 * time.Second,
+				},
+				Classifier: config.ClassifierConfig{
+					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapKey:  "policy.rego",
+					HotReloadInterval: 30 * time.Second,
+				},
+				Audit: config.AuditConfig{
+					DataStorageURL: "http://data-storage:8080",
+					Timeout:        5 * time.Second,
+					BufferSize:     1000,
+					FlushInterval:  0, // Invalid
+				},
+			}
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("flush interval"))
+		})
+	})
 })
