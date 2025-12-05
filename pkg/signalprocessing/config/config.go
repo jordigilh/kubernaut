@@ -58,5 +58,8 @@ func (c *Config) Validate() error {
 	if c.Classifier.RegoConfigMapName == "" {
 		return fmt.Errorf("Rego ConfigMap name is required")
 	}
+	if c.Classifier.HotReloadInterval <= 0 {
+		return fmt.Errorf("hot-reload interval must be positive, got %v", c.Classifier.HotReloadInterval)
+	}
 	return nil
 }
