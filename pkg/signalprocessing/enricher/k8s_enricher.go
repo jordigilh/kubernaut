@@ -78,11 +78,24 @@ func NewK8sEnricher(c client.Client, logger logr.Logger, m *metrics.Metrics, tim
 }
 
 // Enrich fetches Kubernetes context based on signal type.
+// BR-SP-001: <2 seconds P95
+//
+// Standard Depth Strategy (no configuration):
+//
+//	Pod signal    → Namespace + Pod + Node + OwnerChain
+//	Deploy signal → Namespace + Deployment
+//	SS signal     → Namespace + StatefulSet
+//	DS signal     → Namespace + DaemonSet
+//	RS signal     → Namespace + ReplicaSet
+//	Svc signal    → Namespace + Service
+//	Node signal   → Node only (no namespace)
+//	Unknown       → Namespace only (graceful fallback)
 func (e *K8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
 	startTime := time.Now()
 	defer func() {
 		if e.metrics != nil {
-			e.metrics.ObserveProcessingDuration("enrichment", time.Since(startTime).Seconds())
+			// Per plan: direct field access to EnrichmentDuration
+			e.metrics.EnrichmentDuration.WithLabelValues("k8s_context").Observe(time.Since(startTime).Seconds())
 		}
 	}()
 
@@ -126,6 +139,7 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
+		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	result.NamespaceLabels = ensureMap(ns.Labels)
@@ -135,6 +149,7 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 	pod, err := e.getPod(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
 	if err != nil {
 		e.logger.Info("Pod not found, continuing with partial context", "error", err)
+		e.recordEnrichmentResult("success") // Partial success is still success
 		return result, nil
 	}
 	result.Pod = e.convertPodDetails(pod)
@@ -150,6 +165,7 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 		}
 	}
 
+	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -158,6 +174,7 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
+		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	result.NamespaceLabels = ensureMap(ns.Labels)
@@ -167,10 +184,12 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 	deployment, err := e.getDeployment(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
 	if err != nil {
 		e.logger.Info("Deployment not found, continuing with namespace only", "error", err)
+		e.recordEnrichmentResult("success") // Partial success is still success
 		return result, nil
 	}
 	result.Deployment = e.convertDeploymentDetails(deployment)
 
+	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -179,6 +198,7 @@ func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signa
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
+		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	result.NamespaceLabels = ensureMap(ns.Labels)
@@ -188,10 +208,12 @@ func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signa
 	statefulset, err := e.getStatefulSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
 	if err != nil {
 		e.logger.Info("StatefulSet not found, continuing with namespace only", "error", err)
+		e.recordEnrichmentResult("success")
 		return result, nil
 	}
 	result.StatefulSet = e.convertStatefulSetDetails(statefulset)
 
+	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -200,6 +222,7 @@ func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalp
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
+		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	result.NamespaceLabels = ensureMap(ns.Labels)
@@ -209,10 +232,12 @@ func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalp
 	daemonset, err := e.getDaemonSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
 	if err != nil {
 		e.logger.Info("DaemonSet not found, continuing with namespace only", "error", err)
+		e.recordEnrichmentResult("success")
 		return result, nil
 	}
 	result.DaemonSet = e.convertDaemonSetDetails(daemonset)
 
+	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -221,6 +246,7 @@ func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signal
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
+		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	result.NamespaceLabels = ensureMap(ns.Labels)
@@ -230,10 +256,12 @@ func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signal
 	replicaset, err := e.getReplicaSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
 	if err != nil {
 		e.logger.Info("ReplicaSet not found, continuing with namespace only", "error", err)
+		e.recordEnrichmentResult("success")
 		return result, nil
 	}
 	result.ReplicaSet = e.convertReplicaSetDetails(replicaset)
 
+	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -242,6 +270,7 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
+		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	result.NamespaceLabels = ensureMap(ns.Labels)
@@ -251,10 +280,12 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 	service, err := e.getService(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
 	if err != nil {
 		e.logger.Info("Service not found, continuing with namespace only", "error", err)
+		e.recordEnrichmentResult("success")
 		return result, nil
 	}
 	result.Service = e.convertServiceDetails(service)
 
+	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -263,10 +294,12 @@ func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalproces
 	// Node signals have no namespace
 	node, err := e.getNode(ctx, signal.TargetResource.Name)
 	if err != nil {
+		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get node %s: %w", signal.TargetResource.Name, err)
 	}
 	result.Node = e.convertNodeDetails(node)
 
+	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -274,11 +307,13 @@ func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalproces
 func (e *K8sEnricher) enrichNamespaceOnly(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
+		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	result.NamespaceLabels = ensureMap(ns.Labels)
 	result.NamespaceAnnotations = ensureMap(ns.Annotations)
 
+	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -542,4 +577,12 @@ func (e *K8sEnricher) convertServiceDetails(service *corev1.Service) *signalproc
 	}
 
 	return details
+}
+
+// recordEnrichmentResult records the enrichment result metric.
+// Per plan: direct field access to EnrichmentTotal.WithLabelValues(result).Inc()
+func (e *K8sEnricher) recordEnrichmentResult(result string) {
+	if e.metrics != nil {
+		e.metrics.EnrichmentTotal.WithLabelValues(result).Inc()
+	}
 }

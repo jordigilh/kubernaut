@@ -16,9 +16,13 @@ limitations under the License.
 
 // Package metrics provides Prometheus metrics for the SignalProcessing controller.
 //
+// Per IMPLEMENTATION_PLAN_V1.21.md Day 1 and Day 3 specification:
+//
 // Metrics exposed:
 //   - signalprocessing_processing_total: Counter for processing operations (labels: phase, result)
 //   - signalprocessing_processing_duration_seconds: Histogram for operation duration (labels: phase)
+//   - signalprocessing_enrichment_total: Counter for enrichment results (labels: result)
+//   - signalprocessing_enrichment_duration_seconds: Histogram for K8s API enrichment latency (labels: resource_kind)
 //   - signalprocessing_enrichment_errors_total: Counter for enrichment errors (labels: error_type)
 //
 // Usage:
@@ -27,7 +31,8 @@ limitations under the License.
 //	m := metrics.NewMetrics(registry)
 //	m.IncrementProcessingTotal("enriching", "success")
 //	m.ObserveProcessingDuration("enriching", 0.5)
-//	m.RecordEnrichmentError("k8s_api_timeout")
+//	m.EnrichmentTotal.WithLabelValues("success").Inc()
+//	m.EnrichmentDuration.WithLabelValues("k8s_context").Observe(0.5)
 package metrics
 
 import (
@@ -35,15 +40,31 @@ import (
 )
 
 // Metrics holds Prometheus metrics for the SignalProcessing controller.
+// Per IMPLEMENTATION_PLAN_V1.21.md metrics specification.
 type Metrics struct {
+	// === CORE BUSINESS METRICS ===
 	ProcessingTotal    *prometheus.CounterVec
 	ProcessingDuration *prometheus.HistogramVec
-	EnrichmentErrors   *prometheus.CounterVec
+
+	// === SLO METRICS (Day 3 Enricher) ===
+
+	// EnrichmentTotal counts K8s enrichment operations.
+	// Labels: result (success, failure)
+	EnrichmentTotal *prometheus.CounterVec
+
+	// EnrichmentDuration measures K8s API enrichment latency.
+	// Labels: resource_kind (k8s_context, pod, deployment, etc.)
+	// SLO: <2 seconds P95 (BR-SP-001)
+	EnrichmentDuration *prometheus.HistogramVec
+
+	// === OPERATIONAL METRICS ===
+	EnrichmentErrors *prometheus.CounterVec
 }
 
 // NewMetrics creates a new Metrics instance with the provided registry.
 func NewMetrics(registry *prometheus.Registry) *Metrics {
 	m := &Metrics{
+		// Core business metrics
 		ProcessingTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "signalprocessing_processing_total",
@@ -59,6 +80,25 @@ func NewMetrics(registry *prometheus.Registry) *Metrics {
 			},
 			[]string{"phase"},
 		),
+
+		// SLO metrics (Day 3 Enricher)
+		EnrichmentTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "signalprocessing_enrichment_total",
+				Help: "Total number of K8s enrichment operations",
+			},
+			[]string{"result"},
+		),
+		EnrichmentDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "signalprocessing_enrichment_duration_seconds",
+				Help:    "Duration of K8s API enrichment operations",
+				Buckets: prometheus.DefBuckets, // Will use SLO-specific buckets in production
+			},
+			[]string{"resource_kind"},
+		),
+
+		// Operational metrics
 		EnrichmentErrors: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "signalprocessing_enrichment_errors_total",
@@ -70,6 +110,8 @@ func NewMetrics(registry *prometheus.Registry) *Metrics {
 
 	registry.MustRegister(m.ProcessingTotal)
 	registry.MustRegister(m.ProcessingDuration)
+	registry.MustRegister(m.EnrichmentTotal)
+	registry.MustRegister(m.EnrichmentDuration)
 	registry.MustRegister(m.EnrichmentErrors)
 
 	return m
