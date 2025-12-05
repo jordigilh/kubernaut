@@ -61,5 +61,8 @@ func (c *Config) Validate() error {
 	if c.Classifier.HotReloadInterval <= 0 {
 		return fmt.Errorf("hot-reload interval must be positive, got %v", c.Classifier.HotReloadInterval)
 	}
+	if c.Audit.BufferSize <= 0 {
+		return fmt.Errorf("audit buffer size must be positive, got %d", c.Audit.BufferSize)
+	}
 	return nil
 }
