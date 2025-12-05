@@ -62,11 +62,11 @@ var _ = Describe("Metrics", func() {
 			m.IncrementProcessingTotal("enriching", "success")
 
 			// Verify counter value is 2
-			metrics, err := registry.Gather()
+			gatheredMetrics, err := registry.Gather()
 			Expect(err).NotTo(HaveOccurred())
 
 			var found bool
-			for _, mf := range metrics {
+			for _, mf := range gatheredMetrics {
 				if mf.GetName() == "signalprocessing_processing_total" {
 					for _, metric := range mf.GetMetric() {
 						if getLabel(metric, "phase") == "enriching" && getLabel(metric, "result") == "success" {
@@ -77,6 +77,34 @@ var _ = Describe("Metrics", func() {
 				}
 			}
 			Expect(found).To(BeTrue(), "expected to find processing_total metric with phase=enriching, result=success")
+		})
+	})
+
+	// Test 3: Enrichment errors counter
+	Context("when recording enrichment errors", func() {
+		It("should increment enrichment errors counter", func() {
+			m.RecordEnrichmentError("k8s_api_timeout")
+			m.RecordEnrichmentError("k8s_api_timeout")
+			m.RecordEnrichmentError("invalid_resource")
+
+			gatheredMetrics, err := registry.Gather()
+			Expect(err).NotTo(HaveOccurred())
+
+			var timeoutCount, invalidCount float64
+			for _, mf := range gatheredMetrics {
+				if mf.GetName() == "signalprocessing_enrichment_errors_total" {
+					for _, metric := range mf.GetMetric() {
+						if getLabel(metric, "error_type") == "k8s_api_timeout" {
+							timeoutCount = metric.GetCounter().GetValue()
+						}
+						if getLabel(metric, "error_type") == "invalid_resource" {
+							invalidCount = metric.GetCounter().GetValue()
+						}
+					}
+				}
+			}
+			Expect(timeoutCount).To(Equal(float64(2)))
+			Expect(invalidCount).To(Equal(float64(1)))
 		})
 	})
 })
