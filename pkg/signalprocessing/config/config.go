@@ -58,5 +58,14 @@ func (c *Config) Validate() error {
 	if c.Classifier.RegoConfigMapName == "" {
 		return fmt.Errorf("Rego ConfigMap name is required")
 	}
+	if c.Classifier.HotReloadInterval <= 0 {
+		return fmt.Errorf("hot-reload interval must be positive, got %v", c.Classifier.HotReloadInterval)
+	}
+	if c.Audit.BufferSize <= 0 {
+		return fmt.Errorf("audit buffer size must be positive, got %d", c.Audit.BufferSize)
+	}
+	if c.Audit.FlushInterval <= 0 {
+		return fmt.Errorf("audit flush interval must be positive, got %v", c.Audit.FlushInterval)
+	}
 	return nil
 }
