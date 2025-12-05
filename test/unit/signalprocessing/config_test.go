@@ -84,4 +84,30 @@ var _ = Describe("Config.Validate", func() {
 			Expect(err.Error()).To(ContainSubstring("enrichment timeout"))
 		})
 	})
+
+	// Test 3: Error handling for missing Rego ConfigMap name
+	Context("when Rego ConfigMap name is missing", func() {
+		It("should return error for empty ConfigMap name", func() {
+			cfg := &config.Config{
+				Enrichment: config.EnrichmentConfig{
+					CacheTTL: 5 * time.Minute,
+					Timeout:  2 * time.Second,
+				},
+				Classifier: config.ClassifierConfig{
+					RegoConfigMapName: "", // Invalid - missing
+					RegoConfigMapKey:  "policy.rego",
+					HotReloadInterval: 30 * time.Second,
+				},
+				Audit: config.AuditConfig{
+					DataStorageURL: "http://data-storage:8080",
+					Timeout:        5 * time.Second,
+					BufferSize:     1000,
+					FlushInterval:  5 * time.Second,
+				},
+			}
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Rego ConfigMap name"))
+		})
+	})
 })
