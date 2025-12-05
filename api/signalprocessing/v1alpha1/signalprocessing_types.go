@@ -17,294 +17,19 @@ limitations under the License.
 // Package v1alpha1 contains API Schema definitions for the signalprocessing v1alpha1 API group
 // Design Decision: DD-SIGNAL-PROCESSING-001 - CRD Naming per ADR-015
 // Design Decision: DD-CONTRACT-002 - Structured types for AIAnalysis integration
+// Implementation Plan: Day 2 - CRD Types aligned with IMPLEMENTATION_PLAN.md
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
-
-// SignalProcessingSpec defines the desired state of SignalProcessing.
-// Phase 1 Enhancement: Self-contained CRD pattern - contains all data from RemediationRequest
-// No external CRD reads required during reconciliation (performance, reliability, isolation)
-type SignalProcessingSpec struct {
-	// ========================================
-	// PARENT REFERENCE (Audit/Lineage Only)
-	// ========================================
-	// Reference to parent RemediationRequest CRD for audit trail and lineage
-	// SignalProcessor does NOT read RemediationRequest - all data is self-contained
-	RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-
-	// ========================================
-	// SIGNAL IDENTIFICATION (From RemediationRequest)
-	// ========================================
-	// Core signal identity copied from RemediationRequest
-	// Unique fingerprint for deduplication (SHA256 of signal key fields)
-	// +kubebuilder:validation:MaxLength=64
-	// +kubebuilder:validation:Pattern="^[a-f0-9]{64}$"
-	SignalFingerprint string `json:"signalFingerprint"`
-
-	// Human-readable signal name (e.g., "HighMemoryUsage", "CrashLoopBackOff")
-	// +kubebuilder:validation:MaxLength=253
-	SignalName string `json:"signalName"`
-
-	// Severity level: "critical", "warning", "info"
-	// +kubebuilder:validation:Enum=critical;warning;info
-	Severity string `json:"severity"`
-
-	// ========================================
-	// SIGNAL CLASSIFICATION (From RemediationRequest)
-	// ========================================
-	// Environment value provided by Rego policies - no enum enforcement
-	// Examples: "production", "staging", "development", "qa-eu", "canary"
-	// GAP-C1-01 FIX: Changed from Enum=prod;staging;dev to free-text
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	Environment string `json:"environment"`
-
-	// Priority value provided by Rego policies - no enum enforcement
-	// Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
-	// GAP-C1-02 FIX: Changed from Enum=P0;P1;P2 + Pattern to free-text
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	Priority string `json:"priority"`
-
-	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", etc.
-	SignalType string `json:"signalType"`
-
-	// Adapter that ingested the signal (e.g., "prometheus-adapter", "k8s-event-adapter")
-	// +kubebuilder:validation:MaxLength=63
-	SignalSource string `json:"signalSource,omitempty"`
-
-	// Target system type: "kubernetes", "aws", "azure", "gcp", "datadog"
-	// +kubebuilder:validation:Enum=kubernetes;aws;azure;gcp;datadog
-	TargetType string `json:"targetType"`
-
-	// ========================================
-	// SIGNAL METADATA (From RemediationRequest)
-	// ========================================
-	// Signal labels extracted from provider-specific data
-	// For Prometheus: alert.Labels (e.g., {"alertname": "HighMemory", "namespace": "prod"})
-	SignalLabels map[string]string `json:"signalLabels,omitempty"`
-
-	// Signal annotations extracted from provider-specific data
-	// For Prometheus: alert.Annotations (e.g., {"summary": "Memory usage above 90%"})
-	SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
-
-	// ========================================
-	// TARGET RESOURCE (From RemediationRequest)
-	// ========================================
-	// Target resource identification (extracted from providerData by RemediationOrchestrator)
-	TargetResource ResourceIdentifier `json:"targetResource"`
-
-	// ========================================
-	// TIMESTAMPS (From RemediationRequest)
-	// ========================================
-	// When the signal first started firing (from upstream source)
-	FiringTime metav1.Time `json:"firingTime,omitempty"`
-
-	// When Gateway received the signal
-	ReceivedTime metav1.Time `json:"receivedTime"`
-
-	// ========================================
-	// DEDUPLICATION (From RemediationRequest)
-	// ========================================
-	// Deduplication and correlation context
-	// Uses shared type for API contract alignment (RO Team decision)
-	Deduplication sharedtypes.DeduplicationInfo `json:"deduplication"`
-
-	// ========================================
-	// PROVIDER DATA (From RemediationRequest)
-	// ========================================
-	// Provider-specific fields in raw JSON format
-	// Controllers parse this based on targetType/signalType if needed
-	ProviderData []byte `json:"providerData,omitempty"`
-
-	// Complete original webhook payload for debugging and audit
-	OriginalPayload []byte `json:"originalPayload,omitempty"`
-
-	// ========================================
-	// STORM DETECTION (From RemediationRequest)
-	// ========================================
-	// True if this signal is part of a detected alert storm
-	IsStorm bool `json:"isStorm,omitempty"`
-
-	// Number of alerts in the storm
-	StormAlertCount int `json:"stormAlertCount,omitempty"`
-
-	// Storm type classification
-	// GAP-C1-05 FIX: Added field for contract alignment with RemediationRequest
-	// Values: "rate" (frequency-based storm) or "pattern" (similar alerts storm)
-	// +kubebuilder:validation:MaxLength=63
-	StormType string `json:"stormType,omitempty"`
-
-	// Time window used for storm detection
-	// GAP-C1-06 FIX: Added field for contract alignment with RemediationRequest
-	// Format: duration string (e.g., "5m", "1h")
-	// +kubebuilder:validation:MaxLength=63
-	StormWindow string `json:"stormWindow,omitempty"`
-
-	// ========================================
-	// CONFIGURATION (Processor-Specific)
-	// ========================================
-	// Optional enrichment configuration specific to this processing
-	EnrichmentConfig *EnrichmentConfiguration `json:"enrichmentConfig,omitempty"`
-}
-
-// ResourceIdentifier identifies the target resource for remediation
-type ResourceIdentifier struct {
-	// Resource kind (e.g., "Pod", "Deployment", "StatefulSet")
-	Kind string `json:"kind"`
-
-	// Resource name
-	Name string `json:"name"`
-
-	// Resource namespace
-	Namespace string `json:"namespace"`
-}
-
-// EnrichmentConfiguration specifies how to enrich signal context
-type EnrichmentConfiguration struct {
-	// Enable cluster state enrichment (Kubernetes API queries)
-	EnableClusterState bool `json:"enableClusterState,omitempty"`
-
-	// Enable metrics enrichment (Prometheus/monitoring queries)
-	EnableMetrics bool `json:"enableMetrics,omitempty"`
-
-	// Enable historical enrichment (vector DB/time-series queries)
-	EnableHistorical bool `json:"enableHistorical,omitempty"`
-}
-
-// SignalProcessingPhase represents the current phase of SignalProcessing reconciliation.
-// BR-SP-051: Phase State Machine
-// +kubebuilder:validation:Enum=pending;enriching;classifying;completed;failed
-type SignalProcessingPhase string
-
-const (
-	// PhasePending is the initial state when SignalProcessing is created.
-	PhasePending SignalProcessingPhase = "pending"
-	// PhaseEnriching is when K8s context enrichment is in progress.
-	PhaseEnriching SignalProcessingPhase = "enriching"
-	// PhaseClassifying is when environment/priority classification is in progress.
-	PhaseClassifying SignalProcessingPhase = "classifying"
-	// PhaseCompleted is the terminal success state.
-	PhaseCompleted SignalProcessingPhase = "completed"
-	// PhaseFailed is the terminal error state.
-	PhaseFailed SignalProcessingPhase = "failed"
-)
-
-// SignalProcessingStatus defines the observed state of SignalProcessing.
-// DD-CONTRACT-002: Structured types replace unstructured ContextData map[string]string
-type SignalProcessingStatus struct {
-	// Phase tracking: "pending", "enriching", "classifying", "completed", "failed"
-	Phase SignalProcessingPhase `json:"phase,omitempty"`
-
-	// Structured enrichment results (DD-CONTRACT-002)
-	// Replaces ContextData map[string]string anti-pattern
-	// GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
-	EnrichmentResults *sharedtypes.EnrichmentResults `json:"enrichmentResults,omitempty"`
-
-	// Classification results from environment/priority classifiers
-	// BR-SP-053: Environment Classification
-	// BR-SP-054: Priority Classification
-	// BR-SP-080, BR-SP-081: Business Classification
-	ClassificationResults *ClassificationResults `json:"classificationResults,omitempty"`
-
-	// Timestamps
-	StartTime   *metav1.Time `json:"startTime,omitempty"`
-	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
-}
-
-// ClassificationResults holds the output of all classification phases.
-// BR-SP-053: Environment Classification
-// BR-SP-054: Priority Classification
-// BR-SP-080: Confidence Scoring
-// BR-SP-081: Business Categorization
-type ClassificationResults struct {
-	// Environment classification (e.g., "production", "staging", "development")
-	Environment string `json:"environment,omitempty"`
-
-	// Environment confidence (0.0 - 1.0)
-	EnvironmentConfidence float64 `json:"environmentConfidence,omitempty"`
-
-	// Priority classification (e.g., "P1", "P2", "P3")
-	Priority string `json:"priority,omitempty"`
-
-	// Priority confidence (0.0 - 1.0)
-	PriorityConfidence float64 `json:"priorityConfidence,omitempty"`
-
-	// Business unit assignment
-	BusinessUnit string `json:"businessUnit,omitempty"`
-
-	// Service owner
-	ServiceOwner string `json:"serviceOwner,omitempty"`
-
-	// Criticality level
-	Criticality string `json:"criticality,omitempty"`
-
-	// SLA requirement
-	SLARequirement string `json:"slaRequirement,omitempty"`
-
-	// Overall confidence (0.0 - 1.0)
-	OverallConfidence float64 `json:"overallConfidence,omitempty"`
-}
-
-// ========================================
-// TYPE ALIASES FOR CONVENIENCE
-// ========================================
-// These aliases allow SignalProcessing code to reference types without
-// the sharedtypes prefix while maintaining single source of truth.
-// GAP-C3-04: Shared types in pkg/shared/types/enrichment.go
-
-// EnrichmentResults alias - use sharedtypes.EnrichmentResults in new code
-type EnrichmentResults = sharedtypes.EnrichmentResults
-
-// OwnerChainEntry alias - use sharedtypes.OwnerChainEntry in new code
-type OwnerChainEntry = sharedtypes.OwnerChainEntry
-
-// DetectedLabels alias - use sharedtypes.DetectedLabels in new code
-type DetectedLabels = sharedtypes.DetectedLabels
-
-// KubernetesContext alias - use sharedtypes.KubernetesContext in new code
-type KubernetesContext = sharedtypes.KubernetesContext
-
-// PodDetails alias - use sharedtypes.PodDetails in new code
-type PodDetails = sharedtypes.PodDetails
-
-// ContainerStatus alias - use sharedtypes.ContainerStatus in new code
-type ContainerStatus = sharedtypes.ContainerStatus
-
-// DeploymentDetails alias - use sharedtypes.DeploymentDetails in new code
-type DeploymentDetails = sharedtypes.DeploymentDetails
-
-// NodeDetails alias - use sharedtypes.NodeDetails in new code
-type NodeDetails = sharedtypes.NodeDetails
-
-// ResourceList alias - use sharedtypes.ResourceList in new code
-type ResourceList = sharedtypes.ResourceList
-
-// NodeCondition alias - use sharedtypes.NodeCondition in new code
-type NodeCondition = sharedtypes.NodeCondition
-
-// ServiceSummary alias - use sharedtypes.ServiceSummary in new code
-type ServiceSummary = sharedtypes.ServiceSummary
-
-// ServicePort alias - use sharedtypes.ServicePort in new code
-type ServicePort = sharedtypes.ServicePort
-
-// IngressSummary alias - use sharedtypes.IngressSummary in new code
-type IngressSummary = sharedtypes.IngressSummary
-
-// IngressRule alias - use sharedtypes.IngressRule in new code
-type IngressRule = sharedtypes.IngressRule
-
-// ConfigMapSummary alias - use sharedtypes.ConfigMapSummary in new code
-type ConfigMapSummary = sharedtypes.ConfigMapSummary
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Environment",type=string,JSONPath=`.status.environmentClassification.environment`
+// +kubebuilder:printcolumn:name="Priority",type=string,JSONPath=`.status.priorityAssignment.priority`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // SignalProcessing is the Schema for the signalprocessings API.
 // DD-SIGNAL-PROCESSING-001: Renamed from RemediationProcessing per ADR-015
@@ -314,6 +39,322 @@ type SignalProcessing struct {
 
 	Spec   SignalProcessingSpec   `json:"spec,omitempty"`
 	Status SignalProcessingStatus `json:"status,omitempty"`
+}
+
+// SignalProcessingSpec defines the desired state of SignalProcessing.
+// Implementation Plan Day 2: Aligned with IMPLEMENTATION_PLAN.md structure
+type SignalProcessingSpec struct {
+	// Reference to parent RemediationRequest
+	RemediationRequestRef ObjectReference `json:"remediationRequestRef"`
+
+	// Signal data (copied from RemediationRequest for processing)
+	Signal SignalData `json:"signal"`
+
+	// Configuration for processing
+	EnrichmentConfig EnrichmentConfig `json:"enrichmentConfig,omitempty"`
+}
+
+// ObjectReference contains enough information to let you locate the referenced object.
+type ObjectReference struct {
+	// API version of the referent
+	APIVersion string `json:"apiVersion,omitempty"`
+	// Kind of the referent
+	Kind string `json:"kind,omitempty"`
+	// Name of the referent
+	Name string `json:"name"`
+	// Namespace of the referent
+	Namespace string `json:"namespace,omitempty"`
+	// UID of the referent
+	UID string `json:"uid,omitempty"`
+}
+
+// SignalData contains all signal information copied from RemediationRequest.
+// This makes SignalProcessing self-contained for processing.
+type SignalData struct {
+	// Unique fingerprint for deduplication (SHA256 of signal key fields)
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:Pattern="^[a-f0-9]{64}$"
+	Fingerprint string `json:"fingerprint"`
+
+	// Human-readable signal name (e.g., "HighMemoryUsage", "CrashLoopBackOff")
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+
+	// Severity level
+	// +kubebuilder:validation:Enum=critical;warning;info
+	Severity string `json:"severity"`
+
+	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", etc.
+	Type string `json:"type"`
+
+	// Adapter that ingested the signal
+	// +kubebuilder:validation:MaxLength=63
+	Source string `json:"source,omitempty"`
+
+	// Target system type
+	// +kubebuilder:validation:Enum=kubernetes;aws;azure;gcp;datadog
+	TargetType string `json:"targetType"`
+
+	// Target resource identification
+	TargetResource ResourceIdentifier `json:"targetResource"`
+
+	// Signal labels extracted from provider-specific data
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Signal annotations extracted from provider-specific data
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// When the signal first started firing
+	FiringTime *metav1.Time `json:"firingTime,omitempty"`
+
+	// When Gateway received the signal
+	ReceivedTime metav1.Time `json:"receivedTime"`
+
+	// Provider-specific fields in raw JSON format
+	ProviderData []byte `json:"providerData,omitempty"`
+}
+
+// ResourceIdentifier identifies the target resource for remediation.
+type ResourceIdentifier struct {
+	// Resource kind (e.g., "Pod", "Deployment", "StatefulSet")
+	Kind string `json:"kind"`
+	// Resource name
+	Name string `json:"name"`
+	// Resource namespace
+	Namespace string `json:"namespace"`
+}
+
+// EnrichmentConfig specifies enrichment settings.
+type EnrichmentConfig struct {
+	// Enable cluster state enrichment
+	EnableClusterState bool `json:"enableClusterState,omitempty"`
+	// Enable metrics enrichment
+	EnableMetrics bool `json:"enableMetrics,omitempty"`
+	// Enable historical enrichment
+	EnableHistorical bool `json:"enableHistorical,omitempty"`
+	// Timeout for enrichment operations
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+}
+
+// SignalProcessingPhase represents the current phase of SignalProcessing reconciliation.
+// BR-SP-051: Phase State Machine
+// +kubebuilder:validation:Enum=pending;enriching;classifying;categorizing;completed;failed
+type SignalProcessingPhase string
+
+const (
+	// PhasePending is the initial state when SignalProcessing is created.
+	PhasePending SignalProcessingPhase = "pending"
+	// PhaseEnriching is when K8s context enrichment is in progress.
+	PhaseEnriching SignalProcessingPhase = "enriching"
+	// PhaseClassifying is when environment/priority classification is in progress.
+	PhaseClassifying SignalProcessingPhase = "classifying"
+	// PhaseCategorizing is when business categorization is in progress.
+	PhaseCategorizing SignalProcessingPhase = "categorizing"
+	// PhaseCompleted is the terminal success state.
+	PhaseCompleted SignalProcessingPhase = "completed"
+	// PhaseFailed is the terminal error state.
+	PhaseFailed SignalProcessingPhase = "failed"
+)
+
+// SignalProcessingStatus defines the observed state of SignalProcessing.
+// Implementation Plan Day 2: Aligned with IMPLEMENTATION_PLAN.md structure
+type SignalProcessingStatus struct {
+	// Phase: Pending, Enriching, Classifying, Categorizing, Completed, Failed
+	Phase SignalProcessingPhase `json:"phase,omitempty"`
+
+	// Processing timestamps
+	StartTime      *metav1.Time `json:"startTime,omitempty"`
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+	// Enrichment results
+	KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
+	RecoveryContext   *RecoveryContext   `json:"recoveryContext,omitempty"`
+
+	// Categorization results (DD-CATEGORIZATION-001)
+	EnvironmentClassification *EnvironmentClassification `json:"environmentClassification,omitempty"`
+	PriorityAssignment        *PriorityAssignment        `json:"priorityAssignment,omitempty"`
+	BusinessClassification    *BusinessClassification    `json:"businessClassification,omitempty"`
+
+	// Conditions for detailed status
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Error information
+	Error string `json:"error,omitempty"`
+}
+
+// KubernetesContext holds enriched Kubernetes resource information.
+// BR-SP-001: K8s Context Enrichment
+type KubernetesContext struct {
+	// Namespace labels
+	NamespaceLabels map[string]string `json:"namespaceLabels,omitempty"`
+	// Namespace annotations
+	NamespaceAnnotations map[string]string `json:"namespaceAnnotations,omitempty"`
+	// Pod details if target is a pod
+	Pod *PodDetails `json:"pod,omitempty"`
+	// Deployment details if target is managed by deployment
+	Deployment *DeploymentDetails `json:"deployment,omitempty"`
+	// Node details where the pod is running
+	Node *NodeDetails `json:"node,omitempty"`
+	// Owner chain from target to top-level controller
+	OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
+	// Detected labels (auto-detected cluster characteristics)
+	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
+	// Custom labels (extracted via Rego policies)
+	CustomLabels map[string]string `json:"customLabels,omitempty"`
+}
+
+// PodDetails contains pod-specific information.
+type PodDetails struct {
+	// Pod labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// Pod annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Pod phase
+	Phase string `json:"phase,omitempty"`
+	// Container statuses
+	ContainerStatuses []ContainerStatus `json:"containerStatuses,omitempty"`
+	// Node name where pod is scheduled
+	NodeName string `json:"nodeName,omitempty"`
+}
+
+// ContainerStatus contains container state information.
+type ContainerStatus struct {
+	// Container name
+	Name string `json:"name"`
+	// Whether container is ready
+	Ready bool `json:"ready"`
+	// Restart count
+	RestartCount int32 `json:"restartCount"`
+	// Container state
+	State string `json:"state,omitempty"`
+	// Last termination reason
+	LastTerminationReason string `json:"lastTerminationReason,omitempty"`
+}
+
+// DeploymentDetails contains deployment-specific information.
+type DeploymentDetails struct {
+	// Deployment labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// Deployment annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Desired replicas
+	Replicas int32 `json:"replicas,omitempty"`
+	// Available replicas
+	AvailableReplicas int32 `json:"availableReplicas,omitempty"`
+	// Ready replicas
+	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
+}
+
+// NodeDetails contains node-specific information.
+type NodeDetails struct {
+	// Node labels
+	Labels map[string]string `json:"labels,omitempty"`
+	// Node conditions
+	Conditions []NodeCondition `json:"conditions,omitempty"`
+	// Allocatable resources
+	Allocatable map[string]string `json:"allocatable,omitempty"`
+}
+
+// NodeCondition represents a node condition.
+type NodeCondition struct {
+	// Condition type
+	Type string `json:"type"`
+	// Condition status
+	Status string `json:"status"`
+	// Reason for condition
+	Reason string `json:"reason,omitempty"`
+}
+
+// OwnerChainEntry represents one owner in the ownership chain.
+// BR-SP-100: OwnerChain Builder
+type OwnerChainEntry struct {
+	// Owner kind
+	Kind string `json:"kind"`
+	// Owner name
+	Name string `json:"name"`
+	// Owner API version
+	APIVersion string `json:"apiVersion,omitempty"`
+	// Owner UID
+	UID string `json:"uid,omitempty"`
+}
+
+// DetectedLabels contains auto-detected cluster characteristics.
+// BR-SP-101: DetectedLabels Detector
+// DD-WORKFLOW-001 v2.2: 8 detection categories
+type DetectedLabels struct {
+	// Whether the target is in a production namespace
+	IsProduction bool `json:"isProduction,omitempty"`
+	// Whether the target has resource limits defined
+	HasResourceLimits bool `json:"hasResourceLimits,omitempty"`
+	// Whether the target is managed by Helm
+	HelmManaged bool `json:"helmManaged,omitempty"`
+	// Whether the target is managed by ArgoCD/Flux
+	GitOpsManaged bool `json:"gitOpsManaged,omitempty"`
+	// Whether the target has a PDB (PodDisruptionBudget)
+	HasPDB bool `json:"hasPDB,omitempty"`
+	// Whether the target has an HPA (HorizontalPodAutoscaler)
+	HasHPA bool `json:"hasHPA,omitempty"`
+	// Whether the namespace has network isolation
+	NetworkIsolated bool `json:"networkIsolated,omitempty"`
+	// Whether the namespace is part of a service mesh
+	ServiceMesh bool `json:"serviceMesh,omitempty"`
+}
+
+// RecoveryContext holds context for recovery attempts.
+// DD-001: Recovery Context Enrichment
+type RecoveryContext struct {
+	// Previous remediation attempt ID
+	PreviousRemediationID string `json:"previousRemediationId,omitempty"`
+	// Number of previous attempts
+	AttemptCount int32 `json:"attemptCount,omitempty"`
+	// Last failure reason
+	LastFailureReason string `json:"lastFailureReason,omitempty"`
+	// Time since first failure
+	TimeSinceFirstFailure *metav1.Duration `json:"timeSinceFirstFailure,omitempty"`
+}
+
+// EnvironmentClassification from DD-CATEGORIZATION-001.
+// BR-SP-051-053: Environment Classification
+// DD-WORKFLOW-001 v2.2: 4 canonical environments (production, staging, development, test)
+type EnvironmentClassification struct {
+	// Environment: production, staging, development, test
+	Environment string `json:"environment"`
+	// Confidence score (0.0-1.0)
+	Confidence float64 `json:"confidence"`
+	// Source of classification: namespace-labels, configmap, signal-labels, default
+	Source string `json:"source"`
+	// When classification was performed
+	ClassifiedAt metav1.Time `json:"classifiedAt"`
+}
+
+// PriorityAssignment from DD-CATEGORIZATION-001.
+// BR-SP-070-072: Priority Assignment
+type PriorityAssignment struct {
+	// Priority level: P0, P1, P2, P3
+	Priority string `json:"priority"`
+	// Confidence score (0.0-1.0)
+	Confidence float64 `json:"confidence"`
+	// Source of assignment: rego-policy, fallback-matrix
+	Source string `json:"source"`
+	// Which Rego rule matched (if applicable)
+	PolicyName string `json:"policyName,omitempty"`
+	// When assignment was performed
+	AssignedAt metav1.Time `json:"assignedAt"`
+}
+
+// BusinessClassification for multi-dimensional categorization.
+// BR-SP-080, BR-SP-081: Business Classification
+type BusinessClassification struct {
+	// Business unit assignment
+	BusinessUnit string `json:"businessUnit,omitempty"`
+	// Service owner
+	ServiceOwner string `json:"serviceOwner,omitempty"`
+	// Criticality level: critical, high, medium, low
+	Criticality string `json:"criticality,omitempty"`
+	// SLA requirement: platinum, gold, silver, bronze
+	SLARequirement string `json:"slaRequirement,omitempty"`
+	// Overall confidence (0.0-1.0)
+	OverallConfidence float64 `json:"overallConfidence"`
 }
 
 // +kubebuilder:object:root=true
