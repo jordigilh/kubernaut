@@ -55,5 +55,8 @@ func (c *Config) Validate() error {
 	if c.Enrichment.Timeout <= 0 {
 		return fmt.Errorf("enrichment timeout must be positive, got %v", c.Enrichment.Timeout)
 	}
+	if c.Classifier.RegoConfigMapName == "" {
+		return fmt.Errorf("Rego ConfigMap name is required")
+	}
 	return nil
 }
