@@ -64,5 +64,8 @@ func (c *Config) Validate() error {
 	if c.Audit.BufferSize <= 0 {
 		return fmt.Errorf("audit buffer size must be positive, got %d", c.Audit.BufferSize)
 	}
+	if c.Audit.FlushInterval <= 0 {
+		return fmt.Errorf("audit flush interval must be positive, got %v", c.Audit.FlushInterval)
+	}
 	return nil
 }
