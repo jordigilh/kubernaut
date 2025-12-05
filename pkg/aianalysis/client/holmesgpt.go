@@ -14,238 +14,186 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package client provides HolmesGPT-API client integration for AIAnalysis.
-// It wraps the ogen-generated client with error classification and type mapping.
-//
-// Design Decision: DD-CONTRACT-002 - Self-contained CRD pattern
-// Business Requirements: BR-AI-006 (API integration), BR-AI-009 (retry logic)
+// Package client provides the HolmesGPT-API client wrapper.
+// BR-AI-006: API call construction and response handling.
 package client
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"net/http"
-
-	"github.com/ogen-go/ogen/validate"
-
-	holmesgpt "github.com/jordigilh/kubernaut/pkg/clients/holmesgpt"
+	"time"
 )
 
-// ========================================
-// CONFIG (BR-AI-006)
-// ========================================
-
-// Config configures the HolmesGPT-API client.
+// Config for HolmesGPT-API client
 type Config struct {
-	// BaseURL is the HolmesGPT-API service URL (e.g., "http://holmesgpt-api:8080")
-	// Internal service - no API key needed (use K8s NetworkPolicies for access control)
 	BaseURL string
+	Timeout time.Duration
 }
 
-// ========================================
-// CLIENT INTERFACE (BR-AI-006)
-// ========================================
-
-// HolmesGPTClient defines the interface for HolmesGPT-API calls.
-// This interface allows for mocking in unit tests.
-type HolmesGPTClient interface {
-	// Investigate calls the incident analysis endpoint.
-	Investigate(ctx context.Context, req *IncidentRequest) (*IncidentResponse, error)
-}
-
-// ========================================
-// REQUEST/RESPONSE TYPES (BR-AI-007)
-// ========================================
-
-// IncidentRequest is the simplified request structure for the Investigate method.
-// It maps to holmesgpt.IncidentRequest for the API call.
-type IncidentRequest struct {
-	IncidentID        string
-	RemediationID     string
-	SignalType        string
-	Severity          string
-	SignalSource      string
-	ResourceNamespace string
-	ResourceKind      string
-	ResourceName      string
-	ErrorMessage      string
-	Environment       string
-	Priority          string
-	RiskTolerance     string
-	BusinessCategory  string
-	ClusterName       string
-
-	// Enrichment data
-	DetectedLabels map[string]interface{}
-	CustomLabels   map[string][]string
-	OwnerChain     []OwnerChainEntry
-}
-
-// OwnerChainEntry represents a resource in the owner chain.
-type OwnerChainEntry struct {
-	Namespace string
-	Kind      string
-	Name      string
-}
-
-// IncidentResponse is the simplified response structure from the Investigate method.
-type IncidentResponse struct {
-	IncidentID         string
-	Analysis           string
-	RootCauseAnalysis  *RootCauseAnalysis
-	SelectedWorkflow   *SelectedWorkflow
-	Confidence         float64
-	Timestamp          string
-	TargetInOwnerChain bool
-	Warnings           []string
-}
-
-// RootCauseAnalysis contains structured RCA information.
-type RootCauseAnalysis struct {
-	Summary             string
-	Severity            string
-	SignalType          string
-	ContributingFactors []string
-}
-
-// SelectedWorkflow contains the AI-selected workflow.
-type SelectedWorkflow struct {
-	WorkflowID      string
-	Version         string
-	ContainerImage  string
-	ContainerDigest string
-	Confidence      float64
-	Parameters      map[string]string
-	Rationale       string
-}
-
-// ========================================
-// CLIENT IMPLEMENTATION (BR-AI-006)
-// ========================================
-
-// Client wraps the ogen-generated HolmesGPT-API client with error classification.
-type Client struct {
-	ogenClient *holmesgpt.Client
+// HolmesGPTClient wraps HolmesGPT-API calls
+type HolmesGPTClient struct {
 	baseURL    string
+	httpClient *http.Client
 }
 
-// NewClient creates a new HolmesGPT-API client.
-func NewClient(cfg Config) (*Client, error) {
-	ogenClient, err := holmesgpt.NewClient(cfg.BaseURL)
+// NewHolmesGPTClient creates a new client
+func NewHolmesGPTClient(cfg Config) *HolmesGPTClient {
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = 60 * time.Second
+	}
+
+	return &HolmesGPTClient{
+		baseURL: cfg.BaseURL,
+		httpClient: &http.Client{
+			Timeout: timeout,
+		},
+	}
+}
+
+// IncidentRequest represents request to /api/v1/incident/analyze
+type IncidentRequest struct {
+	Context        string                 `json:"context"`
+	DetectedLabels map[string]interface{} `json:"detected_labels,omitempty"`
+	CustomLabels   map[string][]string    `json:"custom_labels,omitempty"`
+	OwnerChain     []OwnerChainEntry      `json:"owner_chain,omitempty"`
+}
+
+// OwnerChainEntry represents a resource in the owner chain
+type OwnerChainEntry struct {
+	Namespace string `json:"namespace"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+}
+
+// IncidentResponse represents response from HolmesGPT-API /api/v1/incident/analyze
+// Per HolmesGPT-API team (Dec 5, 2025): This endpoint returns ALL analysis results
+// including selected_workflow and alternative_workflows in a single call.
+type IncidentResponse struct {
+	// Incident identifier from request
+	IncidentID string `json:"incident_id"`
+	// Natural language analysis from LLM
+	Analysis string `json:"analysis"`
+	// Structured RCA with summary, severity, contributing_factors
+	RootCauseAnalysis *RootCauseAnalysis `json:"root_cause_analysis,omitempty"`
+	// Selected workflow for execution (DD-CONTRACT-002)
+	SelectedWorkflow *SelectedWorkflow `json:"selected_workflow,omitempty"`
+	// Alternative workflows considered but not selected
+	// INFORMATIONAL ONLY - NOT for automatic execution
+	// Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION
+	AlternativeWorkflows []AlternativeWorkflow `json:"alternative_workflows,omitempty"`
+	// Overall confidence in analysis (0.0-1.0)
+	Confidence float64 `json:"confidence"`
+	// ISO timestamp of analysis completion
+	Timestamp string `json:"timestamp"`
+	// Whether RCA-identified target resource was found in OwnerChain
+	// If false, DetectedLabels may be from different scope than affected resource
+	TargetInOwnerChain bool `json:"target_in_owner_chain"`
+	// Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// RootCauseAnalysis contains structured RCA results from HolmesGPT-API
+type RootCauseAnalysis struct {
+	// Brief summary of root cause
+	Summary string `json:"summary"`
+	// Severity determined by RCA: critical, high, medium, low
+	Severity string `json:"severity"`
+	// Contributing factors that led to the issue
+	ContributingFactors []string `json:"contributing_factors,omitempty"`
+}
+
+// SelectedWorkflow contains the AI-selected workflow for execution
+type SelectedWorkflow struct {
+	// Workflow identifier (catalog lookup key)
+	WorkflowID string `json:"workflow_id"`
+	// Workflow version
+	Version string `json:"version,omitempty"`
+	// Container image (OCI bundle) - resolved by HolmesGPT-API
+	ContainerImage string `json:"containerImage"`
+	// Container digest for audit trail
+	ContainerDigest string `json:"containerDigest,omitempty"`
+	// Confidence score (0.0-1.0)
+	Confidence float64 `json:"confidence"`
+	// Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
+	Parameters map[string]string `json:"parameters,omitempty"`
+	// Rationale explaining why this workflow was selected
+	Rationale string `json:"rationale"`
+}
+
+// AlternativeWorkflow contains alternative workflows considered but not selected
+// INFORMATIONAL ONLY - NOT for automatic execution
+type AlternativeWorkflow struct {
+	// Workflow identifier
+	WorkflowID string `json:"workflow_id"`
+	// Container image (OCI bundle)
+	ContainerImage string `json:"containerImage,omitempty"`
+	// Confidence score (0.0-1.0) - shows why it wasn't selected
+	Confidence float64 `json:"confidence"`
+	// Rationale explaining why this workflow was considered
+	Rationale string `json:"rationale"`
+}
+
+// Investigate calls the HolmesGPT-API incident analyze endpoint
+// BR-AI-006: API call construction
+func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest) (*IncidentResponse, error) {
+	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create ogen client: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	return &Client{
-		ogenClient: ogenClient,
-		baseURL:    cfg.BaseURL,
-	}, nil
-}
-
-// Investigate calls the HolmesGPT-API incident analysis endpoint.
-// It maps our internal request type to the ogen-generated type and handles errors.
-func (c *Client) Investigate(ctx context.Context, req *IncidentRequest) (*IncidentResponse, error) {
-	// Build the ogen request
-	ogenReq := c.buildOgenRequest(req)
-
-	// Call the API
-	resp, err := c.ogenClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, ogenReq)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/v1/incident/analyze", bytes.NewReader(body))
 	if err != nil {
-		return nil, c.classifyError(err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Handle response type
-	switch r := resp.(type) {
-	case *holmesgpt.IncidentResponse:
-		return c.mapResponse(r), nil
-	default:
-		return nil, NewAPIError(http.StatusInternalServerError, "unexpected response type")
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API returned status %d", resp.StatusCode),
+		}
+	}
+
+	var result IncidentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
 }
 
-// buildOgenRequest maps our request type to the ogen-generated type.
-func (c *Client) buildOgenRequest(req *IncidentRequest) *holmesgpt.IncidentRequest {
-	return &holmesgpt.IncidentRequest{
-		IncidentID:        req.IncidentID,
-		RemediationID:     req.RemediationID,
-		SignalType:        req.SignalType,
-		Severity:          req.Severity,
-		SignalSource:      req.SignalSource,
-		ResourceNamespace: req.ResourceNamespace,
-		ResourceKind:      req.ResourceKind,
-		ResourceName:      req.ResourceName,
-		ErrorMessage:      req.ErrorMessage,
-		Environment:       req.Environment,
-		Priority:          req.Priority,
-		RiskTolerance:     req.RiskTolerance,
-		BusinessCategory:  req.BusinessCategory,
-		ClusterName:       req.ClusterName,
-	}
-}
-
-// mapResponse maps the ogen response to our internal type.
-func (c *Client) mapResponse(resp *holmesgpt.IncidentResponse) *IncidentResponse {
-	result := &IncidentResponse{
-		IncidentID: resp.IncidentID,
-		Analysis:   resp.Analysis,
-		Confidence: resp.Confidence,
-		Timestamp:  resp.Timestamp,
-		Warnings:   resp.Warnings,
-	}
-
-	// Map TargetInOwnerChain (optional field)
-	if resp.TargetInOwnerChain.IsSet() {
-		result.TargetInOwnerChain = resp.TargetInOwnerChain.Value
-	}
-
-	return result
-}
-
-// classifyError determines if an error is transient or permanent.
-// Uses ogen's typed error to extract HTTP status code directly.
-func (c *Client) classifyError(err error) error {
-	// Check for ogen's UnexpectedStatusCodeError which contains the actual status code
-	var statusErr *validate.UnexpectedStatusCodeError
-	if errors.As(err, &statusErr) {
-		return NewAPIError(statusErr.StatusCode, err.Error())
-	}
-
-	// Fallback for other error types (network errors, etc.)
-	// Treat as transient since we can't determine the cause
-	return NewAPIError(http.StatusServiceUnavailable, err.Error())
-}
-
-// ========================================
-// ERROR TYPES (BR-AI-009, BR-AI-010)
-// ========================================
-
-// APIError represents an error from the HolmesGPT-API.
+// APIError represents an API error
+// BR-AI-009: Error classification for retry logic
 type APIError struct {
 	StatusCode int
 	Message    string
 }
 
-// NewAPIError creates a new API error.
-func NewAPIError(statusCode int, message string) *APIError {
-	return &APIError{
-		StatusCode: statusCode,
-		Message:    message,
-	}
-}
-
 func (e *APIError) Error() string {
-	return fmt.Sprintf("HolmesGPT-API error (status %d): %s", e.StatusCode, e.Message)
+	return fmt.Sprintf("API error (status %d): %s", e.StatusCode, e.Message)
 }
 
-// IsTransient returns true if the error is retry-able.
-// Per APPENDIX_B: 429, 502, 503, 504 are transient.
+// IsTransient returns true if the error is retry-able
+// BR-AI-009: Transient errors (429, 502, 503, 504) should be retried
+// BR-AI-010: Permanent errors (400, 401, 403, 404) should not be retried
 func (e *APIError) IsTransient() bool {
 	switch e.StatusCode {
-	case http.StatusTooManyRequests, // 429
-		http.StatusBadGateway,         // 502
-		http.StatusServiceUnavailable, // 503
-		http.StatusGatewayTimeout:     // 504
+	case http.StatusTooManyRequests,     // 429
+		http.StatusBadGateway,           // 502
+		http.StatusServiceUnavailable,   // 503
+		http.StatusGatewayTimeout:       // 504
 		return true
 	default:
 		return false

@@ -7,7 +7,7 @@
 
 ---
 
-## 🔔 HolmesGPT-API Team Acknowledgment (Dec 2, 2025)
+## 🔔 HolmesGPT-API Team Acknowledgment (Dec 5, 2025)
 
 **Status**: ✅ **ALL CHANGES IMPLEMENTED**
 
@@ -19,18 +19,24 @@ The HolmesGPT-API team acknowledges receipt of all requests and confirms the fol
 | OpenAPI 3.1.0 native support | ✅ **DONE** | Use `ogen` for Go client |
 | `target_in_owner_chain` field | ✅ **DONE** | In IncidentResponse |
 | `warnings[]` field | ✅ **DONE** | In IncidentResponse |
-| OpenAPI spec regenerated | ✅ **DONE** | 16 schemas, 3.1.0 |
+| `alternative_workflows[]` field | ✅ **DONE** (v1.2) | For audit/context ONLY - NOT for execution |
+| OpenAPI spec regenerated | ✅ **DONE** | **17 schemas**, OpenAPI 3.1.0 |
 
-**AIAnalysis Next Step**: Regenerate Go client to pick up all changes:
+**AIAnalysis Next Step**: See "How to Proceed After These Changes" section below for detailed integration guide.
+
+**Files Changed**:
+- `holmesgpt-api/src/models/incident_models.py` - Added `AlternativeWorkflow` model, `alternative_workflows` field
+- `holmesgpt-api/src/extensions/incident.py` - LLM prompt requests alternatives, parser extracts them
+- `holmesgpt-api/tests/unit/test_alternative_workflows.py` - 8 new tests for alternatives
+- `holmesgpt-api/api/openapi.json` - Regenerated (17 schemas, OpenAPI 3.1.0)
+- `docs/architecture/decisions/ADR-045-*.md` - Updated to v1.2 with informational purpose documentation
+
+**Quick Start**:
 ```bash
+# Regenerate Go client (17 schemas including AlternativeWorkflow)
 ogen -package holmesgpt -target pkg/clients/holmesgpt \
     holmesgpt-api/api/openapi.json
 ```
-
-**Files Changed**:
-- `holmesgpt-api/src/models/incident_models.py` - Added `failedDetections`, `target_in_owner_chain`, `warnings`
-- `holmesgpt-api/api/openapi.json` - Regenerated (OpenAPI 3.1.0)
-- `holmesgpt-api/api/export_openapi.py` - Native 3.1.0 output
 
 ---
 
@@ -753,6 +759,340 @@ class IncidentResponse(BaseModel):
 ```
 
 **OpenAPI spec regenerated**: `holmesgpt-api/api/openapi.json` (16 schemas, OpenAPI 3.1.0)
+
+---
+
+---
+
+## 🆕 New Questions (Dec 5, 2025)
+
+### Q12: Alternative Workflow Recommendations
+
+**From**: AIAnalysis Team
+**Date**: December 5, 2025
+**Status**: ✅ **RESPONDED** (Dec 5, 2025)
+
+**Context**: During implementation planning, we discovered a potential gap between our implementation plan and the current OpenAPI spec.
+
+**Current API Behavior** (per `openapi.json`):
+- `IncidentResponse.selected_workflow` returns **ONE** workflow (singular)
+- No alternative or backup workflow recommendations
+
+**Our Implementation Plan (outdated?)** assumed:
+```go
+// Plan's Day 4 assumed multiple recommendations:
+type RecommendingHandlerResponse struct {
+    RecommendedWorkflows  []WorkflowRecommendation  // ❌ NOT in OpenAPI
+    AlternativeWorkflows  []WorkflowRecommendation  // ❌ NOT in OpenAPI
+}
+```
+
+**Question**: Can HolmesGPT-API provide alternative workflow recommendations?
+
+**Options**:
+
+| Option | Description | Impact |
+|--------|-------------|--------|
+| **A** | Single `selected_workflow` (current behavior) | AIAnalysis stores single workflow; if it fails, recovery creates new AIAnalysis |
+| **B** | Add `alternative_workflows: List[SelectedWorkflow]` to `IncidentResponse` | AIAnalysis can store backup options; RO can try alternatives without new AI call |
+| **C** | Add `alternative_workflow: Optional[SelectedWorkflow]` (singular) | Simpler: just one backup option |
+
+**Use Case for Alternatives**:
+1. Operator sees "Primary: increase-memory (90% confidence), Alternative: restart-pod (75% confidence)"
+2. If primary fails, RO could try alternative before creating new AIAnalysis
+3. Reduces LLM calls for common failure-recovery scenarios
+
+**AIAnalysis Preference**: **Option B or C** would be beneficial, but we can work with **Option A** if adding alternatives is complex.
+
+**CRD Impact**:
+- Current CRD has `status.selectedWorkflow` (singular)
+- Would need to add `status.alternativeWorkflow` or `status.alternativeWorkflows` if HAPI supports it
+
+---
+
+### Q13: Recovery Endpoint - Does It Return Workflow Selection?
+
+**Status**: ✅ **RESPONDED** (Dec 5, 2025)
+
+**Context**: The `/api/v1/recovery/analyze` endpoint returns `RecoveryResponse` with `strategies[]`, not `selected_workflow`.
+
+**Current `RecoveryResponse`**:
+```json
+{
+  "incident_id": "...",
+  "can_recover": true,
+  "strategies": [
+    {
+      "action_type": "scale_down_gradual",  // NOT a workflow_id
+      "confidence": 0.9,
+      "rationale": "...",
+      "estimated_risk": "low"
+    }
+  ],
+  "primary_recommendation": "scale_down_gradual"
+}
+```
+
+**Question**: For recovery attempts (when `IsRecoveryAttempt=true`), does HolmesGPT-API:
+
+| Option | Behavior |
+|--------|----------|
+| **A** | Use `/incident/analyze` with `previous_execution` context → Returns `selected_workflow` |
+| **B** | Use `/recovery/analyze` → Returns `strategies[]` (not workflows) |
+| **C** | `/recovery/analyze` should return `selected_workflow` too (OpenAPI update needed) |
+
+**Why This Matters**:
+- AIAnalysis needs `selected_workflow` (with `workflow_id`, `containerImage`, `parameters`) to populate CRD status
+- `strategies[].action_type` is not the same as `workflow_id`
+
+**Current Understanding**: Use `/incident/analyze` for BOTH initial AND recovery, with `previous_execution` context for recovery. Is this correct?
+
+---
+
+## HolmesGPT-API Team Response to Q12-Q13 (Dec 5, 2025)
+
+**Status**: ✅ **RESPONDED**
+**Respondent**: HolmesGPT-API Team
+
+---
+
+### A12: Alternative Workflow Recommendations
+
+**Clarification**: ✅ **Alternatives are for CONTEXT, not EXECUTION**
+
+Per authoritative documentation (`APPROVAL_REJECTION_BEHAVIOR_DETAILED.md`):
+
+> **"Alternatives are for CONTEXT, Not EXECUTION"** 📖
+>
+> The `ApprovalContext.AlternativesConsidered` field:
+> - ✅ **Purpose**: Help operator make an informed decision
+> - ✅ **Content**: Pros/cons of alternative approaches
+> - ❌ **NOT**: A fallback queue for automatic execution
+
+**Current State**:
+
+| Aspect | Status | Details |
+|--------|--------|---------|
+| **ADR-045 Schema** | Defines `alternativeWorkflows[]` | In response schema YAML (lines 236-241) |
+| **Actual Implementation** | Single `selected_workflow` only | Not yet implemented |
+| **Purpose** | **Audit/Informational** | NOT for automatic execution |
+
+**Why Alternatives Matter (for Operators)**:
+1. **Informed Decision**: Operator sees "Primary: increase-memory (90%), Alternative: restart-pod (75%)"
+2. **Audit Trail**: Post-incident analysis shows what options were considered
+3. **Transparency**: Operator understands the AI's reasoning and trade-offs
+4. **Manual Override**: If operator rejects primary, they know what alternatives existed
+
+**What Alternatives are NOT for**:
+- ❌ Automatic fallback execution
+- ❌ RO trying alternatives without new AIAnalysis
+- ❌ Bypassing operator approval
+
+**Decision**: ✅ **IMPLEMENTED Option B** (`alternative_workflows[]`) for V1.0
+
+**Implementation Complete** (Dec 5, 2025):
+- Added `AlternativeWorkflow` model to `incident_models.py`
+- LLM prompt requests up to 2-3 alternatives with rationale
+- Parser extracts alternatives from LLM JSON response
+- OpenAPI spec regenerated (17 schemas)
+- ADR-045 updated to v1.2 with informational purpose documentation
+
+**Benefits Delivered**:
+- Richer approval context for operators
+- Better audit trail of AI decision-making
+- No execution complexity (only `selected_workflow` is executed)
+- Transparency into AI reasoning for post-incident analysis
+
+---
+
+### A13: Recovery Endpoint - Does It Return Workflow Selection?
+
+**Answer**: ✅ **Option A is correct** - Use `/incident/analyze` with `previous_execution` context.
+
+**Important Discovery**: There's a schema gap we should address:
+
+| Aspect | Formal Model (`RecoveryResponse`) | Actual Return |
+|--------|-----------------------------------|---------------|
+| `selected_workflow` | ❌ NOT in Pydantic model | ✅ Returned in response dict (line 1235) |
+| `strategies[].action_type` | Contains workflow_id | Populated from `selected_workflow.workflow_id` |
+
+**Current Behavior (recovery.py lines 1200-1235)**:
+```python
+# LLM returns selected_workflow in JSON
+selected_workflow = structured.get("selected_workflow")
+
+# We convert workflow_id → action_type for strategies[]
+strategies.append(RecoveryStrategy(
+    action_type=selected_workflow.get("workflow_id", "unknown_workflow"),  # ← workflow_id becomes action_type
+    confidence=float(confidence),
+    rationale=selected_workflow.get("rationale", "..."),
+    estimated_risk="medium",
+    prerequisites=[]
+))
+
+# BUT we also return selected_workflow as extra field (not in Pydantic model!)
+result = {
+    ...
+    "strategies": [...],
+    "selected_workflow": selected_workflow,  # ← Extra field
+}
+```
+
+**Recommended Approach for AIAnalysis**:
+
+| Option | Endpoint | When | Gets `selected_workflow`? |
+|--------|----------|------|---------------------------|
+| **A (Recommended)** | `/incident/analyze` | Both initial AND recovery | ✅ Yes - top-level field |
+| B | `/recovery/analyze` | Recovery only | ⚠️ In response but not in formal model |
+
+**Why Option A is Better**:
+1. `IncidentResponse` formally includes `selected_workflow` in Pydantic model
+2. Consistent schema across initial and recovery flows
+3. Recovery context provided via `is_recovery_attempt` + `previous_execution` in request
+
+**Action Item for HAPI Team**:
+We should either:
+1. **Add `selected_workflow` to `RecoveryResponse` model** (schema alignment), OR
+2. **Deprecate `/recovery/analyze`** in favor of unified `/incident/analyze` with recovery context
+
+**Recommendation**: Option 2 - Use `/incident/analyze` for everything, simplifies AIAnalysis integration.
+
+---
+
+### Summary of A12-A13
+
+| Question | Answer | AIAnalysis Action |
+|----------|--------|-------------------|
+| Q12: Alternative workflows | **For audit/context only** (not execution) | Store in CRD for operator visibility |
+| Q13: Recovery endpoint | **Use `/incident/analyze`** for both flows | Set `is_recovery_attempt=true` + `previous_execution` for recovery |
+
+**Key Principle** (per `APPROVAL_REJECTION_BEHAVIOR_DETAILED.md`):
+> Alternatives are for **CONTEXT**, not **EXECUTION**. Only `selected_workflow` is executed. Alternatives help operators make informed approval decisions and provide audit trail.
+
+**Schema Gap to Address**: HAPI team will add `alternative_workflows[]` to `IncidentResponse` for operator context and audit purposes.
+
+---
+
+---
+
+## 🔔 AIAnalysis Team: How to Proceed After These Changes (Dec 5, 2025)
+
+**Status**: ✅ **ALL HAPI CHANGES COMPLETE - READY FOR AIANALYSIS INTEGRATION**
+
+### Step 1: Regenerate Go Client
+
+```bash
+# Install ogen if not already installed
+go install github.com/ogen-go/ogen/cmd/ogen@latest
+
+# Regenerate Go client from updated OpenAPI spec (17 schemas)
+mkdir -p pkg/clients/holmesgpt
+ogen -package holmesgpt -target pkg/clients/holmesgpt \
+    holmesgpt-api/api/openapi.json
+
+# Verify new types are generated
+grep -l "AlternativeWorkflow" pkg/clients/holmesgpt/*.go
+```
+
+### Step 2: New Types Available
+
+After regeneration, you'll have access to:
+
+| Type | Purpose | Usage |
+|------|---------|-------|
+| `AlternativeWorkflow` | Alternative workflow recommendation | Audit trail, operator context |
+| `IncidentResponse.AlternativeWorkflows` | List of alternatives | Store in CRD status for transparency |
+
+### Step 3: Update AIAnalysis CRD Status (Optional)
+
+Consider adding to `AIAnalysisStatus` for audit/operator visibility:
+
+```go
+// In api/aianalysis/v1alpha1/aianalysis_types.go
+type AIAnalysisStatus struct {
+    // ... existing fields ...
+
+    // AlternativeWorkflows stores other workflows considered but not selected.
+    // INFORMATIONAL ONLY - NOT for automatic execution.
+    // Helps operators understand AI reasoning during approval.
+    // +optional
+    AlternativeWorkflows []AlternativeWorkflow `json:"alternativeWorkflows,omitempty"`
+}
+
+type AlternativeWorkflow struct {
+    WorkflowID     string  `json:"workflowId"`
+    ContainerImage string  `json:"containerImage,omitempty"`
+    Confidence     float64 `json:"confidence"`
+    Rationale      string  `json:"rationale"`
+}
+```
+
+### Step 4: Use `/incident/analyze` for Both Flows
+
+**Recommended**: Use single endpoint for both initial and recovery:
+
+```go
+// Initial investigation
+resp, err := hapiClient.AnalyzeIncident(ctx, &IncidentRequest{
+    IncidentID:        spec.SignalRef.Name,
+    RemediationID:     req.Name,
+    IsRecoveryAttempt: false,
+    // ... other fields
+})
+
+// Recovery investigation (after workflow failure)
+resp, err := hapiClient.AnalyzeIncident(ctx, &IncidentRequest{
+    IncidentID:          spec.SignalRef.Name,
+    RemediationID:       req.Name,
+    IsRecoveryAttempt:   true,
+    RecoveryAttemptNum:  attemptNumber,
+    PreviousExecution:   &PreviousExecution{...},
+    // ... other fields
+})
+
+// Both return IncidentResponse with:
+// - SelectedWorkflow (for execution)
+// - AlternativeWorkflows (for audit/context only)
+// - TargetInOwnerChain (for Rego policy input)
+// - Warnings (for operator notification)
+```
+
+### Step 5: Handle Alternatives in Recommending Handler
+
+```go
+func (h *RecommendingHandler) Handle(ctx context.Context, req *AIAnalysis) error {
+    // Call HAPI
+    resp, err := h.hapiClient.AnalyzeIncident(ctx, request)
+    if err != nil {
+        return err
+    }
+
+    // Store primary workflow for execution
+    req.Status.SelectedWorkflow = resp.SelectedWorkflow
+
+    // Store alternatives for audit/operator context (NOT for execution)
+    req.Status.AlternativeWorkflows = resp.AlternativeWorkflows
+
+    // Store validation flags for Rego policy
+    req.Status.TargetInOwnerChain = resp.TargetInOwnerChain
+
+    // Store warnings for operator notification
+    req.Status.Warnings = resp.Warnings
+
+    return nil
+}
+```
+
+### Key Principle to Remember
+
+> **Alternatives are for CONTEXT, not EXECUTION.**
+>
+> Only `SelectedWorkflow` is executed by RemediationOrchestrator.
+> `AlternativeWorkflows` help operators make informed approval decisions and provide audit trail.
+
+### Questions?
+
+If you have questions about the new fields or integration patterns, add them to this document under "New Questions" and we'll respond.
 
 ---
 

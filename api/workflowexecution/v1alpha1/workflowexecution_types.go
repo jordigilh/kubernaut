@@ -21,93 +21,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ============================================================================
+// ========================================
 // WorkflowExecution CRD Types
-// Version: 4.0 - Tekton Delegation Architecture (ADR-044)
-// ============================================================================
-//
-// Key Design Decisions:
-// - ADR-044: Engine Delegation - Tekton handles step orchestration
-// - DD-CONTRACT-001 v1.4: Enhanced Failure Details + Resource Locking
-// - ADR-043: OCI Bundle - Workflow definition in container, not CRD
-// - DD-WORKFLOW-003: Parameters - UPPER_SNAKE_CASE keys for Tekton params
-// - DD-WE-001: Resource Locking - Prevents parallel/redundant workflows
-//
-// Controller Responsibilities:
-// 1. Create Tekton PipelineRun from OCI bundle
-// 2. Watch PipelineRun status
-// 3. Update WorkflowExecution status
-// 4. Write audit trace
-//
-// Controller does NOT:
-// - Orchestrate individual steps
-// - Create per-step CRDs
-// - Handle rollback (delegated to Tekton finally tasks)
-// - Transform workflow definition
-// ============================================================================
-
-// Phase constants for WorkflowExecution
-const (
-	// PhasePending indicates the WorkflowExecution is waiting to start
-	PhasePending = "Pending"
-
-	// PhaseRunning indicates PipelineRun is executing
-	PhaseRunning = "Running"
-
-	// PhaseCompleted indicates successful completion
-	PhaseCompleted = "Completed"
-
-	// PhaseFailed indicates execution failed
-	PhaseFailed = "Failed"
-
-	// PhaseSkipped indicates execution was skipped (resource locking)
-	PhaseSkipped = "Skipped"
-)
-
-// Outcome constants for WorkflowExecution
-const (
-	// OutcomeSuccess indicates workflow completed successfully
-	OutcomeSuccess = "Success"
-
-	// OutcomeFailure indicates workflow failed
-	OutcomeFailure = "Failure"
-
-	// OutcomeSkipped indicates workflow was skipped
-	OutcomeSkipped = "Skipped"
-)
-
-// SkipReason constants for WorkflowExecution
-const (
-	// SkipReasonResourceBusy indicates another workflow is running on the target
-	SkipReasonResourceBusy = "ResourceBusy"
-
-	// SkipReasonRecentlyRemediated indicates same workflow+target was recently executed
-	SkipReasonRecentlyRemediated = "RecentlyRemediated"
-)
-
-// FailureReason constants for Kubernetes-style reason codes
-const (
-	// FailureReasonOOMKilled indicates container was killed due to memory limits
-	FailureReasonOOMKilled = "OOMKilled"
-
-	// FailureReasonDeadlineExceeded indicates timeout was reached
-	FailureReasonDeadlineExceeded = "DeadlineExceeded"
-
-	// FailureReasonForbidden indicates RBAC/permission failure
-	FailureReasonForbidden = "Forbidden"
-
-	// FailureReasonResourceExhausted indicates cluster resource limits (quota, etc.)
-	FailureReasonResourceExhausted = "ResourceExhausted"
-
-	// FailureReasonConfigurationError indicates invalid parameters or config
-	FailureReasonConfigurationError = "ConfigurationError"
-
-	// FailureReasonImagePullBackOff indicates container image could not be pulled
-	FailureReasonImagePullBackOff = "ImagePullBackOff"
-
-	// FailureReasonUnknown for unclassified failures
-	FailureReasonUnknown = "Unknown"
-)
+// Version: 4.0 - Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043
+// See: docs/services/crd-controllers/03-workflowexecution/crd-schema.md
+// ========================================
 
 // WorkflowExecutionSpec defines the desired state of WorkflowExecution
 // Simplified per ADR-044 - Tekton handles step orchestration
@@ -124,8 +42,6 @@ type WorkflowExecutionSpec struct {
 	// Format: "namespace/kind/name" for namespaced resources
 	//         "kind/name" for cluster-scoped resources
 	// Example: "payment/deployment/payment-api", "node/worker-node-1"
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=3
 	TargetResource string `json:"targetResource"`
 
 	// Parameters from LLM selection (per DD-WORKFLOW-003)
@@ -134,8 +50,6 @@ type WorkflowExecutionSpec struct {
 	Parameters map[string]string `json:"parameters,omitempty"`
 
 	// Confidence score from LLM (for audit trail)
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=1
 	// +optional
 	Confidence float64 `json:"confidence,omitempty"`
 
@@ -145,23 +59,19 @@ type WorkflowExecutionSpec struct {
 
 	// ExecutionConfig contains minimal execution settings
 	// +optional
-	ExecutionConfig ExecutionConfig `json:"executionConfig,omitempty"`
+	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
 }
 
 // WorkflowRef contains catalog-resolved workflow reference
 type WorkflowRef struct {
 	// WorkflowID is the catalog lookup key
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
 	WorkflowID string `json:"workflowId"`
 
 	// Version of the workflow
-	// +kubebuilder:validation:Required
 	Version string `json:"version"`
 
 	// ContainerImage resolved from workflow catalog (Data Storage API)
 	// OCI bundle reference for Tekton PipelineRun
-	// +kubebuilder:validation:Required
 	ContainerImage string `json:"containerImage"`
 
 	// ContainerDigest for audit trail and reproducibility
@@ -191,6 +101,7 @@ type WorkflowExecutionStatus struct {
 	// Phase tracks current execution stage
 	// Skipped: Resource is busy (another workflow running) or recently remediated
 	// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed;Skipped
+	// +optional
 	Phase string `json:"phase,omitempty"`
 
 	// StartTime when execution started
@@ -218,11 +129,22 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	FailureReason string `json:"failureReason,omitempty"`
 
+	// ========================================
+	// ENHANCED FAILURE INFORMATION (v3.0)
+	// DD-CONTRACT-001 v1.3: Rich failure data for recovery flow
+	// Consumers: RO (for recovery AIAnalysis), Notification (for user alerts)
+	// ========================================
+
 	// FailureDetails contains structured failure information
 	// Populated when Phase=Failed
 	// RO uses this to populate AIAnalysis.Spec.PreviousExecutions for recovery
 	// +optional
 	FailureDetails *FailureDetails `json:"failureDetails,omitempty"`
+
+	// ========================================
+	// RESOURCE LOCKING (v3.1)
+	// DD-CONTRACT-001 v1.4: Prevents parallel workflows on same target
+	// ========================================
 
 	// SkipDetails contains information about why execution was skipped
 	// Populated when Phase=Skipped
@@ -230,89 +152,15 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	SkipDetails *SkipDetails `json:"skipDetails,omitempty"`
 
-	// LockReleased indicates the resource lock has been released after cooldown
-	// Used to track when subsequent workflows can run on the same target
-	// +optional
-	LockReleased bool `json:"lockReleased,omitempty"`
-
 	// Conditions provide detailed status information
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// PipelineRunStatusSummary captures key PipelineRun status fields
-// Lightweight summary to avoid duplicating full Tekton status
-type PipelineRunStatusSummary struct {
-	// Status from PipelineRun (Unknown, True, False)
-	Status string `json:"status,omitempty"`
-
-	// Reason from PipelineRun (e.g., "Succeeded", "Failed", "Running")
-	// +optional
-	Reason string `json:"reason,omitempty"`
-
-	// Message from PipelineRun
-	// +optional
-	Message string `json:"message,omitempty"`
-
-	// CompletedTasks count
-	// +optional
-	CompletedTasks int `json:"completedTasks,omitempty"`
-
-	// TotalTasks count (from pipeline spec)
-	// +optional
-	TotalTasks int `json:"totalTasks,omitempty"`
-}
-
-// FailureDetails contains structured failure information for recovery
-// DD-CONTRACT-001 v1.3: Aligned with AIAnalysis.Spec.PreviousExecutions[].Failure
-// Provides both structured data (for deterministic recovery) and natural language (for LLM context)
-type FailureDetails struct {
-	// FailedTaskIndex is 0-indexed position of failed task in pipeline
-	// Used by RO to populate AIAnalysis.Spec.PreviousExecutions[].Failure.FailedStepIndex
-	FailedTaskIndex int `json:"failedTaskIndex"`
-
-	// FailedTaskName is the name of the failed Tekton Task
-	// Used by RO to populate AIAnalysis.Spec.PreviousExecutions[].Failure.FailedStepName
-	FailedTaskName string `json:"failedTaskName"`
-
-	// FailedStepName is the name of the failed step within the task (if available)
-	// Tekton tasks can have multiple steps; this identifies the specific step
-	// +optional
-	FailedStepName string `json:"failedStepName,omitempty"`
-
-	// Reason is a Kubernetes-style reason code
-	// Used for deterministic recovery decisions by RO
-	// +kubebuilder:validation:Enum=OOMKilled;DeadlineExceeded;Forbidden;ResourceExhausted;ConfigurationError;ImagePullBackOff;Unknown
-	Reason string `json:"reason"`
-
-	// Message is human-readable error message (for logging/UI/notifications)
-	Message string `json:"message"`
-
-	// ExitCode from container (if applicable)
-	// Useful for script-based tasks that return specific exit codes
-	// +optional
-	ExitCode *int32 `json:"exitCode,omitempty"`
-
-	// FailedAt is the timestamp when the failure occurred
-	FailedAt metav1.Time `json:"failedAt"`
-
-	// ExecutionTimeBeforeFailure is how long the workflow ran before failing
-	// Format: Go duration string (e.g., "2m30s")
-	ExecutionTimeBeforeFailure string `json:"executionTimeBeforeFailure"`
-
-	// NaturalLanguageSummary is a human/LLM-readable failure description
-	// Generated by WE controller from structured data above
-	// Used by:
-	//   - RO: Included in AIAnalysis.Spec.PreviousExecutions for LLM context
-	//   - Notification: Included in user-facing failure alerts
-	NaturalLanguageSummary string `json:"naturalLanguageSummary"`
-
-	// WasExecutionFailure indicates whether the failure occurred during execution
-	// true: Failure happened during PipelineRun execution (cluster state unknown)
-	// false: Failure happened before execution started (e.g., RBAC, image pull)
-	// Used by RO to decide if retry is safe
-	WasExecutionFailure bool `json:"wasExecutionFailure"`
-}
+// ========================================
+// SKIP DETAILS (v3.1)
+// DD-CONTRACT-001 v1.4: Resource locking prevents parallel/redundant execution
+// ========================================
 
 // SkipDetails contains information about why a WorkflowExecution was skipped
 // Provides context for notifications and audit trail
@@ -378,17 +226,158 @@ type RecentRemediationRef struct {
 	CooldownRemaining string `json:"cooldownRemaining,omitempty"`
 }
 
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=wfe
-// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`
-// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource`
-// +kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.duration`
-// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// ========================================
+// FAILURE DETAILS (v3.0)
+// DD-CONTRACT-001 v1.3: Structured failure information for recovery
+// ========================================
+
+// FailureDetails contains structured failure information for recovery
+// Aligned with AIAnalysis.Spec.PreviousExecutions[].Failure
+// Provides both structured data (for deterministic recovery) and natural language (for LLM context)
+type FailureDetails struct {
+	// FailedTaskIndex is 0-indexed position of failed task in pipeline
+	// Used by RO to populate AIAnalysis.Spec.PreviousExecutions[].Failure.FailedStepIndex
+	FailedTaskIndex int `json:"failedTaskIndex"`
+
+	// FailedTaskName is the name of the failed Tekton Task
+	// Used by RO to populate AIAnalysis.Spec.PreviousExecutions[].Failure.FailedStepName
+	FailedTaskName string `json:"failedTaskName"`
+
+	// FailedStepName is the name of the failed step within the task (if available)
+	// Tekton tasks can have multiple steps; this identifies the specific step
+	// +optional
+	FailedStepName string `json:"failedStepName,omitempty"`
+
+	// Reason is a Kubernetes-style reason code
+	// Used for deterministic recovery decisions by RO
+	// +kubebuilder:validation:Enum=OOMKilled;DeadlineExceeded;Forbidden;ResourceExhausted;ConfigurationError;ImagePullBackOff;Unknown
+	Reason string `json:"reason"`
+
+	// Message is human-readable error message (for logging/UI/notifications)
+	Message string `json:"message"`
+
+	// ExitCode from container (if applicable)
+	// Useful for script-based tasks that return specific exit codes
+	// +optional
+	ExitCode *int32 `json:"exitCode,omitempty"`
+
+	// FailedAt is the timestamp when the failure occurred
+	FailedAt metav1.Time `json:"failedAt"`
+
+	// ExecutionTimeBeforeFailure is how long the workflow ran before failing
+	// Format: Go duration string (e.g., "2m30s")
+	ExecutionTimeBeforeFailure string `json:"executionTimeBeforeFailure"`
+
+	// ========================================
+	// NATURAL LANGUAGE SUMMARY
+	// For LLM recovery context and user notifications
+	// ========================================
+
+	// NaturalLanguageSummary is a human/LLM-readable failure description
+	// Generated by WE controller from structured data above
+	// Used by:
+	//   - RO: Included in AIAnalysis.Spec.PreviousExecutions for LLM context
+	//   - Notification: Included in user-facing failure alerts
+	NaturalLanguageSummary string `json:"naturalLanguageSummary"`
+}
+
+// PipelineRunStatusSummary captures key PipelineRun status fields
+// Lightweight summary to avoid duplicating full Tekton status
+type PipelineRunStatusSummary struct {
+	// Status from PipelineRun (Unknown, True, False)
+	Status string `json:"status"`
+
+	// Reason from PipelineRun (e.g., "Succeeded", "Failed", "Running")
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// Message from PipelineRun
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// CompletedTasks count
+	// +optional
+	CompletedTasks int `json:"completedTasks,omitempty"`
+
+	// TotalTasks count (from pipeline spec)
+	// +optional
+	TotalTasks int `json:"totalTasks,omitempty"`
+}
+
+// ========================================
+// PHASE CONSTANTS
+// ========================================
+
+const (
+	// PhasePending indicates the WorkflowExecution is waiting to start
+	PhasePending = "Pending"
+
+	// PhaseRunning indicates the PipelineRun is executing
+	PhaseRunning = "Running"
+
+	// PhaseCompleted indicates the workflow completed successfully
+	PhaseCompleted = "Completed"
+
+	// PhaseFailed indicates the workflow failed
+	PhaseFailed = "Failed"
+
+	// PhaseSkipped indicates the workflow was skipped due to resource lock
+	PhaseSkipped = "Skipped"
+)
+
+// ========================================
+// SKIP REASON CONSTANTS
+// ========================================
+
+const (
+	// SkipReasonResourceBusy indicates another workflow is running on the target
+	SkipReasonResourceBusy = "ResourceBusy"
+
+	// SkipReasonRecentlyRemediated indicates same workflow+target was recently executed
+	SkipReasonRecentlyRemediated = "RecentlyRemediated"
+)
+
+// ========================================
+// FAILURE REASON CONSTANTS
+// ========================================
+
+const (
+	// FailureReasonOOMKilled indicates container was killed due to memory limits
+	FailureReasonOOMKilled = "OOMKilled"
+
+	// FailureReasonDeadlineExceeded indicates timeout was reached
+	FailureReasonDeadlineExceeded = "DeadlineExceeded"
+
+	// FailureReasonForbidden indicates RBAC/permission failure
+	FailureReasonForbidden = "Forbidden"
+
+	// FailureReasonResourceExhausted indicates cluster resource limits (quota, etc.)
+	FailureReasonResourceExhausted = "ResourceExhausted"
+
+	// FailureReasonConfigurationError indicates invalid parameters or config
+	FailureReasonConfigurationError = "ConfigurationError"
+
+	// FailureReasonImagePullBackOff indicates container image could not be pulled
+	FailureReasonImagePullBackOff = "ImagePullBackOff"
+
+	// FailureReasonUnknown for unclassified failures
+	FailureReasonUnknown = "Unknown"
+)
+
+// ========================================
+// CRD DEFINITIONS
+// ========================================
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=wfe
+//+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+//+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`
+//+kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource`
+//+kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.duration`
+//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // WorkflowExecution is the Schema for the workflowexecutions API
-// Manages workflow execution lifecycle by delegating to Tekton PipelineRuns
 type WorkflowExecution struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -397,7 +386,7 @@ type WorkflowExecution struct {
 	Status WorkflowExecutionStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
 // WorkflowExecutionList contains a list of WorkflowExecution
 type WorkflowExecutionList struct {
@@ -409,3 +398,4 @@ type WorkflowExecutionList struct {
 func init() {
 	SchemeBuilder.Register(&WorkflowExecution{}, &WorkflowExecutionList{})
 }
+

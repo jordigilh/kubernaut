@@ -1,9 +1,19 @@
 # AIAnalysis Rego Policy Examples
 
 **Status**: 🟡 DRAFT - For Design Discussion
-**Version**: 1.4
-**Date**: 2025-12-02
+**Version**: 1.5
+**Date**: 2025-12-05
 **Purpose**: Explore approval policy input/output schemas with sample policies
+**Rego Syntax**: OPA v1 (`if` keyword, `:=` operator)
+
+---
+
+## ⚠️ OPA v1 Syntax
+
+All policies in this document use OPA v1 syntax (required for `github.com/open-policy-agent/opa/v1/rego`):
+- Default values use `:=` operator: `default x := false`
+- All rules use `if` keyword: `rule if { condition }`
+- See: [DD-AIANALYSIS-001](../../../architecture/decisions/DD-AIANALYSIS-001-rego-policy-loading-strategy.md)
 
 ---
 
@@ -11,6 +21,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **1.5** | 2025-12-05 | Added OPA v1 syntax header; All policies verified to use `if` keyword and `:=` operator |
 | **1.4** | 2025-12-02 | Added `failed_detections` to input schema per DD-WORKFLOW-001 v2.1; Added detection failure handling policies; Key distinction: "Resource doesn't exist" ≠ detection failure |
 | 1.3 | 2025-12-02 | Added `target_in_owner_chain` and `warnings` to input schema (from HolmesGPT-API); Added data quality rules for label accuracy |
 | 1.2 | 2025-11-30 | Aligned with DD-WORKFLOW-001 v1.8: snake_case for all API fields; Updated input schema to use `git_ops_managed`, `pdb_protected`, etc. |
@@ -561,7 +572,7 @@ is_data_risk_action if {
 # OUTPUT
 # ========================================
 
-reason := sprintf("Detection failed for '%s': requiring approval for %s (cannot verify safety)", 
+reason := sprintf("Detection failed for '%s': requiring approval for %s (cannot verify safety)",
     [input.detected_labels.failed_detections[0], input.action]) if {
     require_approval
     has_any_failed_detection

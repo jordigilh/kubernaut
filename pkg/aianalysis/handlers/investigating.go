@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package handlers implements phase handlers for the AIAnalysis controller.
 package handlers
 
 import (
@@ -22,99 +23,55 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/aianalysis"
-	aiclient "github.com/jordigilh/kubernaut/pkg/aianalysis/client"
+	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/client"
 )
 
-// ========================================
-// INVESTIGATING HANDLER (BR-AI-007, BR-AI-008, BR-AI-009)
-// Phase: Investigating → Analyzing
-// ========================================
-
 const (
-	// MaxRetries is the maximum number of retry attempts for transient errors.
-	// Per APPENDIX_B: 5 attempts (30s, 60s, 120s, 240s, 480s)
+	// MaxRetries for transient errors before marking as Failed
 	MaxRetries = 5
 
-	// BaseDelay is the initial retry delay.
+	// BaseDelay for exponential backoff
 	BaseDelay = 30 * time.Second
 
-	// MaxDelay is the maximum retry delay.
+	// MaxDelay caps the backoff delay
 	MaxDelay = 480 * time.Second
 
-	// RetryCountAnnotation is the annotation key for tracking retry count.
-	// Uses kubernaut.ai domain per project standard (NOTICE_LABEL_DOMAIN_AND_NOTIFICATION_ROUTING.md)
+	// RetryCountAnnotation stores retry count in CRD annotations
 	RetryCountAnnotation = "aianalysis.kubernaut.ai/retry-count"
 )
 
-// InvestigatingHandler handles the Investigating phase by calling HolmesGPT-API.
-// It processes the response, captures warnings and targetInOwnerChain,
-// and transitions to the Analyzing phase on success.
+// HolmesGPTClientInterface defines the interface for HolmesGPT-API calls
+type HolmesGPTClientInterface interface {
+	Investigate(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
+}
+
+// InvestigatingHandler handles the Investigating phase
+// BR-AI-007: Call HolmesGPT-API and process response
 type InvestigatingHandler struct {
-	client   client.Client
 	log      logr.Logger
-	hgClient aiclient.HolmesGPTClient
+	hgClient HolmesGPTClientInterface
 }
 
-// InvestigatingHandlerOption configures the InvestigatingHandler.
-type InvestigatingHandlerOption func(*InvestigatingHandler)
-
-// WithInvestigatingLogger sets the logger for the handler.
-func WithInvestigatingLogger(log logr.Logger) InvestigatingHandlerOption {
-	return func(h *InvestigatingHandler) {
-		h.log = log
+// NewInvestigatingHandler creates a new InvestigatingHandler
+func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger) *InvestigatingHandler {
+	return &InvestigatingHandler{
+		hgClient: hgClient,
+		log:      log.WithName("investigating-handler"),
 	}
 }
 
-// WithInvestigatingClient sets the Kubernetes client for the handler.
-func WithInvestigatingClient(c client.Client) InvestigatingHandlerOption {
-	return func(h *InvestigatingHandler) {
-		h.client = c
-	}
-}
-
-// WithHolmesGPTClient sets the HolmesGPT-API client for the handler.
-func WithHolmesGPTClient(hgClient aiclient.HolmesGPTClient) InvestigatingHandlerOption {
-	return func(h *InvestigatingHandler) {
-		h.hgClient = hgClient
-	}
-}
-
-// NewInvestigatingHandler creates a new InvestigatingHandler with the given options.
-func NewInvestigatingHandler(opts ...InvestigatingHandlerOption) *InvestigatingHandler {
-	h := &InvestigatingHandler{}
-
-	for _, opt := range opts {
-		opt(h)
-	}
-
-	return h
-}
-
-// Name returns the handler name for logging and metrics.
-func (h *InvestigatingHandler) Name() string {
-	return "InvestigatingHandler"
-}
-
-// Handle calls HolmesGPT-API and processes the response.
-// BR-AI-007: Process HolmesGPT response
-// BR-AI-008: Handle warnings and targetInOwnerChain
-// BR-AI-009: Retry logic with exponential backoff
-// BR-AI-010: Handle permanent errors
+// Handle processes the Investigating phase
+// BR-AI-007: Call HolmesGPT-API and update status
 func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	log := h.log.WithValues(
-		"aianalysis", client.ObjectKeyFromObject(analysis),
-		"phase", analysis.Status.Phase,
-	)
-	log.V(1).Info("Starting investigation via HolmesGPT-API")
+	h.log.Info("Processing Investigating phase", "name", analysis.Name)
 
 	// Build request from spec
 	req := h.buildRequest(analysis)
@@ -129,137 +86,86 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 	return h.processResponse(ctx, analysis, resp)
 }
 
-// buildRequest constructs the HolmesGPT-API request from the AIAnalysis spec.
-func (h *InvestigatingHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *aiclient.IncidentRequest {
-	spec := &analysis.Spec.AnalysisRequest.SignalContext
+// buildRequest constructs the HolmesGPT-API request from AIAnalysis spec
+func (h *InvestigatingHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *client.IncidentRequest {
+	spec := analysis.Spec.AnalysisRequest.SignalContext
 
-	req := &aiclient.IncidentRequest{
-		IncidentID:        analysis.Name,
-		RemediationID:     analysis.Spec.RemediationID,
-		SignalType:        spec.SignalType,
-		Severity:          spec.Severity,
-		SignalSource:      "kubernaut",
-		ResourceNamespace: spec.TargetResource.Namespace,
-		ResourceKind:      spec.TargetResource.Kind,
-		ResourceName:      spec.TargetResource.Name,
-		ErrorMessage:      fmt.Sprintf("Signal: %s in %s", spec.SignalType, spec.Environment),
-		Environment:       spec.Environment,
-		Priority:          spec.BusinessPriority,
+	return &client.IncidentRequest{
+		Context: fmt.Sprintf("Incident in %s environment, target: %s/%s/%s, signal: %s",
+			spec.Environment,
+			spec.TargetResource.Namespace,
+			spec.TargetResource.Kind,
+			spec.TargetResource.Name,
+			spec.SignalType,
+		),
 	}
-
-	// Add enrichment data if present
-	if spec.EnrichmentResults.DetectedLabels != nil {
-		req.DetectedLabels = h.convertDetectedLabels(spec.EnrichmentResults.DetectedLabels)
-	}
-
-	if spec.EnrichmentResults.CustomLabels != nil {
-		req.CustomLabels = spec.EnrichmentResults.CustomLabels
-	}
-
-	// Add owner chain
-	for _, entry := range spec.EnrichmentResults.OwnerChain {
-		req.OwnerChain = append(req.OwnerChain, aiclient.OwnerChainEntry{
-			Namespace: entry.Namespace,
-			Kind:      entry.Kind,
-			Name:      entry.Name,
-		})
-	}
-
-	return req
 }
 
-// convertDetectedLabels converts DetectedLabels to a map for the API request.
-func (h *InvestigatingHandler) convertDetectedLabels(labels *aianalysisv1.DetectedLabels) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	result["gitOpsManaged"] = labels.GitOpsManaged
-	result["pdbProtected"] = labels.PDBProtected
-	result["hpaEnabled"] = labels.HPAEnabled
-	result["stateful"] = labels.Stateful
-	result["helmManaged"] = labels.HelmManaged
-	result["networkIsolated"] = labels.NetworkIsolated
-
-	if labels.GitOpsTool != "" {
-		result["gitOpsTool"] = labels.GitOpsTool
-	}
-	if labels.ServiceMesh != "" {
-		result["serviceMesh"] = labels.ServiceMesh
-	}
-
-	// Include FailedDetections if present (DD-WORKFLOW-001 v2.2)
-	if len(labels.FailedDetections) > 0 {
-		result["failedDetections"] = labels.FailedDetections
-	}
-
-	return result
-}
-
-// handleError categorizes and handles errors from HolmesGPT-API.
-// BR-AI-009: Transient errors → retry with exponential backoff
-// BR-AI-010: Permanent errors → fail without retry
+// handleError processes errors from HolmesGPT-API
+// BR-AI-009: Retry transient errors with exponential backoff
+// BR-AI-010: Fail immediately on permanent errors
 func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
-	log := h.log.WithValues("aianalysis", client.ObjectKeyFromObject(analysis))
-
-	var apiErr *aiclient.APIError
+	var apiErr *client.APIError
 	if errors.As(err, &apiErr) && apiErr.IsTransient() {
 		// Transient error - check retry count
 		retryCount := h.getRetryCount(analysis)
+
 		if retryCount >= MaxRetries {
-			// Max retries exceeded
-			log.Error(err, "HolmesGPT-API max retries exceeded", "retryCount", retryCount)
-			return h.markFailed(ctx, analysis, "MaxRetriesExceeded",
-				fmt.Sprintf("HolmesGPT-API max retries exceeded after %d attempts: %v", retryCount, err))
+			// Max retries exceeded - mark as Failed
+			h.log.Info("Max retries exceeded", "retryCount", retryCount)
+			analysis.Status.Phase = aianalysis.PhaseFailed
+			analysis.Status.Message = fmt.Sprintf("HolmesGPT-API max retries exceeded: %v", err)
+			analysis.Status.Reason = "MaxRetriesExceeded"
+			return ctrl.Result{}, nil
 		}
 
-		// Schedule retry with exponential backoff
+		// Schedule retry with backoff
 		delay := calculateBackoff(retryCount)
-		h.incrementRetryCount(analysis)
+		h.setRetryCount(analysis, retryCount+1)
 
-		log.Info("Transient error, scheduling retry",
+		h.log.Info("Transient error, scheduling retry",
 			"retryCount", retryCount+1,
 			"delay", delay.String(),
 		)
-
-		// Update status with retry info
-		analysis.Status.Message = fmt.Sprintf("Retrying after transient error (attempt %d/%d)", retryCount+1, MaxRetries)
-
-		if updateErr := h.client.Status().Update(ctx, analysis); updateErr != nil {
-			return ctrl.Result{}, aianalysis.NewTransientError("failed to update retry status", updateErr)
-		}
-
-		return ctrl.Result{RequeueAfter: delay}, nil
+		return ctrl.Result{RequeueAfter: delay}, err
 	}
 
-	// Permanent error - fail immediately
-	log.Error(err, "Permanent HolmesGPT-API error")
-	return h.markFailed(ctx, analysis, "HolmesGPTAPIError", fmt.Sprintf("HolmesGPT-API error: %v", err))
+	// Permanent error - mark as Failed immediately
+	h.log.Info("Permanent error", "error", err)
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.Message = fmt.Sprintf("HolmesGPT-API error: %v", err)
+	analysis.Status.Reason = "APIError"
+	return ctrl.Result{}, nil
 }
 
-// processResponse processes a successful HolmesGPT-API response.
-// BR-AI-008: Capture targetInOwnerChain and warnings in status
-func (h *InvestigatingHandler) processResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *aiclient.IncidentResponse) (ctrl.Result, error) {
-	log := h.log.WithValues("aianalysis", client.ObjectKeyFromObject(analysis))
-	log.Info("Processing HolmesGPT-API response",
+// processResponse handles successful HolmesGPT-API response
+// BR-AI-008: Capture all response fields including RCA, workflow, and alternatives
+// Per HolmesGPT-API team (Dec 5, 2025): /incident/analyze returns ALL analysis results
+func (h *InvestigatingHandler) processResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+	h.log.Info("Processing successful response",
 		"confidence", resp.Confidence,
 		"targetInOwnerChain", resp.TargetInOwnerChain,
 		"warningsCount", len(resp.Warnings),
+		"hasSelectedWorkflow", resp.SelectedWorkflow != nil,
+		"alternativeWorkflowsCount", len(resp.AlternativeWorkflows),
 	)
 
-	// Store investigation results in status
-	analysis.Status.InvestigationID = resp.IncidentID
+	// Store HAPI response metadata
+	targetInOwnerChain := resp.TargetInOwnerChain
+	analysis.Status.TargetInOwnerChain = &targetInOwnerChain
+	analysis.Status.Warnings = resp.Warnings
 
-	// Store RCA results if present
+	// Store root cause analysis (if present)
 	if resp.RootCauseAnalysis != nil {
 		analysis.Status.RootCause = resp.RootCauseAnalysis.Summary
 		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:             resp.RootCauseAnalysis.Summary,
 			Severity:            resp.RootCauseAnalysis.Severity,
-			SignalType:          resp.RootCauseAnalysis.SignalType,
 			ContributingFactors: resp.RootCauseAnalysis.ContributingFactors,
 		}
 	}
 
-	// Store selected workflow if present
+	// Store selected workflow (DD-CONTRACT-002)
 	if resp.SelectedWorkflow != nil {
 		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowID:      resp.SelectedWorkflow.WorkflowID,
@@ -272,92 +178,62 @@ func (h *InvestigatingHandler) processResponse(ctx context.Context, analysis *ai
 		}
 	}
 
-	// BR-AI-008: Store targetInOwnerChain and warnings
-	analysis.Status.TargetInOwnerChain = &resp.TargetInOwnerChain
-	analysis.Status.Warnings = resp.Warnings
+	// Store alternative workflows (INFORMATIONAL ONLY - NOT for execution)
+	// Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION
+	if len(resp.AlternativeWorkflows) > 0 {
+		alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
+		for _, alt := range resp.AlternativeWorkflows {
+			alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
+				WorkflowID:     alt.WorkflowID,
+				ContainerImage: alt.ContainerImage,
+				Confidence:     alt.Confidence,
+				Rationale:      alt.Rationale,
+			})
+		}
+		analysis.Status.AlternativeWorkflows = alternatives
+	}
 
 	// Reset retry count on success
-	h.resetRetryCount(analysis)
+	h.setRetryCount(analysis, 0)
 
 	// Transition to Analyzing phase
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Investigation complete, starting analysis"
 
-	// Calculate investigation time
-	if analysis.Status.StartedAt != nil {
-		elapsed := time.Since(analysis.Status.StartedAt.Time)
-		analysis.Status.InvestigationTime = int64(elapsed.Seconds())
-	}
-
-	if err := h.client.Status().Update(ctx, analysis); err != nil {
-		return ctrl.Result{}, aianalysis.NewTransientError("failed to update status after investigation", err)
-	}
-
-	log.Info("Investigation complete, transitioning to Analyzing phase")
 	return ctrl.Result{Requeue: true}, nil
 }
 
-// markFailed updates status to Failed phase.
-func (h *InvestigatingHandler) markFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, reason, message string) (ctrl.Result, error) {
-	now := metav1.Now()
-	analysis.Status.Phase = aianalysis.PhaseFailed
-	analysis.Status.Message = message
-	analysis.Status.Reason = reason
-	analysis.Status.CompletedAt = &now
-
-	if err := h.client.Status().Update(ctx, analysis); err != nil {
-		return ctrl.Result{}, aianalysis.NewTransientError("failed to update failed status", err)
-	}
-
-	return ctrl.Result{}, nil
-}
-
-// ========================================
-// RETRY HELPERS (BR-AI-009)
-// ========================================
-
-// getRetryCount returns the current retry count from annotations.
+// getRetryCount reads retry count from annotations
 func (h *InvestigatingHandler) getRetryCount(analysis *aianalysisv1.AIAnalysis) int {
 	if analysis.Annotations == nil {
 		return 0
 	}
-
 	countStr, ok := analysis.Annotations[RetryCountAnnotation]
 	if !ok {
 		return 0
 	}
-
-	var count int
-	fmt.Sscanf(countStr, "%d", &count)
+	count, err := strconv.Atoi(countStr)
+	if err != nil {
+		return 0
+	}
 	return count
 }
 
-// incrementRetryCount increments the retry count in annotations.
-func (h *InvestigatingHandler) incrementRetryCount(analysis *aianalysisv1.AIAnalysis) {
+// setRetryCount writes retry count to annotations
+func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, count int) {
 	if analysis.Annotations == nil {
 		analysis.Annotations = make(map[string]string)
 	}
-
-	count := h.getRetryCount(analysis) + 1
-	analysis.Annotations[RetryCountAnnotation] = fmt.Sprintf("%d", count)
+	analysis.Annotations[RetryCountAnnotation] = strconv.Itoa(count)
 }
 
-// resetRetryCount resets the retry count on success.
-func (h *InvestigatingHandler) resetRetryCount(analysis *aianalysisv1.AIAnalysis) {
-	if analysis.Annotations != nil {
-		delete(analysis.Annotations, RetryCountAnnotation)
-	}
-}
-
-// calculateBackoff calculates the delay for the next retry attempt.
-// Uses exponential backoff with jitter: delay = min(baseDelay * 2^attempt, maxDelay) ± 10%
+// calculateBackoff computes exponential backoff with jitter
 func calculateBackoff(attemptCount int) time.Duration {
 	delay := time.Duration(float64(BaseDelay) * math.Pow(2, float64(attemptCount)))
 	if delay > MaxDelay {
 		delay = MaxDelay
 	}
-
 	// Add jitter (±10%)
-	jitterFactor := 0.9 + 0.2*rand.Float64()
-	return time.Duration(float64(delay) * jitterFactor)
+	jitter := time.Duration(float64(delay) * (0.9 + 0.2*rand.Float64()))
+	return jitter
 }

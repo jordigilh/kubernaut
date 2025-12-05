@@ -1,15 +1,22 @@
 ## Controller Implementation
 
-**Version**: 4.0
-**Last Updated**: 2025-12-02
+**Version**: 4.1
+**Last Updated**: 2025-12-05
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Status**: ✅ Updated for Tekton Architecture (ADR-044)
 
-**Location**: `internal/controller/workflowexecution_controller.go`
+**Location**: `internal/controller/workflowexecution/workflowexecution_controller.go`
 
 ---
 
 ## Changelog
+
+### Version 4.1 (2025-12-05)
+- ✅ **Changed**: Cross-namespace watch uses predicate filter instead of namespace-scoped cache
+- ✅ **Added**: `kind` parameter to bundle resolver params (required by Tekton)
+- ✅ **Fixed**: ServiceAccountName moved to `TaskRunTemplate` (Tekton v1 API)
+- ✅ **Added**: Additional labels (`workflow-id`, `target-resource`) for better tracking
+- ✅ **Rationale**: Predicate filter is simpler and achieves same filtering goal
 
 ### Version 4.0 (2025-12-02)
 - ✅ **Rewritten**: Complete rewrite for Tekton PipelineRun delegation
@@ -24,9 +31,10 @@
 **Critical Patterns**:
 1. **Owner References**: WorkflowExecution CRD owned by RemediationRequest for cascade deletion
 2. **Finalizers**: Cleanup coordination before deletion
-3. **PipelineRun Watch**: Watch owned PipelineRun for status sync
+3. **PipelineRun Watch**: Watch PipelineRuns via predicate filter on `kubernaut.ai/workflow-execution` label (v4.1)
 4. **Resource Locking**: Check for active executions on same target (DD-WE-001)
 5. **Event Emission**: Operational visibility through Kubernetes events
+6. **Cross-Namespace Tracking**: Labels enable mapping PipelineRun events to WFE reconcile requests
 
 ```go
 package controller
@@ -248,24 +256,25 @@ func pipelineRunName(targetResource string) string {
     return fmt.Sprintf("wfe-%s", hex.EncodeToString(h[:])[:16])
 }
 
-// buildPipelineRun creates a PipelineRun in the dedicated execution namespace (DD-WE-002)
+// BuildPipelineRun creates a PipelineRun in the dedicated execution namespace (DD-WE-002)
 // Uses deterministic name for atomic locking (DD-WE-003)
-func (r *WorkflowExecutionReconciler) buildPipelineRun(
+// Updated in v4.1: Added kind param, fixed ServiceAccountName location
+func (r *WorkflowExecutionReconciler) BuildPipelineRun(
     wfe *workflowexecutionv1.WorkflowExecution,
 ) *tektonv1.PipelineRun {
     // Convert parameters to Tekton format
-    params := make([]tektonv1.Param, 0, len(wfe.Spec.Parameters))
-    for key, value := range wfe.Spec.Parameters {
-        params = append(params, tektonv1.Param{
-            Name:  key,
-            Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: value},
-        })
+    params := r.ConvertParameters(wfe.Spec.Parameters)
+
+    // Get service account name (use default if not set)
+    saName := r.ServiceAccountName
+    if saName == "" {
+        saName = DefaultServiceAccountName
     }
 
     return &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
             // CRITICAL: Deterministic name = atomic lock (DD-WE-003)
-            Name:      pipelineRunName(wfe.Spec.TargetResource),
+            Name:      PipelineRunName(wfe.Spec.TargetResource),
             Namespace: r.ExecutionNamespace,  // Always "kubernaut-workflows" (DD-WE-002)
             Labels: map[string]string{
                 "kubernaut.ai/workflow-execution": wfe.Name,
@@ -284,11 +293,14 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
                     Params: []tektonv1.Param{
                         {Name: "bundle", Value: tektonv1.ParamValue{StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
                         {Name: "name", Value: tektonv1.ParamValue{StringVal: "workflow"}},
+                        {Name: "kind", Value: tektonv1.ParamValue{StringVal: "pipeline"}},  // Required by Tekton (v4.1)
                     },
                 },
             },
-            Params:             params,
-            ServiceAccountName: r.ServiceAccountName,  // "kubernaut-workflow-runner"
+            Params: params,
+            TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
+                ServiceAccountName: saName,  // Tekton v1 API location (v4.1)
+            },
         },
     }
 }
@@ -508,24 +520,35 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
     return ctrl.NewControllerManagedBy(mgr).
         For(&workflowexecutionv1.WorkflowExecution{}).
-        // Watch PipelineRuns in execution namespace (cross-namespace via label)
+        // Watch PipelineRuns using predicate filter (v4.1)
+        // Predicate filter is simpler than namespace-scoped cache and achieves same goal:
+        // Only watch PipelineRuns that have our tracking label
         Watches(
             &tektonv1.PipelineRun{},
-            handler.EnqueueRequestsFromMapFunc(r.findWFEForPipelineRun),
+            handler.EnqueueRequestsFromMapFunc(r.FindWFEForPipelineRun),
             builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
-                _, hasLabel := obj.GetLabels()["kubernaut.ai/workflow-execution"]
+                labels := obj.GetLabels()
+                if labels == nil {
+                    return false
+                }
+                _, hasLabel := labels["kubernaut.ai/workflow-execution"]
                 return hasLabel
             })),
         ).
         Complete(r)
 }
 
-// findWFEForPipelineRun maps PipelineRun events to WorkflowExecution reconcile requests
-func (r *WorkflowExecutionReconciler) findWFEForPipelineRun(
+// FindWFEForPipelineRun maps PipelineRun events to WorkflowExecution reconcile requests
+// Used for cross-namespace watch via labels (v4.1)
+func (r *WorkflowExecutionReconciler) FindWFEForPipelineRun(
     ctx context.Context,
-    pr client.Object,
+    obj client.Object,
 ) []reconcile.Request {
-    labels := pr.GetLabels()
+    labels := obj.GetLabels()
+    if labels == nil {
+        return nil
+    }
+
     wfeName := labels["kubernaut.ai/workflow-execution"]
     sourceNS := labels["kubernaut.ai/source-namespace"]
 
@@ -602,3 +625,4 @@ func CheckTektonAvailable(ctx context.Context, restMapper meta.RESTMapper) error
 - `wasExecutionFailure: true` → During-execution failure - requires manual review
 
 ---
+

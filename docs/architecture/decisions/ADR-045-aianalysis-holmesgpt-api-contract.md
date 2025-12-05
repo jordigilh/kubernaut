@@ -236,6 +236,14 @@ InvestigateResponse:
       type: array
       items:
         $ref: '#/components/schemas/AlternativeWorkflow'
+      description: |
+        INFORMATIONAL ONLY - NOT for automatic execution.
+        Per APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:
+        - ✅ Purpose: Help operator make an informed approval decision
+        - ✅ Content: Other workflows considered with confidence and rationale
+        - ❌ NOT: A fallback queue for automatic execution
+        Only selectedWorkflow is executed. Alternatives provide audit trail
+        and context for operator approval decisions.
     targetInOwnerChain:
       type: boolean
       default: true
@@ -310,15 +318,31 @@ SelectedWorkflow:
 
 AlternativeWorkflow:
   type: object
+  description: |
+    Alternative workflow that was considered but not selected.
+    For AUDIT and OPERATOR CONTEXT only - NOT for automatic execution.
+
+    Purpose (per APPROVAL_REJECTION_BEHAVIOR_DETAILED.md):
+    - Help operator understand what options were evaluated
+    - Provide audit trail of AI decision-making
+    - Enable informed approval decisions
+
+    Only selectedWorkflow is executed by RemediationOrchestrator.
   properties:
     workflowId:
       type: string
+      description: Workflow identifier that was considered
     containerImage:
       type: string
+      description: OCI image reference for the alternative workflow
     confidence:
       type: number
+      minimum: 0.0
+      maximum: 1.0
+      description: Confidence score for this alternative (typically lower than selectedWorkflow)
     rationale:
       type: string
+      description: Why this workflow was considered but not selected (explains trade-offs)
 
 AnalysisMetadata:
   type: object
@@ -426,6 +450,18 @@ ProblemDetails:
 | `version` | Human metadata, use `containerImage` + `containerDigest` |
 | `historicalSuccessRate` | Not used in V1.0 (see DD-HAPI-003) |
 
+### Informational vs Execution Fields
+
+| Field | Purpose | Execution |
+|-------|---------|-----------|
+| `selectedWorkflow` | Primary recommendation | ✅ **Executed by RO** |
+| `alternativeWorkflows` | Audit trail, operator context | ❌ **NOT executed** |
+| `warnings` | Operator transparency | ❌ Informational |
+| `targetInOwnerChain` | Rego policy input, audit | ❌ Informational |
+
+**Key Principle** (per `APPROVAL_REJECTION_BEHAVIOR_DETAILED.md`):
+> Alternatives are for **CONTEXT**, not **EXECUTION**. They help operators make informed approval decisions and provide audit trail of AI decision-making.
+
 ---
 
 ## Consequences
@@ -452,12 +488,13 @@ ProblemDetails:
 | Item | Owner | Status |
 |------|-------|--------|
 | Create `holmesgpt-api/api/` directory | HAPI Team | ✅ Done |
-| Export OpenAPI spec to `api/openapi.json` | HAPI Team | ✅ Done (16 schemas) |
+| Export OpenAPI spec to `api/openapi.json` | HAPI Team | ✅ Done (17 schemas) |
 | Add `targetInOwnerChain` field to response | HAPI Team | ✅ Done (v1.1) |
 | Add `warnings[]` field to response | HAPI Team | ✅ Done (v1.1) |
 | Implement OwnerChain validation logic | HAPI Team | ✅ Done (11 tests) |
+| Add `alternativeWorkflows[]` for audit/context | HAPI Team | ✅ Done (v1.2) |
 | Add export script to Makefile | HAPI Team | ⏳ Pending |
-| Generate Go client for AIAnalysis | AIAnalysis Team | ⏳ Ready (OpenAPI available) |
+| Generate Go client for AIAnalysis | AIAnalysis Team | ⏳ Ready (OpenAPI available, 17 schemas) |
 | Add OpenAPI spec to CI validation | HAPI Team | ⏳ Pending |
 
 ---
@@ -480,6 +517,7 @@ ProblemDetails:
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2 | 2025-12-05 | HAPI Team | Implemented `alternativeWorkflows[]` for audit/context (NOT for execution) |
 | 1.1 | 2025-12-02 | HAPI Team | Added `targetInOwnerChain` and `warnings[]` fields per AIAnalysis request |
 | 1.0 | 2025-12-02 | HAPI Team | Initial creation (converted from DD-HAPI-004) |
 

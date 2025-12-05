@@ -1,0 +1,30 @@
+# Kind cluster configuration for E2E tests
+# Per ADR-044: Port allocation for E2E tests
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kubernaut-e2e
+nodes:
+  - role: control-plane
+    # Expose NodePorts for E2E testing (per DD-TEST-001)
+    extraPortMappings:
+      # WorkflowExecution controller health/metrics
+      - containerPort: 30081  # Health port NodePort
+        hostPort: 30081
+        protocol: TCP
+      - containerPort: 30090  # Metrics port NodePort
+        hostPort: 30090
+        protocol: TCP
+      # Gateway service (existing)
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP
+      # Data storage service
+      - containerPort: 30082
+        hostPort: 30082
+        protocol: TCP
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+      endpoint = ["http://kind-registry:5000"]
+
+

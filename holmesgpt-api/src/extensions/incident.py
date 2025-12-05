@@ -472,7 +472,15 @@ Provide natural language summary + structured JSON with workflow and parameters.
     "parameters": {{
       "PARAM_NAME": "value-from-investigation"
     }}
-  }}
+  }},
+  "alternative_workflows": [
+    {{
+      "workflow_id": "other-workflow-id",
+      "container_image": "image:tag",
+      "confidence": 0.75,
+      "rationale": "Why this was considered but not selected"
+    }}
+  ]
 }}
 ```
 
@@ -589,12 +597,22 @@ Explain your investigation findings, root cause analysis, and reasoning for work
       "PARAM_NAME": "value",
       "ANOTHER_PARAM": "value"
     }}
-  }}
+  }},
+  "alternative_workflows": [
+    {{
+      "workflow_id": "alternative-workflow-id",
+      "container_image": "image:tag",
+      "confidence": 0.75,
+      "rationale": "Why this alternative was considered but not selected"
+    }}
+  ]
 }}
 ```
 
 **IMPORTANT**:
-- Select ONE workflow per incident
+- Select ONE workflow per incident as `selected_workflow`
+- Include up to 2-3 alternative workflows considered but not selected
+- `alternative_workflows` are for AUDIT/CONTEXT only - they help operators understand what options were considered
 - Populate ALL required parameters from the workflow schema
 - Use your RCA findings to determine parameter values
 - Pass-through business context fields (environment, priority, risk_tolerance, business_category) to MCP search
@@ -814,12 +832,24 @@ def _parse_investigation_result(
     import re
 
     json_match = re.search(r'```json\s*(\{.*?\})\s*```', analysis, re.DOTALL)
+    alternative_workflows = []
     if json_match:
         try:
             json_data = json.loads(json_match.group(1))
             rca = json_data.get("root_cause_analysis", {})
             selected_workflow = json_data.get("selected_workflow")
             confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
+
+            # Extract alternative workflows (ADR-045 v1.2 - for audit/context only)
+            raw_alternatives = json_data.get("alternative_workflows", [])
+            for alt in raw_alternatives:
+                if isinstance(alt, dict) and alt.get("workflow_id"):
+                    alternative_workflows.append({
+                        "workflow_id": alt.get("workflow_id", ""),
+                        "container_image": alt.get("container_image"),
+                        "confidence": float(alt.get("confidence", 0.0)),
+                        "rationale": alt.get("rationale", "")
+                    })
         except json.JSONDecodeError:
             rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
             selected_workflow = None
@@ -863,7 +893,10 @@ def _parse_investigation_result(
         "confidence": confidence,
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "target_in_owner_chain": target_in_owner_chain,
-        "warnings": warnings
+        "warnings": warnings,
+        # Alternative workflows for audit/context (ADR-045 v1.2)
+        # IMPORTANT: These are for INFORMATIONAL purposes only - NOT for automatic execution
+        "alternative_workflows": alternative_workflows
     }
 
 

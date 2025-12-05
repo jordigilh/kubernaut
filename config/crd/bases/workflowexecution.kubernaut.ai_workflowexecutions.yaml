@@ -35,9 +35,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: |-
-          WorkflowExecution is the Schema for the workflowexecutions API
-          Manages workflow execution lifecycle by delegating to Tekton PipelineRuns
+        description: WorkflowExecution is the Schema for the workflowexecutions API
         properties:
           apiVersion:
             description: |-
@@ -63,8 +61,6 @@ spec:
             properties:
               confidence:
                 description: Confidence score from LLM (for audit trail)
-                maximum: 1
-                minimum: 0
                 type: number
               executionConfig:
                 description: ExecutionConfig contains minimal execution settings
@@ -141,7 +137,6 @@ spec:
                   Format: "namespace/kind/name" for namespaced resources
                           "kind/name" for cluster-scoped resources
                   Example: "payment/deployment/payment-api", "node/worker-node-1"
-                minLength: 3
                 type: string
               workflowRef:
                 description: |-
@@ -161,7 +156,6 @@ spec:
                     type: string
                   workflowId:
                     description: WorkflowID is the catalog lookup key
-                    minLength: 1
                     type: string
                 required:
                 - containerImage
@@ -304,13 +298,6 @@ spec:
                     - ImagePullBackOff
                     - Unknown
                     type: string
-                  wasExecutionFailure:
-                    description: |-
-                      WasExecutionFailure indicates whether the failure occurred during execution
-                      true: Failure happened during PipelineRun execution (cluster state unknown)
-                      false: Failure happened before execution started (e.g., RBAC, image pull)
-                      Used by RO to decide if retry is safe
-                    type: boolean
                 required:
                 - executionTimeBeforeFailure
                 - failedAt
@@ -319,18 +306,12 @@ spec:
                 - message
                 - naturalLanguageSummary
                 - reason
-                - wasExecutionFailure
                 type: object
               failureReason:
                 description: |-
                   FailureReason explains why execution failed (if applicable)
                   DEPRECATED: Use FailureDetails for structured failure information
                 type: string
-              lockReleased:
-                description: |-
-                  LockReleased indicates the resource lock has been released after cooldown
-                  Used to track when subsequent workflows can run on the same target
-                type: boolean
               phase:
                 description: |-
                   Phase tracks current execution stage
@@ -375,6 +356,8 @@ spec:
                   totalTasks:
                     description: TotalTasks count (from pipeline spec)
                     type: integer
+                required:
+                - status
                 type: object
               skipDetails:
                 description: |-

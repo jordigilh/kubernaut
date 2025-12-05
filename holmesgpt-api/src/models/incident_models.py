@@ -186,16 +186,41 @@ class IncidentRequest(BaseModel):
     enrichment_results: Optional[EnrichmentResults] = Field(None, description="Enriched context from SignalProcessing")
 
 
+class AlternativeWorkflow(BaseModel):
+    """
+    Alternative workflow recommendation for operator context.
+
+    Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
+
+    IMPORTANT: Alternatives are for CONTEXT, not EXECUTION.
+    Per APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:
+    - ✅ Purpose: Help operator make an informed decision
+    - ✅ Content: Pros/cons of alternative approaches
+    - ❌ NOT: A fallback queue for automatic execution
+
+    Only `selected_workflow` is executed. Alternatives provide:
+    - Audit trail of what options were considered
+    - Context for operator approval decisions
+    - Transparency into AI reasoning
+    """
+    workflow_id: str = Field(..., description="Workflow identifier")
+    container_image: Optional[str] = Field(None, description="OCI image reference")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score for this alternative")
+    rationale: str = Field(..., description="Why this alternative was considered but not selected")
+
+
 class IncidentResponse(BaseModel):
     """
     Response model for incident analysis endpoint
 
     Business Requirement: BR-HAPI-002 (Incident analysis response schema)
     Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
+    Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
 
-    New fields (per AIAnalysis team request, Dec 2, 2025):
-    - target_in_owner_chain: Whether RCA target was found in OwnerChain
-    - warnings: Non-fatal warnings for transparency
+    Fields added per AIAnalysis team requests:
+    - target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)
+    - warnings: Non-fatal warnings for transparency (Dec 2, 2025)
+    - alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY
     """
     incident_id: str = Field(..., description="Incident identifier from request")
     analysis: str = Field(..., description="Natural language analysis from LLM")
@@ -213,4 +238,13 @@ class IncidentResponse(BaseModel):
     warnings: List[str] = Field(
         default_factory=list,
         description="Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)"
+    )
+
+    # Alternative workflows for audit/context (ADR-045 v1.2, Dec 5, 2025)
+    # IMPORTANT: These are for INFORMATIONAL purposes only - NOT for automatic execution
+    # Only selected_workflow is executed. Alternatives help operators make informed decisions.
+    alternative_workflows: List[AlternativeWorkflow] = Field(
+        default_factory=list,
+        description="Other workflows considered but not selected. For operator context and audit trail only - "
+                    "NOT for automatic fallback execution. Helps operators understand AI reasoning."
     )

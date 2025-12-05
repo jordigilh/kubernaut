@@ -676,6 +676,43 @@ spec:
           status:
             description: AIAnalysisStatus defines the observed state of AIAnalysis.
             properties:
+              alternativeWorkflows:
+                description: |-
+                  ========================================
+                  ALTERNATIVE WORKFLOWS (Dec 2025)
+                  ========================================
+                  Alternative workflows considered but not selected.
+                  INFORMATIONAL ONLY - NOT for automatic execution.
+                  Helps operators make informed approval decisions and provides audit trail.
+                  Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION.
+                items:
+                  description: |-
+                    AlternativeWorkflow contains alternative workflows considered but not selected.
+                    INFORMATIONAL ONLY - NOT for automatic execution.
+                    Helps operators understand AI reasoning during approval decisions.
+                    Per HolmesGPT-API team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
+                  properties:
+                    confidence:
+                      description: Confidence score (0.0-1.0) - shows why it wasn't
+                        selected
+                      maximum: 1
+                      minimum: 0
+                      type: number
+                    containerImage:
+                      description: Container image (OCI bundle) - resolved by HolmesGPT-API
+                      type: string
+                    rationale:
+                      description: Rationale explaining why this workflow was considered
+                      type: string
+                    workflowId:
+                      description: Workflow identifier (catalog lookup key)
+                      type: string
+                  required:
+                  - confidence
+                  - rationale
+                  - workflowId
+                  type: object
+                type: array
               approvalContext:
                 description: Rich context for approval notification
                 properties:

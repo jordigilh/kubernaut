@@ -4,6 +4,93 @@
 **Parent Document**: [IMPLEMENTATION_PLAN_V1.0.md](../../IMPLEMENTATION_PLAN_V1.0.md)
 **Duration**: 12-16 hours (2 days)
 **Target Confidence**: 78% (Day 4 Midpoint)
+**Version**: v1.1
+
+**Changelog**:
+- **v1.2** (2025-12-05): OPA v1 Rego syntax update
+  - ✅ **OPA v1 Syntax**: All Rego policies MUST use `if` keyword and `:=` operator
+  - ✅ **Import**: Use `import rego.v1` or `github.com/open-policy-agent/opa/v1/rego`
+  - ✅ **Breaking Change**: Old syntax without `if` will cause parse errors
+  - 📏 **Reference**: `test/unit/aianalysis/testdata/policies/approval.rego`
+- **v1.1** (2025-12-05): Architecture clarification from HolmesGPT-API team
+  - ✅ **Day 4 Simplification**: RecommendingHandler is now a status finalizer (NO separate HAPI call)
+  - ✅ **Workflow Data**: Already captured in InvestigatingHandler from `/incident/analyze`
+  - ✅ **CRD Schema**: Added `AlternativeWorkflows` field for audit/operator context
+  - ✅ **Key Principle**: "Alternatives are for CONTEXT, not EXECUTION"
+  - 📏 **Reference**: [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) Q12-Q13
+- **v1.0** (2025-12-04): Initial document
+
+---
+
+## 🔔 Architecture Clarification (Dec 5, 2025)
+
+> **IMPORTANT**: Per HolmesGPT-API team response to Q12-Q13:
+>
+> | Endpoint | Returns | Phase |
+> |----------|---------|-------|
+> | `/api/v1/incident/analyze` | RCA + `selected_workflow` + `alternative_workflows` | **Investigating** |
+> | N/A (local evaluation) | `approvalRequired` via Rego policy | **Analyzing** |
+> | N/A (finalize status) | Phase=Completed, populate ApprovalContext | **Recommending** |
+>
+> **Key Insight**: The `/incident/analyze` endpoint returns ALL analysis results in ONE call.
+> - `InvestigatingHandler` captures: RCA, SelectedWorkflow, AlternativeWorkflows, TargetInOwnerChain, Warnings
+> - `AnalyzingHandler` evaluates: Rego approval policy using data already in status
+> - `RecommendingHandler` finalizes: Status, populates ApprovalContext, transitions to Completed
+>
+> **Day 4 code samples below are OUTDATED** - RecommendingHandler does NOT call HolmesGPT-API.
+> See updated implementation in `pkg/aianalysis/handlers/recommending.go`.
+
+---
+
+## ⚠️ OPA v1 Rego Syntax Requirement
+
+> **CRITICAL**: All Rego policies in this project MUST use OPA v1 syntax.
+
+### What Changed in OPA v1?
+
+| Aspect | Old Syntax (v0) | New Syntax (v1) |
+|--------|-----------------|-----------------|
+| **Package import** | `"github.com/open-policy-agent/opa/rego"` | `"github.com/open-policy-agent/opa/v1/rego"` |
+| **Default values** | `default x = false` | `default x := false` |
+| **Rule bodies** | `rule { condition }` | `rule if { condition }` |
+| **Assignment** | `x = value { cond }` | `x := value if { cond }` |
+
+### Example: Correct OPA v1 Policy
+
+```rego
+package aianalysis.approval
+
+import rego.v1  # Optional but recommended
+
+# Default with := operator
+default require_approval := false
+
+# Helper rule with 'if' keyword
+is_production if {
+    input.environment == "production"
+}
+
+# Main rule with 'if' keyword
+require_approval if {
+    is_production
+    not input.target_in_owner_chain
+}
+
+# Assignment rule with := and if
+reason := "Target not in owner chain" if {
+    is_production
+    not input.target_in_owner_chain
+}
+```
+
+### Common Error
+
+If you see this error:
+```
+rego_parse_error: `if` keyword is required before rule body
+```
+
+It means your Rego policy is using old v0 syntax. Add `if` before all rule bodies.
 
 ---
 
@@ -212,6 +299,9 @@ var _ = Describe("AnalyzingHandler", func() {
 
 ### Rego Evaluator
 
+> **⚠️ OPA v1 REQUIRED**: Use `github.com/open-policy-agent/opa/v1/rego` package.
+> Rego policies MUST use v1 syntax with `if` keyword and `:=` operator.
+
 ```go
 // pkg/aianalysis/rego/evaluator.go
 package rego
@@ -219,8 +309,9 @@ package rego
 import (
     "context"
     "fmt"
+    "os"
 
-    "github.com/open-policy-agent/opa/rego"
+    "github.com/open-policy-agent/opa/v1/rego" // OPA v1 - REQUIRED
 )
 
 // Config for Rego evaluator
@@ -412,19 +503,33 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 
 ## 🎯 Day 4 Objectives: RecommendingHandler + Midpoint
 
-| Objective | Priority | BR Reference |
-|-----------|----------|--------------|
-| Implement RecommendingHandler | P0 | BR-AI-016 |
-| Query workflow recommendations | P0 | BR-AI-017 |
-| Store recommendations in status | P0 | BR-AI-018 |
-| **Midpoint checkpoint** | P0 | — |
+> **⚠️ UPDATED (Dec 5, 2025)**: RecommendingHandler is now a status finalizer.
+> Workflow data is already captured by InvestigatingHandler from `/incident/analyze`.
+> RecommendingHandler does NOT call HolmesGPT-API.
+
+| Objective | Priority | BR Reference | Notes |
+|-----------|----------|--------------|-------|
+| Implement RecommendingHandler | P0 | BR-AI-016 | **Status finalizer only** |
+| ~~Query workflow recommendations~~ | ~~P0~~ | ~~BR-AI-017~~ | **DONE in Investigating** |
+| Validate workflow exists in status | P0 | BR-AI-018 | From InvestigatingHandler |
+| Populate ApprovalContext | P0 | BR-AI-019 | If approvalRequired=true |
+| Transition to Completed/Failed | P0 | BR-AI-020 | Final phase |
+| **Midpoint checkpoint** | P0 | — | |
 
 ---
 
 ## 🔴 Day 4 TDD RED Phase: RecommendingHandler Tests
 
+> **⚠️ OUTDATED CODE SAMPLES**: The code below shows the original plan which called HolmesGPT-API.
+> Per Dec 5, 2025 architecture clarification, RecommendingHandler is a **status finalizer only**.
+> See updated implementation approach in the "Architecture Clarification" section at the top.
+
+<details>
+<summary>📜 Original Code Samples (OUTDATED - Click to expand)</summary>
+
 ```go
 // test/unit/aianalysis/recommending_handler_test.go
+// ⚠️ OUTDATED: RecommendingHandler no longer calls HAPI
 package aianalysis
 
 import (
@@ -528,12 +633,21 @@ var _ = Describe("RecommendingHandler", func() {
 })
 ```
 
+</details>
+
 ---
 
 ## 🟢 Day 4 GREEN Phase: RecommendingHandler
 
+> **⚠️ OUTDATED CODE SAMPLES**: See "Architecture Clarification" section at the top.
+> RecommendingHandler is now a status finalizer that does NOT call HolmesGPT-API.
+
+<details>
+<summary>📜 Original Code Samples (OUTDATED - Click to expand)</summary>
+
 ```go
 // pkg/aianalysis/handlers/recommending.go
+// ⚠️ OUTDATED: RecommendingHandler no longer calls HAPI
 package handlers
 
 import (
@@ -648,6 +762,100 @@ func (h *RecommendingHandler) handleError(ctx context.Context, analysis *aianaly
     return ctrl.Result{}, nil
 }
 ```
+
+</details>
+
+---
+
+## ✅ Updated Day 4: RecommendingHandler (Status Finalizer)
+
+Per Dec 5, 2025 architecture clarification, RecommendingHandler is simplified:
+
+```go
+// pkg/aianalysis/handlers/recommending.go
+// RecommendingHandler finalizes status - NO HolmesGPT-API call needed
+// Workflow data already captured by InvestigatingHandler
+package handlers
+
+import (
+    "context"
+
+    "github.com/go-logr/logr"
+    ctrl "sigs.k8s.io/controller-runtime"
+
+    aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+    "github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+)
+
+// RecommendingHandler finalizes the AIAnalysis status
+// No HolmesGPT-API call - workflow data already in status from InvestigatingHandler
+type RecommendingHandler struct {
+    log logr.Logger
+}
+
+// NewRecommendingHandler creates a new RecommendingHandler
+func NewRecommendingHandler(log logr.Logger) *RecommendingHandler {
+    return &RecommendingHandler{
+        log: log.WithName("recommending-handler"),
+    }
+}
+
+// Handle finalizes the AIAnalysis status
+func (h *RecommendingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+    h.log.Info("Finalizing analysis", "name", analysis.Name)
+
+    // Validate workflow exists (captured by InvestigatingHandler)
+    if analysis.Status.SelectedWorkflow == nil {
+        analysis.Status.Phase = aianalysis.PhaseFailed
+        analysis.Status.Message = "No workflow selected - investigation may have failed"
+        analysis.Status.Reason = "NoWorkflowSelected"
+        return ctrl.Result{}, nil
+    }
+
+    // Populate ApprovalContext if approval is required
+    if analysis.Status.ApprovalRequired {
+        h.populateApprovalContext(analysis)
+    }
+
+    // Transition to Completed
+    analysis.Status.Phase = aianalysis.PhaseCompleted
+    analysis.Status.Message = "Analysis complete"
+
+    return ctrl.Result{}, nil // Final phase - no requeue
+}
+
+func (h *RecommendingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnalysis) {
+    if analysis.Status.ApprovalContext == nil {
+        analysis.Status.ApprovalContext = &aianalysisv1.ApprovalContext{}
+    }
+
+    ctx := analysis.Status.ApprovalContext
+    ctx.Reason = analysis.Status.ApprovalReason
+    ctx.ConfidenceScore = analysis.Status.SelectedWorkflow.Confidence
+    ctx.WhyApprovalRequired = analysis.Status.ApprovalReason
+
+    // Set confidence level based on score
+    switch {
+    case ctx.ConfidenceScore >= 0.8:
+        ctx.ConfidenceLevel = "high"
+    case ctx.ConfidenceScore >= 0.6:
+        ctx.ConfidenceLevel = "medium"
+    default:
+        ctx.ConfidenceLevel = "low"
+    }
+
+    // Include investigation summary from RCA
+    if analysis.Status.RootCauseAnalysis != nil {
+        ctx.InvestigationSummary = analysis.Status.RootCauseAnalysis.Summary
+    }
+}
+```
+
+**Key Changes**:
+- ❌ No HolmesGPT-API call (workflow already in status)
+- ✅ Validates `SelectedWorkflow` exists
+- ✅ Populates `ApprovalContext` if `ApprovalRequired=true`
+- ✅ Transitions to `Completed` phase
 
 ---
 

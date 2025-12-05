@@ -14,151 +14,109 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package handlers provides phase-specific handlers for AIAnalysis reconciliation.
 package handlers
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-logr/logr"
+	ctrl "sigs.k8s.io/controller-runtime"
+
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
-	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+// RegoEvaluatorInterface for dependency injection in tests
+type RegoEvaluatorInterface interface {
+	Evaluate(ctx context.Context, input *rego.PolicyInput) (*rego.PolicyResult, error)
+}
+
 // AnalyzingHandler handles the Analyzing phase.
-// BR-AI-012: Analyzing phase handling
-// BR-AI-013: Approval determination
-// BR-AI-014: Graceful degradation
+// BR-AI-012: Evaluate Rego approval policies
+// BR-AI-014: Graceful degradation for policy failures
 type AnalyzingHandler struct {
 	log       logr.Logger
-	evaluator rego.EvaluatorInterface
-}
-
-// AnalyzingHandlerOption is a functional option for AnalyzingHandler.
-type AnalyzingHandlerOption func(*AnalyzingHandler)
-
-// WithAnalyzingLogger sets the logger for AnalyzingHandler.
-func WithAnalyzingLogger(log logr.Logger) AnalyzingHandlerOption {
-	return func(h *AnalyzingHandler) {
-		h.log = log
-	}
-}
-
-// WithRegoEvaluator sets the Rego evaluator for AnalyzingHandler.
-func WithRegoEvaluator(evaluator rego.EvaluatorInterface) AnalyzingHandlerOption {
-	return func(h *AnalyzingHandler) {
-		h.evaluator = evaluator
-	}
+	evaluator RegoEvaluatorInterface
 }
 
 // NewAnalyzingHandler creates a new AnalyzingHandler.
-func NewAnalyzingHandler(opts ...AnalyzingHandlerOption) *AnalyzingHandler {
-	h := &AnalyzingHandler{}
-	for _, opt := range opts {
-		opt(h)
+func NewAnalyzingHandler(evaluator RegoEvaluatorInterface, log logr.Logger) *AnalyzingHandler {
+	return &AnalyzingHandler{
+		evaluator: evaluator,
+		log:       log.WithName("analyzing-handler"),
 	}
-	return h
 }
 
-// Phase returns the phase this handler processes.
-func (h *AnalyzingHandler) Phase() string {
-	return string(aianalysis.PhaseAnalyzing)
+// Name returns the handler name.
+func (h *AnalyzingHandler) Name() string {
+	return "analyzing"
 }
 
-// Handle evaluates Rego policies and determines approval requirement.
-// BR-AI-012: Analyzing phase handling
+// Handle processes the Analyzing phase.
+// BR-AI-012: Evaluate Rego policies to determine approval requirement.
+// BR-AI-014: If evaluation fails, default to approvalRequired=true (safe default).
 func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	h.log.Info("Handling Analyzing phase",
-		"name", analysis.Name,
-		"namespace", analysis.Namespace)
+	h.log.Info("Processing Analyzing phase", "name", analysis.Name)
 
 	// Build policy input from analysis
 	input := h.buildPolicyInput(analysis)
 
-	// Evaluate policy
+	// Evaluate Rego policy
 	result, err := h.evaluator.Evaluate(ctx, input)
 	if err != nil {
-		// This shouldn't happen due to graceful degradation in evaluator
-		h.log.Error(err, "Rego evaluation returned error")
-		analysis.Status.Phase = string(aianalysis.PhaseFailed)
-		analysis.Status.Message = fmt.Sprintf("Rego evaluation failed: %v", err)
+		// This shouldn't happen - evaluator should handle errors gracefully
+		// But if it does, use safe defaults
+		h.log.Error(err, "Rego evaluation returned error, using safe default")
+		analysis.Status.Phase = aianalysis.PhaseFailed
+		analysis.Status.Message = "Rego evaluation failed unexpectedly"
+		analysis.Status.Reason = "RegoEvaluationError"
 		return ctrl.Result{}, nil
 	}
 
-	// Store results in status
+	// Store evaluation results in status
 	analysis.Status.ApprovalRequired = result.ApprovalRequired
 	analysis.Status.ApprovalReason = result.Reason
+	analysis.Status.DegradedMode = result.Degraded
 
-	if result.Degraded {
-		analysis.Status.DegradedMode = true
-		h.log.Info("Operating in degraded mode due to policy evaluation failure",
-			"reason", result.Reason)
-	}
-
-	h.log.Info("Approval determination complete",
-		"approval_required", result.ApprovalRequired,
+	h.log.Info("Rego evaluation complete",
+		"approvalRequired", result.ApprovalRequired,
+		"degraded", result.Degraded,
 		"reason", result.Reason,
-		"degraded", result.Degraded)
+	)
 
 	// Transition to Recommending phase
-	analysis.Status.Phase = string(aianalysis.PhaseRecommending)
+	analysis.Status.Phase = aianalysis.PhaseRecommending
+	analysis.Status.Message = "Analysis complete, preparing recommendation"
+
 	return ctrl.Result{Requeue: true}, nil
 }
 
-// buildPolicyInput constructs the Rego policy input from the AIAnalysis resource.
+// buildPolicyInput constructs the Rego policy input from AIAnalysis.
+// BR-AI-012: Build input from status fields populated by InvestigatingHandler.
 func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *rego.PolicyInput {
-	spec := &analysis.Spec.AnalysisRequest.SignalContext
-	status := &analysis.Status
-
 	input := &rego.PolicyInput{
-		Environment: spec.Environment,
-		Warnings:    status.Warnings,
+		Environment:      analysis.Spec.AnalysisRequest.SignalContext.Environment,
+		FailedDetections: []string{},
+		Warnings:         analysis.Status.Warnings,
 	}
 
-	// Add targetInOwnerChain from status (set by InvestigatingHandler)
-	if status.TargetInOwnerChain != nil {
-		input.TargetInOwnerChain = *status.TargetInOwnerChain
+	// Get confidence from SelectedWorkflow (populated by InvestigatingHandler)
+	if analysis.Status.SelectedWorkflow != nil {
+		input.Confidence = analysis.Status.SelectedWorkflow.Confidence
 	}
 
-	// Add detected labels and failed detections
-	if spec.EnrichmentResults.DetectedLabels != nil {
-		input.DetectedLabels = h.convertDetectedLabels(spec.EnrichmentResults.DetectedLabels)
-		input.FailedDetections = spec.EnrichmentResults.DetectedLabels.FailedDetections
+	// Get TargetInOwnerChain from status (populated by InvestigatingHandler)
+	if analysis.Status.TargetInOwnerChain != nil {
+		input.TargetInOwnerChain = *analysis.Status.TargetInOwnerChain
 	}
 
-	// Add custom labels
-	if spec.EnrichmentResults.CustomLabels != nil {
-		input.CustomLabels = spec.EnrichmentResults.CustomLabels
-	}
+	// DetectedLabels would come from enrichment - for now, leave empty
+	// This will be populated when we integrate with SignalProcessing enrichment
+	input.DetectedLabels = make(map[string]interface{})
+	input.CustomLabels = make(map[string][]string)
 
 	return input
-}
-
-// convertDetectedLabels converts DetectedLabels struct to map[string]interface{} for Rego.
-func (h *AnalyzingHandler) convertDetectedLabels(labels *aianalysisv1.DetectedLabels) map[string]interface{} {
-	if labels == nil {
-		return nil
-	}
-
-	result := map[string]interface{}{
-		"gitOpsManaged":   labels.GitOpsManaged,
-		"pdbProtected":    labels.PDBProtected,
-		"hpaEnabled":      labels.HPAEnabled,
-		"stateful":        labels.Stateful,
-		"helmManaged":     labels.HelmManaged,
-		"networkIsolated": labels.NetworkIsolated,
-	}
-
-	// Add optional string fields if present
-	if labels.GitOpsTool != "" {
-		result["gitOpsTool"] = labels.GitOpsTool
-	}
-	if labels.ServiceMesh != "" {
-		result["serviceMesh"] = labels.ServiceMesh
-	}
-
-	return result
 }
 

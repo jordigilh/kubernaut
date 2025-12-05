@@ -1,6 +1,6 @@
 # HolmesGPT API Service
 
-**Version**: v3.4
+**Version**: v3.5
 **Status**: ✅ **PRODUCTION READY**
 **Service Type**: Stateless HTTP API (Python/FastAPI)
 **Port**: 8080 (REST API), 9090 (Metrics)
@@ -12,6 +12,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v3.5 | 2025-12-05 | Added `alternative_workflows[]` for audit/context (ADR-045 v1.2), 500 tests | [ADR-045](../../../architecture/decisions/ADR-045-aianalysis-holmesgpt-api-contract.md) |
 | v3.4 | 2025-12-03 | Added Implementation Structure section (100% ADR-039 compliance) | [DOCUMENTATION_STANDARDIZATION_REQUEST](../../../../handoff/DOCUMENTATION_STANDARDIZATION_REQUEST_HOLMESGPT_API.md) |
 | v3.3 | 2025-12-03 | Documentation restructured to SERVICE_DOCUMENTATION_GUIDE.md standard | [DOCUMENTATION_MIGRATION_PLAN](./DOCUMENTATION_MIGRATION_PLAN.md) |
 | v3.2 | 2025-11-30 | All production blockers resolved (RFC7807, Graceful Shutdown) | [DD-004](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md), [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) |
@@ -147,11 +148,11 @@ holmesgpt-api/
 
 | Test Type | Count | Coverage |
 |-----------|-------|----------|
-| **Unit Tests** | 377 | Core business logic |
+| **Unit Tests** | 385 | Core business logic |
 | **Integration Tests** | 71 | Service interactions |
 | **E2E Tests** | 40 | End-to-end workflows |
 | **Smoke Tests** | 4 | Real LLM validation (optional) |
-| **Total** | **492** | **Full coverage** |
+| **Total** | **500** | **Full coverage** |
 
 ---
 

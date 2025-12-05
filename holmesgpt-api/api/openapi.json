@@ -195,6 +195,47 @@
   },
   "components": {
     "schemas": {
+      "AlternativeWorkflow": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id",
+            "description": "Workflow identifier"
+          },
+          "container_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Image",
+            "description": "OCI image reference"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Confidence score for this alternative"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale",
+            "description": "Why this alternative was considered but not selected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "confidence",
+          "rationale"
+        ],
+        "title": "AlternativeWorkflow",
+        "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- \u2705 Purpose: Help operator make an informed decision\n- \u2705 Content: Pros/cons of alternative approaches\n- \u274c NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
+      },
       "DetectedLabels": {
         "properties": {
           "failedDetections": {
@@ -760,6 +801,14 @@
             "type": "array",
             "title": "Warnings",
             "description": "Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)"
+          },
+          "alternative_workflows": {
+            "items": {
+              "$ref": "#/components/schemas/AlternativeWorkflow"
+            },
+            "type": "array",
+            "title": "Alternative Workflows",
+            "description": "Other workflows considered but not selected. For operator context and audit trail only - NOT for automatic fallback execution. Helps operators understand AI reasoning."
           }
         },
         "type": "object",
@@ -771,7 +820,7 @@
           "timestamp"
         ],
         "title": "IncidentResponse",
-        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)\n\nNew fields (per AIAnalysis team request, Dec 2, 2025):\n- target_in_owner_chain: Whether RCA target was found in OwnerChain\n- warnings: Non-fatal warnings for transparency"
+        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nFields added per AIAnalysis team requests:\n- target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY"
       },
       "OriginalRCA": {
         "properties": {

@@ -14,14 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package aianalysis contains unit tests for the AIAnalysis CRD controller.
-// Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
-// - Unit tests (70%+): Business logic in isolation
-// - Integration tests (>50%): Infrastructure interaction, microservices coordination
-// - E2E tests (10-15%): Complete workflow validation
-//
-// Package Naming: WHITE-BOX testing per TEST_PACKAGE_NAMING_STANDARD.md
-// All tests use same package name as code under test for access to internal state.
+// Package aianalysis contains unit tests for the AIAnalysis controller.
+// Test package naming: uses same package name for white-box testing per
+// SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md (lines 2586-2619) and
+// 03-testing-strategy.mdc Test Package Naming Standard.
 package aianalysis
 
 import (
@@ -35,4 +31,3 @@ func TestAIAnalysis(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "AIAnalysis Unit Test Suite")
 }
-

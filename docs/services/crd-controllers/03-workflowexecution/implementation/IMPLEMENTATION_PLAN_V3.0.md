@@ -1,13 +1,18 @@
 # WorkflowExecution Controller - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V3.0.md`
-**Version**: v3.0 - Tekton Architecture + Resource Locking
-**Last Updated**: 2025-12-03
+**Version**: v3.1 - Predicate Filter for Cross-Namespace Watch
+**Last Updated**: 2025-12-05
 **Timeline**: 12 days
 **Status**: ✅ VALIDATED - Ready for Implementation
-**Confidence**: 92%
+**Confidence**: 93%
 
 **Change Log**:
+- **v3.1** (2025-12-05): Cross-namespace watch implementation refinement
+  - ✅ **Changed**: Replaced namespace-scoped cache with predicate filter for PipelineRun watch
+  - ✅ **Rationale**: Predicate filter is simpler and achieves same goal
+  - ✅ **Added**: `kind` parameter to bundle resolver (required by Tekton)
+  - ✅ **Fixed**: ServiceAccountName location (TaskRunTemplate per Tekton v1 API)
 - **v3.0** (2025-12-03): Complete rewrite for Tekton delegation architecture
   - ✅ Tekton PipelineRun delegation (ADR-044)
   - ✅ Dedicated execution namespace (DD-WE-002)
@@ -432,15 +437,17 @@ func pipelineRunName(targetResource string) string {
 - [ ] Set labels for cross-namespace tracking
 
 ```go
-func (r *WorkflowExecutionReconciler) buildPipelineRun(
+func (r *WorkflowExecutionReconciler) BuildPipelineRun(
     wfe *workflowexecutionv1.WorkflowExecution,
 ) *tektonv1.PipelineRun {
     return &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
-            Name:      pipelineRunName(wfe.Spec.TargetResource),
+            Name:      PipelineRunName(wfe.Spec.TargetResource),
             Namespace: r.ExecutionNamespace,  // "kubernaut-workflows"
             Labels: map[string]string{
                 "kubernaut.ai/workflow-execution": wfe.Name,
+                "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+                "kubernaut.ai/target-resource":    wfe.Spec.TargetResource,
                 "kubernaut.ai/source-namespace":   wfe.Namespace,
             },
         },
@@ -451,11 +458,14 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
                     Params: []tektonv1.Param{
                         {Name: "bundle", Value: tektonv1.ParamValue{StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
                         {Name: "name", Value: tektonv1.ParamValue{StringVal: "workflow"}},
+                        {Name: "kind", Value: tektonv1.ParamValue{StringVal: "pipeline"}},  // Required by Tekton (v3.1)
                     },
                 },
             },
-            Params:             r.convertParameters(wfe.Spec.Parameters),
-            ServiceAccountName: r.ServiceAccountName,
+            Params: r.ConvertParameters(wfe.Spec.Parameters),
+            TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
+                ServiceAccountName: r.ServiceAccountName,  // Tekton v1 API location (v3.1)
+            },
         },
     }
 }
@@ -463,10 +473,13 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
 
 #### Afternoon (4h): Cross-Namespace Watch
 
-- [ ] Configure namespace-scoped cache for PipelineRuns
 - [ ] Implement `findWFEForPipelineRun()` mapper
-- [ ] Add predicate filter for our PipelineRuns
+- [ ] Add predicate filter for our PipelineRuns (filters by `kubernaut.ai/workflow-execution` label)
+- [ ] Configure `Watches()` in SetupWithManager with predicate
 - [ ] Test watch triggers reconcile
+
+> **Note (v3.1)**: Uses predicate filter instead of namespace-scoped cache. Predicate filter is simpler
+> and achieves the same goal - only watching PipelineRuns that have our tracking label.
 
 ### Day 4 EOD Checklist
 
@@ -1171,4 +1184,5 @@ This implementation plan is split into multiple files for manageability (~4,500 
 3. Begin implementation following APDC-TDD methodology
 4. Update EOD templates daily
 5. Populate BR Coverage Matrix as tests are written
+
 

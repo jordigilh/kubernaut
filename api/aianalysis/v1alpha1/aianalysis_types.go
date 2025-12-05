@@ -349,6 +349,16 @@ type AIAnalysisStatus struct {
 	SelectedWorkflow *SelectedWorkflow `json:"selectedWorkflow,omitempty"`
 
 	// ========================================
+	// ALTERNATIVE WORKFLOWS (Dec 2025)
+	// ========================================
+	// Alternative workflows considered but not selected.
+	// INFORMATIONAL ONLY - NOT for automatic execution.
+	// Helps operators make informed approval decisions and provides audit trail.
+	// Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION.
+	// +optional
+	AlternativeWorkflows []AlternativeWorkflow `json:"alternativeWorkflows,omitempty"`
+
+	// ========================================
 	// APPROVAL SIGNALING
 	// ========================================
 	// True if approval is required (confidence < 80% or policy requires)
@@ -435,6 +445,24 @@ type SelectedWorkflow struct {
 	// Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
 	Parameters map[string]string `json:"parameters,omitempty"`
 	// Rationale explaining why this workflow was selected
+	Rationale string `json:"rationale"`
+}
+
+// AlternativeWorkflow contains alternative workflows considered but not selected.
+// INFORMATIONAL ONLY - NOT for automatic execution.
+// Helps operators understand AI reasoning during approval decisions.
+// Per HolmesGPT-API team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
+type AlternativeWorkflow struct {
+	// Workflow identifier (catalog lookup key)
+	// +kubebuilder:validation:Required
+	WorkflowID string `json:"workflowId"`
+	// Container image (OCI bundle) - resolved by HolmesGPT-API
+	ContainerImage string `json:"containerImage,omitempty"`
+	// Confidence score (0.0-1.0) - shows why it wasn't selected
+	// +kubebuilder:validation:Minimum=0.0
+	// +kubebuilder:validation:Maximum=1.0
+	Confidence float64 `json:"confidence"`
+	// Rationale explaining why this workflow was considered
 	Rationale string `json:"rationale"`
 }
 

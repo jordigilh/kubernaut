@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | **v2.4** | 2025-12-03 | **SCHEMA UPDATE**: Removed `podSecurityLevel` from DetectedLabels (9→8 fields) per DD-WORKFLOW-001 v2.2; PSP deprecated in K8s 1.21, PSS is namespace-level | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [NOTICE](../../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md) |
+> | **v2.5** | 2025-12-05 | **SCHEMA UPDATE**: Added `AlternativeWorkflows []AlternativeWorkflow` to status for audit/operator context (NOT for automatic execution); Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
+> | v2.4 | 2025-12-03 | **SCHEMA UPDATE**: Removed `podSecurityLevel` from DetectedLabels (9→8 fields) per DD-WORKFLOW-001 v2.2; PSP deprecated in K8s 1.21, PSS is namespace-level | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [NOTICE](../../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md) |
 > | v2.3 | 2025-12-02 | **SCHEMA UPDATE**: Added `FailedDetections []string` to DetectedLabels per DD-WORKFLOW-001 v2.1; Detection failure handling with enum validation | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v2.2 | 2025-12-02 | **GAP FIXES**: Environment/BusinessPriority changed to free-text; RiskTolerance/BusinessCategory removed; EnrichmentQuality removed; Updated SignalContextInput to match Go types | [RO_CONTRACT_GAPS.md](../../../handoff/AIANALYSIS_TO_RO_TEAM.md) |
 > | v2.1 | 2025-12-02 | Added `TargetInOwnerChain` and `Warnings` fields to status (from HolmesGPT-API response) | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
@@ -387,6 +388,15 @@ type AIAnalysisStatus struct {
     SelectedWorkflow *SelectedWorkflow `json:"selectedWorkflow,omitempty"`
 
     // ========================================
+    // ALTERNATIVE WORKFLOWS (Dec 2025)
+    // ========================================
+    // Alternative workflows considered but not selected.
+    // INFORMATIONAL ONLY - NOT for automatic execution.
+    // Helps operators make informed approval decisions and provides audit trail.
+    // +optional
+    AlternativeWorkflows []AlternativeWorkflow `json:"alternativeWorkflows,omitempty"`
+
+    // ========================================
     // APPROVAL SIGNALING (V1.0)
     // ========================================
     // ApprovalRequired=true → RO notifies operators and STOPS
@@ -440,6 +450,30 @@ type SelectedWorkflow struct {
     Rationale string `json:"rationale"`
 }
 ```
+
+### AlternativeWorkflow (Dec 2025)
+
+```go
+// AlternativeWorkflow contains alternative workflows considered but not selected.
+// INFORMATIONAL ONLY - NOT for automatic execution.
+// Helps operators understand AI reasoning during approval decisions.
+// Per HolmesGPT-API team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
+type AlternativeWorkflow struct {
+    // Workflow identifier (catalog lookup key)
+    WorkflowID string `json:"workflowId"`
+    // Container image (OCI bundle) - resolved by HolmesGPT-API
+    ContainerImage string `json:"containerImage,omitempty"`
+    // Confidence score (0.0-1.0) - shows why it wasn't selected
+    Confidence float64 `json:"confidence"`
+    // Rationale explaining why this workflow was considered
+    Rationale string `json:"rationale"`
+}
+```
+
+> **Key Principle** (per HolmesGPT-API team):
+> - ✅ `SelectedWorkflow` is executed by RemediationOrchestrator
+> - ✅ `AlternativeWorkflows` help operators make informed approval decisions
+> - ❌ Alternatives are NOT automatically executed as fallbacks
 
 ---
 

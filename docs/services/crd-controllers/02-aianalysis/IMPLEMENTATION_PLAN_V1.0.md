@@ -1,14 +1,33 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.3
-**Last Updated**: 2025-12-04
+**Version**: v1.5
+**Last Updated**: 2025-12-05
 **Timeline**: 10 days (2 calendar weeks)
 **Status**: 📋 DRAFT - Ready for Review
 **Quality Level**: Matches SignalProcessing V1.19 and Template V3.0 standards
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.6** (2025-12-05): OPA v1 Rego syntax documentation
+  - ✅ **OPA v1 Syntax**: All Rego policies MUST use OPA v1 syntax (`if` keyword, `:=` operator)
+  - ✅ **Import Statement**: Policies should use `import rego.v1` or explicit v1 syntax
+  - ✅ **Breaking Change**: Old Rego syntax (`default x = false`, rules without `if`) will NOT compile
+  - 📏 **Package**: `github.com/open-policy-agent/opa/v1/rego`
+  - 📏 **Reference**: See test policies in `test/unit/aianalysis/testdata/policies/`
+- **v1.5** (2025-12-05): CRD schema update + Day 2 InvestigatingHandler enhancement
+  - ✅ **CRD Schema**: Added `AlternativeWorkflow` type and `AlternativeWorkflows []AlternativeWorkflow` to status
+  - ✅ **Architecture Clarification**: `/incident/analyze` returns ALL data (RCA + workflow + alternatives) in one call
+  - ✅ **Day 2 Enhancement**: InvestigatingHandler now captures full response (RCA, SelectedWorkflow, AlternativeWorkflows)
+  - ✅ **Day 4 Simplification**: RecommendingHandler becomes a status finalizer (no separate HAPI call)
+  - ✅ **Key Principle**: "Alternatives are for CONTEXT, not EXECUTION" per HolmesGPT-API team
+  - 📏 **Reference**: [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) Q12-Q13
+- **v1.4** (2025-12-05): CRD phase alignment - removed Validating phase
+  - ✅ **Phase Alignment**: Removed `Validating` phase references (not in CRD spec)
+  - ✅ **CRD Spec Authority**: Phases are `Pending;Investigating;Analyzing;Recommending;Completed;Failed`
+  - ✅ **Day 2 Update**: Validation logic moves to `Pending` → `Investigating` transition
+  - ✅ **Day Structure**: Day 2 now covers PendingHandler with validation + InvestigatingHandler prep
+  - 📏 **Authority**: `api/aianalysis/v1alpha1/aianalysis_types.go` line 328
 - **v1.3** (2025-12-04): Test package naming compliance fix
   - ✅ **Package Naming Fix**: Changed all `package aianalysis_test` → `package aianalysis`
   - ✅ **Compliance**: Now compliant with TEST_PACKAGE_NAMING_STANDARD.md (white-box testing)
@@ -1809,81 +1828,93 @@ func getString(m map[string]interface{}, key string, defaultVal string) string {
 
 **Step 3: Create example approval policy (1h)**
 
+> **⚠️ OPA v1 SYNTAX REQUIRED**: All Rego policies MUST use OPA v1 syntax with `if` keyword and `:=` operator.
+> Using old syntax (without `if`) will cause `rego_parse_error: 'if' keyword is required before rule body`.
+
 ```rego
 # deploy/aianalysis/policies/approval.rego
+# OPA v1 Syntax - REQUIRED for github.com/open-policy-agent/opa/v1/rego
 package aianalysis.approval
 
-default requires_approval = false
-default reason = ""
+import rego.v1
+
+# Default values using := operator (OPA v1)
+default require_approval := false
+default reason := ""
+
+# Helper: Is this a production environment?
+is_production if {
+    input.environment == "production"
+}
+
+# Helper: Check if detection failed for a field
+detection_failed(field) if {
+    input.failed_detections[_] == field
+}
+
+# Helper: Risky actions (scale down, delete, restart)
+is_risky_action if {
+    # Would check selected_workflow.workflow_id for risky patterns
+    # For now, simplified
+    true
+}
 
 # Rule 1: Low confidence requires approval
-requires_approval {
+require_approval if {
     input.confidence < 0.8
 }
-reason = "Confidence below 80% threshold" {
+reason := "Confidence below 80% threshold" if {
     input.confidence < 0.8
 }
 
 # Rule 2: Production environment with risky action
-requires_approval {
-    input.environment == "production"
+require_approval if {
+    is_production
     is_risky_action
 }
-reason = "Production environment requires approval for risky actions" {
-    input.environment == "production"
+reason := "Production environment requires approval for risky actions" if {
+    is_production
     is_risky_action
 }
 
 # Rule 3: Target not in owner chain (data quality concern)
-requires_approval {
-    input.environment == "production"
+require_approval if {
+    is_production
     not input.target_in_owner_chain
 }
-reason = "DetectedLabels may not match affected resource (target not in OwnerChain)" {
-    input.environment == "production"
+reason := "DetectedLabels may not match affected resource (target not in OwnerChain)" if {
+    is_production
     not input.target_in_owner_chain
 }
 
 # Rule 4: Detection failures in critical fields
-requires_approval {
+require_approval if {
     detection_failed("pdbProtected")
-    input.environment == "production"
+    is_production
 }
-reason = "PDB protection status unknown (detection failed)" {
+reason := "PDB protection status unknown (detection failed)" if {
     detection_failed("pdbProtected")
-    input.environment == "production"
+    is_production
 }
 
 # Rule 5: Recovery attempts require approval
-requires_approval {
+require_approval if {
     input.is_recovery_attempt
     input.recovery_attempt_number >= 2
 }
-reason = "Multiple recovery attempts require human review" {
+reason := "Multiple recovery attempts require human review" if {
     input.is_recovery_attempt
     input.recovery_attempt_number >= 2
 }
 
 # Rule 6: Warnings from HolmesGPT-API
-requires_approval {
+require_approval if {
     count(input.warnings) > 0
     is_risky_action
 }
-reason = concat(": ", ["HolmesGPT-API warnings present", input.warnings[0]]) {
+reason := concat(": ", ["HolmesGPT-API warnings present", input.warnings[0]]) if {
     count(input.warnings) > 0
     is_risky_action
-}
-
-# Helper: Check if detection failed for a field
-detection_failed(field) {
-    input.failed_detections[_] == field
-}
-
-# Helper: Risky actions (scale down, delete, restart)
-is_risky_action {
-    # Would check selected_workflow.workflow_id for risky patterns
-    # For now, simplified
-    true
 }
 ```
 

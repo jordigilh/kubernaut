@@ -14,16 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package remediationorchestrator contains unit tests for the Remediation Orchestrator controller.
-//
-// Business Requirements Coverage:
-// - BR-ORCH-001: Approval notification creation
-// - BR-ORCH-025: Workflow data pass-through to child CRDs
-// - BR-ORCH-026: Approval orchestration
-// - BR-ORCH-027: Global timeout management
-// - BR-ORCH-028: Per-phase timeout management
-// - BR-ORCH-029-031: Notification handling
-// - BR-ORCH-032-034: Resource lock deduplication handling
 package remediationorchestrator
 
 import (
@@ -33,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestRemediationOrchestrator(t *testing.T) {
+func TestRemediationOrchestratorUnit(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "RemediationOrchestrator Unit Test Suite")
+	RunSpecs(t, "Remediation Orchestrator Unit Test Suite")
 }

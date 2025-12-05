@@ -21,206 +21,247 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
-	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
-// ========================================
-// MOCK REGO EVALUATOR
-// ========================================
-
-// MockRegoEvaluator is a mock implementation of rego.EvaluatorInterface.
-type MockRegoEvaluator struct {
-	result *rego.PolicyResult
-	err    error
-}
-
-// NewMockRegoEvaluator creates a new MockRegoEvaluator.
-func NewMockRegoEvaluator() *MockRegoEvaluator {
-	return &MockRegoEvaluator{
-		result: &rego.PolicyResult{
-			ApprovalRequired: false,
-			Reason:           "Auto-approved by default",
-			Degraded:         false,
-		},
-	}
-}
-
-// SetResult sets the result to return from Evaluate.
-func (m *MockRegoEvaluator) SetResult(result *rego.PolicyResult) {
-	m.result = result
-	m.err = nil
-}
-
-// SetError sets the error to return from Evaluate.
-func (m *MockRegoEvaluator) SetError(err error) {
-	m.err = err
-}
-
-// Evaluate implements rego.EvaluatorInterface.
-func (m *MockRegoEvaluator) Evaluate(_ context.Context, _ *rego.PolicyInput) (*rego.PolicyResult, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.result, nil
-}
-
+// BR-AI-012: AnalyzingHandler tests
 var _ = Describe("AnalyzingHandler", func() {
 	var (
-		ctx           context.Context
 		handler       *handlers.AnalyzingHandler
-		mockEvaluator *MockRegoEvaluator
-		logger        logr.Logger
+		mockEvaluator *testutil.MockRegoEvaluator
+		ctx           context.Context
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = logr.Discard()
-		mockEvaluator = NewMockRegoEvaluator()
-		handler = handlers.NewAnalyzingHandler(
-			handlers.WithRegoEvaluator(mockEvaluator),
-			handlers.WithAnalyzingLogger(logger),
-		)
+		mockEvaluator = testutil.NewMockRegoEvaluator()
+		handler = handlers.NewAnalyzingHandler(mockEvaluator, ctrl.Log.WithName("test"))
 	})
 
-	// Helper to create an AIAnalysis in Analyzing phase
-	createAnalysisInAnalyzingPhase := func() *aianalysisv1.AIAnalysis {
-		targetInOwnerChain := true
+	// Helper to create valid AIAnalysis in Analyzing phase
+	createTestAnalysis := func() *aianalysisv1.AIAnalysis {
 		return &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-analysis",
 				Namespace: "default",
 			},
 			Spec: aianalysisv1.AIAnalysisSpec{
-				RemediationID: "test-remediation",
+				RemediationRequestRef: corev1.ObjectReference{
+					Kind:      "RemediationRequest",
+					Name:      "test-rr",
+					Namespace: "default",
+				},
+				RemediationID: "test-remediation-001",
 				AnalysisRequest: aianalysisv1.AnalysisRequest{
 					SignalContext: aianalysisv1.SignalContextInput{
+						Fingerprint:      "test-fingerprint",
+						Severity:         "warning",
+						SignalType:       "OOMKilled",
 						Environment:      "production",
-						BusinessPriority: "P1",
-						EnrichmentResults: aianalysisv1.EnrichmentResults{
-							DetectedLabels: &aianalysisv1.DetectedLabels{
-								GitOpsManaged:   true,
-								PDBProtected:    true,
-								HPAEnabled:      false,
-								Stateful:        false,
-								HelmManaged:     false,
-								NetworkIsolated: false,
-							},
-							CustomLabels: map[string][]string{
-								"team": {"platform"},
-							},
+						BusinessPriority: "P0",
+						TargetResource: aianalysisv1.TargetResource{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: "default",
 						},
 					},
+					AnalysisTypes: []string{"investigation", "analysis"},
 				},
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				Phase:              string(aianalysis.PhaseAnalyzing),
-				TargetInOwnerChain: &targetInOwnerChain,
-				Warnings:           []string{},
+				Phase: aianalysis.PhaseAnalyzing,
+				// Simulating data from InvestigatingHandler
+				RootCause: "OOM caused by memory leak",
+				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+					WorkflowID:     "wf-restart-pod",
+					ContainerImage: "kubernaut.io/workflows/restart:v1.0.0",
+					Confidence:     0.92,
+					Rationale:      "Selected for OOM recovery",
+				},
 			},
 		}
 	}
 
-	// BR-AI-012: Analyzing phase handling
 	Describe("Handle", func() {
-		Context("when Rego evaluation succeeds with approval required", func() {
+		// BR-AI-012: Successful Rego evaluation with approval required
+		Context("when Rego evaluation requires approval", func() {
 			BeforeEach(func() {
-				mockEvaluator.SetResult(&rego.PolicyResult{
-					ApprovalRequired: true,
-					Reason:           "Production environment requires approval",
-					Degraded:         false,
-				})
+				mockEvaluator.WithApprovalRequired("Production environment requires approval")
 			})
 
-			It("should transition to Recommending phase with approval required - BR-AI-012", func() {
-				analysis := createAnalysisInAnalyzingPhase()
+			It("should transition to Recommending phase", func() {
+				analysis := createTestAnalysis()
 
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.Requeue).To(BeTrue())
-				Expect(analysis.Status.Phase).To(Equal(string(aianalysis.PhaseRecommending)))
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseRecommending))
+			})
+
+			It("should set ApprovalRequired to true", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalRequired).To(BeTrue())
+			})
+
+			It("should set ApprovalReason", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalReason).To(Equal("Production environment requires approval"))
 			})
 		})
 
-		Context("when Rego evaluation succeeds with auto-approve", func() {
+		// BR-AI-012: Successful Rego evaluation with auto-approve
+		Context("when Rego evaluation auto-approves", func() {
 			BeforeEach(func() {
-				mockEvaluator.SetResult(&rego.PolicyResult{
-					ApprovalRequired: false,
-					Reason:           "Non-production environment auto-approved",
-					Degraded:         false,
-				})
+				mockEvaluator.WithAutoApprove("Non-production environment - auto-approved")
 			})
 
-			It("should transition to Recommending phase without approval - BR-AI-012", func() {
-				analysis := createAnalysisInAnalyzingPhase()
+			It("should transition to Recommending phase", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.Environment = "development"
 
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.Requeue).To(BeTrue())
-				Expect(analysis.Status.Phase).To(Equal(string(aianalysis.PhaseRecommending)))
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseRecommending))
+			})
+
+			It("should set ApprovalRequired to false", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.Environment = "development"
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalRequired).To(BeFalse())
 			})
 		})
 
-		// BR-AI-013: Approval scenarios
-		DescribeTable("determines approval based on Rego result",
-			func(approvalRequired bool, degraded bool, expectedApproval bool, expectedDegraded bool) {
-				mockEvaluator.SetResult(&rego.PolicyResult{
-					ApprovalRequired: approvalRequired,
-					Reason:           "Test reason",
-					Degraded:         degraded,
-				})
-
-				analysis := createAnalysisInAnalyzingPhase()
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
-				Expect(analysis.Status.ApprovalRequired).To(Equal(expectedApproval))
-				Expect(analysis.Status.DegradedMode).To(Equal(expectedDegraded))
-			},
-			Entry("approval required, not degraded", true, false, true, false),
-			Entry("no approval, not degraded", false, false, false, false),
-			Entry("approval required, degraded", true, true, true, true),
-			Entry("no approval, degraded", false, true, false, true),
-		)
-
-		// BR-AI-014: Degraded mode
-		Context("when Rego evaluation fails gracefully", func() {
+		// BR-AI-014: Degraded mode (policy failure fallback)
+		Context("when Rego evaluation fails gracefully (degraded mode)", func() {
 			BeforeEach(func() {
-				mockEvaluator.SetResult(&rego.PolicyResult{
-					ApprovalRequired: true, // Safe default
-					Reason:           "Policy evaluation failed - defaulting to manual approval",
-					Degraded:         true,
-				})
+				mockEvaluator.WithDegradedMode("Policy evaluation failed - defaulting to manual approval")
 			})
 
-			It("should continue with safe default and set degraded mode - BR-AI-014", func() {
-				analysis := createAnalysisInAnalyzingPhase()
+			It("should continue to Recommending phase with safe defaults", func() {
+				analysis := createTestAnalysis()
 
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.Requeue).To(BeTrue())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseRecommending))
+			})
+
+			It("should set ApprovalRequired to true (safe default)", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalRequired).To(BeTrue())
+			})
+
+			It("should set DegradedMode to true", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.DegradedMode).To(BeTrue())
+			})
+
+			It("should include degraded reason in ApprovalReason", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ApprovalReason).To(ContainSubstring("Policy evaluation failed"))
+			})
+		})
+
+		// BR-AI-012: Policy input construction
+		Context("policy input construction", func() {
+			It("should pass correct environment to evaluator", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.Environment = "staging"
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.Environment).To(Equal("staging"))
+			})
+
+			It("should pass confidence from SelectedWorkflow", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.Confidence).To(BeNumerically("~", 0.92, 0.01))
+			})
+
+			It("should pass TargetInOwnerChain from status", func() {
+				analysis := createTestAnalysis()
+				targetInChain := true
+				analysis.Status.TargetInOwnerChain = &targetInChain
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.TargetInOwnerChain).To(BeTrue())
+			})
+
+			It("should pass Warnings from status", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.Warnings = []string{"High memory pressure", "Node scheduling delayed"}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.Warnings).To(HaveLen(2))
+				Expect(mockEvaluator.LastInput.Warnings).To(ContainElement("High memory pressure"))
+			})
+		})
+
+		// BR-AI-012: Evaluator is called exactly once
+		Context("evaluator invocation", func() {
+			It("should call evaluator exactly once", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.AssertCalled(1)).To(Succeed())
 			})
 		})
 	})
 
-	Describe("Phase", func() {
-		It("should return PhaseAnalyzing", func() {
-			Expect(handler.Phase()).To(Equal(aianalysis.PhaseAnalyzing))
+	// BR-AI-012: Name method
+	Describe("Name", func() {
+		It("should return 'analyzing'", func() {
+			Expect(handler.Name()).To(Equal("analyzing"))
 		})
 	})
 })

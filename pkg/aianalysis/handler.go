@@ -17,8 +17,11 @@ limitations under the License.
 // Package aianalysis implements the AIAnalysis CRD controller.
 // DD-CONTRACT-002: Self-contained CRD pattern with HolmesGPT-API integration.
 //
+// Phase Flow (per CRD spec):
+// Pending → Investigating → Analyzing → Recommending → Completed/Failed
+//
 // Phase Handlers:
-// - ValidatingHandler: Validates spec fields and enrichment data
+// - PendingHandler: Validates spec fields and transitions to Investigating
 // - InvestigatingHandler: Calls HolmesGPT-API for investigation
 // - AnalyzingHandler: Evaluates Rego policies for approval
 // - RecommendingHandler: Selects workflow and updates status
@@ -40,7 +43,7 @@ import (
 // Each phase handler implements this interface to process the AIAnalysis
 // CRD during that specific phase of the reconciliation loop.
 //
-// Phase Flow: Validating → Investigating → Analyzing → Recommending → Completed
+// Phase Flow (per CRD spec): Pending → Investigating → Analyzing → Recommending → Completed/Failed
 type PhaseHandler interface {
 	// Handle processes the AIAnalysis for this phase.
 	// Returns:
@@ -57,13 +60,13 @@ type PhaseHandler interface {
 // ========================================
 
 // Phase constants define the AIAnalysis reconciliation phases.
-// Per crd-schema.md v2.4: No "Approving" phase - RO orchestrates approval.
+// Per CRD spec (aianalysis_types.go line 328):
+// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Recommending;Completed;Failed
+// Note: No "Validating" or "Approving" phases - validation happens in Pending→Investigating transition.
 const (
 	// PhasePending is the initial phase when AIAnalysis is first created.
+	// Validation occurs before transitioning to Investigating.
 	PhasePending = "Pending"
-
-	// PhaseValidating validates the spec and enrichment data.
-	PhaseValidating = "Validating"
 
 	// PhaseInvestigating calls HolmesGPT-API for investigation.
 	PhaseInvestigating = "Investigating"

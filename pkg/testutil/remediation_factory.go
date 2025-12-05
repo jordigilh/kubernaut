@@ -15,7 +15,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ============================================================================
@@ -118,11 +117,12 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 
 // SignalProcessingOpts provides optional overrides for test data
 type SignalProcessingOpts struct {
-	Phase             signalprocessingv1.SignalProcessingPhase
-	EnrichmentResults *sharedtypes.EnrichmentResults
+	Phase              signalprocessingv1.SignalProcessingPhase
+	KubernetesContext  *signalprocessingv1.KubernetesContext
 }
 
 // NewSignalProcessing creates a test SignalProcessing CRD with sensible defaults.
+// Updated to match SignalProcessingSpec v1alpha1 schema (Dec 2025)
 func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *signalprocessingv1.SignalProcessing {
 	sp := &signalprocessingv1.SignalProcessing{
 		TypeMeta: metav1.TypeMeta{
@@ -134,21 +134,26 @@ func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *
 			Namespace: namespace,
 			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
 			Labels: map[string]string{
-				"kubernaut.io/component": "signal-processing",
+				"kubernaut.ai/component": "signal-processing",
 			},
 		},
 		Spec: signalprocessingv1.SignalProcessingSpec{
-			SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-			SignalName:        "TestSignal",
-			Severity:          "warning",
-			Environment:       "production",
-			Priority:          "P1",
-			SignalType:        "prometheus",
-			TargetType:        "kubernetes",
-			TargetResource: signalprocessingv1.ResourceIdentifier{
-				Kind:      "Pod",
-				Name:      "test-pod",
+			RemediationRequestRef: signalprocessingv1.ObjectReference{
+				Kind:      "RemediationRequest",
+				Name:      fmt.Sprintf("%s-rr", name),
 				Namespace: namespace,
+			},
+			Signal: signalprocessingv1.SignalData{
+				Fingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+				Name:        "TestSignal",
+				Severity:    "warning",
+				Type:        "prometheus",
+				TargetType:  "kubernetes",
+				TargetResource: signalprocessingv1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: namespace,
+				},
 			},
 		},
 	}
@@ -159,8 +164,8 @@ func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *
 		if opt.Phase != "" {
 			sp.Status.Phase = opt.Phase
 		}
-		if opt.EnrichmentResults != nil {
-			sp.Status.EnrichmentResults = opt.EnrichmentResults
+		if opt.KubernetesContext != nil {
+			sp.Status.KubernetesContext = opt.KubernetesContext
 		}
 	}
 
@@ -168,19 +173,18 @@ func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *
 }
 
 // NewCompletedSignalProcessing creates a SignalProcessing in Completed phase with enrichment results.
+// Updated to match SignalProcessingStatus v1alpha1 schema (Dec 2025)
 func NewCompletedSignalProcessing(name, namespace string) *signalprocessingv1.SignalProcessing {
-	return NewSignalProcessing(name, namespace, SignalProcessingOpts{
+	sp := NewSignalProcessing(name, namespace, SignalProcessingOpts{
 		Phase: signalprocessingv1.PhaseCompleted,
-		EnrichmentResults: &sharedtypes.EnrichmentResults{
-			KubernetesContext: &sharedtypes.KubernetesContext{
-				Namespace: namespace,
-				PodDetails: &sharedtypes.PodDetails{
-					Name:  "test-pod",
-					Phase: "Running",
-				},
-			},
-		},
 	})
+	// Set KubernetesContext directly on status (updated schema)
+	sp.Status.KubernetesContext = &signalprocessingv1.KubernetesContext{
+		NamespaceLabels: map[string]string{
+			"kubernetes.io/metadata.name": namespace,
+		},
+	}
+	return sp
 }
 
 // ============================================================================

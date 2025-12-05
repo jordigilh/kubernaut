@@ -14,139 +14,149 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package rego provides OPA Rego policy evaluation for AIAnalysis approval decisions.
-// Design Decision: DD-WORKFLOW-001 v2.2 - Approval policy evaluation
-// Business Requirement: BR-AI-011, BR-AI-013, BR-AI-014
+// Package rego provides Rego policy evaluation for AIAnalysis approval decisions.
+// BR-AI-011: Policy evaluation
+// BR-AI-014: Graceful degradation
+// DD-AIANALYSIS-001: Follows Gateway pattern for Rego policy loading
 package rego
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/open-policy-agent/opa/v1/rego"
-)
-
-const (
-	// DefaultTimeout is the default timeout for Rego policy evaluation.
-	DefaultTimeout = 5 * time.Second
-
-	// DefaultPolicyQuery is the Rego query path for approval decisions.
-	DefaultPolicyQuery = "data.aianalysis.approval"
 )
 
 // Config for Rego evaluator
 type Config struct {
-	// PolicyDir is the directory containing Rego policies
-	PolicyDir string
-	// Query is the Rego query path (default: "data.aianalysis.approval")
-	Query string
-	// Timeout for policy evaluation
-	Timeout time.Duration
+	// PolicyPath is the path to the approval.rego policy file
+	PolicyPath string
 }
 
-// PolicyInput represents input to Rego approval policy.
-// DD-WORKFLOW-001 v2.2: Input schema for approval determination.
+// PolicyInput represents input to Rego policy
+// Per IMPLEMENTATION_PLAN_V1.0.md lines 1756-1785 (ApprovalInput schema)
+// Fields align with AIAnalysis status fields captured by InvestigatingHandler
 type PolicyInput struct {
-	// Environment from SignalContext (e.g., "production", "staging")
-	Environment string `json:"environment"`
-	// TargetInOwnerChain indicates if RCA target was found in OwnerChain
-	TargetInOwnerChain bool `json:"target_in_owner_chain"`
-	// DetectedLabels are auto-detected cluster characteristics
+	// Signal context (from SignalProcessing)
+	SignalType       string `json:"signal_type"`
+	Severity         string `json:"severity"`
+	Environment      string `json:"environment"`
+	BusinessPriority string `json:"business_priority"`
+
+	// Target resource
+	TargetResource TargetResourceInput `json:"target_resource"`
+
+	// Detected labels (auto-detected by SignalProcessing)
 	DetectedLabels map[string]interface{} `json:"detected_labels"`
-	// CustomLabels are customer-defined labels from Rego policies
+
+	// Custom labels (customer-defined via Rego)
 	CustomLabels map[string][]string `json:"custom_labels"`
-	// FailedDetections lists fields where detection failed (RBAC, timeout, etc.)
-	FailedDetections []string `json:"failed_detections"`
-	// Warnings from HolmesGPT-API investigation
-	Warnings []string `json:"warnings"`
+
+	// HolmesGPT-API response data
+	Confidence         float64  `json:"confidence"`
+	TargetInOwnerChain bool     `json:"target_in_owner_chain"`
+	Warnings           []string `json:"warnings,omitempty"`
+
+	// FailedDetections (DD-WORKFLOW-001 v2.1)
+	FailedDetections []string `json:"failed_detections,omitempty"`
+
+	// Recovery context
+	IsRecoveryAttempt     bool `json:"is_recovery_attempt"`
+	RecoveryAttemptNumber int  `json:"recovery_attempt_number,omitempty"`
 }
 
-// PolicyResult represents Rego policy evaluation result.
+// TargetResourceInput contains target resource identification
+type TargetResourceInput struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+// PolicyResult represents Rego policy evaluation result
 type PolicyResult struct {
-	// ApprovalRequired indicates if manual approval is needed
+	// ApprovalRequired indicates if human approval is needed
 	ApprovalRequired bool
-	// Reason explains the approval decision
+	// Reason explains why approval is/isn't required
 	Reason string
-	// Degraded indicates if the result is from graceful degradation
+	// Degraded indicates if evaluation used fallback due to policy errors
 	Degraded bool
 }
 
-// EvaluatorInterface defines the interface for Rego evaluation.
-// This allows mocking in tests.
+// EvaluatorInterface for dependency injection in tests
 type EvaluatorInterface interface {
 	Evaluate(ctx context.Context, input *PolicyInput) (*PolicyResult, error)
 }
 
-// Evaluator evaluates Rego policies for approval decisions.
+// Evaluator evaluates Rego policies for approval decisions
 // BR-AI-011: Policy evaluation
-// BR-AI-014: Graceful degradation
 type Evaluator struct {
-	policyDir     string
-	query         string
-	timeout       time.Duration
-	preparedQuery *rego.PreparedEvalQuery
-	logger        logr.Logger
+	policyPath string
 }
 
-// NewEvaluator creates a new Rego evaluator.
-func NewEvaluator(cfg Config, logger logr.Logger) *Evaluator {
-	query := cfg.Query
-	if query == "" {
-		query = DefaultPolicyQuery
-	}
-
-	timeout := cfg.Timeout
-	if timeout == 0 {
-		timeout = DefaultTimeout
-	}
-
+// NewEvaluator creates a new Rego evaluator
+// DD-AIANALYSIS-001: Follows Gateway pattern
+func NewEvaluator(cfg Config) *Evaluator {
 	return &Evaluator{
-		policyDir: cfg.PolicyDir,
-		query:     query,
-		timeout:   timeout,
-		logger:    logger.WithName("rego-evaluator"),
+		policyPath: cfg.PolicyPath,
 	}
 }
 
-// Evaluate evaluates the approval policy.
+// Evaluate evaluates the approval policy
 // BR-AI-011: Policy evaluation
-// BR-AI-014: Graceful degradation - returns safe default on errors
+// BR-AI-014: Graceful degradation on errors
 func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyResult, error) {
-	// Apply timeout
-	ctx, cancel := context.WithTimeout(ctx, e.timeout)
-	defer cancel()
-
-	// Try to prepare query if not already done
-	if e.preparedQuery == nil {
-		if err := e.prepareQuery(ctx); err != nil {
-			// Graceful degradation: policy load failed
-			e.logger.Error(err, "Failed to load Rego policy, defaulting to manual approval")
-			return &PolicyResult{
-				ApprovalRequired: true, // Safe default
-				Reason:           fmt.Sprintf("Policy evaluation failed: %v - defaulting to manual approval", err),
-				Degraded:         true,
-			}, nil
-		}
-	}
-
-	// Evaluate policy
-	results, err := e.preparedQuery.Eval(ctx, rego.EvalInput(input))
+	// Read policy file
+	policyContent, err := os.ReadFile(e.policyPath)
 	if err != nil {
-		e.logger.Error(err, "Rego evaluation error, defaulting to manual approval")
+		// BR-AI-014: Graceful degradation - policy file not found
 		return &PolicyResult{
-			ApprovalRequired: true,
-			Reason:           fmt.Sprintf("Policy evaluation error: %v", err),
+			ApprovalRequired: true, // Safe default
+			Reason:           fmt.Sprintf("Policy file not found: %v - defaulting to manual approval", err),
 			Degraded:         true,
 		}, nil
 	}
 
-	// Parse results
+	// Prepare Rego query
+	query, err := rego.New(
+		rego.Query("data.aianalysis.approval"),
+		rego.Module("approval.rego", string(policyContent)),
+	).PrepareForEval(ctx)
+
+	if err != nil {
+		// BR-AI-014: Graceful degradation - policy syntax error
+		return &PolicyResult{
+			ApprovalRequired: true,
+			Reason:           fmt.Sprintf("Policy compilation failed: %v - defaulting to manual approval", err),
+			Degraded:         true,
+		}, nil
+	}
+
+	// Build input map for Rego
+	inputMap := map[string]interface{}{
+		"environment":          input.Environment,
+		"target_in_owner_chain": input.TargetInOwnerChain,
+		"confidence":           input.Confidence,
+		"detected_labels":      input.DetectedLabels,
+		"custom_labels":        input.CustomLabels,
+		"failed_detections":    input.FailedDetections,
+		"warnings":             input.Warnings,
+	}
+
+	// Evaluate policy
+	results, err := query.Eval(ctx, rego.EvalInput(inputMap))
+	if err != nil {
+		// BR-AI-014: Graceful degradation - evaluation error
+		return &PolicyResult{
+			ApprovalRequired: true,
+			Reason:           fmt.Sprintf("Policy evaluation error: %v - defaulting to manual approval", err),
+			Degraded:         true,
+		}, nil
+	}
+
+	// Check for results
 	if len(results) == 0 || len(results[0].Expressions) == 0 {
-		e.logger.Info("No policy result, defaulting to manual approval")
+		// BR-AI-014: Graceful degradation - no result
 		return &PolicyResult{
 			ApprovalRequired: true,
 			Reason:           "No policy result - defaulting to manual approval",
@@ -154,66 +164,32 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		}, nil
 	}
 
-	// Extract approval decision from result
-	return e.parseResult(results[0].Expressions[0].Value)
-}
-
-// prepareQuery loads and prepares the Rego query.
-func (e *Evaluator) prepareQuery(ctx context.Context) error {
-	// Check if policy directory exists
-	if _, err := os.Stat(e.policyDir); os.IsNotExist(err) {
-		return fmt.Errorf("policy directory does not exist: %s", e.policyDir)
-	}
-
-	// Find all .rego files in directory
-	policyFiles, err := filepath.Glob(filepath.Join(e.policyDir, "*.rego"))
-	if err != nil {
-		return fmt.Errorf("failed to find policy files: %w", err)
-	}
-
-	if len(policyFiles) == 0 {
-		return fmt.Errorf("no policy files found in %s", e.policyDir)
-	}
-
-	// Prepare Rego query
-	prepared, err := rego.New(
-		rego.Query(e.query),
-		rego.Load(policyFiles, nil),
-	).PrepareForEval(ctx)
-
-	if err != nil {
-		return fmt.Errorf("failed to prepare Rego policy: %w", err)
-	}
-
-	e.preparedQuery = &prepared
-	e.logger.Info("Rego policy loaded successfully",
-		"query", e.query,
-		"policy_files", len(policyFiles))
-
-	return nil
-}
-
-// parseResult extracts the approval decision from Rego result.
-func (e *Evaluator) parseResult(rawResult interface{}) (*PolicyResult, error) {
-	// Expected format: map[string]interface{} with require_approval and reason
-	resultMap, ok := rawResult.(map[string]interface{})
+	// Extract result map
+	resultMap, ok := results[0].Expressions[0].Value.(map[string]interface{})
 	if !ok {
-		e.logger.Info("Invalid policy result format, defaulting to manual approval",
-			"result_type", fmt.Sprintf("%T", rawResult))
+		// BR-AI-014: Graceful degradation - invalid result format
 		return &PolicyResult{
 			ApprovalRequired: true,
-			Reason:           "Invalid policy result format",
+			Reason:           fmt.Sprintf("Invalid policy result format (got %T) - defaulting to manual approval", results[0].Expressions[0].Value),
 			Degraded:         true,
 		}, nil
 	}
 
 	// Extract approval decision
-	approvalRequired, _ := resultMap["require_approval"].(bool)
-	reason, _ := resultMap["reason"].(string)
+	approvalRequired, foundApproval := resultMap["require_approval"].(bool)
+	reason, foundReason := resultMap["reason"].(string)
 
-	e.logger.V(1).Info("Policy evaluation complete",
-		"approval_required", approvalRequired,
-		"reason", reason)
+	// If require_approval key doesn't exist, use safe default (true)
+	if !foundApproval {
+		approvalRequired = true
+	}
+	if !foundReason {
+		if approvalRequired {
+			reason = "Approval required by policy"
+		} else {
+			reason = "Auto-approved by policy"
+		}
+	}
 
 	return &PolicyResult{
 		ApprovalRequired: approvalRequired,

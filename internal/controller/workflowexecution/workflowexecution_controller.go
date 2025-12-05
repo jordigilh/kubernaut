@@ -14,8 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package workflowexecution implements the WorkflowExecution CRD controller
-// following TDD methodology - implementation driven by failing tests
 package workflowexecution
 
 import (
@@ -23,365 +21,565 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"time"
 
-	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
-	"knative.dev/pkg/apis"
-
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
+// ========================================
+// WorkflowExecution Controller
+// ADR-044: Tekton PipelineRun Delegation
+// DD-WE-001: Resource Locking Safety
+// DD-WE-002: Dedicated Execution Namespace
+// DD-WE-003: Lock Persistence (Deterministic Name)
+// ========================================
+
 const (
+	// FinalizerName is the finalizer for WorkflowExecution cleanup
+	FinalizerName = "workflowexecution.kubernaut.ai/finalizer"
+
+	// DefaultCooldownPeriod is the default time between workflow executions on same target
+	DefaultCooldownPeriod = 5 * time.Minute
+
 	// DefaultServiceAccountName is the default SA for PipelineRuns
 	DefaultServiceAccountName = "kubernaut-workflow-runner"
 )
 
 // WorkflowExecutionReconciler reconciles a WorkflowExecution object
-// TDD: Interface defined by tests in workflowexecution_controller_test.go
 type WorkflowExecutionReconciler struct {
 	client.Client
-	Scheme             *runtime.Scheme
-	ExecutionNamespace string        // DD-WE-002: Dedicated namespace for PipelineRuns
-	CooldownPeriod     time.Duration // BR-WE-010: Default 5 minutes
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+
+	// ExecutionNamespace is where PipelineRuns are created (DD-WE-002)
+	// Default: "kubernaut-workflows"
+	ExecutionNamespace string
+
+	// CooldownPeriod prevents redundant sequential workflows (DD-WE-001)
+	// Default: 5 minutes
+	CooldownPeriod time.Duration
+
+	// ServiceAccountName for PipelineRuns
+	// Default: "kubernaut-workflow-runner"
+	ServiceAccountName string
 }
 
-// NewWorkflowExecutionReconciler creates a new reconciler
-// TDD: Constructor defined by test requirements
-func NewWorkflowExecutionReconciler(client client.Client, scheme *runtime.Scheme, executionNamespace string) *WorkflowExecutionReconciler {
-	return &WorkflowExecutionReconciler{
-		Client:             client,
-		Scheme:             scheme,
-		ExecutionNamespace: executionNamespace,
-		CooldownPeriod:     5 * time.Minute, // Default per BR-WE-010
-	}
-}
+// ========================================
+// RBAC Markers
+// ========================================
 
-// +kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions/finalizers,verbs=update
-// +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
+//+kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions/finalizers,verbs=update
+//+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
-// Reconcile implements the reconciliation loop for WorkflowExecution
+// Reconcile handles WorkflowExecution reconciliation
+// Phase-based reconciliation per implementation plan
 func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
+	logger := log.FromContext(ctx)
 
-	// Fetch the WorkflowExecution
-	var wfe workflowexecutionv1.WorkflowExecution
+	// Fetch the WorkflowExecution instance
+	var wfe workflowexecutionv1alpha1.WorkflowExecution
 	if err := r.Get(ctx, req.NamespacedName, &wfe); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			log.Error(err, "unable to fetch WorkflowExecution")
-			return ctrl.Result{}, err
-		}
-		// WFE was deleted
-		return ctrl.Result{}, nil
+		// Ignore not-found errors (deleted before reconcile)
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Handle deletion
+	logger.Info("Reconciling WorkflowExecution",
+		"name", wfe.Name,
+		"namespace", wfe.Namespace,
+		"phase", wfe.Status.Phase,
+	)
+
+	// ========================================
+	// Handle Deletion
+	// ========================================
 	if !wfe.DeletionTimestamp.IsZero() {
 		return r.reconcileDelete(ctx, &wfe)
 	}
 
-	// Ensure finalizer is present
-	if !containsFinalizer(wfe.Finalizers, FinalizerName) {
-		wfe.Finalizers = append(wfe.Finalizers, FinalizerName)
+	// ========================================
+	// Add Finalizer (if not present)
+	// ========================================
+	if !controllerutil.ContainsFinalizer(&wfe, FinalizerName) {
+		logger.Info("Adding finalizer", "finalizer", FinalizerName)
+		controllerutil.AddFinalizer(&wfe, FinalizerName)
 		if err := r.Update(ctx, &wfe); err != nil {
-			log.Error(err, "unable to add finalizer")
+			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
+		// Requeue after adding finalizer
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Reconcile based on phase
+	// ========================================
+	// Phase-Based Reconciliation
+	// ========================================
 	switch wfe.Status.Phase {
-	case "", workflowexecutionv1.PhasePending:
+	case "", workflowexecutionv1alpha1.PhasePending:
 		return r.reconcilePending(ctx, &wfe)
-	case workflowexecutionv1.PhaseRunning:
+	case workflowexecutionv1alpha1.PhaseRunning:
 		return r.reconcileRunning(ctx, &wfe)
-	case workflowexecutionv1.PhaseCompleted, workflowexecutionv1.PhaseFailed, workflowexecutionv1.PhaseSkipped:
+	case workflowexecutionv1alpha1.PhaseCompleted, workflowexecutionv1alpha1.PhaseFailed:
 		return r.reconcileTerminal(ctx, &wfe)
-	default:
-		log.Info("unknown phase", "phase", wfe.Status.Phase)
+	case workflowexecutionv1alpha1.PhaseSkipped:
+		// Skipped is terminal - no action needed
 		return ctrl.Result{}, nil
+	default:
+		logger.Error(nil, "Unknown phase", "phase", wfe.Status.Phase)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 }
 
-// FinalizerName is the finalizer for WorkflowExecution resources
-const FinalizerName = "workflowexecution.kubernaut.ai/finalizer"
+// ========================================
+// reconcilePending - Handle Pending phase
+// Day 3-4: Resource lock check + PipelineRun creation
+// ========================================
+func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Reconciling Pending phase")
 
+	// ========================================
+	// Step 1: Check resource lock (DD-WE-001)
+	// ========================================
+	blocked, skipDetails, err := r.CheckResourceLock(ctx, wfe)
+	if err != nil {
+		logger.Error(err, "Failed to check resource lock")
+		return ctrl.Result{}, err
+	}
+	if blocked {
+		logger.Info("Resource is locked, skipping execution",
+			"reason", skipDetails.Reason,
+		)
+		return ctrl.Result{}, r.MarkSkipped(ctx, wfe, skipDetails)
+	}
+
+	// ========================================
+	// Step 2: Check cooldown (DD-WE-001)
+	// ========================================
+	blocked, skipDetails, err = r.CheckCooldown(ctx, wfe)
+	if err != nil {
+		logger.Error(err, "Failed to check cooldown")
+		return ctrl.Result{}, err
+	}
+	if blocked {
+		logger.Info("Cooldown active, skipping execution",
+			"reason", skipDetails.Reason,
+		)
+		return ctrl.Result{}, r.MarkSkipped(ctx, wfe, skipDetails)
+	}
+
+	// ========================================
+	// Step 3: Build and create PipelineRun (Day 4)
+	// ========================================
+	pr := r.BuildPipelineRun(wfe)
+	logger.Info("Creating PipelineRun",
+		"pipelineRun", pr.Name,
+		"namespace", pr.Namespace,
+	)
+
+	if err := r.Create(ctx, pr); err != nil {
+		// Check if this is an AlreadyExists error (race condition caught by DD-WE-003)
+		skipDetails, handleErr := r.HandleAlreadyExists(ctx, wfe, err)
+		if handleErr != nil {
+			logger.Error(handleErr, "Failed to create PipelineRun")
+			return ctrl.Result{}, handleErr
+		}
+		if skipDetails != nil {
+			// Race condition - another WFE created the PipelineRun
+			logger.Info("Race condition detected, skipping execution")
+			return ctrl.Result{}, r.MarkSkipped(ctx, wfe, skipDetails)
+		}
+		// skipDetails == nil means the PipelineRun is ours (we won the race somehow)
+		// This is rare but safe - continue to update status
+	}
+
+	// ========================================
+	// Step 4: Update WFE status to Running
+	// ========================================
+	now := metav1.Now()
+	wfe.Status.Phase = workflowexecutionv1alpha1.PhaseRunning
+	wfe.Status.StartTime = &now
+	wfe.Status.PipelineRunRef = &corev1.LocalObjectReference{
+		Name: pr.Name,
+	}
+
+	if err := r.Status().Update(ctx, wfe); err != nil {
+		logger.Error(err, "Failed to update status to Running")
+		return ctrl.Result{}, err
+	}
+
+	r.Recorder.Event(wfe, "Normal", "PipelineRunCreated",
+		fmt.Sprintf("Created PipelineRun %s/%s", pr.Namespace, pr.Name))
+
+	// Requeue to check PipelineRun status
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
+// ========================================
+// reconcileRunning - Handle Running phase
+// Day 5: Status synchronization
+// ========================================
+func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Reconciling Running phase")
+
+	// TODO (Day 5): Fetch PipelineRun and sync status
+
+	// For now, just requeue
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
+// ========================================
+// reconcileTerminal - Handle Completed/Failed phases
+// Day 6: Cooldown enforcement and cleanup
+// ========================================
+func (r *WorkflowExecutionReconciler) reconcileTerminal(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Reconciling Terminal phase", "phase", wfe.Status.Phase)
+
+	// TODO (Day 6): Enforce cooldown before releasing lock
+
+	// For now, terminal phases are complete
+	return ctrl.Result{}, nil
+}
+
+// ========================================
+// reconcileDelete - Handle deletion with finalizer
+// ========================================
+func (r *WorkflowExecutionReconciler) reconcileDelete(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Reconciling Delete")
+
+	// Check if finalizer is present
+	if !controllerutil.ContainsFinalizer(wfe, FinalizerName) {
+		return ctrl.Result{}, nil
+	}
+
+	// ========================================
+	// Cleanup: Delete PipelineRun if exists
+	// ========================================
+	if wfe.Status.PipelineRunRef != nil {
+		logger.Info("Deleting associated PipelineRun",
+			"pipelineRun", wfe.Status.PipelineRunRef.Name,
+			"namespace", r.ExecutionNamespace,
+		)
+
+		pr := &tektonv1.PipelineRun{}
+		pr.Name = wfe.Status.PipelineRunRef.Name
+		pr.Namespace = r.ExecutionNamespace
+
+		if err := r.Delete(ctx, pr); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				logger.Error(err, "Failed to delete PipelineRun")
+				return ctrl.Result{}, err
+			}
+			// PipelineRun already deleted - continue
+		}
+	}
+
+	// ========================================
+	// Remove Finalizer
+	// ========================================
+	logger.Info("Removing finalizer", "finalizer", FinalizerName)
+	controllerutil.RemoveFinalizer(wfe, FinalizerName)
+	if err := r.Update(ctx, wfe); err != nil {
+		logger.Error(err, "Failed to remove finalizer")
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("WorkflowExecution cleanup complete")
+	return ctrl.Result{}, nil
+}
+
+// ========================================
 // SetupWithManager sets up the controller with the Manager
+// ========================================
 func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Create index on targetResource for O(1) lock check (DD-WE-003)
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&workflowexecutionv1alpha1.WorkflowExecution{},
+		"spec.targetResource",
+		func(obj client.Object) []string {
+			wfe := obj.(*workflowexecutionv1alpha1.WorkflowExecution)
+			return []string{wfe.Spec.TargetResource}
+		},
+	); err != nil {
+		return fmt.Errorf("failed to create field index on spec.targetResource: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&workflowexecutionv1.WorkflowExecution{}).
-		Owns(&tektonv1.PipelineRun{}). // Watch PipelineRuns we create
+		For(&workflowexecutionv1alpha1.WorkflowExecution{}).
+		// Watch PipelineRuns in execution namespace (cross-namespace via label)
+		// Only watch PipelineRuns with our label to avoid unnecessary reconciles
+		Watches(
+			&tektonv1.PipelineRun{},
+			handler.EnqueueRequestsFromMapFunc(r.FindWFEForPipelineRun),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				// Only watch PipelineRuns that have our label
+				labels := obj.GetLabels()
+				if labels == nil {
+					return false
+				}
+				_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+				return hasLabel
+			})),
+		).
 		Complete(r)
 }
 
-// containsFinalizer checks if a finalizer is present
-func containsFinalizer(finalizers []string, finalizer string) bool {
-	for _, f := range finalizers {
-		if f == finalizer {
-			return true
-		}
-	}
-	return false
+// ========================================
+// PipelineRunName generates deterministic name from targetResource
+// DD-WE-003: Lock Persistence via Deterministic Name
+// Format: wfe-<sha256(targetResource)[:16]>
+// ========================================
+func PipelineRunName(targetResource string) string {
+	h := sha256.Sum256([]byte(targetResource))
+	return fmt.Sprintf("wfe-%s", hex.EncodeToString(h[:])[:16])
 }
 
-// removeFinalizer removes a finalizer from the list
-func removeFinalizer(finalizers []string, finalizer string) []string {
-	result := make([]string, 0, len(finalizers))
-	for _, f := range finalizers {
-		if f != finalizer {
-			result = append(result, f)
+// ========================================
+// CheckResourceLock checks if another WFE is Running for same targetResource
+// DD-WE-001: Resource Locking Safety (Layer 1 - Active Lock Check)
+// Returns: blocked, skipDetails, error
+// ========================================
+func (r *WorkflowExecutionReconciler) CheckResourceLock(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (bool, *workflowexecutionv1alpha1.SkipDetails, error) {
+	logger := log.FromContext(ctx)
+
+	// List all WFEs targeting the same resource
+	var wfeList workflowexecutionv1alpha1.WorkflowExecutionList
+	if err := r.List(ctx, &wfeList, client.MatchingFields{
+		"spec.targetResource": wfe.Spec.TargetResource,
+	}); err != nil {
+		// If index not found, fall back to filter in memory
+		if err := r.List(ctx, &wfeList); err != nil {
+			logger.Error(err, "Failed to list WorkflowExecutions")
+			return false, nil, err
 		}
 	}
-	return result
-}
 
-// reconcilePending handles WFE in Pending phase - creates PipelineRun
-func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe *workflowexecutionv1.WorkflowExecution) (ctrl.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-
-	// Check resource lock (BR-WE-009)
-	blocked, reason, conflicting := r.CheckResourceLock(ctx, wfe.Spec.TargetResource, wfe.Spec.WorkflowRef.WorkflowID)
-	if blocked {
-		log.Info("resource is locked, skipping", "reason", reason)
-		r.MarkSkipped(wfe, reason, conflicting, nil)
-		if err := r.Status().Update(ctx, wfe); err != nil {
-			return ctrl.Result{}, err
+	// Check if any Running WFE exists for this targetResource (excluding self)
+	for _, existing := range wfeList.Items {
+		// Skip self
+		if existing.UID == wfe.UID {
+			continue
 		}
-		return ctrl.Result{}, nil
-	}
 
-	// Check cooldown (BR-WE-010)
-	blocked, reason, recent := r.CheckCooldown(ctx, wfe.Spec.TargetResource, wfe.Spec.WorkflowRef.WorkflowID)
-	if blocked {
-		log.Info("within cooldown period, skipping", "reason", reason)
-		r.MarkSkipped(wfe, reason, nil, recent)
-		if err := r.Status().Update(ctx, wfe); err != nil {
-			return ctrl.Result{}, err
+		// Skip different targetResource (in case index wasn't available)
+		if existing.Spec.TargetResource != wfe.Spec.TargetResource {
+			continue
 		}
-		return ctrl.Result{}, nil
-	}
 
-	// Build and create PipelineRun
-	pr := r.BuildPipelineRun(wfe)
+		// Check if Running (active lock)
+		if existing.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
+			logger.Info("Resource lock detected",
+				"blockedBy", existing.Name,
+				"targetResource", wfe.Spec.TargetResource,
+			)
 
-	// Try to create PipelineRun - deterministic name handles race conditions (DD-WE-003)
-	if err := r.Create(ctx, pr); err != nil {
-		if strings.Contains(err.Error(), "already exists") {
-			// Another WFE won the race - skip this one
-			log.Info("PipelineRun already exists (race condition), skipping")
-			r.MarkSkipped(wfe, workflowexecutionv1.SkipReasonResourceBusy, &workflowexecutionv1.ConflictingWorkflowRef{
-				Name:           pr.Name,
-				TargetResource: wfe.Spec.TargetResource,
-				StartedAt:      metav1.Now(), // Required field
-			}, nil)
-			if err := r.Status().Update(ctx, wfe); err != nil {
-				return ctrl.Result{}, err
+			startedAt := metav1.Now()
+			if existing.Status.StartTime != nil {
+				startedAt = *existing.Status.StartTime
 			}
-			return ctrl.Result{}, nil
+
+			return true, &workflowexecutionv1alpha1.SkipDetails{
+				Reason:    workflowexecutionv1alpha1.SkipReasonResourceBusy,
+				Message:   fmt.Sprintf("Another workflow execution '%s' is already running for resource '%s'", existing.Name, wfe.Spec.TargetResource),
+				SkippedAt: metav1.Now(),
+				ConflictingWorkflow: &workflowexecutionv1alpha1.ConflictingWorkflowRef{
+					Name:           existing.Name,
+					WorkflowID:     existing.Spec.WorkflowRef.WorkflowID,
+					StartedAt:      startedAt,
+					TargetResource: existing.Spec.TargetResource,
+				},
+			}, nil
 		}
-		log.Error(err, "unable to create PipelineRun")
-		return ctrl.Result{}, err
 	}
 
-	log.Info("created PipelineRun", "name", pr.Name, "namespace", pr.Namespace)
-
-	// Update WFE status to Running
-	now := metav1.Now()
-	wfe.Status.Phase = workflowexecutionv1.PhaseRunning
-	wfe.Status.StartTime = &now
-	wfe.Status.PipelineRunRef = &corev1.LocalObjectReference{Name: pr.Name}
-
-	if err := r.Status().Update(ctx, wfe); err != nil {
-		log.Error(err, "unable to update status to Running")
-		return ctrl.Result{}, err
-	}
-
-	// Requeue to check PipelineRun status
-	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	return false, nil, nil
 }
 
-// reconcileRunning handles WFE in Running phase - monitors PipelineRun
-func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe *workflowexecutionv1.WorkflowExecution) (ctrl.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
+// ========================================
+// CheckCooldown checks if a recent WFE completed within cooldown period
+// DD-WE-001: Resource Locking Safety (Cooldown Check)
+// Returns: blocked, skipDetails, error
+// ========================================
+func (r *WorkflowExecutionReconciler) CheckCooldown(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (bool, *workflowexecutionv1alpha1.SkipDetails, error) {
+	logger := log.FromContext(ctx)
 
-	if wfe.Status.PipelineRunRef == nil {
-		log.Error(nil, "Running WFE has no PipelineRunRef")
-		r.HandleMissingPipelineRun(wfe)
-		if err := r.Status().Update(ctx, wfe); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
+	// Cooldown disabled
+	if r.CooldownPeriod <= 0 {
+		return false, nil, nil
 	}
 
-	// Fetch PipelineRun
-	var pr tektonv1.PipelineRun
-	prKey := client.ObjectKey{
-		Name:      wfe.Status.PipelineRunRef.Name,
+	// List all WFEs targeting the same resource
+	var wfeList workflowexecutionv1alpha1.WorkflowExecutionList
+	if err := r.List(ctx, &wfeList, client.MatchingFields{
+		"spec.targetResource": wfe.Spec.TargetResource,
+	}); err != nil {
+		// If index not found, fall back to filter in memory
+		if err := r.List(ctx, &wfeList); err != nil {
+			logger.Error(err, "Failed to list WorkflowExecutions")
+			return false, nil, err
+		}
+	}
+
+	now := time.Now()
+	cooldownThreshold := now.Add(-r.CooldownPeriod)
+
+	// Check if any terminal WFE completed within cooldown period (excluding self)
+	for _, existing := range wfeList.Items {
+		// Skip self
+		if existing.UID == wfe.UID {
+			continue
+		}
+
+		// Skip different targetResource (in case index wasn't available)
+		if existing.Spec.TargetResource != wfe.Spec.TargetResource {
+			continue
+		}
+
+		// Check if terminal phase with recent completion
+		if existing.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted ||
+			existing.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
+
+			if existing.Status.CompletionTime != nil &&
+				existing.Status.CompletionTime.Time.After(cooldownThreshold) {
+
+				remainingCooldown := existing.Status.CompletionTime.Time.Add(r.CooldownPeriod).Sub(now)
+				logger.Info("Cooldown active",
+					"blockedBy", existing.Name,
+					"targetResource", wfe.Spec.TargetResource,
+					"remainingCooldown", remainingCooldown,
+				)
+
+				return true, &workflowexecutionv1alpha1.SkipDetails{
+					Reason:    workflowexecutionv1alpha1.SkipReasonRecentlyRemediated,
+					Message:   fmt.Sprintf("Cooldown active: workflow '%s' completed recently for resource '%s'. Remaining: %v", existing.Name, wfe.Spec.TargetResource, remainingCooldown.Round(time.Second)),
+					SkippedAt: metav1.Now(),
+					RecentRemediation: &workflowexecutionv1alpha1.RecentRemediationRef{
+						Name:              existing.Name,
+						WorkflowID:        existing.Spec.WorkflowRef.WorkflowID,
+						CompletedAt:       *existing.Status.CompletionTime,
+						Outcome:           string(existing.Status.Phase),
+						TargetResource:    existing.Spec.TargetResource,
+						CooldownRemaining: remainingCooldown.Round(time.Second).String(),
+					},
+				}, nil
+			}
+		}
+	}
+
+	return false, nil, nil
+}
+
+// ========================================
+// HandleAlreadyExists handles the race condition where PipelineRun already exists
+// DD-WE-003: Layer 2 - Deterministic naming catches race conditions
+// Returns: skipDetails if should be skipped, nil if PipelineRun is ours
+// ========================================
+func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, err error) (*workflowexecutionv1alpha1.SkipDetails, error) {
+	logger := log.FromContext(ctx)
+
+	if !apierrors.IsAlreadyExists(err) {
+		return nil, err
+	}
+
+	// PipelineRun already exists - check if it's ours
+	prName := PipelineRunName(wfe.Spec.TargetResource)
+	existingPR := &tektonv1.PipelineRun{}
+	if getErr := r.Get(ctx, client.ObjectKey{
+		Name:      prName,
 		Namespace: r.ExecutionNamespace,
-	}
-	if err := r.Get(ctx, prKey, &pr); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, err
-		}
-		// PipelineRun was deleted externally (BR-WE-007)
-		log.Info("PipelineRun not found, marking as failed")
-		r.HandleMissingPipelineRun(wfe)
-		if err := r.Status().Update(ctx, wfe); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
+	}, existingPR); getErr != nil {
+		logger.Error(getErr, "Failed to get existing PipelineRun", "name", prName)
+		return nil, getErr
 	}
 
-	// Map PipelineRun status to WFE
-	phase, outcome := r.MapPipelineRunStatus(&pr)
-
-	if phase == workflowexecutionv1.PhaseRunning {
-		// Still running, requeue
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	// Check if the existing PipelineRun was created by this WFE
+	if existingPR.Labels != nil &&
+		existingPR.Labels["kubernaut.ai/workflow-execution"] == wfe.Name &&
+		existingPR.Labels["kubernaut.ai/source-namespace"] == wfe.Namespace {
+		// It's ours - we must have lost a race with ourselves (unlikely but safe)
+		logger.Info("PipelineRun already exists and is ours", "name", prName)
+		return nil, nil
 	}
 
-	// Terminal state reached
-	log.Info("PipelineRun completed", "phase", phase, "outcome", outcome)
+	// Another WFE created this PipelineRun - we lost the race
+	logger.Info("Race condition caught: PipelineRun created by another WFE",
+		"prName", prName,
+		"existingWFE", existingPR.Labels["kubernaut.ai/workflow-execution"],
+	)
 
-	r.UpdateWFEStatus(wfe, &pr)
-
-	if phase == workflowexecutionv1.PhaseFailed {
-		wfe.Status.FailureDetails = r.ExtractFailureDetails(&pr)
-	}
-
-	if err := r.Status().Update(ctx, wfe); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Requeue to handle cooldown-based lock release
-	return ctrl.Result{RequeueAfter: r.CooldownPeriod}, nil
+	return &workflowexecutionv1alpha1.SkipDetails{
+		Reason:    workflowexecutionv1alpha1.SkipReasonResourceBusy,
+		Message:   fmt.Sprintf("Race condition: PipelineRun '%s' already exists for target resource", prName),
+		SkippedAt: metav1.Now(),
+		ConflictingWorkflow: &workflowexecutionv1alpha1.ConflictingWorkflowRef{
+			Name:           existingPR.Labels["kubernaut.ai/workflow-execution"],
+			WorkflowID:     "", // Not available from PipelineRun
+			StartedAt:      existingPR.CreationTimestamp,
+			TargetResource: wfe.Spec.TargetResource,
+		},
+	}, nil
 }
 
-// reconcileTerminal handles WFE in terminal phase - manages lock release
-func (r *WorkflowExecutionReconciler) reconcileTerminal(ctx context.Context, wfe *workflowexecutionv1.WorkflowExecution) (ctrl.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
+// ========================================
+// BuildPipelineRun creates a PipelineRun with bundle resolver
+// DD-WE-002: PipelineRuns created in dedicated execution namespace
+// DD-WE-003: Deterministic name for atomic locking
+// ========================================
+func (r *WorkflowExecutionReconciler) BuildPipelineRun(wfe *workflowexecutionv1alpha1.WorkflowExecution) *tektonv1.PipelineRun {
+	// Convert parameters to Tekton format
+	params := r.ConvertParameters(wfe.Spec.Parameters)
 
-	// Check if cooldown has expired
-	if wfe.Status.CompletionTime == nil {
-		return ctrl.Result{}, nil
-	}
-
-	elapsed := time.Since(wfe.Status.CompletionTime.Time)
-	if elapsed < r.CooldownPeriod {
-		// Still in cooldown, requeue
-		remaining := r.CooldownPeriod - elapsed
-		return ctrl.Result{RequeueAfter: remaining}, nil
-	}
-
-	// Cooldown expired - delete PipelineRun to release lock
-	if wfe.Status.PipelineRunRef != nil && !wfe.Status.LockReleased {
-		prKey := client.ObjectKey{
-			Name:      wfe.Status.PipelineRunRef.Name,
-			Namespace: r.ExecutionNamespace,
-		}
-		var pr tektonv1.PipelineRun
-		if err := r.Get(ctx, prKey, &pr); err == nil {
-			log.Info("deleting PipelineRun after cooldown", "name", pr.Name)
-			if err := r.Delete(ctx, &pr); err != nil && !strings.Contains(err.Error(), "not found") {
-				return ctrl.Result{}, err
-			}
-		}
-
-		// Mark lock as released
-		wfe.Status.LockReleased = true
-		if err := r.Status().Update(ctx, wfe); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
-}
-
-// reconcileDelete handles WFE deletion - cleanup PipelineRun
-func (r *WorkflowExecutionReconciler) reconcileDelete(ctx context.Context, wfe *workflowexecutionv1.WorkflowExecution) (ctrl.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-
-	// Cleanup PipelineRun if exists
-	if wfe.Status.PipelineRunRef != nil {
-		prKey := client.ObjectKey{
-			Name:      wfe.Status.PipelineRunRef.Name,
-			Namespace: r.ExecutionNamespace,
-		}
-		var pr tektonv1.PipelineRun
-		if err := r.Get(ctx, prKey, &pr); err == nil {
-			log.Info("deleting PipelineRun during finalization", "name", pr.Name)
-			if err := r.Delete(ctx, &pr); err != nil && !strings.Contains(err.Error(), "not found") {
-				return ctrl.Result{}, err
-			}
-		}
-	}
-
-	// Remove finalizer
-	wfe.Finalizers = removeFinalizer(wfe.Finalizers, FinalizerName)
-	if err := r.Update(ctx, wfe); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	log.Info("finalization complete")
-	return ctrl.Result{}, nil
-}
-
-// =============================================================================
-// TDD GREEN: Implementations to make tests pass
-// =============================================================================
-
-// BuildPipelineRun creates a Tekton PipelineRun from WorkflowExecution
-// TDD GREEN: BR-WE-001, BR-WE-002, BR-WE-004, BR-WE-006
-func (r *WorkflowExecutionReconciler) BuildPipelineRun(wfe *workflowexecutionv1.WorkflowExecution) *tektonv1.PipelineRun {
-	// Get deterministic name based on target resource (DD-WE-003)
-	prName := r.GetPipelineRunName(wfe.Spec.TargetResource)
-
-	// Get ServiceAccount name (BR-WE-006)
-	saName := wfe.Spec.ExecutionConfig.ServiceAccountName
+	// Get service account name (use default if not set)
+	saName := r.ServiceAccountName
 	if saName == "" {
 		saName = DefaultServiceAccountName
 	}
 
-	// Build parameters (BR-WE-002)
-	params := r.convertParameters(wfe.Spec.Parameters)
-
-	// Create PipelineRun with bundle resolver (ADR-044)
-	pr := &tektonv1.PipelineRun{
+	return &tektonv1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      prName,
-			Namespace: r.ExecutionNamespace, // DD-WE-002: Dedicated namespace
+			// CRITICAL: Deterministic name = atomic lock (DD-WE-003)
+			Name:      PipelineRunName(wfe.Spec.TargetResource),
+			Namespace: r.ExecutionNamespace, // Always "kubernaut-workflows" (DD-WE-002)
 			Labels: map[string]string{
 				"kubernaut.ai/workflow-execution": wfe.Name,
-				"kubernaut.ai/source-namespace":   wfe.Namespace,
 				"kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
+				"kubernaut.ai/target-resource":    wfe.Spec.TargetResource,
+				// Source tracking for cross-namespace lookup
+				"kubernaut.ai/source-namespace": wfe.Namespace,
 			},
+			// NOTE: No OwnerReference - cross-namespace not supported
+			// Cleanup handled via finalizer in reconcileDelete()
 		},
 		Spec: tektonv1.PipelineRunSpec{
 			PipelineRef: &tektonv1.PipelineRef{
 				ResolverRef: tektonv1.ResolverRef{
 					Resolver: "bundles",
 					Params: []tektonv1.Param{
-						{
-							Name:  "bundle",
-							Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ContainerImage},
-						},
-						{
-							Name:  "name",
-							Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "workflow"},
-						},
-						{
-							Name:  "kind",
-							Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "pipeline"},
-						},
+						{Name: "bundle", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
+						{Name: "name", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "workflow"}},
+						{Name: "kind", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "pipeline"}},
 					},
 				},
 			},
@@ -391,256 +589,74 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRun(wfe *workflowexecutionv1.
 			},
 		},
 	}
-
-	// Note: No OwnerReferences because PipelineRun is cross-namespace (BR-WE-004)
-	// Labels are used for tracking instead
-
-	return pr
 }
 
-// convertParameters converts map[string]string to []tektonv1.Param
-// TDD GREEN: BR-WE-002
-func (r *WorkflowExecutionReconciler) convertParameters(params map[string]string) []tektonv1.Param {
+// ========================================
+// ConvertParameters converts map[string]string to Tekton params
+// ========================================
+func (r *WorkflowExecutionReconciler) ConvertParameters(params map[string]string) []tektonv1.Param {
 	if len(params) == 0 {
-		return nil
+		return []tektonv1.Param{}
 	}
 
-	result := make([]tektonv1.Param, 0, len(params))
-	for name, value := range params {
-		result = append(result, tektonv1.Param{
-			Name:  name,
+	tektonParams := make([]tektonv1.Param, 0, len(params))
+	for key, value := range params {
+		tektonParams = append(tektonParams, tektonv1.Param{
+			Name:  key,
 			Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: value},
 		})
 	}
-	return result
+	return tektonParams
 }
 
-// GetPipelineRunName returns deterministic name based on target resource
-// TDD GREEN: BR-WE-011, DD-WE-003
-func (r *WorkflowExecutionReconciler) GetPipelineRunName(targetResource string) string {
-	h := sha256.Sum256([]byte(targetResource))
-	return fmt.Sprintf("wfe-%s", hex.EncodeToString(h[:])[:16])
-}
-
-// MapPipelineRunStatus maps Tekton status to WFE phase and outcome
-// TDD GREEN: BR-WE-003
-func (r *WorkflowExecutionReconciler) MapPipelineRunStatus(pr *tektonv1.PipelineRun) (phase string, outcome string) {
-	cond := pr.Status.GetCondition(apis.ConditionSucceeded)
-	if cond == nil {
-		return workflowexecutionv1.PhasePending, ""
-	}
-
-	switch cond.Status {
-	case corev1.ConditionTrue:
-		return workflowexecutionv1.PhaseCompleted, workflowexecutionv1.OutcomeSuccess
-	case corev1.ConditionFalse:
-		return workflowexecutionv1.PhaseFailed, workflowexecutionv1.OutcomeFailure
-	default: // Unknown
-		return workflowexecutionv1.PhaseRunning, ""
-	}
-}
-
-// UpdateWFEStatus updates WorkflowExecution status from PipelineRun
-// TDD GREEN: BR-WE-003
-func (r *WorkflowExecutionReconciler) UpdateWFEStatus(wfe *workflowexecutionv1.WorkflowExecution, pr *tektonv1.PipelineRun) {
-	phase, _ := r.MapPipelineRunStatus(pr)
-
-	if phase == workflowexecutionv1.PhaseCompleted || phase == workflowexecutionv1.PhaseFailed {
-		now := metav1.Now()
-		wfe.Status.CompletionTime = &now
-
-		// Calculate duration if StartTime is set
-		if wfe.Status.StartTime != nil {
-			duration := now.Sub(wfe.Status.StartTime.Time)
-			wfe.Status.Duration = duration.Round(time.Second).String()
-		}
-	}
-
-	wfe.Status.Phase = phase
-}
-
-// CheckResourceLock checks if resource is locked by another workflow
-// TDD GREEN: BR-WE-009
-func (r *WorkflowExecutionReconciler) CheckResourceLock(ctx context.Context, targetResource string, workflowID string) (blocked bool, reason string, conflicting *workflowexecutionv1.ConflictingWorkflowRef) {
-	// List all WorkflowExecutions
-	var wfeList workflowexecutionv1.WorkflowExecutionList
-	if err := r.List(ctx, &wfeList); err != nil {
-		return false, "", nil
-	}
-
-	// Check for Running or Pending WFEs on the same target
-	for i := range wfeList.Items {
-		wfe := &wfeList.Items[i]
-		if wfe.Spec.TargetResource == targetResource {
-			if wfe.Status.Phase == workflowexecutionv1.PhaseRunning ||
-				wfe.Status.Phase == workflowexecutionv1.PhasePending {
-				// Found blocking WFE
-				return true, workflowexecutionv1.SkipReasonResourceBusy, &workflowexecutionv1.ConflictingWorkflowRef{
-					Name:           wfe.Name,
-					WorkflowID:     wfe.Spec.WorkflowRef.WorkflowID,
-					StartedAt:      metav1.Now(), // Use current time if StartTime not set
-					TargetResource: wfe.Spec.TargetResource,
-				}
-			}
-		}
-	}
-
-	return false, "", nil
-}
-
-// CheckCooldown checks if same workflow+target was recently executed
-// TDD GREEN: BR-WE-010
-func (r *WorkflowExecutionReconciler) CheckCooldown(ctx context.Context, targetResource string, workflowID string) (blocked bool, reason string, recent *workflowexecutionv1.RecentRemediationRef) {
-	// List all WorkflowExecutions
-	var wfeList workflowexecutionv1.WorkflowExecutionList
-	if err := r.List(ctx, &wfeList); err != nil {
-		return false, "", nil
-	}
-
-	now := time.Now()
-
-	// Check for recently completed WFEs with same target+workflow
-	for i := range wfeList.Items {
-		wfe := &wfeList.Items[i]
-		if wfe.Spec.TargetResource == targetResource &&
-			wfe.Spec.WorkflowRef.WorkflowID == workflowID {
-			if (wfe.Status.Phase == workflowexecutionv1.PhaseCompleted ||
-				wfe.Status.Phase == workflowexecutionv1.PhaseFailed) &&
-				wfe.Status.CompletionTime != nil {
-				// Check if within cooldown period
-				elapsed := now.Sub(wfe.Status.CompletionTime.Time)
-				if elapsed < r.CooldownPeriod {
-					remaining := r.CooldownPeriod - elapsed
-					return true, workflowexecutionv1.SkipReasonRecentlyRemediated, &workflowexecutionv1.RecentRemediationRef{
-						Name:              wfe.Name,
-						WorkflowID:        wfe.Spec.WorkflowRef.WorkflowID,
-						CompletedAt:       *wfe.Status.CompletionTime,
-						Outcome:           wfe.Status.Phase, // Completed or Failed
-						TargetResource:    wfe.Spec.TargetResource,
-						CooldownRemaining: remaining.Round(time.Second).String(),
-					}
-				}
-			}
-		}
-	}
-
-	return false, "", nil
-}
-
-// MarkSkipped marks WorkflowExecution as Skipped with details
-// TDD GREEN: BR-WE-009, BR-WE-010
-func (r *WorkflowExecutionReconciler) MarkSkipped(wfe *workflowexecutionv1.WorkflowExecution, reason string, conflicting *workflowexecutionv1.ConflictingWorkflowRef, recent *workflowexecutionv1.RecentRemediationRef) {
-	wfe.Status.Phase = workflowexecutionv1.PhaseSkipped
-	wfe.Status.SkipDetails = &workflowexecutionv1.SkipDetails{
-		Reason:    reason,
-		Message:   r.generateSkipMessage(reason, conflicting, recent),
-		SkippedAt: metav1.Now(),
-	}
-
-	if conflicting != nil {
-		wfe.Status.SkipDetails.ConflictingWorkflow = conflicting
-	}
-	if recent != nil {
-		wfe.Status.SkipDetails.RecentRemediation = recent
-	}
-}
-
-// generateSkipMessage creates a human-readable skip message
-func (r *WorkflowExecutionReconciler) generateSkipMessage(reason string, conflicting *workflowexecutionv1.ConflictingWorkflowRef, recent *workflowexecutionv1.RecentRemediationRef) string {
-	switch reason {
-	case workflowexecutionv1.SkipReasonResourceBusy:
-		if conflicting != nil {
-			return fmt.Sprintf("Resource is currently being remediated by workflow '%s' (workflowId: %s)",
-				conflicting.Name, conflicting.WorkflowID)
-		}
-		return "Resource is currently being remediated by another workflow"
-	case workflowexecutionv1.SkipReasonRecentlyRemediated:
-		if recent != nil {
-			return fmt.Sprintf("Same workflow '%s' was recently executed on this target (completed: %s, cooldown remaining: %s)",
-				recent.WorkflowID, recent.CompletedAt.Format(time.RFC3339), recent.CooldownRemaining)
-		}
-		return "Same workflow was recently executed on this target"
-	default:
-		return "Execution was skipped"
-	}
-}
-
-// HandleMissingPipelineRun handles the case when PipelineRun is deleted externally
-// TDD GREEN: BR-WE-007
-func (r *WorkflowExecutionReconciler) HandleMissingPipelineRun(wfe *workflowexecutionv1.WorkflowExecution) {
-	wfe.Status.Phase = workflowexecutionv1.PhaseFailed
-	wfe.Status.FailureDetails = &workflowexecutionv1.FailureDetails{
-		Reason:                     workflowexecutionv1.FailureReasonUnknown,
-		Message:                    "PipelineRun was deleted externally before completion",
-		NaturalLanguageSummary:     "The workflow execution failed because the underlying PipelineRun was deleted before it could complete. This may have been done by an operator or automated cleanup process.",
-		FailedAt:                   metav1.Now(),
-		WasExecutionFailure:        false, // Pre-execution failure - safe to retry
-		ExecutionTimeBeforeFailure: "0s",
-	}
-}
-
-// ExtractFailureDetails extracts structured failure information from PipelineRun
-// TDD GREEN: BR-WE-005 (supports audit and notifications)
-func (r *WorkflowExecutionReconciler) ExtractFailureDetails(pr *tektonv1.PipelineRun) *workflowexecutionv1.FailureDetails {
-	cond := pr.Status.GetCondition(apis.ConditionSucceeded)
-	if cond == nil {
+// ========================================
+// FindWFEForPipelineRun maps PipelineRun events to WorkflowExecution reconcile requests
+// Used for cross-namespace watch
+// ========================================
+func (r *WorkflowExecutionReconciler) FindWFEForPipelineRun(ctx context.Context, obj client.Object) []reconcile.Request {
+	labels := obj.GetLabels()
+	if labels == nil {
 		return nil
 	}
 
-	// Map message to Kubernetes-style reason code
-	reason := r.mapTektonMessageToReason(cond.Message)
+	wfeName := labels["kubernaut.ai/workflow-execution"]
+	sourceNS := labels["kubernaut.ai/source-namespace"]
 
-	// Generate natural language summary
-	nlSummary := r.generateNaturalLanguageSummary(reason, cond.Message)
-
-	return &workflowexecutionv1.FailureDetails{
-		Reason:                     reason,
-		Message:                    cond.Message,
-		NaturalLanguageSummary:     nlSummary,
-		FailedAt:                   metav1.Now(),
-		WasExecutionFailure:        true, // Tekton ran, so execution failure
-		ExecutionTimeBeforeFailure: "unknown",
+	if wfeName == "" || sourceNS == "" {
+		return nil
 	}
+
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{
+			Name:      wfeName,
+			Namespace: sourceNS,
+		},
+	}}
 }
 
-// mapTektonMessageToReason maps Tekton message to Kubernetes-style reason code
-func (r *WorkflowExecutionReconciler) mapTektonMessageToReason(message string) string {
-	msg := strings.ToLower(message)
+// ========================================
+// MarkSkipped updates WFE to Skipped phase with details
+// ========================================
+func (r *WorkflowExecutionReconciler) MarkSkipped(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, details *workflowexecutionv1alpha1.SkipDetails) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Marking WorkflowExecution as Skipped",
+		"reason", details.Reason,
+		"message", details.Message,
+	)
 
-	switch {
-	case strings.Contains(msg, "oomkilled") || strings.Contains(msg, "oom"):
-		return workflowexecutionv1.FailureReasonOOMKilled
-	case strings.Contains(msg, "deadline") || strings.Contains(msg, "timeout"):
-		return workflowexecutionv1.FailureReasonDeadlineExceeded
-	case strings.Contains(msg, "forbidden") || strings.Contains(msg, "permission"):
-		return workflowexecutionv1.FailureReasonForbidden
-	case strings.Contains(msg, "imagepullbackoff") || strings.Contains(msg, "errimagepull"):
-		return workflowexecutionv1.FailureReasonImagePullBackOff
-	case strings.Contains(msg, "resourceexhausted") || strings.Contains(msg, "quota"):
-		return workflowexecutionv1.FailureReasonResourceExhausted
-	case strings.Contains(msg, "configuration") || strings.Contains(msg, "invalid"):
-		return workflowexecutionv1.FailureReasonConfigurationError
-	default:
-		return workflowexecutionv1.FailureReasonUnknown
+	wfe.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
+	wfe.Status.SkipDetails = details
+	now := metav1.Now()
+	wfe.Status.CompletionTime = &now
+
+	if err := r.Status().Update(ctx, wfe); err != nil {
+		logger.Error(err, "Failed to update status to Skipped")
+		return err
 	}
+
+	// Emit event
+	r.Recorder.Event(wfe, "Normal", "Skipped", details.Message)
+
+	return nil
 }
 
-// generateNaturalLanguageSummary creates a human-readable failure summary
-func (r *WorkflowExecutionReconciler) generateNaturalLanguageSummary(reason, message string) string {
-	switch reason {
-	case workflowexecutionv1.FailureReasonOOMKilled:
-		return fmt.Sprintf("The workflow task was terminated because it exceeded its memory limit. Consider increasing the memory allocation or optimizing the workflow. Original error: %s", message)
-	case workflowexecutionv1.FailureReasonDeadlineExceeded:
-		return fmt.Sprintf("The workflow exceeded its timeout limit. Consider increasing the timeout or investigating why the workflow takes longer than expected. Original error: %s", message)
-	case workflowexecutionv1.FailureReasonForbidden:
-		return fmt.Sprintf("The workflow failed due to insufficient permissions. Verify that the ServiceAccount has the required RBAC permissions. Original error: %s", message)
-	case workflowexecutionv1.FailureReasonImagePullBackOff:
-		return fmt.Sprintf("The workflow container image could not be pulled. Verify the image reference and registry credentials. Original error: %s", message)
-	case workflowexecutionv1.FailureReasonResourceExhausted:
-		return fmt.Sprintf("The workflow failed due to cluster resource limits (e.g., ResourceQuota). Consider requesting more resources or freeing up existing resources. Original error: %s", message)
-	case workflowexecutionv1.FailureReasonConfigurationError:
-		return fmt.Sprintf("The workflow failed due to invalid configuration or parameters. Review the workflow parameters and configuration. Original error: %s", message)
-	default:
-		return fmt.Sprintf("The workflow failed with an unclassified error. Review the detailed error message for more information: %s", message)
-	}
-}

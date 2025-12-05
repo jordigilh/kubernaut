@@ -2,8 +2,17 @@
 
 ## Status
 **✅ APPROVED** (2025-11-29)
+**Updated**: 2025-12-05 (OPA v1 syntax requirement)
 **Follows**: Gateway pattern (DD-GATEWAY-XXX)
 **Confidence**: 95%
+
+### ⚠️ OPA v1 Syntax Requirement (Dec 2025)
+
+All Rego policies MUST use OPA v1 syntax:
+- **Package**: `github.com/open-policy-agent/opa/v1/rego`
+- **Default**: Use `:=` operator (`default x := false`)
+- **Rules**: Use `if` keyword (`rule if { condition }`)
+- **Import**: Optionally add `import rego.v1` at top of policy
 
 ## Context & Problem
 

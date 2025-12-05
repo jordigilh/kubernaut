@@ -22,6 +22,7 @@
 || 032 | [Data Access Layer Isolation](./ADR-032-data-access-layer-isolation.md) | ✅ Accepted | 2025-10-31 | All services access DB via Data Storage Service REST API |
 || 034 | [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) | ✅ Approved | 2025-11-08 | Event sourcing pattern with JSONB for audit traces |
 || 035 | [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) | ✅ Approved | 2025-11-08 | Async buffered writes for zero latency impact |
+|| 047 | [Policy Engine Selection](./ADR-047-policy-engine-selection.md) | 🔄 Proposed | 2025-12-05 | Rego vs CEL vs 6 alternatives for policy evaluation |
 
 ### **Business Requirement (BR) Migration Decisions**
 

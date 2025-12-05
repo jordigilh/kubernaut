@@ -14,173 +14,253 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package remediationorchestrator contains unit tests for the Remediation Orchestrator controller.
-// BR-ORCH-025: Core Orchestration Phases
-// BR-ORCH-026: Approval Orchestration
-// BR-ORCH-027, BR-ORCH-028: Timeout Management
-// BR-ORCH-032: Resource Lock Deduplication (Skipped Phase)
 package remediationorchestrator
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 )
 
-var _ = Describe("BR-ORCH-025: Phase State Machine Validation", func() {
+var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 
-	// IsTerminal validates business rule: terminal phases cannot progress further
-	// Reference: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md - DescribeTable pattern
-	Describe("IsTerminal", func() {
-		DescribeTable("should correctly identify terminal vs non-terminal phases",
-			func(p phase.Phase, expected bool, description string) {
-				Expect(phase.IsTerminal(p)).To(Equal(expected), description)
+	// ========================================
+	// IsTerminal - Terminal State Detection
+	// BR-ORCH-026: Terminal states must be correctly identified
+	// ========================================
+	Describe("IsTerminal (BR-ORCH-026)", func() {
+
+		DescribeTable("terminal state detection - identifies phases where remediation has ended",
+			func(p phase.Phase, expectTerminal bool, reason string) {
+				// When: We check if the phase is terminal
+				result := phase.IsTerminal(p)
+
+				// Then: Result should match expected terminal status
+				Expect(result).To(Equal(expectTerminal), reason)
 			},
-			// Non-terminal phases (orchestration continues)
-			Entry("Pending is not terminal", phase.Pending, false,
-				"Pending allows transition to Processing"),
-			Entry("Processing is not terminal", phase.Processing, false,
-				"Processing allows transition to Analyzing"),
-			Entry("Analyzing is not terminal", phase.Analyzing, false,
-				"Analyzing allows transition to AwaitingApproval or Executing"),
-			Entry("AwaitingApproval is not terminal", phase.AwaitingApproval, false,
-				"AwaitingApproval allows transition to Executing (BR-ORCH-026)"),
-			Entry("Executing is not terminal", phase.Executing, false,
-				"Executing allows transition to Completed, Failed, TimedOut, or Skipped"),
+			// Terminal states - remediation has ended
+			Entry("Completed is terminal (successful remediation)",
+				phase.Completed, true, "Completed indicates successful end of remediation"),
+			Entry("Failed is terminal (remediation error)",
+				phase.Failed, true, "Failed indicates remediation cannot proceed"),
+			Entry("TimedOut is terminal (BR-ORCH-027, BR-ORCH-028)",
+				phase.TimedOut, true, "TimedOut indicates phase/global timeout exceeded"),
+			Entry("Skipped is terminal (BR-ORCH-032 resource lock)",
+				phase.Skipped, true, "Skipped indicates duplicate remediation prevented"),
 
-			// Terminal phases (orchestration ends)
-			Entry("Completed is terminal", phase.Completed, true,
-				"Completed is a successful terminal state"),
-			Entry("Failed is terminal", phase.Failed, true,
-				"Failed is an error terminal state"),
-			Entry("TimedOut is terminal (BR-ORCH-027)", phase.TimedOut, true,
-				"TimedOut is a timeout terminal state"),
-			Entry("Skipped is terminal (BR-ORCH-032)", phase.Skipped, true,
-				"Skipped is a resource-lock deduplication terminal state"),
+			// Non-terminal states - remediation in progress
+			Entry("Pending is NOT terminal (initial state)",
+				phase.Pending, false, "Pending indicates remediation not started"),
+			Entry("Processing is NOT terminal (SignalProcessing active)",
+				phase.Processing, false, "Processing indicates SignalProcessing CRD in progress"),
+			Entry("Analyzing is NOT terminal (AIAnalysis active)",
+				phase.Analyzing, false, "Analyzing indicates AIAnalysis CRD in progress"),
+			Entry("AwaitingApproval is NOT terminal (BR-ORCH-001)",
+				phase.AwaitingApproval, false, "AwaitingApproval indicates human approval required"),
+			Entry("Executing is NOT terminal (WorkflowExecution active)",
+				phase.Executing, false, "Executing indicates WorkflowExecution CRD in progress"),
+
+			// Edge cases
+			Entry("Unknown phase is NOT terminal (defensive)",
+				phase.Phase("Unknown"), false, "Unknown phases should not be treated as terminal"),
+			Entry("Empty phase is NOT terminal (defensive)",
+				phase.Phase(""), false, "Empty phases should not be treated as terminal"),
 		)
 	})
 
-	// CanTransition validates the phase state machine transitions
-	// Reference: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md lines 1246-1306
-	Describe("CanTransition", func() {
-		DescribeTable("should validate phase transition rules",
-			func(from, to phase.Phase, allowed bool, description string) {
-				Expect(phase.CanTransition(from, to)).To(Equal(allowed), description)
-			},
-			// From Pending (BR-ORCH-025)
-			Entry("Pending → Processing: allowed",
-				phase.Pending, phase.Processing, true,
-				"Initial phase can only progress to Processing"),
-			Entry("Pending → Analyzing: NOT allowed",
-				phase.Pending, phase.Analyzing, false,
-				"Cannot skip Processing phase"),
-			Entry("Pending → Completed: NOT allowed",
-				phase.Pending, phase.Completed, false,
-				"Cannot jump to terminal state"),
+	// ========================================
+	// CanTransition - Phase State Machine
+	// BR-ORCH-025: Phase state transitions must follow defined rules
+	// ========================================
+	Describe("CanTransition (BR-ORCH-025)", func() {
 
-			// From Processing (BR-ORCH-025)
-			Entry("Processing → Analyzing: allowed",
-				phase.Processing, phase.Analyzing, true,
-				"After SignalProcessing completes, progress to AI analysis"),
-			Entry("Processing → Failed: allowed",
-				phase.Processing, phase.Failed, true,
-				"SignalProcessing failure triggers Failed state"),
-			Entry("Processing → TimedOut: allowed (BR-ORCH-028)",
-				phase.Processing, phase.TimedOut, true,
-				"Per-phase timeout triggers TimedOut state"),
-			Entry("Processing → Completed: NOT allowed",
-				phase.Processing, phase.Completed, false,
-				"Cannot skip Analyzing and Executing phases"),
+		Context("valid forward transitions - happy path", func() {
+			DescribeTable("allowed state machine transitions",
+				func(from, to phase.Phase, reason string) {
+					result := phase.CanTransition(from, to)
+					Expect(result).To(BeTrue(), reason)
+				},
+				Entry("Pending → Processing (start remediation)",
+					phase.Pending, phase.Processing, "First transition in state machine"),
+				Entry("Processing → Analyzing (SignalProcessing complete)",
+					phase.Processing, phase.Analyzing, "Move to AI analysis after enrichment"),
+				Entry("Analyzing → AwaitingApproval (approval required - BR-ORCH-001)",
+					phase.Analyzing, phase.AwaitingApproval, "Human approval workflow"),
+				Entry("Analyzing → Executing (auto-approve path)",
+					phase.Analyzing, phase.Executing, "Skip approval for low-risk operations"),
+				Entry("AwaitingApproval → Executing (approval granted)",
+					phase.AwaitingApproval, phase.Executing, "Proceed after human approval"),
+				Entry("Executing → Completed (successful workflow)",
+					phase.Executing, phase.Completed, "Workflow completed successfully"),
+			)
+		})
 
-			// From Analyzing (BR-ORCH-025, BR-ORCH-026)
-			Entry("Analyzing → AwaitingApproval: allowed (BR-ORCH-026)",
-				phase.Analyzing, phase.AwaitingApproval, true,
-				"AI analysis may require human approval"),
-			Entry("Analyzing → Executing: allowed (auto-approved)",
-				phase.Analyzing, phase.Executing, true,
-				"AI analysis may auto-approve low-risk workflows"),
-			Entry("Analyzing → Failed: allowed",
-				phase.Analyzing, phase.Failed, true,
-				"AI analysis failure triggers Failed state"),
-			Entry("Analyzing → TimedOut: allowed (BR-ORCH-028)",
-				phase.Analyzing, phase.TimedOut, true,
-				"Per-phase timeout triggers TimedOut state"),
+		Context("valid error transitions - failure handling", func() {
+			DescribeTable("allowed transitions to error states",
+				func(from, to phase.Phase, reason string) {
+					result := phase.CanTransition(from, to)
+					Expect(result).To(BeTrue(), reason)
+				},
+				// Failed transitions
+				Entry("Processing → Failed (SignalProcessing error)",
+					phase.Processing, phase.Failed, "Error during signal enrichment"),
+				Entry("Analyzing → Failed (AIAnalysis error)",
+					phase.Analyzing, phase.Failed, "Error during AI analysis"),
+				Entry("AwaitingApproval → Failed (approval rejected/error)",
+					phase.AwaitingApproval, phase.Failed, "Approval denied or system error"),
+				Entry("Executing → Failed (WorkflowExecution error)",
+					phase.Executing, phase.Failed, "Error during workflow execution"),
 
-			// From AwaitingApproval (BR-ORCH-001, BR-ORCH-026)
-			Entry("AwaitingApproval → Executing: allowed",
-				phase.AwaitingApproval, phase.Executing, true,
-				"Human approval granted triggers execution"),
-			Entry("AwaitingApproval → Failed: allowed (rejected)",
-				phase.AwaitingApproval, phase.Failed, true,
-				"Human rejection triggers Failed state"),
-			Entry("AwaitingApproval → TimedOut: allowed (BR-ORCH-026)",
-				phase.AwaitingApproval, phase.TimedOut, true,
-				"Approval timeout triggers TimedOut state"),
+				// TimedOut transitions (BR-ORCH-027, BR-ORCH-028)
+				Entry("Processing → TimedOut (per-phase timeout)",
+					phase.Processing, phase.TimedOut, "SignalProcessing exceeded timeout"),
+				Entry("Analyzing → TimedOut (per-phase timeout)",
+					phase.Analyzing, phase.TimedOut, "AIAnalysis exceeded timeout"),
+				Entry("AwaitingApproval → TimedOut (approval timeout)",
+					phase.AwaitingApproval, phase.TimedOut, "Human approval timed out"),
+				Entry("Executing → TimedOut (workflow timeout)",
+					phase.Executing, phase.TimedOut, "WorkflowExecution exceeded timeout"),
 
-			// From Executing (BR-ORCH-025, BR-ORCH-032)
-			Entry("Executing → Completed: allowed",
-				phase.Executing, phase.Completed, true,
-				"WorkflowExecution success triggers Completed state"),
-			Entry("Executing → Failed: allowed",
-				phase.Executing, phase.Failed, true,
-				"WorkflowExecution failure triggers Failed state"),
-			Entry("Executing → TimedOut: allowed (BR-ORCH-028)",
-				phase.Executing, phase.TimedOut, true,
-				"Per-phase timeout triggers TimedOut state"),
-			Entry("Executing → Skipped: allowed (BR-ORCH-032)",
-				phase.Executing, phase.Skipped, true,
-				"WorkflowExecution resource lock triggers Skipped state"),
+				// Skipped transition (BR-ORCH-032)
+				Entry("Executing → Skipped (resource lock deduplication)",
+					phase.Executing, phase.Skipped, "Another workflow already executing on same target"),
+			)
+		})
 
-			// From terminal phases (no transitions allowed)
-			Entry("Completed → Failed: NOT allowed",
-				phase.Completed, phase.Failed, false,
-				"Terminal state cannot transition"),
-			Entry("Completed → Processing: NOT allowed",
-				phase.Completed, phase.Processing, false,
-				"Terminal state cannot transition"),
-			Entry("Failed → Completed: NOT allowed",
-				phase.Failed, phase.Completed, false,
-				"Terminal state cannot transition"),
-			Entry("Failed → Processing: NOT allowed",
-				phase.Failed, phase.Processing, false,
-				"Terminal state cannot transition"),
-			Entry("TimedOut → Processing: NOT allowed",
-				phase.TimedOut, phase.Processing, false,
-				"Terminal state cannot transition"),
-			Entry("Skipped → Processing: NOT allowed",
-				phase.Skipped, phase.Processing, false,
-				"Terminal state cannot transition"),
-		)
+		Context("invalid transitions - must be rejected", func() {
+			DescribeTable("blocked state machine transitions",
+				func(from, to phase.Phase, reason string) {
+					result := phase.CanTransition(from, to)
+					Expect(result).To(BeFalse(), reason)
+				},
+				// Skipping phases
+				Entry("Pending → Completed (skip all phases)",
+					phase.Pending, phase.Completed, "Cannot skip intermediate phases"),
+				Entry("Pending → Analyzing (skip Processing)",
+					phase.Pending, phase.Analyzing, "Must go through Processing first"),
+
+				// Terminal states cannot transition (BR-ORCH-026)
+				Entry("Completed → Pending (reverse from terminal)",
+					phase.Completed, phase.Pending, "Terminal states cannot transition"),
+				Entry("Failed → Processing (recover from failure)",
+					phase.Failed, phase.Processing, "Terminal states cannot transition"),
+				Entry("TimedOut → Analyzing (retry after timeout)",
+					phase.TimedOut, phase.Analyzing, "Terminal states cannot transition"),
+				Entry("Skipped → Executing (retry after skip)",
+					phase.Skipped, phase.Executing, "Terminal states cannot transition"),
+
+				// Same-phase transition
+				Entry("Pending → Pending (no-op transition)",
+					phase.Pending, phase.Pending, "Cannot transition to same phase"),
+
+				// Unknown source phase
+				Entry("Unknown → Processing (invalid source)",
+					phase.Phase("Unknown"), phase.Processing, "Unknown phases have no valid transitions"),
+			)
+		})
 	})
 
-	// Validate validates that phase values are from the allowed set
+	// ========================================
+	// Validate - Phase Value Validation
+	// ========================================
 	Describe("Validate", func() {
-		DescribeTable("should validate phase values",
-			func(p phase.Phase, shouldSucceed bool) {
+
+		DescribeTable("phase value validation",
+			func(p phase.Phase, expectError bool, description string) {
 				err := phase.Validate(p)
-				if shouldSucceed {
-					Expect(err).ToNot(HaveOccurred())
-				} else {
-					Expect(err).To(HaveOccurred())
+				if expectError {
+					Expect(err).To(HaveOccurred(), description)
 					Expect(err.Error()).To(ContainSubstring("invalid phase"))
+				} else {
+					Expect(err).ToNot(HaveOccurred(), description)
 				}
 			},
 			// Valid phases
-			Entry("Pending is valid", phase.Pending, true),
-			Entry("Processing is valid", phase.Processing, true),
-			Entry("Analyzing is valid", phase.Analyzing, true),
-			Entry("AwaitingApproval is valid", phase.AwaitingApproval, true),
-			Entry("Executing is valid", phase.Executing, true),
-			Entry("Completed is valid", phase.Completed, true),
-			Entry("Failed is valid", phase.Failed, true),
-			Entry("TimedOut is valid", phase.TimedOut, true),
-			Entry("Skipped is valid", phase.Skipped, true),
+			Entry("Pending is valid", phase.Pending, false, "Valid initial phase"),
+			Entry("Processing is valid", phase.Processing, false, "Valid active phase"),
+			Entry("Analyzing is valid", phase.Analyzing, false, "Valid active phase"),
+			Entry("AwaitingApproval is valid", phase.AwaitingApproval, false, "Valid active phase"),
+			Entry("Executing is valid", phase.Executing, false, "Valid active phase"),
+			Entry("Completed is valid", phase.Completed, false, "Valid terminal phase"),
+			Entry("Failed is valid", phase.Failed, false, "Valid terminal phase"),
+			Entry("TimedOut is valid", phase.TimedOut, false, "Valid terminal phase"),
+			Entry("Skipped is valid", phase.Skipped, false, "Valid terminal phase"),
 
 			// Invalid phases
-			Entry("InvalidPhase is invalid", phase.Phase("InvalidPhase"), false),
-			Entry("Empty string is invalid", phase.Phase(""), false),
-			Entry("Unknown is invalid", phase.Phase("Unknown"), false),
+			Entry("InvalidPhase should be rejected", phase.Phase("InvalidPhase"), true, "Unknown phase value"),
+			Entry("Empty string should be rejected", phase.Phase(""), true, "Empty phase value"),
 		)
+	})
+
+	// ========================================
+	// PhaseManager - Stateful Phase Management
+	// ========================================
+	Describe("PhaseManager", func() {
+		var manager *phase.Manager
+
+		BeforeEach(func() {
+			manager = phase.NewManager()
+		})
+
+		Context("when creating manager", func() {
+			It("should create a non-nil PhaseManager", func() {
+				Expect(manager).ToNot(BeNil())
+			})
+		})
+
+		Context("when determining current phase", func() {
+			It("should return Pending for empty OverallPhase (initial state)", func() {
+				// Given: A RemediationRequest with no phase set
+				rr := &remediationv1.RemediationRequest{}
+
+				// When: We get the current phase
+				result := manager.CurrentPhase(rr)
+
+				// Then: It should default to Pending
+				Expect(result).To(Equal(phase.Pending))
+			})
+
+			It("should return actual phase from status", func() {
+				// Given: A RemediationRequest with phase set
+				rr := &remediationv1.RemediationRequest{}
+				rr.Status.OverallPhase = "Processing"
+
+				// When: We get the current phase
+				result := manager.CurrentPhase(rr)
+
+				// Then: It should return the set phase
+				Expect(result).To(Equal(phase.Processing))
+			})
+		})
+
+		Context("when transitioning phases", func() {
+			It("should update status on valid transition", func() {
+				// Given: A RemediationRequest in Pending phase
+				rr := &remediationv1.RemediationRequest{}
+				rr.Status.OverallPhase = "Pending"
+
+				// When: We transition to Processing
+				err := manager.TransitionTo(rr, phase.Processing)
+
+				// Then: Transition should succeed and status should be updated
+				Expect(err).ToNot(HaveOccurred())
+				Expect(rr.Status.OverallPhase).To(Equal("Processing"))
+			})
+
+			It("should return error on invalid transition", func() {
+				// Given: A RemediationRequest in Pending phase
+				rr := &remediationv1.RemediationRequest{}
+				rr.Status.OverallPhase = "Pending"
+
+				// When: We attempt invalid transition to Completed
+				err := manager.TransitionTo(rr, phase.Completed)
+
+				// Then: Transition should fail with descriptive error
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("invalid phase transition"))
+			})
+		})
 	})
 })

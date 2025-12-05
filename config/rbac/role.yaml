@@ -8,42 +8,43 @@ rules:
   - ""
   resources:
   - configmaps
-  - deployments
-  - namespaces
-  - nodes
-  - pods
-  - replicasets
-  - services
   verbs:
   - get
   - list
   - watch
 - apiGroups:
-  - apps
+  - ""
   resources:
-  - deployments
-  - replicasets
-  - statefulsets
+  - events
   verbs:
+  - create
+  - patch
+- apiGroups:
+  - aianalysis.kubernaut.ai
+  resources:
+  - aianalyses
+  verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
-  - autoscaling
+  - aianalysis.kubernaut.ai
   resources:
-  - horizontalpodautoscalers
+  - aianalyses/finalizers
   verbs:
-  - get
-  - list
-  - watch
+  - update
 - apiGroups:
-  - networking.k8s.io
+  - aianalysis.kubernaut.ai
   resources:
-  - networkpolicies
+  - aianalyses/status
   verbs:
   - get
-  - list
-  - watch
+  - patch
+  - update
 - apiGroups:
   - notification.kubernaut.ai
   resources:
@@ -70,14 +71,6 @@ rules:
   - get
   - patch
   - update
-- apiGroups:
-  - policy
-  resources:
-  - poddisruptionbudgets
-  verbs:
-  - get
-  - list
-  - watch
 - apiGroups:
   - signalprocessing.kubernaut.ai
   resources:
@@ -113,8 +106,6 @@ rules:
   - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - workflowexecution.kubernaut.ai
