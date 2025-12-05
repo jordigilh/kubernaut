@@ -378,7 +378,7 @@ classification := {
 def classify_environment(labels):
     """Classify environment from labels with fallback chain."""
     env_keys = ["environment", "env", "kubernaut.ai/environment"]
-    
+
     for key in env_keys:
         if key in labels and labels[key]:
             return {
@@ -386,7 +386,7 @@ def classify_environment(labels):
                 "confidence": 0.95,
                 "source": "label:" + key
             }
-    
+
     return {
         "environment": "development",
         "confidence": 0.4,
@@ -448,272 +448,61 @@ result, _ := expr.Run(program, env)
 
 ---
 
-## 📊 Detailed Comparison
+## 📋 BR-Specific Evaluation (Tier 1 Candidates)
 
-### 1. Output Capabilities
+### Critical Requirements Analysis
 
-| Capability | CEL | Rego | Winner |
-|------------|-----|------|--------|
-| **Boolean output** | ✅ Native | ✅ Native | Tie |
-| **String output** | ✅ Native | ✅ Native | Tie |
-| **Numeric output** | ✅ Native | ✅ Native | Tie |
-| **Structured objects** | ⚠️ Limited | ✅ Full support | **Rego** |
-| **`map[string][]string`** | ❌ Cannot return | ✅ Native | **Rego** |
-| **Multiple fields in single eval** | ❌ Multiple expressions | ✅ Single policy | **Rego** |
+| Requirement | **Rego** | **Starlark** | **Expr** | CEL | Winner |
+|-------------|----------|--------------|----------|-----|--------|
+| **BR-SP-051-053**: Environment Classification | ✅ 95% | ✅ 90% | ⚠️ 80% | ⚠️ 60% | Rego |
+| **BR-SP-070-072**: Priority Assignment | ✅ 95% | ✅ 90% | ⚠️ 75% | ❌ 0%* | Rego |
+| **BR-SP-080-081**: Confidence Scoring | ✅ 90% | ✅ 90% | ⚠️ 75% | ⚠️ 40% | Tie |
+| **BR-SP-102**: CustomLabels (`map[string][]string`) | ✅ 100% | ✅ 95% | ✅ 90% | ❌ 0%** | Rego |
+| **BR-SP-104**: Security Wrapper | ✅ 95% | ✅ 95% | ⚠️ 70% | ❌ 20% | Tie |
+| **BR-AI-026-028**: Approval Policies | ✅ 95% | ✅ 90% | ⚠️ 75% | ⚠️ 60% | Rego |
+| **DD-WORKFLOW-001 v1.9**: Sandbox | ✅ Built-in | ✅ Built-in | ⚠️ Manual | ❌ None | Tie |
 
-**Critical Finding**: CEL **cannot return `map[string][]string`** - this is a **hard blocker** for BR-SP-102 (CustomLabels).
-
-**CEL Limitation Example**:
-```cel
-// CEL can only return single values
-input.labels.environment == "production" ? "P0" : "P2"  // Returns string
-```
-
-**Rego Capability Example**:
-```rego
-// Rego returns structured objects
-classification := {
-    "environment": "production",
-    "environment_confidence": 0.95,
-    "priority": "P0",
-    "priority_confidence": 0.90,
-    "custom_labels": {
-        "constraint": ["cost-constrained"],
-        "team": ["name=payments"]
-    }
-}
-```
+*\*BR-SP-070 currently states "Rego-based" - can be changed to "policy-based" since not released*
+*\*\*CEL cannot return `map[string][]string` - architectural blocker*
 
 ---
 
-### 2. Rule Composition
-
-| Capability | CEL | Rego | Winner |
-|------------|-----|------|--------|
-| **Single expression** | ✅ Native | ✅ Supported | Tie |
-| **Rule chaining** | ❌ Manual | ✅ Native `else` | **Rego** |
-| **Fallback hierarchy** | ❌ Ternary chains | ✅ Declarative | **Rego** |
-| **Default values** | ⚠️ Via ternary | ✅ `default` keyword | **Rego** |
-| **Multiple rules for same output** | ❌ N/A | ✅ OR semantics | **Rego** |
-
-**CEL Fallback Example** (awkward):
-```cel
-has(input.namespace_labels.environment) ? input.namespace_labels.environment :
-  has(input.namespace_labels.env) ? input.namespace_labels.env :
-    has(input.namespace_labels["kubernaut.ai/environment"]) ?
-      input.namespace_labels["kubernaut.ai/environment"] : "development"
-```
-
-**Rego Fallback Example** (clean - BR-SP-051-053):
-```rego
-default environment := "development"
-
-environment := env if {
-    env := input.namespace_labels["environment"]
-} else := env if {
-    env := input.namespace_labels["env"]
-} else := env if {
-    env := input.namespace_labels["kubernaut.ai/environment"]
-}
-```
-
----
-
-### 3. Security & Sandboxing
-
-| Capability | CEL | Rego | Winner |
-|------------|-----|------|--------|
-| **Network isolation** | ❌ No built-in | ✅ `http.send()` disabled | **Rego** |
-| **Filesystem isolation** | ❌ No built-in | ✅ No file access | **Rego** |
-| **Execution timeout** | ⚠️ Manual | ✅ Built-in | **Rego** |
-| **Memory limits** | ⚠️ Manual | ✅ Configurable | **Rego** |
-| **Security wrapper** | ❌ Post-processing | ✅ Policy composition | **Rego** |
-
-**DD-WORKFLOW-001 v1.9 Sandbox Requirements**:
-```
-| Measure            | Setting      | Rationale                    |
-|--------------------|--------------|------------------------------|
-| Network access     | ❌ Disabled  | Prevent data exfiltration    |
-| Filesystem access  | ❌ Disabled  | Prevent local file access    |
-| Evaluation timeout | 5 seconds    | Prevent infinite loops       |
-| Memory limit       | 128 MB       | Prevent memory exhaustion    |
-```
-
-**Rego Implementation** (already designed):
-```go
-// pkg/signalprocessing/rego/engine.go
-const (
-    DefaultTimeout = 5 * time.Second
-    MaxMemory = 128 * 1024 * 1024
-)
-```
-
-**CEL would require custom wrapper** - significant implementation effort.
-
----
-
-### 4. Pattern Matching & Regex
-
-| Capability | CEL | Rego | Winner |
-|------------|-----|------|--------|
-| **Equality matching** | ✅ Native | ✅ Native | Tie |
-| **String contains** | ✅ `contains()` | ✅ `contains()` | Tie |
-| **Regex matching** | ⚠️ `matches()` extension | ✅ `regex.match()` | **Rego** |
-| **Glob patterns** | ❌ Not native | ✅ `glob.match()` | **Rego** |
-
-**BR-SP-052 requires regex for namespace patterns**:
-```rego
-// ConfigMap pattern matching (BR-SP-052)
-environment := "production" if {
-    regex.match("^prod-.*", input.namespace)
-}
-```
-
----
-
-### 5. Data Loading & Hot-Reload
-
-| Capability | CEL | Rego | Winner |
-|------------|-----|------|--------|
-| **External data** | ❌ Inline only | ✅ `data.` prefix | **Rego** |
-| **ConfigMap loading** | ⚠️ Custom loader | ✅ Built-in pattern | **Rego** |
-| **Hot-reload support** | ❌ Recompile | ✅ Re-prepare query | **Rego** |
-| **Policy versioning** | ❌ Manual | ✅ Module system | **Rego** |
-
-**BR-SP-072 Hot-Reload Requirement**:
-```go
-// Rego hot-reload pattern (already implemented)
-func (e *Engine) Reload(ctx context.Context, newPolicy string) error {
-    prepared, err := rego.New(
-        rego.Query(e.query),
-        rego.Module("policy.rego", newPolicy),
-    ).PrepareForEval(ctx)
-
-    e.mu.Lock()
-    e.preparedQuery = &prepared
-    e.mu.Unlock()
-    return nil
-}
-```
-
----
-
-### 6. Ecosystem & Tooling
-
-| Capability | CEL | Rego | Winner |
-|------------|-----|------|--------|
-| **Go library maturity** | ✅ Stable | ✅ Stable | Tie |
-| **Testing framework** | ⚠️ Limited | ✅ `opa test` | **Rego** |
-| **Debugging tools** | ⚠️ Basic | ✅ `opa eval` CLI | **Rego** |
-| **Policy linting** | ❌ None | ✅ `opa check` | **Rego** |
-| **IDE support** | ⚠️ Limited | ✅ VS Code extension | **Rego** |
-| **Industry adoption** | Kubernetes CRDs | CNCF graduated, widespread | **Rego** |
-
----
-
-### 7. Performance
-
-| Metric | CEL | Rego | Winner |
-|--------|-----|------|--------|
-| **Single expression eval** | ~1-5μs | ~5-50μs | **CEL** |
-| **Complex policy eval** | N/A (multiple calls) | ~50-500μs | **Rego** |
-| **Prepared query caching** | ✅ Supported | ✅ Supported | Tie |
-| **Memory footprint** | ~1-2MB | ~5-10MB | **CEL** |
-
-**Performance Analysis**:
-- CEL is faster for single expressions
-- Rego is more efficient for complex multi-rule policies (single call vs multiple)
-- Both are fast enough for kubernaut's use cases (<1ms per evaluation)
-- **Performance is NOT a differentiator** for kubernaut's requirements
-
----
-
-## 📋 BR-Specific Evaluation
-
-### BR-SP-051-053: Environment Classification
-
-| Requirement | CEL | Rego | Notes |
-|-------------|-----|------|-------|
-| **BR-SP-051**: Label priority chain | ⚠️ 60% | ✅ 95% | Rego has cleaner `else` syntax |
-| **BR-SP-052**: ConfigMap regex patterns | ⚠️ 50% | ✅ 95% | Rego has native `regex.match()` |
-| **BR-SP-053**: Configurable default | ✅ 80% | ✅ 95% | Both support, Rego cleaner |
-
----
-
-### BR-SP-070-072: Priority Assignment
-
-| Requirement | CEL | Rego | Notes |
-|-------------|-----|------|-------|
-| **BR-SP-070**: "Rego-based priority" | ❌ 0% | ✅ 100% | **Explicit BR requirement** |
-| **BR-SP-071**: Fallback matrix | ⚠️ 50% | ✅ 95% | Rego matrix is declarative |
-| **BR-SP-072**: Hot-reload | ⚠️ 40% | ✅ 95% | Rego has established pattern |
-
-**BR-SP-070 is a HARD BLOCKER for CEL** - the requirement explicitly states "Rego-based".
-
----
-
-### BR-SP-080-081: Confidence Scoring
-
-| Requirement | CEL | Rego | Notes |
-|-------------|-----|------|-------|
-| **BR-SP-080**: Confidence scores | ⚠️ 40% | ✅ 90% | CEL needs multiple expressions |
-| **BR-SP-081**: Multi-dimensional | ⚠️ 30% | ✅ 90% | Rego returns single structured object |
-
----
-
-### BR-SP-102: CustomLabels Extraction
-
-| Requirement | CEL | Rego | Notes |
-|-------------|-----|------|-------|
-| **Format `map[string][]string`** | ❌ 0% | ✅ 100% | **CEL CANNOT return this type** |
-| **Subdomain extraction** | ❌ 0% | ✅ 95% | Rego has comprehensions |
-| **Validation limits** | ⚠️ 30% | ✅ 90% | Rego can enforce inline |
-
-**BR-SP-102 is a HARD BLOCKER for CEL** - architectural mismatch.
-
----
-
-### BR-SP-104: Security Wrapper
-
-| Requirement | CEL | Rego | Notes |
-|-------------|-----|------|-------|
-| **Strip system labels** | ⚠️ 30% | ✅ 95% | Rego has policy composition |
-| **Sandboxed execution** | ❌ 20% | ✅ 95% | Rego has built-in sandbox |
-| **Memory/timeout limits** | ⚠️ 30% | ✅ 95% | Rego built-in |
-
----
-
-### BR-AI-026-028: Approval Policies
-
-| Requirement | CEL | Rego | Notes |
-|-------------|-----|------|-------|
-| **BR-AI-026**: Configurable thresholds | ✅ 70% | ✅ 95% | Both viable |
-| **BR-AI-027**: Environment-specific rules | ⚠️ 60% | ✅ 95% | Rego cleaner |
-| **BR-AI-028**: Risk tolerance decisions | ⚠️ 50% | ✅ 95% | Complex logic favors Rego |
-
----
-
-## 🚨 Risk Analysis
-
-### CEL Risks
-
-| Risk ID | Risk | Severity | Likelihood | Mitigation |
-|---------|------|----------|------------|------------|
-| **CEL-R1** | Cannot return `map[string][]string` | 🔴 Critical | 100% | **No mitigation** - architectural blocker |
-| **CEL-R2** | BR-SP-070 explicitly requires Rego | 🔴 Critical | 100% | Would require BR change + stakeholder approval |
-| **CEL-R3** | No built-in sandbox | 🔴 High | 100% | Custom wrapper required (~2 weeks dev) |
-| **CEL-R4** | Multiple expressions for multi-field output | 🟡 Medium | 100% | Increased complexity |
-| **CEL-R5** | Team has no CEL expertise | 🟡 Medium | 100% | Training required (~1 week) |
-| **CEL-R6** | Limited regex support | 🟡 Medium | 80% | Extension functions needed |
+## 🚨 Risk Analysis (Tier 1 Candidates)
 
 ### Rego Risks
 
 | Risk ID | Risk | Severity | Likelihood | Mitigation |
 |---------|------|----------|------------|------------|
 | **REGO-R1** | Policy complexity | 🟢 Low | 30% | `opa test` framework |
-| **REGO-R2** | OPA library size | 🟢 Low | 100% | Acceptable trade-off |
+| **REGO-R2** | OPA library size (~5-10MB) | 🟢 Low | 100% | Acceptable trade-off |
 | **REGO-R3** | Learning curve | 🟢 Low | 20% | Team already trained |
 | **REGO-R4** | Performance overhead | 🟢 Low | 10% | <1ms per eval, acceptable |
+
+### Starlark Risks
+
+| Risk ID | Risk | Severity | Likelihood | Mitigation |
+|---------|------|----------|------------|------------|
+| **STAR-R1** | Migration effort | 🟡 Medium | 100% | 2-3 weeks planned |
+| **STAR-R2** | No policy-specific tooling | 🟡 Medium | 100% | Use Go tests + custom helpers |
+| **STAR-R3** | Smaller policy community | 🟢 Low | 80% | Strong Google backing |
+| **STAR-R4** | Discards Rego investment | 🟡 Medium | 100% | Acceptable pre-release |
+
+### Expr Risks
+
+| Risk ID | Risk | Severity | Likelihood | Mitigation |
+|---------|------|----------|------------|------------|
+| **EXPR-R1** | Weaker sandbox | 🟡 Medium | 100% | Custom environment restrictions |
+| **EXPR-R2** | No rule chaining | 🟡 Medium | 100% | Handle in Go wrapper |
+| **EXPR-R3** | Less mature for policy | 🟢 Low | 60% | Growing ecosystem |
+| **EXPR-R4** | Migration effort | 🟡 Medium | 100% | 2-3 weeks planned |
+
+### CEL Risks (NOT RECOMMENDED)
+
+| Risk ID | Risk | Severity | Likelihood | Mitigation |
+|---------|------|----------|------------|------------|
+| **CEL-R1** | Cannot return `map[string][]string` | 🔴 Critical | 100% | **No mitigation** - architectural blocker |
+| **CEL-R2** | No built-in sandbox | 🔴 High | 100% | Custom wrapper (~2 weeks) |
+| **CEL-R3** | Multiple expressions needed | 🟡 Medium | 100% | Increased complexity |
 
 ---
 
