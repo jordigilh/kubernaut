@@ -142,8 +142,7 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
-	result.NamespaceLabels = ensureMap(ns.Labels)
-	result.NamespaceAnnotations = ensureMap(ns.Annotations)
+	e.populateNamespaceContext(result, ns)
 
 	// 2. Fetch pod (optional - continue with partial context if not found)
 	pod, err := e.getPod(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
@@ -177,8 +176,7 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
-	result.NamespaceLabels = ensureMap(ns.Labels)
-	result.NamespaceAnnotations = ensureMap(ns.Annotations)
+	e.populateNamespaceContext(result, ns)
 
 	// 2. Fetch deployment (optional)
 	deployment, err := e.getDeployment(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
@@ -201,8 +199,7 @@ func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signa
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
-	result.NamespaceLabels = ensureMap(ns.Labels)
-	result.NamespaceAnnotations = ensureMap(ns.Annotations)
+	e.populateNamespaceContext(result, ns)
 
 	// 2. Fetch statefulset (optional)
 	statefulset, err := e.getStatefulSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
@@ -225,8 +222,7 @@ func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalp
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
-	result.NamespaceLabels = ensureMap(ns.Labels)
-	result.NamespaceAnnotations = ensureMap(ns.Annotations)
+	e.populateNamespaceContext(result, ns)
 
 	// 2. Fetch daemonset (optional)
 	daemonset, err := e.getDaemonSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
@@ -249,8 +245,7 @@ func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signal
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
-	result.NamespaceLabels = ensureMap(ns.Labels)
-	result.NamespaceAnnotations = ensureMap(ns.Annotations)
+	e.populateNamespaceContext(result, ns)
 
 	// 2. Fetch replicaset (optional)
 	replicaset, err := e.getReplicaSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
@@ -273,8 +268,7 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
-	result.NamespaceLabels = ensureMap(ns.Labels)
-	result.NamespaceAnnotations = ensureMap(ns.Annotations)
+	e.populateNamespaceContext(result, ns)
 
 	// 2. Fetch service (optional)
 	service, err := e.getService(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
@@ -310,8 +304,7 @@ func (e *K8sEnricher) enrichNamespaceOnly(ctx context.Context, signal *signalpro
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
-	result.NamespaceLabels = ensureMap(ns.Labels)
-	result.NamespaceAnnotations = ensureMap(ns.Annotations)
+	e.populateNamespaceContext(result, ns)
 
 	e.recordEnrichmentResult("success")
 	return result, nil
@@ -577,6 +570,21 @@ func (e *K8sEnricher) convertServiceDetails(service *corev1.Service) *signalproc
 	}
 
 	return details
+}
+
+// populateNamespaceContext populates both the new Namespace struct and deprecated flat fields.
+// Provides backward compatibility during migration to nested structure.
+func (e *K8sEnricher) populateNamespaceContext(result *signalprocessingv1alpha1.KubernetesContext, ns *corev1.Namespace) {
+	// New nested structure (per plan specification)
+	result.Namespace = &signalprocessingv1alpha1.NamespaceContext{
+		Name:        ns.Name,
+		Labels:      ensureMap(ns.Labels),
+		Annotations: ensureMap(ns.Annotations),
+	}
+
+	// Deprecated flat fields (backward compatibility)
+	result.NamespaceLabels = ensureMap(ns.Labels)
+	result.NamespaceAnnotations = ensureMap(ns.Annotations)
 }
 
 // recordEnrichmentResult records the enrichment result metric.
