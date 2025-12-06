@@ -62,6 +62,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Notification** | 8086 | 30086 | 30186 | `test/infrastructure/kind-notification-config.yaml` |
 | **Data Storage** | 8081 | 30081 | 30181 | `test/infrastructure/kind-datastorage-config.yaml` |
 | **Toolset** | 8087 | 30087 | 30187 | `test/infrastructure/kind-toolset-config.yaml` |
+| **HolmesGPT API** | 8088 | 30088 | 30188 | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
 
 **Allocation Rules**:
 - **Integration Tests**: 15433-18139 range (Podman containers)
@@ -390,11 +391,20 @@ extraPortMappings:
 | **WorkflowExecution** | 8085 | 30085 | 9185 | 30185 |
 | **Notification** | 8086 | 30086 | 9186 | 30186 |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 |
+| **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 |
 
 **Pattern**:
 - Service NodePort: `3008X` where X = service index
 - Metrics NodePort: `3018X` where X = service index
 - Host Port: `808X` / `918X` for service/metrics
+
+**HolmesGPT API Dependencies** (in dedicated Kind cluster):
+| Dependency | Host Port | NodePort | Purpose |
+|------------|-----------|----------|---------|
+| PostgreSQL + pgvector | 5488 | 30488 | Workflow catalog storage |
+| Embedding Service | 8188 | 30288 | Vector embeddings for semantic search |
+| Data Storage | 8089 | 30089 | Audit trail, workflow catalog API |
+| Redis | 6388 | 30388 | Data Storage DLQ |
 
 ---
 
@@ -591,6 +601,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2 | 2025-12-06 | AI Assistant | Added HolmesGPT API Kind NodePort allocation (8088/30088/30188), added dependency ports for HAPI E2E (PostgreSQL+pgvector: 5488/30488, Embedding: 8188/30288, Data Storage: 8089/30089, Redis: 6388/30388) |
 | 1.1 | 2025-11-28 | AI Assistant | Added Kind NodePort allocations for E2E tests (CRD controllers), added all services including Signal Processing, Notification, AIAnalysis, Remediation Orchestrator, Remediation Execution, HolmesGPT API, Dynamic Toolset |
 | 1.0 | 2025-11-26 | AI Assistant | Initial port allocation strategy |
 
