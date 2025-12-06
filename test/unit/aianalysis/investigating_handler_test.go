@@ -501,6 +501,88 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.ValidationAttemptsHistory).To(BeEmpty(), "No history when HAPI doesn't provide it")
 				Expect(analysis.Status.Message).To(Equal("Confidence too low"), "Should use warnings for message")
 			})
+
+			// DD-HAPI-002 v1.4: Handle malformed timestamp gracefully
+			// Business Value: System doesn't crash on bad HAPI data, provides fallback
+			It("should fallback to current time when timestamp is malformed", func() {
+				mockClient.WithHumanReviewAndHistory(
+					"workflow_not_found",
+					[]string{"Workflow not found"},
+					[]client.ValidationAttempt{
+						{Attempt: 1, WorkflowID: "test", IsValid: false, Errors: []string{"error"}, Timestamp: "not-a-valid-timestamp"},
+					},
+				)
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(1))
+				// Timestamp should be set to current time (fallback), not zero
+				Expect(analysis.Status.ValidationAttemptsHistory[0].Timestamp.IsZero()).To(BeFalse(), "Should use current time as fallback")
+			})
+		})
+	})
+
+	// ========================================
+	// RETRY MECHANISM EDGE CASES
+	// ========================================
+	Describe("Retry Mechanism", func() {
+		// BR-AI-021: Exponential backoff for transient errors
+		// Business Value: System retries intelligently without overwhelming HAPI
+
+		Context("getRetryCount edge cases", func() {
+			// Business Value: Handler correctly reads retry state from annotations
+			It("should handle nil annotations gracefully (treats as 0 retries)", func() {
+				analysis := createTestAnalysis()
+				analysis.Annotations = nil
+
+				// Using 503 (transient error) to trigger retry path
+				mockClient.WithAPIError(503, "Service Unavailable")
+
+				_, err := handler.Handle(ctx, analysis)
+
+				// Should requeue (transient error triggers retry) - error indicates requeue
+				Expect(err).To(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Should stay in Investigating")
+				// Should have created annotations and set retry count to 1
+				Expect(analysis.Annotations).NotTo(BeNil())
+				Expect(analysis.Annotations["aianalysis.kubernaut.ai/retry-count"]).To(Equal("1"))
+			})
+
+			// Business Value: Handle corrupted annotation data gracefully
+			It("should handle malformed retry count annotation (treats as 0)", func() {
+				analysis := createTestAnalysis()
+				analysis.Annotations = map[string]string{
+					"aianalysis.kubernaut.ai/retry-count": "not-a-number",
+				}
+
+				mockClient.WithAPIError(503, "Service Unavailable")
+
+				_, err := handler.Handle(ctx, analysis)
+
+				// Should requeue (transient error triggers retry)
+				Expect(err).To(HaveOccurred())
+				// Should behave as if retry count was 0, now incremented to 1
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating))
+				Expect(analysis.Annotations["aianalysis.kubernaut.ai/retry-count"]).To(Equal("1"))
+			})
+
+			// Business Value: Correctly increments retry count on transient failures
+			It("should increment retry count on transient error", func() {
+				analysis := createTestAnalysis()
+				analysis.Annotations = map[string]string{
+					"aianalysis.kubernaut.ai/retry-count": "2",
+				}
+
+				mockClient.WithAPIError(503, "Service Unavailable")
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).To(HaveOccurred())
+				// Retry count should be incremented from 2 to 3
+				Expect(analysis.Annotations["aianalysis.kubernaut.ai/retry-count"]).To(Equal("3"))
+			})
 		})
 	})
 })
