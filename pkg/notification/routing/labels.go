@@ -54,6 +54,13 @@ const (
 	// LabelNamespace is the label key for namespace-based routing.
 	// Value: Kubernetes namespace name
 	LabelNamespace = "kubernaut.ai/namespace"
+
+	// LabelSkipReason is the label key for WFE skip reason-based routing.
+	// Enables fine-grained routing based on why a WorkflowExecution was skipped.
+	// Values: PreviousExecutionFailed, ExhaustedRetries, ResourceBusy, RecentlyRemediated
+	// See: docs/handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md
+	// Added per cross-team agreement: WE→NOT Q7 (2025-12-06)
+	LabelSkipReason = "kubernaut.ai/skip-reason"
 )
 
 // NotificationTypeValues are the standard notification type label values.
@@ -79,5 +86,30 @@ const (
 	EnvironmentStaging     = "staging"
 	EnvironmentDevelopment = "development"
 	EnvironmentTest        = "test"
+)
+
+// SkipReasonValues are the standard WorkflowExecution skip reason label values.
+// These map to WorkflowExecution.Status.SkipDetails.Reason values.
+// See: DD-WE-004 v1.1 (Exponential Backoff Cooldown)
+const (
+	// SkipReasonPreviousExecutionFailed indicates a workflow ran and failed.
+	// Cluster state is unknown/partially modified - manual intervention required.
+	// Severity: CRITICAL - route to PagerDuty or high-priority channels.
+	SkipReasonPreviousExecutionFailed = "PreviousExecutionFailed"
+
+	// SkipReasonExhaustedRetries indicates 5+ pre-execution failures.
+	// Infrastructure issues persisting - manual intervention required.
+	// Severity: HIGH - route to Slack or email for team awareness.
+	SkipReasonExhaustedRetries = "ExhaustedRetries"
+
+	// SkipReasonResourceBusy indicates another WFE is running on target.
+	// Temporary condition - will auto-resolve.
+	// Severity: LOW - typically bulk notifications (BR-ORCH-034).
+	SkipReasonResourceBusy = "ResourceBusy"
+
+	// SkipReasonRecentlyRemediated indicates cooldown/backoff is active.
+	// Temporary condition - will auto-resolve after cooldown expires.
+	// Severity: LOW - typically bulk notifications (BR-ORCH-034).
+	SkipReasonRecentlyRemediated = "RecentlyRemediated"
 )
 

@@ -123,10 +123,10 @@ Result: Replicas = original + 1 (cluster modified, but not as expected)
    ```bash
    # Check resource quotas
    kubectl describe resourcequota -A | grep -A5 "exceeded"
-   
+
    # Check image pull errors
    kubectl get events --field-selector reason=Failed -A | grep -i pull
-   
+
    # Check validation webhooks
    kubectl logs -n kubernaut-system -l app=validation-webhook --tail=100
    ```

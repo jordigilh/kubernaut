@@ -25,16 +25,16 @@ route:
     - kubernaut.ai/environment
     - kubernaut.ai/skip-reason
     - kubernaut.ai/remediation-request
-  
+
   # Wait time before sending first notification for a group
   group_wait: 30s
-  
+
   # Time to wait before sending notification about new alerts in a group
   group_interval: 5m
-  
+
   # Time to wait before re-sending a notification
   repeat_interval: 4h
-  
+
   # Child routes - evaluated in order, first match wins
   routes:
     # =================================================================
@@ -50,7 +50,7 @@ route:
       # Override group settings for critical alerts
       group_wait: 0s  # Send immediately
       repeat_interval: 15m  # Remind every 15 minutes
-    
+
     # =================================================================
     # HIGH: ExhaustedRetries (DD-WE-004)
     # =================================================================
@@ -63,7 +63,7 @@ route:
       receiver: slack-ops-high
       group_wait: 1m
       repeat_interval: 1h
-    
+
     # =================================================================
     # LOW: Temporary Conditions (DD-WE-004)
     # =================================================================
@@ -76,13 +76,13 @@ route:
       receiver: console-only-bulk
       group_wait: 5m
       group_interval: 30m
-    
+
     - match:
         kubernaut.ai/skip-reason: RecentlyRemediated
       receiver: console-only-bulk
       group_wait: 5m
       group_interval: 30m
-    
+
     # =================================================================
     # Production Critical (any notification type)
     # =================================================================
@@ -93,7 +93,7 @@ route:
         kubernaut.ai/environment: production
         kubernaut.ai/severity: critical
       receiver: pagerduty-oncall-critical
-    
+
     # =================================================================
     # Production High (escalation type)
     # =================================================================
@@ -103,7 +103,7 @@ route:
         kubernaut.ai/environment: production
         kubernaut.ai/notification-type: escalation
       receiver: slack-ops-high
-    
+
     # =================================================================
     # Staging/Development (low priority)
     # =================================================================
@@ -112,15 +112,15 @@ route:
     - match:
         kubernaut.ai/environment: staging
       receiver: slack-dev-low
-    
+
     - match:
         kubernaut.ai/environment: development
       receiver: slack-dev-low
-    
+
     - match:
         kubernaut.ai/environment: test
       receiver: slack-dev-low
-  
+
   # Default fallback receiver (when no routes match)
   receiver: slack-default
 
@@ -134,7 +134,7 @@ receivers:
       - service_key: ${PAGERDUTY_CRITICAL_SERVICE_KEY}
         severity: critical
         # Note: actual PagerDuty config would include more fields
-  
+
   # ===================================================================
   # HIGH: Slack #ops for team awareness
   # ===================================================================
@@ -142,21 +142,21 @@ receivers:
     slack_configs:
       - channel: '#kubernaut-ops'
         # Note: actual Slack config would include webhook URL
-  
+
   # ===================================================================
   # LOW: Console only for bulk notifications
   # ===================================================================
   - name: console-only-bulk
     console_configs:
       - enabled: true
-  
+
   # ===================================================================
   # MEDIUM: Slack for dev environments
   # ===================================================================
   - name: slack-dev-low
     slack_configs:
       - channel: '#kubernaut-dev'
-  
+
   # ===================================================================
   # DEFAULT: Slack fallback
   # ===================================================================

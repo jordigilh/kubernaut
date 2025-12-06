@@ -357,6 +357,11 @@ func (in *RemediationRequestStatus) DeepCopyInto(out *RemediationRequestStatus) 
 		in, out := &in.CompletedAt, &out.CompletedAt
 		*out = (*in).DeepCopy()
 	}
+	if in.SignalProcessingRef != nil {
+		in, out := &in.SignalProcessingRef, &out.SignalProcessingRef
+		*out = new(corev1.ObjectReference)
+		**out = **in
+	}
 	if in.RemediationProcessingRef != nil {
 		in, out := &in.RemediationProcessingRef, &out.RemediationProcessingRef
 		*out = new(corev1.ObjectReference)
@@ -371,6 +376,11 @@ func (in *RemediationRequestStatus) DeepCopyInto(out *RemediationRequestStatus) 
 		in, out := &in.WorkflowExecutionRef, &out.WorkflowExecutionRef
 		*out = new(corev1.ObjectReference)
 		**out = **in
+	}
+	if in.NotificationRequestRefs != nil {
+		in, out := &in.NotificationRequestRefs, &out.NotificationRequestRefs
+		*out = make([]corev1.ObjectReference, len(*in))
+		copy(*out, *in)
 	}
 	if in.DuplicateRefs != nil {
 		in, out := &in.DuplicateRefs, &out.DuplicateRefs

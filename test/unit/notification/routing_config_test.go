@@ -424,4 +424,155 @@ receivers:
 			Expect(config.Receivers[0].Name).To(Equal("console-fallback"))
 		})
 	})
+
+	// =============================================================================
+	// SKIP-REASON LABEL ROUTING (BR-NOT-065, DD-WE-004)
+	// =============================================================================
+	// Added: Day 13 Enhancement
+	// Purpose: Verify skip-reason based routing for WorkflowExecution failures
+	// Cross-Team: WE→NOT Q7, RO Q8 (2025-12-06)
+	// =============================================================================
+
+	Describe("Skip-Reason Label Routing (BR-NOT-065, DD-WE-004)", func() {
+
+		Context("Label Constants Verification", func() {
+
+			// Test 1: Verify label key constant
+			It("should define correct skip-reason label key", func() {
+				Expect(routing.LabelSkipReason).To(Equal("kubernaut.ai/skip-reason"))
+			})
+
+			// Test 2: Verify skip reason value constants
+			It("should define all DD-WE-004 skip reason values", func() {
+				Expect(routing.SkipReasonPreviousExecutionFailed).To(Equal("PreviousExecutionFailed"))
+				Expect(routing.SkipReasonExhaustedRetries).To(Equal("ExhaustedRetries"))
+				Expect(routing.SkipReasonResourceBusy).To(Equal("ResourceBusy"))
+				Expect(routing.SkipReasonRecentlyRemediated).To(Equal("RecentlyRemediated"))
+			})
+		})
+
+		Context("Skip-Reason Routing Rules", func() {
+			var config *routing.Config
+
+			BeforeEach(func() {
+				// Production-like routing config with skip-reason rules
+				configYAML := `
+route:
+  routes:
+    # CRITICAL: Execution failures → PagerDuty
+    - match:
+        kubernaut.ai/skip-reason: PreviousExecutionFailed
+      receiver: pagerduty-critical
+    # HIGH: Exhausted retries → Slack
+    - match:
+        kubernaut.ai/skip-reason: ExhaustedRetries
+      receiver: slack-ops
+    # LOW: Temporary conditions → Console
+    - match:
+        kubernaut.ai/skip-reason: ResourceBusy
+      receiver: console-bulk
+    - match:
+        kubernaut.ai/skip-reason: RecentlyRemediated
+      receiver: console-bulk
+  receiver: default-slack
+receivers:
+  - name: pagerduty-critical
+    pagerduty_configs:
+      - service_key: test-critical-key
+  - name: slack-ops
+    slack_configs:
+      - channel: '#kubernaut-ops'
+  - name: console-bulk
+    console_config:
+      enabled: true
+  - name: default-slack
+    slack_configs:
+      - channel: '#kubernaut-alerts'
+`
+				var err error
+				config, err = routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			// Test 3: DescribeTable for all skip-reason routing scenarios
+			DescribeTable("should route to correct receiver based on skip-reason",
+				func(skipReason, expectedReceiver string, description string) {
+					labels := map[string]string{
+						routing.LabelSkipReason: skipReason,
+					}
+					receiverName := config.Route.FindReceiver(labels)
+					Expect(receiverName).To(Equal(expectedReceiver), description)
+				},
+				Entry("CRITICAL: PreviousExecutionFailed → pagerduty-critical",
+					routing.SkipReasonPreviousExecutionFailed, "pagerduty-critical",
+					"Execution failures require immediate PagerDuty alerting"),
+				Entry("HIGH: ExhaustedRetries → slack-ops",
+					routing.SkipReasonExhaustedRetries, "slack-ops",
+					"Infrastructure issues route to ops channel"),
+				Entry("LOW: ResourceBusy → console-bulk",
+					routing.SkipReasonResourceBusy, "console-bulk",
+					"Temporary condition - bulk notification only"),
+				Entry("LOW: RecentlyRemediated → console-bulk",
+					routing.SkipReasonRecentlyRemediated, "console-bulk",
+					"Cooldown active - bulk notification only"),
+				Entry("FALLBACK: unknown-reason → default-slack",
+					"unknown-skip-reason", "default-slack",
+					"Unknown skip reasons fall back to default receiver"),
+			)
+
+			// Test 4: Combined labels (skip-reason + severity)
+			It("should match most specific rule when skip-reason combined with severity", func() {
+				// Config with combined matching (more specific first)
+				combinedConfigYAML := `
+route:
+  routes:
+    - match:
+        kubernaut.ai/skip-reason: PreviousExecutionFailed
+        kubernaut.ai/severity: critical
+      receiver: pagerduty-immediate
+    - match:
+        kubernaut.ai/skip-reason: PreviousExecutionFailed
+      receiver: slack-escalation
+  receiver: default-console
+receivers:
+  - name: pagerduty-immediate
+    pagerduty_configs:
+      - service_key: immediate-key
+  - name: slack-escalation
+    slack_configs:
+      - channel: '#escalation'
+  - name: default-console
+    console_config:
+      enabled: true
+`
+				combinedConfig, err := routing.ParseConfig([]byte(combinedConfigYAML))
+				Expect(err).ToNot(HaveOccurred())
+
+				// Both labels - should match first (more specific) rule
+				labelsWithSeverity := map[string]string{
+					routing.LabelSkipReason: routing.SkipReasonPreviousExecutionFailed,
+					routing.LabelSeverity:   routing.SeverityCritical,
+				}
+				Expect(combinedConfig.Route.FindReceiver(labelsWithSeverity)).To(
+					Equal("pagerduty-immediate"),
+					"Combined skip-reason+severity should match specific rule")
+
+				// Only skip-reason - should match second rule
+				labelsOnlySkip := map[string]string{
+					routing.LabelSkipReason: routing.SkipReasonPreviousExecutionFailed,
+				}
+				Expect(combinedConfig.Route.FindReceiver(labelsOnlySkip)).To(
+					Equal("slack-escalation"),
+					"Skip-reason alone should match less specific rule")
+			})
+
+			// Test 5: Empty/nil labels fallback
+			It("should fall back to default receiver when no skip-reason label present", func() {
+				emptyLabels := map[string]string{}
+				Expect(config.Route.FindReceiver(emptyLabels)).To(Equal("default-slack"))
+
+				Expect(config.Route.FindReceiver(nil)).To(Equal("default-slack"))
+			})
+		})
+	})
 })
