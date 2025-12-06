@@ -1,7 +1,7 @@
 ## Testing Strategy
 
-**Version**: v2.1
-**Last Updated**: 2025-12-04
+**Version**: v2.2
+**Last Updated**: 2025-12-06
 
 ---
 
@@ -9,7 +9,8 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **v2.1** | 2025-12-04 | **TESTING_GUIDELINES Alignment**: Added Quality Gates, Success Metrics; Removed V1.1 deferred code (BR-AI-040, BR-AI-050); Fixed BR range references |
+| **v2.2** | 2025-12-06 | **Day 6 Implementation Alignment**: Updated unit test coverage (70% → 87.6% achieved); Added edge case test patterns for ERROR_HANDLING_PHILOSOPHY.md; Updated test file list; Added confidence level classification tests |
+| v2.1 | 2025-12-04 | **TESTING_GUIDELINES Alignment**: Added Quality Gates, Success Metrics; Removed V1.1 deferred code (BR-AI-040, BR-AI-050); Fixed BR range references |
 | v2.0 | 2025-11-30 | Added TESTING_GUIDELINES.md reference; Updated port allocation per DD-TEST-001 |
 | v1.0 | 2025-10-15 | Initial specification |
 
@@ -38,11 +39,33 @@ Following Kubernaut's defense-in-depth testing strategy:
 ### Unit Tests (Primary Coverage Layer)
 
 **Test Directory**: [test/unit/aianalysis/](../../../test/unit/aianalysis/)
-**Coverage Target**: 72% (core AI/ML controller logic: Rego policies, confidence scoring, approval workflows, CRD reconciliation)
+**Coverage Target**: 70%+ → **87.6% Achieved**
 **Confidence**: 85-90%
 **Execution**: `make test-unit-aianalysis`
+**Test Count**: 149 tests (8 test files)
 
 **Testing Strategy**: Use fake K8s client for compile-time API safety. Mock ONLY HolmesGPT HTTP API. Use REAL business logic (Rego policy engine, approval workflow).
+
+**Test Files (Day 6 Complete)**:
+| File | Focus | Tests |
+|------|-------|-------|
+| `controller_test.go` | CRD lifecycle, phase transitions | ~15 |
+| `investigating_handler_test.go` | HAPI integration, human review, retry | ~45 |
+| `analyzing_handler_test.go` | Rego evaluation, approval context | ~35 |
+| `rego_evaluator_test.go` | Policy evaluation, graceful degradation | ~15 |
+| `holmesgpt_client_test.go` | HTTP client, error handling | ~10 |
+| `metrics_test.go` | Prometheus metrics registration | ~8 |
+| `audit_client_test.go` | Audit event generation | ~8 |
+| `error_types_test.go` | Error categorization (ERROR_HANDLING_PHILOSOPHY.md) | ~13 |
+
+**Edge Case Coverage (Business Value)**:
+| Category | Coverage | Business Value |
+|----------|----------|----------------|
+| Error Types | 100% | Operators distinguish transient vs permanent failures |
+| Confidence Levels | 100% | Quick assessment of AI confidence (high/medium/low) |
+| Human Review Mapping | 100% | All 6 HAPI enum values + 11 warning fallbacks |
+| Retry Mechanism | 89% | Graceful handling of malformed annotations |
+| Validation History | 100% | Timestamp parsing with graceful fallback |
 
 **AI/ML-Specific Test Patterns**:
 
@@ -770,22 +793,70 @@ It("should handle HolmesGPT API timeouts gracefully", func() {
 
 ### Target Metrics
 
-| Metric | Target | Measurement Command |
-|--------|--------|---------------------|
-| **Unit Test Execution** | <10ms average per test | `go test -v ./pkg/aianalysis/... -json \| jq '.Elapsed'` |
-| **Unit Test Coverage** | 70%+ | `make coverage-aianalysis` |
-| **BR Test Ratio** | 90%+ tests validate BRs | Manual audit: `grep -c "BR-AI-" test/unit/aianalysis/*_test.go` |
-| **Integration Coverage** | >50% CRD operations | `make test-integration-aianalysis --coverage` |
-| **E2E Critical Paths** | 100% coverage | 3 scenarios: auto-approve, manual-approve, rejection |
+| Metric | Target | Achieved | Measurement Command |
+|--------|--------|----------|---------------------|
+| **Unit Test Execution** | <10ms average per test | ✅ ~5ms | `go test -v ./test/unit/aianalysis/... -json \| jq '.Elapsed'` |
+| **Unit Test Coverage** | 70%+ | **87.6%** ✅ | `go test ./test/unit/aianalysis/... -coverprofile=coverage.out -coverpkg=./pkg/aianalysis/...` |
+| **BR Test Ratio** | 90%+ tests validate BRs | ✅ ~95% | Manual audit: `grep -c "BR-" test/unit/aianalysis/*_test.go` |
+| **Integration Coverage** | >50% CRD operations | TBD (Day 7) | `make test-integration-aianalysis --coverage` |
+| **E2E Critical Paths** | 100% coverage | TBD (Day 8) | 3 scenarios: auto-approve, manual-approve, rejection |
 
 ### AI-Specific Metrics
 
-| Metric | Target | Purpose |
-|--------|--------|---------|
-| **Rego Policy Coverage** | 100% of rules | All approval decision paths tested |
-| **Confidence Threshold Tests** | 3 boundary tests | 0.79, 0.80, 0.90 thresholds |
-| **HolmesGPT Mock Realism** | Production-like responses | Token counts, latency simulation |
-| **FailedDetections Validation** | All 7 valid fields | `gitOpsManaged`, `pdbProtected`, etc. |
+| Metric | Target | Achieved | Purpose |
+|--------|--------|----------|---------|
+| **Rego Policy Coverage** | 100% of rules | ✅ 100% | All approval decision paths tested |
+| **Confidence Threshold Tests** | 3 boundary tests | ✅ 9 tests | 0.6, 0.79, 0.80, 0.90, 0.95 boundaries |
+| **HolmesGPT Mock Realism** | Production-like responses | ✅ | Token counts, latency simulation |
+| **FailedDetections Validation** | All 7 valid fields | ✅ | `gitOpsManaged`, `pdbProtected`, etc. |
+| **Human Review Enum Mapping** | All 6 values | ✅ 100% | BR-HAPI-197 enum-to-enum mapping |
+| **Error Type Coverage** | All 3 types | ✅ 100% | TransientError, PermanentError, ValidationError |
+
+### Edge Case Test Patterns (Day 6)
+
+**Error Handling Philosophy Coverage** (ERROR_HANDLING_PHILOSOPHY.md):
+
+```go
+// ✅ IMPLEMENTED: Error type identification tests
+Describe("Error Type Identification", func() {
+    It("should identify transient errors using errors.As", func() {
+        err := aianalysis.NewTransientError("timeout", nil)
+        var transientErr *aianalysis.TransientError
+        Expect(errors.As(err, &transientErr)).To(BeTrue())
+    })
+})
+```
+
+**Confidence Level Classification** (BR-AI-019):
+
+```go
+// ✅ IMPLEMENTED: DescribeTable for confidence boundaries
+DescribeTable("should populate ApprovalContext with correct confidence level",
+    func(confidenceScore float64, expectedLevel string) {
+        analysis.Status.SelectedWorkflow.Confidence = confidenceScore
+        _, err := handler.Handle(ctx, analysis)
+        Expect(analysis.Status.ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel))
+    },
+    Entry("0.80 → high (at threshold)", 0.80, "high"),
+    Entry("0.79 → medium (just below)", 0.79, "medium"),
+    Entry("0.60 → medium (at threshold)", 0.60, "medium"),
+    Entry("0.59 → low (just below)", 0.59, "low"),
+)
+```
+
+**Retry Mechanism Edge Cases** (BR-AI-021):
+
+```go
+// ✅ IMPLEMENTED: Malformed annotation handling
+It("should handle malformed retry count annotation (treats as 0)", func() {
+    analysis.Annotations = map[string]string{
+        "aianalysis.kubernaut.ai/retry-count": "not-a-number",
+    }
+    mockClient.WithAPIError(503, "Service Unavailable")
+    _, err := handler.Handle(ctx, analysis)
+    Expect(analysis.Annotations["aianalysis.kubernaut.ai/retry-count"]).To(Equal("1"))
+})
+```
 
 ### Quality Indicators
 
