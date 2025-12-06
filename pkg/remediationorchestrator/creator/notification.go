@@ -104,7 +104,8 @@ func (c *NotificationCreator) CreateApprovalNotification(
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			Type:     notificationv1.NotificationTypeApproval,
-			Priority: c.mapPriority(rr.Spec.Priority),
+			// Priority now from AIAnalysis.Spec.SignalContext.BusinessPriority (set by SP, not RR.Spec)
+			Priority: c.mapPriority(ai.Spec.AnalysisRequest.SignalContext.BusinessPriority),
 			Subject:  fmt.Sprintf("Approval Required: %s", rr.Spec.SignalName),
 			Body:     c.buildApprovalBody(rr, ai),
 			Channels: channels,

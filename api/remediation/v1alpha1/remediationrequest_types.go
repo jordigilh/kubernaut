@@ -50,19 +50,11 @@ type RemediationRequestSpec struct {
 	// +kubebuilder:validation:Enum=critical;warning;info
 	Severity string `json:"severity"`
 
-	// Environment: dynamically configured via namespace labels
-	// Accepts any non-empty string to support custom environment taxonomies
-	// (e.g., "production", "staging", "development", "canary", "qa-eu", "blue", "green", etc.)
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	Environment string `json:"environment"`
-
-	// Priority value provided by Rego policies - no enum enforcement
-	// Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
-	// Operators can define custom priority schemes via Rego policies
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	Priority string `json:"priority"`
+	// NOTE: Environment and Priority fields REMOVED per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
+	// These are now owned by SignalProcessing and available in:
+	// - SignalProcessingStatus.EnvironmentClassification.Environment
+	// - SignalProcessingStatus.PriorityAssignment.Priority
+	// RO reads these from SP status, not from RR spec.
 
 	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", "datadog-monitor", etc.
 	// Used for signal-aware remediation strategies

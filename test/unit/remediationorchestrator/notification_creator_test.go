@@ -167,8 +167,10 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme)
 
 				rr := testutil.NewRemediationRequest("test-rr", "default")
-				rr.Spec.Priority = inputPriority
 				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				// Priority now comes from AIAnalysis.Spec.SignalContext.BusinessPriority
+				// (set by AIAnalysisCreator from SP.Status, per schema update notice)
+				ai.Spec.AnalysisRequest.SignalContext.BusinessPriority = inputPriority
 
 				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())

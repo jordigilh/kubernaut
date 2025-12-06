@@ -26,14 +26,18 @@ type RemediationRequestOpts struct {
 	SignalFingerprint string
 	SignalName        string
 	Severity          string
-	Environment       string
-	Priority          string
-	SignalType        string
-	TargetKind        string
-	TargetName        string
-	TargetNamespace   string // For cluster-scoped resources, leave empty
-	Phase             string
-	TimeoutConfig     *remediationv1.TimeoutConfig // BR-ORCH-028: Per-phase timeout configuration
+	// DEPRECATED: Environment removed from RR spec per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
+	// Now in SignalProcessingStatus.EnvironmentClassification.Environment
+	Environment string
+	// DEPRECATED: Priority removed from RR spec per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
+	// Now in SignalProcessingStatus.PriorityAssignment.Priority
+	Priority        string
+	SignalType      string
+	TargetKind      string
+	TargetName      string
+	TargetNamespace string // For cluster-scoped resources, leave empty
+	Phase           string
+	TimeoutConfig   *remediationv1.TimeoutConfig // BR-ORCH-028: Per-phase timeout configuration
 }
 
 // NewRemediationRequest creates a test RemediationRequest with sensible defaults.
@@ -43,8 +47,7 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 	fingerprint := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 	signalName := "TestSignal"
 	severity := "warning"
-	environment := "production"
-	priority := "P1"
+	// NOTE: Environment and Priority removed per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
 	signalType := "prometheus"
 	targetKind := "Pod"
 	targetName := "test-pod"
@@ -62,12 +65,7 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 		if opt.Severity != "" {
 			severity = opt.Severity
 		}
-		if opt.Environment != "" {
-			environment = opt.Environment
-		}
-		if opt.Priority != "" {
-			priority = opt.Priority
-		}
+		// NOTE: Environment and Priority overrides removed per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
 		if opt.SignalType != "" {
 			signalType = opt.SignalType
 		}
@@ -100,11 +98,11 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 			SignalFingerprint: fingerprint,
 			SignalName:        signalName,
 			Severity:          severity,
-			Environment:       environment,
-			Priority:          priority,
-			SignalType:        signalType,
-			SignalSource:      "test",
-			TargetType:        "kubernetes",
+			// NOTE: Environment and Priority removed per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
+			// These are now in SignalProcessingStatus, not RemediationRequestSpec
+			SignalType:   signalType,
+			SignalSource: "test",
+			TargetType:   "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
 				Kind:      targetKind,
 				Name:      targetName,
@@ -189,6 +187,7 @@ func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *
 
 // NewCompletedSignalProcessing creates a SignalProcessing in Completed phase with enrichment results.
 // Updated to match SignalProcessingStatus v1alpha1 schema (Dec 2025)
+// NOTE: Environment and Priority are now owned by SignalProcessing (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)
 func NewCompletedSignalProcessing(name, namespace string) *signalprocessingv1.SignalProcessing {
 	sp := NewSignalProcessing(name, namespace, SignalProcessingOpts{
 		Phase: signalprocessingv1.PhaseCompleted,
@@ -198,6 +197,18 @@ func NewCompletedSignalProcessing(name, namespace string) *signalprocessingv1.Si
 		NamespaceLabels: map[string]string{
 			"kubernetes.io/metadata.name": namespace,
 		},
+	}
+	// Set default environment classification (per schema update notice)
+	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+		Environment: "production",
+		Confidence:  0.95,
+		Source:      "namespace-labels",
+	}
+	// Set default priority assignment (per schema update notice)
+	sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+		Priority:   "P1",
+		Confidence: 0.9,
+		Source:     "fallback-matrix",
 	}
 	return sp
 }

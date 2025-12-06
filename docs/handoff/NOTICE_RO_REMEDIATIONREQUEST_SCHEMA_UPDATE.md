@@ -162,6 +162,8 @@ type PriorityAssignment struct {
 | 2025-12-06 | RO | ✅ **ACKNOWLEDGED** - Impact assessed, implementation plan updated |
 | 2025-12-06 | SP | 🟢 **SP READY** - Notified RO that all blockers cleared, may proceed with schema updates |
 | 2025-12-06 | Gateway | ✅ **Classification removal COMPLETE** (commit 65b93fe0) - Answered RO questions |
+| 2025-12-06 | RO | ✅ **Q&A ACKNOWLEDGED** - Proceeding with schema update (Day 5 implementation) |
+| 2025-12-06 | RO | ✅ **SCHEMA UPDATE COMPLETE** - Removed Environment/Priority from RR.Spec, updated creators to read from SP.Status |
 
 ---
 
@@ -222,10 +224,14 @@ Gateway removes fields → SP populates status → RO reads from SP status
 | Task | Target | Status |
 |------|--------|--------|
 | Acknowledge notice | 2025-12-06 | ✅ Complete |
-| Update AIAnalysisCreator to read from SP | Day 4 | ⏳ Pending |
-| Update Day 4 plan to read from SP | Day 4 | ⏳ Pending |
-| Remove fields from RR spec | After RO Day 4 | ⏳ Pending |
-| Integration test with SP | Day 5+ | ⏳ Pending |
+| Gateway Q&A resolved | 2025-12-06 | ✅ Complete |
+| Update AIAnalysisCreator to read from SP | Day 5 | ✅ Complete |
+| Update NotificationCreator to read from SP | Day 5 | ✅ Complete |
+| Remove fields from RR spec | Day 5 | ✅ Complete |
+| Run `make generate manifests` | Day 5 | ✅ Complete |
+| Update test factory (testutil) | Day 5 | ✅ Complete |
+| Update unit tests | Day 5 | ✅ Complete |
+| Integration test with SP | Day 6+ | ⏳ Pending |
 
 ---
 
@@ -260,7 +266,7 @@ Contact Signal Processing team or raise in `#kubernaut-dev` channel.
 
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Last Updated**: 2025-12-06
-**Status**: 🟢 **SP IMPLEMENTATION COMPLETE** - RO team may proceed with schema updates
+**Status**: 🟢 **SCHEMA UPDATE COMPLETE** - RO has removed Environment/Priority from RR.Spec, now reads from SP.Status
 

@@ -80,14 +80,6 @@ spec:
                 - lastOccurrence
                 - occurrenceCount
                 type: object
-              environment:
-                description: |-
-                  Environment: dynamically configured via namespace labels
-                  Accepts any non-empty string to support custom environment taxonomies
-                  (e.g., "production", "staging", "development", "canary", "qa-eu", "blue", "green", etc.)
-                maxLength: 63
-                minLength: 1
-                type: string
               firingTime:
                 description: |-
                   Temporal Data
@@ -104,14 +96,6 @@ spec:
                   Complete original webhook payload for debugging and audit
                   Stored as []byte to preserve exact format
                 format: byte
-                type: string
-              priority:
-                description: |-
-                  Priority value provided by Rego policies - no enum enforcement
-                  Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
-                  Operators can define custom priority schemes via Rego policies
-                maxLength: 63
-                minLength: 1
                 type: string
               providerData:
                 description: |-
@@ -244,9 +228,7 @@ spec:
                 type: object
             required:
             - deduplication
-            - environment
             - firingTime
-            - priority
             - receivedTime
             - severity
             - signalFingerprint

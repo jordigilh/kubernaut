@@ -134,17 +134,18 @@ func (c *AIAnalysisCreator) Create(
 }
 
 // buildSignalContext constructs the SignalContextInput from RemediationRequest and SignalProcessing.
+// NOTE: Environment and Priority are now owned by SignalProcessing (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)
 func (c *AIAnalysisCreator) buildSignalContext(
 	rr *remediationv1.RemediationRequest,
 	sp *signalprocessingv1.SignalProcessing,
 ) aianalysisv1.SignalContextInput {
-	// Get environment and priority from SP status if available, fallback to RR spec
-	environment := rr.Spec.Environment
-	priority := rr.Spec.Priority
-	if sp.Status.EnvironmentClassification != nil {
+	// Environment and Priority come from SP status only (no longer on RR.Spec)
+	environment := "unknown"
+	priority := "P2" // Default medium priority
+	if sp.Status.EnvironmentClassification != nil && sp.Status.EnvironmentClassification.Environment != "" {
 		environment = sp.Status.EnvironmentClassification.Environment
 	}
-	if sp.Status.PriorityAssignment != nil {
+	if sp.Status.PriorityAssignment != nil && sp.Status.PriorityAssignment.Priority != "" {
 		priority = sp.Status.PriorityAssignment.Priority
 	}
 

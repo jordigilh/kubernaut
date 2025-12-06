@@ -106,15 +106,18 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 			It("should build correct AIAnalysis spec with signal context and enrichment data", func() {
 				// Arrange - use testutil factories with custom options
+				// NOTE: Environment and Priority now come from SP.Status, not RR.Spec
+				// (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)
 				completedSP := testutil.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				// Override SP status to have custom environment/priority for test
+				completedSP.Status.EnvironmentClassification.Environment = "production"
+				completedSP.Status.PriorityAssignment.Priority = "P0"
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
 				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
 				rr := testutil.NewRemediationRequest("test-remediation", "default", testutil.RemediationRequestOpts{
-					Severity:    "critical",
-					Priority:    "P0",
-					Environment: "production",
-					SignalType:  "kubernetes-event",
+					Severity:   "critical",
+					SignalType: "kubernetes-event",
 				})
 
 				// Act
@@ -135,12 +138,13 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Verify RemediationID
 				Expect(createdAI.Spec.RemediationID).To(Equal(string(rr.UID)))
 
-				// Verify SignalContext
+				// Verify SignalContext (from RR.Spec for these fields)
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(rr.Spec.Severity))
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal(rr.Spec.SignalType))
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(rr.Spec.Environment))
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(rr.Spec.Priority))
+				// Environment and Priority now come from SP.Status (not RR.Spec)
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(completedSP.Status.EnvironmentClassification.Environment))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(completedSP.Status.PriorityAssignment.Priority))
 
 				// Verify TargetResource
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind))
