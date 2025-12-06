@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -257,6 +258,93 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 			Entry("ExhaustedRetries → high", "ExhaustedRetries", "high"),
 			Entry("ResourceBusy → medium", "ResourceBusy", "medium"),
 		)
+
+		Context("BR-ORCH-036: Manual review notification creation", func() {
+			// Test #14: CreateManualReviewNotification generates correct notification
+			It("should create manual review notification with correct type and severity labels", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-test-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Skipped",
+						SkipDetails: &workflowexecutionv1.SkipDetails{
+							Reason:    "ExhaustedRetries",
+							Message:   "5+ consecutive pre-execution failures",
+							SkippedAt: metav1.Now(),
+						},
+						ConsecutiveFailures: 5,
+					},
+				}
+
+				// Act
+				notificationName, err := h.CreateManualReviewNotification(ctx, rr, we, sp)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+				Expect(notificationName).To(Equal("nr-manual-review-test-rr"))
+
+				// Verify notification was created with correct fields
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify type is ManualReview (BR-ORCH-036)
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+
+				// Verify severity label from skip reason
+				Expect(nr.Labels["kubernaut.ai/severity"]).To(Equal("high"))
+
+				// Verify owner reference
+				Expect(nr.OwnerReferences).To(HaveLen(1))
+				Expect(nr.OwnerReferences[0].Name).To(Equal(rr.Name))
+			})
+
+			// Test #15: CreateManualReviewNotification idempotency
+			It("should return existing notification name if already exists", func() {
+				existingNR := &notificationv1.NotificationRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nr-manual-review-test-rr",
+						Namespace: "default",
+					},
+					Spec: notificationv1.NotificationRequestSpec{
+						Type: notificationv1.NotificationTypeManualReview,
+					},
+				}
+				client := fakeClient.WithObjects(existingNR).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-test-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Skipped",
+						SkipDetails: &workflowexecutionv1.SkipDetails{
+							Reason:    "ExhaustedRetries",
+							Message:   "5+ consecutive pre-execution failures",
+							SkippedAt: metav1.Now(),
+						},
+					},
+				}
+
+				// Act
+				notificationName, err := h.CreateManualReviewNotification(ctx, rr, we, sp)
+
+				// Assert - should reuse existing
+				Expect(err).ToNot(HaveOccurred())
+				Expect(notificationName).To(Equal("nr-manual-review-test-rr"))
+			})
+		})
 	})
 })
 

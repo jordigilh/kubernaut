@@ -21,11 +21,15 @@ import (
 	"fmt"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -159,6 +163,132 @@ func (h *WorkflowExecutionHandler) MapSkipReasonToPriority(skipReason string) st
 		return "high"
 	default:
 		return "medium"
+	}
+}
+
+// CreateManualReviewNotification creates a NotificationRequest for manual review scenarios.
+// Reference: BR-ORCH-036 (manual review notification)
+func (h *WorkflowExecutionHandler) CreateManualReviewNotification(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	we *workflowexecutionv1.WorkflowExecution,
+	sp *signalprocessingv1.SignalProcessing,
+) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"workflowExecution", we.Name,
+		"skipReason", we.Status.SkipDetails.Reason,
+	)
+
+	// Generate deterministic name
+	name := fmt.Sprintf("nr-manual-review-%s", rr.Name)
+
+	// Check if already exists (idempotency)
+	existing := &notificationv1.NotificationRequest{}
+	err := h.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		logger.Info("Manual review notification already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing NotificationRequest")
+		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+	}
+
+	// Get severity and priority from skip reason
+	severity := h.MapSkipReasonToSeverity(we.Status.SkipDetails.Reason)
+	priority := h.MapSkipReasonToPriority(we.Status.SkipDetails.Reason)
+
+	// Build NotificationRequest for manual review
+	nr := &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+			Labels: map[string]string{
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/notification-type":   "manual-review",
+				"kubernaut.ai/severity":            severity,
+				"kubernaut.ai/skip-reason":         we.Status.SkipDetails.Reason,
+				"kubernaut.ai/component":           "remediation-orchestrator",
+			},
+		},
+		Spec: notificationv1.NotificationRequestSpec{
+			Type:     notificationv1.NotificationTypeManualReview,
+			Priority: mapPriorityString(priority),
+			Subject:  fmt.Sprintf("Manual Review Required: %s - %s", rr.Spec.SignalName, we.Status.SkipDetails.Reason),
+			Body:     h.buildManualReviewBody(rr, we, sp),
+			Channels: []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}, // Default channels for manual review
+			Metadata: map[string]string{
+				"remediationRequest":   rr.Name,
+				"workflowExecution":    we.Name,
+				"skipReason":           we.Status.SkipDetails.Reason,
+				"skipMessage":          we.Status.SkipDetails.Message,
+				"consecutiveFailures":  fmt.Sprintf("%d", we.Status.ConsecutiveFailures),
+				"requiresManualReview": "true",
+			},
+		},
+	}
+
+	// Set owner reference for cascade deletion
+	if err := controllerutil.SetControllerReference(rr, nr, h.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	// Create the notification
+	if err := h.client.Create(ctx, nr); err != nil {
+		logger.Error(err, "Failed to create manual review notification")
+		return "", fmt.Errorf("failed to create manual review notification: %w", err)
+	}
+
+	logger.Info("Created manual review notification", "name", name, "severity", severity)
+	return name, nil
+}
+
+// buildManualReviewBody builds the notification body for manual review.
+func (h *WorkflowExecutionHandler) buildManualReviewBody(
+	rr *remediationv1.RemediationRequest,
+	we *workflowexecutionv1.WorkflowExecution,
+	sp *signalprocessingv1.SignalProcessing,
+) string {
+	env := "unknown"
+	if sp.Status.EnvironmentClassification != nil {
+		env = sp.Status.EnvironmentClassification.Environment
+	}
+
+	return fmt.Sprintf(`Manual intervention required for remediation.
+
+**Signal**: %s
+**Severity**: %s
+**Environment**: %s
+
+**Skip Reason**: %s
+**Details**: %s
+
+**Consecutive Failures**: %d
+
+**Action Required**: Please investigate and manually resolve the issue.
+`,
+		rr.Spec.SignalName,
+		rr.Spec.Severity,
+		env,
+		we.Status.SkipDetails.Reason,
+		we.Status.SkipDetails.Message,
+		we.Status.ConsecutiveFailures,
+	)
+}
+
+// mapPriorityString converts string priority to NotificationPriority enum.
+func mapPriorityString(priority string) notificationv1.NotificationPriority {
+	switch priority {
+	case "critical":
+		return notificationv1.NotificationPriorityCritical
+	case "high":
+		return notificationv1.NotificationPriorityHigh
+	case "low":
+		return notificationv1.NotificationPriorityLow
+	default:
+		return notificationv1.NotificationPriorityMedium
 	}
 }
 
