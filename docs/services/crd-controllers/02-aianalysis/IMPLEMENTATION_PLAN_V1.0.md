@@ -1,7 +1,7 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.14
+**Version**: v1.15
 **Last Updated**: 2025-12-06
 **Timeline**: 10 days (2 calendar weeks)
 **Status**: 📋 DRAFT - Ready for Review
@@ -9,6 +9,12 @@
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.15** (2025-12-06): **Day 7 Clarification - envtest vs KIND**
+  - ✅ **Integration Tests**: Use envtest (NOT KIND) + real HolmesGPT-API
+  - ✅ **E2E Tests**: Use KIND cluster + real HolmesGPT-API
+  - ✅ **Unit Tests**: Mock HolmesGPT client (`pkg/testutil/mock_holmesgpt_client.go`)
+  - ✅ **DAY_05_07 Fix**: Updated to 4-phase flow (removed Validating/Recommending)
+  - 📏 **Reference**: User guidance 2025-12-06
 - **v1.14** (2025-12-06): **Day 6 Complete - 87.6% Unit Test Coverage Achieved**
   - ✅ **Target Exceeded**: 70% target → 87.6% achieved (+17.6% over target)
   - ✅ **Error Types**: Full coverage for `TransientError`, `PermanentError`, `ValidationError` (ERROR_HANDLING_PHILOSOPHY.md)
@@ -2273,16 +2279,21 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 ### **Day 7: Integration Tests (8h)**
 
 #### Key Deliverables
-- KIND cluster setup
-- MockLLMServer integration
+- **envtest** setup (NOT KIND - KIND is for E2E)
+- Real HolmesGPT-API integration (not mock for integration tests)
 - Rego policy integration tests
+
+**Testing Strategy Clarification** (per user guidance 2025-12-06):
+- **Unit Tests**: Mock HolmesGPT client (`pkg/testutil/mock_holmesgpt_client.go`)
+- **Integration Tests**: Real HolmesGPT-API service + envtest
+- **E2E Tests**: Real HolmesGPT-API service + KIND cluster
 
 **See**: [Rego Policy Testing Strategy](#-rego-policy-testing-strategy) section for detailed patterns.
 
 **EOD Day 7 Checklist:**
-- [ ] KIND cluster configured
-- [ ] MockLLMServer running
-- [ ] Reconciler integration tests
+- [ ] envtest configured (NOT KIND)
+- [ ] Real HolmesGPT-API service connection
+- [ ] Reconciler integration tests (4-phase flow)
 - [ ] Rego policy integration tests (4 scenarios)
 - [ ] Cross-CRD coordination tests
 

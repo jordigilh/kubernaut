@@ -2,8 +2,19 @@
 
 **Part of**: AI Analysis Implementation Plan V1.0
 **Parent Document**: [IMPLEMENTATION_PLAN_V1.0.md](../../IMPLEMENTATION_PLAN_V1.0.md)
+**Version**: v1.1
+**Last Updated**: 2025-12-06
 **Duration**: 18-24 hours (3 days)
 **Target Confidence**: 88% (Day 7 Complete)
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **v1.1** | 2025-12-06 | **Phase Flow Alignment**: Updated reconciliation test to 4-phase flow (Pending → Investigating → Analyzing → Completed) per reconciliation-phases.md v2.1; Removed obsolete Validating and Recommending phases |
+| v1.0 | 2025-12-04 | Initial specification |
 
 ---
 
@@ -365,35 +376,31 @@ var _ = Describe("AIAnalysis Full Reconciliation", func() {
             _ = k8sClient.Delete(ctx, analysis)
         })
 
+        // Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed
+        // NOTE: Validating and Recommending phases were removed in v1.8/v1.10
         It("should complete all phases successfully - BR-AI-001", func() {
             By("Creating AIAnalysis CRD")
             Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-            By("Waiting for Validating phase")
+            By("Waiting for Pending phase (validation)")
             Eventually(func() string {
                 _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
                 return string(analysis.Status.Phase)
-            }, timeout, interval).Should(Equal("Validating"))
+            }, timeout, interval).Should(Equal("Pending"))
 
-            By("Waiting for Investigating phase")
+            By("Waiting for Investigating phase (HolmesGPT-API call)")
             Eventually(func() string {
                 _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
                 return string(analysis.Status.Phase)
             }, timeout, interval).Should(Equal("Investigating"))
 
-            By("Waiting for Analyzing phase")
+            By("Waiting for Analyzing phase (Rego policy evaluation)")
             Eventually(func() string {
                 _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
                 return string(analysis.Status.Phase)
             }, timeout, interval).Should(Equal("Analyzing"))
 
-            By("Waiting for Recommending phase")
-            Eventually(func() string {
-                _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-                return string(analysis.Status.Phase)
-            }, timeout, interval).Should(Equal("Recommending"))
-
-            By("Waiting for Completed phase")
+            By("Waiting for Completed phase (terminal)")
             Eventually(func() string {
                 _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
                 return string(analysis.Status.Phase)
