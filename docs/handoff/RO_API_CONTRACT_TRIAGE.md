@@ -1,7 +1,7 @@
 # Remediation Orchestrator API Contract Triage
 
 **Date**: December 1, 2025
-**Version**: 1.8
+**Version**: 1.9
 **Status**: ✅ **ALL EXTERNAL GAPS RESOLVED** - RO implementation requirements identified
 
 ## Executive Summary
@@ -80,8 +80,8 @@ CONTRACT SUMMARY:
 | `signalFingerprint` | `signalFingerprint` | ✅ Match |
 | `signalName` | `signalName` | ✅ Match |
 | `severity` | `severity` | ✅ Match (same enum) |
-| `environment` | `environment` | 🔴 **GAP-C1-01** |
-| `priority` | `priority` | 🟠 **GAP-C1-02** |
+| ~~`environment`~~ | `environment` | ✅ **REMOVED** (SP owns) |
+| ~~`priority`~~ | `priority` | ✅ **REMOVED** (SP owns) |
 | `signalType` | `signalType` | ✅ Match |
 | `signalSource` | `signalSource` | ✅ Match |
 | `targetType` | `targetType` | ✅ Match (same enum) |
@@ -110,25 +110,16 @@ CONTRACT SUMMARY:
 
 ---
 
-#### 🟡 GAP-C1-02: Priority Enum Mismatch - SP RESOLVED, GATEWAY PENDING
+#### ✅ GAP-C1-02: Priority Enum Mismatch - RESOLVED (Field Removed)
 
 **SP Resolution**: SP team changed to free-text validation (December 1, 2025).
 
-**Before (SP)**: `Enum=P0;P1;P2` + `Pattern=^P[0-2]$`
-**After (SP)**: `MinLength=1, MaxLength=63` (free-text)
+**Gateway Resolution (2025-12-06)**: Gateway removed `environment` and `priority` fields entirely per DD-CATEGORIZATION-001.
+- See: `docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md`
+- Classification is now owned by Signal Processing service
+- RO will remove `Environment`/`Priority` from `RemediationRequestSpec` (acknowledged in `NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md`)
 
-**Remaining**: Gateway team still needs to fix RemediationRequest priority enum.
-
-**Gateway Action Required**:
-```go
-// Before (RemediationRequest)
-// +kubebuilder:validation:Enum=P0;P1;P2;P3
-
-// After (RemediationRequest)
-// +kubebuilder:validation:MinLength=1
-// +kubebuilder:validation:MaxLength=63
-Priority string `json:"priority"`
-```
+**Status**: ✅ **RESOLVED** - Field will be removed from CRD schema (RO action pending)
 
 ---
 
@@ -231,7 +222,7 @@ type DeduplicationInfo struct {
 - SignalProcessing team completed update
 - Shared type created in `pkg/shared/types/`
 - DeepCopy methods added for controller-runtime compatibility
-- Gateway team update pending
+- Gateway team completed update (using `sharedtypes.DeduplicationInfo`)
 
 ---
 
@@ -635,6 +626,7 @@ type RemediationApprovalRequestStatus struct {
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.11 | 2025-12-06 | **GAP-C1-02 RESOLVED**: Gateway removed environment/priority fields entirely (DD-CATEGORIZATION-001). RO to remove from RR schema. |
 | 1.10 | 2025-12-01 | **ALL CONTRACTS COMPLETE**: Gateway confirmed Q3 (namespace empty for cluster-scoped). All team questions resolved. |
 | 1.9 | 2025-12-01 | **RO ACK COMPLETE**: REQ-WE-01/02/03/04 acknowledged. DD-RO-001, BR-ORCH-032/033/034 created. WE Q1/Q2 answered. |
 | 1.8 | 2025-12-01 | **ALL EXTERNAL GAPS RESOLVED!** Gateway team completed C1 gaps. WE team added REQ-WE-01/02/03/04 for RO. |
