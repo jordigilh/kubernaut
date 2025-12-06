@@ -327,7 +327,8 @@ Add `kubernaut.ai/skip-reason` routing label support per DD-WE-004 v1.1:
 
 ### **Tasks**
 
-- [x] Add skip-reason routing tests (9 test cases) ✅
+- [x] Add skip-reason routing tests (9 unit test cases) ✅
+- [x] Add skip-reason routing integration tests (8 test cases) ✅
 - [x] Create example routing configuration ✅
 - [x] Create skip-reason runbook ✅
 - [x] Update API specification (v2.1) ✅
