@@ -1,10 +1,10 @@
 # NOTICE: Gateway Classification Removal - SP Team Coordination
 
 **Date**: 2025-12-06
-**Version**: 1.0
+**Version**: 1.1
 **From**: Gateway Service Team
 **To**: Signal Processing (SP) Service Team
-**Status**: 🔴 **ACTION REQUIRED**
+**Status**: 🟡 **IN PROGRESS** - SP acknowledged, Gateway waiting for Day 5 completion
 **Priority**: HIGH
 
 ---
@@ -59,8 +59,8 @@ The `environment` and `priority` fields should be **removed from the CRD spec** 
 // api/remediation/v1alpha1/remediationrequest_types.go
 type RemediationRequestSpec struct {
     Severity       string `json:"severity"`
-    // REMOVED: Environment string `json:"environment"`  
-    // REMOVED: Priority    string `json:"priority"`     
+    // REMOVED: Environment string `json:"environment"`
+    // REMOVED: Priority    string `json:"priority"`
     SignalType     string `json:"signalType"`
     // ... other fields
 }
@@ -75,7 +75,7 @@ If SP will watch `RemediationRequest` CRDs and enrich them:
 func (r *SPReconciler) Reconcile(ctx context.Context, req ctrl.Request) {
     rr := &RemediationRequest{}
     r.Get(ctx, req.NamespacedName, rr)
-    
+
     if rr.Spec.Environment == "" {
         // Classify and update
         rr.Spec.Environment = r.classifier.Classify(ctx, rr.Spec.TargetResource.Namespace)
@@ -122,7 +122,7 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
     if env := c.getFromCache(namespace); env != "" {
         return env
     }
-    
+
     ns := &corev1.Namespace{}
     if err := c.k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns); err == nil {
         if env, ok := ns.Labels["environment"]; ok && env != "" {
@@ -130,7 +130,7 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
             return env
         }
     }
-    
+
     // ConfigMap fallback...
     // Default: "unknown"
 }
@@ -203,7 +203,11 @@ priority := "P2" {
 | Date | Team | Action |
 |------|------|--------|
 | 2025-12-06 | Gateway | Created notice, awaiting SP acknowledgment |
-| | SP | *Pending acknowledgment* |
+| 2025-12-06 | SP | ✅ **Acknowledged with corrections** - Default is `"unknown"` not `"development"`, label is `kubernaut.ai/environment` not `environment` |
+| 2025-12-06 | SP | Selected **Option A** (remove fields from RemediationRequest CRD) |
+| 2025-12-06 | SP | Created [NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md](./NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md) for RO team |
+| 2025-12-06 | SP | **ETA 2025-12-09** for full readiness (Day 5 Priority Engine) |
+| 2025-12-06 | Gateway | ✅ **Acknowledged SP corrections** - Answers to questions provided below |
 
 ---
 
@@ -211,17 +215,183 @@ priority := "P2" {
 
 ### SP Team Response
 
-**Status**: ⏳ **PENDING SP ACKNOWLEDGMENT**
-
-*SP team: Update this section with your response*
+**Status**: ✅ **ACKNOWLEDGED WITH CORRECTIONS**
 
 ```
-Date: [YYYY-MM-DD]
-Acknowledged by: [Name]
-Approach selected: [Option A / Option B]
-Estimated completion: [Date]
-Notes: [Any concerns or questions]
+Date: 2025-12-06
+Acknowledged by: SP Team
+Approach selected: Option A (Remove environment/priority from RemediationRequest CRD)
+Handoff created: NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md (for RO team)
+Estimated completion: 2025-12-09 (Day 5 Priority Engine completion)
 ```
+
+---
+
+### ⚠️ **CRITICAL CORRECTIONS REQUIRED**
+
+The Gateway notice contains **discrepancies with authoritative SP documentation**:
+
+#### **Correction 1: Default Environment is `"unknown"`, NOT `"development"`**
+
+| Document | Default Value | Status |
+|----------|---------------|--------|
+| **BR-SP-053** (Authoritative) | `"unknown"` | ✅ CORRECT |
+| Gateway Notice (line 100) | `"development"` | ❌ INCORRECT |
+
+**BR-SP-053 Rationale**: *"Using `unknown` is more accurate than assuming `development` - organizations have varied environment taxonomies and `development` could mean different things to different customers."*
+
+**Action Required**: Gateway team must update notice to reflect correct default.
+
+---
+
+#### **Correction 2: Only `kubernaut.ai/environment` Label, NOT `environment`**
+
+| Document | Label Key | Status |
+|----------|-----------|--------|
+| **BR-SP-051** (Authoritative) | `kubernaut.ai/environment` ONLY | ✅ CORRECT |
+| Gateway `classification.go` (line 128) | `environment` | ❌ INCORRECT |
+
+**BR-SP-051 Rationale**: *"Using only `kubernaut.ai/` prefixed labels prevents accidentally capturing labels from other systems and ensures clear ownership of environment classification."*
+
+**Impact**: Gateway's current implementation would NOT be compatible with SP's authoritative BRs. SP will NOT look for unqualified `environment` label.
+
+---
+
+### ✅ **SP Implementation Status**
+
+| BR | Requirement | SP Status | Notes |
+|----|-------------|-----------|-------|
+| BR-SP-051 | Namespace labels (`kubernaut.ai/environment`) | ✅ **Day 4 COMPLETE** | Rego-based, case-insensitive |
+| BR-SP-052 | ConfigMap fallback | ✅ **Day 4 COMPLETE** | Pattern matching supported |
+| BR-SP-053 | Default `"unknown"` | ✅ **Day 4 COMPLETE** | 0.0 confidence |
+| BR-SP-070 | Priority via Rego | ⏳ **Day 5 PENDING** | Implementation starting |
+| BR-SP-071 | Priority fallback matrix | ⏳ **Day 5 PENDING** | Per plan specification |
+| BR-SP-072 | Rego hot-reload | ⏳ **Day 5 PENDING** | Per DD-INFRA-001 |
+
+---
+
+### 📋 **Approach: Option A (Remove Fields from RemediationRequest CRD)**
+
+**Architecture Clarification**:
+- **RemediationRequest (RR) spec**: Contains ONLY what Gateway delivers (severity, signalType, targetResource, etc.)
+- **SignalProcessing (SP) CRD**: SP populates its OWN `SignalProcessingStatus` with environment and priority
+- **RemediationOrchestrator (RO)**: Handles data transitions between services
+
+**Result**: `environment` and `priority` fields should be **REMOVED from RemediationRequestSpec**.
+
+**RO Team Action Required**: See [NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md](./NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)
+
+```go
+// api/remediation/v1alpha1/remediationrequest_types.go
+type RemediationRequestSpec struct {
+    Severity       string `json:"severity"`
+    // REMOVED: Environment string `json:"environment"` -- Now in SignalProcessingStatus
+    // REMOVED: Priority    string `json:"priority"`    -- Now in SignalProcessingStatus
+    SignalType     string `json:"signalType"`
+    SignalSource   string `json:"signalSource"`
+    TargetResource TargetResource `json:"targetResource"`
+    Fingerprint    string `json:"fingerprint"`
+    // ... other Gateway-populated fields
+}
+```
+
+**Data Flow**:
+```
+Gateway → RemediationRequest (no env/priority)
+    ↓
+RO creates SignalProcessing CRD
+    ↓
+SP enriches SignalProcessingStatus.EnvironmentClassification
+SP enriches SignalProcessingStatus.PriorityAssignment
+    ↓
+RO reads from SignalProcessingStatus for downstream services
+```
+
+**Labels**: SP will populate `kubernaut.ai/environment` and `kubernaut.ai/priority` labels on the **SignalProcessing CRD**, not on RemediationRequest.
+
+---
+
+### ❓ **Questions for Gateway Team**
+
+1. **Label Migration**: Will Gateway update existing code to use `kubernaut.ai/environment` instead of `environment` before removal, or will it simply stop populating?
+
+2. **Backwards Compatibility**: Are there any downstream consumers that expect `environment` label (unqualified) that need migration?
+
+3. **Removal Timeline**: Can Gateway wait until 2025-12-09 for SP Day 5 (Priority Engine) completion before removing?
+
+---
+
+### ✅ **Gateway Team Response to SP Questions** (2025-12-06)
+
+#### **Answer 1: Label Migration**
+
+**Action**: Gateway will **simply stop populating** environment and priority fields/labels.
+
+**Rationale**: 
+- Gateway's current `environment` label lookup was incorrect per SP's authoritative BR-SP-051
+- Since SP will own this entirely and use `kubernaut.ai/environment`, no migration needed
+- Gateway will delete the classification code entirely, not modify it
+
+#### **Answer 2: Backwards Compatibility**
+
+**Confirmed**: **No downstream consumers** expect the unqualified `environment` label.
+
+**Analysis**:
+- Gateway was the only producer of this label
+- The `kubernaut.ai/environment` label on RemediationRequest was being set correctly
+- SP will now own label population on the SignalProcessing CRD
+- No migration required for any downstream service
+
+#### **Answer 3: Removal Timeline**
+
+**Confirmed**: Gateway **WILL wait until 2025-12-09** for SP Day 5 completion.
+
+**Updated Timeline**:
+| Milestone | Date | Status |
+|-----------|------|--------|
+| SP acknowledges | 2025-12-06 | ✅ Complete |
+| SP confirms approach | 2025-12-06 | ✅ Complete (Option A) |
+| SP Day 5 Priority Engine | 2025-12-09 | ⏳ Pending |
+| SP signals ready | 2025-12-09 | ⏳ Pending |
+| Gateway removes classification | 2025-12-10+ | 🔒 Blocked until SP ready |
+
+---
+
+### ✅ **Gateway Acknowledgment of SP Corrections**
+
+#### **Correction 1: Default Environment** ✅ ACKNOWLEDGED
+
+Gateway agrees with SP's correction:
+- **Correct default**: `"unknown"` (per BR-SP-053)
+- **Note**: Gateway's implementation in `classification.go` line 196 already used `"unknown"` as default
+- **Notice line 100**: This was documentation error referencing DD-WORKFLOW-001 incorrectly; SP's BR-SP-053 is authoritative
+
+#### **Correction 2: Label Key** ✅ ACKNOWLEDGED
+
+Gateway agrees with SP's correction:
+- **Correct label**: `kubernaut.ai/environment` ONLY (per BR-SP-051)
+- **Gateway error**: `classification.go` line 128 incorrectly looked for unqualified `environment` label
+- **Impact**: This incorrect implementation will be deleted, not fixed
+- **Going forward**: SP will own all environment/priority label population
+
+---
+
+### 📝 **SP Team Checklist Response**
+
+| Checklist Item | Status | Notes |
+|----------------|--------|-------|
+| Acknowledge receipt | ✅ | Acknowledged 2025-12-06 |
+| Confirm approach | ✅ | Option A selected (remove fields from RR) |
+| BR-SP-051 (namespace labels) | ✅ | Using `kubernaut.ai/environment` ONLY |
+| BR-SP-051 (`kubernaut.ai/environment`) | ✅ | Same as above |
+| BR-SP-052 (ConfigMap fallback) | ✅ | Day 4 complete |
+| BR-SP-053 (default) | ⚠️ | Default is `"unknown"` NOT `"development"` |
+| BR-SP-070 (Rego priority) | ⏳ | Day 5 pending |
+| BR-SP-071 (priority matrix) | ⏳ | Day 5 pending |
+| BR-SP-072 (hot-reload) | ⏳ | DD-INFRA-001 pattern defined |
+| Update CRD schema | ⏳ | RO team to remove fields (see [NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md](./NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)) |
+| Update labels | ✅ | Will populate `kubernaut.ai/environment`, `kubernaut.ai/priority` |
+| Signal ready | ⏳ | **ETA: 2025-12-09** (after Day 5 Priority Engine) |
 
 ---
 
@@ -229,15 +399,18 @@ Notes: [Any concerns or questions]
 
 | Milestone | Target Date | Status |
 |-----------|-------------|--------|
-| SP acknowledges receipt | 2025-12-06 | ⏳ Pending |
-| SP confirms approach | 2025-12-07 | ⏳ Pending |
+| SP acknowledges receipt | 2025-12-06 | ✅ Complete |
+| SP confirms approach | 2025-12-06 | ✅ Complete (Option A) |
+| Gateway acknowledges corrections | 2025-12-06 | ✅ Complete |
+| SP Day 5 Priority Engine | 2025-12-09 | ⏳ Pending |
 | SP signals ready | 2025-12-09 | ⏳ Pending |
-| Gateway removes classification | After SP ready | 🔒 Blocked |
+| Gateway removes classification | 2025-12-10+ | 🔒 Blocked until SP ready |
 
-**BLOCKING**: Gateway will NOT remove classification until SP confirms readiness.
+**BLOCKING**: Gateway will NOT remove classification until SP signals readiness (ETA: 2025-12-09).
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Last Updated**: 2025-12-06
+**Status**: 🟡 **IN PROGRESS** - Awaiting SP Day 5 completion
 
