@@ -132,15 +132,31 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		}, nil
 	}
 
-	// Build input map for Rego
+	// Build input map for Rego (matches PolicyInput JSON tags)
 	inputMap := map[string]interface{}{
-		"environment":          input.Environment,
+		// Signal context
+		"signal_type":       input.SignalType,
+		"severity":          input.Severity,
+		"environment":       input.Environment,
+		"business_priority": input.BusinessPriority,
+		// Target resource
+		"target_resource": map[string]interface{}{
+			"kind":      input.TargetResource.Kind,
+			"name":      input.TargetResource.Name,
+			"namespace": input.TargetResource.Namespace,
+		},
+		// Detected labels
+		"detected_labels": input.DetectedLabels,
+		"custom_labels":   input.CustomLabels,
+		// HolmesGPT-API response data
+		"confidence":            input.Confidence,
 		"target_in_owner_chain": input.TargetInOwnerChain,
-		"confidence":           input.Confidence,
-		"detected_labels":      input.DetectedLabels,
-		"custom_labels":        input.CustomLabels,
-		"failed_detections":    input.FailedDetections,
-		"warnings":             input.Warnings,
+		"warnings":              input.Warnings,
+		// FailedDetections
+		"failed_detections": input.FailedDetections,
+		// Recovery context
+		"is_recovery_attempt":     input.IsRecoveryAttempt,
+		"recovery_attempt_number": input.RecoveryAttemptNumber,
 	}
 
 	// Evaluate policy
@@ -197,4 +213,3 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		Degraded:         false,
 	}, nil
 }
-

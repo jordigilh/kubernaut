@@ -1,7 +1,7 @@
 # AI Analysis Service - Reconciliation Phases
 
-**Version**: v2.0
-**Last Updated**: 2025-11-30
+**Version**: v2.1
+**Last Updated**: 2025-12-06
 **Status**: ✅ V1.0 Scope Defined
 
 ---
@@ -10,6 +10,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v2.1 | 2025-12-06 | **BR-HAPI-197**: Added `SubReason` field for granular failure tracking; Removed `Recommending` from Phase enum; Added failure taxonomy | BR-HAPI-197, DD-HAPI-002 v1.2 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Removed "Approving" phase (V1.0); Removed BR-AI-051-053 (dependency validation); Simplified to 4-phase flow; Added DetectedLabels/CustomLabels handling | DD-RECOVERY-002, BR_MAPPING v1.2 |
 | v1.1 | 2025-10-20 | Added approval context population | ADR-018 |
 | v1.0 | 2025-10-15 | Initial specification | - |
@@ -154,6 +155,35 @@ metadata:
 | Timeout | Mark as Failed | No |
 | Invalid response | Mark as Failed | No |
 
+### BR-HAPI-197: Human Review Required Handling
+
+When HolmesGPT-API returns `needs_human_review=true`, the controller MUST:
+
+1. **Fail immediately** - Do not proceed to Analyzing phase
+2. **Set structured failure** - Use `Reason` + `SubReason` fields
+3. **Emit metrics** - Track failure reason for observability
+
+```go
+if response.NeedsHumanReview {
+    status.Phase = "Failed"
+    status.Reason = "WorkflowResolutionFailed"  // Umbrella category
+    status.SubReason = mapWarningsToSubReason(response.Warnings)  // Specific cause
+    status.Message = strings.Join(response.Warnings, "; ")
+    // Store partial response for operator context
+}
+```
+
+### SubReason Mapping
+
+| HolmesGPT-API Trigger | SubReason |
+|-----------------------|-----------|
+| Workflow Not Found | `WorkflowNotFound` |
+| Container Image Mismatch | `ImageMismatch` |
+| Parameter Validation Failed | `ParameterValidationFailed` |
+| No Workflows Matched | `NoMatchingWorkflows` |
+| Low Confidence (<70%) | `LowConfidence` |
+| LLM Parsing Error | `LLMParsingError` |
+
 ---
 
 ## Phase 3: Analyzing
@@ -185,10 +215,20 @@ metadata:
    - `AUTO_APPROVE`: Confidence ≥80%, low-risk environment
    - `MANUAL_APPROVAL_REQUIRED`: Confidence <80%, production, high-risk action
 
-4. **Validate Workflow Exists**
-   - Verify `workflowId` exists in catalog (hallucination detection)
-   - Verify `containerImage` format is valid OCI reference
-   - Verify parameters conform to workflow schema
+4. **Validate Workflow Response** (Defense-in-Depth)
+
+   > ⚠️ **Note**: Per DD-HAPI-002 v1.1, primary validation happens in **HolmesGPT-API**
+   > where the LLM can self-correct. AIAnalysis validation is defense-in-depth only.
+
+   | Validation | Primary | AIAnalysis (Defense) |
+   |------------|---------|---------------------|
+   | `workflowId` exists in catalog | ✅ **HAPI** (LLM self-corrects) | 🟡 Optional |
+   | `containerImage` valid OCI format | ✅ **Data Storage** (registration) | 🟡 Optional |
+   | Parameters conform to schema | ✅ **HAPI** (`validate_workflow_parameters`) | ❌ Not recommended |
+
+   **Rationale** (DD-HAPI-002):
+   - If validation fails at HAPI → LLM can self-correct in same session (good UX)
+   - If validation fails at AIAnalysis → Must restart entire RCA (poor UX)
 
 ### Transition Criteria
 
@@ -271,6 +311,58 @@ status:
    - **If false**: Create WorkflowExecution CRD immediately
    - **If true**: Create notification (Slack/Console), wait for operator approval
 3. **V1.1**: RO will create `RemediationApprovalRequest` CRD for explicit approval workflow
+
+---
+
+## Phase 5: Failed
+
+**Purpose**: Terminal failure state with structured reason
+
+**Timeout**: None (terminal)
+
+### Failure Taxonomy (BR-HAPI-197)
+
+AIAnalysis uses a structured failure taxonomy with `reason` (umbrella category) and `subReason` (specific cause):
+
+| Reason (Umbrella) | SubReason | Description |
+|-------------------|-----------|-------------|
+| `WorkflowResolutionFailed` | `WorkflowNotFound` | LLM hallucinated a workflow that doesn't exist |
+| `WorkflowResolutionFailed` | `ImageMismatch` | LLM provided wrong container image |
+| `WorkflowResolutionFailed` | `ParameterValidationFailed` | Parameters don't conform to schema |
+| `WorkflowResolutionFailed` | `NoMatchingWorkflows` | Catalog has no matching workflows |
+| `WorkflowResolutionFailed` | `LowConfidence` | AI confidence below 70% threshold |
+| `WorkflowResolutionFailed` | `LLMParsingError` | Cannot parse LLM response |
+| `TransientError` | Various | Temporary failure, retry recommended |
+| `PermanentError` | Various | Unrecoverable failure |
+
+### Failed Status Example
+
+```yaml
+status:
+  phase: "Failed"
+  reason: "WorkflowResolutionFailed"
+  subReason: "WorkflowNotFound"
+  message: "Workflow validation failed: workflow 'restart-pod-v1' not found in catalog"
+
+  # Partial response preserved for operator context
+  selectedWorkflow:
+    workflowId: "restart-pod-v1"  # Invalid - not in catalog
+    confidence: 0.85
+    reasoning: "Historical success with similar OOM scenarios"
+
+  phaseTransitions:
+    Pending: "2025-12-06T10:00:00Z"
+    Investigating: "2025-12-06T10:00:01Z"
+    Failed: "2025-12-06T10:00:05Z"
+```
+
+### What Happens Next (RO Responsibility on Failure)
+
+1. **RO watches** `AIAnalysis.status.phase == "Failed"`
+2. **RO checks** `status.reason`:
+   - **If `WorkflowResolutionFailed`**: Notify operator, require manual intervention
+   - **If `TransientError`**: May trigger recovery attempt (up to max retries)
+3. **No WorkflowExecution** is created for failed AIAnalysis
 
 ---
 

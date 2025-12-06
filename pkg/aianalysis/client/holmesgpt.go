@@ -72,6 +72,7 @@ type OwnerChainEntry struct {
 // IncidentResponse represents response from HolmesGPT-API /api/v1/incident/analyze
 // Per HolmesGPT-API team (Dec 5, 2025): This endpoint returns ALL analysis results
 // including selected_workflow and alternative_workflows in a single call.
+// BR-HAPI-197 (Dec 6, 2025): Added NeedsHumanReview and HumanReviewReason fields.
 type IncidentResponse struct {
 	// Incident identifier from request
 	IncidentID string `json:"incident_id"`
@@ -94,6 +95,33 @@ type IncidentResponse struct {
 	TargetInOwnerChain bool `json:"target_in_owner_chain"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)
 	Warnings []string `json:"warnings,omitempty"`
+	// BR-HAPI-197: True when AI cannot produce reliable result and human must intervene
+	// When true, automatic remediation MUST NOT proceed
+	NeedsHumanReview bool `json:"needs_human_review"`
+	// BR-HAPI-197: Structured reason for NeedsHumanReview=true
+	// Enum: workflow_not_found, image_mismatch, parameter_validation_failed,
+	//       no_matching_workflows, low_confidence, llm_parsing_error
+	// Use this for reliable SubReason mapping instead of parsing warnings
+	HumanReviewReason *string `json:"human_review_reason,omitempty"`
+	// DD-HAPI-002 v1.4: Complete history of all validation attempts
+	// HAPI retries up to 3 times with LLM self-correction
+	// Provides audit trail for operator notifications and debugging
+	ValidationAttemptsHistory []ValidationAttempt `json:"validation_attempts_history,omitempty"`
+}
+
+// ValidationAttempt contains details of a single HAPI validation attempt
+// Per DD-HAPI-002 v1.4: Each attempt feeds validation errors back to the LLM
+type ValidationAttempt struct {
+	// Attempt number (1, 2, or 3)
+	Attempt int `json:"attempt"`
+	// WorkflowID that the LLM tried in this attempt
+	WorkflowID string `json:"workflow_id"`
+	// Whether validation passed (always false for failed attempts in history)
+	IsValid bool `json:"is_valid"`
+	// Validation errors encountered
+	Errors []string `json:"errors,omitempty"`
+	// When this attempt occurred (ISO timestamp)
+	Timestamp string `json:"timestamp"`
 }
 
 // RootCauseAnalysis contains structured RCA results from HolmesGPT-API
@@ -190,10 +218,10 @@ func (e *APIError) Error() string {
 // BR-AI-010: Permanent errors (400, 401, 403, 404) should not be retried
 func (e *APIError) IsTransient() bool {
 	switch e.StatusCode {
-	case http.StatusTooManyRequests,     // 429
-		http.StatusBadGateway,           // 502
-		http.StatusServiceUnavailable,   // 503
-		http.StatusGatewayTimeout:       // 504
+	case http.StatusTooManyRequests, // 429
+		http.StatusBadGateway,         // 502
+		http.StatusServiceUnavailable, // 503
+		http.StatusGatewayTimeout:     // 504
 		return true
 	default:
 		return false

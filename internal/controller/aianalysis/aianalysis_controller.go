@@ -42,12 +42,12 @@ const (
 
 	// Phase constants for AIAnalysis lifecycle
 	// Per CRD enum: Pending;Investigating;Analyzing;Recommending;Completed;Failed
-	PhasePending      = "Pending"
+	PhasePending       = "Pending"
 	PhaseInvestigating = "Investigating"
-	PhaseAnalyzing    = "Analyzing"
-	PhaseRecommending = "Recommending"
-	PhaseCompleted    = "Completed"
-	PhaseFailed       = "Failed"
+	PhaseAnalyzing     = "Analyzing"
+	PhaseRecommending  = "Recommending"
+	PhaseCompleted     = "Completed"
+	PhaseFailed        = "Failed"
 )
 
 // AIAnalysisReconciler reconciles an AIAnalysis object
@@ -194,4 +194,3 @@ func (r *AIAnalysisReconciler) handleDeletion(ctx context.Context, analysis *aia
 
 	return ctrl.Result{}, nil
 }
-

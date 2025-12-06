@@ -54,7 +54,8 @@ var _ = Describe("RegoEvaluator", func() {
 				})
 			})
 
-			It("should return approval decision", func() {
+			// BR-AI-013: Business outcome - production with clean state should auto-approve
+			It("should auto-approve production environment with clean state and high confidence", func() {
 				input := &rego.PolicyInput{
 					Environment:        "production",
 					TargetInOwnerChain: true,
@@ -70,8 +71,10 @@ var _ = Describe("RegoEvaluator", func() {
 				result, err := evaluator.Evaluate(ctx, input)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result).NotTo(BeNil())
-				Expect(result.ApprovalRequired).To(BeAssignableToTypeOf(true))
+				// Business outcome: Clean production state with high confidence auto-approves
+				Expect(result.ApprovalRequired).To(BeFalse(), "Clean production state with high confidence should auto-approve")
+				Expect(result.Reason).To(ContainSubstring("Auto-approved"), "Should provide auto-approve reason")
+				Expect(result.Degraded).To(BeFalse(), "Should not be in degraded mode")
 			})
 
 		})
@@ -119,6 +122,75 @@ var _ = Describe("RegoEvaluator", func() {
 				Entry("production + clean state + high confidence",
 					"production", true, 0.9, nil, nil, false),
 			)
+
+			// BR-AI-013: Recovery scenario tests (per IMPLEMENTATION_PLAN_V1.0.md)
+			DescribeTable("based on recovery context",
+				func(isRecovery bool, recoveryAttemptNumber int, severity string, env string, expectedApproval bool) {
+					input := &rego.PolicyInput{
+						Environment:           env,
+						TargetInOwnerChain:    true,
+						Confidence:            0.9, // High confidence
+						IsRecoveryAttempt:     isRecovery,
+						RecoveryAttemptNumber: recoveryAttemptNumber,
+						Severity:              severity,
+					}
+
+					result, err := evaluator.Evaluate(ctx, input)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(result.ApprovalRequired).To(Equal(expectedApproval))
+				},
+				// Multiple recovery attempts (3+) = approval required (any environment)
+				Entry("development + 3rd recovery = approval required",
+					true, 3, "warning", "development", true),
+				Entry("staging + 4th recovery = approval required",
+					true, 4, "warning", "staging", true),
+
+				// First recovery attempt = auto-approve in non-production
+				Entry("development + 1st recovery = auto-approve",
+					true, 1, "warning", "development", false),
+				Entry("staging + 2nd recovery = auto-approve",
+					true, 2, "warning", "staging", false),
+
+				// High severity + recovery = approval required
+				Entry("development + high severity + recovery = approval",
+					true, 1, "critical", "development", true),
+				Entry("staging + P0 + recovery = approval",
+					true, 1, "P0", "staging", true),
+
+				// Not a recovery = normal rules apply
+				Entry("production + not recovery = depends on other rules",
+					false, 0, "warning", "production", false),
+				Entry("development + not recovery = auto-approve",
+					false, 0, "warning", "development", false),
+			)
+
+			// BR-AI-013: Signal context in policy input
+			Context("handles signal context fields", func() {
+				It("should pass all signal context fields to policy", func() {
+					input := &rego.PolicyInput{
+						SignalType:       "OOMKilled",
+						Severity:         "critical",
+						Environment:      "development",
+						BusinessPriority: "P0",
+						TargetResource: rego.TargetResourceInput{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: "default",
+						},
+						TargetInOwnerChain:    true,
+						Confidence:            0.9,
+						IsRecoveryAttempt:     true,
+						RecoveryAttemptNumber: 1,
+					}
+
+					result, err := evaluator.Evaluate(ctx, input)
+
+					// Critical severity + recovery = approval required
+					Expect(err).NotTo(HaveOccurred())
+					Expect(result.ApprovalRequired).To(BeTrue())
+				})
+			})
 		})
 
 		// BR-AI-014: Graceful degradation - missing policy
@@ -162,4 +234,3 @@ var _ = Describe("RegoEvaluator", func() {
 		})
 	})
 })
-

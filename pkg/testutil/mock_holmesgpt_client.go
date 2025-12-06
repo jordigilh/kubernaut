@@ -170,3 +170,113 @@ func (m *MockHolmesGPTClient) AssertRequestContains(substring string) error {
 	return nil
 }
 
+// ========================================
+// BR-HAPI-197: Human Review Required Test Helpers
+// ========================================
+
+// WithHumanReviewRequired configures the mock to return needs_human_review=true
+// with only warnings (no enum - for backward compatibility testing).
+func (m *MockHolmesGPTClient) WithHumanReviewRequired(warnings []string) *MockHolmesGPTClient {
+	m.Response = &client.IncidentResponse{
+		IncidentID:       "mock-incident-001",
+		Analysis:         "Mock analysis: Human review required",
+		Confidence:       0.5,
+		Timestamp:        "2025-12-06T10:00:00Z",
+		Warnings:         warnings,
+		NeedsHumanReview: true,
+		// HumanReviewReason is nil - tests fallback to warning parsing
+	}
+	m.Err = nil
+	return m
+}
+
+// WithHumanReviewReasonEnum configures the mock to return needs_human_review=true
+// with the human_review_reason enum field (preferred method).
+func (m *MockHolmesGPTClient) WithHumanReviewReasonEnum(reason string, warnings []string) *MockHolmesGPTClient {
+	m.Response = &client.IncidentResponse{
+		IncidentID:        "mock-incident-001",
+		Analysis:          "Mock analysis: Human review required",
+		Confidence:        0.5,
+		Timestamp:         "2025-12-06T10:00:00Z",
+		Warnings:          warnings,
+		NeedsHumanReview:  true,
+		HumanReviewReason: &reason,
+	}
+	m.Err = nil
+	return m
+}
+
+// WithHumanReviewRequiredWithPartialResponse configures the mock to return
+// needs_human_review=true with partial workflow/RCA data for operator context.
+func (m *MockHolmesGPTClient) WithHumanReviewRequiredWithPartialResponse(
+	reason *string,
+	warnings []string,
+	partialWorkflow *client.SelectedWorkflow,
+) *MockHolmesGPTClient {
+	m.Response = &client.IncidentResponse{
+		IncidentID:        "mock-incident-001",
+		Analysis:          "Mock analysis: Human review required",
+		Confidence:        0.5,
+		Timestamp:         "2025-12-06T10:00:00Z",
+		Warnings:          warnings,
+		NeedsHumanReview:  true,
+		HumanReviewReason: reason,
+		SelectedWorkflow:  partialWorkflow,
+		RootCauseAnalysis: &client.RootCauseAnalysis{
+			Summary:  "Mock RCA: Partial analysis available",
+			Severity: "medium",
+		},
+	}
+	m.Err = nil
+	return m
+}
+
+// ========================================
+// DD-HAPI-002 v1.4: Validation Attempts History Test Helpers
+// ========================================
+
+// WithValidationAttemptsHistory adds validation attempts history to the current response.
+// Use after WithHumanReviewReasonEnum to add LLM self-correction audit trail.
+func (m *MockHolmesGPTClient) WithValidationAttemptsHistory(attempts []client.ValidationAttempt) *MockHolmesGPTClient {
+	if m.Response != nil {
+		m.Response.ValidationAttemptsHistory = attempts
+	}
+	return m
+}
+
+// WithHumanReviewAndHistory configures a complete needs_human_review=true response
+// with reason enum and validation attempts history (DD-HAPI-002 v1.4 compliant).
+func (m *MockHolmesGPTClient) WithHumanReviewAndHistory(
+	reason string,
+	warnings []string,
+	validationAttempts []client.ValidationAttempt,
+) *MockHolmesGPTClient {
+	m.Response = &client.IncidentResponse{
+		IncidentID:                "mock-incident-001",
+		Analysis:                  "Mock analysis: Human review required after LLM self-correction",
+		Confidence:                0.5,
+		Timestamp:                 "2025-12-06T10:00:00Z",
+		Warnings:                  warnings,
+		NeedsHumanReview:          true,
+		HumanReviewReason:         &reason,
+		ValidationAttemptsHistory: validationAttempts,
+	}
+	m.Err = nil
+	return m
+}
+
+// NewMockValidationAttempts creates mock validation attempts for testing.
+// Each attempt represents a failed LLM self-correction iteration.
+func NewMockValidationAttempts(failureScenarios []string) []client.ValidationAttempt {
+	attempts := make([]client.ValidationAttempt, 0, len(failureScenarios))
+	for i, scenario := range failureScenarios {
+		attempts = append(attempts, client.ValidationAttempt{
+			Attempt:    i + 1,
+			WorkflowID: fmt.Sprintf("mock-workflow-attempt-%d", i+1),
+			IsValid:    false,
+			Errors:     []string{scenario},
+			Timestamp:  fmt.Sprintf("2025-12-06T10:00:%02dZ", i*5),
+		})
+	}
+	return attempts
+}

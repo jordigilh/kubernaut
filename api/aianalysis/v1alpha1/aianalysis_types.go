@@ -324,11 +324,18 @@ type AlternativeApproach struct {
 
 // AIAnalysisStatus defines the observed state of AIAnalysis.
 type AIAnalysisStatus struct {
-	// Phase tracking (no "Approving" phase - RO orchestrates approval)
-	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Recommending;Completed;Failed
+	// Phase tracking (no "Approving" or "Recommending" phase - simplified 4-phase flow)
+	// Per reconciliation-phases.md v2.0: Pending → Investigating → Analyzing → Completed/Failed
+	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed
 	Phase   string `json:"phase"`
 	Message string `json:"message,omitempty"`
-	Reason  string `json:"reason,omitempty"`
+	// Reason provides the umbrella failure category (e.g., "WorkflowResolutionFailed")
+	Reason string `json:"reason,omitempty"`
+	// SubReason provides specific failure cause within the Reason category
+	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError
+	// +optional
+	SubReason string `json:"subReason,omitempty"`
 
 	// Timestamps
 	StartedAt   *metav1.Time `json:"startedAt,omitempty"`
@@ -390,6 +397,11 @@ type AIAnalysisStatus struct {
 	TargetInOwnerChain *bool `json:"targetInOwnerChain,omitempty"`
 	// Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain validation, low confidence)
 	Warnings []string `json:"warnings,omitempty"`
+	// ValidationAttemptsHistory contains complete history of all HAPI validation attempts
+	// Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
+	// This field provides audit trail for operator notifications and debugging
+	// +optional
+	ValidationAttemptsHistory []ValidationAttempt `json:"validationAttemptsHistory,omitempty"`
 
 	// ========================================
 	// OPERATIONAL STATUS
@@ -464,6 +476,24 @@ type AlternativeWorkflow struct {
 	Confidence float64 `json:"confidence"`
 	// Rationale explaining why this workflow was considered
 	Rationale string `json:"rationale"`
+}
+
+// ValidationAttempt contains details of a single HAPI validation attempt
+// Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
+// Each attempt feeds validation errors back to the LLM for correction
+type ValidationAttempt struct {
+	// Attempt number (1, 2, or 3)
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=3
+	Attempt int `json:"attempt"`
+	// WorkflowID that the LLM tried in this attempt
+	WorkflowID string `json:"workflowId"`
+	// Whether validation passed (always false for failed attempts in history)
+	IsValid bool `json:"isValid"`
+	// Validation errors encountered
+	Errors []string `json:"errors,omitempty"`
+	// When this attempt occurred
+	Timestamp metav1.Time `json:"timestamp"`
 }
 
 // RecoveryStatus contains recovery-specific status information

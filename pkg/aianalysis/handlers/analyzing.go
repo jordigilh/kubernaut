@@ -21,6 +21,7 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -36,6 +37,10 @@ type RegoEvaluatorInterface interface {
 // AnalyzingHandler handles the Analyzing phase.
 // BR-AI-012: Evaluate Rego approval policies
 // BR-AI-014: Graceful degradation for policy failures
+// BR-AI-019: Populate ApprovalContext if approval required
+//
+// Per reconciliation-phases.md v2.0: Analyzing transitions directly to Completed.
+// The Recommending phase was removed in v1.8 as workflow data is captured in Investigating.
 type AnalyzingHandler struct {
 	log       logr.Logger
 	evaluator RegoEvaluatorInterface
@@ -57,8 +62,21 @@ func (h *AnalyzingHandler) Name() string {
 // Handle processes the Analyzing phase.
 // BR-AI-012: Evaluate Rego policies to determine approval requirement.
 // BR-AI-014: If evaluation fails, default to approvalRequired=true (safe default).
+// BR-AI-018: Validate workflow exists in status (from InvestigatingHandler).
+// BR-AI-019: Populate ApprovalContext if approval is required.
+//
+// Per reconciliation-phases.md v2.0: Transitions directly to Completed (no Recommending phase).
 func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("Processing Analyzing phase", "name", analysis.Name)
+
+	// BR-AI-018: Validate workflow exists (captured by InvestigatingHandler)
+	if analysis.Status.SelectedWorkflow == nil {
+		h.log.Error(nil, "No workflow selected - investigation may have failed", "name", analysis.Name)
+		analysis.Status.Phase = aianalysis.PhaseFailed
+		analysis.Status.Message = "No workflow selected - investigation may have failed"
+		analysis.Status.Reason = "NoWorkflowSelected"
+		return ctrl.Result{}, nil
+	}
 
 	// Build policy input from analysis
 	input := h.buildPolicyInput(analysis)
@@ -86,20 +104,114 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		"reason", result.Reason,
 	)
 
-	// Transition to Recommending phase
-	analysis.Status.Phase = aianalysis.PhaseRecommending
-	analysis.Status.Message = "Analysis complete, preparing recommendation"
+	// BR-AI-019: Populate ApprovalContext if approval is required
+	if result.ApprovalRequired {
+		h.populateApprovalContext(analysis, result)
+	}
 
-	return ctrl.Result{Requeue: true}, nil
+	// Transition directly to Completed (per reconciliation-phases.md v2.0)
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Message = "Analysis complete"
+
+	h.log.Info("Analysis completed",
+		"name", analysis.Name,
+		"approvalRequired", result.ApprovalRequired,
+	)
+
+	return ctrl.Result{}, nil // Final phase - no requeue
+}
+
+// populateApprovalContext populates the ApprovalContext for approval notifications.
+// BR-AI-019: Rich context for approval notification
+func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnalysis, result *rego.PolicyResult) {
+	if analysis.Status.ApprovalContext == nil {
+		analysis.Status.ApprovalContext = &aianalysisv1.ApprovalContext{}
+	}
+
+	ctx := analysis.Status.ApprovalContext
+	ctx.Reason = result.Reason
+	ctx.WhyApprovalRequired = result.Reason
+
+	// Get confidence from SelectedWorkflow
+	if analysis.Status.SelectedWorkflow != nil {
+		ctx.ConfidenceScore = analysis.Status.SelectedWorkflow.Confidence
+
+		// Set confidence level based on score
+		switch {
+		case ctx.ConfidenceScore >= 0.8:
+			ctx.ConfidenceLevel = "high"
+		case ctx.ConfidenceScore >= 0.6:
+			ctx.ConfidenceLevel = "medium"
+		default:
+			ctx.ConfidenceLevel = "low"
+		}
+
+		// Populate RecommendedActions from SelectedWorkflow
+		ctx.RecommendedActions = []aianalysisv1.RecommendedAction{
+			{
+				Action:    analysis.Status.SelectedWorkflow.WorkflowID,
+				Rationale: analysis.Status.SelectedWorkflow.Rationale,
+			},
+		}
+	}
+
+	// Include investigation summary from RCA
+	if analysis.Status.RootCauseAnalysis != nil {
+		ctx.InvestigationSummary = analysis.Status.RootCauseAnalysis.Summary
+
+		// Populate EvidenceCollected from contributing factors
+		if len(analysis.Status.RootCauseAnalysis.ContributingFactors) > 0 {
+			ctx.EvidenceCollected = analysis.Status.RootCauseAnalysis.ContributingFactors
+		}
+	}
+
+	// Populate AlternativesConsidered from AlternativeWorkflows
+	if len(analysis.Status.AlternativeWorkflows) > 0 {
+		ctx.AlternativesConsidered = make([]aianalysisv1.AlternativeApproach, 0, len(analysis.Status.AlternativeWorkflows))
+		for _, alt := range analysis.Status.AlternativeWorkflows {
+			ctx.AlternativesConsidered = append(ctx.AlternativesConsidered, aianalysisv1.AlternativeApproach{
+				Approach: alt.WorkflowID,
+				ProsCons: alt.Rationale,
+			})
+		}
+	}
+
+	// Populate PolicyEvaluation with Rego details
+	ctx.PolicyEvaluation = &aianalysisv1.PolicyEvaluation{
+		PolicyName: "aianalysis.approval",
+		Decision:   "manual_review_required",
+	}
+	if result.Degraded {
+		ctx.PolicyEvaluation.Decision = "degraded_mode"
+	}
 }
 
 // buildPolicyInput constructs the Rego policy input from AIAnalysis.
 // BR-AI-012: Build input from status fields populated by InvestigatingHandler.
+// Per IMPLEMENTATION_PLAN_V1.0.md lines 1756-1785 (ApprovalInput schema)
 func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *rego.PolicyInput {
 	input := &rego.PolicyInput{
+		// Signal context (from Spec.AnalysisRequest.SignalContext)
+		SignalType:       analysis.Spec.AnalysisRequest.SignalContext.SignalType,
+		Severity:         analysis.Spec.AnalysisRequest.SignalContext.Severity,
 		Environment:      analysis.Spec.AnalysisRequest.SignalContext.Environment,
-		FailedDetections: []string{},
-		Warnings:         analysis.Status.Warnings,
+		BusinessPriority: analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority,
+
+		// Target resource
+		TargetResource: rego.TargetResourceInput{
+			Kind:      analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Kind,
+			Name:      analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Name,
+			Namespace: analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace,
+		},
+
+		// HolmesGPT-API response data
+		Warnings: analysis.Status.Warnings,
+
+		// Recovery context (from Spec)
+		IsRecoveryAttempt:     analysis.Spec.IsRecoveryAttempt,
+		RecoveryAttemptNumber: analysis.Spec.RecoveryAttemptNumber,
 	}
 
 	// Get confidence from SelectedWorkflow (populated by InvestigatingHandler)
@@ -112,11 +224,52 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		input.TargetInOwnerChain = *analysis.Status.TargetInOwnerChain
 	}
 
-	// DetectedLabels would come from enrichment - for now, leave empty
-	// This will be populated when we integrate with SignalProcessing enrichment
-	input.DetectedLabels = make(map[string]interface{})
-	input.CustomLabels = make(map[string][]string)
+	// Populate DetectedLabels from EnrichmentResults (per DD-WORKFLOW-001 v2.2)
+	// Convert typed struct to map for Rego policy evaluation
+	// Path: analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
+	input.DetectedLabels = h.buildDetectedLabelsMap(analysis)
+
+	// Populate FailedDetections from DetectedLabels (per DD-WORKFLOW-001 v2.2)
+	if analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels != nil {
+		input.FailedDetections = analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels.FailedDetections
+	}
+
+	// Populate CustomLabels from EnrichmentResults
+	if analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels != nil {
+		input.CustomLabels = analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels
+	} else {
+		input.CustomLabels = make(map[string][]string)
+	}
 
 	return input
 }
 
+// buildDetectedLabelsMap converts the typed DetectedLabels struct to a map for Rego.
+// Per DD-WORKFLOW-001 v2.2: DetectedLabels uses snake_case field names in JSON.
+// Rego policies access these as input.detected_labels.git_ops_managed, etc.
+func (h *AnalyzingHandler) buildDetectedLabelsMap(analysis *aianalysisv1.AIAnalysis) map[string]interface{} {
+	labels := make(map[string]interface{})
+
+	dl := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
+	if dl == nil {
+		return labels
+	}
+
+	// GitOps management (per DD-WORKFLOW-001 v2.2)
+	labels["git_ops_managed"] = dl.GitOpsManaged
+	labels["git_ops_tool"] = dl.GitOpsTool
+
+	// Workload protection
+	labels["pdb_protected"] = dl.PDBProtected
+	labels["hpa_enabled"] = dl.HPAEnabled
+
+	// Workload characteristics
+	labels["stateful"] = dl.Stateful
+	labels["helm_managed"] = dl.HelmManaged
+
+	// Security posture
+	labels["network_isolated"] = dl.NetworkIsolated
+	labels["service_mesh"] = dl.ServiceMesh
+
+	return labels
+}

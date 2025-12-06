@@ -4,9 +4,28 @@
 **Parent Document**: [IMPLEMENTATION_PLAN_V1.0.md](../../IMPLEMENTATION_PLAN_V1.0.md)
 **Duration**: 6-8 hours
 **Target Confidence**: 68%
-**Version**: v1.1
+**Version**: v1.4
 
 **Changelog**:
+- **v1.4** (2025-12-06): DD-HAPI-002 v1.4 `validation_attempts_history` integration
+  - ✅ **CRD Schema**: Added `ValidationAttempt` type and `ValidationAttemptsHistory` field
+  - ✅ **Client Update**: `IncidentResponse` includes `ValidationAttemptsHistory []ValidationAttempt`
+  - ✅ **Handler Update**: `handleWorkflowResolutionFailure()` parses and stores validation history
+  - ✅ **Message Building**: Operator-friendly messages built from validation attempt errors
+  - ✅ **Timestamp Parsing**: ISO timestamps converted to `metav1.Time`
+  - ✅ **Unit Tests**: 4 new tests for validation history handling
+  - 📏 **Reference**: Q18/Q19 resolved in [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
+- **v1.3** (2025-12-06): HAPI `human_review_reason` enum field integration
+  - ✅ **New Field**: `HumanReviewReason` enum field added (per HAPI response)
+  - ✅ **Direct Mapping**: Enum-to-enum mapping instead of warning parsing
+  - ✅ **Backward Compatible**: Fallback to warning parsing if `human_review_reason` is null
+  - 📏 **Reference**: [RESPONSE_HAPI_TO_AIANALYSIS_NEEDS_HUMAN_REVIEW.md](../../../../handoff/RESPONSE_HAPI_TO_AIANALYSIS_NEEDS_HUMAN_REVIEW.md)
+- **v1.2** (2025-12-06): BR-HAPI-197 `needs_human_review` integration
+  - ✅ **Field Added**: `NeedsHumanReview` field in `IncidentResponse`
+  - ✅ **Failure Handling**: When `NeedsHumanReview=true`, handler fails with structured reason
+  - ✅ **Failure Taxonomy**: `Reason=WorkflowResolutionFailed` + `SubReason` (granular cause)
+  - ✅ **Tests Added**: Tests for `needs_human_review` handling and SubReason mapping
+  - 📏 **Reference**: [BR-HAPI-197](../../../../requirements/BR-HAPI-197-needs-human-review-field.md)
 - **v1.1** (2025-12-05): Architecture clarification alignment
   - ✅ **Response Structure**: Updated `IncidentResponse` to include RCA, SelectedWorkflow, AlternativeWorkflows
   - ✅ **Handler Update**: `processResponse` now captures all v1.5 response fields
@@ -42,6 +61,7 @@
 | Handle API responses (targetInOwnerChain, warnings) | P0 | BR-AI-008 |
 | Implement retry logic with exponential backoff | P0 | BR-AI-009 |
 | Handle permanent errors (401, 400) | P0 | BR-AI-010 |
+| Handle `needs_human_review` response (BR-HAPI-197) | P0 | BR-HAPI-197 |
 
 ---
 
@@ -278,6 +298,75 @@ var _ = Describe("InvestigatingHandler", func() {
             })
         })
 
+        // BR-HAPI-197: Handle needs_human_review response
+        Context("when response has needs_human_review=true", func() {
+            // Preferred: Use human_review_reason enum (Dec 6, 2025)
+            DescribeTable("should map human_review_reason enum to SubReason",
+                func(humanReviewReason string, expectedSubReason string) {
+                    mockClient.WithHumanReviewReasonEnum(humanReviewReason, []string{"some warning"})
+                    analysis := createTestAnalysis()
+
+                    _, err := handler.Handle(ctx, analysis)
+
+                    Expect(err).NotTo(HaveOccurred())
+                    Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+                    Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"))
+                    Expect(analysis.Status.SubReason).To(Equal(expectedSubReason))
+                },
+                Entry("workflow_not_found", "workflow_not_found", "WorkflowNotFound"),
+                Entry("image_mismatch", "image_mismatch", "ImageMismatch"),
+                Entry("parameter_validation_failed", "parameter_validation_failed", "ParameterValidationFailed"),
+                Entry("no_matching_workflows", "no_matching_workflows", "NoMatchingWorkflows"),
+                Entry("low_confidence", "low_confidence", "LowConfidence"),
+                Entry("llm_parsing_error", "llm_parsing_error", "LLMParsingError"),
+            )
+
+            // Backward compatibility: Fallback to warning parsing
+            DescribeTable("should fallback to warning parsing when enum is nil",
+                func(warnings []string, expectedSubReason string) {
+                    mockClient.WithHumanReviewRequired(warnings)  // No enum, just warnings
+                    analysis := createTestAnalysis()
+
+                    _, err := handler.Handle(ctx, analysis)
+
+                    Expect(err).NotTo(HaveOccurred())
+                    Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+                    Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"))
+                    Expect(analysis.Status.SubReason).To(Equal(expectedSubReason))
+                },
+                Entry("workflow not found",
+                    []string{"Workflow validation failed: workflow 'restart-pod-v1' not found in catalog"},
+                    "WorkflowNotFound"),
+                Entry("no matching workflows",
+                    []string{"No workflows matched the incident criteria"},
+                    "NoMatchingWorkflows"),
+                Entry("low confidence",
+                    []string{"Confidence (0.55) below threshold (0.70)"},
+                    "LowConfidence"),
+            )
+
+            It("should preserve partial response for operator context", func() {
+                reason := "parameter_validation_failed"
+                mockClient.WithHumanReviewRequiredWithPartialResponse(
+                    &reason,
+                    []string{"Workflow validation failed"},
+                    &client.SelectedWorkflow{
+                        WorkflowID: "invalid-workflow",
+                        Confidence: 0.85,
+                    },
+                )
+                analysis := createTestAnalysis()
+
+                _, err := handler.Handle(ctx, analysis)
+
+                Expect(err).NotTo(HaveOccurred())
+                Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+                // Partial response preserved for operator context
+                Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
+                Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("invalid-workflow"))
+            })
+        })
+
         // BR-AI-009/010: Error handling using DescribeTable
         DescribeTable("error handling based on HTTP status code",
             func(statusCode int, shouldRetry bool, expectedPhase string) {
@@ -392,6 +481,7 @@ type OwnerChainEntry struct {
 
 // IncidentResponse represents response from HolmesGPT-API /api/v1/incident/analyze
 // Per HolmesGPT-API team (Dec 5, 2025): Returns ALL analysis results in one call
+// BR-HAPI-197: Added NeedsHumanReview + HumanReviewReason fields (Dec 6, 2025)
 type IncidentResponse struct {
     IncidentID           string                `json:"incident_id"`
     Analysis             string                `json:"analysis"`
@@ -402,6 +492,12 @@ type IncidentResponse struct {
     Timestamp            string                `json:"timestamp"`
     TargetInOwnerChain   bool                  `json:"target_in_owner_chain"`
     Warnings             []string              `json:"warnings,omitempty"`
+    // BR-HAPI-197: True when AI cannot produce reliable result
+    NeedsHumanReview     bool                  `json:"needs_human_review"`
+    // HumanReviewReason: Structured enum for reliable SubReason mapping (Dec 6, 2025)
+    // Enum: workflow_not_found, image_mismatch, parameter_validation_failed,
+    //       no_matching_workflows, low_confidence, llm_parsing_error
+    HumanReviewReason    *string               `json:"human_review_reason,omitempty"`
 }
 
 // RootCauseAnalysis contains structured RCA results
@@ -507,6 +603,7 @@ import (
     "math"
     "math/rand"
     "strconv"
+    "strings"
     "time"
 
     "github.com/go-logr/logr"
@@ -607,13 +704,20 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 
 // processResponse - BR-AI-008: Capture ALL v1.5 response fields
 // Per HolmesGPT-API team (Dec 5, 2025): /incident/analyze returns ALL results
+// BR-HAPI-197: Handle needs_human_review response (Dec 6, 2025)
 func (h *InvestigatingHandler) processResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
     h.log.Info("Processing successful response",
         "confidence", resp.Confidence,
         "targetInOwnerChain", resp.TargetInOwnerChain,
         "hasSelectedWorkflow", resp.SelectedWorkflow != nil,
         "alternativeWorkflowsCount", len(resp.AlternativeWorkflows),
+        "needsHumanReview", resp.NeedsHumanReview,
     )
+
+    // BR-HAPI-197: Check if workflow resolution failed
+    if resp.NeedsHumanReview {
+        return h.handleWorkflowResolutionFailure(ctx, analysis, resp)
+    }
 
     // Store HAPI response metadata
     targetInOwnerChain := resp.TargetInOwnerChain
@@ -696,6 +800,97 @@ func calculateBackoff(attemptCount int) time.Duration {
     jitter := time.Duration(float64(delay) * (0.9 + 0.2*rand.Float64()))
     return jitter
 }
+
+// BR-HAPI-197: Handle workflow resolution failure when needs_human_review=true
+// Updated Dec 6, 2025: Use HumanReviewReason enum for reliable SubReason mapping
+func (h *InvestigatingHandler) handleWorkflowResolutionFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+    h.log.Info("Workflow resolution failed, requires human review",
+        "warnings", resp.Warnings,
+        "humanReviewReason", resp.HumanReviewReason,
+        "hasPartialWorkflow", resp.SelectedWorkflow != nil,
+    )
+
+    // Set structured failure
+    analysis.Status.Phase = aianalysis.PhaseFailed
+    analysis.Status.Reason = "WorkflowResolutionFailed"
+
+    // Use HumanReviewReason enum if available (preferred), else fallback to warning parsing
+    if resp.HumanReviewReason != nil {
+        analysis.Status.SubReason = h.mapEnumToSubReason(*resp.HumanReviewReason)
+    } else {
+        // Backward compatibility: parse warnings if enum not available
+        analysis.Status.SubReason = mapWarningsToSubReason(resp.Warnings)
+    }
+
+    analysis.Status.Message = strings.Join(resp.Warnings, "; ")
+    analysis.Status.Warnings = resp.Warnings
+
+    // Preserve partial response for operator context (BR-HAPI-197.4)
+    if resp.SelectedWorkflow != nil {
+        analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+            WorkflowID:      resp.SelectedWorkflow.WorkflowID,
+            ContainerImage:  resp.SelectedWorkflow.ContainerImage,
+            Confidence:      resp.SelectedWorkflow.Confidence,
+            Rationale:       resp.SelectedWorkflow.Rationale,
+        }
+    }
+
+    // Preserve RCA for operator context
+    if resp.RootCauseAnalysis != nil {
+        analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+            Summary:             resp.RootCauseAnalysis.Summary,
+            Severity:            resp.RootCauseAnalysis.Severity,
+            ContributingFactors: resp.RootCauseAnalysis.ContributingFactors,
+        }
+    }
+
+    // Emit metric with sub-reason label (Day 5)
+    // metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", analysis.Status.SubReason).Inc()
+
+    return ctrl.Result{}, nil  // Terminal - no requeue
+}
+
+// mapEnumToSubReason maps HAPI HumanReviewReason enum to CRD SubReason
+// This is the preferred method - direct enum-to-enum mapping (Dec 6, 2025)
+func (h *InvestigatingHandler) mapEnumToSubReason(reason string) string {
+    mapping := map[string]string{
+        "workflow_not_found":           "WorkflowNotFound",
+        "image_mismatch":               "ImageMismatch",
+        "parameter_validation_failed":  "ParameterValidationFailed",
+        "no_matching_workflows":        "NoMatchingWorkflows",
+        "low_confidence":               "LowConfidence",
+        "llm_parsing_error":            "LLMParsingError",
+    }
+    if subReason, ok := mapping[reason]; ok {
+        return subReason
+    }
+    h.log.Info("Unknown human_review_reason, defaulting to WorkflowNotFound", "reason", reason)
+    return "WorkflowNotFound"
+}
+
+// mapWarningsToSubReason extracts SubReason from HAPI warnings
+// DEPRECATED: Use mapEnumToSubReason when HumanReviewReason is available
+// Kept for backward compatibility with older HAPI versions
+func mapWarningsToSubReason(warnings []string) string {
+    warningsStr := strings.ToLower(strings.Join(warnings, " "))
+
+    switch {
+    case strings.Contains(warningsStr, "not found") || strings.Contains(warningsStr, "does not exist"):
+        return "WorkflowNotFound"
+    case strings.Contains(warningsStr, "no workflows matched") || strings.Contains(warningsStr, "no matching"):
+        return "NoMatchingWorkflows"
+    case strings.Contains(warningsStr, "confidence") && strings.Contains(warningsStr, "below"):
+        return "LowConfidence"
+    case strings.Contains(warningsStr, "parameter validation") || strings.Contains(warningsStr, "missing required"):
+        return "ParameterValidationFailed"
+    case strings.Contains(warningsStr, "image mismatch") || strings.Contains(warningsStr, "container image"):
+        return "ImageMismatch"
+    case strings.Contains(warningsStr, "parse") || strings.Contains(warningsStr, "invalid json"):
+        return "LLMParsingError"
+    default:
+        return "WorkflowNotFound"  // Default to most common case
+    }
+}
 ```
 
 ---
@@ -704,10 +899,18 @@ func calculateBackoff(attemptCount int) time.Duration {
 
 ### Code Deliverables
 
-- [ ] `pkg/aianalysis/client/holmesgpt.go` - HolmesGPT-API client
-- [ ] `pkg/aianalysis/handlers/investigating.go` - InvestigatingHandler
+- [ ] `pkg/aianalysis/client/holmesgpt.go` - HolmesGPT-API client (includes `NeedsHumanReview` field)
+- [ ] `pkg/aianalysis/handlers/investigating.go` - InvestigatingHandler (includes BR-HAPI-197 handling)
 - [ ] `test/unit/aianalysis/holmesgpt_client_test.go` - Client tests
-- [ ] `test/unit/aianalysis/investigating_handler_test.go` - Handler tests
+- [ ] `test/unit/aianalysis/investigating_handler_test.go` - Handler tests (includes `needs_human_review` tests)
+
+### BR-HAPI-197 Compliance Checklist
+
+- [ ] `NeedsHumanReview` field in `IncidentResponse`
+- [ ] `handleWorkflowResolutionFailure()` method in InvestigatingHandler
+- [ ] `mapWarningsToSubReason()` helper function
+- [ ] Tests for all 6 SubReason scenarios (DescribeTable)
+- [ ] Test for partial response preservation
 
 ### Verification Commands
 

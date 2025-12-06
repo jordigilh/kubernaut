@@ -898,17 +898,19 @@ spec:
               message:
                 type: string
               phase:
-                description: Phase tracking (no "Approving" phase - RO orchestrates
-                  approval)
+                description: |-
+                  Phase tracking (no "Approving" or "Recommending" phase - simplified 4-phase flow)
+                  Per reconciliation-phases.md v2.0: Pending → Investigating → Analyzing → Completed/Failed
                 enum:
                 - Pending
                 - Investigating
                 - Analyzing
-                - Recommending
                 - Completed
                 - Failed
                 type: string
               reason:
+                description: Reason provides the umbrella failure category (e.g.,
+                  "WorkflowResolutionFailed")
                 type: string
               recoveryStatus:
                 description: |-
@@ -1018,6 +1020,21 @@ spec:
                 description: Timestamps
                 format: date-time
                 type: string
+              subReason:
+                description: |-
+                  SubReason provides specific failure cause within the Reason category
+                  BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
+                enum:
+                - WorkflowNotFound
+                - ImageMismatch
+                - ParameterValidationFailed
+                - NoMatchingWorkflows
+                - LowConfidence
+                - LLMParsingError
+                - ValidationError
+                - TransientError
+                - PermanentError
+                type: string
               targetInOwnerChain:
                 description: |-
                   ========================================
@@ -1037,6 +1054,45 @@ spec:
                 format: int64
                 minimum: 0
                 type: integer
+              validationAttemptsHistory:
+                description: |-
+                  ValidationAttemptsHistory contains complete history of all HAPI validation attempts
+                  Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
+                  This field provides audit trail for operator notifications and debugging
+                items:
+                  description: |-
+                    ValidationAttempt contains details of a single HAPI validation attempt
+                    Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
+                    Each attempt feeds validation errors back to the LLM for correction
+                  properties:
+                    attempt:
+                      description: Attempt number (1, 2, or 3)
+                      maximum: 3
+                      minimum: 1
+                      type: integer
+                    errors:
+                      description: Validation errors encountered
+                      items:
+                        type: string
+                      type: array
+                    isValid:
+                      description: Whether validation passed (always false for failed
+                        attempts in history)
+                      type: boolean
+                    timestamp:
+                      description: When this attempt occurred
+                      format: date-time
+                      type: string
+                    workflowId:
+                      description: WorkflowID that the LLM tried in this attempt
+                      type: string
+                  required:
+                  - attempt
+                  - isValid
+                  - timestamp
+                  - workflowId
+                  type: object
+                type: array
               warnings:
                 description: Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain
                   validation, low confidence)

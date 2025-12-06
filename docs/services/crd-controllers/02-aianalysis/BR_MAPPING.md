@@ -129,14 +129,18 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 **Context**: With predefined workflows (DD-WORKFLOW-002), "hallucination detection" means:
 
-| Validation Type | Description | V1.0? |
-|-----------------|-------------|-------|
-| **Workflow ID Validation** | Ensure `workflowId` exists in catalog | ✅ |
-| **Schema Validation** | Ensure response matches expected JSON schema | ✅ |
-| **Parameter Validation** | Ensure parameters are valid for selected workflow | ✅ |
-| **ContainerImage Format** | Ensure `containerImage` is valid OCI reference | ✅ |
-| ~~Circular DAG Detection~~ | ~~Detect cycles in dynamically-generated workflows~~ | ❌ N/A |
-| ~~Invalid Action Detection~~ | ~~Detect non-existent workflow steps~~ | ❌ N/A |
+| Validation Type | Description | Primary Validator | AIAnalysis Role |
+|-----------------|-------------|-------------------|-----------------|
+| **Workflow ID Validation** | Ensure `workflowId` exists in catalog | ✅ **HAPI** | 🟡 Defense-in-depth |
+| **Schema Validation** | Ensure response matches expected JSON schema | ✅ **HAPI** | 🟡 Defense-in-depth |
+| **Parameter Validation** | Ensure parameters are valid for selected workflow | ✅ **HAPI** (`validate_workflow_parameters`) | ❌ Not recommended |
+| **ContainerImage Format** | Ensure `containerImage` is valid OCI reference | ✅ **Data Storage** (registration) | 🟡 Optional |
+| ~~Circular DAG Detection~~ | ~~Detect cycles in dynamically-generated workflows~~ | ❌ N/A | - |
+| ~~Invalid Action Detection~~ | ~~Detect non-existent workflow steps~~ | ❌ N/A | - |
+
+> ⚠️ **DD-HAPI-002 v1.1 Alignment**: Primary validation happens in **HolmesGPT-API**
+> where the LLM can self-correct if validation fails. AIAnalysis is late-stage
+> (after LLM session ends) and cannot trigger LLM self-correction.
 
 **Reference**: DD-WORKFLOW-002 v3.3 - LLM selects from catalog, does not generate workflows.
 

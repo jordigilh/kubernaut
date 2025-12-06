@@ -17,14 +17,15 @@ limitations under the License.
 // Package aianalysis implements the AIAnalysis CRD controller.
 // DD-CONTRACT-002: Self-contained CRD pattern with HolmesGPT-API integration.
 //
-// Phase Flow (per CRD spec):
-// Pending → Investigating → Analyzing → Recommending → Completed/Failed
+// Phase Flow (per reconciliation-phases.md v2.0):
+// Pending → Investigating → Analyzing → Completed/Failed
 //
 // Phase Handlers:
 // - PendingHandler: Validates spec fields and transitions to Investigating
-// - InvestigatingHandler: Calls HolmesGPT-API for investigation
-// - AnalyzingHandler: Evaluates Rego policies for approval
-// - RecommendingHandler: Selects workflow and updates status
+// - InvestigatingHandler: Calls HolmesGPT-API for investigation (captures RCA + workflow)
+// - AnalyzingHandler: Evaluates Rego policies, populates ApprovalContext, transitions to Completed
+//
+// Note: Recommending phase removed in v1.8 - workflow data captured in Investigating phase.
 package aianalysis
 
 import (
@@ -43,7 +44,7 @@ import (
 // Each phase handler implements this interface to process the AIAnalysis
 // CRD during that specific phase of the reconciliation loop.
 //
-// Phase Flow (per CRD spec): Pending → Investigating → Analyzing → Recommending → Completed/Failed
+// Phase Flow (per reconciliation-phases.md v2.0): Pending → Investigating → Analyzing → Completed/Failed
 type PhaseHandler interface {
 	// Handle processes the AIAnalysis for this phase.
 	// Returns:
@@ -60,8 +61,8 @@ type PhaseHandler interface {
 // ========================================
 
 // Phase constants define the AIAnalysis reconciliation phases.
-// Per CRD spec (aianalysis_types.go line 328):
-// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Recommending;Completed;Failed
+// Per reconciliation-phases.md v2.0: Pending → Investigating → Analyzing → Completed
+// Note: Recommending phase removed in v1.8 - workflow data captured in Investigating phase.
 // Note: No "Validating" or "Approving" phases - validation happens in Pending→Investigating transition.
 const (
 	// PhasePending is the initial phase when AIAnalysis is first created.
@@ -69,15 +70,15 @@ const (
 	PhasePending = "Pending"
 
 	// PhaseInvestigating calls HolmesGPT-API for investigation.
+	// Captures RCA, SelectedWorkflow, AlternativeWorkflows, TargetInOwnerChain, Warnings.
 	PhaseInvestigating = "Investigating"
 
 	// PhaseAnalyzing evaluates Rego policies for approval determination.
+	// Populates ApprovalContext if approval required, then transitions to Completed.
 	PhaseAnalyzing = "Analyzing"
 
-	// PhaseRecommending selects workflow and prepares final status.
-	PhaseRecommending = "Recommending"
-
 	// PhaseCompleted indicates successful completion.
+	// AIAnalysis is ready for RO consumption.
 	PhaseCompleted = "Completed"
 
 	// PhaseFailed indicates a permanent failure.
@@ -187,4 +188,3 @@ func NewValidationError(field, message string) *ValidationError {
 		Message: message,
 	}
 }
-

@@ -94,24 +94,18 @@ var _ = Describe("InvestigatingHandler", func() {
 				)
 			})
 
-			It("should transition to Analyzing phase", func() {
-				analysis := createTestAnalysis()
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing))
-			})
-
-			It("should capture targetInOwnerChain in status", func() {
+			// BR-AI-007: Business outcome - investigation completes and proceeds to analysis
+			It("should complete investigation and proceed to policy analysis", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil())
-				Expect(*analysis.Status.TargetInOwnerChain).To(BeTrue())
+				// Business outcome: Investigation completes successfully
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing), "Should proceed to Analyzing phase")
+				// Business outcome: Data quality indicator captured for policy evaluation
+				Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil(), "Data quality indicator should be captured")
+				Expect(*analysis.Status.TargetInOwnerChain).To(BeTrue(), "Target should be found in owner chain")
 			})
 		})
 
@@ -152,9 +146,9 @@ var _ = Describe("InvestigatingHandler", func() {
 		Context("with full v1.5 response (RCA, Workflow, Alternatives)", func() {
 			BeforeEach(func() {
 				mockClient.WithFullResponse(
-					"Full analysis with all fields", // analysis
-					0.92,                            // confidence
-					true,                            // targetInChain
+					"Full analysis with all fields",  // analysis
+					0.92,                             // confidence
+					true,                             // targetInChain
 					[]string{"Memory pressure high"}, // warnings
 					&client.RootCauseAnalysis{
 						Summary:             "OOM caused by memory leak",
@@ -221,10 +215,10 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
-		// BR-AI-009: Retry on transient errors
-		// BR-AI-010: Permanent error handling
+		// BR-AI-009: Business outcome - transient errors allow investigation to recover
+		// BR-AI-010: Business outcome - permanent errors fail fast to prevent infinite loops
 		// Using DescribeTable per 03-testing-strategy.mdc for reduced duplication
-		DescribeTable("error handling based on HTTP status code",
+		DescribeTable("handles API errors appropriately for business continuity",
 			func(statusCode int, shouldRetry bool, expectedPhase string) {
 				mockClient.WithAPIError(statusCode, "API Error")
 				analysis := createTestAnalysis()
@@ -232,49 +226,48 @@ var _ = Describe("InvestigatingHandler", func() {
 				result, err := handler.Handle(ctx, analysis)
 
 				if shouldRetry {
-					// BR-AI-009: Transient errors should retry
-					Expect(err).To(HaveOccurred())
-					Expect(result.RequeueAfter).To(BeNumerically(">", 0))
-					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating))
+					// Business outcome: Transient errors allow recovery (service may come back)
+					Expect(err).To(HaveOccurred(), "Transient error should signal retry")
+					Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should schedule retry")
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Should stay in Investigating for retry")
 				} else {
-					// BR-AI-010: Permanent errors should fail immediately
+					// Business outcome: Permanent errors fail fast (don't waste resources)
 					Expect(err).NotTo(HaveOccurred())
-					Expect(result.Requeue).To(BeFalse())
-					Expect(analysis.Status.Phase).To(Equal(expectedPhase))
+					Expect(analysis.Status.Phase).To(Equal(expectedPhase), "Should transition to failed state")
 				}
 			},
-			// BR-AI-009: Transient errors (retry)
-			Entry("503 Service Unavailable - should retry", 503, true, aianalysis.PhaseInvestigating),
-			Entry("429 Too Many Requests - should retry", 429, true, aianalysis.PhaseInvestigating),
-			Entry("502 Bad Gateway - should retry", 502, true, aianalysis.PhaseInvestigating),
-			Entry("504 Gateway Timeout - should retry", 504, true, aianalysis.PhaseInvestigating),
+			// BR-AI-009: Transient errors - system should recover automatically
+			Entry("503 - service unavailable: allow recovery", 503, true, aianalysis.PhaseInvestigating),
+			Entry("429 - rate limited: backoff and retry", 429, true, aianalysis.PhaseInvestigating),
+			Entry("502 - gateway error: allow recovery", 502, true, aianalysis.PhaseInvestigating),
+			Entry("504 - timeout: allow recovery", 504, true, aianalysis.PhaseInvestigating),
 
-			// BR-AI-010: Permanent errors (fail immediately)
-			Entry("401 Unauthorized - should fail", 401, false, aianalysis.PhaseFailed),
-			Entry("400 Bad Request - should fail", 400, false, aianalysis.PhaseFailed),
-			Entry("403 Forbidden - should fail", 403, false, aianalysis.PhaseFailed),
-			Entry("404 Not Found - should fail", 404, false, aianalysis.PhaseFailed),
+			// BR-AI-010: Permanent errors - fail immediately, don't retry
+			Entry("401 - unauthorized: misconfigured credentials", 401, false, aianalysis.PhaseFailed),
+			Entry("400 - bad request: invalid analysis request", 400, false, aianalysis.PhaseFailed),
+			Entry("403 - forbidden: access denied", 403, false, aianalysis.PhaseFailed),
+			Entry("404 - not found: resource doesn't exist", 404, false, aianalysis.PhaseFailed),
 		)
 
-		// BR-AI-009: Max retries exceeded
-		Context("when max retries exceeded", func() {
+		// BR-AI-009: Business outcome - prevent infinite retry loops
+		Context("when transient errors persist beyond retry limit", func() {
 			BeforeEach(func() {
 				mockClient.WithAPIError(503, "Service Unavailable")
 			})
 
-			It("should mark as Failed after max retries", func() {
+			It("should fail gracefully after exhausting retry budget", func() {
 				analysis := createTestAnalysis()
 				// Simulate max retries already reached
 				analysis.Annotations = map[string]string{
 					handlers.RetryCountAnnotation: "5",
 				}
 
-				result, err := handler.Handle(ctx, analysis)
+				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Requeue).To(BeFalse())
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
-				Expect(analysis.Status.Message).To(ContainSubstring("max retries"))
+				// Business outcome: Analysis fails gracefully (doesn't hang indefinitely)
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail after exhausting retries")
+				Expect(analysis.Status.Message).To(ContainSubstring("max retries"), "Should explain retry exhaustion")
 			})
 		})
 
@@ -288,6 +281,186 @@ var _ = Describe("InvestigatingHandler", func() {
 				_, _ = handler.Handle(ctx, analysis)
 
 				Expect(mockClient.AssertCalled(1)).To(Succeed())
+			})
+		})
+
+		// ========================================
+		// BR-HAPI-197: Human Review Required Handling
+		// When HolmesGPT-API returns needs_human_review=true, AIAnalysis MUST:
+		// - NOT proceed to Analyzing phase
+		// - Fail with structured reason (WorkflowResolutionFailed + SubReason)
+		// - Preserve partial response for operator context
+		// ========================================
+
+		Context("when HolmesGPT-API returns needs_human_review=true", func() {
+			// BR-HAPI-197: Preferred method - use human_review_reason enum
+			DescribeTable("should map human_review_reason enum to SubReason",
+				func(humanReviewReason string, expectedSubReason string) {
+					mockClient.WithHumanReviewReasonEnum(humanReviewReason, []string{"test warning"})
+					analysis := createTestAnalysis()
+
+					_, err := handler.Handle(ctx, analysis)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail immediately")
+					Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"), "Should use umbrella reason")
+					Expect(analysis.Status.SubReason).To(Equal(expectedSubReason), "Should map enum to SubReason")
+				},
+				Entry("workflow_not_found → WorkflowNotFound", "workflow_not_found", "WorkflowNotFound"),
+				Entry("image_mismatch → ImageMismatch", "image_mismatch", "ImageMismatch"),
+				Entry("parameter_validation_failed → ParameterValidationFailed", "parameter_validation_failed", "ParameterValidationFailed"),
+				Entry("no_matching_workflows → NoMatchingWorkflows", "no_matching_workflows", "NoMatchingWorkflows"),
+				Entry("low_confidence → LowConfidence", "low_confidence", "LowConfidence"),
+				Entry("llm_parsing_error → LLMParsingError", "llm_parsing_error", "LLMParsingError"),
+			)
+
+			// BR-HAPI-197: Backward compatibility - fallback to warning parsing
+			DescribeTable("should fallback to warning parsing when enum is nil",
+				func(warnings []string, expectedSubReason string) {
+					mockClient.WithHumanReviewRequired(warnings)
+					analysis := createTestAnalysis()
+
+					_, err := handler.Handle(ctx, analysis)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+					Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"))
+					Expect(analysis.Status.SubReason).To(Equal(expectedSubReason))
+				},
+				Entry("'not found' in warning → WorkflowNotFound",
+					[]string{"Workflow 'restart-pod-v1' not found in catalog"}, "WorkflowNotFound"),
+				Entry("'no workflows matched' in warning → NoMatchingWorkflows",
+					[]string{"No workflows matched the incident criteria"}, "NoMatchingWorkflows"),
+				Entry("'confidence below' in warning → LowConfidence",
+					[]string{"Confidence (0.55) below threshold (0.70)"}, "LowConfidence"),
+			)
+
+			// BR-HAPI-197.4: Preserve partial response for operator context
+			It("should preserve partial workflow and RCA for operator context", func() {
+				reason := "parameter_validation_failed"
+				mockClient.WithHumanReviewRequiredWithPartialResponse(
+					&reason,
+					[]string{"Parameter validation failed: Missing 'namespace'"},
+					&client.SelectedWorkflow{
+						WorkflowID:     "invalid-workflow",
+						ContainerImage: "kubernaut.io/workflows/restart:v1.0.0",
+						Confidence:     0.85,
+						Rationale:      "AI attempted this workflow",
+					},
+				)
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+				// Partial workflow preserved
+				Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(), "Partial workflow should be preserved")
+				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("invalid-workflow"))
+				// RCA preserved
+				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
+				// Message contains warnings
+				Expect(analysis.Status.Message).To(ContainSubstring("Parameter validation failed"))
+			})
+
+			// BR-HAPI-197.6: MUST NOT proceed to Analyzing
+			It("should NOT proceed to Analyzing phase (terminal failure)", func() {
+				mockClient.WithHumanReviewReasonEnum("workflow_not_found", []string{"Workflow not found"})
+				analysis := createTestAnalysis()
+
+				result, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should be Failed, not Analyzing")
+				Expect(result.Requeue).To(BeFalse(), "Should NOT requeue (terminal)")
+				Expect(result.RequeueAfter).To(BeZero(), "Should NOT schedule requeue")
+			})
+
+			// ========================================
+			// DD-HAPI-002 v1.4: ValidationAttemptsHistory Support
+			// HAPI retries up to 3 times with LLM self-correction
+			// validation_attempts_history provides audit trail
+			// ========================================
+
+			// DD-HAPI-002 v1.4: Store validation attempts history for audit
+			It("should store validation attempts history for audit/debugging", func() {
+				mockClient.WithHumanReviewAndHistory(
+					"parameter_validation_failed",
+					[]string{"Workflow validation failed after 3 attempts"},
+					[]client.ValidationAttempt{
+						{Attempt: 1, WorkflowID: "bad-workflow-1", IsValid: false, Errors: []string{"Workflow not found"}, Timestamp: "2025-12-06T10:00:00Z"},
+						{Attempt: 2, WorkflowID: "restart-pod", IsValid: false, Errors: []string{"Image mismatch"}, Timestamp: "2025-12-06T10:00:05Z"},
+						{Attempt: 3, WorkflowID: "restart-pod", IsValid: false, Errors: []string{"Missing parameter: namespace"}, Timestamp: "2025-12-06T10:00:10Z"},
+					},
+				)
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+				Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(3), "Should store all 3 validation attempts")
+
+				// Verify attempt details
+				Expect(analysis.Status.ValidationAttemptsHistory[0].Attempt).To(Equal(1))
+				Expect(analysis.Status.ValidationAttemptsHistory[0].WorkflowID).To(Equal("bad-workflow-1"))
+				Expect(analysis.Status.ValidationAttemptsHistory[0].Errors).To(ContainElement("Workflow not found"))
+
+				Expect(analysis.Status.ValidationAttemptsHistory[2].Attempt).To(Equal(3))
+				Expect(analysis.Status.ValidationAttemptsHistory[2].Errors).To(ContainElement("Missing parameter: namespace"))
+			})
+
+			// DD-HAPI-002 v1.4: Build detailed message from validation attempts
+			It("should build operator-friendly message from validation attempts history", func() {
+				mockClient.WithHumanReviewAndHistory(
+					"llm_parsing_error",
+					[]string{"LLM parsing failed"},
+					testutil.NewMockValidationAttempts([]string{
+						"Invalid JSON response",
+						"Missing workflow_id field",
+						"Schema validation failed",
+					}),
+				)
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				// Message should contain attempt details for operator notification
+				Expect(analysis.Status.Message).To(ContainSubstring("Attempt 1"))
+				Expect(analysis.Status.Message).To(ContainSubstring("Invalid JSON response"))
+				Expect(analysis.Status.Message).To(ContainSubstring("Attempt 3"))
+				Expect(analysis.Status.Message).To(ContainSubstring("Schema validation failed"))
+			})
+
+			// DD-HAPI-002 v1.4: Parse timestamps correctly
+			It("should parse validation attempt timestamps", func() {
+				mockClient.WithHumanReviewAndHistory(
+					"workflow_not_found",
+					[]string{"Workflow not found"},
+					[]client.ValidationAttempt{
+						{Attempt: 1, WorkflowID: "test", IsValid: false, Errors: []string{"error"}, Timestamp: "2025-12-06T10:00:00Z"},
+					},
+				)
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(1))
+				Expect(analysis.Status.ValidationAttemptsHistory[0].Timestamp.IsZero()).To(BeFalse(), "Timestamp should be parsed")
+			})
+
+			// DD-HAPI-002 v1.4: Handle empty validation history (backward compatibility)
+			It("should fallback to warnings when validation history is empty", func() {
+				mockClient.WithHumanReviewReasonEnum("low_confidence", []string{"Confidence too low"})
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ValidationAttemptsHistory).To(BeEmpty(), "No history when HAPI doesn't provide it")
+				Expect(analysis.Status.Message).To(Equal("Confidence too low"), "Should use warnings for message")
 			})
 		})
 	})

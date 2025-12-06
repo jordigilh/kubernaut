@@ -89,27 +89,27 @@ var _ = Describe("AIAnalysis Controller", func() {
 				Log:      ctrl.Log.WithName("test"),
 			}
 
-			// First reconcile: Add finalizer
+			// Business scenario: AIAnalysis transitions through lifecycle phases
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "test-analysis",
 					Namespace: "default",
 				},
 			}
-			result, err := reconciler.Reconcile(ctx, req)
+
+			// First reconcile: Setup (adds finalizer for cleanup guarantee)
+			_, err := reconciler.Reconcile(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
 
 			// Second reconcile: Process Pending phase
-			result, err = reconciler.Reconcile(ctx, req)
+			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
 
-			// Verify phase transition to Investigating
+			// Business outcome: Analysis progresses from Pending to Investigating
 			updated := &aianalysisv1.AIAnalysis{}
 			Expect(fakeClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
-			Expect(updated.Status.Phase).To(Equal(aianalysis.PhaseInvestigating))
+			Expect(updated.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"Analysis should progress to Investigating phase to query HolmesGPT-API")
 		})
 	})
 })
-

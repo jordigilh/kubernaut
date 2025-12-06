@@ -1,14 +1,44 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.8
-**Last Updated**: 2025-12-05
+**Version**: v1.12
+**Last Updated**: 2025-12-06
 **Timeline**: 10 days (2 calendar weeks)
 **Status**: 📋 DRAFT - Ready for Review
 **Quality Level**: Matches SignalProcessing V1.19 and Template V3.0 standards
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.12** (2025-12-06): **DD-HAPI-002 v1.4: ValidationAttemptsHistory Support**
+  - ✅ **CRD Schema**: Added `ValidationAttempt` type and `ValidationAttemptsHistory []ValidationAttempt` to status
+  - ✅ **Client Update**: `IncidentResponse` includes `validation_attempts_history` field
+  - ✅ **Handler Update**: `InvestigatingHandler` parses and stores validation history for audit
+  - ✅ **Detailed Messages**: Operator notifications built from validation attempt errors
+  - ✅ **Mock Support**: Added `WithHumanReviewAndHistory()` and `NewMockValidationAttempts()` helpers
+  - ✅ **Unit Tests**: 4 new tests for validation history handling (81 total passing)
+  - 📏 **Reference**: DD-HAPI-002 v1.4, Q18/Q19 resolved in [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
+- **v1.11** (2025-12-06): **HAPI `human_review_reason` Enum Integration**
+  - ✅ **New Field**: `HumanReviewReason` enum field in `IncidentResponse` (per HAPI response)
+  - ✅ **Direct Mapping**: `mapEnumToSubReason()` for reliable enum-to-enum mapping
+  - ✅ **Backward Compatible**: Fallback to `mapWarningsToSubReason()` if enum is null
+  - ✅ **Acknowledgment**: Created [ACK_AIANALYSIS_HAPI_HUMAN_REVIEW.md](../../../handoff/ACK_AIANALYSIS_HAPI_HUMAN_REVIEW.md)
+  - 📏 **Reference**: [RESPONSE_HAPI_TO_AIANALYSIS_NEEDS_HUMAN_REVIEW.md](../../../handoff/RESPONSE_HAPI_TO_AIANALYSIS_NEEDS_HUMAN_REVIEW.md)
+- **v1.10** (2025-12-06): **BR-HAPI-197 Integration + CRD Schema Update**
+  - ✅ **CRD Schema**: Removed `Recommending` from Phase enum (now: `Pending;Investigating;Analyzing;Completed;Failed`)
+  - ✅ **CRD Schema**: Added `SubReason` field with enum for granular failure tracking
+  - ✅ **SubReason Enum**: `WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError`
+  - ✅ **Failure Taxonomy**: `Reason=WorkflowResolutionFailed` umbrella + specific `SubReason`
+  - ✅ **BR-HAPI-197 Response**: Created [RESPONSE_AIANALYSIS_NEEDS_HUMAN_REVIEW.md](../../../handoff/RESPONSE_AIANALYSIS_NEEDS_HUMAN_REVIEW.md)
+  - ✅ **Metrics Update**: Failures now tracked with `sub_reason` label for granularity
+  - 📏 **Authority**: [BR-HAPI-197](../../../requirements/BR-HAPI-197-needs-human-review-field.md)
+- **v1.9** (2025-12-06): **DD-005 Metrics Compliance + Audit Interface Fix**
+  - ✅ **DD-005 Compliance**: Day 5 metrics renamed to follow `{service}_{component}_{metric}_{unit}` format
+  - ✅ **Metrics Renamed**: `aianalysis_reconcile_total` → `aianalysis_reconciler_reconciliations_total`, etc.
+  - ✅ **Audit Interface Fix**: Changed `audit.BufferedStore` → `audit.AuditStore`
+  - ✅ **Audit Method Fix**: Changed `store.Write()` → `store.StoreAudit()`
+  - ✅ **Audit Event Fix**: Changed `audit.Event` → `audit.AuditEvent` with all required fields
+  - ✅ **Compliance Gap Notice**: Created [NOTICE_DD005_METRICS_NAMING_COMPLIANCE.md](../../../handoff/NOTICE_DD005_METRICS_NAMING_COMPLIANCE.md)
+  - 📏 **Authority**: [DD-005-OBSERVABILITY-STANDARDS.md](../../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md), [DD-AUDIT-002](../../../architecture/decisions/DD-AUDIT-002-audit-shared-library-design.md)
 - **v1.8** (2025-12-05): **BREAKING** Recommending phase removed per spec alignment
   - ✅ **Spec Authority**: `reconciliation-phases.md` v2.0 defines 4 phases: `Pending → Investigating → Analyzing → Completed`
   - ✅ **Recommending Removed**: Phase provided no value; workflow data already captured in Investigating
@@ -1945,18 +1975,28 @@ reason := concat(": ", ["HolmesGPT-API warnings present", input.warnings[0]]) if
 
 ### **Day 5: Metrics & Audit (8h)**
 
+> ⚠️ **DD-005 COMPLIANCE** (v1.9)
+>
+> Metrics MUST follow [DD-005-OBSERVABILITY-STANDARDS.md](../../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md).
+> Format: `{service}_{component}_{metric_name}_{unit}`
+>
+> See: [NOTICE_DD005_METRICS_NAMING_COMPLIANCE.md](../../../handoff/NOTICE_DD005_METRICS_NAMING_COMPLIANCE.md)
+
 #### Key Deliverables
-- Prometheus metrics (DD-005)
-- Audit client (Risk #4)
+- Prometheus metrics (DD-005 compliant)
+- Audit client using `pkg/audit.AuditStore` (Risk #4 / DD-AUDIT-002)
 - Complete reconciler integration
+
+#### Detailed Documentation
+See: [DAY_05_METRICS_AUDIT.md](implementation/days/DAY_05_METRICS_AUDIT.md) for complete implementation details.
 
 #### DO Phase (6h)
 
-**Step 1: Create Prometheus metrics (2h)**
+**Step 1: Create Prometheus metrics (2h)** - DD-005 Compliant
 
 ```go
-// internal/controller/aianalysis/metrics.go
-package aianalysis
+// pkg/aianalysis/metrics/metrics.go
+package metrics
 
 import (
     "github.com/prometheus/client_golang/prometheus"
@@ -1964,99 +2004,116 @@ import (
 )
 
 var (
-    reconcileTotal = prometheus.NewCounterVec(
+    // Reconciler metrics (aianalysis_reconciler_*)
+    ReconcilerReconciliationsTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "aianalysis_reconcile_total",
+            Name: "aianalysis_reconciler_reconciliations_total",
             Help: "Total number of AIAnalysis reconciliations",
         },
         []string{"phase", "result"},
     )
 
-    phaseDuration = prometheus.NewHistogramVec(
+    ReconcilerDurationSeconds = prometheus.NewHistogramVec(
         prometheus.HistogramOpts{
-            Name:    "aianalysis_phase_duration_seconds",
-            Help:    "Duration of AIAnalysis phases",
-            Buckets: prometheus.ExponentialBuckets(0.1, 2, 10), // 0.1s to 51.2s
+            Name:    "aianalysis_reconciler_duration_seconds",
+            Help:    "Duration of AIAnalysis reconciliation",
+            Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
         },
         []string{"phase"},
     )
 
-    holmesgptCallDuration = prometheus.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "aianalysis_holmesgpt_call_duration_seconds",
-            Help:    "Duration of HolmesGPT-API calls",
-            Buckets: prometheus.ExponentialBuckets(0.5, 2, 8), // 0.5s to 64s
-        },
-        []string{"endpoint", "status"},
-    )
-
-    regoEvalDuration = prometheus.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "aianalysis_rego_eval_duration_seconds",
-            Help:    "Duration of Rego policy evaluations",
-            Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to 512ms
-        },
-    )
-
-    approvalRequired = prometheus.NewCounterVec(
+    // HolmesGPT-API metrics (aianalysis_holmesgpt_*)
+    HolmesGPTRequestsTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "aianalysis_approval_required_total",
-            Help: "Total AIAnalysis results requiring approval",
+            Name: "aianalysis_holmesgpt_requests_total",
+            Help: "Total number of HolmesGPT-API requests",
         },
-        []string{"reason"},
+        []string{"endpoint", "status_code"},
     )
 
-    detectionFailures = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "aianalysis_detection_failures_total",
-            Help: "Detection failures by field name",
-        },
-        []string{"field"},
-    )
-
-    confidenceHistogram = prometheus.NewHistogram(
+    HolmesGPTLatencySeconds = prometheus.NewHistogramVec(
         prometheus.HistogramOpts{
-            Name:    "aianalysis_confidence_score",
-            Help:    "Distribution of workflow selection confidence scores",
-            Buckets: prometheus.LinearBuckets(0.5, 0.05, 11), // 0.5 to 1.0
+            Name:    "aianalysis_holmesgpt_latency_seconds",
+            Help:    "Latency of HolmesGPT-API calls",
+            Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60},
         },
+        []string{"endpoint"},
+    )
+
+    // Rego policy metrics (aianalysis_rego_*)
+    RegoEvaluationsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "aianalysis_rego_evaluations_total",
+            Help: "Total number of Rego policy evaluations",
+        },
+        []string{"outcome", "degraded"},
+    )
+
+    RegoLatencySeconds = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "aianalysis_rego_latency_seconds",
+            Help:    "Latency of Rego policy evaluations",
+            Buckets: []float64{0.001, 0.01, 0.05, 0.1, 0.5},
+        },
+        []string{},
+    )
+
+    // Approval metrics (aianalysis_approval_*)
+    ApprovalDecisionsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "aianalysis_approval_decisions_total",
+            Help: "Total number of approval decisions",
+        },
+        []string{"decision", "environment"},
+    )
+
+    // DetectedLabels metrics (aianalysis_detected_labels_*)
+    DetectedLabelsFailuresTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "aianalysis_detected_labels_failures_total",
+            Help: "Total number of failed label detections",
+        },
+        []string{"field_name"},
     )
 )
 
 func init() {
     metrics.Registry.MustRegister(
-        reconcileTotal,
-        phaseDuration,
-        holmesgptCallDuration,
-        regoEvalDuration,
-        approvalRequired,
-        detectionFailures,
-        confidenceHistogram,
+        ReconcilerReconciliationsTotal,
+        ReconcilerDurationSeconds,
+        HolmesGPTRequestsTotal,
+        HolmesGPTLatencySeconds,
+        RegoEvaluationsTotal,
+        RegoLatencySeconds,
+        ApprovalDecisionsTotal,
+        DetectedLabelsFailuresTotal,
     )
 }
 ```
 
-**Step 2: Create audit client (2h)**
+**Step 2: Create audit client (2h)** - Uses `pkg/audit.AuditStore`
 
 ```go
-// internal/controller/aianalysis/audit.go
-package aianalysis
+// pkg/aianalysis/audit/audit.go
+package audit
 
 import (
     "context"
-    "time"
+    "encoding/json"
 
     "github.com/go-logr/logr"
+    "github.com/google/uuid"
     "github.com/jordigilh/kubernaut/pkg/audit"
     aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 )
 
+// AuditClient handles audit event storage using pkg/audit shared library
 type AuditClient struct {
-    store audit.BufferedStore
+    store audit.AuditStore  // CORRECT: Uses shared library interface
     log   logr.Logger
 }
 
-func NewAuditClient(store audit.BufferedStore, log logr.Logger) *AuditClient {
+func NewAuditClient(store audit.AuditStore, log logr.Logger) *AuditClient {
     return &AuditClient{
         store: store,
         log:   log.WithName("audit"),
@@ -2064,42 +2121,55 @@ func NewAuditClient(store audit.BufferedStore, log logr.Logger) *AuditClient {
 }
 
 func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
-    event := audit.Event{
-        EventType:     "aianalysis_completed",
-        RemediationID: analysis.Spec.RemediationID,
-        Timestamp:     time.Now(),
-        Data: map[string]interface{}{
-            "aianalysis_name":      analysis.Name,
-            "namespace":            analysis.Namespace,
-            "phase":                analysis.Status.Phase,
-            "approval_required":    analysis.Status.ApprovalRequired,
-            "approval_reason":      analysis.Status.ApprovalReason,
-            "confidence":           analysis.Status.SelectedWorkflow.Confidence,
-            "workflow_id":          analysis.Status.SelectedWorkflow.WorkflowID,
-            "target_in_owner_chain": analysis.Status.TargetInOwnerChain,
-            "warnings_count":       len(analysis.Status.Warnings),
-            "tokens_used":          analysis.Status.TokensUsed,
-            "is_recovery_attempt":  analysis.Spec.IsRecoveryAttempt,
-        },
+    // Build event data payload
+    eventData := map[string]interface{}{
+        "phase":             analysis.Status.Phase,
+        "approval_required": analysis.Status.ApprovalRequired,
+        "approval_reason":   analysis.Status.ApprovalReason,
+        "warnings_count":    len(analysis.Status.Warnings),
+    }
+    if analysis.Status.SelectedWorkflow != nil {
+        eventData["confidence"] = analysis.Status.SelectedWorkflow.Confidence
+        eventData["workflow_id"] = analysis.Status.SelectedWorkflow.WorkflowID
+    }
+    eventDataBytes, _ := json.Marshal(eventData)
+    namespace := analysis.Namespace
+
+    // Build audit event using pkg/audit.AuditEvent (CORRECT structure)
+    event := &audit.AuditEvent{
+        EventID:       uuid.New(),
+        EventType:     "aianalysis.analysis.completed",
+        EventCategory: "analysis",
+        EventAction:   "completed",
+        EventOutcome:  "success",
+        ActorType:     "service",
+        ActorID:       "aianalysis-controller",
+        ResourceType:  "AIAnalysis",
+        ResourceID:    analysis.Name,
+        CorrelationID: analysis.Spec.RemediationID,
+        Namespace:     &namespace,
+        EventData:     eventDataBytes,
     }
 
-    // Fire-and-forget (Risk #4: async buffered)
-    if err := c.store.Write(ctx, event); err != nil {
+    // Fire-and-forget (Risk #4 / DD-AUDIT-002: async buffered)
+    if err := c.store.StoreAudit(ctx, event); err != nil {  // CORRECT: StoreAudit, not Write
         c.log.Error(err, "Failed to write audit event",
             "event_type", event.EventType,
-            "remediation_id", event.RemediationID,
+            "correlation_id", event.CorrelationID,
         )
-        // Don't fail reconciliation on audit failure
+        // Don't fail reconciliation on audit failure (graceful degradation)
     }
 }
 ```
 
 **EOD Day 5 Checklist:**
-- [ ] Prometheus metrics created (DD-005)
-- [ ] Audit client with buffered store (Risk #4)
+- [ ] Prometheus metrics created (DD-005 compliant naming)
+- [ ] Audit client uses `audit.AuditStore` interface (DD-AUDIT-002)
+- [ ] Audit events use `audit.AuditEvent` with all required fields
 - [ ] Metrics for HolmesGPT-API calls, Rego eval, approvals
 - [ ] Detection failure metrics
-- [ ] Fire-and-forget audit pattern
+- [ ] Fire-and-forget audit pattern (don't fail on audit error)
+- [ ] Unit tests for metrics/audit (TDD)
 - [ ] **Create Error Handling Philosophy document** ⭐ V3.0
 
 #### **Error Handling Philosophy Document** (Day 5 EOD Deliverable)

@@ -28,6 +28,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
@@ -91,109 +92,165 @@ var _ = Describe("AnalyzingHandler", func() {
 
 	Describe("Handle", func() {
 		// BR-AI-012: Successful Rego evaluation with approval required
+		// Per reconciliation-phases.md v2.0: Analyzing → Completed (no Recommending phase)
 		Context("when Rego evaluation requires approval", func() {
 			BeforeEach(func() {
 				mockEvaluator.WithApprovalRequired("Production environment requires approval")
 			})
 
-			It("should transition to Recommending phase", func() {
-				analysis := createTestAnalysis()
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseRecommending))
-			})
-
-			It("should set ApprovalRequired to true", func() {
+			// BR-AI-012: Business outcome - analysis completes with approval decision
+			It("should complete analysis and require approval for production", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalRequired).To(BeTrue())
+				// Business outcome: Analysis completes successfully
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Analysis should reach terminal Completed phase")
+				Expect(analysis.Status.CompletedAt).NotTo(BeNil(), "Completion timestamp should be set")
+				// Business outcome: Production requires approval
+				Expect(analysis.Status.ApprovalRequired).To(BeTrue(), "Production environment should require approval")
+				Expect(analysis.Status.ApprovalReason).NotTo(BeEmpty(), "Approval reason should explain why approval is needed")
+				Expect(analysis.Status.ApprovalReason).To(ContainSubstring("Production"), "Reason should mention production")
 			})
 
-			It("should set ApprovalReason", func() {
+			// BR-AI-019: ApprovalContext population
+			It("should populate ApprovalContext", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalReason).To(Equal("Production environment requires approval"))
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.Reason).To(Equal("Production environment requires approval"))
+				Expect(analysis.Status.ApprovalContext.WhyApprovalRequired).To(Equal("Production environment requires approval"))
+			})
+
+			It("should populate ApprovalContext with confidence level", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.ConfidenceScore).To(BeNumerically("~", 0.92, 0.01))
+				Expect(analysis.Status.ApprovalContext.ConfidenceLevel).To(Equal("high"))
+			})
+
+			It("should populate ApprovalContext with RecommendedActions from SelectedWorkflow", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(1))
+				Expect(analysis.Status.ApprovalContext.RecommendedActions[0].Action).To(Equal("wf-restart-pod"))
+			})
+
+			// BR-AI-019: Business outcome - operator can see policy decision in approval context
+			It("should include policy evaluation details for operator visibility", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil(), "ApprovalContext should exist for manual review")
+				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil(), "Policy evaluation should be visible to operator")
+				// Business outcome: Operator sees clear decision status
+				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(
+					BeElementOf("manual_review_required", "auto_approved", "degraded_mode"),
+					"Decision should be one of the valid business outcomes",
+				)
 			})
 		})
 
 		// BR-AI-012: Successful Rego evaluation with auto-approve
+		// Per reconciliation-phases.md v2.0: Analyzing → Completed (no Recommending phase)
 		Context("when Rego evaluation auto-approves", func() {
 			BeforeEach(func() {
 				mockEvaluator.WithAutoApprove("Non-production environment - auto-approved")
 			})
 
-			It("should transition to Recommending phase", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.Environment = "development"
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseRecommending))
-			})
-
-			It("should set ApprovalRequired to false", func() {
+			// BR-AI-012: Business outcome - non-production auto-approves without operator intervention
+			It("should auto-approve and complete without requiring operator action", func() {
 				analysis := createTestAnalysis()
 				analysis.Spec.AnalysisRequest.SignalContext.Environment = "development"
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalRequired).To(BeFalse())
+				// Business outcome: Analysis completes for auto-approved scenarios
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Analysis should complete")
+				Expect(analysis.Status.CompletedAt).NotTo(BeNil(), "Completion timestamp should be set")
+				// Business outcome: No approval needed - workflow can proceed immediately
+				Expect(analysis.Status.ApprovalRequired).To(BeFalse(), "Non-production should auto-approve")
+				// Business outcome: No ApprovalContext needed when auto-approved (reduces operator noise)
+				Expect(analysis.Status.ApprovalContext).To(BeNil(), "No approval context for auto-approved analysis")
 			})
 		})
 
-		// BR-AI-014: Degraded mode (policy failure fallback)
+		// BR-AI-014: Business outcome - graceful degradation ensures safety when policy fails
 		Context("when Rego evaluation fails gracefully (degraded mode)", func() {
 			BeforeEach(func() {
 				mockEvaluator.WithDegradedMode("Policy evaluation failed - defaulting to manual approval")
 			})
 
-			It("should continue to Recommending phase with safe defaults", func() {
-				analysis := createTestAnalysis()
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Requeue).To(BeTrue())
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseRecommending))
-			})
-
-			It("should set ApprovalRequired to true (safe default)", func() {
+			// BR-AI-014: Business outcome - system remains safe when policy infrastructure fails
+			It("should complete with safe defaults requiring operator approval", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalRequired).To(BeTrue())
+				// Business outcome: Analysis completes (doesn't block remediation flow)
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Should complete despite policy failure")
+				Expect(analysis.Status.CompletedAt).NotTo(BeNil())
+				// Business outcome: Safe default - requires operator approval when uncertain
+				Expect(analysis.Status.ApprovalRequired).To(BeTrue(), "Degraded mode should require approval (safe default)")
+				// Business outcome: Operator sees degraded mode indicator
+				Expect(analysis.Status.DegradedMode).To(BeTrue(), "Operator should know system is in degraded mode")
+				Expect(analysis.Status.ApprovalReason).To(ContainSubstring("failed"), "Reason should explain degradation")
 			})
 
-			It("should set DegradedMode to true", func() {
+			// BR-AI-019: Business outcome - operator sees clear degraded status
+			It("should inform operator of degraded mode in approval context", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.DegradedMode).To(BeTrue())
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil(), "ApprovalContext should exist for operator")
+				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(Equal("degraded_mode"),
+					"Operator should see clear 'degraded_mode' status")
 			})
+		})
 
-			It("should include degraded reason in ApprovalReason", func() {
+		// BR-AI-018: Business outcome - analysis fails gracefully when no workflow available
+		Context("when SelectedWorkflow is missing", func() {
+			It("should fail analysis with clear explanation for operator", func() {
 				analysis := createTestAnalysis()
+				analysis.Status.SelectedWorkflow = nil // Simulate missing workflow from HolmesGPT-API
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalReason).To(ContainSubstring("Policy evaluation failed"))
+				// Business outcome: Analysis terminates (doesn't hang)
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail when no workflow available")
+				// Business outcome: Clear reason for operators/debugging
+				Expect(analysis.Status.Reason).To(Equal("NoWorkflowSelected"), "Reason should identify the issue")
+				Expect(analysis.Status.Message).To(ContainSubstring("workflow"), "Message should explain missing workflow")
+			})
+
+			It("should not evaluate policies when no workflow exists", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.SelectedWorkflow = nil
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.AssertNotCalled()).To(Succeed())
 			})
 		})
 
@@ -243,6 +300,156 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.Warnings).To(HaveLen(2))
 				Expect(mockEvaluator.LastInput.Warnings).To(ContainElement("High memory pressure"))
 			})
+
+			// BR-AI-012: Extended PolicyInput fields (per IMPLEMENTATION_PLAN_V1.0.md)
+			It("should pass signal context fields", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.SignalType = "OOMKilled"
+				analysis.Spec.AnalysisRequest.SignalContext.Severity = "critical"
+				analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority = "P0"
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.SignalType).To(Equal("OOMKilled"))
+				Expect(mockEvaluator.LastInput.Severity).To(Equal("critical"))
+				Expect(mockEvaluator.LastInput.BusinessPriority).To(Equal("P0"))
+			})
+
+			It("should pass target resource fields", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Kind = "Deployment"
+				analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Name = "my-app"
+				analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace = "production"
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.TargetResource.Kind).To(Equal("Deployment"))
+				Expect(mockEvaluator.LastInput.TargetResource.Name).To(Equal("my-app"))
+				Expect(mockEvaluator.LastInput.TargetResource.Namespace).To(Equal("production"))
+			})
+
+			It("should pass recovery context fields", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.IsRecoveryAttempt = true
+				analysis.Spec.RecoveryAttemptNumber = 3
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.IsRecoveryAttempt).To(BeTrue())
+				Expect(mockEvaluator.LastInput.RecoveryAttemptNumber).To(Equal(3))
+			})
+
+			It("should default recovery fields when not recovery", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.IsRecoveryAttempt = false
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.IsRecoveryAttempt).To(BeFalse())
+				Expect(mockEvaluator.LastInput.RecoveryAttemptNumber).To(Equal(0))
+			})
+
+			// BR-AI-012: DetectedLabels population from EnrichmentResults (DD-WORKFLOW-001 v2.2)
+			It("should pass DetectedLabels from EnrichmentResults", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = &sharedtypes.DetectedLabels{
+					GitOpsManaged:   true,
+					GitOpsTool:      "argocd",
+					PDBProtected:    true,
+					HPAEnabled:      false,
+					Stateful:        true,
+					HelmManaged:     false,
+					NetworkIsolated: true,
+					ServiceMesh:     "istio",
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.DetectedLabels).NotTo(BeNil())
+				// Verify snake_case keys per DD-WORKFLOW-001 v2.2
+				Expect(mockEvaluator.LastInput.DetectedLabels["git_ops_managed"]).To(BeTrue())
+				Expect(mockEvaluator.LastInput.DetectedLabels["git_ops_tool"]).To(Equal("argocd"))
+				Expect(mockEvaluator.LastInput.DetectedLabels["pdb_protected"]).To(BeTrue())
+				Expect(mockEvaluator.LastInput.DetectedLabels["hpa_enabled"]).To(BeFalse())
+				Expect(mockEvaluator.LastInput.DetectedLabels["stateful"]).To(BeTrue())
+				Expect(mockEvaluator.LastInput.DetectedLabels["helm_managed"]).To(BeFalse())
+				Expect(mockEvaluator.LastInput.DetectedLabels["network_isolated"]).To(BeTrue())
+				Expect(mockEvaluator.LastInput.DetectedLabels["service_mesh"]).To(Equal("istio"))
+			})
+
+			// BR-AI-012: FailedDetections populated from DetectedLabels
+			It("should pass FailedDetections from DetectedLabels", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = &sharedtypes.DetectedLabels{
+					FailedDetections: []string{"pdbProtected", "hpaEnabled"},
+					PDBProtected:     false, // Value should be ignored per DD-WORKFLOW-001 v2.2
+					HPAEnabled:       false, // Value should be ignored
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.FailedDetections).To(HaveLen(2))
+				Expect(mockEvaluator.LastInput.FailedDetections).To(ContainElement("pdbProtected"))
+				Expect(mockEvaluator.LastInput.FailedDetections).To(ContainElement("hpaEnabled"))
+			})
+
+			// BR-AI-012: CustomLabels population from EnrichmentResults
+			It("should pass CustomLabels from EnrichmentResults", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels = map[string][]string{
+					"constraint": {"cost-constrained", "stateful-safe"},
+					"team":       {"name=payments"},
+					"region":     {"us-east-1"},
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.CustomLabels).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.CustomLabels["constraint"]).To(ContainElement("cost-constrained"))
+				Expect(mockEvaluator.LastInput.CustomLabels["constraint"]).To(ContainElement("stateful-safe"))
+				Expect(mockEvaluator.LastInput.CustomLabels["team"]).To(ContainElement("name=payments"))
+				Expect(mockEvaluator.LastInput.CustomLabels["region"]).To(ContainElement("us-east-1"))
+			})
+
+			// BR-AI-012: Empty DetectedLabels returns empty map
+			It("should return empty map when DetectedLabels is nil", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = nil
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.DetectedLabels).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.DetectedLabels).To(BeEmpty())
+			})
+
+			// BR-AI-012: Empty CustomLabels returns empty map
+			It("should return empty map when CustomLabels is nil", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels = nil
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.CustomLabels).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.CustomLabels).To(BeEmpty())
+			})
 		})
 
 		// BR-AI-012: Evaluator is called exactly once
@@ -265,4 +472,3 @@ var _ = Describe("AnalyzingHandler", func() {
 		})
 	})
 })
-
