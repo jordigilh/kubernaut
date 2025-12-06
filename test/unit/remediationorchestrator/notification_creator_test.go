@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -76,6 +77,326 @@ var _ = Describe("NotificationCreator", func() {
 				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(name).To(Equal("nr-approval-test-rr"))
+			})
+		})
+
+		Context("BR-ORCH-031: Cascade Deletion", func() {
+			// Test #3: Sets owner reference
+			It("should set owner reference to RemediationRequest for cascade deletion", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify owner reference is set
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.OwnerReferences).To(HaveLen(1))
+				Expect(nr.OwnerReferences[0].Name).To(Equal(rr.Name))
+				Expect(nr.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+			})
+		})
+
+		Context("BR-ORCH-001 AC-001-2: Idempotency", func() {
+			// Test #4: Idempotency - returns existing name without error
+			It("should be idempotent - return existing name without creating duplicate", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+
+				// First call creates the notification
+				name1, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name1).To(Equal("nr-approval-test-rr"))
+
+				// Second call should return same name without error
+				name2, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name2).To(Equal(name1))
+
+				// Verify only one notification exists
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+			})
+		})
+
+		Context("Precondition Validation", func() {
+			// Test #5: Returns error when SelectedWorkflow is nil
+			It("should return error when SelectedWorkflow is nil", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("missing SelectedWorkflow"))
+			})
+
+			// Test #6: Returns error when WorkflowID is empty
+			It("should return error when WorkflowID is empty", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.SelectedWorkflow.WorkflowID = ""
+
+				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("missing WorkflowID"))
+			})
+		})
+
+		// Test #7-11: Priority mapping via DescribeTable
+		DescribeTable("BR-ORCH-001: Priority mapping",
+			func(inputPriority string, expectedPriority notificationv1.NotificationPriority) {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr.Spec.Priority = inputPriority
+				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nr.Spec.Priority).To(Equal(expectedPriority))
+			},
+			Entry("P0 → Critical", "P0", notificationv1.NotificationPriorityCritical),
+			Entry("P1 → High", "P1", notificationv1.NotificationPriorityHigh),
+			Entry("P2 → Medium", "P2", notificationv1.NotificationPriorityMedium),
+			Entry("P3 → Low", "P3", notificationv1.NotificationPriorityLow),
+			Entry("unknown → Low", "unknown", notificationv1.NotificationPriorityLow),
+		)
+
+		// Test #12-14: Channel determination via DescribeTable
+		DescribeTable("BR-ORCH-001: Channel determination",
+			func(approvalReason string, expectedChannels []notificationv1.Channel) {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.ApprovalReason = approvalReason
+
+				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nr.Spec.Channels).To(ConsistOf(expectedChannels))
+			},
+			Entry("default → Slack only",
+				"low_confidence",
+				[]notificationv1.Channel{notificationv1.ChannelSlack}),
+			Entry("high_risk_action → Slack + Email",
+				"high_risk_action",
+				[]notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}),
+		)
+	})
+
+	Describe("CreateBulkDuplicateNotification", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("BR-ORCH-034: Bulk Duplicate Notification", func() {
+			// Test #15: Generates deterministic name
+			It("should generate deterministic name nr-bulk-{rr.Name}", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr.Status.DuplicateCount = 5
+
+				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("nr-bulk-test-rr"))
+			})
+
+			// Test #16: Sets owner reference
+			It("should set owner reference for cascade deletion (BR-ORCH-031)", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr.Status.DuplicateCount = 3
+
+				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.OwnerReferences).To(HaveLen(1))
+				Expect(nr.OwnerReferences[0].Name).To(Equal(rr.Name))
+			})
+
+			// Test #17: Idempotency
+			It("should be idempotent - return existing name without creating duplicate", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr.Status.DuplicateCount = 2
+
+				// First call
+				name1, err := nc.CreateBulkDuplicateNotification(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Second call should return same name
+				name2, err := nc.CreateBulkDuplicateNotification(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name2).To(Equal(name1))
+
+				// Only one notification exists
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+			})
+
+			// Test #18: Uses correct notification type
+			It("should use NotificationTypeSimple for informational bulk notification", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr.Status.DuplicateCount = 4
+
+				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeSimple))
+				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityLow))
+			})
+		})
+	})
+
+	Describe("Label Setting", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("BR-ORCH-001: Approval notification labels", func() {
+			// Test #19: Sets correct labels for approval notification
+			It("should set kubernaut.ai labels for routing (kubernaut.ai/severity, kubernaut.ai/notification-type)", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr.Spec.Severity = "high"
+				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+
+				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "approval"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/severity", "high"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+			})
+		})
+
+		Context("BR-ORCH-034: Bulk notification labels", func() {
+			// Test #20: Sets correct labels for bulk notification
+			It("should set kubernaut.ai labels for bulk notification", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr.Status.DuplicateCount = 5
+
+				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "bulk-duplicate"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+			})
+		})
+	})
+
+	Describe("Metadata Setting", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("BR-ORCH-001: Approval notification metadata", func() {
+			// Test #21: Sets context metadata for approval notification
+			It("should set Metadata with approval context for routing rules", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.ApprovalReason = "low_confidence"
+				ai.Status.SelectedWorkflow.Confidence = 0.75
+				ai.Status.SelectedWorkflow.WorkflowID = "restart-pod"
+
+				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", "test-rr"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("aiAnalysis", "test-ai"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("approvalReason", "low_confidence"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("confidence", "0.75"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("selectedWorkflow", "restart-pod"))
 			})
 		})
 	})
