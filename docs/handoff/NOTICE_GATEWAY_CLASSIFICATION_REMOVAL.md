@@ -410,6 +410,13 @@ Gateway agrees with SP's correction:
 
 **✅ SP READY**: Signal Processing environment and priority classification is fully implemented. Gateway team may proceed with removing their classification logic at their convenience.
 
+**✅ GATEWAY COMPLETE** (2025-12-06): Gateway classification removal completed (commit 65b93fe0):
+- Removed `EnvironmentClassifier` and `PriorityEngine` from server
+- Removed `environment`/`priority` from `CreateRemediationRequest`, CRD labels, and HTTP response
+- Deleted `classification.go`, `priority.go`, `priority.rego`, and related tests
+- Updated `api-specification.md` with removal notes
+- 20 files changed, 157 insertions, 1853 deletions
+
 ### SP Implementation Summary
 
 | Component | Status | Location |
