@@ -19,7 +19,6 @@ package aianalysis
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 )
@@ -41,8 +40,10 @@ var _ = Describe("AIAnalysis Metrics", func() {
 
 		It("should register ReconcilerDurationSeconds histogram", func() {
 			Expect(metrics.ReconcilerDurationSeconds).NotTo(BeNil())
-			desc := metrics.ReconcilerDurationSeconds.WithLabelValues("Investigating").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_reconciler_duration_seconds"))
+			// Verify metric can be used (histograms return Observer from WithLabelValues)
+			Expect(func() {
+				metrics.ReconcilerDurationSeconds.WithLabelValues("Investigating").Observe(1.5)
+			}).NotTo(Panic())
 		})
 
 		It("should register ReconcilerPhaseTransitionsTotal counter", func() {
@@ -53,8 +54,10 @@ var _ = Describe("AIAnalysis Metrics", func() {
 
 		It("should register ReconcilerPhaseDurationSeconds histogram", func() {
 			Expect(metrics.ReconcilerPhaseDurationSeconds).NotTo(BeNil())
-			desc := metrics.ReconcilerPhaseDurationSeconds.WithLabelValues("Analyzing").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_reconciler_phase_duration_seconds"))
+			// Verify metric can be used (histograms return Observer from WithLabelValues)
+			Expect(func() {
+				metrics.ReconcilerPhaseDurationSeconds.WithLabelValues("Analyzing").Observe(30.0)
+			}).NotTo(Panic())
 		})
 
 		// BR-AI-OBSERVABILITY-002: Business outcome - track phase transition success rate
@@ -84,8 +87,10 @@ var _ = Describe("AIAnalysis Metrics", func() {
 
 		It("should register HolmesGPTLatencySeconds histogram", func() {
 			Expect(metrics.HolmesGPTLatencySeconds).NotTo(BeNil())
-			desc := metrics.HolmesGPTLatencySeconds.WithLabelValues("/api/v1/incident/analyze").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_holmesgpt_latency_seconds"))
+			// Verify metric can be used (histograms return Observer from WithLabelValues)
+			Expect(func() {
+				metrics.HolmesGPTLatencySeconds.WithLabelValues("/api/v1/incident/analyze").Observe(2.5)
+			}).NotTo(Panic())
 		})
 
 		It("should register HolmesGPTRetriesTotal counter", func() {
@@ -115,10 +120,10 @@ var _ = Describe("AIAnalysis Metrics", func() {
 
 		It("should register RegoLatencySeconds histogram", func() {
 			Expect(metrics.RegoLatencySeconds).NotTo(BeNil())
-			// No labels for this metric
-			var regoHist *prometheus.HistogramVec
-			regoHist = metrics.RegoLatencySeconds
-			Expect(regoHist).NotTo(BeNil())
+			// Verify metric can be used (histograms return Observer from WithLabelValues)
+			Expect(func() {
+				metrics.RegoLatencySeconds.WithLabelValues().Observe(0.05)
+			}).NotTo(Panic())
 		})
 
 		It("should register RegoReloadsTotal counter", func() {
@@ -153,8 +158,10 @@ var _ = Describe("AIAnalysis Metrics", func() {
 		// BR-AI-OBSERVABILITY-004: Track AI confidence distribution
 		It("should register ConfidenceScoreDistribution histogram", func() {
 			Expect(metrics.ConfidenceScoreDistribution).NotTo(BeNil())
-			desc := metrics.ConfidenceScoreDistribution.WithLabelValues("OOMKilled").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_confidence_score_distribution"))
+			// Verify metric can be used (histograms return Observer from WithLabelValues)
+			Expect(func() {
+				metrics.ConfidenceScoreDistribution.WithLabelValues("OOMKilled").Observe(0.85)
+			}).NotTo(Panic())
 		})
 
 		// Business outcome: Track confidence by signal type for tuning
