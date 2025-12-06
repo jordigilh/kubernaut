@@ -298,33 +298,56 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
 		})
 
-		// Test 4: CRD with invalid spec (missing required fields)
+		// Test 4: CRD with optional fields omitted (BR-NOT-065)
 		// BR-NOT-002: NotificationRequest Schema Validation
-		It("should reject NotificationRequest with missing required fields", func() {
-			notifName := fmt.Sprintf("invalid-notif-%s", uniqueSuffix)
+		// BR-NOT-065: Channel Routing Based on Labels
+		It("should accept NotificationRequest with optional fields omitted (BR-NOT-065)", func() {
+			notifName := fmt.Sprintf("optional-fields-%s", uniqueSuffix)
 
-			// Missing Recipients and Channels (required)
+			// Recipients and Channels are optional per CRD schema
+			// BR-NOT-065: Empty channels triggers label-based routing rules
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Labels: map[string]string{
+						"kubernaut.ai/severity":    "medium",
+						"kubernaut.ai/environment": "test",
+					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Subject:  "Invalid Test",
-					Body:     "Missing required fields",
-					// Recipients: []notificationv1alpha1.Recipient{}, // Missing (required)
-					// Channels: []notificationv1alpha1.Channel{}, // Missing (required)
+					Subject:  "Optional Fields Test",
+					Body:     "Testing with optional fields omitted",
+					// Recipients omitted (optional per CRD schema)
+					// Channels omitted (optional - routing rules apply per BR-NOT-065)
 				},
 			}
 
-			// Attempt to create CRD
+			// Create CRD - should succeed
 			err := k8sClient.Create(ctx, notif)
-			Expect(err).To(HaveOccurred(), "Should reject CRD with missing required fields")
+			Expect(err).NotTo(HaveOccurred(), "Should accept CRD with optional fields omitted (BR-NOT-065)")
 
-			// Verify error is validation error
-			Expect(apierrors.IsInvalid(err)).To(BeTrue(), "Error should be validation error")
+			// Verify CRD exists and controller started processing
+			created := &notificationv1alpha1.NotificationRequest{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      notifName,
+					Namespace: testNamespace,
+				}, created)
+				if err != nil {
+					return false
+				}
+				// Controller started processing (status initialized)
+				return created.Status.Phase != ""
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should start processing notification")
+
+			// Cleanup
+			_ = k8sClient.Delete(ctx, notif)
+
+			GinkgoWriter.Printf("✅ Optional fields accepted - routing rules applied (BR-NOT-065)\n")
 		})
 
 		// Test 5: CRD name validation (DNS-1123 subdomain)

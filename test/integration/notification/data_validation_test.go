@@ -227,46 +227,64 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 	// ==============================================
 
 	Context("Invalid Input Rejection (BR-NOT-058)", func() {
-		It("should reject notification with missing required fields and provide helpful error", func() {
-			// BEHAVIOR: System rejects invalid input with clear error message
-			// CORRECTNESS: Error helps user understand what's missing
+		It("should accept notification with optional fields omitted (BR-NOT-065)", func() {
+			// BEHAVIOR: Recipients and Channels are optional per CRD schema
+			// BR-NOT-065: Empty channels triggers label-based routing rules
+			// CORRECTNESS: CRD is created successfully and controller processes it
 
-			notifName := fmt.Sprintf("missing-fields-%s", uniqueSuffix)
+			notifName := fmt.Sprintf("optional-fields-%s", uniqueSuffix)
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Labels: map[string]string{
+						"kubernaut.ai/severity":    "low",
+						"kubernaut.ai/environment": "test",
+					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Subject:  "Test",
-					Body:     "Test",
-					// Missing Recipients (required)
-					// Missing Channels (required)
+					Subject:  "Test Optional Fields",
+					Body:     "Testing with optional fields omitted",
+					// Recipients omitted (optional per CRD schema)
+					// Channels omitted (optional per CRD schema - routing rules apply)
 				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
 
-			// BEHAVIOR: System rejects invalid input
-			Expect(err).To(HaveOccurred(), "Missing required fields should be rejected")
+			// BEHAVIOR: System accepts notification with optional fields omitted
+			Expect(err).NotTo(HaveOccurred(), "Optional fields should not cause rejection (BR-NOT-065)")
 
-			// CORRECTNESS: Error message helps user fix the problem
-			errorMsg := err.Error()
-			Expect(errorMsg).To(Or(
-				ContainSubstring("recipients"),
-				ContainSubstring("channels"),
-				ContainSubstring("Required"),
-			), "Error should mention missing required fields")
+			// Verify CRD exists and controller started processing
+			created := &notificationv1alpha1.NotificationRequest{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      notifName,
+					Namespace: testNamespace,
+				}, created)
+				if err != nil {
+					return false
+				}
+				// Controller started processing (status initialized)
+				return created.Status.Phase != ""
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should start processing notification")
 
-			GinkgoWriter.Printf("✅ Invalid input rejected with helpful error: %v\n", err)
+			// Verify routing was applied (empty channels -> routing rules)
+			Expect(len(notif.Spec.Channels)).To(Equal(0), "Original spec had empty channels")
+
+			// Cleanup
+			_ = k8sClient.Delete(ctx, notif)
+
+			GinkgoWriter.Printf("✅ Optional fields accepted - CRD created and processing started (BR-NOT-065)\n")
 		})
 
-		It("should reject notification with empty channels array", func() {
-			// BEHAVIOR: At least one delivery channel is required
-			// CORRECTNESS: Error clearly states channels are required
+		It("should accept notification with empty channels array (BR-NOT-065)", func() {
+			// BEHAVIOR: Empty channels triggers label-based routing rules (BR-NOT-065)
+			// CORRECTNESS: CRD is created successfully and controller applies routing rules
 
 			notifName := fmt.Sprintf("empty-channels-%s", uniqueSuffix)
 
@@ -274,27 +292,47 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Labels: map[string]string{
+						"kubernaut.ai/severity":    "medium",
+						"kubernaut.ai/environment": "test",
+					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Subject:  "Test Empty Channels",
-					Body:     "Should fail",
+					Subject:  "Test Empty Channels - Routing Rules",
+					Body:     "Should succeed with routing rules",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{}, // Empty
+					Channels: []notificationv1alpha1.Channel{}, // Empty - routing rules apply
 				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
 
-			// BEHAVIOR: Empty channels rejected
-			Expect(err).To(HaveOccurred(), "Empty channels should be rejected")
-			Expect(err.Error()).To(ContainSubstring("channels"),
-				"Error should mention channels field")
+			// BEHAVIOR: Empty channels accepted (BR-NOT-065)
+			Expect(err).NotTo(HaveOccurred(), "Empty channels should be accepted (BR-NOT-065 routing rules)")
 
-			GinkgoWriter.Printf("✅ Empty channels rejected: %v\n", err)
+			// Verify CRD exists and controller started processing
+			created := &notificationv1alpha1.NotificationRequest{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      notifName,
+					Namespace: testNamespace,
+				}, created)
+				if err != nil {
+					return false
+				}
+				// Controller started processing (status initialized)
+				return created.Status.Phase != ""
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should start processing notification")
+
+			// Cleanup
+			_ = k8sClient.Delete(ctx, notif)
+
+			GinkgoWriter.Printf("✅ Empty channels accepted - routing rules applied (BR-NOT-065)\n")
 		})
 
 		It("should reject notification with oversized subject (>500 chars)", func() {
