@@ -198,6 +198,19 @@ func (h *WorkflowExecutionHandler) handleManualReviewRequired(
 	return ctrl.Result{}, nil
 }
 
+// CalculateRequeueTime calculates requeue duration from NextAllowedExecution.
+// Reference: DD-WE-004 (exponential backoff)
+func (h *WorkflowExecutionHandler) CalculateRequeueTime(nextAllowed *metav1.Time) time.Duration {
+	if nextAllowed == nil {
+		return 1 * time.Minute // Default fallback
+	}
+	duration := time.Until(nextAllowed.Time)
+	if duration < 0 {
+		return 0 // Already expired, requeue immediately
+	}
+	return duration
+}
+
 // TrackDuplicate tracks a duplicate RR on the parent (BR-ORCH-033).
 // It updates the parent RR's DuplicateCount and DuplicateRefs.
 func (h *WorkflowExecutionHandler) TrackDuplicate(
@@ -251,14 +264,14 @@ func (h *WorkflowExecutionHandler) MapSkipReasonToSeverity(skipReason string) st
 
 // MapSkipReasonToPriority maps skip reason to NotificationPriority per Notification team guidance.
 // Reference: BR-ORCH-036
-func (h *WorkflowExecutionHandler) MapSkipReasonToPriority(skipReason string) string {
+func (h *WorkflowExecutionHandler) MapSkipReasonToPriority(skipReason string) notificationv1.NotificationPriority {
 	switch skipReason {
 	case "PreviousExecutionFailed":
-		return "critical"
+		return notificationv1.NotificationPriorityCritical
 	case "ExhaustedRetries":
-		return "high"
+		return notificationv1.NotificationPriorityHigh
 	default:
-		return "medium"
+		return notificationv1.NotificationPriorityMedium
 	}
 }
 
@@ -310,7 +323,7 @@ func (h *WorkflowExecutionHandler) CreateManualReviewNotification(
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			Type:     notificationv1.NotificationTypeManualReview,
-			Priority: mapPriorityString(priority),
+			Priority: priority,
 			Subject:  fmt.Sprintf("Manual Review Required: %s - %s", rr.Spec.SignalName, we.Status.SkipDetails.Reason),
 			Body:     h.buildManualReviewBody(rr, we, sp),
 			Channels: []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}, // Default channels for manual review
@@ -374,17 +387,4 @@ func (h *WorkflowExecutionHandler) buildManualReviewBody(
 	)
 }
 
-// mapPriorityString converts string priority to NotificationPriority enum.
-func mapPriorityString(priority string) notificationv1.NotificationPriority {
-	switch priority {
-	case "critical":
-		return notificationv1.NotificationPriorityCritical
-	case "high":
-		return notificationv1.NotificationPriorityHigh
-	case "low":
-		return notificationv1.NotificationPriorityLow
-	default:
-		return notificationv1.NotificationPriorityMedium
-	}
-}
 

@@ -163,8 +163,8 @@ var _ = Describe("StatusAggregator", func() {
 				Expect(result.WorkflowExecutionPhase).To(BeEmpty())
 			})
 
-			// Test #6: Returns error when child CRD not found
-			It("should return error when referenced child CRD not found", func() {
+			// Test #6: Handles missing child CRDs gracefully (no error, sets AllChildrenHealthy=false)
+			It("should handle missing child CRDs gracefully", func() {
 				// Arrange
 				rr := testutil.NewRemediationRequest("test-rr", "default")
 				rr.Status.SignalProcessingRef = &corev1.ObjectReference{
@@ -178,10 +178,11 @@ var _ = Describe("StatusAggregator", func() {
 				// Act
 				result, err := agg.AggregateStatus(ctx, rr)
 
-				// Assert
-				Expect(err).To(HaveOccurred())
-				Expect(result).To(BeNil())
-				Expect(err.Error()).To(ContainSubstring("not found"))
+				// Assert - graceful handling: no error, but AllChildrenHealthy=false
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).ToNot(BeNil())
+				Expect(result.SignalProcessingPhase).To(BeEmpty()) // Phase empty since not found
+				Expect(result.AllChildrenHealthy).To(BeFalse())
 			})
 		})
 	})

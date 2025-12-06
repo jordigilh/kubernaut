@@ -248,16 +248,42 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 
 		// Tests #11-13: mapSkipReasonToPriority mapping via DescribeTable
 		DescribeTable("BR-ORCH-036: Skip reason to priority mapping",
-			func(skipReason string, expectedPriority string) {
+			func(skipReason string, expectedPriority notificationv1.NotificationPriority) {
 				client := fakeClient.Build()
 				h = handler.NewWorkflowExecutionHandler(client, scheme)
 				priority := h.MapSkipReasonToPriority(skipReason)
 				Expect(priority).To(Equal(expectedPriority))
 			},
-			Entry("PreviousExecutionFailed → critical", "PreviousExecutionFailed", "critical"),
-			Entry("ExhaustedRetries → high", "ExhaustedRetries", "high"),
-			Entry("ResourceBusy → medium", "ResourceBusy", "medium"),
+			Entry("PreviousExecutionFailed → Critical", "PreviousExecutionFailed", notificationv1.NotificationPriorityCritical),
+			Entry("ExhaustedRetries → High", "ExhaustedRetries", notificationv1.NotificationPriorityHigh),
+			Entry("ResourceBusy → Medium", "ResourceBusy", notificationv1.NotificationPriorityMedium),
 		)
+
+		Context("DD-WE-004: CalculateRequeueTime", func() {
+			It("should return 0 when NextAllowedExecution is in the past", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+				pastTime := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+				duration := h.CalculateRequeueTime(&pastTime)
+				Expect(duration).To(BeNumerically("<=", 0))
+			})
+
+			It("should return time until NextAllowedExecution when in the future", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+				futureTime := metav1.NewTime(time.Now().Add(30 * time.Second))
+				duration := h.CalculateRequeueTime(&futureTime)
+				Expect(duration).To(BeNumerically(">", 0))
+				Expect(duration).To(BeNumerically("<=", 30*time.Second))
+			})
+
+			It("should return 1 minute fallback when NextAllowedExecution is nil", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+				duration := h.CalculateRequeueTime(nil)
+				Expect(duration).To(Equal(1 * time.Minute))
+			})
+		})
 
 		Context("BR-ORCH-032, DD-WE-004: HandleFailed", func() {
 			// Test #8: HandleFailed with WasExecutionFailure sets RequiresManualReview=true

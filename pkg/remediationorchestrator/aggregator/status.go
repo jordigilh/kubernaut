@@ -18,8 +18,8 @@ package aggregator
 
 import (
 	"context"
-	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -52,6 +52,7 @@ type AggregatedStatus struct {
 }
 
 // AggregateStatus fetches child CRD statuses and returns aggregated status.
+// Handles missing child CRDs gracefully - logs warning and continues with empty phase.
 // Reference: BR-ORCH-029
 func (a *StatusAggregator) AggregateStatus(ctx context.Context, rr *remediationv1.RemediationRequest) (*AggregatedStatus, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
@@ -62,36 +63,58 @@ func (a *StatusAggregator) AggregateStatus(ctx context.Context, rr *remediationv
 	if rr.Status.SignalProcessingRef != nil {
 		phase, err := a.getSignalProcessingPhase(ctx, rr.Status.SignalProcessingRef.Name, rr.Status.SignalProcessingRef.Namespace)
 		if err != nil {
-			logger.Error(err, "Failed to get SignalProcessing status")
-			return nil, fmt.Errorf("failed to get SignalProcessing status: %w", err)
+			if apierrors.IsNotFound(err) {
+				logger.Info("SignalProcessing CRD not found, continuing gracefully",
+					"signalProcessingRef", rr.Status.SignalProcessingRef.Name)
+				result.AllChildrenHealthy = false
+			} else {
+				logger.Error(err, "Failed to get SignalProcessing status")
+				result.AllChildrenHealthy = false
+			}
+		} else {
+			result.SignalProcessingPhase = phase
 		}
-		result.SignalProcessingPhase = phase
 	}
 
 	// Aggregate AIAnalysis status
 	if rr.Status.AIAnalysisRef != nil {
 		phase, err := a.getAIAnalysisPhase(ctx, rr.Status.AIAnalysisRef.Name, rr.Status.AIAnalysisRef.Namespace)
 		if err != nil {
-			logger.Error(err, "Failed to get AIAnalysis status")
-			return nil, fmt.Errorf("failed to get AIAnalysis status: %w", err)
+			if apierrors.IsNotFound(err) {
+				logger.Info("AIAnalysis CRD not found, continuing gracefully",
+					"aiAnalysisRef", rr.Status.AIAnalysisRef.Name)
+				result.AllChildrenHealthy = false
+			} else {
+				logger.Error(err, "Failed to get AIAnalysis status")
+				result.AllChildrenHealthy = false
+			}
+		} else {
+			result.AIAnalysisPhase = phase
 		}
-		result.AIAnalysisPhase = phase
 	}
 
 	// Aggregate WorkflowExecution status
 	if rr.Status.WorkflowExecutionRef != nil {
 		phase, err := a.getWorkflowExecutionPhase(ctx, rr.Status.WorkflowExecutionRef.Name, rr.Status.WorkflowExecutionRef.Namespace)
 		if err != nil {
-			logger.Error(err, "Failed to get WorkflowExecution status")
-			return nil, fmt.Errorf("failed to get WorkflowExecution status: %w", err)
+			if apierrors.IsNotFound(err) {
+				logger.Info("WorkflowExecution CRD not found, continuing gracefully",
+					"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
+				result.AllChildrenHealthy = false
+			} else {
+				logger.Error(err, "Failed to get WorkflowExecution status")
+				result.AllChildrenHealthy = false
+			}
+		} else {
+			result.WorkflowExecutionPhase = phase
 		}
-		result.WorkflowExecutionPhase = phase
 	}
 
 	logger.V(1).Info("Status aggregated successfully",
 		"spPhase", result.SignalProcessingPhase,
 		"aiPhase", result.AIAnalysisPhase,
 		"wePhase", result.WorkflowExecutionPhase,
+		"allChildrenHealthy", result.AllChildrenHealthy,
 	)
 	return result, nil
 }
