@@ -28,7 +28,7 @@ import logging
 import os
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, HTTPException, status
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.models.incident_models import IncidentRequest, IncidentResponse, DetectedLabels, EnrichmentResults
 from src.toolsets.workflow_catalog import WorkflowCatalogToolset
@@ -856,7 +856,7 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
         result = None
 
         for attempt in range(MAX_VALIDATION_ATTEMPTS):
-            attempt_timestamp = datetime.utcnow().isoformat() + "Z"
+            attempt_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
             # Build prompt with error feedback for retries
             if validation_errors_history:
@@ -1228,14 +1228,14 @@ def _parse_and_validate_investigation_result(
         needs_human_review = True
         human_review_reason = "low_confidence"
 
-    from datetime import datetime
+    from datetime import datetime, timezone
     result = {
         "incident_id": incident_id,
         "analysis": analysis,
         "root_cause_analysis": rca,
         "selected_workflow": selected_workflow,
         "confidence": confidence,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "target_in_owner_chain": target_in_owner_chain,
         "warnings": warnings,
         "needs_human_review": needs_human_review,
@@ -1395,7 +1395,7 @@ def _parse_investigation_result(
         "root_cause_analysis": rca,
         "selected_workflow": selected_workflow,
         "confidence": confidence,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "target_in_owner_chain": target_in_owner_chain,
         "warnings": warnings,
         # DD-HAPI-002 v1.2, BR-HAPI-197: Human review flag and structured reason

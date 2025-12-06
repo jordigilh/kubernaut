@@ -136,17 +136,35 @@ def unique_remediation_id():
     return f"rem-audit-{uuid.uuid4().hex[:8]}"
 
 
+@pytest.fixture
+def mock_config():
+    """
+    Create a properly mocked Config object with serializable attributes.
+
+    This fixes the _asdict() MagicMock error when llm_request events
+    try to serialize config.model, config.toolsets, etc.
+    """
+    mock = Mock()
+    mock.model = "gpt-4-mock"
+    mock.toolsets = {"kubernetes/core": {}}
+    mock.mcp_servers = {}
+    return mock
+
+
 def query_audit_events(
     data_storage_url: str,
-    incident_id: str,
+    correlation_id: str,
     timeout: int = 10
 ) -> List[Dict[str, Any]]:
     """
-    Query Data Storage for audit events by incident_id.
+    Query Data Storage for audit events by correlation_id.
+
+    ADR-034: correlation_id is the primary filter (maps to remediation_id).
+    The incident_id is inside event_data JSONB.
 
     Args:
         data_storage_url: Data Storage service URL
-        incident_id: Incident ID to filter events
+        correlation_id: Correlation ID (remediation_id) to filter events
         timeout: Request timeout in seconds
 
     Returns:
@@ -154,11 +172,11 @@ def query_audit_events(
     """
     response = requests.get(
         f"{data_storage_url}/api/v1/audit/events",
-        params={"incident_id": incident_id},
+        params={"correlation_id": correlation_id},
         timeout=timeout
     )
     response.raise_for_status()
-    return response.json().get("events", [])
+    return response.json().get("data", [])
 
 
 def wait_for_audit_flush(seconds: float = 6.0):
@@ -192,6 +210,7 @@ class TestAuditPipelineE2E:
         self,
         data_storage_url,
         mock_llm_response_valid,
+        mock_config,
         unique_incident_id,
         unique_remediation_id
     ):
@@ -213,7 +232,7 @@ class TestAuditPipelineE2E:
         incident_module._audit_store = None
 
         with patch("src.extensions.incident.investigate_issues", return_value=mock_llm_response_valid):
-            with patch("src.extensions.incident.Config"):
+            with patch("src.extensions.incident.Config", return_value=mock_config):
                 import asyncio
                 from src.extensions.incident import analyze_incident
 
@@ -243,23 +262,25 @@ class TestAuditPipelineE2E:
         # Wait for flush to complete
         wait_for_audit_flush()
 
-        # Query Data Storage for persisted events
-        events = query_audit_events(data_storage_url, unique_incident_id)
+        # Query Data Storage for persisted events by correlation_id (remediation_id)
+        events = query_audit_events(data_storage_url, unique_remediation_id)
 
         # Verify llm_request event exists
         llm_requests = [e for e in events if e.get("event_type") == "llm_request"]
         assert len(llm_requests) >= 1, "llm_request event not found in Data Storage"
 
-        # Verify correlation IDs
+        # ADR-034: incident_id and prompt info are in event_data
         event = llm_requests[0]
-        assert event["incident_id"] == unique_incident_id
-        assert event["remediation_id"] == unique_remediation_id
-        assert "prompt_length" in event or "prompt_preview" in event
+        assert event["correlation_id"] == unique_remediation_id
+        event_data = event.get("event_data", {})
+        assert event_data.get("incident_id") == unique_incident_id
+        assert "prompt_length" in event_data or "prompt_preview" in event_data
 
     def test_llm_response_event_persisted(
         self,
         data_storage_url,
         mock_llm_response_valid,
+        mock_config,
         unique_incident_id,
         unique_remediation_id
     ):
@@ -275,7 +296,7 @@ class TestAuditPipelineE2E:
         incident_module._audit_store = None
 
         with patch("src.extensions.incident.investigate_issues", return_value=mock_llm_response_valid):
-            with patch("src.extensions.incident.Config"):
+            with patch("src.extensions.incident.Config", return_value=mock_config):
                 import asyncio
                 from src.extensions.incident import analyze_incident
 
@@ -302,21 +323,26 @@ class TestAuditPipelineE2E:
 
         wait_for_audit_flush()
 
-        events = query_audit_events(data_storage_url, unique_incident_id)
+        # Query by correlation_id (remediation_id)
+        events = query_audit_events(data_storage_url, unique_remediation_id)
 
         # Verify llm_response event exists
         llm_responses = [e for e in events if e.get("event_type") == "llm_response"]
         assert len(llm_responses) >= 1, "llm_response event not found in Data Storage"
 
+        # ADR-034: Fields are in event_data
         event = llm_responses[0]
-        assert event["incident_id"] == unique_incident_id
-        assert "has_analysis" in event
-        assert "analysis_length" in event
+        assert event["correlation_id"] == unique_remediation_id
+        event_data = event.get("event_data", {})
+        assert event_data.get("incident_id") == unique_incident_id
+        assert "has_analysis" in event_data
+        assert "analysis_length" in event_data
 
     def test_validation_attempt_event_persisted(
         self,
         data_storage_url,
         mock_llm_response_valid,
+        mock_config,
         unique_incident_id,
         unique_remediation_id
     ):
@@ -332,7 +358,7 @@ class TestAuditPipelineE2E:
         incident_module._audit_store = None
 
         with patch("src.extensions.incident.investigate_issues", return_value=mock_llm_response_valid):
-            with patch("src.extensions.incident.Config"):
+            with patch("src.extensions.incident.Config", return_value=mock_config):
                 import asyncio
                 from src.extensions.incident import analyze_incident
 
@@ -359,22 +385,27 @@ class TestAuditPipelineE2E:
 
         wait_for_audit_flush()
 
-        events = query_audit_events(data_storage_url, unique_incident_id)
+        # Query by correlation_id (remediation_id)
+        events = query_audit_events(data_storage_url, unique_remediation_id)
 
         # Verify validation attempt event exists
         validation_events = [e for e in events if e.get("event_type") == "workflow_validation_attempt"]
         assert len(validation_events) >= 1, "workflow_validation_attempt event not found in Data Storage"
 
+        # ADR-034: Fields are in event_data
         event = validation_events[0]
-        assert event["incident_id"] == unique_incident_id
-        assert "attempt" in event
-        assert "max_attempts" in event
-        assert "is_valid" in event
+        assert event["correlation_id"] == unique_remediation_id
+        event_data = event.get("event_data", {})
+        assert event_data.get("incident_id") == unique_incident_id
+        assert "attempt" in event_data
+        assert "max_attempts" in event_data
+        assert "is_valid" in event_data
 
     def test_complete_audit_trail_persisted(
         self,
         data_storage_url,
         mock_llm_response_valid,
+        mock_config,
         unique_incident_id,
         unique_remediation_id
     ):
@@ -395,7 +426,7 @@ class TestAuditPipelineE2E:
         incident_module._audit_store = None
 
         with patch("src.extensions.incident.investigate_issues", return_value=mock_llm_response_valid):
-            with patch("src.extensions.incident.Config"):
+            with patch("src.extensions.incident.Config", return_value=mock_config):
                 import asyncio
                 from src.extensions.incident import analyze_incident
 
@@ -422,24 +453,30 @@ class TestAuditPipelineE2E:
 
         wait_for_audit_flush()
 
-        events = query_audit_events(data_storage_url, unique_incident_id)
+        # Query by correlation_id (remediation_id)
+        events = query_audit_events(data_storage_url, unique_remediation_id)
 
-        # Verify all event types present
-        event_types = {e.get("event_type") for e in events}
+        # Filter out Data Storage self-audit events (datastorage.audit.written)
+        # These are created by Data Storage when it writes our events
+        hapi_events = [e for e in events if e.get("event_type") != "datastorage.audit.written"]
+        event_types = {e.get("event_type") for e in hapi_events}
 
         assert "llm_request" in event_types, "Missing llm_request in audit trail"
         assert "llm_response" in event_types, "Missing llm_response in audit trail"
         assert "workflow_validation_attempt" in event_types, "Missing workflow_validation_attempt in audit trail"
 
-        # Verify all events have consistent correlation IDs
-        for event in events:
-            assert event["incident_id"] == unique_incident_id, f"Inconsistent incident_id in {event['event_type']}"
-            assert event["remediation_id"] == unique_remediation_id, f"Inconsistent remediation_id in {event['event_type']}"
+        # ADR-034: Verify HAPI events have consistent correlation_id and incident_id
+        # (exclude Data Storage self-audit events which have different structure)
+        for event in hapi_events:
+            assert event["correlation_id"] == unique_remediation_id, f"Inconsistent correlation_id in {event['event_type']}"
+            event_data = event.get("event_data", {})
+            assert event_data.get("incident_id") == unique_incident_id, f"Inconsistent incident_id in {event['event_type']}"
 
     def test_validation_retry_events_persisted(
         self,
         data_storage_url,
         mock_llm_response_invalid_workflow,
+        mock_config,
         unique_incident_id,
         unique_remediation_id
     ):
@@ -459,7 +496,7 @@ class TestAuditPipelineE2E:
 
         # LLM always returns invalid workflow (triggers max retries)
         with patch("src.extensions.incident.investigate_issues", return_value=mock_llm_response_invalid_workflow):
-            with patch("src.extensions.incident.Config"):
+            with patch("src.extensions.incident.Config", return_value=mock_config):
                 import asyncio
                 from src.extensions.incident import analyze_incident
 
@@ -486,7 +523,8 @@ class TestAuditPipelineE2E:
 
         wait_for_audit_flush()
 
-        events = query_audit_events(data_storage_url, unique_incident_id)
+        # Query by correlation_id (remediation_id)
+        events = query_audit_events(data_storage_url, unique_remediation_id)
 
         # Should have multiple LLM requests (retries)
         llm_requests = [e for e in events if e.get("event_type") == "llm_request"]

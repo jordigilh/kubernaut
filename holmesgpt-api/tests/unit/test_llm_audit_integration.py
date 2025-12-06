@@ -3,16 +3,15 @@ Unit tests for LLM Audit Integration
 
 Business Requirement: BR-AUDIT-005 - Workflow Selection Audit Trail
 Design Decisions:
+  - ADR-034: Unified Audit Table Design (AUTHORITATIVE schema)
   - ADR-038: Asynchronous Buffered Audit Trace Ingestion
   - DD-AUDIT-002: Audit Shared Library Design
 
-TDD Phase: RED (failing tests - audit integration needed in recovery.py)
-
 Test Strategy:
 1. Verify audit store is initialized with correct config
-2. Verify LLM request audit events are stored
-3. Verify LLM response audit events are stored
-4. Verify tool call audit events are stored
+2. Verify LLM request audit events have ADR-034 compliant structure
+3. Verify LLM response audit events have ADR-034 compliant structure
+4. Verify tool call audit events have ADR-034 compliant structure
 5. Verify non-blocking behavior (fire-and-forget)
 """
 
@@ -29,7 +28,7 @@ class TestLLMAuditIntegration:
     Unit tests for LLM audit integration
 
     Business Requirement: BR-AUDIT-005
-    Design Decisions: ADR-038, DD-AUDIT-002
+    Design Decisions: ADR-034, ADR-038, DD-AUDIT-002
     """
 
     def test_buffered_audit_store_initialization(self):
@@ -76,10 +75,14 @@ class TestLLMAuditIntegration:
 
         # Store event (should not block)
         event = {
-            "event_id": str(uuid.uuid4()),
+            "version": "1.0",
+            "service": "test-service",
             "event_type": "llm_request",
-            "incident_id": "test-123",
-            "model": "test-model"
+            "event_timestamp": "2025-01-01T00:00:00Z",
+            "correlation_id": "test-123",
+            "operation": "test_op",
+            "outcome": "success",
+            "event_data": {"model": "test-model"}
         }
 
         result = store.store_audit(event)
@@ -95,14 +98,11 @@ class TestLLMAuditIntegration:
 
     def test_llm_request_audit_event_structure(self):
         """
-        BR-AUDIT-005: LLM request audit events have correct structure
+        BR-AUDIT-005 + ADR-034: LLM request audit events have correct structure
 
-        BEHAVIOR: Audit event contains all required fields
+        BEHAVIOR: Audit event contains ADR-034 envelope + event_data
         CORRECTNESS: Fields match ADR-034 unified audit schema
-
-        TDD Phase: RED - Need to define LLM audit event structure
         """
-        # Define expected LLM request audit event
         event = create_llm_request_audit_event(
             incident_id="inc-12345",
             remediation_id="rem-67890",
@@ -111,27 +111,37 @@ class TestLLMAuditIntegration:
             toolsets_enabled=["kubernetes/core", "workflow/catalog"]
         )
 
-        # Required fields per ADR-034
-        assert "event_id" in event
+        # ADR-034 envelope fields (top-level)
+        assert "version" in event
+        assert event["version"] == "1.0"
+        assert "service" in event
+        assert event["service"] == "holmesgpt-api"
         assert "event_type" in event
         assert event["event_type"] == "llm_request"
-        assert "timestamp" in event
-        assert "incident_id" in event
-        assert "remediation_id" in event
-        assert "model" in event
-        assert "prompt_length" in event
-        assert "toolsets_enabled" in event
+        assert "event_timestamp" in event
+        assert "correlation_id" in event
+        assert event["correlation_id"] == "rem-67890"
+        assert "operation" in event
+        assert "outcome" in event
+        assert "event_data" in event
+
+        # Service-specific fields (in event_data)
+        event_data = event["event_data"]
+        assert "event_id" in event_data
+        assert "incident_id" in event_data
+        assert event_data["incident_id"] == "inc-12345"
+        assert "model" in event_data
+        assert event_data["model"] == "claude-3-5-sonnet"
+        assert "prompt_length" in event_data
+        assert "toolsets_enabled" in event_data
 
     def test_llm_response_audit_event_structure(self):
         """
-        BR-AUDIT-005: LLM response audit events have correct structure
+        BR-AUDIT-005 + ADR-034: LLM response audit events have correct structure
 
-        BEHAVIOR: Audit event contains all required fields
+        BEHAVIOR: Audit event contains ADR-034 envelope + event_data
         CORRECTNESS: Fields match ADR-034 unified audit schema
-
-        TDD Phase: GREEN - Now using src/audit/events.py
         """
-        # Define expected LLM response audit event
         event = create_llm_response_audit_event(
             incident_id="inc-12345",
             remediation_id="rem-67890",
@@ -141,27 +151,33 @@ class TestLLMAuditIntegration:
             tool_call_count=3
         )
 
-        # Required fields per ADR-034
-        assert "event_id" in event
+        # ADR-034 envelope fields (top-level)
+        assert "version" in event
+        assert "service" in event
         assert "event_type" in event
         assert event["event_type"] == "llm_response"
-        assert "timestamp" in event
-        assert "incident_id" in event
-        assert "remediation_id" in event
-        assert "has_analysis" in event
-        assert "analysis_length" in event
-        assert "tool_call_count" in event
+        assert "event_timestamp" in event
+        assert "correlation_id" in event
+        assert event["correlation_id"] == "rem-67890"
+        assert "operation" in event
+        assert "outcome" in event
+        assert "event_data" in event
+
+        # Service-specific fields (in event_data)
+        event_data = event["event_data"]
+        assert "event_id" in event_data
+        assert "incident_id" in event_data
+        assert "has_analysis" in event_data
+        assert "analysis_length" in event_data
+        assert "tool_call_count" in event_data
 
     def test_tool_call_audit_event_structure(self):
         """
-        BR-AUDIT-005: Tool call audit events have correct structure
+        BR-AUDIT-005 + ADR-034: Tool call audit events have correct structure
 
-        BEHAVIOR: Audit event contains all required fields
+        BEHAVIOR: Audit event contains ADR-034 envelope + event_data
         CORRECTNESS: Fields match ADR-034 unified audit schema
-
-        TDD Phase: GREEN - Now using src/audit/events.py
         """
-        # Define expected tool call audit event
         event = create_tool_call_audit_event(
             incident_id="inc-12345",
             remediation_id="rem-67890",
@@ -171,16 +187,26 @@ class TestLLMAuditIntegration:
             tool_result={"workflows": []}
         )
 
-        # Required fields per ADR-034
-        assert "event_id" in event
+        # ADR-034 envelope fields (top-level)
+        assert "version" in event
+        assert "service" in event
         assert "event_type" in event
         assert event["event_type"] == "llm_tool_call"
-        assert "timestamp" in event
-        assert "incident_id" in event
-        assert "remediation_id" in event
-        assert "tool_name" in event
-        assert "tool_arguments" in event
-        assert "tool_result" in event
+        assert "event_timestamp" in event
+        assert "correlation_id" in event
+        assert event["correlation_id"] == "rem-67890"
+        assert "operation" in event
+        assert "outcome" in event
+        assert "event_data" in event
+
+        # Service-specific fields (in event_data)
+        event_data = event["event_data"]
+        assert "event_id" in event_data
+        assert "incident_id" in event_data
+        assert "tool_name" in event_data
+        assert event_data["tool_name"] == "search_workflow_catalog"
+        assert "tool_arguments" in event_data
+        assert "tool_result" in event_data
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -195,4 +221,3 @@ from src.audit.events import (
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
-

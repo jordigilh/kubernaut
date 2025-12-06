@@ -277,23 +277,36 @@ def build_image(
     """
     Build image using Podman (per ADR-016).
 
+    Follows the pattern from test/infrastructure/datastorage.go:
+    - Working directory set to context_dir (workspace root)
+    - Dockerfile path is relative to context_dir
+    - Context is "." (current directory after cwd change)
+
     Args:
         image_name: Target image name
-        dockerfile: Path to Dockerfile
-        context_dir: Build context directory
+        dockerfile: Path to Dockerfile (relative to context_dir)
+        context_dir: Build context directory (workspace root)
         build_args: Optional build arguments
     """
     print(f"🔨 Building image '{image_name}'...")
 
-    cmd = ["podman", "build", "-t", image_name, "-f", dockerfile]
+    # Verify dockerfile exists relative to context_dir
+    dockerfile_path = os.path.join(context_dir, dockerfile)
+    if not os.path.exists(dockerfile_path):
+        raise RuntimeError(f"Dockerfile not found: {dockerfile_path}")
+
+    print(f"   Dockerfile: {dockerfile}")
+    print(f"   Context: {context_dir}")
+
+    # Match Go pattern: run from context_dir with relative dockerfile path
+    cmd = ["podman", "build", "-t", image_name, "-f", dockerfile, "."]
 
     if build_args:
         for key, value in build_args.items():
             cmd.extend(["--build-arg", f"{key}={value}"])
 
-    cmd.append(context_dir)
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # Run from context_dir (workspace root) - matching Go's buildCmd.Dir = workspaceRoot
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=context_dir)
 
     if result.returncode != 0:
         print(f"❌ Build failed:\n{result.stderr}")

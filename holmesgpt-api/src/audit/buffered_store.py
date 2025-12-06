@@ -274,43 +274,78 @@ class BufferedAuditStore:
 
     def _write_batch_with_retry(self, batch: List[Dict[str, Any]]) -> None:
         """
-        Write batch with exponential backoff retry
+        Write batch by iterating through events and POSTing each individually
 
+        ADR-034: Data Storage expects single events at POST /api/v1/audit/events
+        ADR-038: Client-side batching with fire-and-forget pattern
         DD-AUDIT-002: "Retries failed writes with exponential backoff"
 
-        Retry strategy:
+        Retry strategy (per event):
         - Attempt 1: Immediate
         - Attempt 2: 1 second delay
         - Attempt 3: 4 seconds delay
-        - After max_retries: Drop batch and log
+        - After max_retries: Drop event and continue
         """
         if not batch:
             return
 
+        written = 0
+        failed = 0
+
+        for event in batch:
+            if self._write_single_event_with_retry(event):
+                written += 1
+            else:
+                failed += 1
+
+        with self._lock:
+            self._written_count += written
+            if failed > 0:
+                self._failed_batch_count += 1
+
+        if written > 0:
+            logger.debug(
+                f"✅ DD-AUDIT-002: Wrote audit events - "
+                f"written={written}, failed={failed}"
+            )
+
+        if failed > 0:
+            logger.warning(
+                f"⚠️ DD-AUDIT-002: Some events failed - "
+                f"written={written}, failed={failed}"
+            )
+
+    def _write_single_event_with_retry(self, event: Dict[str, Any]) -> bool:
+        """
+        Write single event with exponential backoff retry
+
+        ADR-034: POST /api/v1/audit/events expects single event JSON
+
+        Args:
+            event: ADR-034 compliant audit event
+
+        Returns:
+            True if written successfully, False if dropped
+        """
         for attempt in range(1, self._config.max_retries + 1):
             try:
                 response = requests.post(
-                    f"{self._url}/api/v1/audit/events/batch",
-                    json={"events": batch},
+                    f"{self._url}/api/v1/audit/events",
+                    json=event,
                     timeout=self._config.http_timeout_seconds
                 )
                 response.raise_for_status()
-
-                # Success
-                with self._lock:
-                    self._written_count += len(batch)
-
-                logger.debug(
-                    f"✅ DD-AUDIT-002: Wrote audit batch - "
-                    f"batch_size={len(batch)}, attempt={attempt}"
-                )
-                return
+                return True
 
             except Exception as e:
+                event_type = event.get("event_type", "unknown")
+                correlation_id = event.get("correlation_id", "")
+
                 logger.warning(
-                    f"⚠️ DD-AUDIT-002: Batch write failed - "
+                    f"⚠️ DD-AUDIT-002: Event write failed - "
                     f"attempt={attempt}/{self._config.max_retries}, "
-                    f"batch_size={len(batch)}, error={e}"
+                    f"event_type={event_type}, correlation_id={correlation_id}, "
+                    f"error={e}"
                 )
 
                 if attempt < self._config.max_retries:
@@ -318,12 +353,14 @@ class BufferedAuditStore:
                     backoff = attempt * attempt
                     time.sleep(backoff)
 
-        # Final failure: Drop batch
-        with self._lock:
-            self._failed_batch_count += 1
+        # Final failure: Drop event
+        event_type = event.get("event_type", "unknown")
+        correlation_id = event.get("correlation_id", "")
 
         logger.error(
-            f"❌ DD-AUDIT-002: Dropping audit batch after max retries - "
-            f"batch_size={len(batch)}, max_retries={self._config.max_retries}"
+            f"❌ DD-AUDIT-002: Dropping audit event after max retries - "
+            f"event_type={event_type}, correlation_id={correlation_id}, "
+            f"max_retries={self._config.max_retries}"
         )
+        return False
 

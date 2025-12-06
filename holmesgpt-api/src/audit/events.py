@@ -19,17 +19,28 @@ LLM Audit Event Factories
 
 Business Requirement: BR-AUDIT-005 - Workflow Selection Audit Trail
 Design Decisions:
-  - ADR-034: Unified Audit Table Design
+  - ADR-034: Unified Audit Table Design (AUTHORITATIVE schema)
   - ADR-038: Asynchronous Buffered Audit Trace Ingestion
   - DD-AUDIT-002: Audit Shared Library Design
 
 This module provides factory functions for creating LLM audit events.
 Events are structured per ADR-034 unified audit schema.
 
+ADR-034 Required Fields:
+  - version: Schema version (always "1.0")
+  - service/event_category: Service name ("holmesgpt-api")
+  - event_type: Event type (e.g., "llm_request")
+  - event_timestamp: ISO 8601 timestamp
+  - correlation_id: Remediation ID for correlation
+  - operation/event_action: Action performed
+  - outcome/event_outcome: Result status
+  - event_data: Service-specific payload (JSONB)
+
 Event Types:
   - llm_request: LLM prompt sent to model
   - llm_response: LLM analysis response received
   - llm_tool_call: LLM tool invocation (e.g., search_workflow_catalog)
+  - workflow_validation_attempt: Validation retry event
 
 Usage:
     from src.audit.events import (
@@ -38,7 +49,7 @@ Usage:
         create_tool_call_event
     )
 
-    # Create event
+    # Create event (ADR-034 compliant)
     event = create_llm_request_event(
         incident_id="inc-123",
         remediation_id="rem-456",
@@ -51,9 +62,55 @@ Usage:
     audit_store.store_audit(event)
 """
 
-import datetime
+from datetime import datetime, timezone
 import uuid
 from typing import Dict, Any, List, Optional
+
+
+# ADR-034 Constants
+AUDIT_VERSION = "1.0"
+SERVICE_NAME = "holmesgpt-api"
+
+
+def _get_utc_timestamp() -> str:
+    """Get current UTC timestamp in ISO 8601 format (ADR-034 compliant)."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _create_adr034_event(
+    event_type: str,
+    operation: str,
+    outcome: str,
+    correlation_id: str,
+    event_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Create an ADR-034 compliant audit event envelope.
+
+    This is the canonical format for all audit events per ADR-034.
+    Data Storage expects this exact structure.
+
+    Args:
+        event_type: Event type (e.g., "llm_request")
+        operation: Action performed (e.g., "llm_request_sent")
+        outcome: Result status ("success", "failure", "pending")
+        correlation_id: Remediation ID for correlation
+        event_data: Service-specific payload (JSONB)
+
+    Returns:
+        ADR-034 compliant event dictionary
+    """
+    return {
+        # ADR-034 Required Fields
+        "version": AUDIT_VERSION,
+        "service": SERVICE_NAME,              # event_category alias
+        "event_type": event_type,
+        "event_timestamp": _get_utc_timestamp(),
+        "correlation_id": correlation_id,
+        "operation": operation,               # event_action alias
+        "outcome": outcome,                   # event_outcome alias
+        "event_data": event_data,             # Service-specific JSONB payload
+    }
 
 
 def create_llm_request_event(
@@ -65,7 +122,7 @@ def create_llm_request_event(
     mcp_servers: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
-    Create an LLM request audit event
+    Create an LLM request audit event (ADR-034 compliant)
 
     Business Requirement: BR-AUDIT-005
     Design Decision: ADR-034 - Unified Audit Table Design
@@ -79,20 +136,25 @@ def create_llm_request_event(
         mcp_servers: Optional list of MCP servers
 
     Returns:
-        Structured audit event dictionary
+        ADR-034 compliant audit event dictionary
     """
-    return {
+    event_data = {
         "event_id": str(uuid.uuid4()),
-        "event_type": "llm_request",
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "incident_id": incident_id,
-        "remediation_id": remediation_id or "",
         "model": model,
         "prompt_length": len(prompt),
         "prompt_preview": prompt[:500] + "..." if len(prompt) > 500 else prompt,
         "toolsets_enabled": toolsets_enabled,
         "mcp_servers": mcp_servers or [],
     }
+
+    return _create_adr034_event(
+        event_type="llm_request",
+        operation="llm_request_sent",
+        outcome="success",
+        correlation_id=remediation_id or "",
+        event_data=event_data
+    )
 
 
 def create_llm_response_event(
@@ -104,7 +166,7 @@ def create_llm_response_event(
     tool_call_count: int
 ) -> Dict[str, Any]:
     """
-    Create an LLM response audit event
+    Create an LLM response audit event (ADR-034 compliant)
 
     Business Requirement: BR-AUDIT-005
     Design Decision: ADR-034 - Unified Audit Table Design
@@ -118,19 +180,24 @@ def create_llm_response_event(
         tool_call_count: Number of tool calls made by LLM
 
     Returns:
-        Structured audit event dictionary
+        ADR-034 compliant audit event dictionary
     """
-    return {
+    event_data = {
         "event_id": str(uuid.uuid4()),
-        "event_type": "llm_response",
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "incident_id": incident_id,
-        "remediation_id": remediation_id or "",
         "has_analysis": has_analysis,
         "analysis_length": analysis_length,
         "analysis_preview": analysis_preview,
         "tool_call_count": tool_call_count,
     }
+
+    return _create_adr034_event(
+        event_type="llm_response",
+        operation="llm_response_received",
+        outcome="success" if has_analysis else "failure",
+        correlation_id=remediation_id or "",
+        event_data=event_data
+    )
 
 
 def create_tool_call_event(
@@ -142,7 +209,7 @@ def create_tool_call_event(
     tool_result: Any
 ) -> Dict[str, Any]:
     """
-    Create a tool call audit event
+    Create a tool call audit event (ADR-034 compliant)
 
     Business Requirement: BR-AUDIT-005
     Design Decision: ADR-034 - Unified Audit Table Design
@@ -156,19 +223,24 @@ def create_tool_call_event(
         tool_result: Result returned by tool
 
     Returns:
-        Structured audit event dictionary
+        ADR-034 compliant audit event dictionary
     """
-    return {
+    event_data = {
         "event_id": str(uuid.uuid4()),
-        "event_type": "llm_tool_call",
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "incident_id": incident_id,
-        "remediation_id": remediation_id or "",
         "tool_call_index": tool_call_index,
         "tool_name": tool_name,
         "tool_arguments": tool_arguments,
         "tool_result": tool_result,
     }
+
+    return _create_adr034_event(
+        event_type="llm_tool_call",
+        operation="tool_invoked",
+        outcome="success",
+        correlation_id=remediation_id or "",
+        event_data=event_data
+    )
 
 
 def create_validation_attempt_event(
@@ -182,7 +254,7 @@ def create_validation_attempt_event(
     human_review_reason: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Create a workflow validation attempt audit event
+    Create a workflow validation attempt audit event (ADR-034 compliant)
 
     Business Requirement: BR-AUDIT-005, BR-HAPI-197
     Design Decision: DD-HAPI-002 v1.2 - Workflow Response Validation
@@ -201,22 +273,35 @@ def create_validation_attempt_event(
         human_review_reason: Reason code if needs_human_review (final attempt)
 
     Returns:
-        Structured audit event dictionary
+        ADR-034 compliant audit event dictionary
     """
-    return {
+    is_final_attempt = attempt >= max_attempts
+
+    event_data = {
         "event_id": str(uuid.uuid4()),
-        "event_type": "workflow_validation_attempt",
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "incident_id": incident_id,
-        "remediation_id": remediation_id or "",
         "attempt": attempt,
         "max_attempts": max_attempts,
         "is_valid": is_valid,
         "errors": errors,
         "workflow_id": workflow_id or "",
         "human_review_reason": human_review_reason or "",
-        "is_final_attempt": attempt >= max_attempts,
+        "is_final_attempt": is_final_attempt,
     }
 
+    # Determine outcome based on validation result
+    if is_valid:
+        outcome = "success"
+    elif is_final_attempt:
+        outcome = "failure"
+    else:
+        outcome = "pending"  # Will retry
 
+    return _create_adr034_event(
+        event_type="workflow_validation_attempt",
+        operation="validation_executed",
+        outcome=outcome,
+        correlation_id=remediation_id or "",
+        event_data=event_data
+    )
 
