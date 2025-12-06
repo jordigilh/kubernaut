@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -34,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	"github.com/jordigilh/kubernaut/pkg/notification/retry"
+	"github.com/jordigilh/kubernaut/pkg/notification/routing"
 	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
 )
 
@@ -59,6 +61,12 @@ type NotificationRequestReconciler struct {
 	// See: DD-NOT-001-ADR034-AUDIT-INTEGRATION-v2.0-FULL.md
 	AuditStore   audit.AuditStore // Buffered store for async audit writes (fire-and-forget)
 	AuditHelpers *AuditHelpers    // Helper functions for creating audit events
+
+	// BR-NOT-065: Channel Routing Based on Labels
+	// Routing configuration for label-based channel selection
+	// See: DD-WE-004 (skip-reason routing)
+	routingConfig *routing.Config
+	routingMu     sync.RWMutex
 }
 
 //+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
@@ -181,7 +189,17 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 	// Get retry policy to check max attempts
 	policy := r.getRetryPolicy(notification)
 
-	for _, channel := range notification.Spec.Channels {
+	// BR-NOT-065: Resolve channels from routing rules if spec.channels is empty
+	channels := notification.Spec.Channels
+	if len(channels) == 0 {
+		channels = r.resolveChannelsFromRouting(ctx, notification)
+		log.Info("Resolved channels from routing rules",
+			"notification", notification.Name,
+			"channels", channels,
+			"labels", notification.Labels)
+	}
+
+	for _, channel := range channels {
 		// Skip if channel already succeeded (idempotent delivery)
 		if r.channelAlreadySucceeded(notification, string(channel)) {
 			log.Info("Channel already delivered successfully, skipping", "channel", channel)
@@ -819,6 +837,116 @@ func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Contex
 	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
 		log.Error(err, "Failed to buffer audit event", "event_type", "message.escalated")
 	}
+}
+
+// =============================================================================
+// BR-NOT-065: Channel Routing Based on Labels
+// =============================================================================
+// Routing configuration management for label-based channel selection.
+// See: DD-WE-004 (skip-reason routing), NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md
+// =============================================================================
+
+// GetRoutingConfig returns the current routing configuration (thread-safe).
+func (r *NotificationRequestReconciler) GetRoutingConfig() *routing.Config {
+	r.routingMu.RLock()
+	defer r.routingMu.RUnlock()
+	return r.routingConfig
+}
+
+// SetRoutingConfig updates the routing configuration (thread-safe).
+// Called by hot-reload when ConfigMap changes (BR-NOT-067).
+func (r *NotificationRequestReconciler) SetRoutingConfig(config *routing.Config) {
+	r.routingMu.Lock()
+	defer r.routingMu.Unlock()
+	r.routingConfig = config
+}
+
+// resolveChannelsFromRouting resolves delivery channels from routing rules when spec.channels is empty.
+// BR-NOT-065: Use routing rules to determine channels based on CRD labels.
+//
+// Routing Priority (DD-WE-004):
+//   - PreviousExecutionFailed → CRITICAL (PagerDuty)
+//   - ExhaustedRetries → HIGH (Slack)
+//   - ResourceBusy/RecentlyRemediated → LOW (Console bulk)
+func (r *NotificationRequestReconciler) resolveChannelsFromRouting(
+	ctx context.Context,
+	notification *notificationv1alpha1.NotificationRequest,
+) []notificationv1alpha1.Channel {
+	log := log.FromContext(ctx)
+
+	// Get routing config (may be nil if not loaded)
+	config := r.GetRoutingConfig()
+	if config == nil {
+		log.Info("No routing config loaded, using default console channel",
+			"notification", notification.Name)
+		return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
+	}
+
+	// Find receiver based on notification labels
+	labels := notification.Labels
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+
+	// Log routing labels for debugging
+	routingLabels := make(map[string]string)
+	for k, v := range labels {
+		if strings.HasPrefix(k, "kubernaut.ai/") {
+			routingLabels[k] = v
+		}
+	}
+	log.V(1).Info("Routing labels", "labels", routingLabels)
+
+	// Find matching receiver
+	receiverName := config.Route.FindReceiver(labels)
+	receiver := config.GetReceiver(receiverName)
+
+	if receiver == nil {
+		log.Info("Receiver not found, using default console channel",
+			"receiver", receiverName,
+			"notification", notification.Name)
+		return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
+	}
+
+	// Convert receiver to channels
+	channels := r.receiverToChannels(receiver)
+
+	log.Info("Resolved channels from routing",
+		"notification", notification.Name,
+		"receiver", receiverName,
+		"channels", channels)
+
+	return channels
+}
+
+// receiverToChannels converts a routing.Receiver to a list of notification channels.
+func (r *NotificationRequestReconciler) receiverToChannels(receiver *routing.Receiver) []notificationv1alpha1.Channel {
+	var channels []notificationv1alpha1.Channel
+
+	// Map receiver configs to CRD channel types
+	if len(receiver.SlackConfigs) > 0 {
+		channels = append(channels, notificationv1alpha1.ChannelSlack)
+	}
+	if len(receiver.PagerDutyConfigs) > 0 {
+		// PagerDuty uses webhook channel type
+		channels = append(channels, notificationv1alpha1.ChannelWebhook)
+	}
+	if len(receiver.EmailConfigs) > 0 {
+		channels = append(channels, notificationv1alpha1.ChannelEmail)
+	}
+	if len(receiver.WebhookConfigs) > 0 {
+		channels = append(channels, notificationv1alpha1.ChannelWebhook)
+	}
+	if len(receiver.ConsoleConfigs) > 0 {
+		channels = append(channels, notificationv1alpha1.ChannelConsole)
+	}
+
+	// Default to console if no channels configured
+	if len(channels) == 0 {
+		channels = append(channels, notificationv1alpha1.ChannelConsole)
+	}
+
+	return channels
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -452,7 +452,7 @@ type NotificationRequestReconciler struct {
     client.Client
     Scheme *runtime.Scheme
     // ... existing fields ...
-    
+
     // RoutingConfig holds the loaded routing configuration
     routingConfig *routing.Config
     routingMu     sync.RWMutex
