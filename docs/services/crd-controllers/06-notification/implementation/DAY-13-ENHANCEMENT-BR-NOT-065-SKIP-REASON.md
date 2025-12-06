@@ -49,11 +49,12 @@ receiver := config.GetReceiver(receiverName)
 | **9:00-9:15** | ANALYSIS: Review existing implementation | 15 min | Context verified |
 | **9:15-10:00** | TDD GREEN: Add skip-reason tests | 45 min | 5 unit tests |
 | **10:00-10:30** | Integration test: Skip-reason routing | 30 min | 1 integration test |
-| **10:30-11:00** | Create example routing config | 30 min | Example YAML |
-| **11:00-11:45** | Create skip-reason runbook | 45 min | Runbook document |
-| **11:45-12:15** | Update cross-team document | 30 min | DD-WE-004 v1.5 |
+| **10:30-11:15** | **Controller Integration** (NEW) | 45 min | Routing in reconciler |
+| **11:15-11:45** | Create example routing config | 30 min | Example YAML |
+| **11:45-12:30** | Create skip-reason runbook | 45 min | Runbook document |
+| **12:30-13:00** | Update cross-team document | 30 min | DD-WE-004 v1.5 |
 
-**Total**: ~3.5 hours (efficiency gained from implementation already done)
+**Total**: ~4 hours (added controller integration)
 
 ---
 
@@ -61,10 +62,17 @@ receiver := config.GetReceiver(receiverName)
 
 | Original Plan | Revised Plan | Reason |
 |---------------|--------------|--------|
-| TDD RED (60 min) | TDD GREEN (45 min) | Implementation exists, tests will pass |
+| TDD RED (60 min) | TDD GREEN (45 min) | Label implementation exists, tests will pass |
 | No integration test | Add 1 integration test (30 min) | Verify controller uses labels |
-| Runbook (60 min) | Runbook (45 min) | Simpler structure, append to existing patterns |
-| Total: 4 hours | Total: 3.5 hours | Implementation already complete |
+| No controller integration | **Add controller integration (45 min)** | Controller not yet using routing package |
+| Runbook (60 min) | Runbook (45 min) | Simpler structure |
+| Total: 4 hours | Total: 4 hours | Added controller integration |
+
+### ⚠️ Critical Finding: Controller Integration Missing
+
+**Verified**: `grep -r "routing\." internal/controller/notification/` returns **no matches**.
+
+The `pkg/notification/routing/` package exists but the controller reconciler doesn't use it yet. Day 13 MUST include integrating routing into the controller.
 
 ---
 
@@ -366,7 +374,116 @@ go test ./test/integration/notification/... -v --ginkgo.focus="Skip-Reason Routi
 
 ---
 
-## 📝 Phase 3: Create Example Routing Configuration (30 min)
+## 🔧 Phase 3: Controller Integration (45 min) - CRITICAL
+
+> **Finding**: The routing package exists but the controller doesn't use it yet.
+> This phase integrates routing into the controller reconciler.
+
+### Task 3.1: Add Routing to Controller
+
+**File**: `internal/controller/notification/notificationrequest_controller.go`
+
+Modify the `Reconcile` function to use routing when `spec.channels` is empty:
+
+```go
+import (
+    "github.com/jordigilh/kubernaut/pkg/notification/routing"
+)
+
+// In Reconcile function, after getting the NotificationRequest:
+
+func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    // ... existing code ...
+
+    // Get the NotificationRequest
+    notification := &notificationv1alpha1.NotificationRequest{}
+    if err := r.Get(ctx, req.NamespacedName, notification); err != nil {
+        return ctrl.Result{}, client.IgnoreNotFound(err)
+    }
+
+    // Resolve channels using routing rules if spec.channels is empty
+    channels := notification.Spec.Channels
+    if len(channels) == 0 {
+        // BR-NOT-065: Use routing rules to determine channels
+        channels = r.resolveChannelsFromRouting(ctx, notification)
+        log.FromContext(ctx).Info("Resolved channels from routing rules",
+            "notification", notification.Name,
+            "channels", channels,
+            "labels", notification.Labels)
+    }
+
+    // ... continue with delivery using resolved channels ...
+}
+
+// resolveChannelsFromRouting uses the routing configuration to determine channels
+func (r *NotificationRequestReconciler) resolveChannelsFromRouting(
+    ctx context.Context,
+    notification *notificationv1alpha1.NotificationRequest,
+) []notificationv1alpha1.Channel {
+    // Get routing config (loaded from ConfigMap)
+    config := r.getRoutingConfig()
+    if config == nil {
+        log.FromContext(ctx).Info("No routing config, using default console channel")
+        return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
+    }
+
+    // Find receiver based on notification labels
+    receiverName := config.Route.FindReceiver(notification.Labels)
+    receiver := config.GetReceiver(receiverName)
+    if receiver == nil {
+        log.FromContext(ctx).Info("Receiver not found, using default console channel",
+            "receiver", receiverName)
+        return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
+    }
+
+    // Convert receiver to channels
+    return routing.ReceiverToChannels(receiver)
+}
+```
+
+### Task 3.2: Add Routing Config Loading
+
+**File**: `internal/controller/notification/notificationrequest_controller.go`
+
+Add routing config field and initialization:
+
+```go
+type NotificationRequestReconciler struct {
+    client.Client
+    Scheme *runtime.Scheme
+    // ... existing fields ...
+    
+    // RoutingConfig holds the loaded routing configuration
+    routingConfig *routing.Config
+    routingMu     sync.RWMutex
+}
+
+func (r *NotificationRequestReconciler) getRoutingConfig() *routing.Config {
+    r.routingMu.RLock()
+    defer r.routingMu.RUnlock()
+    return r.routingConfig
+}
+
+func (r *NotificationRequestReconciler) SetRoutingConfig(config *routing.Config) {
+    r.routingMu.Lock()
+    defer r.routingMu.Unlock()
+    r.routingConfig = config
+}
+```
+
+### Task 3.3: Run Tests
+
+```bash
+cd /Users/jgil/go/src/github.com/jordigilh/kubernaut
+go build ./internal/controller/notification/...
+go test ./test/unit/notification/... -v --count=1 2>&1 | tail -20
+```
+
+**Expected**: Build succeeds, existing tests still pass.
+
+---
+
+## 📝 Phase 4: Create Example Routing Configuration (30 min)
 
 ### Task 3.1: Create Skip-Reason Routing Example
 
@@ -777,6 +894,13 @@ Update `docs/handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md`:
 - [ ] Integration tests passing (`go test ./test/integration/notification/... -v --ginkgo.focus="Skip-Reason"`)
 - [ ] No lint errors
 
+### Controller Integration (CRITICAL)
+- [ ] `resolveChannelsFromRouting()` added to controller
+- [ ] `getRoutingConfig()` / `SetRoutingConfig()` added
+- [ ] Controller uses routing when `spec.channels` is empty
+- [ ] Build succeeds: `go build ./internal/controller/notification/...`
+- [ ] Existing tests still pass
+
 ### Configuration
 - [ ] Example routing config created (`routing-config-skip-reason-example.yaml`)
 - [ ] Config validated (YAML syntax)
@@ -784,11 +908,12 @@ Update `docs/handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md`:
 ### Documentation
 - [ ] Skip-reason runbook created (`SKIP_REASON_ROUTING.md`)
 - [ ] API specification already updated (v2.1) ✅
+- [ ] BR-NOT-065 updated with mandatory labels ✅
 - [ ] Cross-team document updated (v1.5)
 
 ### Cross-Team
 - [ ] DD-WE-004 fully acknowledged (v1.5)
-- [ ] RO Team notified of completion
+- [ ] RO Team notified of mandatory labels requirement
 - [ ] WE Team notified of completion
 
 ---

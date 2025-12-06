@@ -465,31 +465,71 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 #### BR-NOT-065: Channel Routing Based on Labels
 
-**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification labels (type, environment, severity, namespace) using configurable routing rules. CRD creators (e.g., RemediationOrchestrator) do NOT need to specify Recipients or Channels - routing rules determine these based on labels.
+**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification labels (type, environment, severity, namespace, skip-reason) using configurable routing rules. CRD creators (e.g., RemediationOrchestrator) do NOT need to specify Recipients or Channels - routing rules determine these based on labels.
 
 **Priority**: P0 (CRITICAL)
 
 **Rationale**: Different notification types require different delivery channels. Approval requests may need PagerDuty for immediate attention, while completion notifications may only need Slack. Label-based routing enables flexible, configurable channel selection without code changes.
 
 **Implementation**:
-- Routing based on notification labels: `type`, `environment`, `severity`, `namespace`
+- Routing based on notification labels: `type`, `environment`, `severity`, `namespace`, `skip-reason`
 - Configurable routing rules in ConfigMap
 - First matching rule wins (ordered evaluation)
 - Default fallback channel if no rules match
+
+**Supported Routing Labels** (all use `kubernaut.ai/` domain):
+
+| Label Key | Purpose | Example Values |
+|-----------|---------|----------------|
+| `kubernaut.ai/notification-type` | Notification type routing | `escalation`, `approval_required`, `completed`, `failed` |
+| `kubernaut.ai/severity` | Severity-based routing | `critical`, `high`, `medium`, `low` |
+| `kubernaut.ai/environment` | Environment-based routing | `production`, `staging`, `development`, `test` |
+| `kubernaut.ai/priority` | Priority-based routing | `P0`, `P1`, `P2`, `P3` |
+| `kubernaut.ai/namespace` | Namespace-based routing | Kubernetes namespace name |
+| `kubernaut.ai/component` | Source component routing | `remediation-orchestrator`, `workflow-execution` |
+| `kubernaut.ai/remediation-request` | Correlation routing | RemediationRequest CRD name |
+| `kubernaut.ai/skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` |
+
+**Skip Reason Routing** (Added per DD-WE-004 v1.1):
+
+| Skip Reason | Recommended Severity | Routing Target | Rationale |
+|-------------|---------------------|----------------|-----------|
+| `PreviousExecutionFailed` | `critical` | PagerDuty | Cluster state unknown - immediate action required |
+| `ExhaustedRetries` | `high` | Slack | Infrastructure issues - team awareness required |
+| `ResourceBusy` | `low` | Bulk (BR-ORCH-034) | Temporary - auto-resolves |
+| `RecentlyRemediated` | `low` | Bulk (BR-ORCH-034) | Temporary - auto-resolves |
+
+**Mandatory Labels for CRD Creators** (REQUIRED):
+
+CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels when creating NotificationRequest CRDs:
+
+| Label | Requirement | Source | Rationale |
+|-------|-------------|--------|-----------|
+| `kubernaut.ai/notification-type` | **MANDATORY** | CRD creator | Required for type-based routing |
+| `kubernaut.ai/severity` | **MANDATORY** | CRD creator | Required for severity-based routing |
+| `kubernaut.ai/environment` | **MANDATORY** | RemediationRequest | Required for environment-based routing |
+| `kubernaut.ai/skip-reason` | **CONDITIONAL** | WorkflowExecution (when skipped) | Required for skip-reason routing |
+| `kubernaut.ai/remediation-request` | **MANDATORY** | RemediationRequest name | Required for correlation |
+| `kubernaut.ai/component` | **MANDATORY** | Source controller name | Required for source tracking |
+
+**Cross-Team Enforcement**: Per DD-WE-004 Q8, RO confirmed they will set all routing labels explicitly.
 
 **Acceptance Criteria**:
 - ✅ Notifications routed based on label matching
 - ✅ Multiple routing rules supported with priority ordering
 - ✅ Default fallback channel configured
 - ✅ Routing decision logged for audit
+- ✅ Skip-reason label supported for WFE failure routing (DD-WE-004)
+- ✅ Missing mandatory labels logged as warning
 
 **Test Coverage**:
-- Unit: Label matching and routing decision logic
+- Unit: Label matching and routing decision logic (37 tests)
 - Integration: Multi-rule routing with various label combinations
 - E2E: End-to-end routing validation
 
 **Related BRs**: BR-NOT-066 (Config Format), BR-NOT-067 (Hot-Reload)
-**Related DDs**: DD-NOTIFICATION-001 (Alertmanager Routing Reuse)
+**Related DDs**: DD-NOTIFICATION-001 (Alertmanager Routing Reuse), DD-WE-004 (Exponential Backoff)
+**Cross-Team**: NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md (Q7, Q8)
 
 ---
 
