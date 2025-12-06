@@ -1,7 +1,7 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.12
+**Version**: v1.13
 **Last Updated**: 2025-12-06
 **Timeline**: 10 days (2 calendar weeks)
 **Status**: 📋 DRAFT - Ready for Review
@@ -9,6 +9,18 @@
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.13** (2025-12-06): **Metrics Business Value Triage - Removed 7 Low-Value Metrics**
+  - ✅ **REMOVED**: `aianalysis_reconciler_phase_transitions_total` (debugging only)
+  - ✅ **REMOVED**: `aianalysis_reconciler_phase_duration_seconds` (debugging only)
+  - ✅ **REMOVED**: `aianalysis_holmesgpt_requests_total` (HAPI tracks server-side)
+  - ✅ **REMOVED**: `aianalysis_holmesgpt_latency_seconds` (HAPI tracks server-side, same-cluster)
+  - ✅ **REMOVED**: `aianalysis_holmesgpt_retries_total` (debugging only)
+  - ✅ **REMOVED**: `aianalysis_rego_latency_seconds` (debugging only, fast operation)
+  - ✅ **REMOVED**: `aianalysis_rego_reloads_total` (operational only)
+  - ✅ **RENAMED**: `aianalysis_holmesgpt_validation_attempts_total` → `aianalysis_audit_validation_attempts_total`
+  - ✅ **RENAMED**: `aianalysis_detected_labels_failures_total` → `aianalysis_quality_detected_labels_failures_total`
+  - 📊 **Final Metric Count**: 8 (6 business + 2 audit/quality) vs 15 before
+  - 📏 **Rationale**: Same-cluster deployment means client-side HAPI metrics add no value; HAPI tracks its own server-side metrics
 - **v1.12** (2025-12-06): **DD-HAPI-002 v1.4: ValidationAttemptsHistory Support**
   - ✅ **CRD Schema**: Added `ValidationAttempt` type and `ValidationAttemptsHistory []ValidationAttempt` to status
   - ✅ **Client Update**: `IncidentResponse` includes `validation_attempts_history` field
@@ -2162,15 +2174,18 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 }
 ```
 
-**EOD Day 5 Checklist:**
-- [ ] Prometheus metrics created (DD-005 compliant naming)
-- [ ] Audit client uses `audit.AuditStore` interface (DD-AUDIT-002)
-- [ ] Audit events use `audit.AuditEvent` with all required fields
-- [ ] Metrics for HolmesGPT-API calls, Rego eval, approvals
-- [ ] Detection failure metrics
-- [ ] Fire-and-forget audit pattern (don't fail on audit error)
-- [ ] Unit tests for metrics/audit (TDD)
+**EOD Day 5 Checklist (v1.13 - Business Value Metrics):**
+- [x] Prometheus metrics created (DD-005 compliant naming) - **8 business-value metrics**
+- [x] Audit client uses `audit.AuditStore` interface (DD-AUDIT-002)
+- [x] Audit events use `audit.AuditEvent` with all required fields
+- [x] **Business Metrics**: Reconciliation throughput/SLA, Rego evaluations, Approvals, Confidence, Failures
+- [x] **Audit Metrics**: Validation attempts (DD-HAPI-002)
+- [x] **Quality Metrics**: Detected labels failures
+- [x] Fire-and-forget audit pattern (don't fail on audit error)
+- [x] Unit tests for metrics/audit (TDD) - 101 tests passing
 - [ ] **Create Error Handling Philosophy document** ⭐ V3.0
+
+**Removed Metrics (v1.13)**: Client-side HAPI metrics removed (HAPI tracks server-side in same-cluster)
 
 #### **Error Handling Philosophy Document** (Day 5 EOD Deliverable)
 

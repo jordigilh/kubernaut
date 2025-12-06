@@ -23,14 +23,16 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 )
 
-// Day 5: Metrics Unit Tests
+// Day 5: Metrics Unit Tests (v1.13 - Business Value Metrics Only)
 // DD-005 Compliant: Tests verify correct metric naming and behavior
+// METRIC SELECTION: Only business-value metrics are included (see IMPLEMENTATION_PLAN_V1.0.md v1.13)
 var _ = Describe("AIAnalysis Metrics", func() {
 	// ========================================
-	// RECONCILER METRICS
+	// RECONCILER METRICS (Business: Throughput + SLA)
 	// ========================================
 	Describe("Reconciler Metrics (DD-005 Compliant)", func() {
 		// BR-AI-OBSERVABILITY-001: Track reconciliation outcomes
+		// Business: "How many analyses completed?" - Throughput SLA
 		It("should register ReconcilerReconciliationsTotal counter", func() {
 			Expect(metrics.ReconcilerReconciliationsTotal).NotTo(BeNil())
 			// Verify metric name follows DD-005 convention: {service}_{component}_{metric}_{unit}
@@ -38,6 +40,7 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			Expect(desc.String()).To(ContainSubstring("aianalysis_reconciler_reconciliations_total"))
 		})
 
+		// Business: "Did we meet <60s SLA target?" - Latency SLA
 		It("should register ReconcilerDurationSeconds histogram", func() {
 			Expect(metrics.ReconcilerDurationSeconds).NotTo(BeNil())
 			// Verify metric can be used (histograms return Observer from WithLabelValues)
@@ -46,21 +49,7 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			}).NotTo(Panic())
 		})
 
-		It("should register ReconcilerPhaseTransitionsTotal counter", func() {
-			Expect(metrics.ReconcilerPhaseTransitionsTotal).NotTo(BeNil())
-			desc := metrics.ReconcilerPhaseTransitionsTotal.WithLabelValues("Pending", "Investigating").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_reconciler_phase_transitions_total"))
-		})
-
-		It("should register ReconcilerPhaseDurationSeconds histogram", func() {
-			Expect(metrics.ReconcilerPhaseDurationSeconds).NotTo(BeNil())
-			// Verify metric can be used (histograms return Observer from WithLabelValues)
-			Expect(func() {
-				metrics.ReconcilerPhaseDurationSeconds.WithLabelValues("Analyzing").Observe(30.0)
-			}).NotTo(Panic())
-		})
-
-		// BR-AI-OBSERVABILITY-002: Business outcome - track phase transition success rate
+		// Business outcome: Track phase transition success rate
 		It("should support recording reconciliation outcomes", func() {
 			// Record successful reconciliation
 			metrics.ReconcilerReconciliationsTotal.WithLabelValues("Pending", "success").Inc()
@@ -75,74 +64,31 @@ var _ = Describe("AIAnalysis Metrics", func() {
 	})
 
 	// ========================================
-	// HOLMESGPT-API METRICS
-	// ========================================
-	Describe("HolmesGPT-API Metrics (DD-005 Compliant)", func() {
-		// BR-AI-006: Track API call metrics
-		It("should register HolmesGPTRequestsTotal counter", func() {
-			Expect(metrics.HolmesGPTRequestsTotal).NotTo(BeNil())
-			desc := metrics.HolmesGPTRequestsTotal.WithLabelValues("/api/v1/incident/analyze", "200").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_holmesgpt_requests_total"))
-		})
-
-		It("should register HolmesGPTLatencySeconds histogram", func() {
-			Expect(metrics.HolmesGPTLatencySeconds).NotTo(BeNil())
-			// Verify metric can be used (histograms return Observer from WithLabelValues)
-			Expect(func() {
-				metrics.HolmesGPTLatencySeconds.WithLabelValues("/api/v1/incident/analyze").Observe(2.5)
-			}).NotTo(Panic())
-		})
-
-		It("should register HolmesGPTRetriesTotal counter", func() {
-			Expect(metrics.HolmesGPTRetriesTotal).NotTo(BeNil())
-			desc := metrics.HolmesGPTRetriesTotal.WithLabelValues("/api/v1/incident/analyze").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_holmesgpt_retries_total"))
-		})
-
-		// DD-HAPI-002 v1.4: Track validation attempts from HAPI
-		It("should register ValidationAttemptsTotal counter", func() {
-			Expect(metrics.ValidationAttemptsTotal).NotTo(BeNil())
-			desc := metrics.ValidationAttemptsTotal.WithLabelValues("restart-pod-v1", "false").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_holmesgpt_validation_attempts_total"))
-		})
-	})
-
-	// ========================================
-	// REGO POLICY METRICS
+	// REGO POLICY METRICS (Business: Policy Decisions)
 	// ========================================
 	Describe("Rego Policy Metrics (DD-005 Compliant)", func() {
 		// BR-AI-030: Track policy evaluation outcomes
+		// Business: "How many policy decisions were made?"
 		It("should register RegoEvaluationsTotal counter", func() {
 			Expect(metrics.RegoEvaluationsTotal).NotTo(BeNil())
 			desc := metrics.RegoEvaluationsTotal.WithLabelValues("approved", "false").Desc()
 			Expect(desc.String()).To(ContainSubstring("aianalysis_rego_evaluations_total"))
 		})
-
-		It("should register RegoLatencySeconds histogram", func() {
-			Expect(metrics.RegoLatencySeconds).NotTo(BeNil())
-			// Verify metric can be used (histograms return Observer from WithLabelValues)
-			Expect(func() {
-				metrics.RegoLatencySeconds.WithLabelValues().Observe(0.05)
-			}).NotTo(Panic())
-		})
-
-		It("should register RegoReloadsTotal counter", func() {
-			Expect(metrics.RegoReloadsTotal).NotTo(BeNil())
-		})
 	})
 
 	// ========================================
-	// APPROVAL METRICS
+	// APPROVAL METRICS (Business: Core Outcome)
 	// ========================================
 	Describe("Approval Metrics (DD-005 Compliant)", func() {
 		// BR-AI-059: Track approval decisions
+		// Business: "What's the approval vs auto-execute ratio?"
 		It("should register ApprovalDecisionsTotal counter", func() {
 			Expect(metrics.ApprovalDecisionsTotal).NotTo(BeNil())
 			desc := metrics.ApprovalDecisionsTotal.WithLabelValues("approved", "production").Desc()
 			Expect(desc.String()).To(ContainSubstring("aianalysis_approval_decisions_total"))
 		})
 
-		// BR-AI-OBSERVABILITY-003: Track approval reasons for audit
+		// Business outcome: Track approval reasons for operator dashboards
 		It("should support recording approval decisions by environment", func() {
 			Expect(func() {
 				metrics.ApprovalDecisionsTotal.WithLabelValues("manual_review_required", "production").Inc()
@@ -152,10 +98,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 	})
 
 	// ========================================
-	// CONFIDENCE METRICS
+	// CONFIDENCE METRICS (Business: AI Quality)
 	// ========================================
 	Describe("Confidence Metrics (DD-005 Compliant)", func() {
 		// BR-AI-OBSERVABILITY-004: Track AI confidence distribution
+		// Business: "How reliable is the AI model?"
 		It("should register ConfidenceScoreDistribution histogram", func() {
 			Expect(metrics.ConfidenceScoreDistribution).NotTo(BeNil())
 			// Verify metric can be used (histograms return Observer from WithLabelValues)
@@ -174,10 +121,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 	})
 
 	// ========================================
-	// FAILURE METRICS
+	// FAILURE METRICS (Business: Failure Tracking)
 	// ========================================
 	Describe("Failure Metrics (DD-005 Compliant)", func() {
 		// BR-HAPI-197: Track workflow resolution failures
+		// Business: "What failure modes are occurring?"
 		It("should register FailuresTotal counter", func() {
 			Expect(metrics.FailuresTotal).NotTo(BeNil())
 			desc := metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Desc()
@@ -195,15 +143,28 @@ var _ = Describe("AIAnalysis Metrics", func() {
 	})
 
 	// ========================================
-	// DETECTED LABELS METRICS
+	// AUDIT METRICS (Compliance: LLM Validation)
 	// ========================================
-	Describe("DetectedLabels Metrics (DD-005 Compliant)", func() {
+	Describe("Audit Metrics (DD-005 Compliant)", func() {
+		// DD-HAPI-002 v1.4: Track validation attempts from HAPI
+		// Audit: "How many LLM self-correction attempts occurred?"
+		It("should register ValidationAttemptsTotal counter", func() {
+			Expect(metrics.ValidationAttemptsTotal).NotTo(BeNil())
+			desc := metrics.ValidationAttemptsTotal.WithLabelValues("restart-pod-v1", "false").Desc()
+			Expect(desc.String()).To(ContainSubstring("aianalysis_audit_validation_attempts_total"))
+		})
+	})
+
+	// ========================================
+	// DATA QUALITY METRICS (Quality: Enrichment)
+	// ========================================
+	Describe("Data Quality Metrics (DD-005 Compliant)", func() {
 		// DD-WORKFLOW-001: Track label detection failures
+		// Quality: "Are there enrichment/detection issues?"
 		It("should register DetectedLabelsFailuresTotal counter", func() {
 			Expect(metrics.DetectedLabelsFailuresTotal).NotTo(BeNil())
 			desc := metrics.DetectedLabelsFailuresTotal.WithLabelValues("environment").Desc()
-			Expect(desc.String()).To(ContainSubstring("aianalysis_detected_labels_failures_total"))
+			Expect(desc.String()).To(ContainSubstring("aianalysis_quality_detected_labels_failures_total"))
 		})
 	})
 })
-
