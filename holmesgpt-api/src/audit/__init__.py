@@ -48,6 +48,7 @@ from src.audit.events import (
     create_llm_request_event,
     create_llm_response_event,
     create_tool_call_event,
+    create_validation_attempt_event,
 )
 
 __all__ = [
@@ -56,5 +57,6 @@ __all__ = [
     "create_llm_request_event",
     "create_llm_response_event",
     "create_tool_call_event",
+    "create_validation_attempt_event",
 ]
 

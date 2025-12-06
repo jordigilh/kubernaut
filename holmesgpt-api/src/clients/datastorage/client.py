@@ -211,6 +211,48 @@ class DataStorageClient:
 
         return RemediationWorkflow.model_validate(response.json())
 
+    def get_workflow_by_uuid(self, workflow_id: str) -> Optional[RemediationWorkflow]:
+        """
+        Get a workflow by UUID (latest version).
+
+        GET /api/v1/workflows/{workflow_id}
+
+        Business Requirement: BR-AI-023 (Hallucination Detection)
+        Design Decision: DD-HAPI-002 v1.2 Step 1
+
+        This method is used for workflow response validation to verify that a
+        workflow_id returned by the LLM actually exists in the catalog.
+
+        Args:
+            workflow_id: Unique workflow identifier (UUID)
+
+        Returns:
+            RemediationWorkflow if found, None if not found (404)
+
+        Raises:
+            DataStorageError: If request fails (excluding 404)
+        """
+        url = f"{self.base_url}/api/v1/workflows/{workflow_id}"
+
+        logger.debug(f"Getting workflow by UUID: workflow_id={workflow_id}")
+
+        response = requests.get(
+            url,
+            headers=self.headers,
+            timeout=self.timeout,
+        )
+
+        if response.status_code == 404:
+            logger.info(f"Workflow not found: workflow_id={workflow_id}")
+            return None
+
+        self._handle_error(response)
+
+        workflow = RemediationWorkflow.model_validate(response.json())
+        logger.debug(f"Workflow found: workflow_id={workflow_id}, version={workflow.version}")
+
+        return workflow
+
     def list_workflow_versions(self, workflow_id: str) -> List[WorkflowVersionSummary]:
         """
         List all versions of a workflow

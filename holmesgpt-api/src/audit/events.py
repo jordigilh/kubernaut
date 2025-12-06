@@ -171,4 +171,52 @@ def create_tool_call_event(
     }
 
 
+def create_validation_attempt_event(
+    incident_id: str,
+    remediation_id: Optional[str],
+    attempt: int,
+    max_attempts: int,
+    is_valid: bool,
+    errors: List[str],
+    workflow_id: Optional[str] = None,
+    human_review_reason: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Create a workflow validation attempt audit event
+
+    Business Requirement: BR-AUDIT-005, BR-HAPI-197
+    Design Decision: DD-HAPI-002 v1.2 - Workflow Response Validation
+
+    Tracks each validation attempt during LLM self-correction loop.
+    Critical for understanding LLM failures and operator notifications.
+
+    Args:
+        incident_id: Incident identifier for correlation
+        remediation_id: Remediation request ID for audit correlation
+        attempt: Current attempt number (1-indexed)
+        max_attempts: Maximum allowed attempts
+        is_valid: Whether validation passed
+        errors: List of validation error messages
+        workflow_id: Workflow ID being validated (if any)
+        human_review_reason: Reason code if needs_human_review (final attempt)
+
+    Returns:
+        Structured audit event dictionary
+    """
+    return {
+        "event_id": str(uuid.uuid4()),
+        "event_type": "workflow_validation_attempt",
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "incident_id": incident_id,
+        "remediation_id": remediation_id or "",
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+        "is_valid": is_valid,
+        "errors": errors,
+        "workflow_id": workflow_id or "",
+        "human_review_reason": human_review_reason or "",
+        "is_final_attempt": attempt >= max_attempts,
+    }
+
+
 

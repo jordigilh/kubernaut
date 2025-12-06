@@ -25,7 +25,29 @@ Design Decision: DD-HAPI-001 (Custom Labels Auto-Append Architecture)
 """
 
 from typing import Dict, Any, Optional, List
+from enum import Enum
 from pydantic import BaseModel, Field, field_validator
+
+
+# ========================================
+# HUMAN REVIEW REASON ENUM (BR-HAPI-197)
+# ========================================
+
+class HumanReviewReason(str, Enum):
+    """
+    Structured reason for needs_human_review=true.
+
+    Business Requirement: BR-HAPI-197
+    Design Decision: DD-HAPI-002 v1.2
+
+    AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
+    """
+    WORKFLOW_NOT_FOUND = "workflow_not_found"
+    IMAGE_MISMATCH = "image_mismatch"
+    PARAMETER_VALIDATION_FAILED = "parameter_validation_failed"
+    NO_MATCHING_WORKFLOWS = "no_matching_workflows"
+    LOW_CONFIDENCE = "low_confidence"
+    LLM_PARSING_ERROR = "llm_parsing_error"
 
 
 # ========================================
@@ -186,6 +208,25 @@ class IncidentRequest(BaseModel):
     enrichment_results: Optional[EnrichmentResults] = Field(None, description="Enriched context from SignalProcessing")
 
 
+class ValidationAttempt(BaseModel):
+    """
+    Record of a single validation attempt during LLM self-correction.
+
+    Business Requirement: BR-HAPI-197 (needs_human_review field)
+    Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
+
+    Used for:
+    1. Operator notification - natural language description of why validation failed
+    2. Audit trail - complete history of all validation attempts
+    3. Debugging - understand LLM behavior when workflows fail
+    """
+    attempt: int = Field(..., ge=1, description="Attempt number (1-indexed)")
+    workflow_id: Optional[str] = Field(None, description="Workflow ID being validated (if any)")
+    is_valid: bool = Field(..., description="Whether validation passed")
+    errors: List[str] = Field(default_factory=list, description="Validation errors (empty if valid)")
+    timestamp: str = Field(..., description="ISO timestamp of validation attempt")
+
+
 class AlternativeWorkflow(BaseModel):
     """
     Alternative workflow recommendation for operator context.
@@ -215,12 +256,14 @@ class IncidentResponse(BaseModel):
 
     Business Requirement: BR-HAPI-002 (Incident analysis response schema)
     Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
+    Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
     Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
 
     Fields added per AIAnalysis team requests:
     - target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)
     - warnings: Non-fatal warnings for transparency (Dec 2, 2025)
     - alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY
+    - needs_human_review: AI could not produce reliable result (Dec 6, 2025)
     """
     incident_id: str = Field(..., description="Incident identifier from request")
     analysis: str = Field(..., description="Natural language analysis from LLM")
@@ -228,6 +271,27 @@ class IncidentResponse(BaseModel):
     selected_workflow: Optional[Dict[str, Any]] = Field(None, description="Selected workflow with workflow_id, containerImage, confidence, parameters")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence in analysis")
     timestamp: str = Field(..., description="ISO timestamp of analysis completion")
+
+    # Human review flag (DD-HAPI-002 v1.2, Dec 6, 2025)
+    # True when AI could not produce a reliable result
+    needs_human_review: bool = Field(
+        default=False,
+        description="True when AI analysis could not produce a reliable result. "
+                    "Reasons include: workflow validation failures after retries, LLM parsing errors, "
+                    "no suitable workflow found, or other AI reliability issues. "
+                    "When true, AIAnalysis should NOT create WorkflowExecution - requires human intervention. "
+                    "Check 'human_review_reason' for structured reason or 'warnings' for details."
+    )
+
+    # Structured reason for human review (BR-HAPI-197, Dec 6, 2025)
+    # Provides reliable enum for AIAnalysis subReason mapping
+    human_review_reason: Optional[HumanReviewReason] = Field(
+        default=None,
+        description="Structured reason when needs_human_review=true. "
+                    "Use this for reliable subReason mapping instead of parsing warnings. "
+                    "Values: workflow_not_found, image_mismatch, parameter_validation_failed, "
+                    "no_matching_workflows, low_confidence, llm_parsing_error"
+    )
 
     # OwnerChain validation fields (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
     target_in_owner_chain: bool = Field(
@@ -247,4 +311,17 @@ class IncidentResponse(BaseModel):
         default_factory=list,
         description="Other workflows considered but not selected. For operator context and audit trail only - "
                     "NOT for automatic fallback execution. Helps operators understand AI reasoning."
+    )
+
+    # Validation attempts history (BR-HAPI-197, DD-HAPI-002 v1.2, Dec 6, 2025)
+    # Complete history of all validation attempts during LLM self-correction loop.
+    # Used for:
+    # - Operator notifications: Natural language description of why validation failed
+    # - Audit trail: Complete record of all attempts (also emitted to audit store)
+    # - Debugging: Understanding LLM behavior and failure patterns
+    validation_attempts_history: List[ValidationAttempt] = Field(
+        default_factory=list,
+        description="History of all validation attempts during LLM self-correction. "
+                    "Each attempt records workflow_id, validation result, and any errors. "
+                    "Empty if validation passed on first attempt or no workflow was selected."
     )

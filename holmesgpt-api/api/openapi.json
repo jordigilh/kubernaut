@@ -462,6 +462,19 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HumanReviewReason": {
+        "type": "string",
+        "enum": [
+          "workflow_not_found",
+          "image_mismatch",
+          "parameter_validation_failed",
+          "no_matching_workflows",
+          "low_confidence",
+          "llm_parsing_error"
+        ],
+        "title": "HumanReviewReason",
+        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirement: BR-HAPI-197\nDesign Decision: DD-HAPI-002 v1.2\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings."
+      },
       "IncidentRequest": {
         "properties": {
           "incident_id": {
@@ -788,6 +801,23 @@
             "title": "Timestamp",
             "description": "ISO timestamp of analysis completion"
           },
+          "needs_human_review": {
+            "type": "boolean",
+            "title": "Needs Human Review",
+            "description": "True when AI analysis could not produce a reliable result. Reasons include: workflow validation failures after retries, LLM parsing errors, no suitable workflow found, or other AI reliability issues. When true, AIAnalysis should NOT create WorkflowExecution - requires human intervention. Check 'human_review_reason' for structured reason or 'warnings' for details.",
+            "default": false
+          },
+          "human_review_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HumanReviewReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Structured reason when needs_human_review=true. Use this for reliable subReason mapping instead of parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error"
+          },
           "target_in_owner_chain": {
             "type": "boolean",
             "title": "Target In Owner Chain",
@@ -809,6 +839,14 @@
             "type": "array",
             "title": "Alternative Workflows",
             "description": "Other workflows considered but not selected. For operator context and audit trail only - NOT for automatic fallback execution. Helps operators understand AI reasoning."
+          },
+          "validation_attempts_history": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationAttempt"
+            },
+            "type": "array",
+            "title": "Validation Attempts History",
+            "description": "History of all validation attempts during LLM self-correction. Each attempt records workflow_id, validation result, and any errors. Empty if validation passed on first attempt or no workflow was selected."
           }
         },
         "type": "object",
@@ -820,7 +858,7 @@
           "timestamp"
         ],
         "title": "IncidentResponse",
-        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nFields added per AIAnalysis team requests:\n- target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY"
+        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nFields added per AIAnalysis team requests:\n- target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)"
       },
       "OriginalRCA": {
         "properties": {
@@ -1484,6 +1522,54 @@
         ],
         "title": "SelectedWorkflowSummary",
         "description": "Summary of the workflow that was executed and failed"
+      },
+      "ValidationAttempt": {
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Attempt",
+            "description": "Attempt number (1-indexed)"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id",
+            "description": "Workflow ID being validated (if any)"
+          },
+          "is_valid": {
+            "type": "boolean",
+            "title": "Is Valid",
+            "description": "Whether validation passed"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Validation errors (empty if valid)"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO timestamp of validation attempt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt",
+          "is_valid",
+          "timestamp"
+        ],
+        "title": "ValidationAttempt",
+        "description": "Record of a single validation attempt during LLM self-correction.\n\nBusiness Requirement: BR-HAPI-197 (needs_human_review field)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\n\nUsed for:\n1. Operator notification - natural language description of why validation failed\n2. Audit trail - complete history of all validation attempts\n3. Debugging - understand LLM behavior when workflows fail"
       },
       "ValidationError": {
         "properties": {

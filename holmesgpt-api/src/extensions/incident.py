@@ -38,9 +38,45 @@ from holmes.config import Config
 from holmes.core.models import InvestigateRequest, InvestigationResult
 from holmes.core.investigation import investigate_issues
 
+# Audit imports (BR-AUDIT-005, ADR-038, DD-AUDIT-002)
+from src.audit import (
+    BufferedAuditStore,
+    AuditConfig,
+    create_llm_request_event,
+    create_llm_response_event,
+    create_tool_call_event,
+    create_validation_attempt_event,
+)
+
 logger = logging.getLogger(__name__)
 
+# ========================================
+# AUDIT STORE INITIALIZATION (BR-AUDIT-005, ADR-038)
+# ========================================
+_audit_store: Optional[BufferedAuditStore] = None
+
+
+def get_audit_store() -> Optional[BufferedAuditStore]:
+    """Get or initialize the audit store singleton (ADR-038)"""
+    global _audit_store
+    if _audit_store is None:
+        data_storage_url = os.getenv("DATA_STORAGE_URL", "http://data-storage:8080")
+        try:
+            _audit_store = BufferedAuditStore(
+                data_storage_url=data_storage_url,
+                config=AuditConfig(buffer_size=10000, batch_size=50, flush_interval_seconds=5.0)
+            )
+            logger.info(f"BR-AUDIT-005: Initialized audit store - url={data_storage_url}")
+        except Exception as e:
+            logger.warning(f"BR-AUDIT-005: Failed to initialize audit store: {e}")
+    return _audit_store
+
 router = APIRouter()
+
+# ========================================
+# LLM SELF-CORRECTION CONSTANTS (DD-HAPI-002 v1.2)
+# ========================================
+MAX_VALIDATION_ATTEMPTS = 3  # BR-HAPI-197: Max attempts before human review
 
 
 # ========================================
@@ -187,6 +223,47 @@ The Data Storage service will use these filters to return only workflows that ar
 with the detected cluster environment.
 
 **IMPORTANT**: If `gitOpsManaged=true`, prioritize workflows with `gitops_aware=true` tag.
+"""
+
+
+# ========================================
+# LLM SELF-CORRECTION FEEDBACK (DD-HAPI-002 v1.2)
+# ========================================
+
+def _build_validation_error_feedback(errors: List[str], attempt: int) -> str:
+    """
+    Build validation error feedback to append to LLM prompt for self-correction.
+
+    Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
+    Business Requirement: BR-HAPI-197 (needs_human_review field)
+
+    This feedback is appended to the conversation when the LLM's workflow response
+    fails validation. The LLM uses this to self-correct while context is preserved.
+
+    Args:
+        errors: List of validation error messages
+        attempt: Current attempt number (0-indexed)
+
+    Returns:
+        Formatted error feedback section for the prompt
+    """
+    attempt_display = attempt + 1  # Convert to 1-indexed for display
+    errors_list = "\n".join(f"- {error}" for error in errors)
+
+    return f"""
+
+## ⚠️ VALIDATION ERROR - CORRECTION REQUIRED (Attempt {attempt_display}/{MAX_VALIDATION_ATTEMPTS})
+
+Your previous workflow response had validation errors:
+
+{errors_list}
+
+**Please correct your response:**
+1. Re-check the workflow ID exists in the catalog (use MCP search_workflow_catalog)
+2. Ensure container_image matches the catalog exactly (or omit to use catalog default)
+3. Verify all required parameters are provided with correct types and values
+
+**Re-submit your JSON response with the corrected workflow selection.**
 """
 
 
@@ -623,9 +700,20 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 
 async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Dict[str, Any]] = None, app_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Core incident analysis logic
+    Core incident analysis logic with LLM self-correction loop.
 
-    Business Requirements: BR-HAPI-002 (Incident analysis)
+    Business Requirements:
+    - BR-HAPI-002 (Incident analysis)
+    - BR-HAPI-197 (needs_human_review field)
+
+    Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
+
+    Self-Correction Loop:
+    1. Call HolmesGPT SDK for RCA and workflow selection
+    2. Validate workflow response (existence, image, parameters)
+    3. If invalid, feed errors back to LLM for self-correction
+    4. Retry up to MAX_VALIDATION_ATTEMPTS times
+    5. If all attempts fail, set needs_human_review=True
     """
     incident_id = request_data.get("incident_id", "unknown")
 
@@ -637,32 +725,8 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
 
     # Use HolmesGPT SDK for AI-powered analysis
     try:
-        # Create investigation prompt
-        investigation_prompt = _create_incident_investigation_prompt(request_data)
-
-        # Log the prompt
-        print("\n" + "="*80)
-        print("🔍 INCIDENT ANALYSIS PROMPT TO LLM")
-        print("="*80)
-        print(investigation_prompt)
-        print("="*80 + "\n")
-
-        # Create investigation request
-        investigation_request = InvestigateRequest(
-            source="kubernaut",
-            title=f"Incident analysis for {request_data.get('signal_type')}",
-            description=investigation_prompt,
-            subject={
-                "type": "incident",
-                "incident_id": incident_id,
-                "signal_type": request_data.get("signal_type")
-            },
-            context={
-                "incident_id": incident_id,
-                "issue_type": "incident"
-            },
-            source_instance_id="holmesgpt-api"
-        )
+        # Create base investigation prompt
+        base_prompt = _create_incident_investigation_prompt(request_data)
 
         # Create minimal DAL
         dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))
@@ -776,23 +840,226 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
             owner_chain=owner_chain
         )
 
-        # Call HolmesGPT SDK
-        logger.info("Calling HolmesGPT SDK for incident analysis")
-        investigation_result = investigate_issues(
-            investigate_request=investigation_request,
-            dal=dal,
-            config=config
-        )
+        # DD-HAPI-002 v1.2: Create Data Storage client for workflow validation
+        data_storage_client = _create_data_storage_client(app_config)
 
-        # Parse investigation result with OwnerChain for validation (DD-WORKFLOW-001 v1.7)
-        result = _parse_investigation_result(investigation_result, request_data, owner_chain=owner_chain)
+        # BR-AUDIT-005: Get audit store for LLM interaction tracking
+        audit_store = get_audit_store()
+        remediation_id = request_data.get("remediation_id", "")
+
+        # ========================================
+        # LLM SELF-CORRECTION LOOP (DD-HAPI-002 v1.2)
+        # With full audit trail (BR-AUDIT-005)
+        # ========================================
+        validation_errors_history: List[List[str]] = []
+        validation_attempts_history: List[Dict[str, Any]] = []  # For response
+        result = None
+
+        for attempt in range(MAX_VALIDATION_ATTEMPTS):
+            attempt_timestamp = datetime.utcnow().isoformat() + "Z"
+
+            # Build prompt with error feedback for retries
+            if validation_errors_history:
+                investigation_prompt = base_prompt + _build_validation_error_feedback(
+                    validation_errors_history[-1],
+                    attempt
+                )
+            else:
+                investigation_prompt = base_prompt
+
+            # Log the prompt
+            print("\n" + "="*80)
+            print(f"🔍 INCIDENT ANALYSIS PROMPT TO LLM (Attempt {attempt + 1}/{MAX_VALIDATION_ATTEMPTS})")
+            print("="*80)
+            print(investigation_prompt)
+            print("="*80 + "\n")
+
+            # Create investigation request
+            investigation_request = InvestigateRequest(
+                source="kubernaut",
+                title=f"Incident analysis for {request_data.get('signal_type')}",
+                description=investigation_prompt,
+                subject={
+                    "type": "incident",
+                    "incident_id": incident_id,
+                    "signal_type": request_data.get("signal_type")
+                },
+                context={
+                    "incident_id": incident_id,
+                    "issue_type": "incident",
+                    "attempt": attempt + 1
+                },
+                source_instance_id="holmesgpt-api"
+            )
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # AUDIT: LLM REQUEST (BR-AUDIT-005)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if audit_store:
+                audit_store.store_audit(create_llm_request_event(
+                    incident_id=incident_id,
+                    remediation_id=remediation_id,
+                    model=config.model if config else "unknown",
+                    prompt=investigation_prompt,
+                    toolsets_enabled=list(config.toolsets.keys()) if config and config.toolsets else [],
+                    mcp_servers=list(config.mcp_servers.keys()) if config and config.mcp_servers else []
+                ))
+
+            # Call HolmesGPT SDK
+            logger.info({
+                "event": "calling_holmesgpt_sdk",
+                "incident_id": incident_id,
+                "attempt": attempt + 1,
+                "max_attempts": MAX_VALIDATION_ATTEMPTS
+            })
+            investigation_result = investigate_issues(
+                investigate_request=investigation_request,
+                dal=dal,
+                config=config
+            )
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # AUDIT: LLM RESPONSE (BR-AUDIT-005)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            has_analysis = investigation_result and investigation_result.analysis
+            analysis_length = len(investigation_result.analysis) if has_analysis else 0
+            analysis_preview = investigation_result.analysis[:500] + "..." if analysis_length > 500 else (investigation_result.analysis if has_analysis else "")
+            tool_call_count = len(investigation_result.tool_calls) if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls else 0
+
+            if audit_store:
+                audit_store.store_audit(create_llm_response_event(
+                    incident_id=incident_id,
+                    remediation_id=remediation_id,
+                    has_analysis=bool(has_analysis),
+                    analysis_length=analysis_length,
+                    analysis_preview=analysis_preview,
+                    tool_call_count=tool_call_count
+                ))
+
+                # Audit tool calls if any
+                if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls:
+                    for idx, tool_call in enumerate(investigation_result.tool_calls):
+                        tool_name = getattr(tool_call, 'name', 'unknown')
+                        tool_arguments = getattr(tool_call, 'arguments', {})
+                        tool_result = getattr(tool_call, 'result', None)
+                        audit_store.store_audit(create_tool_call_event(
+                            incident_id=incident_id,
+                            remediation_id=remediation_id,
+                            tool_call_index=idx,
+                            tool_name=tool_name,
+                            tool_arguments=tool_arguments,
+                            tool_result=tool_result
+                        ))
+
+            # Parse and validate investigation result
+            result, validation_result = _parse_and_validate_investigation_result(
+                investigation_result,
+                request_data,
+                owner_chain=owner_chain,
+                data_storage_client=data_storage_client
+            )
+
+            # Get workflow_id for audit
+            workflow_id = result.get("selected_workflow", {}).get("workflow_id") if result.get("selected_workflow") else None
+
+            # Check if validation passed or no workflow to validate
+            is_valid = validation_result is None or validation_result.is_valid
+            validation_errors = validation_result.errors if validation_result and not validation_result.is_valid else []
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # AUDIT: VALIDATION ATTEMPT (BR-AUDIT-005, DD-HAPI-002 v1.2)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if audit_store:
+                audit_store.store_audit(create_validation_attempt_event(
+                    incident_id=incident_id,
+                    remediation_id=remediation_id,
+                    attempt=attempt + 1,
+                    max_attempts=MAX_VALIDATION_ATTEMPTS,
+                    is_valid=is_valid,
+                    errors=validation_errors,
+                    workflow_id=workflow_id
+                ))
+
+            # Build validation attempt record for response (BR-HAPI-197)
+            validation_attempts_history.append({
+                "attempt": attempt + 1,
+                "workflow_id": workflow_id,
+                "is_valid": is_valid,
+                "errors": validation_errors,
+                "timestamp": attempt_timestamp
+            })
+
+            if is_valid:
+                logger.info({
+                    "event": "workflow_validation_passed",
+                    "incident_id": incident_id,
+                    "attempt": attempt + 1,
+                    "has_workflow": result.get("selected_workflow") is not None
+                })
+                break
+            else:
+                # Validation failed - log and prepare for retry
+                validation_errors_history.append(validation_errors)
+                logger.warning({
+                    "event": "workflow_validation_retry",
+                    "incident_id": incident_id,
+                    "attempt": attempt + 1,
+                    "max_attempts": MAX_VALIDATION_ATTEMPTS,
+                    "errors": validation_errors,
+                    "message": "DD-HAPI-002 v1.2: Workflow validation failed, retrying with error feedback"
+                })
+
+        # After loop: Check if we exhausted all attempts
+        if validation_errors_history and len(validation_errors_history) >= MAX_VALIDATION_ATTEMPTS:
+            # All attempts failed - set needs_human_review
+            last_errors = validation_errors_history[-1]
+            human_review_reason = _determine_human_review_reason(last_errors)
+            result["needs_human_review"] = True
+            result["human_review_reason"] = human_review_reason
+
+            # Build detailed error summary from ALL attempts for operator notification
+            all_errors_summary = []
+            for i, errors in enumerate(validation_errors_history):
+                all_errors_summary.append(f"Attempt {i+1}: {'; '.join(errors)}")
+            result["warnings"].append(
+                f"Workflow validation failed after {MAX_VALIDATION_ATTEMPTS} attempts. " +
+                " | ".join(all_errors_summary)
+            )
+
+            # Final audit with human_review_reason
+            if audit_store:
+                audit_store.store_audit(create_validation_attempt_event(
+                    incident_id=incident_id,
+                    remediation_id=remediation_id,
+                    attempt=MAX_VALIDATION_ATTEMPTS,
+                    max_attempts=MAX_VALIDATION_ATTEMPTS,
+                    is_valid=False,
+                    errors=last_errors,
+                    workflow_id=workflow_id,
+                    human_review_reason=human_review_reason
+                ))
+
+            logger.warning({
+                "event": "workflow_validation_exhausted",
+                "incident_id": incident_id,
+                "total_attempts": MAX_VALIDATION_ATTEMPTS,
+                "all_errors": validation_errors_history,
+                "final_errors": last_errors,
+                "human_review_reason": human_review_reason,
+                "message": "BR-HAPI-197: Max validation attempts exhausted, needs_human_review=True"
+            })
+
+        # Add validation history to response (BR-HAPI-197)
+        result["validation_attempts_history"] = validation_attempts_history
 
         logger.info({
             "event": "incident_analysis_completed",
             "incident_id": incident_id,
             "has_workflow": result.get("selected_workflow") is not None,
             "target_in_owner_chain": result.get("target_in_owner_chain", True),
-            "warnings_count": len(result.get("warnings", []))
+            "warnings_count": len(result.get("warnings", [])),
+            "needs_human_review": result.get("needs_human_review", False),
+            "validation_attempts": len(validation_errors_history) + 1 if validation_errors_history else 1
         })
 
         return result
@@ -806,21 +1073,199 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
         raise
 
 
-def _parse_investigation_result(
+def _create_data_storage_client(app_config: Optional[Dict[str, Any]]):
+    """
+    Create Data Storage client for workflow validation.
+
+    DD-HAPI-002 v1.2: Client used to validate workflow existence, container image, and parameters.
+
+    Returns:
+        DataStorageClient or None if configuration is missing
+    """
+    try:
+        from src.clients.datastorage.client import DataStorageClient
+
+        # Get Data Storage URL from config or environment
+        ds_url = None
+        if app_config:
+            ds_url = app_config.get("data_storage_url") or app_config.get("DATA_STORAGE_URL")
+        if not ds_url:
+            ds_url = os.getenv("DATA_STORAGE_URL", "http://data-storage:8080")
+
+        return DataStorageClient(base_url=ds_url)
+    except Exception as e:
+        logger.warning({
+            "event": "data_storage_client_creation_failed",
+            "error": str(e),
+            "message": "Workflow validation will be skipped"
+        })
+        return None
+
+
+def _determine_human_review_reason(errors: List[str]) -> str:
+    """
+    Determine the human_review_reason based on validation errors.
+
+    BR-HAPI-197: Map validation errors to structured reason enum.
+
+    Args:
+        errors: List of validation error messages
+
+    Returns:
+        HumanReviewReason enum value as string
+    """
+    error_text = " ".join(errors).lower()
+
+    if "not found" in error_text and "catalog" in error_text:
+        return "workflow_not_found"
+    elif "mismatch" in error_text or "image" in error_text:
+        return "image_mismatch"
+    elif "parameter" in error_text or "required" in error_text or "type" in error_text:
+        return "parameter_validation_failed"
+    else:
+        return "parameter_validation_failed"  # Default for validation errors
+
+
+def _parse_and_validate_investigation_result(
     investigation: InvestigationResult,
     request_data: Dict[str, Any],
-    owner_chain: Optional[List[Dict[str, Any]]] = None
-) -> Dict[str, Any]:
+    owner_chain: Optional[List[Dict[str, Any]]] = None,
+    data_storage_client=None
+):
     """
-    Parse HolmesGPT investigation result into IncidentResponse format
+    Parse and validate HolmesGPT investigation result.
 
-    Business Requirement: BR-HAPI-002 (Incident analysis response schema)
-    Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
+    DD-HAPI-002 v1.2: Returns both the parsed result AND the validation result
+    so the caller can decide whether to retry with error feedback.
 
     Args:
         investigation: HolmesGPT investigation result
         request_data: Original request data
         owner_chain: OwnerChain from enrichment results for target validation
+        data_storage_client: Data Storage client for workflow validation
+
+    Returns:
+        Tuple of (result_dict, validation_result) where validation_result is None
+        if no workflow to validate or validation passed.
+    """
+    from src.validation.workflow_response_validator import WorkflowResponseValidator, ValidationResult
+
+    incident_id = request_data.get("incident_id", "unknown")
+
+    # Extract analysis text
+    analysis = investigation.analysis if investigation and investigation.analysis else "No analysis available"
+
+    # Try to parse JSON from analysis
+    import json
+    import re
+
+    json_match = re.search(r'```json\s*(\{.*?\})\s*```', analysis, re.DOTALL)
+    alternative_workflows = []
+    selected_workflow = None
+    rca = {"summary": "No structured RCA found", "severity": "unknown", "contributing_factors": []}
+    confidence = 0.0
+    validation_result = None
+
+    if json_match:
+        try:
+            json_data = json.loads(json_match.group(1))
+            rca = json_data.get("root_cause_analysis", {})
+            selected_workflow = json_data.get("selected_workflow")
+            confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
+
+            # Extract alternative workflows (ADR-045 v1.2 - for audit/context only)
+            raw_alternatives = json_data.get("alternative_workflows", [])
+            for alt in raw_alternatives:
+                if isinstance(alt, dict) and alt.get("workflow_id"):
+                    alternative_workflows.append({
+                        "workflow_id": alt.get("workflow_id", ""),
+                        "container_image": alt.get("container_image"),
+                        "confidence": float(alt.get("confidence", 0.0)),
+                        "rationale": alt.get("rationale", "")
+                    })
+
+            # DD-HAPI-002 v1.2: Workflow Response Validation
+            # Validates: workflow existence, container image consistency, parameter schema
+            if selected_workflow and data_storage_client:
+                validator = WorkflowResponseValidator(data_storage_client)
+                validation_result = validator.validate(
+                    workflow_id=selected_workflow.get("workflow_id", ""),
+                    container_image=selected_workflow.get("container_image"),
+                    parameters=selected_workflow.get("parameters", {})
+                )
+                if validation_result.is_valid:
+                    # Use validated container image from catalog
+                    if validation_result.validated_container_image:
+                        selected_workflow["container_image"] = validation_result.validated_container_image
+                    validation_result = None  # Clear to indicate success
+
+        except json.JSONDecodeError:
+            rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
+
+    # OwnerChain validation (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
+    target_in_owner_chain = True
+    warnings: List[str] = []
+
+    # Check if RCA-identified target is in OwnerChain
+    rca_target = rca.get("affectedResource") or rca.get("affected_resource")
+    if rca_target and owner_chain:
+        target_in_owner_chain = _is_target_in_owner_chain(rca_target, owner_chain, request_data)
+        if not target_in_owner_chain:
+            warnings.append(
+                "Target resource not found in OwnerChain - DetectedLabels may not apply to affected resource"
+            )
+
+    # Generate warnings for other conditions (BR-HAPI-197)
+    needs_human_review = False
+    human_review_reason = None
+
+    if selected_workflow is None:
+        warnings.append("No workflows matched the search criteria")
+        needs_human_review = True
+        human_review_reason = "no_matching_workflows"
+    elif confidence < 0.7:
+        warnings.append(f"Low confidence selection ({confidence:.0%}) - manual review recommended")
+        needs_human_review = True
+        human_review_reason = "low_confidence"
+
+    from datetime import datetime
+    result = {
+        "incident_id": incident_id,
+        "analysis": analysis,
+        "root_cause_analysis": rca,
+        "selected_workflow": selected_workflow,
+        "confidence": confidence,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "target_in_owner_chain": target_in_owner_chain,
+        "warnings": warnings,
+        "needs_human_review": needs_human_review,
+        "human_review_reason": human_review_reason,
+        "alternative_workflows": alternative_workflows
+    }
+
+    return result, validation_result
+
+
+def _parse_investigation_result(
+    investigation: InvestigationResult,
+    request_data: Dict[str, Any],
+    owner_chain: Optional[List[Dict[str, Any]]] = None,
+    data_storage_client=None
+) -> Dict[str, Any]:
+    """
+    Parse HolmesGPT investigation result into IncidentResponse format.
+
+    DEPRECATED: Use _parse_and_validate_investigation_result for self-correction loop.
+
+    Business Requirement: BR-HAPI-002 (Incident analysis response schema)
+    Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
+    Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
+
+    Args:
+        investigation: HolmesGPT investigation result
+        request_data: Original request data
+        owner_chain: OwnerChain from enrichment results for target validation
+        data_storage_client: Optional Data Storage client for workflow validation (DD-HAPI-002 v1.2)
     """
     incident_id = request_data.get("incident_id", "unknown")
 
@@ -850,6 +1295,41 @@ def _parse_investigation_result(
                         "confidence": float(alt.get("confidence", 0.0)),
                         "rationale": alt.get("rationale", "")
                     })
+
+            # DD-HAPI-002 v1.2: Workflow Response Validation
+            # Validates: workflow existence, container image consistency, parameter schema
+            if selected_workflow and data_storage_client:
+                from src.validation.workflow_response_validator import WorkflowResponseValidator
+                validator = WorkflowResponseValidator(data_storage_client)
+                validation_result = validator.validate(
+                    workflow_id=selected_workflow.get("workflow_id", ""),
+                    container_image=selected_workflow.get("container_image"),
+                    parameters=selected_workflow.get("parameters", {})
+                )
+                if not validation_result.is_valid:
+                    # Add validation errors as warnings (LLM self-correction would have happened in-session)
+                    # If we reach here, it means the LLM failed to provide valid workflow after max attempts
+                    workflow_validation_failed = True
+                    workflow_validation_errors = validation_result.errors
+                    logger.warning({
+                        "event": "workflow_validation_failed",
+                        "incident_id": request_data.get("incident_id", "unknown"),
+                        "workflow_id": selected_workflow.get("workflow_id"),
+                        "errors": validation_result.errors,
+                        "message": "DD-HAPI-002 v1.2: Workflow response validation failed"
+                    })
+                    # Add validation errors to workflow for transparency
+                    selected_workflow["validation_errors"] = validation_result.errors
+                else:
+                    # Use validated container image from catalog
+                    if validation_result.validated_container_image:
+                        selected_workflow["container_image"] = validation_result.validated_container_image
+                        logger.debug({
+                            "event": "workflow_validation_passed",
+                            "incident_id": request_data.get("incident_id", "unknown"),
+                            "workflow_id": selected_workflow.get("workflow_id"),
+                            "container_image": validation_result.validated_container_image
+                        })
         except json.JSONDecodeError:
             rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
             selected_workflow = None
@@ -862,6 +1342,10 @@ def _parse_investigation_result(
     # OwnerChain validation (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
     target_in_owner_chain = True
     warnings: List[str] = []
+
+    # DD-HAPI-002 v1.2: Workflow validation tracking
+    workflow_validation_failed = False
+    workflow_validation_errors: List[str] = []
 
     # Check if RCA-identified target is in OwnerChain
     rca_target = rca.get("affectedResource") or rca.get("affected_resource")
@@ -879,11 +1363,31 @@ def _parse_investigation_result(
                 "message": "DD-WORKFLOW-001 v1.7: RCA target not in OwnerChain, DetectedLabels may be from different scope"
             })
 
-    # Generate warnings for other conditions
+    # Generate warnings for other conditions (BR-HAPI-197)
+    needs_human_review = False
+    human_review_reason = None
+
     if selected_workflow is None:
         warnings.append("No workflows matched the search criteria")
+        needs_human_review = True
+        human_review_reason = "no_matching_workflows"
     elif confidence < 0.7:
         warnings.append(f"Low confidence selection ({confidence:.0%}) - manual review recommended")
+        needs_human_review = True
+        human_review_reason = "low_confidence"
+
+    # DD-HAPI-002 v1.2: Set needs_human_review if workflow validation failed
+    if workflow_validation_failed:
+        warnings.append(f"Workflow validation failed: {'; '.join(workflow_validation_errors)}")
+        needs_human_review = True
+        # Determine specific reason from validation errors
+        error_text = " ".join(workflow_validation_errors).lower()
+        if "not found in catalog" in error_text:
+            human_review_reason = "workflow_not_found"
+        elif "mismatch" in error_text:
+            human_review_reason = "image_mismatch"
+        else:
+            human_review_reason = "parameter_validation_failed"
 
     return {
         "incident_id": incident_id,
@@ -894,6 +1398,9 @@ def _parse_investigation_result(
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "target_in_owner_chain": target_in_owner_chain,
         "warnings": warnings,
+        # DD-HAPI-002 v1.2, BR-HAPI-197: Human review flag and structured reason
+        "needs_human_review": needs_human_review,
+        "human_review_reason": human_review_reason,
         # Alternative workflows for audit/context (ADR-045 v1.2)
         # IMPORTANT: These are for INFORMATIONAL purposes only - NOT for automatic execution
         "alternative_workflows": alternative_workflows
