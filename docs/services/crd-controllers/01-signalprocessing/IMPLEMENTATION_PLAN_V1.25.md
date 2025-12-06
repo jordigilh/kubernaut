@@ -460,7 +460,8 @@ The following contract gaps (identified by RO team) were fixed in `api/signalpro
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **v1.25** | 2025-12-06 | Day 6 triage fixes: Added BR-SP-002 coverage, 4-tier confidence scoring (labels→pattern→Rego→default), removed priority from Classify input, NewBusinessClassifier constructor, fixed K8s label limit (63 chars), timeout 200ms, BC-CF-* tests, safe type assertions | ✅ **CURRENT** |
+| **v1.26** | 2025-12-06 | Day 7 triage fixes: CRD OwnerChainEntry schema corrected (add Namespace, remove APIVersion/UID per DD-WORKFLOW-001 v1.8), max depth 10→5 per BR-SP-100, source NOT in chain (owners only), expanded test matrix 5→12, use CRD type v1alpha1.OwnerChainEntry, k8s_enricher.go aligned with new schema | ✅ **CURRENT** |
+| **v1.25** | 2025-12-06 | Day 6 triage fixes: Added BR-SP-002 coverage, 4-tier confidence scoring (labels→pattern→Rego→default), removed priority from Classify input, NewBusinessClassifier constructor, fixed K8s label limit (63 chars), timeout 200ms, BC-CF-* tests, safe type assertions | ✅ |
 | **v1.24** | 2025-12-06 | Day 5 triage fixes: PE-ER-01 (construction error, not fallback), PE-ER-06 (fallback per BR-SP-071), `fallbackBySeverity` signature (no error return) | ✅ |
 | **v1.23** | 2025-12-06 | Day 5 gap fixes: Created `pkg/shared/hotreload/FileWatcher`, `priority.rego` policy, NewPriorityEngine constructor, 100ms timeout, nil checks, priority validation, integration test matrix (PE-HR-*), CRD Source comment update | ✅ |
 | **v1.22** | 2025-12-06 | Day 5 updates: fsnotify hot-reload (DD-INFRA-001), severity-based fallback (BR-SP-071), BR-SP-070 schema compliance, P0-P3 only. Day 4 fixes: struct alignment, EC-EC-02 test, hot-reload test, EC-ER-03/04 clarifications | ✅ |
@@ -2778,6 +2779,16 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 **File**: `pkg/signalprocessing/ownerchain/builder.go`
 
+**Business Requirement**: BR-SP-100 (OwnerChain Traversal)
+
+**Authoritative Reference**: DD-WORKFLOW-001 v1.8
+
+> ⚠️ **CRITICAL SCHEMA REQUIREMENTS (DD-WORKFLOW-001 v1.8)**:
+> - OwnerChainEntry MUST have: `Namespace`, `Kind`, `Name` ONLY
+> - Do NOT include `APIVersion` or `UID` - not used by HolmesGPT-API validation
+> - Chain contains **OWNERS ONLY** - source resource is NOT included
+> - Max depth: **5** levels (per BR-SP-100)
+
 ```go
 package ownerchain
 
@@ -2786,15 +2797,19 @@ import (
 
     "github.com/go-logr/logr"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
-    sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+    signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
+
+// MaxOwnerChainDepth per BR-SP-100: Stop at max depth 5
+const MaxOwnerChainDepth = 5
 
 // Builder constructs the K8s ownership chain
 // Used by HolmesGPT-API to validate DetectedLabels applicability
-// See: DD-WORKFLOW-001 v1.9
-// Uses sharedtypes.OwnerChainEntry from pkg/shared/types/enrichment.go
+// DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
+// BR-SP-100: Max depth 5, owners only (source not included)
 type Builder struct {
     client client.Client
     logger logr.Logger
@@ -2809,26 +2824,30 @@ func NewBuilder(c client.Client, logger logr.Logger) *Builder {
 
 // Build traverses K8s ownerReferences to construct ownership chain
 // Algorithm: Follow first `controller: true` ownerReference at each level
-// Example: Pod → ReplicaSet → Deployment
-func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]sharedtypes.OwnerChainEntry, error) {
-    var chain []sharedtypes.OwnerChainEntry
+// Example: Pod → ReplicaSet → Deployment (Pod is NOT in chain, only owners)
+// DD-WORKFLOW-001 v1.8: Chain contains OWNERS ONLY
+// BR-SP-100: Max depth 5
+func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]signalprocessingv1alpha1.OwnerChainEntry, error) {
+    var chain []signalprocessingv1alpha1.OwnerChainEntry
 
     currentNamespace := namespace
     currentKind := kind
     currentName := name
 
-    // Add source resource as first entry
-    chain = append(chain, sharedtypes.OwnerChainEntry{
-        Namespace: currentNamespace,
-        Kind:      currentKind,
-        Name:      currentName,
-    })
+    // NOTE: Source resource is NOT added to chain (DD-WORKFLOW-001 v1.8)
+    // Chain contains owners only
 
-    // Traverse ownerReferences (max 10 levels to prevent infinite loops)
-    for i := 0; i < 10; i++ {
+    // Traverse ownerReferences (max 5 levels per BR-SP-100)
+    for i := 0; i < MaxOwnerChainDepth; i++ {
         ownerRef, err := b.getControllerOwner(ctx, currentNamespace, currentKind, currentName)
-        if err != nil || ownerRef == nil {
-            break // No more owners
+        if err != nil {
+            // Log error but return partial chain (graceful degradation)
+            b.logger.V(1).Info("Error fetching owner, returning partial chain",
+                "error", err, "currentKind", currentKind, "currentName", currentName)
+            break
+        }
+        if ownerRef == nil {
+            break // No more owners - chain complete
         }
 
         // Cluster-scoped resources have empty namespace
@@ -2837,7 +2856,8 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]sh
             ownerNamespace = ""
         }
 
-        chain = append(chain, sharedtypes.OwnerChainEntry{
+        // DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY
+        chain = append(chain, signalprocessingv1alpha1.OwnerChainEntry{
             Namespace: ownerNamespace,
             Kind:      ownerRef.Kind,
             Name:      ownerRef.Name,
@@ -2855,10 +2875,46 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]sh
     return chain, nil
 }
 
+// getControllerOwner fetches a resource and returns its controller owner reference.
+// Returns nil, nil if no controller owner found.
+// Returns nil, error for K8s API errors (RBAC, timeout, not found).
 func (b *Builder) getControllerOwner(ctx context.Context, namespace, kind, name string) (*metav1.OwnerReference, error) {
-    // Implementation: Get resource, find ownerReference with controller: true
-    // Returns nil if no controller owner found
-    return nil, nil // Placeholder
+    // Use unstructured for dynamic resource fetching
+    gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: kind}
+    if group, ok := kindToGroup[kind]; ok {
+        gvk.Group = group
+        gvk.Version = "v1"
+    }
+
+    obj := &unstructured.Unstructured{}
+    obj.SetGroupVersionKind(gvk)
+
+    key := client.ObjectKey{Namespace: namespace, Name: name}
+    if err := b.client.Get(ctx, key, obj); err != nil {
+        return nil, err // Caller handles error
+    }
+
+    // Find controller owner (controller: true)
+    for _, ref := range obj.GetOwnerReferences() {
+        if ref.Controller != nil && *ref.Controller {
+            return &ref, nil
+        }
+    }
+
+    return nil, nil // No controller owner
+}
+
+// kindToGroup maps K8s kinds to their API groups for unstructured fetching
+var kindToGroup = map[string]string{
+    "Pod":         "",
+    "ReplicaSet":  "apps",
+    "Deployment":  "apps",
+    "StatefulSet": "apps",
+    "DaemonSet":   "apps",
+    "Job":         "batch",
+    "CronJob":     "batch",
+    "Node":        "",
+    "Service":     "",
 }
 
 func isClusterScoped(kind string) bool {
@@ -2870,15 +2926,24 @@ func isClusterScoped(kind string) bool {
 }
 ```
 
-**Test Scenarios (Day 7)**:
+**Test Scenarios (Day 7)** - 12 tests per TESTING_GUIDELINES.md:
 
-| ID | Input | Expected Outcome |
-|----|-------|------------------|
-| TC-OC-001 | Pod owned by ReplicaSet owned by Deployment | Chain: Pod→RS→Deployment |
-| TC-OC-002 | StatefulSet Pod | Chain: Pod→StatefulSet |
-| TC-OC-003 | DaemonSet Pod | Chain: Pod→DaemonSet |
-| TC-OC-004 | Node (cluster-scoped) | Chain entry with empty namespace |
-| TC-OC-005 | Orphan Pod (no owner) | Chain: Pod only |
+| ID | Category | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| **OC-HP-01** | Happy Path | Pod owned by ReplicaSet owned by Deployment | Chain: [RS, Deployment] (2 entries) |
+| **OC-HP-02** | Happy Path | Pod owned by StatefulSet | Chain: [StatefulSet] (1 entry) |
+| **OC-HP-03** | Happy Path | Pod owned by DaemonSet | Chain: [DaemonSet] (1 entry) |
+| **OC-HP-04** | Happy Path | Pod owned by Job owned by CronJob | Chain: [Job, CronJob] (2 entries) |
+| **OC-EC-01** | Edge Case | Orphan Pod (no owner) | Empty chain [] |
+| **OC-EC-02** | Edge Case | Node (cluster-scoped) | Single entry with empty namespace |
+| **OC-EC-03** | Edge Case | Max depth reached (5 levels) | Truncated chain (5 entries max) |
+| **OC-EC-04** | Edge Case | ReplicaSet without Deployment | Chain: [RS] (1 entry) |
+| **OC-ER-01** | Error | K8s API timeout | Partial chain + logged error |
+| **OC-ER-02** | Error | RBAC forbidden (403) | Partial chain + logged error |
+| **OC-ER-03** | Error | Resource not found | Graceful termination, partial chain |
+| **OC-ER-04** | Error | Context cancelled | Return current chain |
+
+**Test File**: `test/unit/signalprocessing/ownerchain_builder_test.go`
 
 ---
 

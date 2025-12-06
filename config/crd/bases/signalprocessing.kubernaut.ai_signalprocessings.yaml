@@ -468,18 +468,19 @@ spec:
                       description: |-
                         OwnerChainEntry represents one owner in the ownership chain.
                         BR-SP-100: OwnerChain Builder
+                        DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
+                        HolmesGPT-API uses for DetectedLabels validation
                       properties:
-                        apiVersion:
-                          description: Owner API version
-                          type: string
                         kind:
-                          description: Owner kind
+                          description: Owner kind (e.g., ReplicaSet, Deployment, StatefulSet,
+                            DaemonSet)
                           type: string
                         name:
                           description: Owner name
                           type: string
-                        uid:
-                          description: Owner UID
+                        namespace:
+                          description: Owner namespace (empty for cluster-scoped resources
+                            like Node)
                           type: string
                       required:
                       - kind

@@ -235,6 +235,13 @@ spec:
                   - type
                   type: object
                 type: array
+              consecutiveFailures:
+                description: |-
+                  ConsecutiveFailures tracks pre-execution failures for this target resource
+                  Incremented when wasExecutionFailure=false, reset to 0 on success
+                  NOT incremented for execution failures (wasExecutionFailure=true)
+                format: int32
+                type: integer
               duration:
                 description: Duration of the execution
                 type: string
@@ -298,6 +305,14 @@ spec:
                     - ImagePullBackOff
                     - Unknown
                     type: string
+                  wasExecutionFailure:
+                    description: |-
+                      WasExecutionFailure indicates whether the failure occurred during workflow execution
+                      true = workflow RAN and failed (non-idempotent actions may have occurred)
+                      false = workflow failed BEFORE execution (validation, image pull, quota, etc.)
+                      CRITICAL: Execution failures (true) block ALL future retries for this target
+                                Pre-execution failures (false) get exponential backoff
+                    type: boolean
                 required:
                 - executionTimeBeforeFailure
                 - failedAt
@@ -311,6 +326,13 @@ spec:
                 description: |-
                   FailureReason explains why execution failed (if applicable)
                   DEPRECATED: Use FailureDetails for structured failure information
+                type: string
+              nextAllowedExecution:
+                description: |-
+                  NextAllowedExecution is the timestamp when next execution is allowed
+                  Calculated using exponential backoff: Base * 2^(min(failures-1, maxExponent))
+                  Only set for pre-execution failures, not for execution failures
+                format: date-time
                 type: string
               phase:
                 description: |-
@@ -399,6 +421,8 @@ spec:
                     enum:
                     - ResourceBusy
                     - RecentlyRemediated
+                    - ExhaustedRetries
+                    - PreviousExecutionFailed
                     type: string
                   recentRemediation:
                     description: |-

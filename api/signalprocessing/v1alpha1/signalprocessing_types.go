@@ -367,15 +367,15 @@ type NodeCondition struct {
 
 // OwnerChainEntry represents one owner in the ownership chain.
 // BR-SP-100: OwnerChain Builder
+// DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
+// HolmesGPT-API uses for DetectedLabels validation
 type OwnerChainEntry struct {
-	// Owner kind
+	// Owner namespace (empty for cluster-scoped resources like Node)
+	Namespace string `json:"namespace,omitempty"`
+	// Owner kind (e.g., ReplicaSet, Deployment, StatefulSet, DaemonSet)
 	Kind string `json:"kind"`
 	// Owner name
 	Name string `json:"name"`
-	// Owner API version
-	APIVersion string `json:"apiVersion,omitempty"`
-	// Owner UID
-	UID string `json:"uid,omitempty"`
 }
 
 // DetectedLabels contains auto-detected cluster characteristics.

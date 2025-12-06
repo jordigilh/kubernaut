@@ -203,6 +203,8 @@ spec:
                 - escalation
                 - simple
                 - status-update
+                - approval
+                - manual-review
                 type: string
             required:
             - body

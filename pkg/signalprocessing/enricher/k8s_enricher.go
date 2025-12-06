@@ -154,7 +154,8 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 	result.Pod = e.convertPodDetails(pod)
 
 	// 3. Build owner chain from pod's owner references
-	result.OwnerChain = e.buildOwnerChain(pod.OwnerReferences)
+	// DD-WORKFLOW-001 v1.8: Namespace inherited from pod (owner is in same namespace)
+	result.OwnerChain = e.buildOwnerChain(pod.OwnerReferences, signal.TargetResource.Namespace)
 
 	// 4. Fetch node where pod runs (optional)
 	if pod.Spec.NodeName != "" {
@@ -312,34 +313,34 @@ func (e *K8sEnricher) enrichNamespaceOnly(ctx context.Context, signal *signalpro
 
 // buildOwnerChain builds the owner chain from owner references.
 // Returns controller owner first if present.
-func (e *K8sEnricher) buildOwnerChain(ownerRefs []metav1.OwnerReference) []signalprocessingv1alpha1.OwnerChainEntry {
+// DD-WORKFLOW-001 v1.8: OwnerChainEntry requires Namespace, Kind, Name ONLY (no APIVersion/UID)
+// Note: This is a simplified implementation. Full traversal is in pkg/signalprocessing/ownerchain/builder.go (Day 7).
+func (e *K8sEnricher) buildOwnerChain(ownerRefs []metav1.OwnerReference, namespace string) []signalprocessingv1alpha1.OwnerChainEntry {
 	if len(ownerRefs) == 0 {
 		return nil
 	}
 
 	chain := make([]signalprocessingv1alpha1.OwnerChainEntry, 0, len(ownerRefs))
 
-	// Find controller owner first
+	// Find controller owner first (DD-WORKFLOW-001 v1.8: follow controller=true)
 	for _, ref := range ownerRefs {
 		if ref.Controller != nil && *ref.Controller {
 			chain = append(chain, signalprocessingv1alpha1.OwnerChainEntry{
-				Kind:       ref.Kind,
-				Name:       ref.Name,
-				APIVersion: ref.APIVersion,
-				UID:        string(ref.UID),
+				Namespace: namespace, // DD-WORKFLOW-001 v1.8: inherited from resource
+				Kind:      ref.Kind,
+				Name:      ref.Name,
 			})
 			break
 		}
 	}
 
-	// Add non-controller owners
+	// Add non-controller owners (secondary, less common)
 	for _, ref := range ownerRefs {
 		if ref.Controller == nil || !*ref.Controller {
 			chain = append(chain, signalprocessingv1alpha1.OwnerChainEntry{
-				Kind:       ref.Kind,
-				Name:       ref.Name,
-				APIVersion: ref.APIVersion,
-				UID:        string(ref.UID),
+				Namespace: namespace, // DD-WORKFLOW-001 v1.8: inherited from resource
+				Kind:      ref.Kind,
+				Name:      ref.Name,
 			})
 		}
 	}
