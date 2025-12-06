@@ -55,20 +55,20 @@ def pytest_configure(config):
 def kind_cluster():
     """
     Session-scoped Kind cluster for E2E tests.
-    
+
     Per DD-TEST-001 v1.2: Uses dedicated ports for HAPI (8088/30088).
     Per ADR-016: Uses Podman as container runtime.
-    
+
     The cluster is created once per test session and reused.
     """
     cluster = KindCluster("holmesgpt-e2e")
-    
+
     # Create cluster (will reuse if already exists)
     cluster.create()
     cluster.wait_for_ready()
-    
+
     yield cluster
-    
+
     # Note: We don't delete the cluster by default to speed up development
     # Set HAPI_E2E_CLEANUP=true to delete after tests
     if os.environ.get("HAPI_E2E_CLEANUP", "").lower() == "true":
@@ -79,23 +79,23 @@ def kind_cluster():
 def data_storage_stack(kind_cluster):
     """
     Session-scoped Data Storage stack deployment.
-    
+
     Deploys:
     - PostgreSQL + pgvector (port 5488/30488)
     - Redis (port 6388/30388)
     - Embedding Service (port 8188/30288) - optional
     - Data Storage Service (port 8089/30089)
-    
+
     Per TESTING_GUIDELINES.md: Real infrastructure, mock LLM only.
     """
     deployment = DataStorageDeployment(kind_cluster)
-    
+
     # Deploy full stack (skip embedding if HAPI_SKIP_EMBEDDING=true)
     skip_embedding = os.environ.get("HAPI_SKIP_EMBEDDING", "").lower() == "true"
     data_storage_url = deployment.deploy(skip_embedding=skip_embedding)
-    
+
     yield data_storage_url
-    
+
     # Teardown namespace
     if os.environ.get("HAPI_E2E_CLEANUP", "").lower() == "true":
         deployment.teardown()
@@ -105,18 +105,18 @@ def data_storage_stack(kind_cluster):
 def setup_e2e_environment(data_storage_stack):
     """
     Set up environment variables for E2E testing.
-    
+
     Uses real Data Storage URL from Kind cluster deployment.
     """
     # LLM is mocked (per TESTING_GUIDELINES.md - cost constraint)
     os.environ.setdefault("LLM_PROVIDER", "openai")
     os.environ.setdefault("LLM_MODEL", "mock-model")
     os.environ.setdefault("OPENAI_API_KEY", "mock-key-for-e2e")
-    
+
     # Data Storage is REAL (from Kind cluster deployment)
     os.environ["DATA_STORAGE_URL"] = data_storage_stack
     os.environ.setdefault("DATA_STORAGE_TIMEOUT", "30")
-    
+
     print(f"\n{'='*60}")
     print(f"E2E Environment Ready")
     print(f"{'='*60}")
