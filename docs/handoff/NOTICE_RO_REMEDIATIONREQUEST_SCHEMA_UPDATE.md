@@ -161,6 +161,7 @@ type PriorityAssignment struct {
 | 2025-12-06 | Gateway | ⚠️ **Gateway proceeding with removal** - Fields will be empty in new CRDs |
 | 2025-12-06 | RO | ✅ **ACKNOWLEDGED** - Impact assessed, implementation plan updated |
 | 2025-12-06 | SP | 🟢 **SP READY** - Notified RO that all blockers cleared, may proceed with schema updates |
+| 2025-12-06 | Gateway | ✅ **Classification removal COMPLETE** (commit 65b93fe0) - Answered RO questions |
 
 ---
 
@@ -188,7 +189,9 @@ Estimated completion: Day 4-5 of RO implementation
 
 1. **✅ CONFIRMED**: `Severity` remains on `RR.Spec` (not mentioned in removal list) - RO will continue using `rr.Spec.Severity`
 2. **Question**: When Gateway removes these fields, will it set them to empty strings or omit them entirely?
+   - **✅ GATEWAY ANSWER**: Fields will be **removed from CRD schema entirely** (not empty strings). Once RO removes from `RemediationRequestSpec`, they won't exist at all. Gateway has already stopped populating them (commit 65b93fe0).
 3. **Question**: Should RO's SignalProcessingCreator still copy `Environment`/`Priority` to `SignalProcessing.Spec.Signal` if they're empty on RR?
+   - **✅ GATEWAY ANSWER**: **No** - RO should not copy these from RR anymore. SP is the owner and will populate its own `SignalProcessingStatus` fields directly. RO should read environment/priority from `sp.Status.EnvironmentClassification.Environment` and `sp.Status.PriorityAssignment.Priority` as shown in the implementation plan above.
 
 #### Implementation Plan
 
