@@ -1,7 +1,7 @@
 # Notification Service - API Specification
 
-**Version**: 2.0
-**Last Updated**: 2025-11-21
+**Version**: 2.1
+**Last Updated**: 2025-12-06
 **Service Type**: CRD Controller (NotificationRequest CRD)
 **Architecture**: Declarative Kubernetes-native notification delivery
 **Audit Integration**: ADR-034 Unified Audit Table (v2.0)
@@ -489,6 +489,110 @@ type SimpleNotificationResponse struct {
 	Channels       map[string]ChannelStatus  `json:"channels"`
 }
 ```
+
+---
+
+## 🏷️ Routing Labels (BR-NOT-065)
+
+The Notification Service supports **label-based routing** for notifications. When `NotificationRequest.spec.channels` is NOT specified, the service uses labels on the CRD to determine which channels to route to.
+
+### **Supported Routing Labels**
+
+All labels use the `kubernaut.ai/` domain (NOT `kubernaut.io/`).
+
+| Label Key | Purpose | Values | Example |
+|-----------|---------|--------|---------|
+| `kubernaut.ai/notification-type` | Notification type routing | `escalation`, `approval_required`, `completed`, `failed`, `status_update` | Route approvals to PagerDuty |
+| `kubernaut.ai/severity` | Severity-based routing | `critical`, `high`, `medium`, `low` | Route critical to PagerDuty |
+| `kubernaut.ai/environment` | Environment-based routing | `production`, `staging`, `development`, `test` | Route prod to oncall |
+| `kubernaut.ai/priority` | Priority-based routing | `P0`, `P1`, `P2`, `P3` | Route P0 to all channels |
+| `kubernaut.ai/namespace` | Namespace-based routing | Any Kubernetes namespace | Route payment-ns to finance |
+| `kubernaut.ai/component` | Source component routing | `remediation-orchestrator`, `workflow-execution`, etc. | Route by source |
+| `kubernaut.ai/remediation-request` | Correlation routing | RemediationRequest CRD name | Link to parent remediation |
+| `kubernaut.ai/skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
+
+### **Skip-Reason Label (DD-WE-004 Integration)**
+
+The `kubernaut.ai/skip-reason` label enables fine-grained routing based on WorkflowExecution skip reasons:
+
+| Skip Reason | Severity | Recommended Routing | Rationale |
+|-------------|----------|---------------------|-----------|
+| `PreviousExecutionFailed` | **CRITICAL** | PagerDuty (immediate) | Cluster state unknown - manual intervention required |
+| `ExhaustedRetries` | HIGH | Slack (#ops channel) | Infrastructure issues - team awareness required |
+| `ResourceBusy` | LOW | Console/Bulk | Temporary - auto-resolves |
+| `RecentlyRemediated` | LOW | Console/Bulk | Temporary - auto-resolves |
+
+**Example Routing Configuration** (Alertmanager-compatible per BR-NOT-066):
+```yaml
+route:
+  routes:
+    # CRITICAL: Execution failures → PagerDuty
+    - match:
+        kubernaut.ai/skip-reason: PreviousExecutionFailed
+      receiver: pagerduty-oncall
+
+    # HIGH: Exhausted retries → Slack
+    - match:
+        kubernaut.ai/skip-reason: ExhaustedRetries
+      receiver: slack-ops
+
+    # LOW: Temporary conditions → Console only
+    - match_re:
+        kubernaut.ai/skip-reason: "^(ResourceBusy|RecentlyRemediated)$"
+      receiver: console-only
+
+  receiver: default-slack
+
+receivers:
+  - name: pagerduty-oncall
+    pagerduty_configs:
+      - service_key: ${PAGERDUTY_KEY}
+  - name: slack-ops
+    slack_configs:
+      - channel: '#kubernaut-ops'
+  - name: console-only
+    console_config:
+      enabled: true
+  - name: default-slack
+    slack_configs:
+      - channel: '#kubernaut-alerts'
+```
+
+### **Go Constants** (`pkg/notification/routing/labels.go`)
+
+```go
+// Label keys
+const (
+    LabelNotificationType   = "kubernaut.ai/notification-type"
+    LabelSeverity          = "kubernaut.ai/severity"
+    LabelEnvironment       = "kubernaut.ai/environment"
+    LabelPriority          = "kubernaut.ai/priority"
+    LabelNamespace         = "kubernaut.ai/namespace"
+    LabelComponent         = "kubernaut.ai/component"
+    LabelRemediationRequest = "kubernaut.ai/remediation-request"
+    LabelSkipReason        = "kubernaut.ai/skip-reason"
+)
+
+// Skip reason values (DD-WE-004)
+const (
+    SkipReasonPreviousExecutionFailed = "PreviousExecutionFailed"  // CRITICAL
+    SkipReasonExhaustedRetries        = "ExhaustedRetries"         // HIGH
+    SkipReasonResourceBusy            = "ResourceBusy"             // LOW
+    SkipReasonRecentlyRemediated      = "RecentlyRemediated"       // LOW
+)
+```
+
+### **Routing Resolution Priority**
+
+1. If `spec.channels` is specified → Use those channels directly
+2. If `spec.channels` is empty → Resolve from routing rules based on labels
+3. If no routing rules match → Use default receiver (console)
+
+**Related Documentation**:
+- [BR-NOT-065: Channel Routing Based on Labels](./BUSINESS_REQUIREMENTS.md#br-not-065-channel-routing-based-on-labels)
+- [BR-NOT-066: Alertmanager-Compatible Configuration Format](./BUSINESS_REQUIREMENTS.md#br-not-066-alertmanager-compatible-configuration-format)
+- [DD-WE-004: Exponential Backoff Cooldown](../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
+- [Cross-Team Notice](../../../../handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md)
 
 ---
 

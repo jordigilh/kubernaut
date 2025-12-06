@@ -1,9 +1,9 @@
 # Notification Service - Implementation Checklist
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
-**Service Type**: Stateless HTTP API Service
-**Status**: ⚠️ NEEDS IMPLEMENTATION
+**Version**: 1.1
+**Last Updated**: December 6, 2025
+**Service Type**: CRD Controller
+**Status**: ✅ PRODUCTION-READY + Day 13 Enhancement Scheduled
 
 ---
 
@@ -302,7 +302,45 @@ test/e2e/notification/            ✅ E2E tests (10%)
 | **DO-GREEN** | 2-3 days | Minimal implementation + integration |
 | **DO-REFACTOR** | 2-3 days | Sophisticated enhancements |
 | **CHECK** | 1 day | Comprehensive validation |
-| **TOTAL** | **8-10 days** | Production-ready service |
+| **Day 13: Enhancements** | 4 hours | Skip-reason routing (BR-NOT-065) |
+| **TOTAL** | **8-10 days + 4h** | Production-ready service + enhancements |
+
+---
+
+## 📋 **Day 13: BR-NOT-065 Skip-Reason Enhancement**
+
+**Duration**: 4 hours
+**Status**: ⏳ Scheduled
+**Reference**: [DAY-13-ENHANCEMENT-BR-NOT-065-SKIP-REASON.md](./implementation/DAY-13-ENHANCEMENT-BR-NOT-065-SKIP-REASON.md)
+
+### **Scope**
+
+Add `kubernaut.ai/skip-reason` routing label support per DD-WE-004 v1.1:
+
+| Skip Reason | Severity | Routing Target |
+|-------------|----------|----------------|
+| `PreviousExecutionFailed` | CRITICAL | PagerDuty |
+| `ExhaustedRetries` | HIGH | Slack #ops |
+| `ResourceBusy` | LOW | Console |
+| `RecentlyRemediated` | LOW | Console |
+
+### **Tasks**
+
+- [ ] Add skip-reason routing tests (4+ test cases)
+- [ ] Create example routing configuration
+- [ ] Create skip-reason runbook
+- [ ] Update API specification (v2.1)
+- [ ] Update cross-team document (DD-WE-004 v1.5)
+
+### **Files**
+
+| File | Action |
+|------|--------|
+| `test/unit/notification/routing_config_test.go` | Add skip-reason tests |
+| `config/notification/routing-config-skip-reason-example.yaml` | Create |
+| `docs/services/crd-controllers/06-notification/runbooks/SKIP_REASON_ROUTING.md` | Create |
+| `docs/services/crd-controllers/06-notification/api-specification.md` | Update to v2.1 |
+| `docs/handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md` | Update to v1.5 |
 
 ---
 

@@ -1,7 +1,7 @@
 # Notification Controller
 
-**Version**: v1.3.0
-**Status**: ✅ Production-Ready (249 tests, 100% pass rate)
+**Version**: v1.4.0
+**Status**: ✅ Production-Ready (249 tests, 100% pass rate) + Day 13 Enhancement Scheduled
 **Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
 **Metrics Port**: 9186 (`/metrics` - with auth filter, DD-TEST-001 compliant)
 **CRD**: NotificationRequest
@@ -686,7 +686,15 @@ err := r.Create(ctx, notification)
 
 ## 📝 Version History
 
-### **Version 1.3.0** (2025-12-02) - **CURRENT**
+### **Version 1.4.0** (2025-12-06) - **CURRENT**
+- ✅ **Skip-Reason Label Routing**: Added `kubernaut.ai/skip-reason` routing label (DD-WE-004 integration)
+- ✅ **Label Constants**: Implemented `LabelSkipReason` and skip reason value constants
+- ✅ **API Specification**: Updated to v2.1 with routing labels section
+- ✅ **Day 13 Enhancement**: Complete implementation plan for skip-reason routing tests, config, and runbooks
+- ✅ **Cross-Team**: Acknowledged DD-WE-004 v1.4 with implementation details
+- 📋 **Scheduled**: Day 13 - Skip-reason routing tests, example config, runbook
+
+### **Version 1.3.0** (2025-12-02)
 - ✅ **Documentation Standardization**: README restructured to match service template (RO, WE pattern)
 - ✅ **Documentation Index**: Added comprehensive doc navigation with line counts
 - ✅ **File Organization**: Visual tree with all core specification docs
@@ -729,20 +737,28 @@ err := r.Create(ctx, notification)
 
 ## 🔮 Future Enhancements
 
+### **V1.x Enhancements (In Progress)**
+
+1. **Label-Based Routing** (BR-NOT-065, BR-NOT-066) - ✅ **COMPLETE**:
+   - Alertmanager-compatible routing configuration
+   - Label-based channel selection (`kubernaut.ai/notification-type`, `kubernaut.ai/severity`, `kubernaut.ai/skip-reason`)
+   - ConfigMap hot-reload for routing rules
+   - Multi-channel fanout
+
+2. **Skip-Reason Routing** (DD-WE-004) - 📋 **Day 13 Scheduled**:
+   - `kubernaut.ai/skip-reason` label routing
+   - `PreviousExecutionFailed` → PagerDuty (CRITICAL)
+   - `ExhaustedRetries` → Slack #ops (HIGH)
+   - `ResourceBusy`/`RecentlyRemediated` → Console (LOW)
+
 ### **V2.0 Planned Features**
 
-1. **Additional Channels** (BR-NOT-065 to BR-NOT-068):
+1. **Additional Channels** (BR-NOT-067 to BR-NOT-069):
    - Email (SMTP) with HTML templates
    - PagerDuty incidents
    - Microsoft Teams with Adaptive Cards
    - SMS via Twilio/SNS
    - Custom webhooks
-
-2. **Advanced Routing** (BR-NOT-065 to BR-NOT-068):
-   - Alertmanager-compatible routing configuration
-   - Label-based channel selection
-   - ConfigMap hot-reload for routing rules
-   - Multi-channel fanout
 
 3. **Performance Optimization**:
    - Batch notification delivery
@@ -836,8 +852,8 @@ See [LICENSE](../../../../../LICENSE) file in repository root.
 
 ---
 
-**Version**: v1.3.0
-**Last Updated**: December 2, 2025
-**Status**: ✅ Production-Ready ✅
+**Version**: v1.4.0
+**Last Updated**: December 6, 2025
+**Status**: ✅ Production-Ready + Day 13 Enhancement Scheduled
 **Maintainer**: Notification Service Team
 
