@@ -259,7 +259,7 @@ func (b *BusinessClassifier) evaluateRego(ctx context.Context, k8sCtx *signalpro
 
 	results, err := query.Eval(timeoutCtx, rego.EvalInput(input))
 	if err != nil {
-		return nil, fmt.Errorf("Rego evaluation failed: %w", err)
+		return nil, fmt.Errorf("rego evaluation failed: %w", err)
 	}
 
 	if len(results) == 0 || len(results[0].Expressions) == 0 {

@@ -241,7 +241,7 @@ func (p *PriorityEngine) StartHotReload(ctx context.Context) error {
 				rego.Module("priority.rego", content),
 			).PrepareForEval(ctx)
 			if err != nil {
-				return fmt.Errorf("Rego compilation failed: %w", err)
+				return fmt.Errorf("rego compilation failed: %w", err)
 			}
 
 			// Atomically swap policy
