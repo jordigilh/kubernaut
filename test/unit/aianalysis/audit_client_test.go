@@ -200,6 +200,121 @@ var _ = Describe("AIAnalysis Audit Client", func() {
 	})
 
 	// ========================================
+	// HOLMESGPT-API CALL AUDIT
+	// ========================================
+	Describe("RecordHolmesGPTCall", func() {
+		// DD-AUDIT-003: Track API calls for performance monitoring
+		// Business Value: Operators can monitor HAPI response times and success rates
+		It("should record successful API call with status code and duration", func() {
+			analysis := createTestAnalysis()
+
+			auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/incident/analyze", 200, 1500)
+
+			Expect(mockStore.Events).To(HaveLen(1))
+			event := mockStore.Events[0]
+
+			Expect(event.EventType).To(Equal("aianalysis.holmesgpt.call"))
+			Expect(event.EventCategory).To(Equal("analysis"))
+			Expect(event.EventAction).To(Equal("api_call"))
+			Expect(event.EventOutcome).To(Equal("success"))
+			Expect(event.DurationMs).NotTo(BeNil())
+			Expect(*event.DurationMs).To(Equal(1500))
+
+			// Verify endpoint and status in event data
+			eventDataStr := string(event.EventData)
+			Expect(eventDataStr).To(ContainSubstring("/api/v1/incident/analyze"))
+			Expect(eventDataStr).To(ContainSubstring("200"))
+		})
+
+		It("should record failed API call with failure outcome", func() {
+			analysis := createTestAnalysis()
+
+			auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/incident/analyze", 500, 500)
+
+			Expect(mockStore.Events).To(HaveLen(1))
+			event := mockStore.Events[0]
+
+			Expect(event.EventOutcome).To(Equal("failure"), "Status >= 400 should be failure")
+		})
+	})
+
+	// ========================================
+	// APPROVAL DECISION AUDIT
+	// ========================================
+	Describe("RecordApprovalDecision", func() {
+		// DD-AUDIT-003: Track approval decisions for compliance
+		// Business Value: Audit trail for all approval decisions (SOC2 compliance)
+		It("should record approval decision with confidence and workflow", func() {
+			analysis := createTestAnalysis()
+
+			auditClient.RecordApprovalDecision(ctx, analysis, "manual_review_required", "Low confidence score")
+
+			Expect(mockStore.Events).To(HaveLen(1))
+			event := mockStore.Events[0]
+
+			Expect(event.EventType).To(Equal("aianalysis.approval.decision"))
+			Expect(event.EventCategory).To(Equal("analysis"))
+			Expect(event.EventAction).To(Equal("approval_decision"))
+			Expect(event.EventOutcome).To(Equal("success"))
+
+			// Verify decision details in event data
+			eventDataStr := string(event.EventData)
+			Expect(eventDataStr).To(ContainSubstring("manual_review_required"))
+			Expect(eventDataStr).To(ContainSubstring("Low confidence score"))
+			Expect(eventDataStr).To(ContainSubstring("production")) // Environment from analysis
+		})
+
+		It("should include workflow info when available", func() {
+			analysis := createTestAnalysis()
+
+			auditClient.RecordApprovalDecision(ctx, analysis, "auto_approved", "High confidence")
+
+			Expect(mockStore.Events).To(HaveLen(1))
+			eventDataStr := string(mockStore.Events[0].EventData)
+			Expect(eventDataStr).To(ContainSubstring("confidence"))
+			Expect(eventDataStr).To(ContainSubstring("workflow_id"))
+		})
+	})
+
+	// ========================================
+	// REGO EVALUATION AUDIT
+	// ========================================
+	Describe("RecordRegoEvaluation", func() {
+		// DD-AUDIT-003: Track policy evaluation for debugging and compliance
+		// Business Value: Audit trail for policy decisions (why was approval required?)
+		It("should record policy evaluation with outcome and duration", func() {
+			analysis := createTestAnalysis()
+
+			auditClient.RecordRegoEvaluation(ctx, analysis, "approval_required", false, 5)
+
+			Expect(mockStore.Events).To(HaveLen(1))
+			event := mockStore.Events[0]
+
+			Expect(event.EventType).To(Equal("aianalysis.rego.evaluation"))
+			Expect(event.EventCategory).To(Equal("analysis"))
+			Expect(event.EventAction).To(Equal("policy_evaluation"))
+			Expect(event.EventOutcome).To(Equal("approval_required"))
+			Expect(event.DurationMs).NotTo(BeNil())
+			Expect(*event.DurationMs).To(Equal(5))
+
+			// Verify evaluation details in event data
+			eventDataStr := string(event.EventData)
+			Expect(eventDataStr).To(ContainSubstring("approval_required"))
+			Expect(eventDataStr).To(ContainSubstring(`"degraded":false`))
+		})
+
+		It("should track degraded mode when policy evaluation fails", func() {
+			analysis := createTestAnalysis()
+
+			auditClient.RecordRegoEvaluation(ctx, analysis, "approval_required", true, 10)
+
+			Expect(mockStore.Events).To(HaveLen(1))
+			eventDataStr := string(mockStore.Events[0].EventData)
+			Expect(eventDataStr).To(ContainSubstring(`"degraded":true`))
+		})
+	})
+
+	// ========================================
 	// GRACEFUL DEGRADATION
 	// ========================================
 	Describe("Graceful Degradation (DD-AUDIT-002)", func() {

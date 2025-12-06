@@ -315,6 +315,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			)
 
 			// BR-HAPI-197: Backward compatibility - fallback to warning parsing
+			// Business Value: Operators can diagnose failures even with older HAPI versions
 			DescribeTable("should fallback to warning parsing when enum is nil",
 				func(warnings []string, expectedSubReason string) {
 					mockClient.WithHumanReviewRequired(warnings)
@@ -327,13 +328,51 @@ var _ = Describe("InvestigatingHandler", func() {
 					Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"))
 					Expect(analysis.Status.SubReason).To(Equal(expectedSubReason))
 				},
+				// WorkflowNotFound patterns
 				Entry("'not found' in warning → WorkflowNotFound",
 					[]string{"Workflow 'restart-pod-v1' not found in catalog"}, "WorkflowNotFound"),
+				Entry("'does not exist' in warning → WorkflowNotFound",
+					[]string{"Workflow does not exist in catalog"}, "WorkflowNotFound"),
+				// NoMatchingWorkflows patterns
 				Entry("'no workflows matched' in warning → NoMatchingWorkflows",
 					[]string{"No workflows matched the incident criteria"}, "NoMatchingWorkflows"),
+				Entry("'no matching' in warning → NoMatchingWorkflows",
+					[]string{"No matching workflow for OOMKilled signal"}, "NoMatchingWorkflows"),
+				// LowConfidence patterns
 				Entry("'confidence below' in warning → LowConfidence",
 					[]string{"Confidence (0.55) below threshold (0.70)"}, "LowConfidence"),
+				// ParameterValidationFailed patterns
+				Entry("'parameter validation' in warning → ParameterValidationFailed",
+					[]string{"Parameter validation failed for workflow"}, "ParameterValidationFailed"),
+				Entry("'missing required' in warning → ParameterValidationFailed",
+					[]string{"Missing required parameter: namespace"}, "ParameterValidationFailed"),
+				// ImageMismatch patterns
+				Entry("'image mismatch' in warning → ImageMismatch",
+					[]string{"Image mismatch: expected v1.0.0, got v2.0.0"}, "ImageMismatch"),
+				Entry("'container image' in warning → ImageMismatch",
+					[]string{"Container image validation failed"}, "ImageMismatch"),
+				// LLMParsingError patterns
+				Entry("'parse' in warning → LLMParsingError",
+					[]string{"Failed to parse LLM response"}, "LLMParsingError"),
+				Entry("'invalid json' in warning → LLMParsingError",
+					[]string{"Invalid JSON in LLM output"}, "LLMParsingError"),
+				// Default case (unknown warning)
+				Entry("unknown warning → WorkflowNotFound (default)",
+					[]string{"Some completely unexpected error"}, "WorkflowNotFound"),
 			)
+
+			// BR-HAPI-197: Unknown enum value handling
+			// Business Value: System handles new HAPI enum values gracefully
+			It("should default to WorkflowNotFound for unknown human_review_reason enum", func() {
+				mockClient.WithHumanReviewReasonEnum("some_future_enum_value", []string{"Unknown reason"})
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+				Expect(analysis.Status.SubReason).To(Equal("WorkflowNotFound"), "Should default to WorkflowNotFound for unknown enum")
+			})
 
 			// BR-HAPI-197.4: Preserve partial response for operator context
 			It("should preserve partial workflow and RCA for operator context", func() {
