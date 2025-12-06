@@ -275,7 +275,7 @@ Please acknowledge receipt of this notice by updating the section below:
 | Team | Acknowledged | Date | Notes |
 |------|--------------|------|-------|
 | AIAnalysis | ⬜ Pending | - | Rego policy hot-reload |
-| Gateway | ⬜ Pending | - | Config hot-reload |
+| Gateway | ✅ Acknowledged | 2025-12-06 | Storm thresholds, dedup TTL, retry config. Implementation plan: Day 8 Gateway |
 | WorkflowExecution | ⬜ Pending | - | Timeout/retry config |
 | RemediationOrchestrator | ⬜ Pending | - | Policy config |
 | KubernetesExecutor | ⬜ Pending | - | Safety config |
