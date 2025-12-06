@@ -206,6 +206,7 @@ type RemediationRequestStatus struct {
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 
 	// References to downstream CRDs
+	SignalProcessingRef      *corev1.ObjectReference `json:"signalProcessingRef,omitempty"`
 	RemediationProcessingRef *corev1.ObjectReference `json:"remediationProcessingRef,omitempty"`
 	AIAnalysisRef            *corev1.ObjectReference `json:"aiAnalysisRef,omitempty"`
 	WorkflowExecutionRef     *corev1.ObjectReference `json:"workflowExecutionRef,omitempty"`
@@ -256,6 +257,15 @@ type RemediationRequestStatus struct {
 	// FailureReason provides a human-readable reason for the failure
 	// Only set when OverallPhase = "failed"
 	FailureReason *string `json:"failureReason,omitempty"`
+
+	// RequiresManualReview indicates that this remediation cannot proceed automatically
+	// and requires operator intervention. Set when:
+	// - WE skip reason is "ExhaustedRetries" (5+ consecutive pre-execution failures)
+	// - WE skip reason is "PreviousExecutionFailed" (execution failure, cluster state unknown)
+	// - AIAnalysis WorkflowResolutionFailed with LowConfidence or WorkflowNotFound
+	// Reference: BR-ORCH-032, BR-ORCH-036, DD-WE-004
+	// +optional
+	RequiresManualReview bool `json:"requiresManualReview,omitempty"`
 
 	// TimeoutPhase indicates which phase timed out
 	// Only set when OverallPhase = "timeout"

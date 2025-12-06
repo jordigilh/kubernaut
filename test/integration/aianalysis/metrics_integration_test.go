@@ -26,11 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 )
 
@@ -155,23 +152,9 @@ var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Ordered, func()
 				"quality_detected_labels_failures_total should be registered")
 		})
 
-		// v1.13: Verify removed metrics are NOT present
-		It("should NOT register removed low-value metrics", func() {
-			Expect(metricExists("aianalysis_reconciler_phase_transitions_total")).To(BeFalse(),
-				"phase_transitions_total should NOT be registered (removed in v1.13)")
-			Expect(metricExists("aianalysis_reconciler_phase_duration_seconds")).To(BeFalse(),
-				"phase_duration_seconds should NOT be registered (removed in v1.13)")
-			Expect(metricExists("aianalysis_holmesgpt_requests_total")).To(BeFalse(),
-				"holmesgpt_requests_total should NOT be registered (removed in v1.13)")
-			Expect(metricExists("aianalysis_holmesgpt_latency_seconds")).To(BeFalse(),
-				"holmesgpt_latency_seconds should NOT be registered (removed in v1.13)")
-			Expect(metricExists("aianalysis_holmesgpt_retries_total")).To(BeFalse(),
-				"holmesgpt_retries_total should NOT be registered (removed in v1.13)")
-			Expect(metricExists("aianalysis_rego_latency_seconds")).To(BeFalse(),
-				"rego_latency_seconds should NOT be registered (removed in v1.13)")
-			Expect(metricExists("aianalysis_rego_reloads_total")).To(BeFalse(),
-				"rego_reloads_total should NOT be registered (removed in v1.13)")
-		})
+		// NOTE: Removed "should NOT register removed low-value metrics" test
+		// Reason: Tests implementation detail (absence of metrics), not business value
+		// Per TESTING_GUIDELINES.md: Focus on business outcomes, not implementation
 	})
 
 	// ========================================
@@ -247,71 +230,17 @@ var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Ordered, func()
 	})
 
 	// ========================================
-	// METRICS DURING CRD LIFECYCLE (requires envtest)
+	// NOTE: CRD Lifecycle Metrics Test → E2E (Day 8)
 	// ========================================
-	Context("Metrics During CRD Lifecycle", func() {
-		var testNamespace *corev1.Namespace
-
-		BeforeEach(func() {
-			// Create test namespace
-			testNamespace = &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: "test-metrics-",
-				},
-			}
-			Expect(k8sClient.Create(ctx, testNamespace)).To(Succeed())
-		})
-
-		AfterEach(func() {
-			// Cleanup
-			if testNamespace != nil {
-				_ = k8sClient.Delete(ctx, testNamespace)
-			}
-		})
-
-		// BR-AI-001: CRD lifecycle should emit metrics
-		It("should record reconciliation metrics when CRD is created", func() {
-			Skip("Requires controller manager setup - will be enabled when reconciler is integrated")
-
-			// Create test AIAnalysis
-			analysis := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-metrics-analysis",
-					Namespace: testNamespace.Name,
-				},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Kind:      "RemediationRequest",
-						Name:      "test-rr",
-						Namespace: testNamespace.Name,
-					},
-					RemediationID: "test-metrics-001",
-					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      "test-fingerprint",
-							Severity:         "warning",
-							SignalType:       "OOMKilled",
-							Environment:      "staging",
-							BusinessPriority: "P2",
-							TargetResource: aianalysisv1.TargetResource{
-								Kind:      "Pod",
-								Name:      "test-pod",
-								Namespace: testNamespace.Name,
-							},
-						},
-						AnalysisTypes: []string{"investigation"},
-					},
-				},
-			}
-
-			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-			// Verify reconciliation metric was incremented
-			Eventually(func() string {
-				return getMetricValue("aianalysis_reconciler_reconciliations_total")
-			}, 10*time.Second).Should(ContainSubstring("Pending"))
-		})
-	})
+	// The test "should record reconciliation metrics when CRD is created"
+	// has been moved to E2E tests (test/e2e/aianalysis/) because it requires:
+	// - Full controller manager deployment
+	// - Metrics endpoint exposed via Service
+	// - Real reconciliation flow
+	//
+	// This validates: "Can operators scrape AIAnalysis metrics in production?"
+	// See: IMPLEMENTATION_PLAN_V1.0.md Day 8 (E2E Tests)
+	// ========================================
 })
 
 // ========================================

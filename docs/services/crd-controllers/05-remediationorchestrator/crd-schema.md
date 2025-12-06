@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | **v1.1** | 2025-12-06 | **SCHEMA UPDATE**: Added `NotificationRequestRefs []corev1.ObjectReference` for audit trail and compliance tracking; Enables instant visibility of all notifications sent for a remediation | [BR-ORCH-035](../../../requirements/BR-ORCH-035-notification-reference-tracking.md) |
+> | **v1.2** | 2025-12-06 | **Day 5 CRITICAL FIX**: Added `SignalProcessingRef *corev1.ObjectReference` for SP CRD tracking; Added `RequiresManualReview bool` for manual intervention scenarios (ExhaustedRetries, PreviousExecutionFailed, WorkflowResolutionFailed) | [BR-ORCH-032](../../../requirements/BR-ORCH-032-034-resource-lock-deduplication.md), [BR-ORCH-036](../../../requirements/BR-ORCH-036-manual-review-notification.md), [DD-WE-004](../../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md) |
+> | v1.1 | 2025-12-06 | **SCHEMA UPDATE**: Added `NotificationRequestRefs []corev1.ObjectReference` for audit trail and compliance tracking; Enables instant visibility of all notifications sent for a remediation | [BR-ORCH-035](../../../requirements/BR-ORCH-035-notification-reference-tracking.md) |
 > | v1.0 | 2025-12-04 | Initial CRD schema with recovery support | - |
 
 ### 📋 Authoritative Schema Reference
@@ -230,12 +231,29 @@ type RemediationRequestStatus struct {
     CompletionTime *metav1.Time `json:"completionTime,omitempty"`
 
     // ========================================
+    // CHILD CRD REFERENCES (v1.2)
+    // ========================================
+
+    // SignalProcessingRef references the SignalProcessing CRD created for enrichment
+    // v1.2: Added for Environment/Priority tracking after Gateway classification removal
+    SignalProcessingRef *corev1.ObjectReference `json:"signalProcessingRef,omitempty"`
+
+    // AIAnalysisRef references the AIAnalysis CRD created for investigation
+    AIAnalysisRef *corev1.ObjectReference `json:"aiAnalysisRef,omitempty"`
+
+    // WorkflowExecutionRef references the WorkflowExecution CRD for workflow tracking
+    WorkflowExecutionRef *corev1.ObjectReference `json:"workflowExecutionRef,omitempty"`
+
+    // NotificationRequestRefs tracks all notification CRDs for audit trail (BR-ORCH-035, v1.1)
+    NotificationRequestRefs []corev1.ObjectReference `json:"notificationRequestRefs,omitempty"`
+
+    // ========================================
     // SKIPPED PHASE TRACKING (BR-ORCH-032/033/034, December 2025)
     // When WorkflowExecution is skipped due to resource locking
     // ========================================
 
     // SkipReason indicates why this remediation was skipped
-    // Values: "ResourceBusy" (another workflow running) or "RecentlyRemediated" (cooldown active)
+    // Values: "ResourceBusy", "RecentlyRemediated", "ExhaustedRetries", "PreviousExecutionFailed"
     SkipReason string `json:"skipReason,omitempty"`
 
     // DuplicateOf references the parent RemediationRequest that is actively handling this resource
@@ -246,6 +264,11 @@ type RemediationRequestStatus struct {
 
     // DuplicateRefs lists the names of skipped RemediationRequests (parent RR only)
     DuplicateRefs []string `json:"duplicateRefs,omitempty"`
+
+    // RequiresManualReview indicates automatic processing is blocked (v1.2)
+    // Set when: ExhaustedRetries, PreviousExecutionFailed, WorkflowResolutionFailed
+    // Reference: BR-ORCH-032, BR-ORCH-036, DD-WE-004
+    RequiresManualReview bool `json:"requiresManualReview,omitempty"`
 
     // ========================================
     // RECOVERY TRACKING (Phase 1 Critical Fix)

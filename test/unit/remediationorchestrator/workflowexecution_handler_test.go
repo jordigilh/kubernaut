@@ -1,0 +1,262 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package remediationorchestrator_test
+
+import (
+	"context"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
+)
+
+var _ = Describe("WorkflowExecutionHandler", func() {
+	var (
+		scheme *runtime.Scheme
+	)
+
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		_ = remediationv1.AddToScheme(scheme)
+		_ = workflowexecutionv1.AddToScheme(scheme)
+		_ = signalprocessingv1.AddToScheme(scheme)
+		_ = notificationv1.AddToScheme(scheme)
+	})
+
+	Describe("Constructor", func() {
+		// Test #1: Constructor returns non-nil
+		It("should return non-nil WorkflowExecutionHandler", func() {
+			client := fake.NewClientBuilder().WithScheme(scheme).Build()
+			h := handler.NewWorkflowExecutionHandler(client, scheme)
+			Expect(h).ToNot(BeNil())
+		})
+	})
+
+	Describe("HandleSkipped", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			h          *handler.WorkflowExecutionHandler
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("BR-ORCH-032: ResourceBusy skip reason", func() {
+			// Test #2: HandleSkipped with ResourceBusy sets OverallPhase="Skipped" and requeues
+			It("should set OverallPhase=Skipped and SkipReason=ResourceBusy and requeue", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-test-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Skipped",
+						SkipDetails: &workflowexecutionv1.SkipDetails{
+							Reason:    "ResourceBusy",
+							Message:   "Another workflow is executing on this resource",
+							SkippedAt: metav1.Now(),
+							ConflictingWorkflow: &workflowexecutionv1.ConflictingWorkflowRef{
+								Name:           "we-parent-rr",
+								WorkflowID:     "restart-pod",
+								StartedAt:      metav1.Now(),
+								TargetResource: "default/Pod/test-pod",
+							},
+						},
+					},
+				}
+
+				result, err := h.HandleSkipped(ctx, rr, we, sp)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify status update
+				Expect(rr.Status.OverallPhase).To(Equal("Skipped"))
+				Expect(rr.Status.SkipReason).To(Equal("ResourceBusy"))
+				Expect(rr.Status.DuplicateOf).To(Equal("we-parent-rr"))
+
+				// Verify requeue
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+				Expect(result.RequeueAfter).To(BeNumerically("<=", 30*time.Second))
+			})
+		})
+
+		Context("BR-ORCH-032: RecentlyRemediated skip reason", func() {
+			// Test #3: HandleSkipped with RecentlyRemediated sets OverallPhase="Skipped" and requeues
+			It("should set OverallPhase=Skipped and SkipReason=RecentlyRemediated and requeue", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-test-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Skipped",
+						SkipDetails: &workflowexecutionv1.SkipDetails{
+							Reason:    "RecentlyRemediated",
+							Message:   "Target was remediated within cooldown period",
+							SkippedAt: metav1.Now(),
+							RecentRemediation: &workflowexecutionv1.RecentRemediationRef{
+								Name:              "we-previous-rr",
+								WorkflowID:        "restart-pod",
+								CompletedAt:       metav1.Now(),
+								Outcome:           "Completed",
+								TargetResource:    "default/Pod/test-pod",
+								CooldownRemaining: "4m30s",
+							},
+						},
+					},
+				}
+
+				result, err := h.HandleSkipped(ctx, rr, we, sp)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify status update
+				Expect(rr.Status.OverallPhase).To(Equal("Skipped"))
+				Expect(rr.Status.SkipReason).To(Equal("RecentlyRemediated"))
+				Expect(rr.Status.DuplicateOf).To(Equal("we-previous-rr"))
+
+				// Verify requeue with fixed 1 minute interval (WE owns backoff logic)
+				Expect(result.RequeueAfter).To(Equal(1 * time.Minute))
+			})
+		})
+
+		Context("BR-ORCH-032, BR-ORCH-036: ExhaustedRetries skip reason", func() {
+			// Test #4: HandleSkipped with ExhaustedRetries sets OverallPhase="Failed" + RequiresManualReview
+			It("should set OverallPhase=Failed and RequiresManualReview=true and NOT requeue", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-test-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Skipped",
+						SkipDetails: &workflowexecutionv1.SkipDetails{
+							Reason:    "ExhaustedRetries",
+							Message:   "5+ consecutive pre-execution failures",
+							SkippedAt: metav1.Now(),
+						},
+						ConsecutiveFailures: 5,
+					},
+				}
+
+				result, err := h.HandleSkipped(ctx, rr, we, sp)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify status - FAILED, not Skipped (per BR-ORCH-032 v1.1)
+				Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+				Expect(rr.Status.SkipReason).To(Equal("ExhaustedRetries"))
+				Expect(rr.Status.RequiresManualReview).To(BeTrue())
+				Expect(rr.Status.DuplicateOf).To(BeEmpty()) // NOT a duplicate
+
+				// NO requeue - manual intervention required
+				Expect(result.RequeueAfter).To(Equal(time.Duration(0)))
+			})
+		})
+
+		Context("BR-ORCH-032, BR-ORCH-036: PreviousExecutionFailed skip reason", func() {
+			// Test #5: HandleSkipped with PreviousExecutionFailed sets OverallPhase="Failed" + RequiresManualReview
+			It("should set OverallPhase=Failed and RequiresManualReview=true for cluster state concerns", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-test-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Skipped",
+						SkipDetails: &workflowexecutionv1.SkipDetails{
+							Reason:    "PreviousExecutionFailed",
+							Message:   "Previous workflow execution failed - cluster state may be inconsistent",
+							SkippedAt: metav1.Now(),
+						},
+					},
+				}
+
+				result, err := h.HandleSkipped(ctx, rr, we, sp)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify status - FAILED, not Skipped (per BR-ORCH-032 v1.1)
+				Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+				Expect(rr.Status.SkipReason).To(Equal("PreviousExecutionFailed"))
+				Expect(rr.Status.RequiresManualReview).To(BeTrue())
+				Expect(rr.Status.DuplicateOf).To(BeEmpty()) // NOT a duplicate
+
+				// NO requeue - manual intervention required
+				Expect(result.RequeueAfter).To(Equal(time.Duration(0)))
+			})
+		})
+
+		// Tests #6-10: mapSkipReasonToSeverity mapping via DescribeTable
+		DescribeTable("BR-ORCH-036: Skip reason to severity mapping",
+			func(skipReason string, expectedSeverity string) {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+				severity := h.MapSkipReasonToSeverity(skipReason)
+				Expect(severity).To(Equal(expectedSeverity))
+			},
+			Entry("PreviousExecutionFailed → critical", "PreviousExecutionFailed", "critical"),
+			Entry("ExhaustedRetries → high", "ExhaustedRetries", "high"),
+			Entry("ResourceBusy → medium", "ResourceBusy", "medium"),
+			Entry("RecentlyRemediated → medium", "RecentlyRemediated", "medium"),
+			Entry("unknown → medium", "unknown", "medium"),
+		)
+
+		// Tests #11-13: mapSkipReasonToPriority mapping via DescribeTable
+		DescribeTable("BR-ORCH-036: Skip reason to priority mapping",
+			func(skipReason string, expectedPriority string) {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+				priority := h.MapSkipReasonToPriority(skipReason)
+				Expect(priority).To(Equal(expectedPriority))
+			},
+			Entry("PreviousExecutionFailed → critical", "PreviousExecutionFailed", "critical"),
+			Entry("ExhaustedRetries → high", "ExhaustedRetries", "high"),
+			Entry("ResourceBusy → medium", "ResourceBusy", "medium"),
+		)
+	})
+})
+

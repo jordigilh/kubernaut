@@ -995,15 +995,25 @@ var _ = Describe("NotificationCreator", func() {
 
 ## Day 5: Status Aggregation and WE Failure Handling (8h)
 
-**Updated**: December 6, 2025 - Added WE failure handling per DD-WE-004
+**Updated**: December 6, 2025 - v1.5: Fixed API field names, added imports, added test plan
+
+> **📋 Day 5 Changelog**
+> | Version | Date | Changes |
+> |---------|------|---------|
+> | v1.5 | 2025-12-06 | **CRITICAL FIXES**: `rr.Status.Phase` → `rr.Status.OverallPhase`; Added `SignalProcessingRef` to API; Added `RequiresManualReview` field; Fixed missing imports; Added test plan with BR mappings |
+> | v1.4 | 2025-12-06 | Added WE failure handling per DD-WE-004 |
 
 **Files**:
 - `pkg/remediationorchestrator/aggregator/status.go`
 - `pkg/remediationorchestrator/handler/workflowexecution.go` (NEW)
 
-**Business Requirements**: BR-ORCH-032 (skip handling), BR-ORCH-033 (duplicate tracking)
+**Business Requirements**: BR-ORCH-032 (skip handling), BR-ORCH-033 (duplicate tracking), BR-ORCH-036 (manual review notification)
 
 **Design Decisions**: DD-RO-001 (deduplication), DD-WE-004 (exponential backoff)
+
+**API Updates Required** (added in v1.5):
+- `RemediationRequestStatus.SignalProcessingRef` - reference to SP CRD
+- `RemediationRequestStatus.RequiresManualReview` - boolean for manual review needed
 
 ---
 
@@ -1019,16 +1029,21 @@ import (
 	"fmt"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
 // WorkflowExecutionHandler handles WE status changes
+// Reference: BR-ORCH-032, BR-ORCH-033, BR-ORCH-036, DD-WE-004
 type WorkflowExecutionHandler struct {
 	client client.Client
 	scheme *runtime.Scheme
@@ -1043,10 +1058,12 @@ func NewWorkflowExecutionHandler(c client.Client, s *runtime.Scheme) *WorkflowEx
 }
 
 // HandleSkipped handles WE Skipped phase per DD-WE-004 and BR-ORCH-032
+// NOTE: Uses rr.Status.OverallPhase (NOT Phase)
 func (h *WorkflowExecutionHandler) HandleSkipped(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	we *workflowexecutionv1.WorkflowExecution,
+	sp *signalprocessingv1.SignalProcessing, // v1.5: Pass SP for environment labels
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -1063,7 +1080,7 @@ func (h *WorkflowExecutionHandler) HandleSkipped(
 		if err := h.trackDuplicate(ctx, rr, we); err != nil {
 			return ctrl.Result{}, err
 		}
-		rr.Status.Phase = "Skipped"
+		rr.Status.OverallPhase = "Skipped" // v1.5: FIXED from Phase
 		rr.Status.SkipReason = reason
 		rr.Status.DuplicateOf = we.Status.SkipDetails.ConflictingWorkflow.RemediationRequestRef
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -1075,7 +1092,7 @@ func (h *WorkflowExecutionHandler) HandleSkipped(
 		if err := h.trackDuplicate(ctx, rr, we); err != nil {
 			return ctrl.Result{}, err
 		}
-		rr.Status.Phase = "Skipped"
+		rr.Status.OverallPhase = "Skipped" // v1.5: FIXED from Phase
 		rr.Status.SkipReason = reason
 		rr.Status.DuplicateOf = we.Status.SkipDetails.RecentRemediation.RemediationRequestRef
 
@@ -1085,13 +1102,13 @@ func (h *WorkflowExecutionHandler) HandleSkipped(
 	case "ExhaustedRetries":
 		// NOT A DUPLICATE: Manual review required
 		logger.Info("WE skipped: ExhaustedRetries - manual intervention required")
-		return h.handleManualReviewRequired(ctx, rr, we, reason,
+		return h.handleManualReviewRequired(ctx, rr, we, sp, reason,
 			"Retry limit exceeded - 5+ consecutive pre-execution failures")
 
 	case "PreviousExecutionFailed":
 		// NOT A DUPLICATE: Manual review required (cluster state unknown)
 		logger.Info("WE skipped: PreviousExecutionFailed - manual intervention required")
-		return h.handleManualReviewRequired(ctx, rr, we, reason,
+		return h.handleManualReviewRequired(ctx, rr, we, sp, reason,
 			"Previous execution failed during workflow run - cluster state may be inconsistent")
 
 	default:
@@ -1101,10 +1118,12 @@ func (h *WorkflowExecutionHandler) HandleSkipped(
 }
 
 // HandleFailed handles WE Failed phase
+// NOTE: Uses rr.Status.OverallPhase (NOT Phase), rr.Status.RequiresManualReview
 func (h *WorkflowExecutionHandler) HandleFailed(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	we *workflowexecutionv1.WorkflowExecution,
+	sp *signalprocessingv1.SignalProcessing, // v1.5: Pass SP for environment labels
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -1116,12 +1135,12 @@ func (h *WorkflowExecutionHandler) HandleFailed(
 		// EXECUTION FAILURE: Cluster state may be modified - NO auto-retry
 		logger.Info("WE failed during execution - manual review required")
 
-		rr.Status.Phase = "Failed"
-		rr.Status.RequiresManualReview = true
+		rr.Status.OverallPhase = "Failed"         // v1.5: FIXED from Phase
+		rr.Status.RequiresManualReview = true     // v1.5: NEW field added to API
 		rr.Status.Message = we.Status.FailureDetails.NaturalLanguageSummary
 
 		// Create escalation notification with naturalLanguageSummary
-		if err := h.createExecutionFailureNotification(ctx, rr, we); err != nil {
+		if err := h.createExecutionFailureNotification(ctx, rr, we, sp); err != nil {
 			logger.Error(err, "Failed to create execution failure notification")
 			return ctrl.Result{}, err
 		}
@@ -1136,20 +1155,28 @@ func (h *WorkflowExecutionHandler) HandleFailed(
 }
 
 // handleManualReviewRequired handles skip reasons requiring manual intervention
+// v1.5: Pass SP for environment; use OverallPhase; use RequiresManualReview
 func (h *WorkflowExecutionHandler) handleManualReviewRequired(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	we *workflowexecutionv1.WorkflowExecution,
+	sp *signalprocessingv1.SignalProcessing, // v1.5: Pass SP for environment
 	skipReason string,
 	message string,
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	// v1.5: Get environment from SP status (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE)
+	environment := "unknown"
+	if sp != nil && sp.Status.EnvironmentClassification != nil {
+		environment = sp.Status.EnvironmentClassification.Environment
+	}
+
 	// Update RR status - FAILED, not Skipped (per BR-ORCH-032 v1.1)
-	rr.Status.Phase = "Failed"
+	rr.Status.OverallPhase = "Failed"      // v1.5: FIXED from Phase
 	rr.Status.SkipReason = skipReason
-	rr.Status.RequiresManualReview = true
-	rr.Status.DuplicateOf = "" // NOT a duplicate
+	rr.Status.RequiresManualReview = true  // v1.5: NEW field added to API
+	rr.Status.DuplicateOf = ""             // NOT a duplicate
 	rr.Status.Message = we.Status.SkipDetails.Message
 
 	// Create manual review notification (BR-ORCH-036)
@@ -1161,14 +1188,14 @@ func (h *WorkflowExecutionHandler) handleManualReviewRequired(
 				"kubernaut.ai/remediation-request": rr.Name,
 				"kubernaut.ai/notification-type":   "manual-review",
 				"kubernaut.ai/skip-reason":         skipReason,
-				"kubernaut.ai/severity":            h.mapSkipReasonToSeverity(skipReason), // critical for PreviousExecutionFailed
-				"kubernaut.ai/environment":         rr.Spec.Environment,
+				"kubernaut.ai/severity":            h.mapSkipReasonToSeverity(skipReason),
+				"kubernaut.ai/environment":         environment, // v1.5: FIXED - from SP status
 				"kubernaut.ai/component":           "remediation-orchestrator",
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
-			Type:     notificationv1.NotificationTypeManualReview, // BR-ORCH-036: Distinct from escalation
-			Priority: h.mapSkipReasonToPriority(skipReason),       // critical for PreviousExecutionFailed
+			Type:     notificationv1.NotificationTypeManualReview, // BR-ORCH-036
+			Priority: h.mapSkipReasonToPriority(skipReason),
 			Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s - %s", rr.Name, skipReason),
 			Body:     h.buildManualReviewBody(rr, we, skipReason, message),
 			Channels: []notificationv1.Channel{
@@ -1181,6 +1208,7 @@ func (h *WorkflowExecutionHandler) handleManualReviewRequired(
 				"workflowExecution":  we.Name,
 				"skipReason":         skipReason,
 				"targetResource":     we.Spec.TargetResource,
+				"environment":        environment, // v1.5: From SP status
 			},
 		},
 	}
@@ -1288,7 +1316,76 @@ A workflow has been blocked and requires manual review.
 
 ---
 
-### Status Aggregator (Original Day 5 Content)
+---
+
+### Day 5: TDD Test Plan (MANDATORY)
+
+**File**: `test/unit/remediationorchestrator/workflowexecution_handler_test.go`
+
+**Test Coverage Matrix** (per `03-testing-strategy.mdc` and `TESTING_GUIDELINES.md`):
+
+| # | Test Case | BR Reference | Type | Priority |
+|---|-----------|--------------|------|----------|
+| 1 | Constructor returns non-nil `WorkflowExecutionHandler` | — | Unit | P0 |
+| 2 | `HandleSkipped` with ResourceBusy sets OverallPhase="Skipped" and requeues | BR-ORCH-032 | Unit | P0 |
+| 3 | `HandleSkipped` with RecentlyRemediated sets OverallPhase="Skipped" and requeues | BR-ORCH-032 | Unit | P0 |
+| 4 | `HandleSkipped` with ExhaustedRetries sets OverallPhase="Failed" + RequiresManualReview | BR-ORCH-032, BR-ORCH-036 | Unit | P0 |
+| 5 | `HandleSkipped` with PreviousExecutionFailed sets OverallPhase="Failed" + RequiresManualReview | BR-ORCH-032, BR-ORCH-036 | Unit | P0 |
+| 6 | `HandleSkipped` creates manual review notification for ExhaustedRetries | BR-ORCH-036 | Unit | P0 |
+| 7 | `HandleSkipped` creates manual review notification for PreviousExecutionFailed | BR-ORCH-036 | Unit | P0 |
+| 8 | `HandleFailed` with WasExecutionFailure sets RequiresManualReview=true | BR-ORCH-032, DD-WE-004 | Unit | P0 |
+| 9 | `HandleFailed` without WasExecutionFailure calls evaluateRecoveryOptions | BR-ORCH-032 | Unit | P1 |
+| 10 | `trackDuplicate` increments DuplicateCount on parent RR | BR-ORCH-033 | Unit | P0 |
+| 11 | `trackDuplicate` appends to DuplicateRefs | BR-ORCH-033 | Unit | P0 |
+| 12 | `mapSkipReasonToSeverity` mapping (DescribeTable) | BR-ORCH-036 | Unit | P1 |
+| 13 | `mapSkipReasonToPriority` mapping (DescribeTable) | BR-ORCH-036 | Unit | P1 |
+| 14 | Manual review notification uses environment from SP status | BR-ORCH-036, NOTICE | Unit | P0 |
+| 15 | Manual review notification sets `NotificationTypeManualReview` | BR-ORCH-036 | Unit | P0 |
+
+**DescribeTable Tests** (per `03-testing-strategy.mdc`):
+
+```go
+// Test mapSkipReasonToSeverity mapping
+DescribeTable("BR-ORCH-036: Skip reason to severity mapping",
+    func(skipReason string, expectedSeverity string) {
+        handler := NewWorkflowExecutionHandler(fakeClient, scheme)
+        severity := handler.mapSkipReasonToSeverity(skipReason)
+        Expect(severity).To(Equal(expectedSeverity))
+    },
+    Entry("PreviousExecutionFailed → critical", "PreviousExecutionFailed", "critical"),
+    Entry("ExhaustedRetries → high", "ExhaustedRetries", "high"),
+    Entry("ResourceBusy → medium", "ResourceBusy", "medium"),
+    Entry("RecentlyRemediated → medium", "RecentlyRemediated", "medium"),
+    Entry("unknown → medium", "unknown", "medium"),
+)
+
+// Test mapSkipReasonToPriority mapping
+DescribeTable("BR-ORCH-036: Skip reason to priority mapping",
+    func(skipReason string, expectedPriority notificationv1.NotificationPriority) {
+        handler := NewWorkflowExecutionHandler(fakeClient, scheme)
+        priority := handler.mapSkipReasonToPriority(skipReason)
+        Expect(priority).To(Equal(expectedPriority))
+    },
+    Entry("PreviousExecutionFailed → Critical", "PreviousExecutionFailed", notificationv1.NotificationPriorityCritical),
+    Entry("ExhaustedRetries → High", "ExhaustedRetries", notificationv1.NotificationPriorityHigh),
+    Entry("ResourceBusy → Medium", "ResourceBusy", notificationv1.NotificationPriorityMedium),
+)
+```
+
+**File**: `test/unit/remediationorchestrator/status_aggregator_test.go`
+
+| # | Test Case | BR Reference | Type | Priority |
+|---|-----------|--------------|------|----------|
+| 16 | Constructor returns non-nil `StatusAggregator` | — | Unit | P0 |
+| 17 | `AggregateStatus` returns SP status when SignalProcessingRef set | BR-ORCH-025 | Unit | P0 |
+| 18 | `AggregateStatus` returns AI status when AIAnalysisRef set | BR-ORCH-025 | Unit | P0 |
+| 19 | `AggregateStatus` returns WE status when WorkflowExecutionRef set | BR-ORCH-025 | Unit | P0 |
+| 20 | `AggregateStatus` handles missing child CRDs gracefully | — | Unit | P1 |
+| 21 | `AggregateStatus` aggregates error from child CRDs | — | Unit | P1 |
+
+---
+
+### Status Aggregator
 
 **File**: `pkg/remediationorchestrator/aggregator/status.go`
 
@@ -1299,15 +1396,28 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/remediation/orchestrator"
 )
+
+// AggregatedStatus holds collected status from all child CRDs
+type AggregatedStatus struct {
+	SignalProcessingPhase string
+	SignalProcessingReady bool
+	AIAnalysisPhase       string
+	AIAnalysisReady       bool
+	WorkflowExecutionPhase string
+	WorkflowExecutionReady bool
+	EnrichmentResults     interface{}
+	Error                 error
+}
 
 // StatusAggregator aggregates status from child CRDs
 type StatusAggregator struct {
@@ -1320,16 +1430,18 @@ func NewStatusAggregator(c client.Client) *StatusAggregator {
 }
 
 // AggregateStatus collects status from all child CRDs
-func (a *StatusAggregator) AggregateStatus(ctx context.Context, rr *remediationv1.RemediationRequest) (*orchestrator.AggregatedStatus, error) {
-	log := log.FromContext(ctx)
+// v1.5: Uses SignalProcessingRef (ObjectReference), not string
+func (a *StatusAggregator) AggregateStatus(ctx context.Context, rr *remediationv1.RemediationRequest) (*AggregatedStatus, error) {
+	logger := log.FromContext(ctx)
 
-	status := &orchestrator.AggregatedStatus{}
+	status := &AggregatedStatus{}
 
 	// Aggregate SignalProcessing status
-	if rr.Status.SignalProcessingRef != "" {
-		spStatus, err := a.getSignalProcessingStatus(ctx, rr.Namespace, rr.Status.SignalProcessingRef)
+	// v1.5: SignalProcessingRef is now *corev1.ObjectReference
+	if rr.Status.SignalProcessingRef != nil && rr.Status.SignalProcessingRef.Name != "" {
+		spStatus, err := a.getSignalProcessingStatus(ctx, rr.Namespace, rr.Status.SignalProcessingRef.Name)
 		if err != nil {
-			log.Error(err, "Failed to get SignalProcessing status")
+			logger.Error(err, "Failed to get SignalProcessing status")
 			status.Error = err
 		} else {
 			status.SignalProcessingPhase = spStatus.Phase
@@ -1339,10 +1451,10 @@ func (a *StatusAggregator) AggregateStatus(ctx context.Context, rr *remediationv
 	}
 
 	// Aggregate AIAnalysis status
-	if rr.Status.AIAnalysisRef != "" {
-		aiStatus, err := a.getAIAnalysisStatus(ctx, rr.Namespace, rr.Status.AIAnalysisRef)
+	if rr.Status.AIAnalysisRef != nil && rr.Status.AIAnalysisRef.Name != "" {
+		aiStatus, err := a.getAIAnalysisStatus(ctx, rr.Namespace, rr.Status.AIAnalysisRef.Name)
 		if err != nil {
-			log.Error(err, "Failed to get AIAnalysis status")
+			logger.Error(err, "Failed to get AIAnalysis status")
 			status.Error = err
 		} else {
 			status.AIAnalysisPhase = aiStatus.Phase
