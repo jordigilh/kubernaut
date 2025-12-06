@@ -23,13 +23,20 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// +kubebuilder:validation:Enum=escalation;simple;status-update
+// +kubebuilder:validation:Enum=escalation;simple;status-update;approval;manual-review
 type NotificationType string
 
 const (
 	NotificationTypeEscalation   NotificationType = "escalation"
 	NotificationTypeSimple       NotificationType = "simple"
 	NotificationTypeStatusUpdate NotificationType = "status-update"
+	// NotificationTypeApproval is used for approval request notifications (BR-ORCH-001)
+	// Added Dec 2025 per RO team request for explicit approval workflow support
+	NotificationTypeApproval NotificationType = "approval"
+	// NotificationTypeManualReview is used for manual intervention required notifications (BR-ORCH-036)
+	// Added Dec 2025 for ExhaustedRetries/PreviousExecutionFailed scenarios requiring operator action
+	// Distinct from 'escalation' to enable label-based routing rules (BR-NOT-065)
+	NotificationTypeManualReview NotificationType = "manual-review"
 )
 
 // +kubebuilder:validation:Enum=critical;high;medium;low

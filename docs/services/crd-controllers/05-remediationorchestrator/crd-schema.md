@@ -1,5 +1,11 @@
 ## CRD Schema
 
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | **v1.1** | 2025-12-06 | **SCHEMA UPDATE**: Added `NotificationRequestRefs []corev1.ObjectReference` for audit trail and compliance tracking; Enables instant visibility of all notifications sent for a remediation | [BR-ORCH-035](../../../requirements/BR-ORCH-035-notification-reference-tracking.md) |
+> | v1.0 | 2025-12-04 | Initial CRD schema with recovery support | - |
+
 ### 📋 Authoritative Schema Reference
 
 **IMPORTANT**: The authoritative CRD schema is defined in [`docs/architecture/CRD_SCHEMAS.md`](../../../../architecture/CRD_SCHEMAS.md)
@@ -301,6 +307,16 @@ type RemediationRequestStatus struct {
     // V1.0 Approval Notification Integration (ADR-018)
     // Idempotency flag to prevent duplicate notifications (BR-ORCH-001)
     ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"` // true after NotificationRequest CRD created
+
+    // ========================================
+    // NOTIFICATION TRACKING (BR-ORCH-035)
+    // Added v1.1 (2025-12-06)
+    // ========================================
+    // NotificationRequestRefs tracks all notification CRDs created for this remediation.
+    // Provides audit trail for compliance and instant visibility for debugging.
+    // Includes: approval notifications, completion notifications, failure notifications, timeout notifications.
+    // Reference: BR-ORCH-035
+    NotificationRequestRefs []corev1.ObjectReference `json:"notificationRequestRefs,omitempty"`
 }
 
 // Reference types

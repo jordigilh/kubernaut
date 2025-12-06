@@ -31,7 +31,9 @@ type RemediationRequestOpts struct {
 	SignalType        string
 	TargetKind        string
 	TargetName        string
+	TargetNamespace   string // For cluster-scoped resources, leave empty
 	Phase             string
+	TimeoutConfig     *remediationv1.TimeoutConfig // BR-ORCH-028: Per-phase timeout configuration
 }
 
 // NewRemediationRequest creates a test RemediationRequest with sensible defaults.
@@ -46,6 +48,7 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 	signalType := "prometheus"
 	targetKind := "Pod"
 	targetName := "test-pod"
+	targetNamespace := namespace // Default to RR namespace for namespaced resources
 
 	// Apply overrides if provided
 	if len(opts) > 0 {
@@ -74,6 +77,13 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 		if opt.TargetName != "" {
 			targetName = opt.TargetName
 		}
+		// TargetNamespace: explicitly set (even to empty for cluster-scoped)
+		if opt.TargetNamespace != "" {
+			targetNamespace = opt.TargetNamespace
+		} else if opt.TargetKind == "Node" || opt.TargetKind == "PersistentVolume" || opt.TargetKind == "ClusterRole" {
+			// Cluster-scoped resources have no namespace
+			targetNamespace = ""
+		}
 	}
 
 	rr := &remediationv1.RemediationRequest{
@@ -98,7 +108,7 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 			TargetResource: remediationv1.ResourceIdentifier{
 				Kind:      targetKind,
 				Name:      targetName,
-				Namespace: namespace,
+				Namespace: targetNamespace,
 			},
 		},
 	}
@@ -106,6 +116,11 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 	// Apply phase if provided
 	if len(opts) > 0 && opts[0].Phase != "" {
 		rr.Status.OverallPhase = opts[0].Phase
+	}
+
+	// Apply TimeoutConfig if provided (BR-ORCH-028)
+	if len(opts) > 0 && opts[0].TimeoutConfig != nil {
+		rr.Spec.TimeoutConfig = opts[0].TimeoutConfig
 	}
 
 	return rr
@@ -117,8 +132,8 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 
 // SignalProcessingOpts provides optional overrides for test data
 type SignalProcessingOpts struct {
-	Phase              signalprocessingv1.SignalProcessingPhase
-	KubernetesContext  *signalprocessingv1.KubernetesContext
+	Phase             signalprocessingv1.SignalProcessingPhase
+	KubernetesContext *signalprocessingv1.KubernetesContext
 }
 
 // NewSignalProcessing creates a test SignalProcessing CRD with sensible defaults.
@@ -210,7 +225,7 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 			Namespace: namespace,
 			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
 			Labels: map[string]string{
-				"kubernaut.io/component": "ai-analysis",
+				"kubernaut.ai/component": "ai-analysis",
 			},
 		},
 		Spec: aianalysisv1.AIAnalysisSpec{
@@ -319,7 +334,7 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 			Namespace: namespace,
 			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
 			Labels: map[string]string{
-				"kubernaut.io/component": "workflow-execution",
+				"kubernaut.ai/component": "workflow-execution",
 			},
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
@@ -434,7 +449,7 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 			Namespace: namespace,
 			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
 			Labels: map[string]string{
-				"kubernaut.io/component": "notification",
+				"kubernaut.ai/component": "notification",
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{

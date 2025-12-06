@@ -1,0 +1,347 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package remediationorchestrator contains unit tests for the Remediation Orchestrator.
+package remediationorchestrator
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
+)
+
+var _ = Describe("WorkflowExecutionCreator", func() {
+	var (
+		scheme *runtime.Scheme
+	)
+
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		_ = remediationv1.AddToScheme(scheme)
+		_ = aianalysisv1.AddToScheme(scheme)
+		_ = workflowexecutionv1.AddToScheme(scheme)
+	})
+
+	Describe("NewWorkflowExecutionCreator", func() {
+		It("should return a non-nil creator to enable BR-ORCH-025 workflow pass-through", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			// Act
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+
+			// Assert
+			Expect(weCreator).ToNot(BeNil())
+		})
+	})
+
+	Describe("Create", func() {
+		It("should generate deterministic name 'we-{rr.Name}' per BR-ORCH-025 pass-through pattern", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			rr := testutil.NewRemediationRequest("test-remediation", "default")
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name).To(Equal("we-test-remediation"))
+		})
+
+		It("should set owner reference for cascade deletion per BR-ORCH-031", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			rr := testutil.NewRemediationRequest("test-remediation", "default")
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify owner reference is set
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.OwnerReferences).To(HaveLen(1))
+			Expect(created.OwnerReferences[0].Name).To(Equal(rr.Name))
+			Expect(created.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+		})
+
+		It("should return existing name when WorkflowExecution already exists per BR-ORCH-025 idempotency", func() {
+			// Arrange
+			rr := testutil.NewRemediationRequest("test-remediation", "default")
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			existingWE := testutil.NewWorkflowExecution("we-test-remediation", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingWE).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name).To(Equal("we-test-remediation"))
+		})
+
+		It("should build WorkflowExecution spec with all required fields per BR-ORCH-025", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			rr := testutil.NewRemediationRequest("test-remediation", "default")
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify RemediationRequestRef
+			Expect(created.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+			Expect(created.Spec.RemediationRequestRef.Namespace).To(Equal(rr.Namespace))
+			Expect(created.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
+
+			// Verify WorkflowRef pass-through from AIAnalysis
+			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal(ai.Status.SelectedWorkflow.WorkflowID))
+			Expect(created.Spec.WorkflowRef.Version).To(Equal(ai.Status.SelectedWorkflow.Version))
+			Expect(created.Spec.WorkflowRef.ContainerImage).To(Equal(ai.Status.SelectedWorkflow.ContainerImage))
+
+			// Verify audit fields
+			Expect(created.Spec.Confidence).To(Equal(ai.Status.SelectedWorkflow.Confidence))
+			Expect(created.Spec.Rationale).To(Equal(ai.Status.SelectedWorkflow.Rationale))
+
+			// Verify labels
+			Expect(created.Labels["kubernaut.ai/remediation-request"]).To(Equal(rr.Name))
+			Expect(created.Labels["kubernaut.ai/component"]).To(Equal("workflow-execution"))
+		})
+	})
+
+	Describe("BuildTargetResourceString", func() {
+		It("should format namespaced resources as 'namespace/kind/name' per BR-ORCH-025", func() {
+			// Arrange
+			rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+			// Act
+			result := creator.BuildTargetResourceString(rr)
+
+			// Assert - default testutil creates a Pod in default namespace
+			Expect(result).To(Equal("default/Pod/test-pod"))
+		})
+
+		It("should format cluster-scoped Node as 'kind/name' per BR-ORCH-025", func() {
+			// Arrange - Node is cluster-scoped, factory sets empty namespace
+			rr := testutil.NewRemediationRequest("test-remediation", "default",
+				testutil.RemediationRequestOpts{TargetKind: "Node", TargetName: "worker-1"})
+
+			// Act
+			result := creator.BuildTargetResourceString(rr)
+
+			// Assert
+			Expect(result).To(Equal("Node/worker-1"))
+		})
+
+		It("should format cluster-scoped PersistentVolume as 'kind/name' per BR-ORCH-025", func() {
+			// Arrange - PersistentVolume is cluster-scoped, factory sets empty namespace
+			rr := testutil.NewRemediationRequest("pv-test", "default",
+				testutil.RemediationRequestOpts{TargetKind: "PersistentVolume", TargetName: "my-pv"})
+
+			// Act
+			result := creator.BuildTargetResourceString(rr)
+
+			// Assert
+			Expect(result).To(Equal("PersistentVolume/my-pv"))
+		})
+	})
+
+	Describe("Create error handling", func() {
+		DescribeTable("should return error for invalid AIAnalysis per BR-ORCH-025",
+			func(description string, setupAI func(*aianalysisv1.AIAnalysis), expectedError string) {
+				// Arrange
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default")
+				ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+				setupAI(ai)
+				ctx := context.Background()
+
+				// Act
+				_, err := weCreator.Create(ctx, rr, ai)
+
+				// Assert
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedError))
+			},
+			Entry("nil SelectedWorkflow",
+				"SelectedWorkflow is nil",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow = nil },
+				"no selectedWorkflow"),
+			Entry("empty WorkflowID",
+				"WorkflowID is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.WorkflowID = "" },
+				"workflowId is required"),
+			Entry("empty ContainerImage",
+				"ContainerImage is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ContainerImage = "" },
+				"containerImage is required"),
+		)
+
+		It("should return error when client Create fails per BR-ORCH-025", func() {
+			// Arrange - Use interceptor to simulate Create failure
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						return errors.New("simulated create failure")
+					},
+				}).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			rr := testutil.NewRemediationRequest("test-remediation", "default")
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ctx := context.Background()
+
+			// Act
+			_, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to create WorkflowExecution"))
+		})
+
+		It("should return error when client Get fails with non-NotFound error per BR-ORCH-025", func() {
+			// Arrange - Use interceptor to simulate Get failure
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						return errors.New("simulated get failure")
+					},
+				}).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			rr := testutil.NewRemediationRequest("test-remediation", "default")
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ctx := context.Background()
+
+			// Act
+			_, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to check existing WorkflowExecution"))
+		})
+	})
+
+	Describe("buildExecutionConfig", func() {
+		It("should set timeout when TimeoutConfig is provided per BR-ORCH-028", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			rr := testutil.NewRemediationRequest("test-remediation", "default",
+				testutil.RemediationRequestOpts{
+					TimeoutConfig: &remediationv1.TimeoutConfig{
+						WorkflowExecutionTimeout: metav1.Duration{Duration: 30 * 60 * 1000000000}, // 30 minutes
+					},
+				})
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.ExecutionConfig).ToNot(BeNil())
+			Expect(created.Spec.ExecutionConfig.Timeout).ToNot(BeNil())
+			Expect(created.Spec.ExecutionConfig.Timeout.Duration).To(Equal(30 * 60 * 1000000000 * time.Nanosecond))
+		})
+
+		It("should return nil ExecutionConfig when no timeout configured per BR-ORCH-028", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			rr := testutil.NewRemediationRequest("test-remediation", "default")
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.ExecutionConfig).To(BeNil())
+		})
+
+		It("should return nil ExecutionConfig when timeout duration is zero per BR-ORCH-028", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme)
+			rr := testutil.NewRemediationRequest("test-remediation", "default",
+				testutil.RemediationRequestOpts{
+					TimeoutConfig: &remediationv1.TimeoutConfig{
+						WorkflowExecutionTimeout: metav1.Duration{Duration: 0},
+					},
+				})
+			ai := testutil.NewCompletedAIAnalysis("ai-test-remediation", "default")
+			ctx := context.Background()
+
+			// Act
+			name, err := weCreator.Create(ctx, rr, ai)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.ExecutionConfig).To(BeNil())
+		})
+	})
+})
+

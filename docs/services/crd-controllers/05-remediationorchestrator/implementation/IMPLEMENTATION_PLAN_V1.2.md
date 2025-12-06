@@ -1,8 +1,8 @@
 # Remediation Orchestrator Controller - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.2.md`
-**Version**: 1.2.0 - MODULAR STRUCTURE + COMPLETE TEMPLATE COMPLIANCE (96% Confidence) ✅
-**Date**: 2025-10-14 (Updated: 2025-12-04)
+**Version**: 1.2.2 - NOTIFICATION API ALIGNMENT (96% Confidence) ✅
+**Date**: 2025-10-14 (Updated: 2025-12-06)
 **Timeline**: 14-16 days (112-128 hours)
 **Status**: ✅ **Ready for Implementation** (96% Confidence)
 **Service Type**: CRD Controller (Appendix B patterns apply)
@@ -13,6 +13,21 @@
 **Design References**: [ADR-018 Approval Notifications](../../../architecture/decisions/ADR-018-approval-notification-v1-integration.md)
 
 **Version History**:
+- **v1.2.2** (2025-12-06): 🔧 **NOTIFICATION API ALIGNMENT - CRITICAL FIX**
+  - ✅ **API Change**: Added `NotificationTypeApproval` enum to NotificationRequest API
+  - ✅ **Field Names Fixed**: Plan updated to use `Subject`/`Body` (not `Title`/`Message`)
+  - ✅ **Type Safety**: Plan updated to use `Metadata map[string]string` (not `Context` struct)
+  - ✅ **Typed Enums**: Plan updated to use `[]Channel` and `NotificationPriority` types
+  - ✅ **Cross-Team Notice**: Created [NOTICE_NOTIFICATION_TYPE_APPROVAL_ADDITION.md](../../../handoff/NOTICE_NOTIFICATION_TYPE_APPROVAL_ADDITION.md)
+  - 📏 **Source**: Day 4 pre-implementation triage
+
+- **v1.2.1** (2025-12-06): 📋 **BR-ORCH-035 NOTIFICATION REFERENCE TRACKING**
+  - ✅ **New BR**: BR-ORCH-035 - Notification Reference Tracking for audit trail
+  - ✅ **Schema Update**: Added `NotificationRequestRefs []corev1.ObjectReference` to RemediationRequestStatus
+  - ✅ **Day 4 Impact**: NotificationRequest creators must append refs after creation
+  - ✅ **Business Value**: Instant audit trail visibility, compliance evidence, reduced investigation time
+  - 📏 **Source**: [BR-ORCH-035](../../../requirements/BR-ORCH-035-notification-reference-tracking.md)
+
 - **v1.2.0** (2025-12-04): 🎯 **MODULAR STRUCTURE + COMPLETE TEMPLATE COMPLIANCE**
   - ✅ **Modular Organization**: Split into main plan + 13 breakout files (11,025 lines total)
   - ✅ **Day Breakouts**: DAY_01_FOUNDATION.md, DAYS_02_07_PHASE_HANDLERS.md, DAYS_08_16_TESTING.md
@@ -28,7 +43,7 @@
   - ✅ **Prerequisites Checklist**: ADR/DD validation with CRD Controller requirements
   - ✅ **CRD API Group Standard**: Confirmed `remediation.kubernaut.ai/v1alpha1`
   - ✅ **E2E Test Environment**: KIND cluster confirmed (DD-TEST-001)
-  - ✅ **BR References**: Updated to 11 formally defined BRs (BR-ORCH-001, 025-034)
+  - ✅ **BR References**: Updated to 12 formally defined BRs (BR-ORCH-001, 025-035)
   - ✅ **Confidence**: 96% (up from 95% - cross-team validation complete)
   - 📏 **Source**: All cross-team Q&A resolved in docs/handoff/
 
@@ -280,7 +295,7 @@ status:
 > **📝 BR Reference Note**: This implementation plan was created during early design phases and contains
 > conceptual BR references (BR-ORCH-005, BR-ORCH-010, etc.) that were later consolidated into 11 formally
 > defined requirements. See [BR_MAPPING.md](../BR_MAPPING.md) for the authoritative list of V1 BRs:
-> BR-ORCH-001, BR-ORCH-025-034. Legacy BR references in this document should be understood as
+> BR-ORCH-001, BR-ORCH-025-035. Legacy BR references in this document should be understood as
 > implementation task labels rather than formal requirement identifiers.
 
 ---
@@ -306,6 +321,7 @@ status:
 - **BR-ORCH-027, BR-ORCH-028**: Global and per-phase timeout management
 - **BR-ORCH-029, BR-ORCH-030, BR-ORCH-031**: Notification handling, status tracking, cascade cleanup
 - **BR-ORCH-032, BR-ORCH-033, BR-ORCH-034**: WE Skipped phase, duplicate tracking, bulk notification
+- **BR-ORCH-035**: Notification reference tracking for audit trail and compliance
 
 **Performance Targets**:
 - Child CRD creation: < 2s per child (< 8s for all 4)
@@ -1415,6 +1431,15 @@ func (m *Manager) CreateNotification(ctx context.Context, rr *remediationv1alpha
 		return nil, fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
 
+	// BR-ORCH-035: Track notification reference for audit trail
+	rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+		APIVersion: notificationv1alpha1.GroupVersion.String(),
+		Kind:       "NotificationRequest",
+		Name:       notification.Name,
+		Namespace:  notification.Namespace,
+		UID:        notification.UID,
+	})
+
 	return notification, nil
 }
 
@@ -1445,6 +1470,15 @@ func (m *Manager) CreateSuccessNotification(ctx context.Context, rr *remediation
 	if err := m.client.Create(ctx, notification); err != nil {
 		return nil, fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
+
+	// BR-ORCH-035: Track notification reference for audit trail
+	rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+		APIVersion: notificationv1alpha1.GroupVersion.String(),
+		Kind:       "NotificationRequest",
+		Name:       notification.Name,
+		Namespace:  notification.Namespace,
+		UID:        notification.UID,
+	})
 
 	return notification, nil
 }

@@ -37,26 +37,62 @@ RemediationRequest.status.overallPhase = "completed"
          ↓
    (24-hour retention begins)
 
-   === ALTERNATIVE PATH: WE Resource Lock (DD-RO-001) ===
+   === ALTERNATIVE PATH A: WE Resource Lock - DUPLICATE (DD-RO-001) ===
 RemediationRequest creates WorkflowExecution
          ↓
    WorkflowExecution.status.phase = "Skipped"
-     (ResourceBusy or RecentlyRemediated)
+     (ResourceBusy OR RecentlyRemediated)
          ↓
    (watch triggers)
          ↓
 RemediationRequest.status.overallPhase = "Skipped"
-RemediationRequest.status.skipReason = "ResourceBusy"
+RemediationRequest.status.skipReason = "ResourceBusy" | "RecentlyRemediated"
 RemediationRequest.status.duplicateOf = "parent-rr-name"
          ↓
    (Parent RR tracks duplicates, bulk notification on completion)
+   (Requeue: ResourceBusy=30s, RecentlyRemediated=NextAllowedExecution)
+
+   === ALTERNATIVE PATH B: WE Failure - MANUAL REVIEW (DD-WE-004) ===
+RemediationRequest creates WorkflowExecution
+         ↓
+   WorkflowExecution.status.phase = "Skipped"
+     (ExhaustedRetries OR PreviousExecutionFailed)
+         ↓
+   (watch triggers)
+         ↓
+RemediationRequest.status.overallPhase = "Failed"  ← NOT Skipped
+RemediationRequest.status.skipReason = "ExhaustedRetries" | "PreviousExecutionFailed"
+RemediationRequest.status.requiresManualReview = true
+RemediationRequest.status.duplicateOf = ""  ← NOT a duplicate
+         ↓
+   (Individual escalation notification created)
+   (NO requeue - manual intervention required)
+
+   === ALTERNATIVE PATH C: WE Execution Failure ===
+RemediationRequest creates WorkflowExecution
+         ↓
+   WorkflowExecution.status.phase = "Failed"
+   WorkflowExecution.status.failureDetails.wasExecutionFailure = true
+         ↓
+   (watch triggers)
+         ↓
+RemediationRequest.status.overallPhase = "Failed"
+RemediationRequest.status.requiresManualReview = true
+RemediationRequest.status.message = failureDetails.naturalLanguageSummary
+         ↓
+   (Individual escalation notification with naturalLanguageSummary)
+   (NO requeue - cluster state may be inconsistent)
 ```
 
 **Overall Phase States**:
 - `pending` → `processing` → `analyzing` → `executing` → `completed` / `failed` / `timeout` / `skipped`
 - `failed` → `recovering` → `analyzing` → `executing` → `completed` / `failed`
 
-**Note**: `skipped` is a terminal state for duplicate remediations when WorkflowExecution returns `Skipped` phase due to resource locking (see DD-RO-001).
+**Note on Skipped vs Failed**:
+- `skipped` is for **duplicates** (`ResourceBusy`, `RecentlyRemediated`) - requeued, tracked on parent
+- `failed` is for **manual review required** (`ExhaustedRetries`, `PreviousExecutionFailed`, execution failures) - no requeue
+
+**Reference**: DD-RO-001 (Resource Lock Deduplication), DD-WE-004 (Exponential Backoff)
 
 ### Reconciliation Flow
 

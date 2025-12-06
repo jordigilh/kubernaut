@@ -210,6 +210,12 @@ type RemediationRequestStatus struct {
 	AIAnalysisRef            *corev1.ObjectReference `json:"aiAnalysisRef,omitempty"`
 	WorkflowExecutionRef     *corev1.ObjectReference `json:"workflowExecutionRef,omitempty"`
 
+	// NotificationRequestRefs tracks all notification CRDs created for this remediation.
+	// Provides audit trail for compliance and instant visibility for debugging.
+	// Reference: BR-ORCH-035
+	// +optional
+	NotificationRequestRefs []corev1.ObjectReference `json:"notificationRequestRefs,omitempty"`
+
 	// Approval notification tracking (BR-ORCH-001)
 	// Prevents duplicate notifications when AIAnalysis requires approval
 	ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"`

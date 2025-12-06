@@ -1,0 +1,262 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package remediationorchestrator contains unit tests for the Remediation Orchestrator.
+package remediationorchestrator
+
+import (
+	"context"
+	"fmt"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
+)
+
+var _ = Describe("AIAnalysisCreator", func() {
+	var (
+		scheme *runtime.Scheme
+		ctx    context.Context
+	)
+
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		_ = remediationv1.AddToScheme(scheme)
+		_ = signalprocessingv1.AddToScheme(scheme)
+		_ = aianalysisv1.AddToScheme(scheme)
+		ctx = context.Background()
+	})
+
+	Describe("NewAIAnalysisCreator", func() {
+		It("should return a non-nil creator to enable BR-ORCH-025 data pass-through", func() {
+			// Arrange
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			// Act
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+
+			// Assert
+			Expect(aiCreator).ToNot(BeNil())
+		})
+	})
+
+	Describe("Create", func() {
+		Context("BR-ORCH-025: Data pass-through from RemediationRequest and SignalProcessing", func() {
+			It("should generate deterministic name in format 'ai-{rr.Name}' for reliable tracking", func() {
+				// Arrange - use testutil factories
+				completedSP := testutil.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("ai-test-remediation"))
+			})
+
+			It("should be idempotent - return existing name on retry without creating duplicate", func() {
+				// Arrange - pre-create the AIAnalysis
+				existingAI := &aianalysisv1.AIAnalysis{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ai-test-remediation",
+						Namespace: "default",
+					},
+				}
+				completedSP := testutil.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(existingAI, completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("ai-test-remediation"))
+			})
+
+			It("should build correct AIAnalysis spec with signal context and enrichment data", func() {
+				// Arrange - use testutil factories with custom options
+				completedSP := testutil.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default", testutil.RemediationRequestOpts{
+					Severity:    "critical",
+					Priority:    "P0",
+					Environment: "production",
+					SignalType:  "kubernetes-event",
+				})
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+
+				// Fetch created AI and verify spec
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify RemediationRequestRef
+				Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+				Expect(createdAI.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
+
+				// Verify RemediationID
+				Expect(createdAI.Spec.RemediationID).To(Equal(string(rr.UID)))
+
+				// Verify SignalContext
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(rr.Spec.Severity))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal(rr.Spec.SignalType))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(rr.Spec.Environment))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(rr.Spec.Priority))
+
+				// Verify TargetResource
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.TargetResource.Name).To(Equal(rr.Spec.TargetResource.Name))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace).To(Equal(rr.Spec.TargetResource.Namespace))
+
+				// Verify AnalysisTypes
+				Expect(createdAI.Spec.AnalysisRequest.AnalysisTypes).To(ContainElements("investigation", "root-cause", "workflow-selection"))
+
+				// Verify recovery fields (should be false for initial analysis)
+				Expect(createdAI.Spec.IsRecoveryAttempt).To(BeFalse())
+				Expect(createdAI.Spec.RecoveryAttemptNumber).To(Equal(0))
+			})
+
+			It("should pass through enrichment results from SignalProcessing.Status", func() {
+				// Arrange - use testutil factory with KubernetesContext
+				completedSP := testutil.NewSignalProcessing("sp-test-remediation", "default", testutil.SignalProcessingOpts{
+					Phase: signalprocessingv1.PhaseCompleted,
+					KubernetesContext: &signalprocessingv1.KubernetesContext{
+						NamespaceLabels: map[string]string{
+							"kubernetes.io/metadata.name": "default",
+							"environment":                 "production",
+						},
+					},
+				})
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+
+				// Fetch created AI and verify enrichment results
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify EnrichmentResults.KubernetesContext is populated
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext).ToNot(BeNil())
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.NamespaceLabels).To(
+					HaveKeyWithValue("environment", "production"))
+			})
+		})
+
+		Context("BR-ORCH-031: Cascade deletion via owner references", func() {
+			It("should set owner reference for automatic cleanup when RemediationRequest is deleted", func() {
+				// Arrange - use testutil factories
+				completedSP := testutil.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+
+				// Fetch the created AIAnalysis
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify owner reference
+				Expect(createdAI.OwnerReferences).To(HaveLen(1))
+				Expect(createdAI.OwnerReferences[0].Name).To(Equal(rr.Name))
+				Expect(createdAI.OwnerReferences[0].UID).To(Equal(rr.UID))
+			})
+		})
+
+		// BR-ORCH-025: Error handling ensures failures are propagated correctly
+		Context("BR-ORCH-025: Error handling for infrastructure failures", func() {
+			DescribeTable("should return appropriate error when client operations fail",
+				func(errorType string, interceptFunc interceptor.Funcs, expectedError string) {
+					// Arrange
+					completedSP := testutil.NewCompletedSignalProcessing("sp-test-remediation", "default")
+					fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+						WithInterceptorFuncs(interceptFunc).Build()
+					aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+					rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+					// Act
+					_, err := aiCreator.Create(ctx, rr, completedSP)
+
+					// Assert
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring(expectedError))
+				},
+				Entry("Get fails with non-NotFound error - propagates to allow RO to mark RR as Failed",
+					"get_error",
+					interceptor.Funcs{
+						Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							// Return error for AIAnalysis Get
+							if _, ok := obj.(*aianalysisv1.AIAnalysis); ok {
+								return fmt.Errorf("network error")
+							}
+							return c.Get(ctx, key, obj, opts...)
+						},
+					},
+					"failed to check existing AIAnalysis",
+				),
+				Entry("Create fails with API server error - propagates to allow RO to mark RR as Failed",
+					"create_error",
+					interceptor.Funcs{
+						Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							return fmt.Errorf("API server unavailable")
+						},
+					},
+					"failed to create AIAnalysis",
+				),
+			)
+		})
+	})
+})

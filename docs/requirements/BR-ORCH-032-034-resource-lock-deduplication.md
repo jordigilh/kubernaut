@@ -30,7 +30,7 @@ These BRs handle **Layer 3** scenarios where WorkflowExecution returns `Skipped`
 
 ### Description
 
-RemediationOrchestrator MUST watch WorkflowExecution status and handle the `Skipped` phase when WE's resource locking mechanism prevents execution due to `ResourceBusy` or `RecentlyRemediated` reasons.
+RemediationOrchestrator MUST watch WorkflowExecution status and handle the `Skipped` phase when WE's resource locking mechanism prevents execution due to `ResourceBusy`, `RecentlyRemediated`, `ExhaustedRetries`, or `PreviousExecutionFailed` reasons.
 
 ### Priority
 
@@ -41,26 +41,46 @@ RemediationOrchestrator MUST watch WorkflowExecution status and handle the `Skip
 WorkflowExecution implements resource-level locking (DD-WE-001) to prevent:
 - Parallel workflow executions on the same Kubernetes resource
 - Redundant sequential executions within cooldown period
+- Execution on resources with unresolved prior failures
 
 When WE skips execution, RO must:
 - Update RemediationRequest status accordingly
-- Track the relationship with the active remediation
+- Track the relationship with the active remediation (for duplicates)
 - Provide clear audit trail for skipped remediations
+- Handle `PreviousExecutionFailed` differently (NOT a duplicate)
 
 ### Implementation
 
 1. Watch `WorkflowExecution.status.phase` for `Skipped` value
 2. Extract skip reason from `status.skipDetails.reason`:
    - `ResourceBusy`: Another workflow executing on same target
-   - `RecentlyRemediated`: Target recently remediated (cooldown period)
-3. Extract parent RR reference from:
-   - `ResourceBusy`: `status.skipDetails.conflictingWorkflow.remediationRequestRef`
-   - `RecentlyRemediated`: `status.skipDetails.recentRemediation.remediationRequestRef`
-4. Update RemediationRequest:
+   - `RecentlyRemediated`: Target recently remediated (cooldown period active)
+   - `ExhaustedRetries`: 5+ pre-execution failures (exponential backoff exhausted)
+   - `PreviousExecutionFailed`: Prior execution failed during execution (cluster state unknown)
+3. **Per-reason handling**:
+
+| Skip Reason | Is Duplicate? | Track on Parent? | Notification | Requeue? |
+|-------------|---------------|------------------|--------------|----------|
+| `ResourceBusy` | ✅ Yes | ✅ Yes | Bulk (BR-ORCH-034) | ✅ 30s |
+| `RecentlyRemediated` | ✅ Yes | ✅ Yes | Bulk (BR-ORCH-034) | ✅ Use `NextAllowedExecution` |
+| `ExhaustedRetries` | ❌ **No** | ❌ **No** | Individual (escalation) | ❌ Manual review |
+| `PreviousExecutionFailed` | ❌ **No** | ❌ **No** | Individual (escalation) | ❌ Manual review |
+
+4. For `ResourceBusy`/`RecentlyRemediated` (duplicates):
    - `status.phase = "Skipped"`
    - `status.skipReason = reason`
    - `status.duplicateOf = parentRRName`
    - `status.message = "Skipped: {reason} - see {parentRRName}"`
+   - Requeue for retry
+
+5. For `ExhaustedRetries`/`PreviousExecutionFailed` (NOT duplicates - require manual review):
+   - `status.phase = "Failed"` (not Skipped - terminal failure)
+   - `status.skipReason = reason`
+   - `status.duplicateOf = ""` (empty - not a duplicate)
+   - `status.requiresManualReview = true`
+   - `status.message = we.Status.SkipDetails.Message`
+   - Create individual `escalation` notification (not bulk)
+   - Do NOT requeue - wait for operator intervention
 
 ### Acceptance Criteria
 
@@ -68,29 +88,57 @@ When WE skips execution, RO must:
 |----|-----------|---------------|
 | AC-032-1 | RO watches WorkflowExecution status changes | Integration |
 | AC-032-2 | `Skipped` phase detected and handled | Unit |
-| AC-032-3 | Skip reason (`ResourceBusy`, `RecentlyRemediated`) extracted and stored | Unit |
-| AC-032-4 | Parent RR reference stored in `status.duplicateOf` | Unit |
-| AC-032-5 | RemediationRequest phase set to `Skipped` (not `Failed`) | Unit |
-| AC-032-6 | Audit trail clearly indicates skip reason | Unit |
+| AC-032-3 | Skip reason (`ResourceBusy`, `RecentlyRemediated`, `ExhaustedRetries`, `PreviousExecutionFailed`) extracted and stored | Unit |
+| AC-032-4 | Parent RR reference stored in `status.duplicateOf` for duplicates only | Unit |
+| AC-032-5 | `ResourceBusy`/`RecentlyRemediated` → RR phase `Skipped`, requeue | Unit |
+| AC-032-6 | `ExhaustedRetries`/`PreviousExecutionFailed` → RR phase `Failed`, no requeue | Unit |
+| AC-032-7 | Audit trail clearly indicates skip reason | Unit |
+| AC-032-8 | `ExhaustedRetries`/`PreviousExecutionFailed` triggers individual notification (not bulk) | Unit |
+| AC-032-9 | `ExhaustedRetries`/`PreviousExecutionFailed` sets `requiresManualReview = true` | Unit |
+| AC-032-10 | `RecentlyRemediated` uses `NextAllowedExecution` for requeue timing | Unit |
 
 ### Test Scenarios
 
 ```gherkin
-Scenario: WE Skipped due to ResourceBusy
+Scenario: WE Skipped due to ResourceBusy (duplicate - requeue)
   Given WorkflowExecution "we-2" targets same resource as "we-1"
   And WorkflowExecution "we-1" is Running
   When WorkflowExecution "we-2" is Skipped with reason "ResourceBusy"
   Then RemediationRequest "rr-2" phase should be "Skipped"
   And status.skipReason should be "ResourceBusy"
   And status.duplicateOf should reference "rr-1"
+  And reconciler should requeue after 30 seconds
 
-Scenario: WE Skipped due to RecentlyRemediated
+Scenario: WE Skipped due to RecentlyRemediated (duplicate - requeue with backoff)
   Given Resource "payment/deployment/api" was remediated 5 minutes ago by "rr-1"
   And cooldown period is 10 minutes
+  And WorkflowExecution has NextAllowedExecution = now + 5 minutes
   When WorkflowExecution "we-2" is created for same resource
   Then WorkflowExecution "we-2" should be Skipped with reason "RecentlyRemediated"
   And RemediationRequest "rr-2" phase should be "Skipped"
   And status.duplicateOf should reference "rr-1"
+  And reconciler should requeue using NextAllowedExecution
+
+Scenario: WE Skipped due to ExhaustedRetries (NOT duplicate - manual review)
+  Given Resource "payment/deployment/api" has 5 consecutive pre-execution failures
+  When WorkflowExecution "we-6" is created for same resource
+  Then WorkflowExecution "we-6" should be Skipped with reason "ExhaustedRetries"
+  And RemediationRequest "rr-6" phase should be "Failed"
+  And status.requiresManualReview should be TRUE
+  And status.duplicateOf should be EMPTY (not a duplicate)
+  And an individual escalation notification should be created
+  And reconciler should NOT requeue
+
+Scenario: WE Skipped due to PreviousExecutionFailed (NOT duplicate - manual review)
+  Given Resource "payment/deployment/api" had a failed execution 5 minutes ago
+  And the prior failure was during execution (wasExecutionFailure=true)
+  When WorkflowExecution "we-2" is created for same resource
+  Then WorkflowExecution "we-2" should be Skipped with reason "PreviousExecutionFailed"
+  And RemediationRequest "rr-2" phase should be "Failed"
+  And status.requiresManualReview should be TRUE
+  And status.duplicateOf should be EMPTY (not a duplicate)
+  And an individual escalation notification should be created
+  And reconciler should NOT requeue
 ```
 
 ---
@@ -255,14 +303,25 @@ spec:
 
 - [DD-RO-001: Resource Lock Deduplication Handling](../architecture/decisions/DD-RO-001-resource-lock-deduplication-handling.md)
 - [DD-WE-001: Resource Locking Safety](../architecture/decisions/DD-WE-001-resource-locking-safety.md)
+- [DD-WE-004: Exponential Backoff Cooldown](../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
 - [DD-GATEWAY-009: State-Based Deduplication](../architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md)
 - [DD-GATEWAY-008: Storm Aggregation](../architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md)
 - [BR-WE-009/010/011: Resource Locking Safety](./BR-WE-009-011-resource-locking.md)
+- [NOTICE: WE Exponential Backoff](../handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md)
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: December 2, 2025
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **1.1** | 2025-12-06 | Added `ExhaustedRetries` and `PreviousExecutionFailed` skip reasons (DD-WE-004). Updated handling: duplicates → Skipped+requeue, manual review → Failed+no requeue. Added AC-032-9, AC-032-10. |
+| 1.0 | 2025-12-02 | Initial version with `ResourceBusy` and `RecentlyRemediated` handling |
+
+---
+
+**Document Version**: 1.1
+**Last Updated**: December 6, 2025
 **Maintained By**: Kubernaut Architecture Team
 
 
