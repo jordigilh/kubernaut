@@ -16,11 +16,14 @@ limitations under the License.
 
 // Package classifier provides Rego-based environment and business classification.
 //
-// Per IMPLEMENTATION_PLAN_V1.21.md Day 4 specification:
+// Per IMPLEMENTATION_PLAN_V1.22.md Day 4 specification:
 //
 //	type EnvironmentClassifier struct {
-//	    regoQuery *rego.PreparedEvalQuery
-//	    logger    logr.Logger
+//	    regoQuery        *rego.PreparedEvalQuery // Prepared query for performance
+//	    k8sClient        client.Client           // For ConfigMap fallback (BR-SP-052)
+//	    logger           logr.Logger             // DD-005 v2.0: logr.Logger
+//	    configMapMu      sync.RWMutex            // Thread safety for ConfigMap cache
+//	    configMapMapping map[string]string       // Namespace pattern → environment mapping
 //	}
 //
 // Priority order: namespace labels → ConfigMap (BR-SP-052) → signal labels → default
@@ -58,7 +61,7 @@ const (
 )
 
 // EnvironmentClassifier determines environment using Rego policy.
-// Per IMPLEMENTATION_PLAN_V1.21.md Day 4 specification.
+// Per IMPLEMENTATION_PLAN_V1.22.md Day 4 specification.
 type EnvironmentClassifier struct {
 	regoQuery *rego.PreparedEvalQuery // Prepared query for performance
 	k8sClient client.Client           // For ConfigMap fallback (BR-SP-052)
@@ -206,7 +209,7 @@ func (c *EnvironmentClassifier) evaluateRego(ctx context.Context, input map[stri
 	source, _ := resultMap["source"].(string)
 
 	// Handle confidence - Rego returns json.Number, not float64
-	confidence := c.extractConfidence(resultMap["confidence"])
+	confidence := c.extractConfidenceFromResult(resultMap["confidence"])
 
 	if environment == "" {
 		environment = "unknown"
@@ -222,25 +225,14 @@ func (c *EnvironmentClassifier) evaluateRego(ctx context.Context, input map[stri
 	}, nil
 }
 
-// extractConfidence handles the various types Rego can return for numbers.
-func (c *EnvironmentClassifier) extractConfidence(v interface{}) float64 {
-	switch val := v.(type) {
-	case float64:
-		return val
-	case int:
-		return float64(val)
-	case int64:
-		return float64(val)
-	default:
-		// Try json.Number interface
-		if num, ok := v.(interface{ Float64() (float64, error) }); ok {
-			f, err := num.Float64()
-			if err == nil {
-				return f
-			}
-		}
+// extractConfidenceFromResult handles the various types Rego can return for numbers.
+// Wraps the shared extractConfidence function with default handling.
+func (c *EnvironmentClassifier) extractConfidenceFromResult(v interface{}) float64 {
+	conf := extractConfidence(v)
+	if conf == 0.0 {
 		return defaultConfidence
 	}
+	return conf
 }
 
 // buildRegoInput constructs the input map for Rego policy evaluation.

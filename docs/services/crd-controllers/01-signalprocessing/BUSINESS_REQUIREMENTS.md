@@ -1,10 +1,10 @@
 # Signal Processing Service - Business Requirements
 
-**Version**: 1.0
-**Last Updated**: 2025-12-03
+**Version**: 1.2
+**Last Updated**: 2025-12-06
 **Status**: ✅ APPROVED
 **Owner**: SignalProcessing Team
-**Related**: [IMPLEMENTATION_PLAN_V1.20.md](IMPLEMENTATION_PLAN_V1.20.md)
+**Related**: [IMPLEMENTATION_PLAN_V1.25.md](IMPLEMENTATION_PLAN_V1.25.md)
 
 ---
 
@@ -245,20 +245,23 @@ data:
 **Priority**: P1 (High)
 **Category**: Priority Assignment
 
-**Description**: The SignalProcessing controller MUST use a severity × environment fallback matrix when Rego policy fails or times out.
+**Description**: The SignalProcessing controller MUST use a severity-based fallback when Rego policy fails or times out.
 
 **Acceptance Criteria**:
 - [ ] Fallback triggers on: Rego timeout (>100ms), policy error, missing policy
-- [ ] Matrix based on signal severity and detected environment
+- [ ] Fallback based on signal severity ONLY (environment is not considered in fallback)
 - [ ] Log when fallback is used
 - [ ] Never fail - always return a valid priority
 
-**Fallback Matrix**:
-| Severity \ Environment | production | staging | development | test |
-|------------------------|------------|---------|-------------|------|
-| critical | P0 | P1 | P2 | P3 |
-| warning | P1 | P2 | P3 | P3 |
-| info | P2 | P3 | P3 | P3 |
+**Fallback Matrix** (Severity-Based Only):
+| Severity | Priority | Rationale |
+|----------|----------|-----------|
+| critical | P1 | Conservative - high but not highest without context |
+| warning | P2 | Standard priority for warnings |
+| info | P3 | Lowest priority for informational |
+| unknown | P2 | Default when severity is also unknown |
+
+**Rationale**: When Rego policy fails, we don't have reliable environment classification. Using severity-only fallback is more predictable and avoids compounding uncertainty from potentially incorrect environment detection.
 
 **Test Coverage**: `priority_engine_test.go` (Unit)
 
@@ -272,18 +275,37 @@ data:
 **Description**: The SignalProcessing controller MUST support hot-reload of Rego policies from ConfigMap changes without restart.
 
 **Acceptance Criteria**:
-- [ ] Watch `kubernaut-rego-policies` ConfigMap for changes
+- [ ] Watch mounted ConfigMap file for changes (via `fsnotify`)
 - [ ] Re-compile policy on ConfigMap update
 - [ ] Use mutex to prevent race conditions during reload
 - [ ] Log policy version hash after reload
 - [ ] Continue using old policy if new policy fails to compile
 
 **Implementation**:
-- Informer-based ConfigMap watch
+- `fsnotify`-based file watch on mounted ConfigMap (per [DD-INFRA-001](../../../architecture/decisions/DD-INFRA-001-configmap-hotreload-pattern.md))
+- Uses shared `pkg/shared/hotreload/FileWatcher` component
 - `sync.RWMutex` for policy access
 - SHA256 hash for policy version tracking
 
-**Test Coverage**: `hot_reloader_test.go` (Integration)
+**Deployment Requirement**:
+ConfigMap must be mounted as a volume in the deployment spec:
+```yaml
+volumes:
+- name: rego-policies
+  configMap:
+    name: kubernaut-rego-policies
+volumeMounts:
+- name: rego-policies
+  mountPath: /etc/kubernaut/policies
+```
+
+**Test Coverage**:
+- `pkg/shared/hotreload/file_watcher_test.go` (Unit) - 14 tests for FileWatcher
+- `test/integration/signalprocessing/hot_reloader_test.go` (Integration) - 4 tests for policy hot-reload
+
+**References**:
+- [DD-INFRA-001: ConfigMap Hot-Reload Pattern](../../../architecture/decisions/DD-INFRA-001-configmap-hotreload-pattern.md)
+- [NOTICE_SHARED_HOTRELOADER_PACKAGE.md](../../../handoff/NOTICE_SHARED_HOTRELOADER_PACKAGE.md)
 
 ---
 
@@ -556,5 +578,7 @@ data:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2025-12-06 | BR-SP-071: Changed to severity-only fallback (not environment × severity matrix) |
+| 1.1 | 2025-12-06 | BR-SP-072: Updated to fsnotify-based hot-reload per DD-INFRA-001, added FileWatcher reference |
 | 1.0 | 2025-12-03 | Initial release - 19 BRs defined |
 

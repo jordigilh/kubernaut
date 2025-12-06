@@ -434,7 +434,8 @@ type PriorityAssignment struct {
 	Priority string `json:"priority"`
 	// Confidence score (0.0-1.0)
 	Confidence float64 `json:"confidence"`
-	// Source of assignment: rego-policy, fallback-matrix
+	// Source of assignment: rego-policy, fallback-severity
+	// Per BR-SP-071: fallback-severity used when Rego fails (severity-only fallback)
 	Source string `json:"source"`
 	// Which Rego rule matched (if applicable)
 	PolicyName string `json:"policyName,omitempty"`

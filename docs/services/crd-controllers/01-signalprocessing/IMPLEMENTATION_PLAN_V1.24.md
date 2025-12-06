@@ -460,7 +460,10 @@ The following contract gaps (identified by RO team) were fixed in `api/signalpro
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **v1.22** | 2025-12-06 | Day 5 updates: fsnotify hot-reload (DD-INFRA-001), severity-based fallback (BR-SP-071), BR-SP-070 schema compliance, P0-P3 only | ✅ **CURRENT** |
+| **v1.25** | 2025-12-06 | Day 6 triage fixes: Added BR-SP-002 coverage, 4-tier confidence scoring (labels→pattern→Rego→default), removed priority from Classify input, NewBusinessClassifier constructor, fixed K8s label limit (63 chars), timeout 200ms, BC-CF-* tests, safe type assertions | ✅ **CURRENT** |
+| **v1.24** | 2025-12-06 | Day 5 triage fixes: PE-ER-01 (construction error, not fallback), PE-ER-06 (fallback per BR-SP-071), `fallbackBySeverity` signature (no error return) | ✅ |
+| **v1.23** | 2025-12-06 | Day 5 gap fixes: Created `pkg/shared/hotreload/FileWatcher`, `priority.rego` policy, NewPriorityEngine constructor, 100ms timeout, nil checks, priority validation, integration test matrix (PE-HR-*), CRD Source comment update | ✅ |
+| **v1.22** | 2025-12-06 | Day 5 updates: fsnotify hot-reload (DD-INFRA-001), severity-based fallback (BR-SP-071), BR-SP-070 schema compliance, P0-P3 only. Day 4 fixes: struct alignment, EC-EC-02 test, hot-reload test, EC-ER-03/04 clarifications | ✅ |
 | **v1.21** | 2025-12-05 | Day 4 Rego-based environment classifier, Gateway coordination | ✅ |
 | **v1.18** | 2025-12-02 | DD-WORKFLOW-001 v2.1, Template v3.0 compliance, all gaps fixed | ✅ |
 | **v1.17** | 2025-12-02 | Shared types, data flow, RO contract gaps, DD-WORKFLOW-001 v1.9 | ✅ |
@@ -1858,8 +1861,11 @@ func (e *K8sEnricher) getNamespace(ctx context.Context, name string) (*signalpro
 
 ```go
 type EnvironmentClassifier struct {
-    regoQuery *rego.PreparedEvalQuery
-    logger    logr.Logger // DD-005 v2.0: logr.Logger (not *zap.Logger)
+    regoQuery        *rego.PreparedEvalQuery // Prepared query for performance
+    k8sClient        client.Client           // For ConfigMap fallback (BR-SP-052)
+    logger           logr.Logger             // DD-005 v2.0: logr.Logger (not *zap.Logger)
+    configMapMu      sync.RWMutex            // Thread safety for ConfigMap cache
+    configMapMapping map[string]string       // Namespace pattern → environment mapping
 }
 
 // Classify determines environment using Rego policy
@@ -1946,6 +1952,13 @@ import (
 ```
 
 ```go
+const (
+    // Per BR-SP-070: P95 evaluation latency < 100ms
+    regoEvalTimeout = 100 * time.Millisecond
+    // Valid priority levels per BR-SP-071
+    validPriorities = map[string]bool{"P0": true, "P1": true, "P2": true, "P3": true}
+)
+
 type PriorityEngine struct {
     regoQuery   *rego.PreparedEvalQuery
     fileWatcher *hotreload.FileWatcher // Per DD-INFRA-001: fsnotify-based
@@ -1954,44 +1967,132 @@ type PriorityEngine struct {
     mu          sync.RWMutex           // Protects regoQuery during hot-reload
 }
 
+// NewPriorityEngine creates a new Rego-based priority engine.
+// Per BR-SP-070, BR-SP-071, BR-SP-072 specifications.
+func NewPriorityEngine(ctx context.Context, policyPath string, logger logr.Logger) (*PriorityEngine, error) {
+    log := logger.WithName("priority-engine")
+
+    // Read and compile initial policy
+    policyContent, err := os.ReadFile(policyPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read policy file %s: %w", policyPath, err)
+    }
+
+    query, err := rego.New(
+        rego.Query("data.signalprocessing.priority.result"),
+        rego.Module(filepath.Base(policyPath), string(policyContent)),
+    ).PrepareForEval(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to compile Rego policy: %w", err)
+    }
+
+    return &PriorityEngine{
+        regoQuery:  &query,
+        policyPath: policyPath,
+        logger:     log,
+    }, nil
+}
+
 // Assign determines priority using Rego policy with K8s + business context
 // BR-SP-070: Rego policies with rich context
+// BR-SP-071: Fallback on timeout (>100ms) or error
 // Input schema per BR-SP-070 (no replicas/minReplicas/conditions)
 func (p *PriorityEngine) Assign(ctx context.Context, k8sCtx *KubernetesContext, envClass *EnvironmentClassification, signal *SignalData) (*PriorityAssignment, error) {
-    // Build input per BR-SP-070 schema
-    input := map[string]interface{}{
-        "signal": map[string]interface{}{
-            "severity": signal.Severity,
-            "source":   signal.Source,
-        },
-        "environment":       envClass.Environment,
-        "namespace_labels":  k8sCtx.Namespace.Labels,
-        "deployment_labels": k8sCtx.Deployment.Labels,
+    // Validate inputs (PE-ER-03)
+    if envClass == nil {
+        return nil, fmt.Errorf("environment classification is required")
     }
+    if signal == nil {
+        return nil, fmt.Errorf("signal data is required")
+    }
+
+    // Build input per BR-SP-070 schema with nil checks
+    input := p.buildRegoInput(k8sCtx, envClass, signal)
+
+    // Add timeout per BR-SP-071 (>100ms triggers fallback)
+    timeoutCtx, cancel := context.WithTimeout(ctx, regoEvalTimeout)
+    defer cancel()
 
     p.mu.RLock()
     query := p.regoQuery
     p.mu.RUnlock()
 
-    results, err := query.Eval(ctx, rego.EvalInput(input))
+    results, err := query.Eval(timeoutCtx, rego.EvalInput(input))
     if err != nil {
         // BR-SP-071: Fallback based on severity ONLY (not environment)
-        return p.fallbackBySeverity(signal.Severity)
+        p.logger.Info("Rego evaluation failed, using fallback", "error", err)
+        return p.fallbackBySeverity(signal.Severity), nil
     }
 
-    // Extract from Rego
-    priority := results[0].Expressions[0].Value.(map[string]interface{})
+    // Check for empty results
+    if len(results) == 0 || len(results[0].Expressions) == 0 {
+        p.logger.Info("Rego returned no results, using fallback")
+        return p.fallbackBySeverity(signal.Severity), nil
+    }
+
+    // Extract and validate Rego output
+    return p.extractAndValidateResult(results, signal.Severity)
+}
+
+// buildRegoInput constructs the input map with nil checks.
+func (p *PriorityEngine) buildRegoInput(k8sCtx *KubernetesContext, envClass *EnvironmentClassification, signal *SignalData) map[string]interface{} {
+    input := map[string]interface{}{
+        "signal": map[string]interface{}{
+            "severity": signal.Severity,
+            "source":   signal.Source,
+        },
+        "environment": envClass.Environment,
+    }
+
+    // Nil checks for nested K8s context
+    if k8sCtx != nil {
+        if k8sCtx.Namespace != nil {
+            input["namespace_labels"] = ensureLabelsMap(k8sCtx.Namespace.Labels)
+        } else {
+            input["namespace_labels"] = map[string]interface{}{}
+        }
+        if k8sCtx.Deployment != nil {
+            input["deployment_labels"] = ensureLabelsMap(k8sCtx.Deployment.Labels)
+        } else {
+            input["deployment_labels"] = map[string]interface{}{}
+        }
+    } else {
+        input["namespace_labels"] = map[string]interface{}{}
+        input["deployment_labels"] = map[string]interface{}{}
+    }
+
+    return input
+}
+
+// extractAndValidateResult extracts and validates Rego output.
+// PE-ER-04, PE-ER-05: Validate priority is P0-P3
+func (p *PriorityEngine) extractAndValidateResult(results rego.ResultSet, severity string) (*PriorityAssignment, error) {
+    resultMap, ok := results[0].Expressions[0].Value.(map[string]interface{})
+    if !ok {
+        p.logger.Info("Invalid Rego output type, using fallback")
+        return p.fallbackBySeverity(severity), nil
+    }
+
+    priority, _ := resultMap["priority"].(string)
+    policyName, _ := resultMap["policy_name"].(string)
+    confidence := extractConfidence(resultMap["confidence"])
+
+    // Validate priority is P0-P3 (PE-ER-04, PE-ER-05)
+    if !validPriorities[priority] {
+        return nil, fmt.Errorf("invalid priority value: %s (must be P0, P1, P2, or P3)", priority)
+    }
+
     return &PriorityAssignment{
-        Priority:   priority["priority"].(string),
-        Confidence: priority["confidence"].(float64),
+        Priority:   priority,
+        Confidence: confidence,
         Source:     "rego-policy",
-        PolicyName: priority["policy_name"].(string),
+        PolicyName: policyName,
     }, nil
 }
 
 // fallbackBySeverity returns priority based on severity only (BR-SP-071)
 // Used when Rego fails - environment is NOT considered in fallback
-func (p *PriorityEngine) fallbackBySeverity(severity string) (*PriorityAssignment, error) {
+func (p *PriorityEngine) fallbackBySeverity(severity string) *PriorityAssignment {
     var priority string
     switch strings.ToLower(severity) {
     case "critical":
@@ -2008,7 +2109,7 @@ func (p *PriorityEngine) fallbackBySeverity(severity string) (*PriorityAssignmen
         Priority:   priority,
         Confidence: 0.6, // Reduced confidence for fallback
         Source:     "fallback-severity",
-    }, nil
+    }
 }
 
 // BR-SP-072: Hot-reload from mounted ConfigMap via fsnotify
@@ -2056,47 +2157,299 @@ func (p *PriorityEngine) Stop() {
 
 #### **Day 6: Business Classifier**
 
-**BR Coverage**: BR-SP-080, BR-SP-081
+**BR Coverage**: BR-SP-002, BR-SP-080, BR-SP-081
 
 **File**: `pkg/signalprocessing/classifier/business.go`
 
+**Dependencies**:
+- `github.com/open-policy-agent/opa/v1/rego` - Rego policy evaluation
+
+**Label Keys** (for direct label detection per BR-SP-002):
+- `kubernaut.ai/business-unit` → BusinessUnit (confidence 1.0)
+- `kubernaut.ai/service-owner` → ServiceOwner (confidence 1.0)
+- `kubernaut.ai/criticality` → Criticality (confidence 1.0)
+- `kubernaut.ai/sla-tier` → SLARequirement (confidence 1.0)
+
 ```go
+const (
+    // Per BR-SP-080: Rego evaluation timeout
+    businessRegoTimeout = 200 * time.Millisecond
+
+    // BR-SP-080: Confidence levels by detection method
+    confidenceExplicitLabel = 1.0  // Explicit label match
+    confidencePatternMatch  = 0.8  // Pattern match (namespace prefix)
+    confidenceRegoInference = 0.6  // Rego policy inference
+    confidenceDefault       = 0.4  // Default fallback
+
+    // Label keys per BR-SP-002
+    labelBusinessUnit  = "kubernaut.ai/business-unit"
+    labelServiceOwner  = "kubernaut.ai/service-owner"
+    labelCriticality   = "kubernaut.ai/criticality"
+    labelSLATier       = "kubernaut.ai/sla-tier"
+)
+
+// Valid enum values per BR-SP-081
+var (
+    validCriticality = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
+    validSLATier     = map[string]bool{"platinum": true, "gold": true, "silver": true, "bronze": true}
+)
+
 type BusinessClassifier struct {
-    regoQuery *rego.PreparedEvalQuery
-    logger    logr.Logger // DD-005 v2.0: logr.Logger (not *zap.Logger)
+    regoQuery  *rego.PreparedEvalQuery
+    policyPath string
+    logger     logr.Logger // DD-005 v2.0: logr.Logger (not *zap.Logger)
+    mu         sync.RWMutex
 }
 
-// Classify performs multi-dimensional business categorization
-// BR-SP-081: businessUnit, serviceOwner, criticality, sla
-func (b *BusinessClassifier) Classify(ctx context.Context, k8sCtx *KubernetesContext, envClass *EnvironmentClassification, priority *PriorityAssignment) (*BusinessClassification, error) {
-    input := map[string]interface{}{
-        "environment": envClass.Environment,
-        "priority":    priority.Priority,
-        "namespace": map[string]interface{}{
-            "labels":      k8sCtx.Namespace.Labels,
-            "annotations": k8sCtx.Namespace.Annotations,
-        },
-        "deployment": map[string]interface{}{
-            "labels":      k8sCtx.Deployment.Labels,
-            "annotations": k8sCtx.Deployment.Annotations,
-        },
-    }
+// NewBusinessClassifier creates a new business classifier.
+// Per BR-SP-002, BR-SP-080, BR-SP-081 specifications.
+func NewBusinessClassifier(ctx context.Context, policyPath string, logger logr.Logger) (*BusinessClassifier, error) {
+    log := logger.WithName("business-classifier")
 
-    results, err := b.regoQuery.Eval(ctx, rego.EvalInput(input))
+    policyContent, err := os.ReadFile(policyPath)
     if err != nil {
-        return &BusinessClassification{
-            OverallConfidence: 0.5,
-        }, nil
+        return nil, fmt.Errorf("failed to read policy file %s: %w", policyPath, err)
     }
 
-    biz := results[0].Expressions[0].Value.(map[string]interface{})
-    return &BusinessClassification{
-        BusinessUnit:      biz["business_unit"].(string),
-        ServiceOwner:      biz["service_owner"].(string),
-        Criticality:       biz["criticality"].(string),
-        SLARequirement:    biz["sla"].(string),
-        OverallConfidence: biz["confidence"].(float64),
+    query, err := rego.New(
+        rego.Query("data.signalprocessing.business.result"),
+        rego.Module(filepath.Base(policyPath), string(policyContent)),
+    ).PrepareForEval(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to compile Rego policy: %w", err)
+    }
+
+    return &BusinessClassifier{
+        regoQuery:  &query,
+        policyPath: policyPath,
+        logger:     log,
     }, nil
+}
+
+// Classify performs multi-dimensional business categorization.
+// Per BR-SP-002: Classification from namespace/deployment labels OR Rego policies.
+// Per BR-SP-080: 4-tier confidence scoring (1.0 label → 0.8 pattern → 0.6 Rego → 0.4 default)
+// Per BR-SP-081: businessUnit, serviceOwner, criticality, sla dimensions
+//
+// NOTE: priority is NOT an input - business classification is independent of priority assignment.
+func (b *BusinessClassifier) Classify(ctx context.Context, k8sCtx *KubernetesContext, envClass *EnvironmentClassification) (*BusinessClassification, error) {
+    // Validate inputs
+    if k8sCtx == nil {
+        return nil, fmt.Errorf("kubernetes context is required")
+    }
+
+    result := &BusinessClassification{}
+
+    // BR-SP-080: 4-tier detection with confidence scoring
+    // Tier 1: Explicit label match (confidence 1.0)
+    b.classifyFromLabels(k8sCtx, result)
+
+    // Tier 2: Pattern match (confidence 0.8) - if label detection incomplete
+    if result.BusinessUnit == "" || result.ServiceOwner == "" {
+        b.classifyFromPatterns(k8sCtx, result)
+    }
+
+    // Tier 3: Rego inference (confidence 0.6) - for remaining fields
+    if b.needsRegoClassification(result) {
+        if err := b.classifyFromRego(ctx, k8sCtx, envClass, result); err != nil {
+            b.logger.Info("Rego classification failed, using defaults", "error", err)
+        }
+    }
+
+    // Tier 4: Default fallback (confidence 0.4) - for any remaining unknown fields
+    b.applyDefaults(result)
+
+    // Calculate overall confidence (weighted average)
+    result.OverallConfidence = b.calculateOverallConfidence(result)
+
+    return result, nil
+}
+
+// classifyFromLabels extracts business fields from explicit kubernaut.ai/ labels.
+// Per BR-SP-002 + BR-SP-080: Label-based classification (confidence 1.0)
+func (b *BusinessClassifier) classifyFromLabels(k8sCtx *KubernetesContext, result *BusinessClassification) {
+    labels := b.collectLabels(k8sCtx)
+
+    if val, ok := labels[labelBusinessUnit]; ok && val != "" {
+        result.BusinessUnit = val
+        result.businessUnitConfidence = confidenceExplicitLabel
+    }
+    if val, ok := labels[labelServiceOwner]; ok && val != "" {
+        result.ServiceOwner = val
+        result.serviceOwnerConfidence = confidenceExplicitLabel
+    }
+    if val, ok := labels[labelCriticality]; ok && val != "" {
+        if validCriticality[strings.ToLower(val)] {
+            result.Criticality = strings.ToLower(val)
+            result.criticalityConfidence = confidenceExplicitLabel
+        }
+    }
+    if val, ok := labels[labelSLATier]; ok && val != "" {
+        if validSLATier[strings.ToLower(val)] {
+            result.SLARequirement = strings.ToLower(val)
+            result.slaConfidence = confidenceExplicitLabel
+        }
+    }
+}
+
+// classifyFromPatterns uses namespace naming patterns.
+// Per BR-SP-080: Pattern match (confidence 0.8)
+// Examples: "payments-prod" → business_unit="payments", "billing-staging" → "billing"
+func (b *BusinessClassifier) classifyFromPatterns(k8sCtx *KubernetesContext, result *BusinessClassification) {
+    if k8sCtx.Namespace == nil {
+        return
+    }
+
+    nsName := k8sCtx.Namespace.Name
+    parts := strings.Split(nsName, "-")
+    if len(parts) > 0 && result.BusinessUnit == "" {
+        // First segment before hyphen as potential business unit
+        potentialUnit := parts[0]
+        if len(potentialUnit) > 2 { // Avoid short prefixes like "ns"
+            result.BusinessUnit = potentialUnit
+            result.businessUnitConfidence = confidencePatternMatch
+        }
+    }
+}
+
+// classifyFromRego evaluates business Rego policy for inference.
+// Per BR-SP-080: Rego inference (confidence 0.6)
+func (b *BusinessClassifier) classifyFromRego(ctx context.Context, k8sCtx *KubernetesContext, envClass *EnvironmentClassification, result *BusinessClassification) error {
+    input := b.buildRegoInput(k8sCtx, envClass)
+
+    timeoutCtx, cancel := context.WithTimeout(ctx, businessRegoTimeout)
+    defer cancel()
+
+    b.mu.RLock()
+    query := b.regoQuery
+    b.mu.RUnlock()
+
+    results, err := query.Eval(timeoutCtx, rego.EvalInput(input))
+    if err != nil {
+        return err
+    }
+
+    if len(results) == 0 || len(results[0].Expressions) == 0 {
+        return nil // No results, will use defaults
+    }
+
+    return b.extractRegoResults(results, result)
+}
+
+// extractRegoResults safely extracts Rego output with type checking.
+func (b *BusinessClassifier) extractRegoResults(results rego.ResultSet, result *BusinessClassification) error {
+    resultMap, ok := results[0].Expressions[0].Value.(map[string]interface{})
+    if !ok {
+        return fmt.Errorf("invalid Rego output type")
+    }
+
+    // Safe extraction with validation
+    if val, ok := resultMap["business_unit"].(string); ok && val != "" && result.BusinessUnit == "" {
+        result.BusinessUnit = val
+        result.businessUnitConfidence = confidenceRegoInference
+    }
+    if val, ok := resultMap["service_owner"].(string); ok && val != "" && result.ServiceOwner == "" {
+        result.ServiceOwner = val
+        result.serviceOwnerConfidence = confidenceRegoInference
+    }
+    if val, ok := resultMap["criticality"].(string); ok && val != "" && result.Criticality == "" {
+        if validCriticality[strings.ToLower(val)] {
+            result.Criticality = strings.ToLower(val)
+            result.criticalityConfidence = confidenceRegoInference
+        }
+    }
+    if val, ok := resultMap["sla"].(string); ok && val != "" && result.SLARequirement == "" {
+        if validSLATier[strings.ToLower(val)] {
+            result.SLARequirement = strings.ToLower(val)
+            result.slaConfidence = confidenceRegoInference
+        }
+    }
+
+    return nil
+}
+
+// applyDefaults sets "unknown" for any unclassified fields.
+// Per BR-SP-081: "unknown" if not determinable
+func (b *BusinessClassifier) applyDefaults(result *BusinessClassification) {
+    if result.BusinessUnit == "" {
+        result.BusinessUnit = "unknown"
+        result.businessUnitConfidence = confidenceDefault
+    }
+    if result.ServiceOwner == "" {
+        result.ServiceOwner = "unknown"
+        result.serviceOwnerConfidence = confidenceDefault
+    }
+    if result.Criticality == "" {
+        result.Criticality = "medium" // Safe default
+        result.criticalityConfidence = confidenceDefault
+    }
+    if result.SLARequirement == "" {
+        result.SLARequirement = "bronze" // Lowest tier default
+        result.slaConfidence = confidenceDefault
+    }
+}
+
+// calculateOverallConfidence computes weighted average confidence.
+func (b *BusinessClassifier) calculateOverallConfidence(result *BusinessClassification) float64 {
+    sum := result.businessUnitConfidence + result.serviceOwnerConfidence +
+           result.criticalityConfidence + result.slaConfidence
+    return sum / 4.0
+}
+
+// Helper methods
+func (b *BusinessClassifier) collectLabels(k8sCtx *KubernetesContext) map[string]string {
+    labels := make(map[string]string)
+    if k8sCtx.Namespace != nil {
+        for k, v := range k8sCtx.Namespace.Labels {
+            labels[k] = v
+        }
+    }
+    if k8sCtx.Deployment != nil {
+        for k, v := range k8sCtx.Deployment.Labels {
+            labels[k] = v
+        }
+    }
+    return labels
+}
+
+func (b *BusinessClassifier) needsRegoClassification(result *BusinessClassification) bool {
+    return result.BusinessUnit == "" || result.ServiceOwner == "" ||
+           result.Criticality == "" || result.SLARequirement == ""
+}
+
+func (b *BusinessClassifier) buildRegoInput(k8sCtx *KubernetesContext, envClass *EnvironmentClassification) map[string]interface{} {
+    input := map[string]interface{}{
+        "environment": "",
+    }
+    if envClass != nil {
+        input["environment"] = envClass.Environment
+    }
+    if k8sCtx != nil && k8sCtx.Namespace != nil {
+        input["namespace"] = map[string]interface{}{
+            "name":        k8sCtx.Namespace.Name,
+            "labels":      ensureLabelsMap(k8sCtx.Namespace.Labels),
+            "annotations": ensureLabelsMap(k8sCtx.Namespace.Annotations),
+        }
+    }
+    if k8sCtx != nil && k8sCtx.Deployment != nil {
+        input["deployment"] = map[string]interface{}{
+            "labels":      ensureLabelsMap(k8sCtx.Deployment.Labels),
+            "annotations": ensureLabelsMap(k8sCtx.Deployment.Annotations),
+        }
+    }
+    return input
+}
+```
+
+**NOTE**: The `BusinessClassification` struct needs internal confidence tracking fields (not in CRD, just for calculation):
+```go
+// Internal tracking (not exported to CRD)
+type classificationWithConfidence struct {
+    *BusinessClassification
+    businessUnitConfidence  float64
+    serviceOwnerConfidence  float64
+    criticalityConfidence   float64
+    slaConfidence           float64
 }
 ```
 
@@ -3588,7 +3941,7 @@ var _ = Describe("SignalProcessing Controller", func() {
 | EC-ER-01 | Rego policy syntax error | Malformed Rego policy | Returns error, logs policy issue |
 | EC-ER-02 | Rego policy timeout | Policy takes >5s to evaluate | Returns error with timeout |
 | EC-ER-03 | Rego policy runtime panic | Policy causes OPA panic | Returns error, doesn't crash service |
-| EC-ER-04 | ConfigMap mount missing | Rego policy ConfigMap not mounted | Returns error at startup |
+| EC-ER-04 | ConfigMap not found | ConfigMap not available in cluster | Graceful degradation, logs warning, continues without ConfigMap |
 | EC-ER-05 | Invalid Rego output type | Rego returns number instead of string | Returns type validation error |
 | EC-ER-06 | Nil input to classifier | Classify(ctx, nil, nil) | Returns validation error, doesn't panic |
 
@@ -3623,12 +3976,12 @@ var _ = Describe("SignalProcessing Controller", func() {
 **Error Handling (6-8 tests)**:
 | ID | Scenario | Input | Expected Outcome |
 |----|----------|-------|------------------|
-| PE-ER-01 | Rego policy syntax error | Malformed priority Rego policy | Fallback to severity-based (BR-SP-071) |
+| PE-ER-01 | Rego policy syntax error | Malformed priority Rego policy | Returns construction error (cannot fallback - no valid engine exists) |
 | PE-ER-02 | Rego policy timeout | Policy takes >100ms | Fallback to severity-based (BR-SP-071) |
 | PE-ER-03 | Nil environment classification | AssignPriority with nil env | Returns validation error |
 | PE-ER-04 | Invalid Rego output | Rego returns "PX" (invalid) | Returns validation error |
 | PE-ER-05 | Rego returns out of range | Rego returns "P5" (not P0-P3) | Returns validation error |
-| PE-ER-06 | Context cancelled | Context cancelled mid-evaluation | Returns context.Canceled |
+| PE-ER-06 | Context cancelled | Context cancelled mid-evaluation | Fallback to severity-based (BR-SP-071 - never fail) |
 
 **Fallback Tests (4 tests)** - Per BR-SP-071 severity-based fallback:
 | ID | Scenario | Input | Expected Outcome |
@@ -3637,6 +3990,14 @@ var _ = Describe("SignalProcessing Controller", func() {
 | PE-FB-02 | Fallback warning | Rego fails, severity="warning" | Returns "P2", source="fallback-severity" |
 | PE-FB-03 | Fallback info | Rego fails, severity="info" | Returns "P3", source="fallback-severity" |
 | PE-FB-04 | Fallback unknown | Rego fails, severity="" | Returns "P2", source="fallback-severity" |
+
+**Hot-Reload Integration Tests** - Per BR-SP-072 (`test/integration/signalprocessing/hot_reloader_test.go`):
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| PE-HR-01 | Policy file change detection | Update priority.rego file | FileWatcher triggers callback |
+| PE-HR-02 | Policy hot-reload success | Valid new policy content | New policy takes effect without restart |
+| PE-HR-03 | Policy hot-reload graceful degradation | Invalid new policy content | Old policy retained, error logged |
+| PE-HR-04 | Concurrent requests during reload | Requests during policy swap | All requests complete (no race conditions) |
 
 ---
 
@@ -3659,19 +4020,27 @@ var _ = Describe("SignalProcessing Controller", func() {
 | BC-EC-02 | Conflicting business labels | `domain: payments` + `service: orders` | Uses primary label hierarchy |
 | BC-EC-03 | Unknown business domain | Pod in "misc" namespace | Returns business_domain="unknown" |
 | BC-EC-04 | Multiple team labels | `team: a` + `owner: b` | Returns both in context |
-| BC-EC-05 | Very long business label | 253-char business label | Handles within K8s limits |
+| BC-EC-05 | Very long business label | 63-char business label value (K8s limit) | Handles within K8s label value limits |
 | BC-EC-06 | Non-ASCII business name | `team: 支付团队` | Handles UTF-8 correctly |
 | BC-EC-07 | Whitespace in labels | `team: " checkout "` | Trims whitespace |
 | BC-EC-08 | No Rego rules match | Context doesn't match any business rule | Returns minimal context |
+
+**Confidence Tier Tests (BR-SP-080)** (4 tests):
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| BC-CF-01 | Explicit label detection | `kubernaut.ai/business-unit=payments` | Returns confidence 1.0, source="label" |
+| BC-CF-02 | Pattern match detection | Namespace "billing-prod" (no labels) | Returns confidence 0.8, source="pattern" |
+| BC-CF-03 | Rego inference | Only Rego rule matches | Returns confidence 0.6, source="rego" |
+| BC-CF-04 | Default fallback | No detection possible | Returns confidence 0.4, source="default" |
 
 **Error Handling (5-7 tests)**:
 | ID | Scenario | Input | Expected Outcome |
 |----|----------|-------|------------------|
 | BC-ER-01 | Rego policy syntax error | Malformed business Rego | Returns error, logs policy issue |
-| BC-ER-02 | Rego policy timeout | Policy takes >5s | Returns error with timeout |
+| BC-ER-02 | Rego policy timeout | Policy takes >200ms | Uses default fallback (0.4 confidence) |
 | BC-ER-03 | Nil K8sContext | Classify with nil context | Returns validation error |
 | BC-ER-04 | Invalid Rego output structure | Rego returns string instead of object | Returns type validation error |
-| BC-ER-05 | Context cancelled | Context cancelled mid-evaluation | Returns context.Canceled |
+| BC-ER-05 | Context cancelled | Context cancelled mid-evaluation | Uses default fallback (graceful degradation) |
 
 ---
 

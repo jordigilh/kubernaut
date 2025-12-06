@@ -1,5 +1,5 @@
 # Environment Classification Policy
-# Per IMPLEMENTATION_PLAN_V1.21.md Day 4 specification
+# Per IMPLEMENTATION_PLAN_V1.22.md Day 4 specification
 #
 # BR-SP-051: Primary detection from namespace labels (kubernaut.ai/environment)
 # BR-SP-051: Case-insensitive matching (uses lower() function)

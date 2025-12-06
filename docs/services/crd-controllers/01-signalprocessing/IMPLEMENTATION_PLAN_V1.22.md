@@ -460,7 +460,8 @@ The following contract gaps (identified by RO team) were fixed in `api/signalpro
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **v1.22** | 2025-12-06 | Day 5 updates: fsnotify hot-reload (DD-INFRA-001), severity-based fallback (BR-SP-071), BR-SP-070 schema compliance, P0-P3 only | ✅ **CURRENT** |
+| **v1.23** | 2025-12-06 | Day 5 gap fixes: Created `pkg/shared/hotreload/FileWatcher`, `priority.rego` policy, NewPriorityEngine constructor, 100ms timeout, nil checks, priority validation, integration test matrix (PE-HR-*), CRD Source comment update | ✅ **CURRENT** |
+| **v1.22** | 2025-12-06 | Day 5 updates: fsnotify hot-reload (DD-INFRA-001), severity-based fallback (BR-SP-071), BR-SP-070 schema compliance, P0-P3 only. Day 4 fixes: struct alignment, EC-EC-02 test, hot-reload test, EC-ER-03/04 clarifications | ✅ |
 | **v1.21** | 2025-12-05 | Day 4 Rego-based environment classifier, Gateway coordination | ✅ |
 | **v1.18** | 2025-12-02 | DD-WORKFLOW-001 v2.1, Template v3.0 compliance, all gaps fixed | ✅ |
 | **v1.17** | 2025-12-02 | Shared types, data flow, RO contract gaps, DD-WORKFLOW-001 v1.9 | ✅ |
@@ -1858,8 +1859,11 @@ func (e *K8sEnricher) getNamespace(ctx context.Context, name string) (*signalpro
 
 ```go
 type EnvironmentClassifier struct {
-    regoQuery *rego.PreparedEvalQuery
-    logger    logr.Logger // DD-005 v2.0: logr.Logger (not *zap.Logger)
+    regoQuery        *rego.PreparedEvalQuery // Prepared query for performance
+    k8sClient        client.Client           // For ConfigMap fallback (BR-SP-052)
+    logger           logr.Logger             // DD-005 v2.0: logr.Logger (not *zap.Logger)
+    configMapMu      sync.RWMutex            // Thread safety for ConfigMap cache
+    configMapMapping map[string]string       // Namespace pattern → environment mapping
 }
 
 // Classify determines environment using Rego policy
@@ -1946,6 +1950,13 @@ import (
 ```
 
 ```go
+const (
+    // Per BR-SP-070: P95 evaluation latency < 100ms
+    regoEvalTimeout = 100 * time.Millisecond
+    // Valid priority levels per BR-SP-071
+    validPriorities = map[string]bool{"P0": true, "P1": true, "P2": true, "P3": true}
+)
+
 type PriorityEngine struct {
     regoQuery   *rego.PreparedEvalQuery
     fileWatcher *hotreload.FileWatcher // Per DD-INFRA-001: fsnotify-based
@@ -1954,38 +1965,126 @@ type PriorityEngine struct {
     mu          sync.RWMutex           // Protects regoQuery during hot-reload
 }
 
+// NewPriorityEngine creates a new Rego-based priority engine.
+// Per BR-SP-070, BR-SP-071, BR-SP-072 specifications.
+func NewPriorityEngine(ctx context.Context, policyPath string, logger logr.Logger) (*PriorityEngine, error) {
+    log := logger.WithName("priority-engine")
+
+    // Read and compile initial policy
+    policyContent, err := os.ReadFile(policyPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read policy file %s: %w", policyPath, err)
+    }
+
+    query, err := rego.New(
+        rego.Query("data.signalprocessing.priority.result"),
+        rego.Module(filepath.Base(policyPath), string(policyContent)),
+    ).PrepareForEval(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to compile Rego policy: %w", err)
+    }
+
+    return &PriorityEngine{
+        regoQuery:  &query,
+        policyPath: policyPath,
+        logger:     log,
+    }, nil
+}
+
 // Assign determines priority using Rego policy with K8s + business context
 // BR-SP-070: Rego policies with rich context
+// BR-SP-071: Fallback on timeout (>100ms) or error
 // Input schema per BR-SP-070 (no replicas/minReplicas/conditions)
 func (p *PriorityEngine) Assign(ctx context.Context, k8sCtx *KubernetesContext, envClass *EnvironmentClassification, signal *SignalData) (*PriorityAssignment, error) {
-    // Build input per BR-SP-070 schema
-    input := map[string]interface{}{
-        "signal": map[string]interface{}{
-            "severity": signal.Severity,
-            "source":   signal.Source,
-        },
-        "environment":       envClass.Environment,
-        "namespace_labels":  k8sCtx.Namespace.Labels,
-        "deployment_labels": k8sCtx.Deployment.Labels,
+    // Validate inputs (PE-ER-03)
+    if envClass == nil {
+        return nil, fmt.Errorf("environment classification is required")
     }
+    if signal == nil {
+        return nil, fmt.Errorf("signal data is required")
+    }
+
+    // Build input per BR-SP-070 schema with nil checks
+    input := p.buildRegoInput(k8sCtx, envClass, signal)
+
+    // Add timeout per BR-SP-071 (>100ms triggers fallback)
+    timeoutCtx, cancel := context.WithTimeout(ctx, regoEvalTimeout)
+    defer cancel()
 
     p.mu.RLock()
     query := p.regoQuery
     p.mu.RUnlock()
 
-    results, err := query.Eval(ctx, rego.EvalInput(input))
+    results, err := query.Eval(timeoutCtx, rego.EvalInput(input))
     if err != nil {
         // BR-SP-071: Fallback based on severity ONLY (not environment)
+        p.logger.Info("Rego evaluation failed, using fallback", "error", err)
         return p.fallbackBySeverity(signal.Severity)
     }
 
-    // Extract from Rego
-    priority := results[0].Expressions[0].Value.(map[string]interface{})
+    // Check for empty results
+    if len(results) == 0 || len(results[0].Expressions) == 0 {
+        p.logger.Info("Rego returned no results, using fallback")
+        return p.fallbackBySeverity(signal.Severity)
+    }
+
+    // Extract and validate Rego output
+    return p.extractAndValidateResult(results, signal.Severity)
+}
+
+// buildRegoInput constructs the input map with nil checks.
+func (p *PriorityEngine) buildRegoInput(k8sCtx *KubernetesContext, envClass *EnvironmentClassification, signal *SignalData) map[string]interface{} {
+    input := map[string]interface{}{
+        "signal": map[string]interface{}{
+            "severity": signal.Severity,
+            "source":   signal.Source,
+        },
+        "environment": envClass.Environment,
+    }
+
+    // Nil checks for nested K8s context
+    if k8sCtx != nil {
+        if k8sCtx.Namespace != nil {
+            input["namespace_labels"] = ensureLabelsMap(k8sCtx.Namespace.Labels)
+        } else {
+            input["namespace_labels"] = map[string]interface{}{}
+        }
+        if k8sCtx.Deployment != nil {
+            input["deployment_labels"] = ensureLabelsMap(k8sCtx.Deployment.Labels)
+        } else {
+            input["deployment_labels"] = map[string]interface{}{}
+        }
+    } else {
+        input["namespace_labels"] = map[string]interface{}{}
+        input["deployment_labels"] = map[string]interface{}{}
+    }
+
+    return input
+}
+
+// extractAndValidateResult extracts and validates Rego output.
+// PE-ER-04, PE-ER-05: Validate priority is P0-P3
+func (p *PriorityEngine) extractAndValidateResult(results rego.ResultSet, severity string) (*PriorityAssignment, error) {
+    resultMap, ok := results[0].Expressions[0].Value.(map[string]interface{})
+    if !ok {
+        p.logger.Info("Invalid Rego output type, using fallback")
+        return p.fallbackBySeverity(severity)
+    }
+
+    priority, _ := resultMap["priority"].(string)
+    policyName, _ := resultMap["policy_name"].(string)
+    confidence := extractConfidence(resultMap["confidence"])
+
+    // Validate priority is P0-P3 (PE-ER-04, PE-ER-05)
+    if !validPriorities[priority] {
+        return nil, fmt.Errorf("invalid priority value: %s (must be P0, P1, P2, or P3)", priority)
+    }
+
     return &PriorityAssignment{
-        Priority:   priority["priority"].(string),
-        Confidence: priority["confidence"].(float64),
+        Priority:   priority,
+        Confidence: confidence,
         Source:     "rego-policy",
-        PolicyName: priority["policy_name"].(string),
+        PolicyName: policyName,
     }, nil
 }
 
@@ -3588,7 +3687,7 @@ var _ = Describe("SignalProcessing Controller", func() {
 | EC-ER-01 | Rego policy syntax error | Malformed Rego policy | Returns error, logs policy issue |
 | EC-ER-02 | Rego policy timeout | Policy takes >5s to evaluate | Returns error with timeout |
 | EC-ER-03 | Rego policy runtime panic | Policy causes OPA panic | Returns error, doesn't crash service |
-| EC-ER-04 | ConfigMap mount missing | Rego policy ConfigMap not mounted | Returns error at startup |
+| EC-ER-04 | ConfigMap not found | ConfigMap not available in cluster | Graceful degradation, logs warning, continues without ConfigMap |
 | EC-ER-05 | Invalid Rego output type | Rego returns number instead of string | Returns type validation error |
 | EC-ER-06 | Nil input to classifier | Classify(ctx, nil, nil) | Returns validation error, doesn't panic |
 
@@ -3637,6 +3736,14 @@ var _ = Describe("SignalProcessing Controller", func() {
 | PE-FB-02 | Fallback warning | Rego fails, severity="warning" | Returns "P2", source="fallback-severity" |
 | PE-FB-03 | Fallback info | Rego fails, severity="info" | Returns "P3", source="fallback-severity" |
 | PE-FB-04 | Fallback unknown | Rego fails, severity="" | Returns "P2", source="fallback-severity" |
+
+**Hot-Reload Integration Tests** - Per BR-SP-072 (`test/integration/signalprocessing/hot_reloader_test.go`):
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| PE-HR-01 | Policy file change detection | Update priority.rego file | FileWatcher triggers callback |
+| PE-HR-02 | Policy hot-reload success | Valid new policy content | New policy takes effect without restart |
+| PE-HR-03 | Policy hot-reload graceful degradation | Invalid new policy content | Old policy retained, error logged |
+| PE-HR-04 | Concurrent requests during reload | Requests during policy swap | All requests complete (no race conditions) |
 
 ---
 

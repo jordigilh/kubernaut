@@ -39,7 +39,7 @@ import (
 )
 
 // Unit Tests: Environment Classifier (Rego-based)
-// Per IMPLEMENTATION_PLAN_V1.21.md Day 4 specification
+// Per IMPLEMENTATION_PLAN_V1.22.md Day 4 specification
 // Test Matrix: 21-28 tests (5-8 happy path, 10-12 edge cases, 6-8 error handling)
 var _ = Describe("Environment Classifier (Rego)", func() {
 	var (
@@ -80,7 +80,7 @@ var _ = Describe("Environment Classifier (Rego)", func() {
 		return policyPath
 	}
 
-	// Standard Rego policy per IMPLEMENTATION_PLAN_V1.21.md (OPA v1 syntax)
+	// Standard Rego policy per IMPLEMENTATION_PLAN_V1.22.md (OPA v1 syntax)
 	// Per plan (line 1864): Priority order is namespace labels → ConfigMap → signal labels → default
 	// Note: Rego only handles namespace labels. ConfigMap and signal labels are in Go.
 	// BR-SP-051: Case-insensitive matching via lower() function
@@ -286,6 +286,40 @@ result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Environment).To(Equal("production")) // Namespace wins
 			Expect(result.Source).To(Equal("namespace-labels"))
+		})
+
+		// EC-EC-02: Partial match namespace name (should NOT match)
+		// Plan: "production-like-test" should return "unknown" to avoid false positive
+		It("EC-EC-02: should return unknown for partial match namespace name", func() {
+			policyPath := createPolicy(standardPolicy)
+
+			// Create ConfigMap with prod-* pattern
+			configMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubernaut-environment-config",
+					Namespace: "kubernaut-system",
+				},
+				Data: map[string]string{
+					"mapping": `prod-*: production`,
+				},
+			}
+			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap).Build()
+			var err error
+			envClassifier, err = classifier.NewEnvironmentClassifier(ctx, policyPath, k8sClient, logger)
+			Expect(err).NotTo(HaveOccurred())
+
+			// "production-like-test" should NOT match "prod-*" pattern
+			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
+				Namespace: &signalprocessingv1alpha1.NamespaceContext{
+					Name:   "production-like-test", // Partial match - should NOT trigger
+					Labels: map[string]string{},    // No label
+				},
+			}
+
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Environment).To(Equal("unknown")) // Avoid false positive
 		})
 
 		// EC-EC-03: Case sensitivity (should normalize)
@@ -531,8 +565,45 @@ result = { this is not valid rego syntax
 			Expect(result.Environment).To(Equal("unknown"))
 		})
 
-		// EC-ER-03: Policy file not found (graceful degradation)
-		It("EC-ER-03: should return error when policy file not found", func() {
+		// EC-ER-03: Rego policy runtime panic (graceful degradation)
+		// Plan: Policy causes OPA panic → Returns error, doesn't crash service
+		It("EC-ER-03: should handle Rego policy that causes evaluation error gracefully", func() {
+			// Policy that causes a runtime evaluation issue
+			panicPolicy := `
+package signalprocessing.environment
+
+# Policy that tries to access non-existent nested field (runtime error)
+result := {"environment": env, "confidence": 0.95, "source": "namespace-labels"} if {
+    env := input.namespace.labels.nonexistent.deeply.nested.field
+    env != ""
+}
+
+# Fallback
+result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+}
+`
+			policyPath := createPolicy(panicPolicy)
+			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+			var err error
+			envClassifier, err = classifier.NewEnvironmentClassifier(ctx, policyPath, k8sClient, logger)
+			Expect(err).NotTo(HaveOccurred())
+
+			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
+				Namespace: &signalprocessingv1alpha1.NamespaceContext{
+					Name:   "test-ns",
+					Labels: map[string]string{},
+				},
+			}
+
+			// Should gracefully degrade, not crash
+			result, err := envClassifier.Classify(ctx, k8sCtx, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Environment).To(Equal("unknown"))
+		})
+
+		// EC-ER-03b: Policy file not found
+		It("EC-ER-03b: should return error when policy file not found", func() {
 			k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			_, err := classifier.NewEnvironmentClassifier(ctx, "/nonexistent/path/policy.rego", k8sClient, logger)
@@ -774,6 +845,66 @@ dev-*: development`,
 			// Should gracefully degrade
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Environment).To(Equal("unknown"))
+		})
+	})
+
+	// ============================================================================
+	// BR-SP-052: ConfigMap Hot-Reload Test
+	// ============================================================================
+
+	Context("BR-SP-052: ConfigMap Hot-Reload", func() {
+		It("should reload ConfigMap mapping on ReloadConfigMap call", func() {
+			policyPath := createPolicy(standardPolicy)
+
+			// Initial ConfigMap with staging mapping
+			initialConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubernaut-environment-config",
+					Namespace: "kubernaut-system",
+				},
+				Data: map[string]string{
+					"mapping": `test-ns: staging`,
+				},
+			}
+			k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(initialConfigMap).Build()
+			var err error
+			envClassifier, err = classifier.NewEnvironmentClassifier(ctx, policyPath, k8sClient, logger)
+			Expect(err).NotTo(HaveOccurred())
+
+			// First classification - should return staging from ConfigMap
+			k8sCtx := &signalprocessingv1alpha1.KubernetesContext{
+				Namespace: &signalprocessingv1alpha1.NamespaceContext{
+					Name:   "test-ns",
+					Labels: map[string]string{}, // No namespace label
+				},
+			}
+
+			result1, err := envClassifier.Classify(ctx, k8sCtx, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result1.Environment).To(Equal("staging"))
+			Expect(result1.Source).To(Equal("configmap"))
+
+			// Update ConfigMap with production mapping
+			updatedConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubernaut-environment-config",
+					Namespace: "kubernaut-system",
+				},
+				Data: map[string]string{
+					"mapping": `test-ns: production`, // Changed to production
+				},
+			}
+			Expect(k8sClient.Update(ctx, updatedConfigMap)).To(Succeed())
+
+			// Trigger hot-reload
+			err = envClassifier.ReloadConfigMap(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second classification - should return production after reload
+			result2, err := envClassifier.Classify(ctx, k8sCtx, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result2.Environment).To(Equal("production"))
+			Expect(result2.Source).To(Equal("configmap"))
 		})
 	})
 

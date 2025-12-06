@@ -1,10 +1,10 @@
 # NOTICE: RemediationRequest Schema Update Required
 
 **Date**: 2025-12-06
-**Version**: 1.0
+**Version**: 1.1
 **From**: Signal Processing (SP) Team
 **To**: Remediation Orchestrator (RO) Team
-**Status**: 🔴 **ACTION REQUIRED**
+**Status**: 🟢 **SP READY - RO MAY PROCEED**
 **Priority**: HIGH
 **Related**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md](./NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
@@ -156,9 +156,11 @@ type PriorityAssignment struct {
 | Date | Team | Action |
 |------|------|--------|
 | 2025-12-06 | SP | Created notice, awaiting RO acknowledgment |
+| 2025-12-06 | SP | ✅ Day 4 Environment Classifier COMPLETE |
 | 2025-12-06 | SP | ✅ Day 5 Priority Engine COMPLETE (ahead of schedule) |
 | 2025-12-06 | Gateway | ⚠️ **Gateway proceeding with removal** - Fields will be empty in new CRDs |
-| - | RO | ⏳ Pending acknowledgment |
+| 2025-12-06 | RO | ✅ **ACKNOWLEDGED** - Impact assessed, implementation plan updated |
+| 2025-12-06 | SP | 🟢 **SP READY** - Notified RO that all blockers cleared, may proceed with schema updates |
 
 ---
 
@@ -166,28 +168,86 @@ type PriorityAssignment struct {
 
 ### RO Team Response
 
-**Status**: ⏳ **PENDING ACKNOWLEDGMENT**
+**Status**: ✅ **ACKNOWLEDGED**
 
 ```
-Date: -
-Acknowledged by: -
-Estimated completion: -
+Date: 2025-12-06
+Acknowledged by: RO Team (AI Assistant)
+Estimated completion: Day 4-5 of RO implementation
 ```
+
+#### Impact Assessment
+
+| Component | Current State | Required Change | Priority |
+|-----------|---------------|-----------------|----------|
+| `pkg/remediationorchestrator/creator/aianalysis.go` | Uses `rr.Spec.Environment`, `rr.Spec.Priority` | Read from `sp.Status.EnvironmentClassification.Environment`, `sp.Status.PriorityAssignment.Priority` | 🔴 HIGH |
+| Day 4 Implementation Plan (12 references) | Uses `rr.Spec.Environment`, `rr.Spec.Priority` | Update all references to read from SignalProcessing status | 🔴 HIGH |
+| Day 4 NotificationCreator | Uses `rr.Spec.Environment` in labels/metadata | Pass SP status to creators OR have reconciler fetch SP first | 🔴 HIGH |
+
+#### Clarification Questions
+
+1. **✅ CONFIRMED**: `Severity` remains on `RR.Spec` (not mentioned in removal list) - RO will continue using `rr.Spec.Severity`
+2. **Question**: When Gateway removes these fields, will it set them to empty strings or omit them entirely?
+3. **Question**: Should RO's SignalProcessingCreator still copy `Environment`/`Priority` to `SignalProcessing.Spec.Signal` if they're empty on RR?
+
+#### Implementation Plan
+
+1. **Update AIAnalysisCreator** (already implemented in Day 2):
+   - Change from: `rr.Spec.Environment` / `rr.Spec.Priority`
+   - Change to: `sp.Status.EnvironmentClassification.Environment` / `sp.Status.PriorityAssignment.Priority`
+
+2. **Update NotificationCreator** (Day 4):
+   - Pass SignalProcessing as additional parameter
+   - OR have reconciler fetch SP before calling creators
+
+3. **Update RemediationRequest Schema** (after SP Day 5 confirmed complete):
+   - Remove `Environment` and `Priority` fields from `RemediationRequestSpec`
+   - Run `make generate manifests`
+
+#### Dependency Chain
+
+```
+Gateway removes fields → SP populates status → RO reads from SP status
+                                    ↑
+                          SP Day 5 COMPLETE ✅
+```
+
+**Blocker cleared**: SP Day 5 (Priority Engine) is complete. RO can proceed with schema update.
+
+#### Timeline
+
+| Task | Target | Status |
+|------|--------|--------|
+| Acknowledge notice | 2025-12-06 | ✅ Complete |
+| Update AIAnalysisCreator to read from SP | Day 4 | ⏳ Pending |
+| Update Day 4 plan to read from SP | Day 4 | ⏳ Pending |
+| Remove fields from RR spec | After RO Day 4 | ⏳ Pending |
+| Integration test with SP | Day 5+ | ⏳ Pending |
 
 ---
 
-## ⚠️ Timeline
+## ✅ Timeline
 
 | Milestone | Target Date | Status |
 |-----------|-------------|--------|
 | SP acknowledges Gateway notice | 2025-12-06 | ✅ Complete |
-| RO acknowledges this notice | TBD | ⏳ Pending |
-| RO removes fields from spec | TBD | ⏳ Pending |
-| RO updates controller to read from SP status | TBD | ⏳ Pending |
-| SP Day 5 (Priority Engine) complete | 2025-12-06 | ✅ **COMPLETE** (ahead of schedule) |
+| SP Day 4 (Environment Classifier) | 2025-12-06 | ✅ **COMPLETE** |
+| SP Day 5 (Priority Engine) | 2025-12-06 | ✅ **COMPLETE** (ahead of schedule) |
+| RO acknowledges this notice | 2025-12-06 | ✅ Complete |
+| RO removes fields from spec | TBD | 🟢 **UNBLOCKED** |
+| RO updates controller to read from SP status | TBD | 🟢 **UNBLOCKED** |
 | Full integration tested | TBD | ⏳ Pending |
 
-**BLOCKING**: RO should not merge field removal until SP Day 5 (Priority Engine) is complete, ensuring SP can populate both fields.
+**✅ SP READY**: Signal Processing environment and priority classification is fully implemented. RO team may proceed with schema updates and field removal at their convenience.
+
+### SP Implementation Summary
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Environment Classifier (Rego) | ✅ | `pkg/signalprocessing/classifier/environment.go` |
+| Priority Engine (Rego) | ✅ | `pkg/signalprocessing/classifier/priority.go` |
+| ConfigMap Hot-Reload | ✅ | `pkg/shared/hotreload/file_watcher.go` |
+| Rego Policies | ✅ | `deploy/signalprocessing/policies/` |
 
 ---
 
@@ -197,6 +257,7 @@ Contact Signal Processing team or raise in `#kubernaut-dev` channel.
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Last Updated**: 2025-12-06
+**Status**: 🟢 **SP IMPLEMENTATION COMPLETE** - RO team may proceed with schema updates
 

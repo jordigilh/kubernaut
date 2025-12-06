@@ -396,15 +396,38 @@ spec:
                         description: Whether the namespace is part of a service mesh
                         type: boolean
                     type: object
+                  namespace:
+                    description: Namespace details (per plan specification)
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Namespace annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Namespace labels
+                        type: object
+                      name:
+                        description: Namespace name
+                        type: string
+                    required:
+                    - name
+                    type: object
                   namespaceAnnotations:
                     additionalProperties:
                       type: string
-                    description: Namespace annotations
+                    description: |-
+                      NamespaceAnnotations - DEPRECATED: Use Namespace.Annotations instead
+                      Kept for backward compatibility during migration
                     type: object
                   namespaceLabels:
                     additionalProperties:
                       type: string
-                    description: Namespace labels
+                    description: |-
+                      NamespaceLabels - DEPRECATED: Use Namespace.Labels instead
+                      Kept for backward compatibility during migration
                     type: object
                   node:
                     description: Node details where the pod is running
@@ -641,7 +664,9 @@ spec:
                     description: 'Priority level: P0, P1, P2, P3'
                     type: string
                   source:
-                    description: 'Source of assignment: rego-policy, fallback-matrix'
+                    description: |-
+                      Source of assignment: rego-policy, fallback-severity
+                      Per BR-SP-071: fallback-severity used when Rego fails (severity-only fallback)
                     type: string
                 required:
                 - assignedAt

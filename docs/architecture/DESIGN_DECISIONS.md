@@ -91,6 +91,11 @@
 | DD-EMBEDDING-001 | Embedding Service as MCP Playbook Catalog Server (Python Microservice) | ✅ Approved | 2025-11-14 | [DD-EMBEDDING-001-embedding-service-implementation.md](decisions/DD-EMBEDDING-001-embedding-service-implementation.md) |
 | DD-PLAYBOOK-001 | Mandatory Playbook Label Schema (7 Labels) | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-001-mandatory-label-schema.md](decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) |
 | DD-PLAYBOOK-002 | MCP Playbook Catalog Architecture | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md](decisions/DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md) |
+| DD-INFRA-001 | ConfigMap Hot-Reload Pattern (Shared Infrastructure) | ✅ Approved | 2025-12-06 | [DD-INFRA-001-configmap-hotreload-pattern.md](decisions/DD-INFRA-001-configmap-hotreload-pattern.md) |
+| DD-WE-001 | Resource Locking Safety (Prevent Parallel Workflows) | ✅ Approved | 2025-12-01 | [DD-WE-001-resource-locking-safety.md](decisions/DD-WE-001-resource-locking-safety.md) |
+| DD-WE-002 | Dedicated Execution Namespace | ✅ Approved | 2025-12-01 | [DD-WE-002-dedicated-execution-namespace.md](decisions/DD-WE-002-dedicated-execution-namespace.md) |
+| DD-WE-003 | Resource Lock Persistence (Deterministic PipelineRun Name) | ✅ Approved | 2025-12-01 | [DD-WE-003-resource-lock-persistence.md](decisions/DD-WE-003-resource-lock-persistence.md) |
+| DD-WE-004 | Exponential Backoff Cooldown | ✅ Approved | 2025-12-06 | [DD-WE-004-exponential-backoff-cooldown.md](decisions/DD-WE-004-exponential-backoff-cooldown.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
@@ -117,5 +122,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: November 11, 2025
+**Last Updated**: December 6, 2025
 **Maintained By**: Kubernaut Architecture Team
