@@ -15,8 +15,33 @@ limitations under the License.
 */
 
 // Package ownerchain provides K8s ownership chain traversal for DetectedLabels validation.
-// BR-SP-100: OwnerChain Traversal
-// DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
+//
+// # Business Requirements
+//
+// BR-SP-100: OwnerChain Traversal - Build K8s ownership chain from signal source resource.
+//
+// # Design Decisions
+//
+// DD-WORKFLOW-001 v1.8: OwnerChainEntry schema requires Namespace, Kind, Name ONLY.
+// Do NOT include APIVersion or UID - not used by HolmesGPT-API validation.
+//
+// # Algorithm
+//
+// The Build method traverses K8s ownerReferences following these rules:
+//  1. Start from source resource (NOT added to chain - owners only)
+//  2. Follow first ownerReference with controller: true at each level
+//  3. Stop at MaxOwnerChainDepth (5) or when no more owners exist
+//  4. On K8s API errors, return partial chain (graceful degradation)
+//
+// # Example
+//
+// For a Pod owned by a ReplicaSet owned by a Deployment:
+//
+//	chain, _ := builder.Build(ctx, "prod", "Pod", "api-pod-abc12")
+//	// chain = [
+//	//   {Namespace: "prod", Kind: "ReplicaSet", Name: "api-rs-xyz"},
+//	//   {Namespace: "prod", Kind: "Deployment", Name: "api"},
+//	// ]
 package ownerchain
 
 import (
