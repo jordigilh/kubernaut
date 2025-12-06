@@ -259,6 +259,177 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 			Entry("ResourceBusy → medium", "ResourceBusy", "medium"),
 		)
 
+		Context("BR-ORCH-032, DD-WE-004: HandleFailed", func() {
+			// Test #8: HandleFailed with WasExecutionFailure sets RequiresManualReview=true
+			It("should set RequiresManualReview=true when WasExecutionFailure=true", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-test-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Failed",
+						FailureDetails: &workflowexecutionv1.FailureDetails{
+							WasExecutionFailure:            true,
+							NaturalLanguageSummary:         "Workflow step 2 failed during pod restart",
+							FailedTaskIndex:                2,
+							FailedTaskName:                 "restart-pod",
+							Reason:                         "OOMKilled",
+							Message:                        "Container killed due to OOM",
+							FailedAt:                       metav1.Now(),
+							ExecutionTimeBeforeFailure:     "2m30s",
+						},
+					},
+				}
+
+				result, err := h.HandleFailed(ctx, rr, we, sp)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify status - execution failure requires manual review
+				Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+				Expect(rr.Status.RequiresManualReview).To(BeTrue())
+				Expect(rr.Status.Message).To(Equal(we.Status.FailureDetails.NaturalLanguageSummary))
+
+				// NO requeue - manual intervention required
+				Expect(result.RequeueAfter).To(Equal(time.Duration(0)))
+			})
+
+			// Test #9: HandleFailed without WasExecutionFailure considers recovery
+			It("should consider recovery when WasExecutionFailure=false", func() {
+				client := fakeClient.Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-test-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Failed",
+						FailureDetails: &workflowexecutionv1.FailureDetails{
+							WasExecutionFailure:            false, // Pre-execution failure
+							NaturalLanguageSummary:         "Failed to resolve workflow from catalog",
+							FailedTaskIndex:                0,
+							FailedTaskName:                 "validate-workflow",
+							Reason:                         "ConfigurationError",
+							Message:                        "Workflow not found in catalog",
+							FailedAt:                       metav1.Now(),
+							ExecutionTimeBeforeFailure:     "0s",
+						},
+					},
+				}
+
+				result, err := h.HandleFailed(ctx, rr, we, sp)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Pre-execution failures may be recoverable
+				// For now, also mark as failed but may requeue for recovery
+				Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+				// Pre-execution failures don't require manual review by default
+				Expect(rr.Status.RequiresManualReview).To(BeFalse())
+				Expect(result.Requeue).To(BeFalse())
+			})
+		})
+
+		Context("BR-ORCH-033: trackDuplicate", func() {
+			// Test #10: trackDuplicate increments DuplicateCount on parent RR
+			It("should increment DuplicateCount on parent RR", func() {
+				// Create parent RR that exists in the cluster
+				parentRR := testutil.NewRemediationRequest("parent-rr", "default")
+				parentRR.Status.OverallPhase = "executing"
+				parentRR.Status.DuplicateCount = 0
+
+				client := fakeClient.WithObjects(parentRR).WithStatusSubresource(parentRR).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				// Create child RR that is a duplicate
+				childRR := testutil.NewRemediationRequest("child-rr", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-child-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Skipped",
+						SkipDetails: &workflowexecutionv1.SkipDetails{
+							Reason:    "ResourceBusy",
+							Message:   "Another workflow executing",
+							SkippedAt: metav1.Now(),
+							ConflictingWorkflow: &workflowexecutionv1.ConflictingWorkflowRef{
+								Name:           "we-parent-rr",
+								WorkflowID:     "restart-pod",
+								StartedAt:      metav1.Now(),
+								TargetResource: "default/Pod/test-pod",
+							},
+						},
+					},
+				}
+
+				// Act
+				err := h.TrackDuplicate(ctx, childRR, we, "parent-rr")
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify parent RR DuplicateCount was incremented
+				updatedParent := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: "parent-rr", Namespace: "default"}, updatedParent)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedParent.Status.DuplicateCount).To(Equal(1))
+			})
+
+			// Test #11: trackDuplicate appends to DuplicateRefs
+			It("should append to DuplicateRefs on parent RR", func() {
+				// Create parent RR with existing duplicates
+				parentRR := testutil.NewRemediationRequest("parent-rr", "default")
+				parentRR.Status.OverallPhase = "executing"
+				parentRR.Status.DuplicateCount = 1
+				parentRR.Status.DuplicateRefs = []string{"existing-dup"}
+
+				client := fakeClient.WithObjects(parentRR).WithStatusSubresource(parentRR).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
+
+				// Create child RR that is a duplicate
+				childRR := testutil.NewRemediationRequest("child-rr", "default")
+				we := &workflowexecutionv1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "we-child-rr",
+						Namespace: "default",
+					},
+					Status: workflowexecutionv1.WorkflowExecutionStatus{
+						Phase: "Skipped",
+						SkipDetails: &workflowexecutionv1.SkipDetails{
+							Reason:    "ResourceBusy",
+							Message:   "Another workflow executing",
+							SkippedAt: metav1.Now(),
+							ConflictingWorkflow: &workflowexecutionv1.ConflictingWorkflowRef{
+								Name:           "we-parent-rr",
+								WorkflowID:     "restart-pod",
+								StartedAt:      metav1.Now(),
+								TargetResource: "default/Pod/test-pod",
+							},
+						},
+					},
+				}
+
+				// Act
+				err := h.TrackDuplicate(ctx, childRR, we, "parent-rr")
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify parent RR DuplicateRefs was appended
+				updatedParent := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: "parent-rr", Namespace: "default"}, updatedParent)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedParent.Status.DuplicateCount).To(Equal(2))
+				Expect(updatedParent.Status.DuplicateRefs).To(ContainElements("existing-dup", "child-rr"))
+			})
+		})
+
 		Context("BR-ORCH-036: Manual review notification creation", func() {
 			// Test #14: CreateManualReviewNotification generates correct notification
 			It("should create manual review notification with correct type and severity labels", func() {

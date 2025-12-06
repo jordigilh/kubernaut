@@ -107,6 +107,60 @@ func (h *WorkflowExecutionHandler) HandleSkipped(
 	}
 }
 
+// HandleFailed handles WE Failed phase per DD-WE-004 and BR-ORCH-032.
+// Reference: BR-ORCH-032 (failure handling), DD-WE-004 (execution vs pre-execution failures)
+func (h *WorkflowExecutionHandler) HandleFailed(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	we *workflowexecutionv1.WorkflowExecution,
+	sp *signalprocessingv1.SignalProcessing,
+) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"workflowExecution", we.Name,
+	)
+
+	if we.Status.FailureDetails == nil {
+		logger.Error(nil, "WE Failed but FailureDetails is nil")
+		rr.Status.OverallPhase = "Failed"
+		rr.Status.Message = "Workflow failed with unknown reason"
+		return ctrl.Result{}, nil
+	}
+
+	if we.Status.FailureDetails.WasExecutionFailure {
+		// EXECUTION FAILURE: Cluster state may be modified - NO auto-retry
+		logger.Info("WE failed during execution - manual review required",
+			"failedTask", we.Status.FailureDetails.FailedTaskName,
+			"reason", we.Status.FailureDetails.Reason,
+		)
+
+		rr.Status.OverallPhase = "Failed"
+		rr.Status.RequiresManualReview = true
+		rr.Status.Message = we.Status.FailureDetails.NaturalLanguageSummary
+
+		// TODO: Create execution failure notification
+		// This will be implemented in Day 7 (Escalation Manager)
+
+		// NO requeue - manual intervention required
+		return ctrl.Result{}, nil
+	}
+
+	// PRE-EXECUTION FAILURE: May consider recovery (V1.1+ feature)
+	// For V1.0, just mark as failed without requiring manual review
+	logger.Info("WE failed during pre-execution - may consider recovery in future",
+		"failedTask", we.Status.FailureDetails.FailedTaskName,
+		"reason", we.Status.FailureDetails.Reason,
+	)
+
+	rr.Status.OverallPhase = "Failed"
+	rr.Status.RequiresManualReview = false // Pre-execution failures are recoverable
+	rr.Status.Message = we.Status.FailureDetails.NaturalLanguageSummary
+
+	// V1.0: No automatic recovery, just fail
+	// V1.1+: Will call evaluateRecoveryOptions here
+	return ctrl.Result{}, nil
+}
+
 // handleManualReviewRequired handles skip reasons requiring manual intervention.
 // Reference: BR-ORCH-032 v1.1, BR-ORCH-036
 func (h *WorkflowExecutionHandler) handleManualReviewRequired(
@@ -131,11 +185,53 @@ func (h *WorkflowExecutionHandler) handleManualReviewRequired(
 		"message", message,
 	)
 
-	// TODO: Create manual review notification (BR-ORCH-036)
-	// This will be implemented in a subsequent test
+	// Create manual review notification (BR-ORCH-036)
+	notificationName, err := h.CreateManualReviewNotification(ctx, rr, we, sp)
+	if err != nil {
+		logger.Error(err, "Failed to create manual review notification")
+		// Continue even if notification fails - don't block the skip handling
+	} else {
+		logger.Info("Created manual review notification", "notification", notificationName)
+	}
 
 	// NO requeue - manual intervention required
 	return ctrl.Result{}, nil
+}
+
+// TrackDuplicate tracks a duplicate RR on the parent (BR-ORCH-033).
+// It updates the parent RR's DuplicateCount and DuplicateRefs.
+func (h *WorkflowExecutionHandler) TrackDuplicate(
+	ctx context.Context,
+	childRR *remediationv1.RemediationRequest,
+	we *workflowexecutionv1.WorkflowExecution,
+	parentRRName string,
+) error {
+	logger := log.FromContext(ctx).WithValues(
+		"childRR", childRR.Name,
+		"parentRR", parentRRName,
+	)
+
+	// Fetch the parent RR
+	parentRR := &remediationv1.RemediationRequest{}
+	if err := h.client.Get(ctx, client.ObjectKey{Name: parentRRName, Namespace: childRR.Namespace}, parentRR); err != nil {
+		logger.Error(err, "Failed to fetch parent RR for duplicate tracking")
+		return fmt.Errorf("failed to fetch parent RR: %w", err)
+	}
+
+	// Update duplicate count and refs
+	parentRR.Status.DuplicateCount++
+	parentRR.Status.DuplicateRefs = append(parentRR.Status.DuplicateRefs, childRR.Name)
+
+	// Update the parent's status
+	if err := h.client.Status().Update(ctx, parentRR); err != nil {
+		logger.Error(err, "Failed to update parent RR status with duplicate tracking")
+		return fmt.Errorf("failed to update parent RR status: %w", err)
+	}
+
+	logger.Info("Tracked duplicate on parent RR",
+		"duplicateCount", parentRR.Status.DuplicateCount,
+	)
+	return nil
 }
 
 // MapSkipReasonToSeverity maps skip reason to severity label per Notification team guidance.
