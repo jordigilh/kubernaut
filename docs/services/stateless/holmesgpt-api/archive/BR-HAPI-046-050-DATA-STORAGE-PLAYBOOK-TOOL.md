@@ -1,13 +1,26 @@
 # BR-HAPI-046 to BR-HAPI-050: Data Storage Playbook Tool Integration
 
-**Version**: 1.1
+> ## ⚠️ **SUPERSEDED - DO NOT IMPLEMENT**
+>
+> **Status**: 🗄️ **ARCHIVED** (December 6, 2025)
+> **Superseded By**: **BR-HAPI-250** - Workflow Catalog Search Tool
+> **Note**: This document uses outdated "playbook" terminology. Current terminology is "workflow".
+>
+> See `archive/BR-HAPI-046-050-DATA-STORAGE-WORKFLOW-TOOL.md` for the updated (but still archived) version.
+
+---
+
+**Version**: 1.1 → **ARCHIVED**
 **Date**: November 13, 2025 (Updated from Context API to Data Storage Service)
-**Related**: DD-CONTEXT-005 (Minimal LLM Response Schema), DD-STORAGE-008 (Playbook Catalog Schema)
+**Archive Date**: December 6, 2025
+**Related**: DD-CONTEXT-005 (Minimal LLM Response Schema), DD-STORAGE-008 (Workflow Catalog Schema)
 **Implementation Plan**: IMPLEMENTATION_PLAN_V3.0.md v3.1
 
 ---
 
 ## Overview
+
+> ⚠️ **ARCHIVED**: This document uses outdated "playbook" terminology. See BR-HAPI-250 for actual implementation.
 
 These 5 business requirements define the Data Storage playbook search tool integration for HolmesGPT API Service. This integration implements DD-CONTEXT-005 ("Filter Before LLM" pattern), allowing the LLM to request relevant remediation playbooks via semantic search on-demand rather than forcing all playbooks in every investigation.
 
@@ -25,7 +38,7 @@ These 5 business requirements define the Data Storage playbook search tool integ
 
 **Category**: Data Storage Playbook Tool Integration
 **Priority**: High
-**Status**: ⏸️ PENDING (v3.1)
+**Status**: 🗄️ **ARCHIVED** - Superseded by BR-HAPI-250
 
 ### Requirement
 
@@ -105,7 +118,7 @@ def register_context_tool(sdk_client):
 
 **Category**: Data Storage Service Tool Integration
 **Priority**: High
-**Status**: ⏸️ PENDING (v3.1)
+**Status**: 🗄️ **ARCHIVED** - Superseded by BR-HAPI-250
 
 ### Requirement
 
@@ -260,7 +273,7 @@ class DataStorageClient:
 
 **Category**: Data Storage Service Tool Integration
 **Priority**: High
-**Status**: ⏸️ PENDING (v3.1)
+**Status**: 🗄️ **ARCHIVED** - Superseded by BR-HAPI-250
 
 ### Requirement
 
@@ -386,7 +399,7 @@ class ContextTool:
 
 **Category**: Data Storage Service Tool Integration
 **Priority**: Medium
-**Status**: ⏸️ PENDING (v3.1)
+**Status**: 🗄️ **ARCHIVED** - Superseded by BR-HAPI-250
 
 ### Requirement
 
@@ -472,7 +485,7 @@ def log_tool_call(investigation_id: str, parameters: Dict[str, Any], result: Dic
 
 **Category**: Data Storage Service Tool Integration
 **Priority**: High
-**Status**: ⏸️ PENDING (v3.1)
+**Status**: 🗄️ **ARCHIVED** - Superseded by BR-HAPI-250
 
 ### Requirement
 

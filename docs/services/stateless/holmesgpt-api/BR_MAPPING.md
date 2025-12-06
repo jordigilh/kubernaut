@@ -226,8 +226,8 @@ This document maps high-level business requirements to their detailed sub-requir
 **Implementation Status**: ✅ Partially Implemented (90% - 2 pending enhancements)
 
 **Pending Enhancements**:
-1. **BR-HAPI-036-PENDING-1**: RFC 7807 Error Response Standard (DD-004) - 2-3 hours
-2. **BR-HAPI-036-PENDING-2**: Kubernetes-Aware Graceful Shutdown (DD-007) - 3-4 hours
+1. ~~**BR-HAPI-036-PENDING-1**: RFC 7807 Error Response Standard (DD-004)~~ → ✅ **IMPLEMENTED** as BR-HAPI-200 in `src/middleware/rfc7807.py`
+2. ~~**BR-HAPI-036-PENDING-2**: Kubernetes-Aware Graceful Shutdown (DD-007)~~ → ✅ **IMPLEMENTED** as BR-HAPI-201 in `src/main.py`
 
 ---
 
