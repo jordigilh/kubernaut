@@ -8,14 +8,19 @@
 
 ## 🔍 **Root Cause**
 
-Integration tests were written for an old `NewServer` API that took 12+ individual component parameters:
+Integration tests were written for an old `NewServer` API that took 12+ individual component parameters.
+
+**Note (2025-12-06)**: `EnvironmentClassifier` and `PriorityEngine` components have been removed from Gateway.
+Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001.
+See: `docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md`
 
 ```go
-// OLD API (what integration tests expect)
+// OLD API (what integration tests expect) - OUTDATED
+// classifier and priorityEngine no longer exist (removed 2025-12-06)
 func NewServer(
     adapterRegistry *adapters.AdapterRegistry,
-    classifier *processing.EnvironmentClassifier,
-    priorityEngine *processing.PriorityEngine,
+    // classifier *processing.EnvironmentClassifier,  // REMOVED
+    // priorityEngine *processing.PriorityEngine,     // REMOVED
     pathDecider *processing.RemediationPathDecider,
     crdCreator *processing.CRDCreator,
     dedupService *processing.DeduplicationService,

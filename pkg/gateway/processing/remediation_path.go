@@ -281,15 +281,19 @@ func NewRemediationPathDeciderWithRego(policyPath string, logger logr.Logger) (*
 	}, nil
 }
 
-// SignalContext provides enriched context for remediation path decision
+// SignalContext provides context for remediation path decision
 //
-// NormalizedSignal doesn't contain Environment and Priority (those are enriched
-// by EnvironmentClassifier and PriorityEngine). This struct wraps the signal
-// with its enriched context.
+// Note: Environment and Priority fields deprecated (2025-12-06)
+// Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001.
+// Gateway no longer enriches signals with environment/priority.
+// The pathDecider will use defaults ("unknown") when these are empty.
+// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type SignalContext struct {
-	Signal      *types.NormalizedSignal
+	Signal *types.NormalizedSignal
+	// Deprecated: Environment classification moved to SP - always empty from Gateway
 	Environment string
-	Priority    string
+	// Deprecated: Priority classification moved to SP - always empty from Gateway
+	Priority string
 }
 
 // DeterminePath determines the remediation path for a signal context

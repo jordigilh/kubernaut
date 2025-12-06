@@ -185,10 +185,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			Expect(crdList.Items).To(HaveLen(1), "One CRD should be created")
 
 			crd := crdList.Items[0]
-			Expect(crd.Spec.Priority).To(Equal("P0"),
-				"critical + production = P0 (revenue-impacting)")
-			Expect(crd.Spec.Environment).To(Equal("production"),
-				"Environment should be classified from namespace label")
+			// Note: Priority and Environment assertions removed (2025-12-06)
+			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"),
 				"Alert name enables AI to understand failure type")
 

@@ -234,10 +234,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			// Verify business metadata for AI analysis
 			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"),
 				"AI needs alert name to understand failure type")
-			Expect(crd.Spec.Priority).To(Equal("P0"),
-				"critical + production = P0 (revenue-impacting, immediate AI analysis)")
-			Expect(crd.Spec.Environment).To(Equal("production"),
-				"Environment classification drives priority assignment")
+			// Note: Priority and Environment assertions removed (2025-12-06)
+			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 			Expect(crd.Spec.Severity).To(Equal("critical"),
 				"Severity helps AI choose remediation strategy")
 			Expect(crd.Namespace).To(Equal(prodNamespace),
@@ -470,7 +468,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				Expect(resp.StatusCode).To(BeNumerically("<", 300),
 					"Alert for %s should succeed (got HTTP %d): %s", tc.namespace, resp.StatusCode, string(bodyBytes))
 
-				// BUSINESS OUTCOME: CRD has correct environment and priority based on namespace
+				// BUSINESS OUTCOME: CRD created in correct namespace
 				// Use Eventually to handle async CRD creation
 				var crd remediationv1alpha1.RemediationRequest
 				Eventually(func() bool {
@@ -483,16 +481,16 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 					return true
 				}, "10s", "200ms").Should(BeTrue(),
 					"Alert in %s namespace should create CRD", tc.namespace)
-				Expect(crd.Spec.Environment).To(Equal(tc.expectedEnv),
-					"Namespace '%s' → Environment '%s'", tc.namespace, tc.expectedEnv)
-				Expect(crd.Spec.Priority).To(Equal(tc.expectedPri),
-					"%s + %s → Priority %s (%s)", tc.severity, tc.expectedEnv, tc.expectedPri, tc.rationale)
+				// Note: Environment/Priority assertions removed (2025-12-06)
+				// Classification moved to Signal Processing per DD-CATEGORIZATION-001
+				// Gateway only creates CRD, SP enriches with classification
+				Expect(crd.Namespace).To(Equal(tc.namespace),
+					"CRD should be created in correct namespace")
 			}
 
 			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Environment classification from namespace works correctly
-			// ✅ Priority assignment uses environment (production critical = P0, staging critical = P1)
-			// ✅ Business rules for resource allocation are enforced (P0 = immediate, P1 = high, P2 = medium)
+			// ✅ CRD creation in correct namespace works
+			// Note: Environment/priority classification moved to Signal Processing (2025-12-06)
 		})
 	})
 })

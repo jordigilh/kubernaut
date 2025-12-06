@@ -85,7 +85,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				RawPayload:   json.RawMessage(`{"alerts":[{"status":"firing"}]}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: Notification has alert name and severity
 			Expect(err).NotTo(HaveOccurred())
@@ -100,42 +100,9 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 			// PagerDuty alert: "🚨 Critical: payment-api pod crashed in production"
 		})
 
-		It("enables notification service to identify WHO to alert based on priority", func() {
-			// BUSINESS SCENARIO: Notification routing based on priority
-			// P0 → Page on-call engineer immediately (phone call)
-			// P1 → Slack alert to team channel
-			// P2 → Email digest (batched)
-			// Required field: priority
-
-			signal := &types.NormalizedSignal{
-				Fingerprint:  "xyz789abc123def456ghi789jkl012", // Must be >=16 chars
-				AlertName:    "DatabaseConnectionPoolExhausted",
-				Severity:     "critical",
-				Namespace:    "production",
-				Resource: types.ResourceIdentifier{
-					Kind:      "StatefulSet",
-					Name:      "postgres-db",
-					Namespace: "production",
-				},
-				FiringTime:   time.Now(),
-				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
-				Source:       "prometheus-adapter",
-				RawPayload:   json.RawMessage(`{}`),
-			}
-
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
-
-			// BUSINESS OUTCOME: CRD has priority for notification routing
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.Priority).To(Equal("P0"),
-				"Notification service needs priority to decide: phone call vs Slack vs email")
-			Expect(rr.Labels["kubernaut.ai/priority"]).To(Equal("P0"),
-				"Label enables notification service to filter/query by priority")
-
-			// Business capability verified:
-			// Notification service: P0 label → Phone call to on-call engineer
-		})
+		// Note: Test "enables notification service to identify WHO to alert based on priority" REMOVED (2025-12-06)
+		// Priority classification moved to Signal Processing per DD-CATEGORIZATION-001
+		// Gateway no longer populates priority labels or spec fields
 
 		It("enables notification service to provide WHEN context for incident timeline", func() {
 			// BUSINESS SCENARIO: On-call engineer needs timeline:
@@ -162,7 +129,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				RawPayload:   json.RawMessage(`{}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P1", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: Notification has timestamps for incident timeline
 			Expect(err).NotTo(HaveOccurred())
@@ -180,41 +147,9 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 			// PagerDuty incident: "Alert firing since 14:05 UTC (90 seconds ago)"
 		})
 
-		It("enables notification service to include WHERE context for incident location", func() {
-			// BUSINESS SCENARIO: On-call engineer needs to know:
-			// "Issue in production environment (not staging/dev)"
-			// Required field: environment
-
-			signal := &types.NormalizedSignal{
-				Fingerprint:  "location456abc789def012ghi345jkl", // Must be >=16 chars
-				AlertName:    "HighMemoryUsage",
-				Severity:     "critical",
-				Namespace:    "production",
-				Resource: types.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "memory-hungry-app",
-					Namespace: "production",
-				},
-				FiringTime:   time.Now(),
-				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
-				Source:       "prometheus-adapter",
-				RawPayload:   json.RawMessage(`{}`),
-			}
-
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
-
-			// BUSINESS OUTCOME: Notification has environment for incident context
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.Environment).To(Equal("production"),
-				"Notification service needs environment to emphasize urgency")
-			Expect(rr.Labels["kubernaut.ai/environment"]).To(Equal("production"),
-				"Label enables notification service to filter production vs staging alerts")
-
-			// Business capability verified:
-			// PagerDuty: "🔴 PRODUCTION: High memory usage detected"
-			// (vs staging: "🟡 STAGING: High memory usage detected")
-		})
+		// Note: Test "enables notification service to include WHERE context for incident location" REMOVED (2025-12-06)
+		// Environment classification moved to Signal Processing per DD-CATEGORIZATION-001
+		// Gateway no longer populates environment labels or spec fields
 
 		It("enables notification service to show ORIGINAL alert details for engineer investigation", func() {
 			// BUSINESS SCENARIO: On-call engineer clicks PagerDuty link, sees:
@@ -254,7 +189,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				RawPayload:   json.RawMessage(`{"alerts":[{"labels":{"alertname":"PodMemoryHigh"},"annotations":{"summary":"Pod memory > 90%"}}]}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: Notification shows all Prometheus labels
 			Expect(err).NotTo(HaveOccurred())
@@ -317,7 +252,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				AlertCount:  50,
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: Notification shows storm aggregation
 			Expect(err).NotTo(HaveOccurred())
@@ -358,7 +293,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				RawPayload:   json.RawMessage(`{}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P1", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: CRD has deduplication metadata
 			Expect(err).NotTo(HaveOccurred())
@@ -408,7 +343,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 					},
 				}
 
-				rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+				rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 				// BUSINESS OUTCOME: CRD created successfully with truncated label
 				Expect(err).NotTo(HaveOccurred())
@@ -454,7 +389,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 					},
 				}
 
-				rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+				rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 				// BUSINESS OUTCOME: CRD created successfully (annotation truncated or rejected)
 				// Implementation may either:
@@ -529,7 +464,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				RawPayload:   json.RawMessage(`{}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: Signal rejected with clear error
 			Expect(err).To(HaveOccurred(), "Signal without resource Kind must be rejected")
@@ -566,7 +501,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				RawPayload:   json.RawMessage(`{}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P1", "staging")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: Signal rejected with clear error
 			Expect(err).To(HaveOccurred(), "Signal without resource Name must be rejected")
@@ -603,7 +538,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				RawPayload:   json.RawMessage(`{}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P2", "default")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: Signal rejected
 			Expect(err).To(HaveOccurred(), "Signal with empty resource must be rejected")
@@ -636,7 +571,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				RawPayload:   json.RawMessage(`{}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P1", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: CRD created with populated TargetResource
 			Expect(err).NotTo(HaveOccurred(), "Valid signal should be processed")
@@ -672,7 +607,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				RawPayload:   json.RawMessage(`{}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			// BUSINESS OUTCOME: CRD created - cluster-scoped resources have empty namespace
 			Expect(err).NotTo(HaveOccurred(), "Cluster-scoped resource should be processed")

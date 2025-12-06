@@ -366,14 +366,8 @@ func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClie
 				PatternThreshold:  5,               // Production: 5 similar alerts
 				AggregationWindow: 1 * time.Second, // Test: 1s, Production: 1m
 			},
-			Environment: gatewayconfig.EnvironmentSettings{
-				CacheTTL:           5 * time.Second, // Production: 30 seconds
-				ConfigMapNamespace: "kubernaut-system",
-				ConfigMapName:      "kubernaut-environment-overrides",
-			},
-			Priority: gatewayconfig.PrioritySettings{
-				PolicyPath: "../../../config.app/gateway/policies/priority.rego", // Use Rego policy for tests (relative to test/integration/gateway/)
-			},
+			// Note: Environment and Priority settings removed (2025-12-06)
+			// Classification now owned by Signal Processing per DD-CATEGORIZATION-001
 			Retry: gatewayconfig.DefaultRetrySettings(), // BR-GATEWAY-111: K8s API retry configuration
 		},
 	}

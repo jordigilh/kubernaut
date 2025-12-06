@@ -255,9 +255,8 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 			Expect(crd.Spec.SignalType).To(Equal("kubernetes-event"), "Signal type from adapter")
 			Expect(crd.Spec.SignalSource).To(Equal("kubernetes-events"), "Signal source from adapter (monitoring system)")
 
-			// BUSINESS VALIDATION 3: CRD has priority assigned by processing pipeline
-			Expect(crd.Spec.Priority).ToNot(BeEmpty(), "Priority should be assigned")
-			// Priority is determined by Rego policy based on severity + environment
+			// Note: Priority validation removed (2025-12-06)
+			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 		})
 	})
 

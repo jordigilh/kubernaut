@@ -73,19 +73,15 @@ type InfrastructureSettings struct {
 
 // ProcessingSettings contains business logic configuration.
 // Single Responsibility: Signal processing behavior
+//
+// Note: Environment and Priority settings removed (2025-12-06)
+// Environment/Priority classification now owned by Signal Processing per DD-CATEGORIZATION-001.
+// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type ProcessingSettings struct {
 	Deduplication DeduplicationSettings `yaml:"deduplication"`
 	Storm         StormSettings         `yaml:"storm"`
-	Environment   EnvironmentSettings   `yaml:"environment"`
-	Priority      PrioritySettings      `yaml:"priority"`
 	CRD           CRDSettings           `yaml:"crd"`
 	Retry         RetrySettings         `yaml:"retry"` // BR-GATEWAY-111: K8s API retry configuration
-}
-
-// PrioritySettings contains priority assignment configuration.
-type PrioritySettings struct {
-	// PolicyPath is the path to the Rego policy file for priority assignment
-	PolicyPath string `yaml:"policy_path"`
 }
 
 // DeduplicationSettings contains deduplication configuration.
@@ -132,17 +128,8 @@ type StormSettings struct {
 	SamplingRate      float64 `yaml:"sampling_rate"`      // Sample rate when threshold reached (default: 0.5)
 }
 
-// EnvironmentSettings contains environment classification configuration.
-type EnvironmentSettings struct {
-	// Cache TTL for namespace label cache
-	// For testing: set to 5*time.Second for fast cache expiry in tests
-	// For production: use default (0) for 30-second TTL
-	CacheTTL time.Duration `yaml:"cache_ttl"` // Default: 30s
-
-	// ConfigMap for environment overrides
-	ConfigMapNamespace string `yaml:"configmap_namespace"` // Default: "kubernaut-system"
-	ConfigMapName      string `yaml:"configmap_name"`      // Default: "kubernaut-environment-overrides"
-}
+// Note: EnvironmentSettings struct removed (2025-12-06)
+// Environment classification now owned by Signal Processing per DD-CATEGORIZATION-001
 
 // CRDSettings contains CRD creation configuration.
 type CRDSettings struct {

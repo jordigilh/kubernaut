@@ -139,8 +139,8 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			// BUSINESS VALIDATION 3: CRD has Kubernaut-specific labels
 			Expect(crd.Labels).To(HaveKey("kubernaut.ai/signal-type"), "Should have signal-type label")
 			Expect(crd.Labels).To(HaveKey("kubernaut.ai/severity"), "Should have severity label")
-			Expect(crd.Labels).To(HaveKey("kubernaut.ai/environment"), "Should have environment label")
-			Expect(crd.Labels).To(HaveKey("kubernaut.ai/priority"), "Should have priority label")
+			// Note: environment and priority labels removed (2025-12-06)
+			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 		})
 
 		It("should create CRD with complete metadata for Kubernetes API queries", func() {
@@ -182,10 +182,8 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			// BUSINESS VALIDATION: Labels enable Kubernetes API queries
 			Expect(crd.Labels["kubernaut.ai/severity"]).To(Equal("critical"),
 				"Severity label for kubectl queries")
-			Expect(crd.Labels["kubernaut.ai/environment"]).To(Equal("production"),
-				"Environment label for kubectl queries")
-			Expect(crd.Labels["kubernaut.ai/priority"]).To(Equal("P0"),
-				"Priority label for kubectl queries (critical + production = P0)")
+			// Note: environment and priority label assertions removed (2025-12-06)
+			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 
 			// BUSINESS VALIDATION: Annotations for audit trail
 			Expect(crd.Annotations).To(HaveKey("kubernaut.ai/created-at"),

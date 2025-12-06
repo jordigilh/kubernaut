@@ -156,7 +156,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-429", "TestAlert429")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -199,7 +199,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-503", "TestAlert503")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -235,7 +235,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-503-fail", "TestAlert503Fail")
 
 			// Execute: Create CRD with retry (should fail)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Failure after max retries
 			Expect(err).To(HaveOccurred())
@@ -283,7 +283,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-504", "TestAlert504")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -322,7 +322,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-timeout", "TestAlertTimeout")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -358,7 +358,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-400", "TestAlert400")
 
 			// Execute: Create CRD (should fail immediately)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
@@ -397,7 +397,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-403", "TestAlert403")
 
 			// Execute: Create CRD (should fail immediately)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
@@ -436,7 +436,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-422", "TestAlert422")
 
 			// Execute: Create CRD (should fail immediately)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
@@ -476,7 +476,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-409", "TestAlert409")
 
 			// Execute: Create CRD (should fail immediately but gracefully)
-			_, _ = creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			_, _ = creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Immediate failure (no retry), but CRD is fetched
 			// Note: The actual implementation fetches the existing CRD, so this test
@@ -517,7 +517,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-connrefused", "TestAlertConnRefused")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -556,7 +556,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-connreset", "TestAlertConnReset")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -602,7 +602,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-backoff-cap", "TestAlertBackoffCap")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -647,7 +647,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-initial-backoff", "TestAlertInitialBackoff")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -772,7 +772,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-default-config", "TestAlertDefaultConfig")
 
 			// Execute: Create CRD with retry (using default config)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry (default config allows retries)
 			Expect(err).ToNot(HaveOccurred())

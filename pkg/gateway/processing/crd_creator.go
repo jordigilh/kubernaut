@@ -277,8 +277,10 @@ func getErrorTypeString(err error) string {
 // Parameters:
 // - ctx: Context for cancellation and timeout
 // - signal: Normalized signal from adapter
-// - priority: Assigned priority (P0/P1/P2) from PriorityEngine
-// - environment: Classified environment (prod/staging/dev) from EnvironmentClassifier
+//
+// Note: Environment and Priority classification removed from Gateway (2025-12-06)
+// These are now owned by Signal Processing service per DD-CATEGORIZATION-001.
+// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 //
 // Returns:
 // - *RemediationRequest: Created CRD with populated fields
@@ -286,8 +288,6 @@ func getErrorTypeString(err error) string {
 func (c *CRDCreator) CreateRemediationRequest(
 	ctx context.Context,
 	signal *types.NormalizedSignal,
-	priority string,
-	environment string,
 ) (*remediationv1alpha1.RemediationRequest, error) {
 	// BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Validate resource info (V1.0 Kubernetes-only)
 	// Business Outcome: V1.0 only supports Kubernetes signals - reject signals without
@@ -324,8 +324,8 @@ func (c *CRDCreator) CreateRemediationRequest(
 				// Truncate fingerprint to 63 chars (K8s label value max length)
 				"kubernaut.ai/signal-fingerprint": signal.Fingerprint[:min(len(signal.Fingerprint), 63)],
 				"kubernaut.ai/severity":           signal.Severity,
-				"kubernaut.ai/environment":        environment,
-				"kubernaut.ai/priority":           priority,
+				// Note: kubernaut.ai/environment and kubernaut.ai/priority removed (2025-12-06)
+				// Signal Processing service now owns classification per DD-CATEGORIZATION-001
 			},
 			Annotations: map[string]string{
 				// Timestamp for audit trail (RFC3339 format)
@@ -337,10 +337,8 @@ func (c *CRDCreator) CreateRemediationRequest(
 			SignalFingerprint: signal.Fingerprint,
 			SignalName:        signal.AlertName,
 
-			// Classification
+			// Classification (environment/priority removed - SP owns these now)
 			Severity:     signal.Severity,
-			Environment:  environment,
-			Priority:     priority,
 			SignalType:   signal.SourceType,
 			SignalSource: signal.Source,
 			TargetType:   "kubernetes",
@@ -447,7 +445,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 				"fingerprint", signal.Fingerprint,
 				"original_ns", signal.Namespace)
 
-			c.metrics.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
+			c.metrics.CRDsCreatedTotal.WithLabelValues(signal.SourceType, "fallback_ns").Inc()
 			return rr, nil
 		}
 
@@ -463,7 +461,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 	}
 
 	// Record success metric
-	c.metrics.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
+	// Note: Metric labels changed from (environment, priority) to (sourceType, "created")
+	// since environment/priority classification moved to SP per DD-CATEGORIZATION-001
+	c.metrics.CRDsCreatedTotal.WithLabelValues(signal.SourceType, "created").Inc()
 
 	// Log creation event
 	c.logger.Info("Created RemediationRequest CRD",
@@ -471,8 +471,6 @@ func (c *CRDCreator) CreateRemediationRequest(
 		"namespace", signal.Namespace,
 		"fingerprint", signal.Fingerprint,
 		"severity", signal.Severity,
-		"environment", environment,
-		"priority", priority,
 		"alertName", signal.AlertName)
 
 	return rr, nil
@@ -597,8 +595,8 @@ func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remedia
 //
 // Returns the created CRD or error
 func (c *CRDCreator) CreateStormCRD(ctx context.Context, signal *types.NormalizedSignal, windowID string) (*remediationv1alpha1.RemediationRequest, error) {
-	// Create base CRD
-	rr, err := c.CreateRemediationRequest(ctx, signal, "high", "ai")
+	// Create base CRD (environment/priority classification removed - SP owns these)
+	rr, err := c.CreateRemediationRequest(ctx, signal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storm CRD: %w", err)
 	}

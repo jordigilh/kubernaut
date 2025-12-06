@@ -43,7 +43,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			Expect(cfg.Processing.Deduplication.TTL).To(Equal(5 * time.Minute))
 			Expect(cfg.Processing.Storm.RateThreshold).To(Equal(10))
 			Expect(cfg.Processing.Storm.PatternThreshold).To(Equal(5))
-			Expect(cfg.Processing.Environment.CacheTTL).To(Equal(30 * time.Second))
+			// Note: Environment.CacheTTL removed (2025-12-06) - classification moved to SP
 		})
 
 		It("should return error for non-existent file", func() {

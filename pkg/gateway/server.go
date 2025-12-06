@@ -99,10 +99,10 @@ type Server struct {
 	crdUpdater      *processing.CRDUpdater // DD-GATEWAY-009: CRD updater for state-based deduplication
 	stormDetector   *processing.StormDetector
 	stormAggregator *processing.StormAggregator
-	classifier      *processing.EnvironmentClassifier
-	priorityEngine  *processing.PriorityEngine
-	pathDecider     *processing.RemediationPathDecider
-	crdCreator      *processing.CRDCreator
+	// Note: classifier and priorityEngine removed (2025-12-06)
+	// Environment/Priority classification now owned by Signal Processing per DD-CATEGORIZATION-001
+	pathDecider *processing.RemediationPathDecider
+	crdCreator  *processing.CRDCreator
 
 	// Infrastructure clients
 	redisClient *rediscache.Client // DD-CACHE-001: Shared Redis Library
@@ -291,30 +291,9 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 			"aggregation_window", cfg.Processing.Storm.AggregationWindow)
 	}
 
-	// Create environment classifier with configurable cache TTL
-	var classifier *processing.EnvironmentClassifier
-	if cfg.Processing.Environment.CacheTTL > 0 {
-		classifier = processing.NewEnvironmentClassifierWithTTL(ctrlClient, logger, cfg.Processing.Environment.CacheTTL)
-		logger.Info("Using custom environment cache TTL", "cache_ttl", cfg.Processing.Environment.CacheTTL)
-	} else {
-		classifier = processing.NewEnvironmentClassifier(ctrlClient, logger)
-	}
-
-	// Create priority engine with Rego policy (REQUIRED)
-	// Architecture Decision: Priority assignment MUST use Rego policies
-	// Gateway fails to start if policy cannot be loaded
-	if cfg.Processing.Priority.PolicyPath == "" {
-		return nil, fmt.Errorf("priority policy path is required (cfg.Processing.Priority.PolicyPath)")
-	}
-
-	priorityEngine, err := processing.NewPriorityEngineWithRego(cfg.Processing.Priority.PolicyPath, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load priority Rego policy (fail-fast): %w", err)
-	}
-
-	logger.Info("Loaded Rego policy for priority assignment",
-		"policy_path", cfg.Processing.Priority.PolicyPath,
-	)
+	// Note: Environment classifier and Priority engine removed (2025-12-06)
+	// Environment/Priority classification now owned by Signal Processing per DD-CATEGORIZATION-001
+	// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 
 	pathDecider := processing.NewRemediationPathDecider(logger)
 	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
@@ -331,10 +310,9 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		crdUpdater:      crdUpdater, // DD-GATEWAY-009: CRD updater for state-based deduplication
 		stormDetector:   stormDetector,
 		stormAggregator: stormAggregator,
-		classifier:      classifier,
-		priorityEngine:  priorityEngine,
-		pathDecider:     pathDecider,
-		crdCreator:      crdCreator,
+		// Note: classifier and priorityEngine removed - SP owns classification
+		pathDecider: pathDecider,
+		crdCreator:  crdCreator,
 		redisClient:     redisClient,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
@@ -1015,6 +993,12 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ProcessingResponse represents the result of signal processing
+//
+// Note: Environment and Priority fields removed from response (2025-12-06)
+// These classifications are now owned by Signal Processing service per DD-CATEGORIZATION-001.
+// AlertManager/webhook callers don't need this information - they only need to know
+// if the alert was accepted (HTTP status code).
+// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type ProcessingResponse struct {
 	Status                      string                            `json:"status"` // "created", "duplicate", or "accepted"
 	Message                     string                            `json:"message"`
@@ -1022,8 +1006,6 @@ type ProcessingResponse struct {
 	Duplicate                   bool                              `json:"duplicate"`
 	RemediationRequestName      string                            `json:"remediationRequestName,omitempty"`
 	RemediationRequestNamespace string                            `json:"remediationRequestNamespace,omitempty"`
-	Environment                 string                            `json:"environment,omitempty"` // TDD FIX: Top-level per API spec
-	Priority                    string                            `json:"priority,omitempty"`    // TDD FIX: Top-level per API spec
 	RemediationPath             string                            `json:"remediationPath,omitempty"`
 	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"` // Deduplication info only
 	// Storm aggregation fields (BR-GATEWAY-016)
@@ -1077,7 +1059,10 @@ func NewStormAggregationResponse(fingerprint, windowID, stormType string, resour
 // NewCRDCreatedResponse creates a ProcessingResponse for successful CRD creation
 // TDD REFACTOR: Extracted factory function for CRD creation response pattern
 // Business Outcome: Consistent CRD creation handling (BR-004)
-func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, environment, priority, remediationPath string) *ProcessingResponse {
+//
+// Note: Environment and Priority parameters removed (2025-12-06)
+// Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001
+func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, remediationPath string) *ProcessingResponse {
 	return &ProcessingResponse{
 		Status:                      StatusCreated,
 		Message:                     "RemediationRequest CRD created successfully",
@@ -1085,8 +1070,6 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, environment, prio
 		Duplicate:                   false,
 		RemediationRequestName:      crdName,
 		RemediationRequestNamespace: crdNamespace,
-		Environment:                 environment,
-		Priority:                    priority,
 		RemediationPath:             remediationPath,
 	}
 }
@@ -1277,38 +1260,32 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 // createRemediationRequestCRD handles the CRD creation pipeline
 // TDD REFACTOR: Extracted from ProcessSignal for clarity
 // Business Outcome: Consistent CRD creation (BR-004)
+//
+// Note: Environment and Priority classification removed from Gateway (2025-12-06)
+// Signal Processing service now owns classification per DD-CATEGORIZATION-001.
+// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.NormalizedSignal, start time.Time) (*ProcessingResponse, error) {
 	logger := middleware.GetLogger(ctx)
 
-	// 3. Environment classification
-	environment := s.classifier.Classify(ctx, signal.Namespace)
-
-	// 4. Priority assignment
-	priority := s.priorityEngine.Assign(ctx, signal.Severity, environment)
-
-	// 5. Remediation path decision
+	// Remediation path decision (simplified - no longer depends on environment/priority)
 	signalCtx := &processing.SignalContext{
-		Signal:      signal,
-		Environment: environment,
-		Priority:    priority,
+		Signal: signal,
 	}
 	remediationPath := s.pathDecider.DeterminePath(ctx, signalCtx)
 
 	logger.V(1).Info("Remediation path decided",
 		"fingerprint", signal.Fingerprint,
-		"environment", environment,
-		"priority", priority,
 		"remediationPath", remediationPath)
 
-	// 6. Create RemediationRequest CRD
-	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal, priority, environment)
+	// Create RemediationRequest CRD (environment/priority classification moved to SP)
+	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal)
 	if err != nil {
 		logger.Error(err, "Failed to create RemediationRequest CRD",
 			"fingerprint", signal.Fingerprint)
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
 
-	// 7. Store deduplication metadata in Redis (BR-003, BR-005, BR-077)
+	// Store deduplication metadata in Redis (BR-003, BR-005, BR-077)
 	// This enables duplicate detection across Gateway restarts and provides
 	// persistent state for deduplication even when CRDs are deleted
 	crdRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
@@ -1326,12 +1303,10 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 	logger.Info("Signal processed successfully",
 		"fingerprint", signal.Fingerprint,
 		"crdName", rr.Name,
-		"environment", environment,
-		"priority", priority,
 		"remediationPath", remediationPath,
 		"duration_ms", duration.Milliseconds())
 
-	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace, environment, priority, remediationPath), nil
+	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace, remediationPath), nil
 }
 
 // createAggregatedCRDAfterWindow creates a single aggregated RemediationRequest CRD
@@ -1411,14 +1386,9 @@ func (s *Server) createAggregatedCRD(
 	aggregatedSignal.AlertCount = resourceCount
 	aggregatedSignal.AffectedResources = resources
 
-	// Environment classification
-	environment := s.classifier.Classify(ctx, aggregatedSignal.Namespace)
-
-	// Priority assignment
-	priority := s.priorityEngine.Assign(ctx, aggregatedSignal.Severity, environment)
-
 	// Create single aggregated RemediationRequest CRD
-	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal, priority, environment)
+	// Note: Environment/Priority classification moved to SP per DD-CATEGORIZATION-001
+	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal)
 	if err != nil {
 		logger.Error(err, "Failed to create aggregated RemediationRequest CRD",
 			"windowID", windowID,
