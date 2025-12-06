@@ -1,6 +1,6 @@
 # HolmesGPT API Service
 
-**Version**: v3.5
+**Version**: v3.7
 **Status**: ✅ **PRODUCTION READY**
 **Service Type**: Stateless HTTP API (Python/FastAPI)
 **Port**: 8080 (REST API), 9090 (Metrics)
@@ -12,6 +12,8 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v3.7 | 2025-12-06 | Full LLM I/O audit, `validation_attempts_history` field, E2E audit tests (real DB only), 433 unit tests, 553 total tests | [BR-AUDIT-005](../../../requirements/BR-AUDIT-005.md) |
+| v3.6 | 2025-12-06 | LLM self-correction loop (max 3 retries), `needs_human_review` + `human_review_reason`, 429 unit tests | [DD-HAPI-002 v1.2](../../../architecture/decisions/DD-HAPI-002-workflow-parameter-validation.md) |
 | v3.5 | 2025-12-05 | Added `alternative_workflows[]` for audit/context (ADR-045 v1.2), 500 tests | [ADR-045](../../../architecture/decisions/ADR-045-aianalysis-holmesgpt-api-contract.md) |
 | v3.4 | 2025-12-03 | Added Implementation Structure section (100% ADR-039 compliance) | [DOCUMENTATION_STANDARDIZATION_REQUEST](../../../../handoff/DOCUMENTATION_STANDARDIZATION_REQUEST_HOLMESGPT_API.md) |
 | v3.3 | 2025-12-03 | Documentation restructured to SERVICE_DOCUMENTATION_GUIDE.md standard | [DOCUMENTATION_MIGRATION_PLAN](./DOCUMENTATION_MIGRATION_PLAN.md) |
@@ -111,7 +113,7 @@ holmesgpt-api/
   - `audit/` - LLM call auditing
 
 ### **Tests**
-- `tests/unit/` - 377 unit tests (business logic, models, prompts)
+- `tests/unit/` - 433 unit tests (business logic, models, prompts)
 - `tests/integration/` - 71 integration tests (Data Storage, mock LLM)
 - `tests/e2e/` - 40 E2E tests (workflow selection, container image)
 - `tests/smoke/` - 4 smoke tests (real LLM validation, optional)
@@ -148,11 +150,11 @@ holmesgpt-api/
 
 | Test Type | Count | Coverage |
 |-----------|-------|----------|
-| **Unit Tests** | 385 | Core business logic |
+| **Unit Tests** | 433 | Core business logic |
 | **Integration Tests** | 71 | Service interactions |
-| **E2E Tests** | 40 | End-to-end workflows |
+| **E2E Tests** | 45 | End-to-end workflows (requires real Data Storage) |
 | **Smoke Tests** | 4 | Real LLM validation (optional) |
-| **Total** | **500** | **Full coverage** |
+| **Total** | **553** | **Full coverage** |
 
 ---
 
