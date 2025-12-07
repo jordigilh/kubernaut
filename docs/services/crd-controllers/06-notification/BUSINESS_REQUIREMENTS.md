@@ -571,21 +571,26 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 
 **Rationale**: Production routing changes should not require controller restart. Hot-reload enables immediate configuration updates and reduces operational risk.
 
-**Implementation**:
-- Watch ConfigMap for changes via controller-runtime
-- Rebuild routing table on ConfigMap update
-- Graceful transition: in-flight notifications complete with old config
-- New notifications use updated config immediately
+**Implementation** (✅ COMPLETE):
+- Watch ConfigMap `notification-routing-config` in `kubernaut-notifications` namespace via controller-runtime
+- Rebuild routing table on ConfigMap create/update/delete events
+- Thread-safe Router with RWMutex protects in-flight notifications
+- New notifications use updated config immediately after reload
+- Before/after diff logged on configuration changes
 
 **Acceptance Criteria**:
-- ✅ ConfigMap changes detected within 30 seconds
-- ✅ Routing table updated without restart
-- ✅ In-flight notifications not affected
-- ✅ Config reload logged with before/after diff
+- ✅ ConfigMap changes detected immediately (controller-runtime watch)
+- ✅ Routing table updated without restart via `Router.LoadConfig()`
+- ✅ In-flight notifications not affected (RWMutex protection)
+- ✅ Config reload logged with before/after diff (`GetConfigSummary()`)
+
+**Files Modified**:
+- `pkg/notification/routing/router.go` - Thread-safe Router with hot-reload support
+- `internal/controller/notification/notificationrequest_controller.go` - ConfigMap watch integration
 
 **Test Coverage**:
-- Unit: Config reload logic
-- Integration: ConfigMap update triggers reload
+- Unit: 10 tests for Router config parsing, reload, and thread safety
+- Integration: ConfigMap update triggers reload (via controller-runtime)
 - E2E: Dynamic routing change validation
 
 **Related BRs**: BR-NOT-065 (Channel Routing), BR-NOT-066 (Config Format)

@@ -24,12 +24,18 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -63,8 +69,12 @@ type NotificationRequestReconciler struct {
 	AuditHelpers *AuditHelpers    // Helper functions for creating audit events
 
 	// BR-NOT-065: Channel Routing Based on Labels
-	// Routing configuration for label-based channel selection
+	// BR-NOT-067: Routing Configuration Hot-Reload
+	// Thread-safe router with hot-reload support from ConfigMap
 	// See: DD-WE-004 (skip-reason routing)
+	Router *routing.Router
+
+	// Legacy: Direct config (for backwards compatibility, use Router instead)
 	routingConfig *routing.Config
 	routingMu     sync.RWMutex
 }
@@ -72,6 +82,7 @@ type NotificationRequestReconciler struct {
 //+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -872,12 +883,11 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRouting(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
 ) []notificationv1alpha1.Channel {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
-	// Get routing config (may be nil if not loaded)
-	config := r.GetRoutingConfig()
-	if config == nil {
-		log.Info("No routing config loaded, using default console channel",
+	// BR-NOT-067: Use Router for thread-safe routing with hot-reload support
+	if r.Router == nil {
+		logger.Info("No routing router initialized, using default console channel",
 			"notification", notification.Name)
 		return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
 	}
@@ -895,25 +905,17 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRouting(
 			routingLabels[k] = v
 		}
 	}
-	log.V(1).Info("Routing labels", "labels", routingLabels)
+	logger.V(1).Info("Routing labels", "labels", routingLabels)
 
-	// Find matching receiver
-	receiverName := config.Route.FindReceiver(labels)
-	receiver := config.GetReceiver(receiverName)
-
-	if receiver == nil {
-		log.Info("Receiver not found, using default console channel",
-			"receiver", receiverName,
-			"notification", notification.Name)
-		return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
-	}
+	// BR-NOT-067: Find matching receiver using thread-safe Router
+	receiver := r.Router.FindReceiver(labels)
 
 	// Convert receiver to channels
 	channels := r.receiverToChannels(receiver)
 
-	log.Info("Resolved channels from routing",
+	logger.Info("Resolved channels from routing",
 		"notification", notification.Name,
-		"receiver", receiverName,
+		"receiver", receiver.Name,
 		"channels", channels)
 
 	return channels
@@ -950,8 +952,107 @@ func (r *NotificationRequestReconciler) receiverToChannels(receiver *routing.Rec
 }
 
 // SetupWithManager sets up the controller with the Manager.
+// BR-NOT-067: Watches ConfigMap for routing configuration hot-reload
 func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Initialize router with default config if not provided
+	if r.Router == nil {
+		r.Router = routing.NewRouter(ctrl.Log.WithName("routing"))
+	}
+
+	// Load initial routing config from ConfigMap (if exists)
+	if err := r.loadRoutingConfigFromCluster(context.Background()); err != nil {
+		// Non-fatal: use default config if ConfigMap doesn't exist
+		ctrl.Log.Info("Using default routing config", "error", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&notificationv1alpha1.NotificationRequest{}).
+		// BR-NOT-067: Watch ConfigMaps for routing configuration hot-reload
+		Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(r.handleConfigMapChange),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				// Only watch the routing ConfigMap
+				return routing.IsRoutingConfigMap(obj.GetName(), obj.GetNamespace())
+			})),
+		).
 		Complete(r)
+}
+
+// =============================================================================
+// BR-NOT-067: ConfigMap Hot-Reload Handler
+// =============================================================================
+
+// handleConfigMapChange handles changes to the routing ConfigMap.
+// It reloads the routing configuration when the ConfigMap is created, updated, or deleted.
+func (r *NotificationRequestReconciler) handleConfigMapChange(ctx context.Context, obj client.Object) []reconcile.Request {
+	logger := log.FromContext(ctx)
+
+	// Verify this is the routing ConfigMap
+	if !routing.IsRoutingConfigMap(obj.GetName(), obj.GetNamespace()) {
+		return nil
+	}
+
+	logger.Info("Routing ConfigMap changed, reloading configuration",
+		"name", obj.GetName(),
+		"namespace", obj.GetNamespace(),
+	)
+
+	// Reload routing configuration
+	if err := r.loadRoutingConfigFromCluster(ctx); err != nil {
+		logger.Error(err, "Failed to reload routing configuration, keeping previous config")
+	}
+
+	// Return empty - we don't need to reconcile any specific NotificationRequest
+	// The new config will be used for future notifications
+	return nil
+}
+
+// loadRoutingConfigFromCluster loads routing configuration from the cluster ConfigMap.
+// BR-NOT-067: ConfigMap changes detected within 30 seconds
+func (r *NotificationRequestReconciler) loadRoutingConfigFromCluster(ctx context.Context) error {
+	logger := log.FromContext(ctx)
+
+	// Fetch the routing ConfigMap
+	configMap := &corev1.ConfigMap{}
+	key := types.NamespacedName{
+		Name:      routing.DefaultConfigMapName,
+		Namespace: routing.DefaultConfigMapNamespace,
+	}
+
+	if err := r.Get(ctx, key, configMap); err != nil {
+		if errors.IsNotFound(err) {
+			logger.Info("Routing ConfigMap not found, using default configuration",
+				"name", key.Name,
+				"namespace", key.Namespace,
+			)
+			// Use default config (already set in NewRouter)
+			return nil
+		}
+		return fmt.Errorf("failed to get routing ConfigMap: %w", err)
+	}
+
+	// Extract routing YAML from ConfigMap
+	yamlData, ok := routing.ExtractRoutingConfig(configMap.Data)
+	if !ok {
+		logger.Info("Routing ConfigMap found but missing routing.yaml key, using default configuration",
+			"name", key.Name,
+			"namespace", key.Namespace,
+		)
+		return nil
+	}
+
+	// Load the new configuration
+	// BR-NOT-067: Routing table updated without restart
+	if err := r.Router.LoadConfig(yamlData); err != nil {
+		return fmt.Errorf("failed to load routing configuration: %w", err)
+	}
+
+	logger.Info("Routing configuration loaded successfully from ConfigMap",
+		"name", key.Name,
+		"namespace", key.Namespace,
+		"summary", r.Router.GetConfigSummary(),
+	)
+
+	return nil
 }

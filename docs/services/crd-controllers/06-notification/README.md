@@ -141,13 +141,13 @@
 
 ### Deployment Namespace
 
-**Default Namespace**: `kubernaut-system` (where NotificationRequest CRDs are created)
+**Default Namespace**: `kubernaut-notifications` (where controller and NotificationRequest CRDs are deployed)
 
 ```yaml
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: kubernaut-system
+  name: kubernaut-notifications
   labels:
     kubernaut.ai/component: notification-controller
 ```
