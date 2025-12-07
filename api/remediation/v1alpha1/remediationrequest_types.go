@@ -185,6 +185,28 @@ type ResourceIdentifier struct {
 
 // RemediationRequestStatus defines the observed state of RemediationRequest.
 type RemediationRequestStatus struct {
+	// ╔════════════════════════════════════════════════════════════════╗
+	// ║  GATEWAY-OWNED SECTION (DD-GATEWAY-011)                        ║
+	// ║  Gateway Service has exclusive write access to these fields    ║
+	// ╚════════════════════════════════════════════════════════════════╝
+
+	// Deduplication tracks signal occurrence for this remediation.
+	// OWNER: Gateway Service (exclusive write access)
+	// Reference: DD-GATEWAY-011, BR-GATEWAY-181
+	// +optional
+	Deduplication *DeduplicationStatus `json:"deduplication,omitempty"`
+
+	// StormAggregation tracks storm detection for this remediation.
+	// OWNER: Gateway Service (exclusive write access)
+	// Reference: DD-GATEWAY-011, DD-GATEWAY-008 v2.0
+	// +optional
+	StormAggregation *StormAggregationStatus `json:"stormAggregation,omitempty"`
+
+	// ╔════════════════════════════════════════════════════════════════╗
+	// ║  RO-OWNED SECTION                                              ║
+	// ║  Remediation Orchestrator has exclusive write access           ║
+	// ╚════════════════════════════════════════════════════════════════╝
+
 	// Phase tracking for orchestration
 	// Valid values: "pending", "processing", "analyzing", "executing", "recovering",
 	//               "completed", "failed", "timeout", "Skipped"
@@ -301,6 +323,44 @@ type RemediationRequestStatus struct {
 
 	// CurrentProcessingRef references the current SignalProcessing CRD (may differ during recovery)
 	CurrentProcessingRef *corev1.ObjectReference `json:"currentProcessingRef,omitempty"`
+}
+
+// ========================================
+// GATEWAY-OWNED STATUS TYPES (DD-GATEWAY-011)
+// These types track Gateway-specific state
+// ========================================
+
+// DeduplicationStatus tracks signal occurrence for deduplication.
+// OWNER: Gateway Service (exclusive write access)
+// Reference: DD-GATEWAY-011, BR-GATEWAY-181
+type DeduplicationStatus struct {
+	// FirstSeenAt is when this signal fingerprint was first observed
+	// +optional
+	FirstSeenAt *metav1.Time `json:"firstSeenAt,omitempty"`
+	// LastSeenAt is when this signal fingerprint was last observed
+	// +optional
+	LastSeenAt *metav1.Time `json:"lastSeenAt,omitempty"`
+	// OccurrenceCount tracks how many times this signal has been seen
+	// +optional
+	OccurrenceCount int32 `json:"occurrenceCount,omitempty"`
+}
+
+// StormAggregationStatus tracks storm detection for this remediation.
+// OWNER: Gateway Service (exclusive write access)
+// Reference: DD-GATEWAY-011, DD-GATEWAY-008 v2.0
+type StormAggregationStatus struct {
+	// IsPartOfStorm indicates if this signal is part of a detected storm
+	// +optional
+	IsPartOfStorm bool `json:"isPartOfStorm,omitempty"`
+	// StormID is the unique identifier for the storm this signal belongs to
+	// +optional
+	StormID string `json:"stormId,omitempty"`
+	// AggregatedCount is the number of signals aggregated in this storm
+	// +optional
+	AggregatedCount int32 `json:"aggregatedCount,omitempty"`
+	// StormDetectedAt is when the storm was first detected
+	// +optional
+	StormDetectedAt *metav1.Time `json:"stormDetectedAt,omitempty"`
 }
 
 // +kubebuilder:object:root=true

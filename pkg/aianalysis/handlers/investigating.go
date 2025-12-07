@@ -160,6 +160,16 @@ func (h *InvestigatingHandler) processResponse(ctx context.Context, analysis *ai
 		return h.handleWorkflowResolutionFailure(ctx, analysis, resp)
 	}
 
+	// BR-HAPI-200 Outcome A: Problem confidently resolved, no workflow needed
+	// Detection: needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
+	// This scenario happens when:
+	// - Pod recovered automatically (OOMKilled then restarted)
+	// - Alert resolved before investigation completed (transient condition)
+	// - Resource self-healed (deployment rollout succeeded after initial failure)
+	if resp.SelectedWorkflow == nil && resp.Confidence >= 0.7 {
+		return h.handleProblemResolved(ctx, analysis, resp)
+	}
+
 	// Store HAPI response metadata
 	targetInOwnerChain := resp.TargetInOwnerChain
 	analysis.Status.TargetInOwnerChain = &targetInOwnerChain
@@ -313,6 +323,47 @@ func (h *InvestigatingHandler) handleWorkflowResolutionFailure(ctx context.Conte
 	}
 
 	// Reset retry count (this is a terminal failure, not transient)
+	h.setRetryCount(analysis, 0)
+
+	return ctrl.Result{}, nil // Terminal - no requeue
+}
+
+// handleProblemResolved handles BR-HAPI-200 Outcome A: problem self-resolved
+// This is a TERMINAL SUCCESS state - no workflow execution needed
+// Triggered when: needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
+func (h *InvestigatingHandler) handleProblemResolved(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.IncidentResponse) (ctrl.Result, error) {
+	h.log.Info("Problem confirmed resolved, no workflow needed",
+		"confidence", resp.Confidence,
+		"warnings", resp.Warnings,
+	)
+
+	// Set terminal success state per BR-HAPI-200
+	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.Reason = "WorkflowNotNeeded"
+	analysis.Status.SubReason = "ProblemResolved"
+
+	// Use analysis text if available, else construct from warnings
+	// Note: HAPI JSON uses "investigation_summary" but Go client maps to "Analysis"
+	if resp.Analysis != "" {
+		analysis.Status.Message = resp.Analysis
+	} else if len(resp.Warnings) > 0 {
+		analysis.Status.Message = strings.Join(resp.Warnings, "; ")
+	} else {
+		analysis.Status.Message = "Problem self-resolved. No remediation required."
+	}
+
+	analysis.Status.Warnings = resp.Warnings
+
+	// Store RCA if available (for context/audit)
+	if resp.RootCauseAnalysis != nil {
+		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:             resp.RootCauseAnalysis.Summary,
+			Severity:            resp.RootCauseAnalysis.Severity,
+			ContributingFactors: resp.RootCauseAnalysis.ContributingFactors,
+		}
+	}
+
+	// Reset retry count on success
 	h.setRetryCount(analysis, 0)
 
 	return ctrl.Result{}, nil // Terminal - no requeue

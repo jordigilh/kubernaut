@@ -333,7 +333,8 @@ type AIAnalysisStatus struct {
 	Reason string `json:"reason,omitempty"`
 	// SubReason provides specific failure cause within the Reason category
 	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
-	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError
+	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
 

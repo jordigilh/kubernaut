@@ -265,6 +265,46 @@ func (m *MockHolmesGPTClient) WithHumanReviewAndHistory(
 	return m
 }
 
+// ========================================
+// BR-HAPI-200: Problem Resolved Test Helpers
+// ========================================
+
+// WithProblemResolved configures the mock to return a "problem resolved" response.
+// BR-HAPI-200 Outcome A: needs_human_review=false, selected_workflow=null, confidence >= 0.7
+// This represents a self-healed incident where no remediation is needed.
+func (m *MockHolmesGPTClient) WithProblemResolved(confidence float64, warnings []string, analysis string) *MockHolmesGPTClient {
+	m.Response = &client.IncidentResponse{
+		IncidentID:         "mock-incident-001",
+		Analysis:           analysis,
+		Confidence:         confidence,
+		Timestamp:          "2025-12-07T10:00:00Z",
+		Warnings:           warnings,
+		NeedsHumanReview:   false,
+		SelectedWorkflow:   nil, // Explicitly nil - no workflow needed
+		TargetInOwnerChain: true,
+	}
+	m.Err = nil
+	return m
+}
+
+// WithProblemResolvedAndRCA configures a "problem resolved" response with RCA context.
+// Useful for testing that RCA is preserved even when no workflow is needed.
+func (m *MockHolmesGPTClient) WithProblemResolvedAndRCA(confidence float64, warnings []string, analysis string, rca *client.RootCauseAnalysis) *MockHolmesGPTClient {
+	m.Response = &client.IncidentResponse{
+		IncidentID:         "mock-incident-001",
+		Analysis:           analysis,
+		RootCauseAnalysis:  rca,
+		Confidence:         confidence,
+		Timestamp:          "2025-12-07T10:00:00Z",
+		Warnings:           warnings,
+		NeedsHumanReview:   false,
+		SelectedWorkflow:   nil, // Explicitly nil - no workflow needed
+		TargetInOwnerChain: true,
+	}
+	m.Err = nil
+	return m
+}
+
 // NewMockValidationAttempts creates mock validation attempts for testing.
 // Each attempt represents a failed LLM self-correction iteration.
 func NewMockValidationAttempts(failureScenarios []string) []client.ValidationAttempt {

@@ -84,13 +84,23 @@ var _ = Describe("InvestigatingHandler", func() {
 
 	Describe("Handle", func() {
 		// BR-AI-007: Process HolmesGPT response
-		Context("with successful API response", func() {
+		// NOTE: To proceed to Analyzing phase, HAPI MUST return a SelectedWorkflow
+		// If no workflow is returned with high confidence, it triggers "Resolved" (BR-HAPI-200)
+		Context("with successful API response including workflow", func() {
 			BeforeEach(func() {
-				mockClient.WithSuccessResponse(
+				mockClient.WithFullResponse(
 					"Root cause identified: OOM",
 					0.9,
 					true,
 					[]string{},
+					nil, // no RCA needed for this test
+					&client.SelectedWorkflow{
+						WorkflowID:     "wf-restart-pod",
+						ContainerImage: "kubernaut.io/workflows/restart:v1.0.0",
+						Confidence:     0.9,
+						Rationale:      "Selected for OOM recovery",
+					},
+					nil, // no alternatives
 				)
 			})
 
@@ -110,13 +120,22 @@ var _ = Describe("InvestigatingHandler", func() {
 		})
 
 		// BR-AI-008: Handle warnings
-		Context("with warnings in response", func() {
+		// NOTE: To proceed to Analyzing phase, HAPI MUST return a SelectedWorkflow
+		Context("with warnings in response including workflow", func() {
 			BeforeEach(func() {
-				mockClient.WithSuccessResponse(
+				mockClient.WithFullResponse(
 					"Analysis with warnings",
 					0.7,
 					false,
 					[]string{"High memory pressure", "Node scheduling delayed"},
+					nil, // no RCA
+					&client.SelectedWorkflow{
+						WorkflowID:     "wf-scale-deployment",
+						ContainerImage: "kubernaut.io/workflows/scale:v1.0.0",
+						Confidence:     0.7,
+						Rationale:      "Scale to handle memory pressure",
+					},
+					nil, // no alternatives
 				)
 			})
 
@@ -522,6 +541,180 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(1))
 				// Timestamp should be set to current time (fallback), not zero
 				Expect(analysis.Status.ValidationAttemptsHistory[0].Timestamp.IsZero()).To(BeFalse(), "Should use current time as fallback")
+			})
+		})
+	})
+
+	// ========================================
+	// BR-HAPI-200 OUTCOME A: PROBLEM SELF-RESOLVED
+	// When needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
+	// This represents incidents that self-healed (e.g., OOMKilled pod restarted)
+	// ========================================
+	Describe("Problem Resolved Handling (BR-HAPI-200)", func() {
+		// BR-HAPI-200: Core behavior - problem resolved with high confidence
+		Context("when problem is confidently resolved", func() {
+			BeforeEach(func() {
+				mockClient.WithProblemResolved(
+					0.92, // High confidence
+					[]string{"Problem self-resolved - no remediation required"},
+					"Investigated OOMKilled signal. Pod 'myapp' recovered automatically. Status: Running, memory at 45% of limit.",
+				)
+			})
+
+			// BR-HAPI-200: Business outcome - no workflow execution, mark complete
+			It("should complete without workflow execution", func() {
+				analysis := createTestAnalysis()
+
+				result, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				// Business outcome: Analysis completes successfully (no remediation needed)
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Should be Completed (not Analyzing)")
+				Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"), "Should indicate no workflow needed")
+				Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"), "Should specify problem self-resolved")
+				// Terminal state - no requeue
+				Expect(result.Requeue).To(BeFalse(), "Should NOT requeue (terminal success)")
+				Expect(result.RequeueAfter).To(BeZero(), "Should NOT schedule requeue")
+			})
+
+			// BR-HAPI-200: Message should contain investigation summary
+			It("should capture investigation summary in message", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Message).To(ContainSubstring("OOMKilled"))
+				Expect(analysis.Status.Message).To(ContainSubstring("recovered automatically"))
+			})
+
+			// BR-HAPI-200: Warnings should be preserved
+			It("should preserve warnings for audit trail", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Warnings).To(HaveLen(1))
+				Expect(analysis.Status.Warnings).To(ContainElement("Problem self-resolved - no remediation required"))
+			})
+		})
+
+		// BR-HAPI-200: Preserve RCA even when no workflow needed
+		Context("when problem resolved with RCA available", func() {
+			BeforeEach(func() {
+				mockClient.WithProblemResolvedAndRCA(
+					0.85,
+					[]string{"Transient failure - recovered"},
+					"Memory pressure subsided after pod restart",
+					&client.RootCauseAnalysis{
+						Summary:             "OOM caused by temporary memory spike",
+						Severity:            "low",
+						ContributingFactors: []string{"Temporary memory pressure", "Pod restarted automatically"},
+					},
+				)
+			})
+
+			// BR-HAPI-200: RCA preserved for audit/learning
+			It("should preserve RCA for audit/learning even when no workflow executed", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
+				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
+				Expect(analysis.Status.RootCauseAnalysis.Summary).To(ContainSubstring("memory spike"))
+				Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(HaveLen(2))
+			})
+		})
+
+		// BR-HAPI-200: Confidence threshold boundary tests
+		DescribeTable("should respect confidence threshold of 0.7",
+			func(confidence float64, shouldBeResolved bool) {
+				if shouldBeResolved {
+					mockClient.WithProblemResolved(confidence, []string{"Resolved"}, "Problem resolved")
+				} else {
+					// Low confidence without workflow = should NOT trigger resolved
+					// This goes to normal flow (Analyzing) since no human review needed
+					mockClient.WithFullResponse(
+						"Low confidence analysis",
+						confidence,
+						true,
+						[]string{},
+						nil, // no RCA
+						&client.SelectedWorkflow{ // Must have workflow to proceed to Analyzing
+							WorkflowID:     "wf-test",
+							ContainerImage: "test:v1",
+							Confidence:     confidence,
+							Rationale:      "Test workflow",
+						},
+						nil, // no alternatives
+					)
+				}
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				if shouldBeResolved {
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Should be Completed (resolved)")
+					Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+				} else {
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing), "Should proceed to Analyzing (has workflow)")
+				}
+			},
+			// At threshold: problem is confidently resolved
+			Entry("confidence = 0.70 (at threshold) → resolved", 0.70, true),
+			Entry("confidence = 0.71 (above threshold) → resolved", 0.71, true),
+			Entry("confidence = 0.85 (well above) → resolved", 0.85, true),
+			Entry("confidence = 0.99 (near certainty) → resolved", 0.99, true),
+			// Below threshold with workflow → proceeds to Analyzing (not resolved)
+			Entry("confidence = 0.69 (below threshold) with workflow → Analyzing", 0.69, false),
+			Entry("confidence = 0.50 (low) with workflow → Analyzing", 0.50, false),
+		)
+
+		// BR-HAPI-200: Fallback message when analysis is empty
+		Context("when analysis text is empty", func() {
+			It("should use warnings for message when analysis is empty", func() {
+				mockClient.WithProblemResolved(0.92, []string{"Pod recovered"}, "") // Empty analysis
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
+				Expect(analysis.Status.Message).To(Equal("Pod recovered"))
+			})
+
+			It("should use default message when both analysis and warnings are empty", func() {
+				mockClient.WithProblemResolved(0.92, []string{}, "") // Empty both
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
+				Expect(analysis.Status.Message).To(Equal("Problem self-resolved. No remediation required."))
+			})
+		})
+
+		// BR-HAPI-200: Retry count reset on success
+		Context("retry count management", func() {
+			It("should reset retry count on successful resolution", func() {
+				mockClient.WithProblemResolved(0.92, []string{"Resolved"}, "Problem resolved")
+				analysis := createTestAnalysis()
+				// Simulate previous retries
+				analysis.Annotations = map[string]string{
+					handlers.RetryCountAnnotation: "3",
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
+				// Retry count should be reset
+				Expect(analysis.Annotations[handlers.RetryCountAnnotation]).To(Equal("0"))
 			})
 		})
 	})
