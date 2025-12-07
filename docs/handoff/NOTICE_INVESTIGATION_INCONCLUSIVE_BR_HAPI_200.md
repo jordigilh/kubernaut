@@ -3,8 +3,39 @@
 **Date**: December 7, 2025
 **From**: HolmesGPT-API Team
 **To**: AIAnalysis Team, Remediation Orchestrator Team, Notification Team
-**Priority**: 🟠 HIGH (V1.0 - Per AIAnalysis scope clarification)
-**Status**: ✅ ALL TEAMS ACKNOWLEDGED (Clarification pending from HAPI)
+**Priority**: 🔴 **HIGH - V1.0 SCOPE** (Confirmed by HAPI Team)
+**Status**: ✅ ALL TEAMS ACKNOWLEDGED FOR V1.0
+
+---
+
+## 🎉 HAPI V1.0 IMPLEMENTATION COMPLETE
+
+**Date**: December 7, 2025
+
+The **HolmesGPT-API team has completed all V1.0 work** for BR-HAPI-200:
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| `INVESTIGATION_INCONCLUSIVE` enum | ✅ Complete | `incident_models.py` |
+| LLM prompt guidance | ✅ Complete | `incident.py` (Outcome A/B handling) |
+| Response parsing | ✅ Complete | `investigation_outcome` field |
+| Unit tests | ✅ Complete | 474 tests passing |
+| BR-HAPI-200 documentation | ✅ Complete | Aligned with implementation |
+| Q4 API contract clarification | ✅ Complete | See answers below |
+
+**Other teams can now proceed with their implementations.**
+
+---
+
+## ⚠️ SCOPE CLARIFICATION
+
+**This is V1.0 scope, NOT V1.1.**
+
+The original notice incorrectly marked this as V1.1. HAPI Team confirmed (2025-12-07):
+
+> "This is not an enhancement, it's covering a real scenario that can happen in production."
+
+All teams must implement this in V1.0.
 
 ---
 
@@ -82,18 +113,18 @@ class HumanReviewReason(str, Enum):
 
 ---
 
-## 🎯 Team-Specific Guidance
+## 🎯 Team-Specific Guidance (V1.0)
 
-### AIAnalysis Team
+### AIAnalysis Team (V1.0)
 
-**Required Changes (V1.1)**:
+**Required Changes**:
 
 1. **Handle new subReason**:
    ```yaml
    status:
      phase: Failed
      reason: WorkflowResolutionFailed
-     subReason: InvestigationInconclusive  # NEW
+     subReason: InvestigationInconclusive
      message: "Investigation inconclusive - human review recommended"
    ```
 
@@ -102,7 +133,7 @@ class HumanReviewReason(str, Enum):
    status:
      phase: Completed
      reason: WorkflowNotNeeded
-     subReason: ProblemResolved  # Optional
+     subReason: ProblemResolved
      message: "Problem self-resolved. No remediation required."
    ```
 
@@ -113,231 +144,246 @@ class HumanReviewReason(str, Enum):
 
 ---
 
-### Remediation Orchestrator Team
+### Remediation Orchestrator Team (V1.0)
 
-**Required Changes (V1.1)**:
+**Required Changes**:
 
 1. **Handle `WorkflowNotNeeded` from AIAnalysis**:
    - Update RemediationRequest status to reflect no action needed
    - Do NOT create WorkflowExecution
 
-2. **Optional Metric**:
+2. **Metric**:
    ```prometheus
-   kubernaut_remediation_no_action_needed_total{
+   kubernaut_remediationorchestrator_no_action_needed_total{
      reason="problem_resolved|investigation_inconclusive"
    }
    ```
 
 ---
 
-### Notification Team
+### Notification Team (V1.0)
 
-**Required Changes (V1.1)**:
+**Required Changes**:
 
-1. **Optional: Configure routing for self-resolved incidents**:
-   | Notification Type | Use Case |
-   |-------------------|----------|
-   | **Skip** | Most self-resolutions don't need notification |
-   | **Informational** | "FYI: Incident auto-resolved" for audit |
-   | **Warning** | Pattern of repeated self-resolutions (flapping) |
+1. **Add routing label constant**:
+   ```go
+   // pkg/notification/routing/labels.go
+   LabelInvestigationOutcome = "kubernaut.ai/investigation-outcome"
+   ```
 
-2. **Suggested Label**:
+2. **Configure routing for outcomes**:
    ```yaml
-   # On AIAnalysis CR
-   labels:
-     kubernaut.ai/investigation-outcome: "resolved" | "inconclusive" | "workflow-selected"
+   route:
+     routes:
+       # Self-resolved: Skip notification by default
+       - match:
+           kubernaut.ai/investigation-outcome: resolved
+         receiver: null-receiver
+
+       # Inconclusive: Route to ops for review
+       - match:
+           kubernaut.ai/investigation-outcome: inconclusive
+         receiver: slack-ops
    ```
 
 ---
 
-## 📅 Timeline
+## 📅 Timeline (V1.0)
 
-| Phase | Target | Teams Affected |
-|-------|--------|----------------|
-| Enum added | ✅ Complete | HolmesGPT-API |
-| BR-HAPI-200 documented | ✅ Complete | All |
-| LLM prompt update | V1.0 | HolmesGPT-API |
-| AIAnalysis handler | V1.0 | AIAnalysis |
-| RO handler | ✅ V1.0 (planned) | RO |
-| Notification routing | ✅ V1.0 (Day 15) | Notification |
-
----
-
-## ✅ Acknowledgment Required
-
-Please acknowledge receipt and provide feedback:
-
-| Team | Acknowledged | Notes |
-|------|--------------|-------|
-| AIAnalysis | ✅ 2025-12-07 | See below |
-| Remediation Orchestrator | ✅ 2025-12-07 | See below |
-| Notification | ✅ 2025-12-07 | See below |
+| Phase | Target | Teams Affected | Status |
+|-------|--------|----------------|--------|
+| Enum added | ✅ Complete | HolmesGPT-API | ✅ Done |
+| BR-HAPI-200 documented | ✅ Complete | All | ✅ Done |
+| LLM prompt update | ✅ Complete | HolmesGPT-API | ✅ Done |
+| Response parsing | ✅ Complete | HolmesGPT-API | ✅ Done |
+| Unit tests (474 total) | ✅ Complete | HolmesGPT-API | ✅ Done |
+| **HAPI V1.0 Complete** | ✅ **2025-12-07** | **HolmesGPT-API** | ✅ **ALL DONE** |
+| **AIAnalysis handler** | ✅ **2025-12-07** | **AIAnalysis** | ✅ **ALL DONE** |
+| RO handler | V1.0 | RO | ⏳ Day 7 |
+| Notification routing | V1.0 | Notification | ⏳ Day 15 |
 
 ---
 
-### AIAnalysis Team Acknowledgment (2025-12-07)
+## ✅ Acknowledgment Status
 
-**Status**: ✅ **ACKNOWLEDGED - V1.0 SCOPE**
+| Team | Acknowledged | Scope | Status |
+|------|--------------|-------|--------|
+| AIAnalysis | ✅ 2025-12-07 | **V1.0** | ✅ **IMPLEMENTATION COMPLETE** |
+| Remediation Orchestrator | ✅ 2025-12-07 | **V1.0** | BR-ORCH-036 v2.0, BR-ORCH-037 created |
+| Notification | ✅ 2025-12-07 | **V1.0** | Day 15 (~1 hour) |
 
-We acknowledge receipt of BR-HAPI-200. **This is V1.0 scope, not V1.1.**
+---
 
-#### ⚠️ Scope Clarification Required
+## 📝 Team Acknowledgments
 
-The notice marks this as "V1.1 - No immediate action required", but **BR-HAPI-197 is V1.0** and the `human_review_reason` enum infrastructure is already live. The `investigation_inconclusive` value **can be returned now** by HAPI.
+### AIAnalysis Team (2025-12-07)
 
-**Question for HAPI Team**:
+**Status**: ✅ **IMPLEMENTATION COMPLETE**
 
-> **Q1**: Is `investigation_inconclusive` already being returned by the HAPI service in V1.0, or is the LLM prompt update that triggers this value truly deferred to V1.1?
->
-> If HAPI can return this value today (even if rare), AIAnalysis must handle it in V1.0.
-
-#### Implementation Status (V1.0)
+#### Implementation Status
 
 | Task | Status | Notes |
 |------|--------|-------|
 | Add `investigation_inconclusive` → `InvestigationInconclusive` mapping | ✅ Complete | `pkg/aianalysis/handlers/investigating.go` |
-| Handle "Resolved" outcome (`WorkflowNotNeeded`) | ⏳ Day 8 | Need to verify HAPI response structure |
-| Unit tests for new mapping | ⏳ Day 8 | Following TDD |
+| Handle "Resolved" outcome (`WorkflowNotNeeded`) | ✅ **Complete** | `handleProblemResolved()` method |
+| Unit tests for new mapping | ✅ **Complete** | 163 tests, 87.6% coverage |
+| CRD SubReason enum update | ✅ **Complete** | Added `InvestigationInconclusive`, `ProblemResolved` |
 
-#### Answer to Q1
+#### Taxonomy Decision (Implemented)
 
-> **Q1**: Should `ProblemResolved` be a new subReason, or use existing `WorkflowNotNeeded`?
+- `Reason: WorkflowNotNeeded` + `SubReason: ProblemResolved` for self-resolved ✅
+- `Reason: WorkflowResolutionFailed` + `SubReason: InvestigationInconclusive` for inconclusive ✅
 
-**Answer**: Both.
-- `Reason: WorkflowNotNeeded` (consistent with existing taxonomy)
-- `SubReason: ProblemResolved` (provides specific context)
+#### Detection Pattern (Implemented)
 
-This maintains the `Reason + SubReason` pattern established for `WorkflowResolutionFailed`.
+```go
+// Outcome A: Problem Resolved (high confidence, no workflow)
+if resp.SelectedWorkflow == nil && resp.Confidence >= 0.7 && !resp.NeedsHumanReview {
+    // Phase=Completed, Reason=WorkflowNotNeeded, SubReason=ProblemResolved
+}
 
-#### "Resolved" Outcome Handling
-
-For Outcome A (problem self-resolved), we need clarification:
-
-> **Q2**: When a problem is confirmed resolved (high confidence, no workflow needed), what is the exact response structure from HAPI?
->
-> Expected (please confirm):
-> ```json
-> {
->   "needs_human_review": false,
->   "human_review_reason": null,
->   "selected_workflow": null,
->   "confidence": 0.92,
->   "investigation_summary": "Pod recovered automatically..."
-> }
-> ```
->
-> Is `selected_workflow: null` the correct indicator, or is there a different field?
+// Outcome B: Investigation Inconclusive (human review required)
+if resp.NeedsHumanReview && *resp.HumanReviewReason == "investigation_inconclusive" {
+    // Phase=Failed, Reason=WorkflowResolutionFailed, SubReason=InvestigationInconclusive
+}
+```
 
 ---
 
-**Acknowledged By**: AIAnalysis Team
-**Date**: December 7, 2025
+### HAPI Team Response (2025-12-07)
+
+**Confirmed V1.0 scope** and response structure:
+
+```json
+{
+  "needs_human_review": false,
+  "human_review_reason": null,
+  "selected_workflow": null,
+  "confidence": 0.92,
+  "investigation_summary": "Pod recovered automatically..."
+}
+```
+
+`selected_workflow: null` + high confidence + `needs_human_review: false` = problem resolved.
 
 ---
 
-### RO Team Acknowledgment (2025-12-07)
+### RO Team (2025-12-07)
 
 **Status**: ✅ **ACKNOWLEDGED - V1.0 SCOPE**
 
-We acknowledge receipt of BR-HAPI-200 and will handle both scenarios in V1.0:
+| Outcome | BR | RO Action | Status |
+|---------|------|-----------|--------|
+| **Problem Resolved** | BR-ORCH-037 | Skip WE, mark RR `Completed` | ⏳ Day 7 |
+| **Investigation Inconclusive** | BR-ORCH-036 v2.0 | Create `manual-review` notification | ⏳ Day 4 |
 
-#### Implementation Scope
+**Metric**: `kubernaut_remediationorchestrator_no_action_needed_total{reason="problem_resolved"}`
 
-| Outcome | BR | RO Action | V1.0 Status |
-|---------|------|-----------|-------------|
-| **A: Problem Resolved** | BR-ORCH-037 | Skip WE, mark RR `Completed` with `Outcome=NoActionRequired` | ✅ Planned |
-| **B: Investigation Inconclusive** | BR-ORCH-036 (v2.0) | Create `manual-review` notification | ✅ Planned |
+**Self-resolved notification**: No notification by default.
 
-#### Documentation Created
+---
 
-1. **BR-ORCH-036 v2.0**: Extended to include `InvestigationInconclusive` as a SubReason for manual review
-2. **BR-ORCH-037 v1.0**: New BR for `WorkflowNotNeeded` handling
+### Notification Team (2025-12-07)
 
-#### Answers to Questions
+**Status**: ✅ **ACKNOWLEDGED - V1.0 SCOPE**
 
-> **Q2: Do you need a new metric for self-resolved incidents?**
+| Task | Status |
+|------|--------|
+| Add `LabelInvestigationOutcome` constant | ⏳ Day 15 |
+| Add routing configuration example | ⏳ Day 15 |
+| Add 2-3 unit tests | ⏳ Day 15 |
 
-**Answer**: Yes. We'll add:
-```prometheus
-kubernaut_remediationorchestrator_no_action_needed_total{reason="problem_resolved"}
+**Self-resolved notification**: No notification by default (agreed with RO).
+
+---
+
+## ❓ Questions
+
+| Q# | Question | Answer | By |
+|----|----------|--------|-----|
+| Q1 | Should `ProblemResolved` be a new subReason? | Yes, with `Reason: WorkflowNotNeeded` | AIAnalysis |
+| Q2 | Response structure for "Resolved"? | Confirmed (see HAPI response above) | HAPI |
+| Q3 | Self-resolved notification by default? | No | RO + Notification |
+| **Q4** | **API CONTRACT: SubReason Naming** | ✅ **RESOLVED** | **HAPI** |
+
+---
+
+### Q4: API Contract Clarification (RESOLVED 2025-12-07)
+
+**From**: AIAnalysis Team
+**To**: HAPI Team
+
+**Original Issue**: Conflicting SubReason values in documentation:
+
+| Document | SubReason Value |
+|----------|-----------------|
+| BR-HAPI-200 (line 182) | `ProblemNotReproducible` |
+| NOTICE (line 117) | `ProblemResolved` |
+| BR-ORCH-037 (line 48) | `ProblemResolved` |
+
+---
+
+#### ✅ HAPI Team Response (Based on Authoritative Code)
+
+**Q1: Is `problem_not_reproducible` a valid HAPI enum value?**
+
+**Answer: NO.**
+
+**Authoritative Source**: `holmesgpt-api/src/models/incident_models.py` lines 36-53
+
+```python
+class HumanReviewReason(str, Enum):
+    WORKFLOW_NOT_FOUND = "workflow_not_found"
+    IMAGE_MISMATCH = "image_mismatch"
+    PARAMETER_VALIDATION_FAILED = "parameter_validation_failed"
+    NO_MATCHING_WORKFLOWS = "no_matching_workflows"
+    LOW_CONFIDENCE = "low_confidence"
+    LLM_PARSING_ERROR = "llm_parsing_error"
+    # BR-HAPI-200: LLM investigation did not yield conclusive results
+    INVESTIGATION_INCONCLUSIVE = "investigation_inconclusive"  # ← ONLY new value
 ```
 
-> **Q3: Should self-resolved incidents generate any notification by default?**
-
-**Answer**: No notification by default. Optional informational notification if `notify_on_self_resolved=true` in config.
-
-#### Implementation Timeline
-
-| Task | Target Day |
-|------|------------|
-| Update RR API with `Outcome` field | Day 7 |
-| Implement `WorkflowNotNeeded` handler | Day 7 |
-| Add `InvestigationInconclusive` to manual review handler | Day 4 (already planned) |
-| Add metrics | Day 8 |
+`problem_not_reproducible` appears in BR-HAPI-200 documentation (drafted before implementation) but was **never implemented**. BR-HAPI-200 will be updated to align with the authoritative implementation.
 
 ---
 
-**Acknowledged By**: RemediationOrchestrator Team
-**Date**: December 7, 2025
+**Q2: For Outcome A (confident resolution), what should HAPI return?**
 
----
+**Answer: Option (A) - `human_review_reason: null`**
 
-### Notification Team Acknowledgment (2025-12-07)
+**Authoritative Source**: `holmesgpt-api/src/extensions/incident.py` lines 1278-1302
 
-**Status**: ✅ **ACKNOWLEDGED - V1.1 SCOPE**
+```python
+# BR-HAPI-200: Handle special investigation outcomes
+investigation_outcome = json_data.get("investigation_outcome") if json_data else None
 
-We acknowledge receipt of BR-HAPI-200. This is a V1.1 enhancement that does NOT affect our V1.0-complete status.
+# BR-HAPI-200: Outcome A - Problem self-resolved (high confidence, no workflow needed)
+if investigation_outcome == "resolved":
+    warnings.append("Problem self-resolved - no remediation required")
+    needs_human_review = False
+    human_review_reason = None  # ← NULL by design
 
-#### Assessment
-
-| Aspect | Status |
-|--------|--------|
-| **V1.0 Impact** | ❌ None - Notification V1.0 is complete |
-| **Existing Support** | ✅ BR-NOT-065 routing infrastructure already supports label-based routing |
-| **Implementation Effort** | ~2 hours (V1.1) |
-
-#### Implementation Plan (V1.1)
-
-The existing routing infrastructure in `pkg/notification/routing/` already supports:
-- Alertmanager-compatible label-based routing
-- Dynamic ConfigMap-based configuration (BR-NOT-067)
-- Label constants in `pkg/notification/routing/labels.go`
-
-**V1.1 Tasks**:
-1. Add `LabelInvestigationOutcome` constant to `pkg/notification/routing/labels.go`
-2. Add example routing rules to default config
-3. Add 3-5 unit tests for new routing scenarios
-
-#### Answer to Q3
-
-> **Q3: Should self-resolved incidents generate any notification by default?**
-
-**Answer**: **No notification by default**. We agree with RO's assessment.
-
-**Rationale**:
-- Self-resolved incidents require no human action
-- Unnecessary notifications create alert fatigue
-- Operators can opt-in via routing config if audit trail is desired
-
-**Routing Configuration Example (V1.1)**:
-```yaml
-route:
-  routes:
-    # Self-resolved: Skip notification by default
-    - match:
-        kubernaut.ai/investigation-outcome: resolved
-      receiver: null-receiver  # Or use continue: false with no receiver
-
-    # Inconclusive: Route to ops for review
-    - match:
-        kubernaut.ai/investigation-outcome: inconclusive
-      receiver: slack-ops
+# BR-HAPI-200: Outcome B - Investigation inconclusive (human review required)
+elif investigation_outcome == "inconclusive":
+    warnings.append("Investigation inconclusive - human review recommended")
+    needs_human_review = True
+    human_review_reason = "investigation_inconclusive"  # ← Uses enum
 ```
 
+**Authoritative Test Source**: `holmesgpt-api/tests/unit/test_resolved_signals_br_hapi_200.py` lines 111-159
+
+| Outcome | `needs_human_review` | `human_review_reason` | `confidence` | AIAnalysis SubReason |
+|---------|---------------------|----------------------|--------------|---------------------|
+| **A: Resolved** | `false` | `null` | `≥ 0.7` | `ProblemResolved` (derived) |
+| **B: Inconclusive** | `true` | `investigation_inconclusive` | `< 0.5` | `InvestigationInconclusive` |
+
+**Rationale**: When problem is **confidently resolved**, no human review is needed → no enum value returned. AIAnalysis derives `SubReason: ProblemResolved` from the response pattern.
+
+**✅ AIAnalysis Recommendation is correct.**
+
 ---
 
-**Acknowledged By**: Notification Team
-**Date**: December 7, 2025
+**Status**: ✅ RESOLVED - AIAnalysis team's Option (A) confirmed per authoritative implementation
 
 ---
 
@@ -347,42 +393,27 @@ route:
 |----------|---------|
 | [BR-HAPI-200](../requirements/BR-HAPI-200-resolved-stale-signals.md) | Business requirement |
 | [BR-HAPI-197](../requirements/BR-HAPI-197-needs-human-review-field.md) | Parent: `needs_human_review` field |
+| [BR-ORCH-036 v2.0](../requirements/BR-ORCH-036-manual-review-notification.md) | RO manual review handling |
+| [BR-ORCH-037](../requirements/BR-ORCH-037-workflow-not-needed.md) | RO workflow-not-needed handling |
 | [RESPONSE_AIANALYSIS_NEEDS_HUMAN_REVIEW.md](./RESPONSE_AIANALYSIS_NEEDS_HUMAN_REVIEW.md) | AIAnalysis failure taxonomy |
 
 ---
 
-## ❓ Questions
+## 📝 Document History
 
-Please add questions here or create a response document:
-
-1. **AIAnalysis**: Should `ProblemResolved` be a new subReason, or use existing `WorkflowNotNeeded`?
-2. **RO**: Do you need a new metric for self-resolved incidents?
-3. **Notification**: Should self-resolved incidents generate any notification by default?
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| v1.0 | 2025-12-07 | HAPI Team | Initial notice (incorrectly marked V1.1) |
+| v1.1 | 2025-12-07 | AIAnalysis Team | Scope clarification: This is V1.0 |
+| v1.2 | 2025-12-07 | HAPI Team | Confirmed V1.0 scope, answered Q1 & Q2 |
+| v1.3 | 2025-12-07 | RO Team | Acknowledged V1.0, created BR-ORCH-037 |
+| v1.4 | 2025-12-07 | Notification Team | Acknowledged V1.0 (revised from V1.1) |
+| v2.0 | 2025-12-07 | Architecture Team | Cleaned up document, clarified V1.0 throughout |
+| v2.1 | 2025-12-07 | HAPI Team | Answered Q4: Confirmed Option (A), clarified enum naming |
+| v2.2 | 2025-12-07 | HAPI Team | **V1.0 COMPLETE**: All HAPI implementation done |
+| v2.3 | 2025-12-07 | AIAnalysis Team | **V1.0 COMPLETE**: `handleProblemResolved()`, 163 tests, 87.6% coverage |
 
 ---
 
 **Maintained By**: HolmesGPT-API Team
 **Last Updated**: December 7, 2025
-
----
-
-## 📢 Update Notification (2025-12-07) - REVISED
-
-**To**: HolmesGPT-API Team
-**From**: Notification Team
-
-The Notification team has **REVISED** acknowledgment to align with RO's V1.0 scope:
-
-- ✅ **Acknowledged**: **V1.0 scope** (revised from V1.1)
-- ✅ **Aligned with RO**: RO creates `InvestigationInconclusive` notifications in V1.0
-- ✅ **Q3 Answered**: No notification by default for self-resolved incidents
-- ✅ **Implementation Plan**: ~1 hour (Day 15) - Add label constant + routing rules + tests
-- ✅ **Existing Support**: BR-NOT-065 routing infrastructure already supports this pattern
-
-**V1.0 Tasks Scheduled**:
-1. Add `LabelInvestigationOutcome` constant
-2. Add routing configuration example
-3. Add 2-3 unit tests
-
-**Status**: 2 of 3 teams acknowledged for V1.0 (AIAnalysis pending)
-
