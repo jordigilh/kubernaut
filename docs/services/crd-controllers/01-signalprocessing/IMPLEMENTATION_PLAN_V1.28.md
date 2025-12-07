@@ -1,13 +1,19 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.27.md`
-**Version**: v1.27
-**Last Updated**: 2025-12-06
+**Filename**: `IMPLEMENTATION_PLAN_V1.28.md`
+**Version**: v1.28
+**Last Updated**: 2025-12-07
 **Timeline**: 14-17 days (quality-focused, includes label detection)
 **Status**: ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Production-Ready Standard (100% Confidence - All Dependencies Validated)
 
 **Change Log**:
+- **v1.28** (2025-12-07): Day 8 Post-Implementation Triage - Plan-to-Code Alignment
+  - ✅ **Helper Function Signatures**: Updated to match implementation (detectPDB, detectHPA, etc.)
+  - ✅ **API Call Clarity**: Functions that don't make API calls (detectGitOps, detectHelm, detectServiceMesh) now pass result directly, no error return
+  - ✅ **DD-WORKFLOW-001 v2.3 Reference**: Updated comments to reference v2.3 (was v2.2)
+  - ✅ **BR-SP-101 Cache TTL**: Clarified as deferred to V1.1 in BUSINESS_REQUIREMENTS.md
+  - 📏 **Triage Source**: Day 8 post-implementation triage against actual code
 - **v1.27** (2025-12-06): Day 8 Triage - DetectedLabels Test Matrix Expansion + Gap Fixes
   - ✅ **Test File Location**: Added `test/unit/signalprocessing/label_detector_test.go` per BR-SP-101
   - ✅ **Test Matrix Expanded**: 7 → 16 tests (Happy Path 9 + Edge Cases 3 + Error Handling 4)
@@ -3067,69 +3073,39 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *sharedtypes.Ku
     }
 
     labels := &sharedtypes.DetectedLabels{}
-    var failedDetections []string  // Track QUERY failures only (DD-WORKFLOW-001 v2.2)
+    var failedDetections []string  // Track QUERY failures only (DD-WORKFLOW-001 v2.3)
 
-    // 1. GitOps detection (ArgoCD/Flux)
-    tool, err := d.detectGitOpsTool(ctx, k8sCtx)
-    if err != nil {
-        d.logger.V(1).Info("Could not query for GitOps annotations", "error", err)
-        failedDetections = append(failedDetections, "gitOpsManaged")
-    } else {
-        labels.GitOpsManaged = (tool != "")
-        labels.GitOpsTool = tool  // "" if not GitOps managed
-    }
+    // 1. GitOps detection (ArgoCD/Flux) - NO API call needed
+    d.detectGitOps(k8sCtx, labels)
 
-    // 2. PDB protection detection
-    // hasPDB returns (true, nil) if exists, (false, nil) if not exists, (false, err) if query failed
-    hasPDB, err := d.hasPDB(ctx, k8sCtx)
-    if err != nil {
+    // 2. PDB protection detection - K8s API query
+    if err := d.detectPDB(ctx, k8sCtx, labels); err != nil {
         d.logger.V(1).Info("Could not query PodDisruptionBudgets", "error", err)
         failedDetections = append(failedDetections, "pdbProtected")
-    } else {
-        labels.PDBProtected = hasPDB  // false is valid - just means no PDB
     }
 
-    // 3. HPA detection
-    hasHPA, err := d.hasHPA(ctx, k8sCtx)
-    if err != nil {
+    // 3. HPA detection - K8s API query
+    if err := d.detectHPA(ctx, k8sCtx, labels); err != nil {
         d.logger.V(1).Info("Could not query HorizontalPodAutoscalers", "error", err)
         failedDetections = append(failedDetections, "hpaEnabled")
-    } else {
-        labels.HPAEnabled = hasHPA
     }
 
-    // 4. StatefulSet detection (uses owner chain - NO API call, NO error possible)
-    // Per DD-WORKFLOW-001 v2.3: Check owner chain for StatefulSet kind
+    // 4. StatefulSet detection - uses owner chain (NO API call)
     labels.Stateful = d.isStateful(ownerChain)
 
-    // 5. Helm managed detection
-    isHelm, err := d.isHelmManaged(ctx, k8sCtx)
-    if err != nil {
-        d.logger.V(1).Info("Could not check Helm labels", "error", err)
-        failedDetections = append(failedDetections, "helmManaged")
-    } else {
-        labels.HelmManaged = isHelm
-    }
+    // 5. Helm managed detection - NO API call needed
+    d.detectHelm(k8sCtx, labels)
 
-    // 6. Network isolation detection
-    hasNetPol, err := d.hasNetworkPolicy(ctx, k8sCtx)
-    if err != nil {
+    // 6. Network isolation detection - K8s API query
+    if err := d.detectNetworkPolicy(ctx, k8sCtx, labels); err != nil {
         d.logger.V(1).Info("Could not query NetworkPolicies", "error", err)
         failedDetections = append(failedDetections, "networkIsolated")
-    } else {
-        labels.NetworkIsolated = hasNetPol
     }
 
-    // 7. Service Mesh detection (Istio/Linkerd)
-    mesh, err := d.detectServiceMesh(ctx, k8sCtx)
-    if err != nil {
-        d.logger.V(1).Info("Could not detect service mesh", "error", err)
-        failedDetections = append(failedDetections, "serviceMesh")
-    } else {
-        labels.ServiceMesh = mesh  // "" is valid - just means no mesh
-    }
+    // 7. Service Mesh detection (Istio/Linkerd) - NO API call needed
+    d.detectServiceMesh(k8sCtx, labels)
 
-    // Set FailedDetections only if we had QUERY failures (DD-WORKFLOW-001 v2.2)
+    // Set FailedDetections only if we had QUERY failures (DD-WORKFLOW-001 v2.3)
     if len(failedDetections) > 0 {
         labels.FailedDetections = failedDetections
         d.logger.Info("Some label detections failed (RBAC or timeout)",
@@ -3139,25 +3115,29 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *sharedtypes.Ku
     return labels
 }
 
-// Helper functions now return (value, error) for FailedDetections tracking (DD-WORKFLOW-001 v2.2)
+// Helper functions:
+// - detectGitOps, detectHelm, detectServiceMesh: NO API call, no error return
+// - detectPDB, detectHPA, detectNetworkPolicy: K8s API call, returns error on query failure
 
-func (d *LabelDetector) detectGitOpsTool(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (string, error) {
-    // Check for ArgoCD: argocd.argoproj.io/instance annotation
-    // Check for Flux: fluxcd.io/sync-gc-mark label
-    // Returns ("argocd" | "flux" | "", nil) on success, ("", err) on RBAC/timeout
-    return "", nil
+func (d *LabelDetector) detectGitOps(k8sCtx *sharedtypes.KubernetesContext, result *sharedtypes.DetectedLabels) {
+    // Check for ArgoCD: argocd.argoproj.io/instance annotation (pod, deployment, namespace)
+    // Check for Flux: fluxcd.io/sync-gc-mark label (deployment, namespace)
+    // NO API call - uses existing data from KubernetesContext
+    // Sets result.GitOpsManaged and result.GitOpsTool
 }
 
-func (d *LabelDetector) hasPDB(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
-    // Query PodDisruptionBudgets matching pod labels
-    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
-    return false, nil
+func (d *LabelDetector) detectPDB(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext, result *sharedtypes.DetectedLabels) error {
+    // List PodDisruptionBudgets, check if selector matches pod labels
+    // Sets result.PDBProtected = true/false
+    // Returns nil on success (even if no PDB found), error on query failure
+    return nil
 }
 
-func (d *LabelDetector) hasHPA(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
-    // Query HorizontalPodAutoscalers targeting deployment
-    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
-    return false, nil
+func (d *LabelDetector) detectHPA(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext, result *sharedtypes.DetectedLabels) error {
+    // List HorizontalPodAutoscalers, check if scaleTargetRef matches deployment
+    // Sets result.HPAEnabled = true/false
+    // Returns nil on success (even if no HPA found), error on query failure
+    return nil
 }
 
 func (d *LabelDetector) isStateful(ownerChain []sharedtypes.OwnerChainEntry) bool {
@@ -3171,43 +3151,41 @@ func (d *LabelDetector) isStateful(ownerChain []sharedtypes.OwnerChainEntry) boo
     return false
 }
 
-func (d *LabelDetector) isHelmManaged(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
-    // Check for app.kubernetes.io/managed-by: Helm or helm.sh/chart annotation
-    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
-    return false, nil
+func (d *LabelDetector) detectHelm(k8sCtx *sharedtypes.KubernetesContext, result *sharedtypes.DetectedLabels) {
+    // Check for app.kubernetes.io/managed-by: Helm or helm.sh/chart label
+    // NO API call - uses existing data from KubernetesContext
+    // Sets result.HelmManaged = true/false
 }
 
-func (d *LabelDetector) hasNetworkPolicy(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
-    // Query NetworkPolicies in namespace
-    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
-    return false, nil
+func (d *LabelDetector) detectNetworkPolicy(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext, result *sharedtypes.DetectedLabels) error {
+    // List NetworkPolicies in namespace
+    // Sets result.NetworkIsolated = true if any exist, false otherwise
+    // Returns nil on success (even if no NetworkPolicy found), error on query failure
+    return nil
 }
 
-func (d *LabelDetector) detectServiceMesh(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (string, error) {
+func (d *LabelDetector) detectServiceMesh(k8sCtx *sharedtypes.KubernetesContext, result *sharedtypes.DetectedLabels) {
     // Per DD-WORKFLOW-001 v2.3: Check pod annotations for service mesh sidecars
     // NO K8s API call needed - uses existing pod annotation data
     //
     // Istio: sidecar.istio.io/status (present after sidecar injection)
     // Linkerd: linkerd.io/proxy-version (present after proxy injection)
-    if k8sCtx.PodDetails == nil {
-        return "", nil
+    //
+    // Sets result.ServiceMesh = "istio" | "linkerd" | ""
+    if k8sCtx.PodDetails == nil || k8sCtx.PodDetails.Annotations == nil {
+        result.ServiceMesh = ""
+        return
     }
     annotations := k8sCtx.PodDetails.Annotations
-    if annotations == nil {
-        return "", nil
-    }
-    
-    // Check for Istio sidecar
     if _, ok := annotations["sidecar.istio.io/status"]; ok {
-        return "istio", nil
+        result.ServiceMesh = "istio"
+        return
     }
-    
-    // Check for Linkerd proxy
     if _, ok := annotations["linkerd.io/proxy-version"]; ok {
-        return "linkerd", nil
+        result.ServiceMesh = "linkerd"
+        return
     }
-    
-    return "", nil
+    result.ServiceMesh = ""
 }
 ```
 

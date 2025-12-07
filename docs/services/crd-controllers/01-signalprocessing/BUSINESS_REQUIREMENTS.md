@@ -437,16 +437,22 @@ volumeMounts:
 - [ ] **serviceMesh**: Check for Istio/Linkerd sidecar or annotations
 
 **Detection Methods**:
-| Field | API Call | Cache TTL |
-|-------|----------|-----------|
+| Field | API Call | Cache TTL (V1.1) |
+|-------|----------|------------------|
 | gitOpsManaged | None (existing data) | N/A |
 | gitOpsTool | None (existing data) | N/A |
-| pdbProtected | List PDBs | 5 min |
-| hpaEnabled | List HPAs | 1 min |
+| pdbProtected | List PDBs | 5 min *(deferred)* |
+| hpaEnabled | List HPAs | 1 min *(deferred)* |
 | stateful | None (owner chain) | N/A |
 | helmManaged | None (existing data) | N/A |
-| networkIsolated | List NetworkPolicies | 5 min |
+| networkIsolated | List NetworkPolicies | 5 min *(deferred)* |
 | serviceMesh | None (existing data) | N/A |
+
+> **Note**: Cache TTL is deferred to V1.1. V1.0 performs fresh queries on each reconciliation.
+> This is acceptable for P0 release because:
+> - SignalProcessing reconciles per-signal (not batch)
+> - K8s API is local (controller runs in-cluster)
+> - Performance optimization is V1.1 scope
 
 **Test Coverage**: `label_detector_test.go` (Unit + Integration)
 
