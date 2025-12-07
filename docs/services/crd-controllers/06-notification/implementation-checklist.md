@@ -1,9 +1,9 @@
 # Notification Service - Implementation Checklist
 
-**Version**: 1.4
+**Version**: 1.5
 **Last Updated**: December 7, 2025
 **Service Type**: CRD Controller
-**Status**: ✅ PRODUCTION-READY + Day 13 ✅ + BR-NOT-067 ✅ + Day 14 (DD-005) ✅
+**Status**: ✅ PRODUCTION-READY + Day 13 ✅ + BR-NOT-067 ✅ + Day 14 (DD-005) ✅ + Day 15 ⏳
 
 ---
 
@@ -304,7 +304,8 @@ test/e2e/notification/            ✅ E2E tests (10%)
 | **CHECK** | 1 day | Comprehensive validation |
 | **Day 13: Enhancements** | 4 hours | Skip-reason routing (BR-NOT-065) ✅ |
 | **Day 14: DD-005 Compliance** | 1.5 hours | Metrics naming standardization ✅ |
-| **TOTAL** | **8-10 days + 5.5h** | Production-ready service + enhancements ✅ |
+| **Day 15: BR-HAPI-200** | ~1 hour | Investigation-outcome routing ⏳ |
+| **TOTAL** | **8-10 days + 6.5h** | Production-ready service + enhancements |
 
 ---
 
@@ -396,6 +397,57 @@ Rename notification metrics to follow DD-005 naming convention:
 
 ---
 
+## 📋 **Day 15: BR-HAPI-200 Investigation-Outcome Routing**
+
+**Duration**: ~1 hour
+**Status**: ⏳ PENDING
+**Reference**: [NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md](../../../../docs/handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md)
+
+### **Context**
+
+BR-HAPI-200 introduces investigation outcomes from HolmesGPT-API that require routing support:
+- RO creates `InvestigationInconclusive` notifications in V1.0
+- Notification service must route based on `kubernaut.ai/investigation-outcome` label
+
+### **Investigation Outcomes**
+
+| Outcome | Scenario | Routing | Rationale |
+|---------|----------|---------|-----------|
+| `resolved` | Problem self-resolved | **Skip notification** | No action needed - prevent alert fatigue |
+| `inconclusive` | LLM cannot determine root cause | Slack #ops | Human review required |
+| `workflow-selected` | Normal workflow execution | Default routing | Standard flow |
+
+### **Tasks**
+
+- [ ] Add `LabelInvestigationOutcome` constant to `pkg/notification/routing/labels.go`
+- [ ] Add investigation outcome value constants
+- [ ] Add 2-3 unit tests for investigation-outcome routing
+- [ ] Update example routing configuration
+- [ ] Run all test tiers
+- [ ] Commit changes
+
+### **Files to Modify**
+
+| File | Action |
+|------|--------|
+| `pkg/notification/routing/labels.go` | Add constants |
+| `test/unit/notification/routing_config_test.go` | Add tests |
+| `config/samples/notification_routing_config.yaml` | Add example |
+
+### **Estimated Timeline**
+
+| Task | Duration |
+|------|----------|
+| Add label constants | 10 min |
+| Add unit tests (TDD RED) | 20 min |
+| Verify tests pass (GREEN) | 5 min |
+| Update routing config example | 10 min |
+| Run all test tiers | 10 min |
+| Commit | 5 min |
+| **Total** | **~1 hour** |
+
+---
+
 ## 📊 **Success Metrics**
 
 | Metric | Target | How to Measure |
@@ -424,6 +476,6 @@ Rename notification metrics to follow DD-005 naming convention:
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 6, 2025
-**Status**: ✅ Complete Specification
+**Last Updated**: December 7, 2025
+**Status**: ✅ Complete Specification (Day 15: BR-HAPI-200 pending)
 
