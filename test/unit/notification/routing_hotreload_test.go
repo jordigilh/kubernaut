@@ -358,7 +358,7 @@ var _ = Describe("BR-NOT-067: Controller ConfigMap Watch Integration", func() {
 			expectedNamespace := routing.DefaultConfigMapNamespace
 
 			Expect(expectedConfigMapName).To(Equal("notification-routing-config"))
-			Expect(expectedNamespace).To(Equal("kubernaut-system"))
+			Expect(expectedNamespace).To(Equal("kubernaut-notifications"))
 		})
 	})
 

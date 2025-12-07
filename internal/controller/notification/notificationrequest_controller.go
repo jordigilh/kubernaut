@@ -413,8 +413,9 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 			}
 
 			// Record metric for failed completion (BR-NOT-054: Observability)
+			// DD-005: Using compliant metric names
 			UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhaseFailed), 1)
-			RecordRetryCount(notification.Namespace, float64(maxAttempt))
+			RecordDeliveryRetries(notification.Namespace, float64(maxAttempt))
 
 			return ctrl.Result{}, nil // No requeue - terminal state
 		}

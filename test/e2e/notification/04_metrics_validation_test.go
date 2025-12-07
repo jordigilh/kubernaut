@@ -105,8 +105,9 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
 			return string(body)
-		}, 15*time.Second, 1*time.Second).Should(ContainSubstring("notification_phase"),
-			"Metrics endpoint should contain notification_phase gauge after notification is processed")
+		// DD-005: notification_reconciler_phase (was: notification_phase)
+		}, 15*time.Second, 1*time.Second).Should(ContainSubstring("notification_reconciler_phase"),
+			"Metrics endpoint should contain notification_reconciler_phase gauge after notification is processed")
 
 		// Get final metrics output for validation
 		By("Querying metrics endpoint for detailed validation")
@@ -117,15 +118,15 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 		Expect(err).ToNot(HaveOccurred())
 		metricsOutput = string(body)
 
-		By("Validating notification_phase metric exists")
-		Expect(metricsOutput).To(ContainSubstring("notification_phase"),
-			"Metrics should contain notification_phase gauge")
+		By("Validating notification_reconciler_phase metric exists (DD-005 compliant)")
+		Expect(metricsOutput).To(ContainSubstring("notification_reconciler_phase"),
+			"Metrics should contain notification_reconciler_phase gauge")
 
 			By("Validating metric has correct labels")
 			// Expect metrics with namespace and phase labels
-			Expect(metricsOutput).To(MatchRegexp(`notification_phase\{.*namespace="default".*\}`),
+			Expect(metricsOutput).To(MatchRegexp(`notification_reconciler_phase\{.*namespace="default".*\}`),
 				"Metric should have namespace label")
-			Expect(metricsOutput).To(MatchRegexp(`notification_phase\{.*phase=".*".*\}`),
+			Expect(metricsOutput).To(MatchRegexp(`notification_reconciler_phase\{.*phase=".*".*\}`),
 				"Metric should have phase label")
 		})
 
@@ -169,8 +170,9 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
 			return string(body)
-		}, 15*time.Second, 1*time.Second).Should(ContainSubstring("notification_deliveries_total"),
-			"Metrics endpoint should contain notification_deliveries_total counter after notification is delivered")
+		// DD-005: notification_delivery_requests_total (was: notification_deliveries_total)
+		}, 15*time.Second, 1*time.Second).Should(ContainSubstring("notification_delivery_requests_total"),
+			"Metrics endpoint should contain notification_delivery_requests_total counter after notification is delivered")
 
 		// Get final metrics output for validation
 		By("Querying metrics endpoint for detailed validation")
@@ -181,17 +183,17 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 		Expect(err).ToNot(HaveOccurred())
 		metricsOutput = string(body)
 
-		By("Validating notification_deliveries_total metric exists")
-		Expect(metricsOutput).To(ContainSubstring("notification_deliveries_total"),
-			"Metrics should contain notification_deliveries_total counter")
+		By("Validating notification_delivery_requests_total metric exists (DD-005 compliant)")
+		Expect(metricsOutput).To(ContainSubstring("notification_delivery_requests_total"),
+			"Metrics should contain notification_delivery_requests_total counter")
 
 			By("Validating metric has correct labels")
 			// Expect metrics with namespace, status, channel labels
-			Expect(metricsOutput).To(MatchRegexp(`notification_deliveries_total\{.*namespace="default".*\}`),
+			Expect(metricsOutput).To(MatchRegexp(`notification_delivery_requests_total\{.*namespace="default".*\}`),
 				"Metric should have namespace label")
-			Expect(metricsOutput).To(MatchRegexp(`notification_deliveries_total\{.*channel="console".*\}`),
+			Expect(metricsOutput).To(MatchRegexp(`notification_delivery_requests_total\{.*channel="console".*\}`),
 				"Metric should have channel label")
-			Expect(metricsOutput).To(MatchRegexp(`notification_deliveries_total\{.*status="success".*\}`),
+			Expect(metricsOutput).To(MatchRegexp(`notification_delivery_requests_total\{.*status="success".*\}`),
 				"Metric should have status label for successful deliveries")
 		})
 
@@ -306,11 +308,11 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			body, _ := io.ReadAll(resp.Body)
 			metricsOutput = string(body)
 
-			// Check if all core metrics are present
+			// Check if all core metrics are present (DD-005 compliant names)
 			return metricsOutput != "" &&
-				strings.Contains(metricsOutput, "notification_deliveries_total") &&
+				strings.Contains(metricsOutput, "notification_delivery_requests_total") &&
 				strings.Contains(metricsOutput, "notification_delivery_duration_seconds") &&
-				strings.Contains(metricsOutput, "notification_phase")
+				strings.Contains(metricsOutput, "notification_reconciler_phase")
 		}, 15*time.Second, 1*time.Second).Should(BeTrue(),
 			"All core notification metrics should appear in endpoint after notification is processed")
 
@@ -323,12 +325,13 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 		Expect(err).ToNot(HaveOccurred())
 		metricsOutput = string(body)
 
-		By("Validating core notification metrics are present and being recorded")
+		By("Validating core notification metrics are present and being recorded (DD-005 compliant)")
 		// These are the metrics that are actually being recorded by the controller
+		// DD-005 Format: {service}_{component}_{metric_name}_{unit}
 		coreMetrics := []string{
-			"notification_deliveries_total",          // RecordDeliveryAttempt - recorded
+			"notification_delivery_requests_total",   // RecordDeliveryAttempt - recorded
 			"notification_delivery_duration_seconds", // RecordDeliveryDuration - recorded
-			"notification_phase",                     // UpdatePhaseCount - recorded
+			"notification_reconciler_phase",          // UpdatePhaseCount - recorded
 		}
 
 		for _, metric := range coreMetrics {
@@ -336,13 +339,14 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				"Core metric %s should be present and recorded", metric)
 		}
 
-			By("Validating additional registered metrics are present")
+			By("Validating additional registered metrics are present (DD-005 compliant)")
 			// These metrics are registered in the controller package
 			// They may not appear in Prometheus output until they have data
+			// DD-005 compliant names
 			registeredMetrics := []string{
-				"notification_failure_rate",
-				"notification_retry_count",
-				"notification_stuck_duration_seconds",
+				"notification_delivery_failure_ratio",
+				"notification_delivery_retries",
+				"notification_delivery_stuck_duration_seconds",
 			}
 
 			registeredCount := 0

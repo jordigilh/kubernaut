@@ -7,40 +7,45 @@ import (
 
 // ==============================================
 // v3.1 Enhancement: Prometheus Metrics for Runbook Automation
+// DD-005 Compliant: Format {service}_{component}_{metric_name}_{unit}
 // ==============================================
 
 var (
-	// notificationFailureRate tracks the current notification failure rate (percentage)
+	// notificationDeliveryFailureRatio tracks the current notification failure rate (percentage)
 	// Used by Runbook 1: High Notification Failure Rate (>10%)
-	notificationFailureRate = prometheus.NewGaugeVec(
+	// DD-005: notification_delivery_failure_ratio (was: notification_failure_rate)
+	notificationDeliveryFailureRatio = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "notification_failure_rate",
-			Help: "Current notification failure rate (percentage) by namespace",
+			Name: "notification_delivery_failure_ratio",
+			Help: "Current notification delivery failure rate (0-1 ratio) by namespace",
 		},
 		[]string{"namespace"},
 	)
 
-	// notificationStuckDuration tracks time notifications spend in Delivering phase
+	// notificationDeliveryStuckDuration tracks time notifications spend in Delivering phase
 	// Used by Runbook 2: Stuck Notifications (>10min)
-	notificationStuckDuration = prometheus.NewHistogramVec(
+	// DD-005: notification_delivery_stuck_duration_seconds (was: notification_stuck_duration_seconds)
+	notificationDeliveryStuckDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "notification_stuck_duration_seconds",
+			Name:    "notification_delivery_stuck_duration_seconds",
 			Help:    "Time notifications spend in Delivering phase",
 			Buckets: []float64{60, 300, 600, 900, 1800}, // 1m, 5m, 10m, 15m, 30m
 		},
 		[]string{"namespace"},
 	)
 
-	// notificationDeliveriesTotal counts total delivery attempts by status
-	notificationDeliveriesTotal = prometheus.NewCounterVec(
+	// notificationDeliveryRequestsTotal counts total delivery attempts by status
+	// DD-005: notification_delivery_requests_total (was: notification_deliveries_total)
+	notificationDeliveryRequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "notification_deliveries_total",
-			Help: "Total number of notification delivery attempts",
+			Name: "notification_delivery_requests_total",
+			Help: "Total number of notification delivery requests",
 		},
 		[]string{"namespace", "status", "channel"},
 	)
 
 	// notificationDeliveryDuration tracks end-to-end delivery latency
+	// DD-005: Already compliant (notification_delivery_duration_seconds)
 	notificationDeliveryDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "notification_delivery_duration_seconds",
@@ -50,35 +55,39 @@ var (
 		[]string{"namespace", "channel"},
 	)
 
-	// notificationPhase tracks current phase distribution
-	notificationPhase = prometheus.NewGaugeVec(
+	// notificationReconcilerPhase tracks current phase distribution
+	// DD-005: notification_reconciler_phase (was: notification_phase)
+	notificationReconcilerPhase = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "notification_phase",
+			Name: "notification_reconciler_phase",
 			Help: "Current notification phase (0=Pending, 1=Sending, 2=Sent, 3=Failed)",
 		},
 		[]string{"namespace", "phase"},
 	)
 
-	// notificationRetryCount tracks retry attempts
-	notificationRetryCount = prometheus.NewHistogramVec(
+	// notificationDeliveryRetries tracks retry attempts
+	// DD-005: notification_delivery_retries (was: notification_retry_count)
+	notificationDeliveryRetries = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "notification_retry_count",
-			Help:    "Number of retry attempts per notification",
+			Name:    "notification_delivery_retries",
+			Help:    "Number of delivery retry attempts per notification",
 			Buckets: []float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 		[]string{"namespace"},
 	)
 
 	// v3.1 Category B: Slack API retry metrics
-	notificationSlackRetryCount = prometheus.NewCounterVec(
+	// DD-005: notification_slack_retries_total (was: notification_slack_retry_count)
+	notificationSlackRetriesTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "notification_slack_retry_count",
+			Name: "notification_slack_retries_total",
 			Help: "Total number of Slack API retry attempts",
 		},
 		[]string{"namespace", "reason"},
 	)
 
 	// v3.1 Category B: Slack API backoff duration metrics
+	// DD-005: Already compliant (notification_slack_backoff_duration_seconds)
 	notificationSlackBackoffDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "notification_slack_backoff_duration_seconds",
@@ -91,14 +100,15 @@ var (
 
 func init() {
 	// Register metrics with controller-runtime's global registry
+	// DD-005 Compliant naming: {service}_{component}_{metric_name}_{unit}
 	metrics.Registry.MustRegister(
-		notificationFailureRate,
-		notificationStuckDuration,
-		notificationDeliveriesTotal,
+		notificationDeliveryFailureRatio,
+		notificationDeliveryStuckDuration,
+		notificationDeliveryRequestsTotal,
 		notificationDeliveryDuration,
-		notificationPhase,
-		notificationRetryCount,
-		notificationSlackRetryCount,
+		notificationReconcilerPhase,
+		notificationDeliveryRetries,
+		notificationSlackRetriesTotal,
 		notificationSlackBackoffDuration,
 	)
 
@@ -108,10 +118,11 @@ func init() {
 }
 
 // Metrics helper functions for use in controller
+// DD-005 Compliant: All helper functions use DD-005 compliant metric names
 
 // RecordDeliveryAttempt records a delivery attempt (success or failure)
 func RecordDeliveryAttempt(namespace, channel, status string) {
-	notificationDeliveriesTotal.WithLabelValues(namespace, status, channel).Inc()
+	notificationDeliveryRequestsTotal.WithLabelValues(namespace, status, channel).Inc()
 }
 
 // RecordDeliveryDuration records the time taken for a delivery
@@ -119,31 +130,31 @@ func RecordDeliveryDuration(namespace, channel string, durationSeconds float64) 
 	notificationDeliveryDuration.WithLabelValues(namespace, channel).Observe(durationSeconds)
 }
 
-// UpdateFailureRate updates the failure rate metric for a namespace
-func UpdateFailureRate(namespace string, rate float64) {
-	notificationFailureRate.WithLabelValues(namespace).Set(rate)
+// UpdateFailureRatio updates the failure ratio metric for a namespace (0-1 scale)
+func UpdateFailureRatio(namespace string, ratio float64) {
+	notificationDeliveryFailureRatio.WithLabelValues(namespace).Set(ratio)
 }
 
 // RecordStuckDuration records time spent in Delivering phase
 func RecordStuckDuration(namespace string, durationSeconds float64) {
-	notificationStuckDuration.WithLabelValues(namespace).Observe(durationSeconds)
+	notificationDeliveryStuckDuration.WithLabelValues(namespace).Observe(durationSeconds)
 }
 
 // UpdatePhaseCount updates the count of notifications in a specific phase
 func UpdatePhaseCount(namespace, phase string, count float64) {
-	notificationPhase.WithLabelValues(namespace, phase).Set(count)
+	notificationReconcilerPhase.WithLabelValues(namespace, phase).Set(count)
 }
 
-// RecordRetryCount records the number of retries for a notification
-func RecordRetryCount(namespace string, retries float64) {
-	notificationRetryCount.WithLabelValues(namespace).Observe(retries)
+// RecordDeliveryRetries records the number of retries for a notification
+func RecordDeliveryRetries(namespace string, retries float64) {
+	notificationDeliveryRetries.WithLabelValues(namespace).Observe(retries)
 }
 
 // v3.1 Category B: Slack API retry metrics helpers
 
 // RecordSlackRetry records a Slack API retry attempt
 func RecordSlackRetry(namespace, reason string) {
-	notificationSlackRetryCount.WithLabelValues(namespace, reason).Inc()
+	notificationSlackRetriesTotal.WithLabelValues(namespace, reason).Inc()
 }
 
 // RecordSlackBackoff records the backoff duration for a Slack API retry
