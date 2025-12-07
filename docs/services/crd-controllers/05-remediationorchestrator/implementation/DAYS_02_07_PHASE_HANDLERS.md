@@ -3,7 +3,9 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | **v1.4** | 2025-12-06 | **Day 4/5 CRITICAL FIXES**: Fixed API field access errors (`rr.Spec.SignalName` not `rr.Spec.SignalData.SignalName`), added precondition validation, added `NotificationTypeManualReview` enum (BR-ORCH-036), added Day 4 test plan with BR mappings | [BR-ORCH-036](../../../requirements/BR-ORCH-036-manual-review-notification.md) |
+> | **v1.6** | 2025-12-06 | **Day 6 CRITICAL FIXES**: Corrected package path to `pkg/remediationorchestrator/timeout/`, fixed TimeoutConfig usage (not `GlobalTimeout`), added phase start time fields to API (`ProcessingStartTime`, `AnalyzingStartTime`, `ExecutingStartTime`), added test plan with 14 tests + DescribeTable examples | [BR-ORCH-027](BUSINESS_REQUIREMENTS.md#br-orch-027-global-remediation-timeout), [BR-ORCH-028](BUSINESS_REQUIREMENTS.md#br-orch-028-per-phase-timeouts) |
+> | v1.5 | 2025-12-06 | **Day 5 MAJOR UPDATE**: Fixed `rr.Status.Phase` → `rr.Status.OverallPhase`, added `SignalProcessingRef` and `RequiresManualReview` to API, fixed SP `Environment` read from status, added Day 5 test plan with 21 tests | [NOTICE](../../../handoff/NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md) |
+> | v1.4 | 2025-12-06 | **Day 4/5 CRITICAL FIXES**: Fixed API field access errors (`rr.Spec.SignalName` not `rr.Spec.SignalData.SignalName`), added precondition validation, added `NotificationTypeManualReview` enum (BR-ORCH-036), added Day 4 test plan with BR mappings | [BR-ORCH-036](../../../requirements/BR-ORCH-036-manual-review-notification.md) |
 > | v1.3 | 2025-12-06 | **Day 5 MAJOR UPDATE**: Added WE failure handling per DD-WE-004. New skip reasons: `ExhaustedRetries`, `PreviousExecutionFailed`. New file: `handler/workflowexecution.go`. Updated BR-ORCH-032 v1.1 | [NOTICE](../../../handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md) |
 > | v1.2 | 2025-12-06 | **Day 4 CRITICAL FIX**: Corrected NotificationRequest API usage - `Subject`/`Body` (not `Title`/`Message`), `Metadata` (not `Context`), typed `Channel`/`Priority` enums, added `NotificationTypeApproval` enum | [NOTICE](../../../handoff/NOTICE_NOTIFICATION_TYPE_APPROVAL_ADDITION.md) |
 > | v1.1 | 2025-12-06 | **Day 4 Update**: Added BR-ORCH-035 notification reference tracking to all creators; **Day 3 Update**: Added precondition validation for SelectedWorkflow | [BR-ORCH-035](../../../requirements/BR-ORCH-035-notification-reference-tracking.md) |
@@ -1541,7 +1543,24 @@ func (a *StatusAggregator) calculateOverallReadiness(status *orchestrator.Aggreg
 
 ## Day 6: Timeout Detection (8h)
 
-**File**: `pkg/remediation/orchestrator/timeout/detector.go`
+> **📋 Changelog**
+> | Version | Date | Changes |
+> |---------|------|---------|
+> | **v1.6** | 2025-12-06 | **CRITICAL FIX**: Corrected package path to `pkg/remediationorchestrator/timeout/`, fixed TimeoutConfig usage, added phase start time fields to API, added test plan with BR mappings, added DescribeTable examples |
+> | v1.0 | 2025-12-04 | Initial version |
+
+**File**: `pkg/remediationorchestrator/timeout/detector.go`
+
+**API Prerequisite** (Added in v1.6):
+New fields added to `RemediationRequestStatus`:
+- `ProcessingStartTime` - When SignalProcessing phase started
+- `AnalyzingStartTime` - When AIAnalysis phase started
+- `ExecutingStartTime` - When WorkflowExecution phase started
+
+**Per-Remediation Override**:
+Uses existing `rr.Spec.TimeoutConfig.OverallWorkflowTimeout` (not a separate `GlobalTimeout` field).
+
+### Implementation
 
 ```go
 package timeout
@@ -1550,53 +1569,94 @@ import (
 	"time"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/remediation/orchestrator"
-	"github.com/jordigilh/kubernaut/pkg/remediation/orchestrator/phase"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator"
 )
 
-// Detector detects phase and global timeouts
-type Detector struct {
-	config orchestrator.OrchestratorConfig
+// Terminal phases that should skip timeout checks
+var terminalPhases = map[string]bool{
+	"Completed": true,
+	"Failed":    true,
+	"Timeout":   true,
+	"Skipped":   true,
 }
 
-// NewDetector creates a new timeout detector
-func NewDetector(config orchestrator.OrchestratorConfig) *Detector {
+// TimeoutResult contains information about a detected timeout
+type TimeoutResult struct {
+	TimedOut     bool
+	TimedOutPhase string        // "global", "processing", "analyzing", "executing"
+	Elapsed      time.Duration
+}
+
+// Detector detects phase and global timeouts.
+// Reference: BR-ORCH-027 (global timeout), BR-ORCH-028 (per-phase timeout)
+type Detector struct {
+	config remediationorchestrator.OrchestratorConfig
+}
+
+// NewDetector creates a new timeout detector.
+func NewDetector(config remediationorchestrator.OrchestratorConfig) *Detector {
 	return &Detector{config: config}
 }
 
-// CheckTimeout checks if the current phase has timed out (BR-ORCH-028)
-func (d *Detector) CheckTimeout(rr *remediationv1.RemediationRequest) (timedOut bool, timedOutPhase phase.Phase, duration time.Duration) {
-	currentPhase := phase.Phase(rr.Status.OverallPhase)
+// CheckTimeout checks if global or phase timeout has been exceeded.
+// Global timeout (BR-ORCH-027) is checked first, then per-phase (BR-ORCH-028).
+// Returns TimeoutResult with details about the timeout, or TimedOut=false if no timeout.
+func (d *Detector) CheckTimeout(rr *remediationv1.RemediationRequest) TimeoutResult {
+	currentPhase := rr.Status.OverallPhase
 
 	// Skip if terminal state
-	if phase.IsTerminal(currentPhase) {
-		return false, "", 0
+	if d.IsTerminalPhase(currentPhase) {
+		return TimeoutResult{TimedOut: false}
 	}
 
 	// Check global timeout first (BR-ORCH-027)
-	if globalTimedOut, globalDuration := d.CheckGlobalTimeout(rr); globalTimedOut {
-		return true, "global", globalDuration
+	if result := d.CheckGlobalTimeout(rr); result.TimedOut {
+		return result
 	}
 
-	// Get phase start time
+	// Check per-phase timeout (BR-ORCH-028)
+	return d.CheckPhaseTimeout(rr)
+}
+
+// CheckGlobalTimeout checks if global timeout has been exceeded (BR-ORCH-027).
+func (d *Detector) CheckGlobalTimeout(rr *remediationv1.RemediationRequest) TimeoutResult {
+	elapsed := time.Since(rr.CreationTimestamp.Time)
+
+	// Get global timeout from config or per-remediation override
+	globalTimeout := d.config.Timeouts.Global
+	if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.OverallWorkflowTimeout.Duration > 0 {
+		globalTimeout = rr.Spec.TimeoutConfig.OverallWorkflowTimeout.Duration
+	}
+
+	if elapsed > globalTimeout {
+		return TimeoutResult{
+			TimedOut:      true,
+			TimedOutPhase: "global",
+			Elapsed:       elapsed,
+		}
+	}
+
+	return TimeoutResult{TimedOut: false}
+}
+
+// CheckPhaseTimeout checks if current phase has timed out (BR-ORCH-028).
+func (d *Detector) CheckPhaseTimeout(rr *remediationv1.RemediationRequest) TimeoutResult {
+	currentPhase := rr.Status.OverallPhase
+
+	// Get phase start time based on current phase
 	var phaseStartTime *time.Time
 	switch currentPhase {
-	case phase.Processing:
+	case "Processing":
 		if rr.Status.ProcessingStartTime != nil {
 			t := rr.Status.ProcessingStartTime.Time
 			phaseStartTime = &t
 		}
-	case phase.Analyzing:
+	case "Analyzing", "AwaitingApproval":
 		if rr.Status.AnalyzingStartTime != nil {
 			t := rr.Status.AnalyzingStartTime.Time
 			phaseStartTime = &t
 		}
-	case phase.AwaitingApproval:
-		if rr.Status.AnalyzingStartTime != nil {
-			t := rr.Status.AnalyzingStartTime.Time
-			phaseStartTime = &t
-		}
-	case phase.Executing:
+	case "Executing":
 		if rr.Status.ExecutingStartTime != nil {
 			t := rr.Status.ExecutingStartTime.Time
 			phaseStartTime = &t
@@ -1604,51 +1664,140 @@ func (d *Detector) CheckTimeout(rr *remediationv1.RemediationRequest) (timedOut 
 	}
 
 	if phaseStartTime == nil {
-		return false, "", 0
+		return TimeoutResult{TimedOut: false}
 	}
 
-	// Get timeout for current phase
-	timeout := d.getPhaseTimeout(currentPhase)
+	// Get timeout for current phase (with per-remediation override)
+	timeout := d.GetPhaseTimeout(rr, currentPhase)
 	elapsed := time.Since(*phaseStartTime)
 
 	if elapsed > timeout {
-		return true, currentPhase, elapsed
+		return TimeoutResult{
+			TimedOut:      true,
+			TimedOutPhase: currentPhase,
+			Elapsed:       elapsed,
+		}
 	}
 
-	return false, "", 0
+	return TimeoutResult{TimedOut: false}
 }
 
-// CheckGlobalTimeout checks if global timeout has been exceeded (BR-ORCH-027)
-func (d *Detector) CheckGlobalTimeout(rr *remediationv1.RemediationRequest) (timedOut bool, duration time.Duration) {
-	// Use creation timestamp as start time
-	elapsed := time.Since(rr.CreationTimestamp.Time)
-
-	// Check against global timeout
-	globalTimeout := d.config.Timeouts.Global
-	if rr.Spec.GlobalTimeout != nil && *rr.Spec.GlobalTimeout > 0 {
-		globalTimeout = *rr.Spec.GlobalTimeout
+// GetPhaseTimeout returns the configured timeout for a phase.
+// Checks per-remediation override first, then falls back to global config.
+// Reference: BR-ORCH-028
+func (d *Detector) GetPhaseTimeout(rr *remediationv1.RemediationRequest, phase string) time.Duration {
+	// Check per-remediation override first
+	if rr.Spec.TimeoutConfig != nil {
+		switch phase {
+		case "Processing":
+			if rr.Spec.TimeoutConfig.RemediationProcessingTimeout.Duration > 0 {
+				return rr.Spec.TimeoutConfig.RemediationProcessingTimeout.Duration
+			}
+		case "Analyzing", "AwaitingApproval":
+			if rr.Spec.TimeoutConfig.AIAnalysisTimeout.Duration > 0 {
+				return rr.Spec.TimeoutConfig.AIAnalysisTimeout.Duration
+			}
+		case "Executing":
+			if rr.Spec.TimeoutConfig.WorkflowExecutionTimeout.Duration > 0 {
+				return rr.Spec.TimeoutConfig.WorkflowExecutionTimeout.Duration
+			}
+		}
 	}
 
-	if elapsed > globalTimeout {
-		return true, elapsed
-	}
-
-	return false, 0
-}
-
-// getPhaseTimeout returns the configured timeout for a phase
-func (d *Detector) getPhaseTimeout(p phase.Phase) time.Duration {
-	switch p {
-	case phase.Processing:
+	// Fall back to global config defaults
+	switch phase {
+	case "Processing":
 		return d.config.Timeouts.Processing
-	case phase.Analyzing, phase.AwaitingApproval:
+	case "Analyzing", "AwaitingApproval":
 		return d.config.Timeouts.Analyzing
-	case phase.Executing:
+	case "Executing":
 		return d.config.Timeouts.Executing
 	default:
 		return d.config.Timeouts.Global
 	}
 }
+
+// IsTerminalPhase checks if the phase is terminal (no timeout check needed).
+func (d *Detector) IsTerminalPhase(phase string) bool {
+	return terminalPhases[phase]
+}
+```
+
+### Day 6 TDD Test Plan
+
+**Test File**: `test/unit/remediationorchestrator/timeout_detector_test.go`
+
+| # | Test Case | BR | Type |
+|---|-----------|-----|------|
+| 1 | Constructor returns non-nil Detector | — | Unit |
+| 2 | `CheckGlobalTimeout` returns true when exceeded | BR-ORCH-027 | Unit |
+| 3 | `CheckGlobalTimeout` returns false when not exceeded | BR-ORCH-027 | Unit |
+| 4 | `CheckGlobalTimeout` uses per-RR override when set | BR-ORCH-027 | Unit |
+| 5 | `CheckTimeout` skips terminal phases (Completed) | BR-ORCH-028 | Unit |
+| 6 | `CheckTimeout` skips terminal phases (Failed) | BR-ORCH-028 | Unit |
+| 7 | `CheckPhaseTimeout` detects Processing timeout | BR-ORCH-028 | Unit |
+| 8 | `CheckPhaseTimeout` detects Analyzing timeout | BR-ORCH-028 | Unit |
+| 9 | `CheckPhaseTimeout` detects Executing timeout | BR-ORCH-028 | Unit |
+| 10 | `CheckPhaseTimeout` returns no timeout when not exceeded | BR-ORCH-028 | Unit |
+| 11 | `CheckTimeout` returns global timeout when both exceed | BR-ORCH-027/028 | Unit |
+| 12 | `GetPhaseTimeout` returns config defaults | BR-ORCH-028 | Unit (DescribeTable) |
+| 13 | `GetPhaseTimeout` uses per-RR override | BR-ORCH-028 | Unit (DescribeTable) |
+| 14 | `IsTerminalPhase` returns true for terminal phases | — | Unit (DescribeTable) |
+
+**Total**: 14 tests
+
+### DescribeTable Examples
+
+```go
+// Test #12, #13: GetPhaseTimeout with defaults and overrides
+DescribeTable("BR-ORCH-028: GetPhaseTimeout returns correct timeout",
+    func(phase string, rrOverride *time.Duration, expectedTimeout time.Duration) {
+        config := remediationorchestrator.DefaultConfig()
+        detector := timeout.NewDetector(config)
+
+        rr := testutil.NewRemediationRequest("test-rr", "default")
+        if rrOverride != nil {
+            rr.Spec.TimeoutConfig = &remediationv1.TimeoutConfig{}
+            switch phase {
+            case "Processing":
+                rr.Spec.TimeoutConfig.RemediationProcessingTimeout = metav1.Duration{Duration: *rrOverride}
+            case "Analyzing":
+                rr.Spec.TimeoutConfig.AIAnalysisTimeout = metav1.Duration{Duration: *rrOverride}
+            case "Executing":
+                rr.Spec.TimeoutConfig.WorkflowExecutionTimeout = metav1.Duration{Duration: *rrOverride}
+            }
+        }
+
+        result := detector.GetPhaseTimeout(rr, phase)
+        Expect(result).To(Equal(expectedTimeout))
+    },
+    // Default config values
+    Entry("Processing → 5min (default)", "Processing", nil, 5*time.Minute),
+    Entry("Analyzing → 10min (default)", "Analyzing", nil, 10*time.Minute),
+    Entry("AwaitingApproval → 10min (uses Analyzing)", "AwaitingApproval", nil, 10*time.Minute),
+    Entry("Executing → 30min (default)", "Executing", nil, 30*time.Minute),
+    // Per-RR override
+    Entry("Processing → 2min (override)", "Processing", ptr(2*time.Minute), 2*time.Minute),
+    Entry("Analyzing → 15min (override)", "Analyzing", ptr(15*time.Minute), 15*time.Minute),
+    Entry("Executing → 45min (override)", "Executing", ptr(45*time.Minute), 45*time.Minute),
+)
+
+// Test #14: IsTerminalPhase
+DescribeTable("IsTerminalPhase returns correct value",
+    func(phase string, expected bool) {
+        config := remediationorchestrator.DefaultConfig()
+        detector := timeout.NewDetector(config)
+        Expect(detector.IsTerminalPhase(phase)).To(Equal(expected))
+    },
+    Entry("Completed → true", "Completed", true),
+    Entry("Failed → true", "Failed", true),
+    Entry("Timeout → true", "Timeout", true),
+    Entry("Skipped → true", "Skipped", true),
+    Entry("Processing → false", "Processing", false),
+    Entry("Analyzing → false", "Analyzing", false),
+    Entry("Executing → false", "Executing", false),
+    Entry("Pending → false", "Pending", false),
+)
 ```
 
 ---

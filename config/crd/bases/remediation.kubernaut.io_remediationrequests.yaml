@@ -284,6 +284,13 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              analyzingStartTime:
+                description: |-
+                  AnalyzingStartTime is when AIAnalysis phase started.
+                  Used for per-phase timeout detection (default: 10 minutes).
+                  Reference: BR-ORCH-028
+                format: date-time
+                type: string
               approvalNotificationSent:
                 description: |-
                   Approval notification tracking (BR-ORCH-001)
@@ -355,6 +362,13 @@ spec:
                 items:
                   type: string
                 type: array
+              executingStartTime:
+                description: |-
+                  ExecutingStartTime is when WorkflowExecution phase started.
+                  Used for per-phase timeout detection (default: 30 minutes).
+                  Reference: BR-ORCH-028
+                format: date-time
+                type: string
               failurePhase:
                 description: |-
                   FailurePhase indicates which phase failed (e.g., "ai_analysis", "workflow_execution")
@@ -423,6 +437,13 @@ spec:
                   Phase tracking for orchestration
                   Valid values: "pending", "processing", "analyzing", "executing", "recovering",
                                 "completed", "failed", "timeout", "Skipped"
+                type: string
+              processingStartTime:
+                description: |-
+                  ProcessingStartTime is when SignalProcessing phase started.
+                  Used for per-phase timeout detection (default: 5 minutes).
+                  Reference: BR-ORCH-028
+                format: date-time
                 type: string
               recoveryAttempts:
                 description: RecoveryAttempts tracks the number of recovery attempts

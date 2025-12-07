@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | **v1.2** | 2025-12-06 | **Day 5 CRITICAL FIX**: Added `SignalProcessingRef *corev1.ObjectReference` for SP CRD tracking; Added `RequiresManualReview bool` for manual intervention scenarios (ExhaustedRetries, PreviousExecutionFailed, WorkflowResolutionFailed) | [BR-ORCH-032](../../../requirements/BR-ORCH-032-034-resource-lock-deduplication.md), [BR-ORCH-036](../../../requirements/BR-ORCH-036-manual-review-notification.md), [DD-WE-004](../../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md) |
+> | **v1.3** | 2025-12-06 | **Day 6 CRITICAL FIX**: Added phase start time fields for per-phase timeout detection: `ProcessingStartTime`, `AnalyzingStartTime`, `ExecutingStartTime`; Removed `Environment`/`Priority` from Spec section (now from SignalProcessing.Status) | [BR-ORCH-027](BUSINESS_REQUIREMENTS.md#br-orch-027-global-remediation-timeout), [BR-ORCH-028](BUSINESS_REQUIREMENTS.md#br-orch-028-per-phase-timeouts), [NOTICE](../../../handoff/NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md) |
+> | v1.2 | 2025-12-06 | **Day 5 CRITICAL FIX**: Added `SignalProcessingRef *corev1.ObjectReference` for SP CRD tracking; Added `RequiresManualReview bool` for manual intervention scenarios (ExhaustedRetries, PreviousExecutionFailed, WorkflowResolutionFailed) | [BR-ORCH-032](../../../requirements/BR-ORCH-032-034-resource-lock-deduplication.md), [BR-ORCH-036](../../../requirements/BR-ORCH-036-manual-review-notification.md), [DD-WE-004](../../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md) |
 > | v1.1 | 2025-12-06 | **SCHEMA UPDATE**: Added `NotificationRequestRefs []corev1.ObjectReference` for audit trail and compliance tracking; Enables instant visibility of all notifications sent for a remediation | [BR-ORCH-035](../../../requirements/BR-ORCH-035-notification-reference-tracking.md) |
 > | v1.0 | 2025-12-04 | Initial CRD schema with recovery support | - |
 
@@ -43,8 +44,11 @@ type RemediationRequestSpec struct {
 
     // Signal Classification (REQUIRED)
     Severity     string `json:"severity"`      // "critical", "warning", "info"
-    Environment  string `json:"environment"`   // "prod", "staging", "dev"
-    Priority     string `json:"priority"`      // P0/P1/P2 assigned by Gateway
+    // NOTE (v1.3): Environment and Priority fields REMOVED from Spec
+    // RO now reads these from SignalProcessing.Status:
+    // - SignalProcessingStatus.EnvironmentClassification.Environment
+    // - SignalProcessingStatus.PriorityAssignment.Priority
+    // See: NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
     SignalType   string `json:"signalType"`    // "prometheus", "kubernetes-event", "aws-cloudwatch", etc.
     SignalSource string `json:"signalSource,omitempty"` // Adapter name (e.g., "prometheus-adapter")
     TargetType   string `json:"targetType"`    // "kubernetes", "aws", "azure", "gcp", "datadog"
@@ -229,6 +233,20 @@ type RemediationRequestStatus struct {
     OverallPhase string      `json:"overallPhase"` // pending, processing, analyzing, executing, recovering, completed, failed, timeout, skipped
     StartTime    metav1.Time `json:"startTime"`
     CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+    // ========================================
+    // PHASE START TIME TRACKING (v1.3, BR-ORCH-028)
+    // Used for per-phase timeout detection
+    // ========================================
+
+    // ProcessingStartTime is when SignalProcessing phase started (default timeout: 5min)
+    ProcessingStartTime *metav1.Time `json:"processingStartTime,omitempty"`
+
+    // AnalyzingStartTime is when AIAnalysis phase started (default timeout: 10min)
+    AnalyzingStartTime *metav1.Time `json:"analyzingStartTime,omitempty"`
+
+    // ExecutingStartTime is when WorkflowExecution phase started (default timeout: 30min)
+    ExecutingStartTime *metav1.Time `json:"executingStartTime,omitempty"`
 
     // ========================================
     // CHILD CRD REFERENCES (v1.2)

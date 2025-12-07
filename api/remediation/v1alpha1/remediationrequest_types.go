@@ -197,6 +197,28 @@ type RemediationRequestStatus struct {
 	StartTime   *metav1.Time `json:"startTime,omitempty"`
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 
+	// ========================================
+	// PHASE START TIME TRACKING (BR-ORCH-028)
+	// ========================================
+
+	// ProcessingStartTime is when SignalProcessing phase started.
+	// Used for per-phase timeout detection (default: 5 minutes).
+	// Reference: BR-ORCH-028
+	// +optional
+	ProcessingStartTime *metav1.Time `json:"processingStartTime,omitempty"`
+
+	// AnalyzingStartTime is when AIAnalysis phase started.
+	// Used for per-phase timeout detection (default: 10 minutes).
+	// Reference: BR-ORCH-028
+	// +optional
+	AnalyzingStartTime *metav1.Time `json:"analyzingStartTime,omitempty"`
+
+	// ExecutingStartTime is when WorkflowExecution phase started.
+	// Used for per-phase timeout detection (default: 30 minutes).
+	// Reference: BR-ORCH-028
+	// +optional
+	ExecutingStartTime *metav1.Time `json:"executingStartTime,omitempty"`
+
 	// References to downstream CRDs
 	SignalProcessingRef      *corev1.ObjectReference `json:"signalProcessingRef,omitempty"`
 	RemediationProcessingRef *corev1.ObjectReference `json:"remediationProcessingRef,omitempty"`
