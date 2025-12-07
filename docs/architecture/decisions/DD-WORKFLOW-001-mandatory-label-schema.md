@@ -1,12 +1,12 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V2.2 - PodSecurityLevel Removed)
+**Status**: ✅ **APPROVED** (V2.3 - Detection Methods Documented)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
 **Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
-**Version**: 2.2
+**Version**: 2.3
 
 ---
 
@@ -34,6 +34,15 @@
 ---
 
 ## 📝 **Changelog**
+
+### Version 2.3 (2025-12-06)
+- **NEW**: Added **Detailed Detection Methods** section documenting specific annotations/labels for each detection type
+- **CLARIFICATION**: `stateful` detection uses owner chain (no K8s API call), not direct StatefulSet lookup
+- **CLARIFICATION**: `serviceMesh` detection uses pod annotations:
+  - Istio: `sidecar.istio.io/status` (present after sidecar injection)
+  - Linkerd: `linkerd.io/proxy-version` (present after proxy injection)
+- **DOCUMENTATION**: Each detection field now has documented source, specific check, and API call requirements
+- **RATIONALE**: Standardized detection methods for consistent implementation across services
 
 ### Version 2.2 (2025-12-03)
 - **REMOVED**: `podSecurityLevel` field from DetectedLabels
@@ -309,7 +318,7 @@ final_labels[key] = value {
 
 SignalProcessing auto-detects these labels from Kubernetes resources **without any customer configuration**.
 
-#### **DetectedLabels Fields (9 Fields)**
+#### **DetectedLabels Fields (8 Fields)**
 
 | Field | Type | Wildcard | Detection Method | Used For |
 |-------|------|----------|------------------|----------|
@@ -317,12 +326,33 @@ SignalProcessing auto-detects these labels from Kubernetes resources **without a
 | `gitOpsTool` | string | ✅ `"*"` | `"argocd"`, `"flux"`, or omitted | Workflow selection |
 | `pdbProtected` | bool | ❌ No | PodDisruptionBudget exists | Risk assessment |
 | `hpaEnabled` | bool | ❌ No | HorizontalPodAutoscaler targets workload | Scaling context |
-| `stateful` | bool | ❌ No | StatefulSet or has PVCs attached | State handling |
+| `stateful` | bool | ❌ No | StatefulSet in owner chain | State handling |
 | `helmManaged` | bool | ❌ No | `helm.sh/chart` label present | Deployment method |
 | `networkIsolated` | bool | ❌ No | NetworkPolicy exists in namespace | Security context |
 | `serviceMesh` | string | ✅ `"*"` | `"istio"`, `"linkerd"`, or omitted | Traffic management |
 
 **Note**: Only **string fields** support wildcards. Boolean fields use absence semantics (see Boolean Normalization Rule below).
+
+#### **Detailed Detection Methods (v2.3)**
+
+> **Added**: 2025-12-06 - Specific annotations and labels for each detection type
+
+| Field | Detection Source | Specific Check | API Call Required |
+|-------|------------------|----------------|-------------------|
+| `gitOpsManaged` | Deployment/Namespace annotations | ArgoCD: `argocd.argoproj.io/instance`<br>Flux: `fluxcd.io/sync-gc-mark` label | No (existing data) |
+| `gitOpsTool` | Same as above | `"argocd"` or `"flux"` based on which is present | No (existing data) |
+| `pdbProtected` | K8s API: PodDisruptionBudgets | List PDBs in namespace, check if selector matches pod labels | Yes |
+| `hpaEnabled` | K8s API: HorizontalPodAutoscalers | List HPAs in namespace, check if `scaleTargetRef` matches deployment | Yes |
+| `stateful` | Owner chain (from Day 7) | Check if any `OwnerChainEntry.Kind == "StatefulSet"` | No (owner chain param) |
+| `helmManaged` | Deployment labels | `app.kubernetes.io/managed-by: Helm` or `helm.sh/chart` annotation | No (existing data) |
+| `networkIsolated` | K8s API: NetworkPolicies | List NetworkPolicies in namespace (existence = isolated) | Yes |
+| `serviceMesh` | Pod annotations | Istio: `sidecar.istio.io/status` (present after injection)<br>Linkerd: `linkerd.io/proxy-version` (present after injection) | No (existing data) |
+
+**ServiceMesh Detection Rationale** (2025-12-06):
+- Both Istio and Linkerd inject sidecars into pods, adding specific annotations post-injection
+- Istio adds `sidecar.istio.io/status` with sidecar configuration JSON
+- Linkerd adds `linkerd.io/proxy-version` with the proxy version string
+- These annotations are reliable indicators that the pod is mesh-enabled (injection complete)
 
 #### **Boolean Normalization Rule (V1.5)**
 
