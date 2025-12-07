@@ -1,13 +1,25 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.29.md`
-**Version**: v1.29
+**Filename**: `IMPLEMENTATION_PLAN_V1.30.md`
+**Version**: v1.30
 **Last Updated**: 2025-12-07
 **Timeline**: 14-17 days (quality-focused, includes label detection)
 **Status**: ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Production-Ready Standard (100% Confidence - All Dependencies Validated)
 
 **Change Log**:
+- **v1.30** (2025-12-07): Day 10 Triage - Test Coverage Expansion + Integration Test Matrix
+  - 🔴 **Test Count Correction**: Plan said ~20 unit tests but actual is 184 (Days 1-9 implementation)
+  - 🔴 **Integration Test Gap**: 0 integration tests exist, target 50-80 per plan
+  - ✅ **Coverage Alignment**: Targets now match Gateway (~440) and DataStorage (~714) scale
+  - ✅ **Test Count Table Updated**: Reflects actual counts + realistic targets
+  - ✅ **Day 10 Integration Test Matrix**: Expanded from 1 example to 50+ specific tests
+  - ✅ **Component Integration Tests**: Added K8sEnricher, EnvironmentClassifier, PriorityEngine tests
+  - ✅ **Reconciler Integration Tests**: Full phase transition, error recovery, concurrent tests
+  - ✅ **Rego Integration Tests**: Policy evaluation, hot-reload, fallback tests
+  - ✅ **Controller Setup Added**: ENVTEST example now includes manager + reconciler setup
+  - ✅ **Parallel Execution Pattern**: Unique namespace generation for isolation
+  - 📏 **Triage Source**: Cross-service comparison (Gateway, DataStorage) + TESTING_GUIDELINES.md
 - **v1.29** (2025-12-07): Day 9 Triage - CustomLabels Rego Extraction Gap Fixes
   - 🔴 **CRD Type Fix**: `CustomLabels map[string]string` → `map[string][]string` (DD-WORKFLOW-001 v1.9)
   - 🔴 **Label Domain Fix**: Security wrapper updated from `kubernaut.io/` to `kubernaut.ai/`
@@ -3876,15 +3888,17 @@ func (c *Client) WriteEnrichmentAudit(ctx context.Context, sp *signalprocessingv
 - Data Storage: **392 unit** + **160 integration** = 552 tests
 
 **Signal Processing Expected** (CRD Controller, medium complexity):
-- Unit Tests: **100-150** tests
-- Integration Tests: **50-80** tests
-- E2E Tests: **5-10** tests
+- Unit Tests: **250-300** tests (current: 184 from Days 1-9)
+- Integration Tests: **50-80** tests (current: 0 - Day 10 focus)
+- E2E Tests: **5-10** tests (current: 0 - Day 11 focus)
 
-| Test Type | Expected Count | Purpose | Location |
-|-----------|----------------|---------|----------|
-| **Unit** | 100-150 | Component logic, edge cases, error handling | `test/unit/signalprocessing/` |
-| **Integration** | 50-80 | CRD reconciliation, real K8s API (envtest) | `test/integration/signalprocessing/` |
-| **E2E** | 5-10 | Full workflow validation | `test/e2e/signalprocessing/` |
+| Test Type | Current | Target | Purpose | Location |
+|-----------|---------|--------|---------|----------|
+| **Unit** | 184 ✅ | 250-300 | Component logic, edge cases, error handling | `test/unit/signalprocessing/` |
+| **Integration** | 0 ❌ | 50-80 | CRD reconciliation, real K8s API (envtest) | `test/integration/signalprocessing/` |
+| **E2E** | 0 ❌ | 5-10 | Full workflow validation | `test/e2e/signalprocessing/` |
+
+**Note**: Unit tests created during Days 1-9 cover component logic (enricher, classifier, priority, business, ownerchain, detection, rego). Integration and E2E tests are the Day 10-11 focus.
 
 ---
 
@@ -4618,26 +4632,49 @@ var _ = Describe("BR-SP-006: Rego Policy Evaluation", func() {
 #### **Day 10: Integration Tests (ENVTEST)**
 
 **Test Environment**: ENVTEST (confirmed)
+**Target**: 50-80 integration tests across 4 test files
+**Test Pattern**: Real K8s API (envtest) + real controller manager + isolated namespaces
 
-**File**: `test/integration/signalprocessing/reconciler_integration_test.go`
+---
+
+##### **Integration Test File Structure**
+
+| File | Purpose | Test Count |
+|------|---------|------------|
+| `reconciler_integration_test.go` | Reconciler phase transitions, status updates | ~25 |
+| `component_integration_test.go` | K8sEnricher, Classifiers with real K8s | ~20 |
+| `rego_integration_test.go` | Rego policy evaluation with real ConfigMap | ~15 |
+| `hot_reloader_test.go` | Hot-reload + concurrent access | ~5 |
+
+---
+
+##### **File 1: Reconciler Integration Tests** (`test/integration/signalprocessing/reconciler_integration_test.go`)
+
+**CRITICAL**: ENVTEST requires controller manager setup (not just client):
 
 ```go
-package signalprocessing
+package signalprocessing_test
 
 import (
     "context"
+    "fmt"
     "path/filepath"
     "time"
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
 
+    corev1 "k8s.io/api/core/v1"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/client-go/kubernetes/scheme"
+    "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/client-go/rest"
+    ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/envtest"
+    metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
     signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+    controller "github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 )
 
 const (
@@ -4645,70 +4682,325 @@ const (
     interval = 250 * time.Millisecond
 )
 
-var _ = Describe("SignalProcessing Integration", func() {
-    var (
-        ctx       context.Context
-        cancel    context.CancelFunc
-        testEnv   *envtest.Environment
-        k8sClient client.Client
-    )
+var (
+    testEnv   *envtest.Environment
+    cfg       *rest.Config
+    k8sClient client.Client
+    scheme    *runtime.Scheme
+    ctx       context.Context
+    cancel    context.CancelFunc
+)
 
-    BeforeSuite(func() {
-        testEnv = &envtest.Environment{
-            CRDDirectoryPaths: []string{
-                filepath.Join("..", "..", "..", "config", "crd", "bases"),
-            },
-        }
-        cfg, err := testEnv.Start()
-        Expect(err).ToNot(HaveOccurred())
+var _ = BeforeSuite(func() {
+    ctx, cancel = context.WithCancel(context.Background())
 
-        k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-        Expect(err).ToNot(HaveOccurred())
+    // Setup scheme
+    scheme = runtime.NewScheme()
+    Expect(corev1.AddToScheme(scheme)).To(Succeed())
+    Expect(signalprocessingv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+    // Start envtest
+    testEnv = &envtest.Environment{
+        CRDDirectoryPaths: []string{
+            filepath.Join("..", "..", "..", "config", "crd", "bases"),
+        },
+    }
+    var err error
+    cfg, err = testEnv.Start()
+    Expect(err).ToNot(HaveOccurred())
+
+    // Create client
+    k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+    Expect(err).ToNot(HaveOccurred())
+
+    // Start controller manager with reconciler
+    mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+        Scheme: scheme,
+        Metrics: metricsserver.Options{BindAddress: "0"}, // Disable metrics
     })
+    Expect(err).ToNot(HaveOccurred())
 
-    It("should process production pod signal and assign P0 priority", func() {
-        // BUSINESS OUTCOME: Production pod signals get highest priority
-        // Create SignalProcessing CRD with production namespace signal
-        sp := &signalprocessingv1alpha1.SignalProcessing{
-            ObjectMeta: metav1.ObjectMeta{
-                Name:      "test-signal-prod",
-                Namespace: "kubernaut-system",
-            },
-            Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-                Signal: signalprocessingv1alpha1.SignalData{
-                    Name:      "HighCPU",
-                    Severity:  "critical",
-                    Namespace: "production",
-                    Resource: signalprocessingv1alpha1.ResourceReference{
-                        Kind: "Pod",
-                        Name: "api-server-xyz",
+    // Register reconciler
+    reconciler := &controller.SignalProcessingReconciler{
+        Client: mgr.GetClient(),
+        Scheme: mgr.GetScheme(),
+        Logger: ctrl.Log.WithName("test"),
+        // ... other dependencies injected
+    }
+    Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
+
+    // Start manager in background
+    go func() {
+        defer GinkgoRecover()
+        Expect(mgr.Start(ctx)).To(Succeed())
+    }()
+})
+
+var _ = AfterSuite(func() {
+    cancel()
+    Expect(testEnv.Stop()).To(Succeed())
+})
+
+// Helper: Create unique namespace for test isolation (PARALLEL EXECUTION)
+func createTestNamespace(prefix string) string {
+    ns := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+    namespace := &corev1.Namespace{
+        ObjectMeta: metav1.ObjectMeta{Name: ns},
+    }
+    Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+    return ns
+}
+
+var _ = Describe("SignalProcessing Reconciler Integration", func() {
+    // ========================================
+    // HAPPY PATH TESTS (IT-HP-01 to IT-HP-10)
+    // ========================================
+
+    Context("Happy Path - Phase Transitions", func() {
+        It("IT-HP-01: should process production pod signal and assign P0 priority (BR-SP-070, BR-SP-051)", func() {
+            ns := createTestNamespace("it-hp-01")
+            defer k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
+
+            sp := &signalprocessingv1alpha1.SignalProcessing{
+                ObjectMeta: metav1.ObjectMeta{
+                    Name:      "test-signal",
+                    Namespace: ns,
+                },
+                Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+                    Signal: signalprocessingv1alpha1.SignalData{
+                        Name:      "HighCPU",
+                        Severity:  "critical",
+                        Namespace: "production",
+                        Resource: signalprocessingv1alpha1.ResourceReference{
+                            Kind: "Pod",
+                            Name: "api-server-xyz",
+                        },
                     },
                 },
-            },
-        }
-        Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+            }
+            Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-        // Wait for completion - BUSINESS OUTCOME: Processing completes
-        Eventually(func() string {
-            var updated signalprocessingv1alpha1.SignalProcessing
-            k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)
-            return string(updated.Status.Phase)
-        }, timeout, interval).Should(Equal("Complete"))
+            Eventually(func() string {
+                var updated signalprocessingv1alpha1.SignalProcessing
+                k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)
+                return string(updated.Status.Phase)
+            }, timeout, interval).Should(Equal("Complete"))
 
-        // Verify BUSINESS OUTCOMES (not null-testing)
-        var final signalprocessingv1alpha1.SignalProcessing
-        Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+            var final signalprocessingv1alpha1.SignalProcessing
+            Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+            Expect(final.Status.EnvironmentClassification.Environment).To(Equal("production"))
+            Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
+        })
 
-        // BUSINESS OUTCOME: Production namespace → "production" environment
-        Expect(final.Status.EnvironmentClassification.Environment).To(Equal("production"))
-        Expect(final.Status.EnvironmentClassification.Confidence).To(BeNumerically(">=", 0.8))
+        It("IT-HP-02: should process staging deployment signal and assign P1 priority (BR-SP-070, BR-SP-051)", func() {
+            // Similar structure with staging namespace
+        })
 
-        // BUSINESS OUTCOME: Production + Critical → P0 priority
-        Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
-        Expect(final.Status.PriorityAssignment.Confidence).To(BeNumerically(">=", 0.9))
+        It("IT-HP-03: should process dev service signal and assign P3 priority (BR-SP-070, BR-SP-051)", func() {
+            // Similar structure with dev namespace
+        })
+
+        It("IT-HP-04: should detect environment from namespace label (BR-SP-051)", func() {
+            // Create namespace with kubernaut.ai/environment label
+        })
+
+        It("IT-HP-05: should fallback to ConfigMap for environment (BR-SP-052)", func() {
+            // Create ConfigMap with environment mapping
+        })
+
+        It("IT-HP-06: should classify business context with labels (BR-SP-002)", func() {
+            // Create namespace with business labels
+        })
+
+        It("IT-HP-07: should build owner chain (Pod→RS→Deployment) (BR-SP-100)", func() {
+            // Create Pod with owner references
+        })
+
+        It("IT-HP-08: should detect PDB protection (BR-SP-101)", func() {
+            // Create PDB matching pod labels
+        })
+
+        It("IT-HP-09: should detect HPA enabled (BR-SP-101)", func() {
+            // Create HPA targeting deployment
+        })
+
+        It("IT-HP-10: should populate CustomLabels from Rego policy (BR-SP-102)", func() {
+            // Create ConfigMap with labels.rego policy
+        })
+    })
+
+    // ========================================
+    // EDGE CASE TESTS (IT-EC-01 to IT-EC-08)
+    // ========================================
+
+    Context("Edge Cases", func() {
+        It("IT-EC-01: should default to unknown environment (BR-SP-053)", func() {
+            // No namespace labels, no ConfigMap mapping
+        })
+
+        It("IT-EC-02: should use degraded mode when pod not found (BR-SP-001)", func() {
+            // Signal references non-existent pod
+        })
+
+        It("IT-EC-03: should handle concurrent reconciliation (Controller stability)", func() {
+            // Create 10 SignalProcessing CRs simultaneously
+        })
+
+        It("IT-EC-04: should handle empty signal data gracefully", func() {
+            // Minimal valid SignalProcessing spec
+        })
+
+        It("IT-EC-05: should handle namespace with special characters", func() {
+            // Namespace with dashes and numbers
+        })
+
+        It("IT-EC-06: should handle max owner chain depth (5 levels)", func() {
+            // Create deep owner chain (Pod→RS→Deployment→...)
+        })
+
+        It("IT-EC-07: should handle empty FailedDetections on success", func() {
+            // Verify FailedDetections is empty when all queries succeed
+        })
+
+        It("IT-EC-08: should handle multiple Rego policy keys", func() {
+            // Policy returns multiple custom labels
+        })
+    })
+
+    // ========================================
+    // ERROR HANDLING TESTS (IT-ER-01 to IT-ER-07)
+    // ========================================
+
+    Context("Error Handling", func() {
+        It("IT-ER-01: should retry on K8s API timeout (Error Cat. B)", func() {
+            // Simulate transient API error
+        })
+
+        It("IT-ER-02: should retry on status update conflict (Error Cat. D)", func() {
+            // Simulate optimistic locking conflict
+        })
+
+        It("IT-ER-03: should handle context cancellation gracefully (Error Cat. B)", func() {
+            // Cancel context during reconciliation
+        })
+
+        It("IT-ER-04: should log Rego policy syntax error (Error Cat. C)", func() {
+            // Create ConfigMap with invalid Rego
+        })
+
+        It("IT-ER-05: should track PDB query failure in FailedDetections (BR-SP-103)", func() {
+            // Simulate RBAC denial for PDB list
+        })
+
+        It("IT-ER-06: should complete even if audit write fails (ADR-038)", func() {
+            // Audit client returns error
+        })
+
+        It("IT-ER-07: should mark failed for permanent errors", func() {
+            // Invalid CRD spec that can't be processed
+        })
     })
 })
 ```
+
+---
+
+##### **Reconciler Integration Test Matrix** (25 tests)
+
+| ID | Category | Scenario | Input | Expected | BR |
+|----|----------|----------|-------|----------|-----|
+| **IT-HP-01** | Happy Path | Production pod → P0 | `namespace: production, severity: critical` | P0, env: production | BR-SP-070, BR-SP-051 |
+| **IT-HP-02** | Happy Path | Staging deployment → P1 | `namespace: staging, severity: warning` | P1, env: staging | BR-SP-070, BR-SP-051 |
+| **IT-HP-03** | Happy Path | Dev service → P3 | `namespace: dev, severity: info` | P3, env: development | BR-SP-070, BR-SP-051 |
+| **IT-HP-04** | Happy Path | Environment from label | `namespace.labels[kubernaut.ai/environment]=prod` | env: production | BR-SP-051 |
+| **IT-HP-05** | Happy Path | ConfigMap fallback | ConfigMap mapping `test-ns→staging` | env: staging | BR-SP-052 |
+| **IT-HP-06** | Happy Path | Business classification | `namespace.labels[kubernaut.ai/team]=payments` | businessUnit: payments | BR-SP-002 |
+| **IT-HP-07** | Happy Path | Owner chain traversal | Pod with RS→Deployment owners | Chain: [RS, Deployment] | BR-SP-100 |
+| **IT-HP-08** | Happy Path | PDB detection | PDB selector matches pod | pdbProtected: true | BR-SP-101 |
+| **IT-HP-09** | Happy Path | HPA detection | HPA targets deployment | hpaEnabled: true | BR-SP-101 |
+| **IT-HP-10** | Happy Path | CustomLabels from Rego | ConfigMap with labels.rego | CustomLabels populated | BR-SP-102 |
+| **IT-EC-01** | Edge Case | Default environment | No labels, no ConfigMap | env: unknown | BR-SP-053 |
+| **IT-EC-02** | Edge Case | Degraded mode | Pod not found | DegradedMode: true | BR-SP-001 |
+| **IT-EC-03** | Edge Case | Concurrent reconciliation | 10 CRs at once | All complete | Controller |
+| **IT-EC-04** | Edge Case | Minimal spec | Empty labels | Default values | Robustness |
+| **IT-EC-05** | Edge Case | Special namespace | `my-ns-123` | Handles correctly | Robustness |
+| **IT-EC-06** | Edge Case | Max owner depth | 5+ levels | Stops at 5 | BR-SP-100 |
+| **IT-EC-07** | Edge Case | No failed detections | All queries succeed | FailedDetections: [] | BR-SP-103 |
+| **IT-EC-08** | Edge Case | Multi-key Rego | Policy returns 3 keys | All 3 in CustomLabels | BR-SP-102 |
+| **IT-ER-01** | Error | K8s API timeout | Transient 503 | Retry + succeed | Error Cat. B |
+| **IT-ER-02** | Error | Status conflict | Concurrent update | Retry + succeed | Error Cat. D |
+| **IT-ER-03** | Error | Context cancelled | Cancel during reconcile | Clean exit | Error Cat. B |
+| **IT-ER-04** | Error | Rego syntax error | Invalid policy | Log error, use defaults | Error Cat. C |
+| **IT-ER-05** | Error | PDB RBAC denied | No list permission | FailedDetections: [pdb] | BR-SP-103 |
+| **IT-ER-06** | Error | Audit write failure | Audit returns error | Continue processing | ADR-038 |
+| **IT-ER-07** | Error | Permanent error | Invalid spec | Phase: Failed | Error Cat. A |
+
+---
+
+##### **File 2: Component Integration Tests** (`test/integration/signalprocessing/component_integration_test.go`)
+
+**Test Matrix** (20 tests):
+
+| ID | Category | Component | Scenario | BR |
+|----|----------|-----------|----------|-----|
+| **IT-CMP-01** | K8sEnricher | Enricher | Pod enrichment with real K8s | BR-SP-001 |
+| **IT-CMP-02** | K8sEnricher | Enricher | Deployment enrichment | BR-SP-001 |
+| **IT-CMP-03** | K8sEnricher | Enricher | Node enrichment | BR-SP-001 |
+| **IT-CMP-04** | K8sEnricher | Enricher | StatefulSet enrichment | BR-SP-001 |
+| **IT-CMP-05** | K8sEnricher | Enricher | Service enrichment | BR-SP-001 |
+| **IT-CMP-06** | K8sEnricher | Enricher | Namespace context | BR-SP-001 |
+| **IT-CMP-07** | K8sEnricher | Enricher | Degraded mode fallback | BR-SP-001 |
+| **IT-CMP-08** | Environment | Classifier | Real ConfigMap lookup | BR-SP-052 |
+| **IT-CMP-09** | Environment | Classifier | Namespace label priority | BR-SP-051 |
+| **IT-CMP-10** | Environment | Classifier | Hot-reload policy change | BR-SP-072 |
+| **IT-CMP-11** | Priority | Engine | Real Rego evaluation | BR-SP-070 |
+| **IT-CMP-12** | Priority | Engine | Severity fallback | BR-SP-071 |
+| **IT-CMP-13** | Priority | Engine | ConfigMap policy load | BR-SP-072 |
+| **IT-CMP-14** | Business | Classifier | Label-based classification | BR-SP-002 |
+| **IT-CMP-15** | Business | Classifier | Pattern-based classification | BR-SP-002 |
+| **IT-CMP-16** | OwnerChain | Builder | Real K8s traversal | BR-SP-100 |
+| **IT-CMP-17** | OwnerChain | Builder | Cross-namespace owner | BR-SP-100 |
+| **IT-CMP-18** | Detection | LabelDetector | Real PDB query | BR-SP-101 |
+| **IT-CMP-19** | Detection | LabelDetector | Real HPA query | BR-SP-101 |
+| **IT-CMP-20** | Detection | LabelDetector | Real NetworkPolicy query | BR-SP-101 |
+
+---
+
+##### **File 3: Rego Integration Tests** (`test/integration/signalprocessing/rego_integration_test.go`)
+
+**Test Matrix** (15 tests):
+
+| ID | Category | Scenario | BR |
+|----|----------|----------|-----|
+| **IT-REGO-01** | Policy Load | ConfigMap environment.rego | BR-SP-051 |
+| **IT-REGO-02** | Policy Load | ConfigMap priority.rego | BR-SP-070 |
+| **IT-REGO-03** | Policy Load | ConfigMap labels.rego | BR-SP-102 |
+| **IT-REGO-04** | Evaluation | Environment classification | BR-SP-051 |
+| **IT-REGO-05** | Evaluation | Priority assignment | BR-SP-070 |
+| **IT-REGO-06** | Evaluation | CustomLabels extraction | BR-SP-102 |
+| **IT-REGO-07** | Security | System prefix stripping | BR-SP-104 |
+| **IT-REGO-08** | Fallback | Invalid policy → defaults | BR-SP-071 |
+| **IT-REGO-09** | Fallback | Missing ConfigMap → defaults | BR-SP-053 |
+| **IT-REGO-10** | Concurrent | 10 parallel evaluations | Stability |
+| **IT-REGO-11** | Concurrent | Policy update during eval | BR-SP-072 |
+| **IT-REGO-12** | Timeout | 5s timeout enforcement | DD-WORKFLOW-001 |
+| **IT-REGO-13** | Validation | Key truncation (63 chars) | DD-WORKFLOW-001 |
+| **IT-REGO-14** | Validation | Value truncation (100 chars) | DD-WORKFLOW-001 |
+| **IT-REGO-15** | Validation | Max keys truncation (10) | DD-WORKFLOW-001 |
+
+---
+
+##### **File 4: Hot-Reload Integration Tests** (`test/integration/signalprocessing/hot_reloader_test.go`)
+
+**Test Matrix** (5 tests):
+
+| ID | Category | Scenario | BR |
+|----|----------|----------|-----|
+| **IT-HR-01** | File Watch | Policy file change detected | BR-SP-072 |
+| **IT-HR-02** | Reload | Valid policy takes effect | BR-SP-072 |
+| **IT-HR-03** | Graceful | Invalid policy → old retained | BR-SP-072 |
+| **IT-HR-04** | Concurrent | Update during active reconciliation | BR-SP-072 |
+| **IT-HR-05** | Recovery | Watcher restart after error | BR-SP-072 |
 
 ---
 
@@ -5327,12 +5619,20 @@ These integration tests are scheduled for **Days 9-10 (Testing phase)**:
 
 ### **Tests**
 
-| Directory | Type | Count |
-|-----------|------|-------|
-| `test/unit/signalprocessing/` | Unit | ~20 |
-| `test/integration/signalprocessing/` | Integration (ENVTEST) | ~10 |
-| `test/integration/signalprocessing/rego_integration_test.go` | Rego Policy Integration | 4 |
-| `test/e2e/signalprocessing/` | E2E | ~3 |
+| Directory | Type | Current | Target |
+|-----------|------|---------|--------|
+| `test/unit/signalprocessing/` | Unit | **184** ✅ | 250-300 |
+| `test/integration/signalprocessing/reconciler_integration_test.go` | Reconciler Integration | 0 | ~25 |
+| `test/integration/signalprocessing/component_integration_test.go` | Component Integration | 0 | ~20 |
+| `test/integration/signalprocessing/rego_integration_test.go` | Rego Policy Integration | 0 | ~15 |
+| `test/integration/signalprocessing/hot_reloader_test.go` | Hot-Reload Integration | 0 | ~5 |
+| `test/e2e/signalprocessing/` | E2E | 0 | 5-10 |
+
+**Integration Test Breakdown** (Target: 50-80 tests):
+- Reconciler phase transitions + status updates: ~25 tests
+- Component integration (Enricher, Classifier, Priority): ~20 tests
+- Rego policy evaluation + ConfigMap: ~15 tests
+- Hot-reload + concurrent access: ~5 tests
 
 ---
 
