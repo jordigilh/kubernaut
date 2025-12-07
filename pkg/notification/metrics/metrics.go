@@ -82,11 +82,12 @@ var ReconcilerErrorsTotal = promauto.NewCounterVec(
 	[]string{"error_type"},
 )
 
-// ReconcilerActiveTotal tracks currently active notifications by phase
-// DD-005: notification_reconciler_active_total (was: notification_active_total)
-var ReconcilerActiveTotal = promauto.NewGaugeVec(
+// ReconcilerActive tracks currently active notifications by phase
+// DD-005: notification_reconciler_active (Gauge - no _total suffix per DD-005 line 122)
+// Fixed: was notification_reconciler_active_total (incorrect _total suffix for Gauge)
+var ReconcilerActive = promauto.NewGaugeVec(
 	prometheus.GaugeOpts{
-		Name: "notification_reconciler_active_total",
+		Name: "notification_reconciler_active",
 		Help: "Number of active notifications by phase",
 	},
 	[]string{"phase"},
@@ -123,7 +124,7 @@ func init() {
 		ChannelCircuitBreakerState,
 		ReconcilerDuration,
 		ReconcilerErrorsTotal,
-		ReconcilerActiveTotal,
+		ReconcilerActive, // DD-005: Gauge has no _total suffix
 		SanitizationRedactions,
 		ChannelHealthScore,
 	)
