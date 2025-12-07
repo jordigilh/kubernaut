@@ -331,10 +331,110 @@ Always begin with "What business problem are we solving?" before writing code or
 - **Business tests**: Realistic mocks that simulate real behavior
 - **Unit tests**: Simple mocks that isolate the component under test
 
-### 4. **Measure What Matters**
+### 4. **LLM Mocking Policy (Cost Constraint)**
+
+**E2E tests must use all real services EXCEPT the LLM.**
+
+| Test Type | Infrastructure (DB, APIs) | LLM |
+|-----------|---------------------------|-----|
+| **Unit Tests** | Mock ✅ | Mock ✅ |
+| **Integration Tests** | Mock ✅ | Mock ✅ |
+| **E2E Tests** | **REAL** ❌ No mocking | Mock ✅ (cost) |
+
+**Rationale**: LLM API calls incur significant costs per request. Mocking the LLM in E2E tests:
+- Prevents runaway costs during test runs
+- Allows deterministic, repeatable tests
+- Still validates the complete integration with real infrastructure
+
+**E2E Test Requirements**:
+```python
+# ✅ CORRECT: Real Data Storage, mock LLM only
+@pytest.mark.e2e
+def test_audit_events_persisted(data_storage_url, mock_llm):
+    # data_storage_url → connects to REAL Data Storage service
+    # mock_llm → mocked due to cost
+    pass
+
+# ❌ WRONG: Mocking infrastructure in E2E
+@pytest.mark.e2e
+def test_audit_events(mock_data_storage, mock_llm):
+    # This is NOT an E2E test - it's an integration test
+    pass
+```
+
+**If Data Storage is unavailable, E2E tests should FAIL, not skip.**
+
+### 5. **Measure What Matters**
 - **Business tests**: Business KPIs and stakeholder success criteria
 - **Unit tests**: Technical correctness and edge case handling
 
-### 5. **Make Tests Sustainable**
+### 6. **Make Tests Sustainable**
 - **Business tests**: Should remain stable as business requirements are stable
 - **Unit tests**: Should be fast and provide immediate developer feedback
+
+## 🐳 **Integration Test Infrastructure**
+
+### Podman Compose for Integration Tests
+
+Integration tests require real service dependencies (HolmesGPT-API, Data Storage, PostgreSQL, Redis). Use `podman-compose` to spin up these services locally.
+
+#### Available Infrastructure
+
+| Service | Image | Port | Purpose |
+|---------|-------|------|---------|
+| **PostgreSQL** | `quay.io/jordigilh/pgvector:pg16` | 5432 | Audit trail storage (pgvector) |
+| **Redis** | `quay.io/jordigilh/redis:7-alpine` | 6379 | Caching layer |
+| **Data Storage** | Built from `docker/data-storage.Dockerfile` | 8080 | Audit persistence API |
+| **HolmesGPT-API** | Built from `holmesgpt-api/Dockerfile` | 8081 | AI analysis service |
+
+#### Running Integration Tests
+
+```bash
+# Start infrastructure (from project root)
+podman-compose -f podman-compose.test.yml up -d
+
+# Wait for services to be healthy
+podman-compose -f podman-compose.test.yml ps
+
+# Run integration tests
+make test-container-integration
+
+# Run specific service integration tests
+go test ./test/integration/aianalysis/... -v
+
+# Tear down
+podman-compose -f podman-compose.test.yml down -v
+```
+
+#### Environment Configuration
+
+Integration tests detect running services via environment variables:
+
+```bash
+# Set by podman-compose or manually for local development
+export HOLMESGPT_API_URL=http://localhost:8081
+export DATASTORAGE_URL=http://localhost:8080
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5432
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+```
+
+#### Test Tier Infrastructure Matrix
+
+| Test Tier | K8s Environment | Services | Infrastructure |
+|-----------|-----------------|----------|----------------|
+| **Unit** | None | Mocked | None required |
+| **Integration** | envtest | Real (podman-compose) | `podman-compose.test.yml` |
+| **E2E** | KIND cluster | Real (deployed to KIND) | KIND + Helm/manifests |
+
+#### Mock LLM in All Tiers
+
+**LLM is mocked across ALL test tiers** due to cost constraints. HolmesGPT-API uses its internal mock LLM server for deterministic responses.
+
+```yaml
+# podman-compose.test.yml - holmesgpt-api service
+environment:
+  - LLM_PROVIDER=mock
+  - MOCK_LLM_ENABLED=true
+```

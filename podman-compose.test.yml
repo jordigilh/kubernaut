@@ -76,6 +76,35 @@ services:
       retries: 10
       start_period: 10s
 
+  # HolmesGPT-API Service for integration tests
+  # AI analysis service with mock LLM for deterministic testing
+  holmesgpt-api:
+    build:
+      context: .
+      dockerfile: holmesgpt-api/Dockerfile
+    environment:
+      - CONFIG_PATH=/etc/holmesgpt/config.yaml
+      # Mock LLM for integration tests (cost constraint)
+      - LLM_PROVIDER=mock
+      - MOCK_LLM_ENABLED=true
+      # Data Storage connection
+      - DATASTORAGE_URL=http://datastorage:8080
+      # Logging
+      - LOG_LEVEL=INFO
+    ports:
+      - "8081:8080"
+    networks:
+      - test-network
+    depends_on:
+      datastorage:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
 volumes:
   go-mod-cache:
   go-build-cache:
