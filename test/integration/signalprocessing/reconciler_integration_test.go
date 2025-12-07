@@ -32,22 +32,22 @@ limitations under the License.
 // Implementation Plan: Day 10, Tier 2 - Reconciler Integration Tests
 //
 // Test Matrix: 25 tests per IMPLEMENTATION_PLAN_V1.30.md
-// - Happy Path: IT-HP-01 to IT-HP-10 (10 tests)
-// - Edge Cases: IT-EC-01 to IT-EC-08 (8 tests)
-// - Error Handling: IT-ER-01 to IT-ER-07 (7 tests)
+// - Happy Path: 10 tests (BR-SP-051, BR-SP-070, BR-SP-002, BR-SP-100, BR-SP-101, BR-SP-102)
+// - Edge Cases: 8 tests (BR-SP-053, BR-SP-001, BR-SP-100, BR-SP-103, BR-SP-102)
+// - Error Handling: 7 tests (Error Categories A-D, BR-SP-103, ADR-038)
 //
 // Business Requirements Coverage:
-// - BR-SP-001: K8s Context Enrichment (IT-EC-02, IT-EC-07)
-// - BR-SP-002: Business Classification (IT-HP-06)
-// - BR-SP-051: Namespace Label Environment (IT-HP-01, IT-HP-02, IT-HP-03, IT-HP-04)
-// - BR-SP-052: ConfigMap Fallback (IT-HP-05)
-// - BR-SP-053: Default Environment (IT-EC-01)
-// - BR-SP-070: Priority Assignment (IT-HP-01, IT-HP-02, IT-HP-03)
-// - BR-SP-100: Owner Chain Traversal (IT-HP-07, IT-EC-06)
-// - BR-SP-101: Detected Labels PDB/HPA (IT-HP-08, IT-HP-09)
-// - BR-SP-102: CustomLabels Rego (IT-HP-10, IT-EC-08)
-// - BR-SP-103: Failed Detections (IT-EC-07)
-// - ADR-038: Audit Non-Blocking (IT-ER-06)
+// - BR-SP-001: K8s Context Enrichment, Degraded Mode
+// - BR-SP-002: Business Classification
+// - BR-SP-051: Namespace Label Environment Classification (high confidence)
+// - BR-SP-052: ConfigMap Fallback Classification
+// - BR-SP-053: Default Environment Fallback
+// - BR-SP-070: Priority Assignment (P0/P1/P2/P3)
+// - BR-SP-100: Owner Chain Traversal (max depth 5)
+// - BR-SP-101: Detected Labels (PDB, HPA)
+// - BR-SP-102: CustomLabels Rego Extraction (multi-key)
+// - BR-SP-103: Failed Detections Tracking
+// - ADR-038: Audit Non-Blocking
 package signalprocessing_test
 
 import (
@@ -1049,7 +1049,7 @@ labels["cost-center"] := ["engineering"] if { true }
 	})
 
 	// ========================================
-	// ERROR HANDLING TESTS (IT-ER-01 to IT-ER-07)
+	// ERROR HANDLING TESTS - Error Categories A-D
 	// ========================================
 
 	Context("Error Handling", func() {
@@ -1101,8 +1101,8 @@ labels["cost-center"] := ["engineering"] if { true }
 			Skip("Covered by unit test: test/unit/signalprocessing/controller_shutdown_test.go - context cancellation requires controller restart")
 		})
 
-		// IT-ER-04: Rego syntax error (Error Cat. C)
-		It("IT-ER-04: should use defaults when Rego policy has syntax error", func() {
+		// Rego syntax error fallback to defaults (Error Category C)
+		It("Error-Cat-C: should use defaults when Rego policy has syntax error", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("rego-error")
 			defer deleteTestNamespace(ns)
@@ -1160,14 +1160,14 @@ labels["team"] := ["platform"  // Missing closing bracket
 			// CustomLabels should be empty or have defaults, not error
 		})
 
-		// IT-ER-05: PDB RBAC denied (BR-SP-103)
+		// PDB RBAC denied tracking (BR-SP-103)
 		// Note: ENVTEST typically has full permissions, so this tests graceful degradation
-		It("IT-ER-05: should track failed detections when PDB query fails", func() {
-			Skip("RBAC testing requires restricted ServiceAccount - covered by unit tests")
+		It("BR-SP-103: should track failed detections when PDB query fails", func() {
+			Skip("Covered by unit test: test/unit/signalprocessing/label_detector_test.go - RBAC testing requires restricted ServiceAccount")
 		})
 
-		// IT-ER-06: Audit write failure (ADR-038)
-		It("IT-ER-06: should continue processing when audit write fails", func() {
+		// Audit write failure continues processing (ADR-038)
+		It("ADR-038: should continue processing when audit write fails", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("audit-fail")
 			defer deleteTestNamespace(ns)
@@ -1208,8 +1208,8 @@ labels["team"] := ["platform"  // Missing closing bracket
 			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 		})
 
-		// IT-ER-07: Permanent error (Error Cat. A)
-		It("IT-ER-07: should fail permanently with invalid spec", func() {
+		// Permanent error with invalid spec (Error Category A)
+		It("Error-Cat-A: should fail permanently with invalid spec", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("permanent-fail")
 			defer deleteTestNamespace(ns)
