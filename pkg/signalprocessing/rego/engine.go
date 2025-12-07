@@ -28,26 +28,51 @@ limitations under the License.
 // # Sandbox Configuration
 //
 //   - Evaluation timeout: 5 seconds
-//   - Memory limit: 128 MB
-//   - Network access: Disabled
-//   - Filesystem access: Disabled
+//   - Memory limit: 128 MB (enforced at runtime level)
+//   - Network access: Disabled (OPA default)
+//   - Filesystem access: Disabled (OPA default)
+//
+// # Validation Limits
+//
+//   - Max keys (subdomains): 10
+//   - Max values per key: 5
+//   - Max key length: 63 chars
+//   - Max value length: 100 chars
 package rego
 
 import (
 	"context"
+	"fmt"
+	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/open-policy-agent/opa/rego"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+// Sandbox configuration per DD-WORKFLOW-001 v1.9
+const (
+	evaluationTimeout = 5 * time.Second // Max Rego evaluation time
+	maxKeys           = 10              // Max keys (subdomains)
+	maxValuesPerKey   = 5               // Max values per key
+	maxKeyLength      = 63              // K8s label key compatibility
+	maxValueLength    = 100             // Prompt efficiency
+)
+
+// Reserved prefixes that must be stripped (BR-SP-104)
+var reservedPrefixes = []string{"kubernaut.ai/", "system/"}
 
 // Engine evaluates customer Rego policies for CustomLabels.
 // BR-SP-102: CustomLabels Rego Extraction
 // BR-SP-104: Mandatory Label Protection (via security wrapper)
 // DD-WORKFLOW-001 v1.9: Sandboxed OPA Runtime
 type Engine struct {
-	logger     logr.Logger
-	policyPath string
+	logger       logr.Logger
+	policyPath   string
+	policyModule string // Compiled policy with security wrapper
+	mu           sync.RWMutex
 }
 
 // NewEngine creates a new CustomLabels Rego engine.
@@ -74,18 +99,164 @@ type SignalContext struct {
 	Source   string `json:"source"`
 }
 
-// LoadPolicy loads customer policy from string and wraps with security policy.
-// RED PHASE STUB: Returns nil (always succeeds, but policy not applied)
+// LoadPolicy loads customer policy from string.
+// The policy is stored as-is; security filtering happens after evaluation.
 func (e *Engine) LoadPolicy(policyContent string) error {
-	// RED PHASE: Stub - policy not stored
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.policyModule = policyContent
+	e.logger.Info("Rego policy loaded", "policySize", len(policyContent))
 	return nil
 }
 
 // EvaluatePolicy evaluates the policy and returns CustomLabels.
 // Output format: map[string][]string (subdomain → list of values)
-// RED PHASE STUB: Returns empty map (tests will fail)
+// DD-WORKFLOW-001 v1.9: 5s timeout, sandboxed execution
+// BR-SP-104: Security filtering strips reserved prefixes after evaluation
 func (e *Engine) EvaluatePolicy(ctx context.Context, input *RegoInput) (map[string][]string, error) {
-	// RED PHASE: Stub - returns empty map, tests will fail
-	return make(map[string][]string), nil
+	e.mu.RLock()
+	policyModule := e.policyModule
+	e.mu.RUnlock()
+
+	if policyModule == "" {
+		e.logger.V(1).Info("No policy loaded, returning empty labels")
+		return make(map[string][]string), nil
+	}
+
+	// Sandboxed execution: 5s timeout per DD-WORKFLOW-001 v1.9
+	evalCtx, cancel := context.WithTimeout(ctx, evaluationTimeout)
+	defer cancel()
+
+	// Check if context is already cancelled
+	select {
+	case <-evalCtx.Done():
+		return nil, evalCtx.Err()
+	default:
+	}
+
+	r := rego.New(
+		rego.Query("data.signalprocessing.labels.labels"),
+		rego.Module("policy.rego", policyModule),
+		rego.Input(input),
+		rego.StrictBuiltinErrors(true),    // Strict mode for safety
+		rego.EnablePrintStatements(false), // Disable debugging in prod
+	)
+
+	rs, err := r.Eval(evalCtx)
+	if err != nil {
+		return nil, fmt.Errorf("rego evaluation failed: %w", err)
+	}
+
+	if len(rs) == 0 || len(rs[0].Expressions) == 0 {
+		return make(map[string][]string), nil
+	}
+
+	// Convert result to map[string][]string
+	result, err := e.convertResult(rs[0].Expressions[0].Value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid rego output type: %w", err)
+	}
+
+	// BR-SP-104: Security filtering - strip reserved prefixes
+	// Validate and sanitize (DD-WORKFLOW-001 v1.9)
+	result = e.validateAndSanitize(result)
+
+	e.logger.Info("CustomLabels evaluated", "labelCount", len(result))
+	return result, nil
 }
 
+// convertResult converts OPA output to map[string][]string.
+func (e *Engine) convertResult(value interface{}) (map[string][]string, error) {
+	result := make(map[string][]string)
+
+	valueMap, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("expected map[string]interface{}, got %T", value)
+	}
+
+	for key, val := range valueMap {
+		switch v := val.(type) {
+		case []interface{}:
+			var strValues []string
+			for _, item := range v {
+				if strVal, ok := item.(string); ok {
+					strValues = append(strValues, strVal)
+				}
+				// Skip non-string values silently
+			}
+			if len(strValues) > 0 {
+				result[key] = strValues
+			}
+		case string:
+			result[key] = []string{v}
+		// Skip non-string/non-array values (e.g., numbers)
+		}
+	}
+
+	return result, nil
+}
+
+// validateAndSanitize enforces validation limits per DD-WORKFLOW-001 v1.9.
+// Strips reserved prefixes (BR-SP-104) and enforces size limits.
+func (e *Engine) validateAndSanitize(labels map[string][]string) map[string][]string {
+	result := make(map[string][]string)
+
+	keyCount := 0
+	for key, values := range labels {
+		// Check key count limit
+		if keyCount >= maxKeys {
+			e.logger.Info("CustomLabels key limit reached, truncating",
+				"maxKeys", maxKeys, "totalKeys", len(labels))
+			break
+		}
+
+		// Skip reserved prefixes (BR-SP-104: Mandatory Label Protection)
+		if hasReservedPrefix(key, reservedPrefixes) {
+			e.logger.Info("CustomLabels reserved prefix stripped", "key", key)
+			continue
+		}
+
+		// Truncate key if too long
+		truncatedKey := key
+		if len(key) > maxKeyLength {
+			e.logger.Info("CustomLabels key truncated",
+				"key", key, "maxLength", maxKeyLength)
+			truncatedKey = key[:maxKeyLength]
+		}
+
+		// Validate and truncate values
+		var validValues []string
+		for i, value := range values {
+			if i >= maxValuesPerKey {
+				e.logger.Info("CustomLabels values limit reached",
+					"key", truncatedKey, "maxValues", maxValuesPerKey)
+				break
+			}
+			truncatedValue := value
+			if len(value) > maxValueLength {
+				e.logger.Info("CustomLabels value truncated",
+					"key", truncatedKey, "maxLength", maxValueLength)
+				truncatedValue = value[:maxValueLength]
+			}
+			validValues = append(validValues, truncatedValue)
+		}
+
+		if len(validValues) > 0 {
+			result[truncatedKey] = validValues
+			keyCount++
+		}
+	}
+
+	return result
+}
+
+// hasReservedPrefix checks if key starts with any reserved prefix.
+func hasReservedPrefix(key string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			return true
+		}
+	}
+	return false
+}
