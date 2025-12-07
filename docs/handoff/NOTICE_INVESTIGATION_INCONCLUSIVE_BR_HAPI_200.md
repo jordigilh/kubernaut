@@ -3,8 +3,8 @@
 **Date**: December 7, 2025
 **From**: HolmesGPT-API Team
 **To**: AIAnalysis Team, Remediation Orchestrator Team, Notification Team
-**Priority**: 🟡 MEDIUM (V1.1 - No immediate action required)
-**Status**: ✅ RO + Notification ACKNOWLEDGED (AIAnalysis pending)
+**Priority**: 🟠 HIGH (V1.0 - Per AIAnalysis scope clarification)
+**Status**: ✅ ALL TEAMS ACKNOWLEDGED (Clarification pending from HAPI)
 
 ---
 
@@ -169,9 +169,69 @@ Please acknowledge receipt and provide feedback:
 
 | Team | Acknowledged | Notes |
 |------|--------------|-------|
-| AIAnalysis | ⏳ Pending | |
+| AIAnalysis | ✅ 2025-12-07 | See below |
 | Remediation Orchestrator | ✅ 2025-12-07 | See below |
 | Notification | ✅ 2025-12-07 | See below |
+
+---
+
+### AIAnalysis Team Acknowledgment (2025-12-07)
+
+**Status**: ✅ **ACKNOWLEDGED - V1.0 SCOPE**
+
+We acknowledge receipt of BR-HAPI-200. **This is V1.0 scope, not V1.1.**
+
+#### ⚠️ Scope Clarification Required
+
+The notice marks this as "V1.1 - No immediate action required", but **BR-HAPI-197 is V1.0** and the `human_review_reason` enum infrastructure is already live. The `investigation_inconclusive` value **can be returned now** by HAPI.
+
+**Question for HAPI Team**:
+
+> **Q1**: Is `investigation_inconclusive` already being returned by the HAPI service in V1.0, or is the LLM prompt update that triggers this value truly deferred to V1.1?
+>
+> If HAPI can return this value today (even if rare), AIAnalysis must handle it in V1.0.
+
+#### Implementation Status (V1.0)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Add `investigation_inconclusive` → `InvestigationInconclusive` mapping | ✅ Complete | `pkg/aianalysis/handlers/investigating.go` |
+| Handle "Resolved" outcome (`WorkflowNotNeeded`) | ⏳ Day 8 | Need to verify HAPI response structure |
+| Unit tests for new mapping | ⏳ Day 8 | Following TDD |
+
+#### Answer to Q1
+
+> **Q1**: Should `ProblemResolved` be a new subReason, or use existing `WorkflowNotNeeded`?
+
+**Answer**: Both.
+- `Reason: WorkflowNotNeeded` (consistent with existing taxonomy)
+- `SubReason: ProblemResolved` (provides specific context)
+
+This maintains the `Reason + SubReason` pattern established for `WorkflowResolutionFailed`.
+
+#### "Resolved" Outcome Handling
+
+For Outcome A (problem self-resolved), we need clarification:
+
+> **Q2**: When a problem is confirmed resolved (high confidence, no workflow needed), what is the exact response structure from HAPI?
+>
+> Expected (please confirm):
+> ```json
+> {
+>   "needs_human_review": false,
+>   "human_review_reason": null,
+>   "selected_workflow": null,
+>   "confidence": 0.92,
+>   "investigation_summary": "Pod recovered automatically..."
+> }
+> ```
+>
+> Is `selected_workflow: null` the correct indicator, or is there a different field?
+
+---
+
+**Acknowledged By**: AIAnalysis Team
+**Date**: December 7, 2025
 
 ---
 
@@ -306,17 +366,23 @@ Please add questions here or create a response document:
 
 ---
 
-## 📢 Update Notification (2025-12-07)
+## 📢 Update Notification (2025-12-07) - REVISED
 
 **To**: HolmesGPT-API Team
 **From**: Notification Team
 
-The Notification team has acknowledged BR-HAPI-200:
+The Notification team has **REVISED** acknowledgment to align with RO's V1.0 scope:
 
-- ✅ **Acknowledged**: V1.1 scope confirmed
+- ✅ **Acknowledged**: **V1.0 scope** (revised from V1.1)
+- ✅ **Aligned with RO**: RO creates `InvestigationInconclusive` notifications in V1.0
 - ✅ **Q3 Answered**: No notification by default for self-resolved incidents
-- ✅ **Implementation Plan**: ~2 hours for V1.1 (routing label support)
-- ✅ **Existing Support**: BR-NOT-065 routing infrastructure already supports label-based routing
+- ✅ **Implementation Plan**: ~1 hour (Day 15) - Add label constant + routing rules + tests
+- ✅ **Existing Support**: BR-NOT-065 routing infrastructure already supports this pattern
 
-**Status**: 2 of 3 teams acknowledged (AIAnalysis pending)
+**V1.0 Tasks Scheduled**:
+1. Add `LabelInvestigationOutcome` constant
+2. Add routing configuration example
+3. Add 2-3 unit tests
+
+**Status**: 2 of 3 teams acknowledged for V1.0 (AIAnalysis pending)
 

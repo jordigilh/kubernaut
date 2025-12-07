@@ -312,6 +312,8 @@ var _ = Describe("InvestigatingHandler", func() {
 				Entry("no_matching_workflows → NoMatchingWorkflows", "no_matching_workflows", "NoMatchingWorkflows"),
 				Entry("low_confidence → LowConfidence", "low_confidence", "LowConfidence"),
 				Entry("llm_parsing_error → LLMParsingError", "llm_parsing_error", "LLMParsingError"),
+				// BR-HAPI-200: New investigation outcome
+				Entry("investigation_inconclusive → InvestigationInconclusive", "investigation_inconclusive", "InvestigationInconclusive"),
 			)
 
 			// BR-HAPI-197: Backward compatibility - fallback to warning parsing

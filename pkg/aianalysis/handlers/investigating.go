@@ -320,6 +320,7 @@ func (h *InvestigatingHandler) handleWorkflowResolutionFailure(ctx context.Conte
 
 // mapEnumToSubReason maps HAPI HumanReviewReason enum to CRD SubReason
 // This is the preferred method - direct enum-to-enum mapping (Dec 6, 2025)
+// Updated Dec 7, 2025: Added investigation_inconclusive per BR-HAPI-200
 func (h *InvestigatingHandler) mapEnumToSubReason(reason string) string {
 	mapping := map[string]string{
 		"workflow_not_found":          "WorkflowNotFound",
@@ -328,6 +329,7 @@ func (h *InvestigatingHandler) mapEnumToSubReason(reason string) string {
 		"no_matching_workflows":       "NoMatchingWorkflows",
 		"low_confidence":              "LowConfidence",
 		"llm_parsing_error":           "LLMParsingError",
+		"investigation_inconclusive":  "InvestigationInconclusive", // BR-HAPI-200
 	}
 	if subReason, ok := mapping[reason]; ok {
 		return subReason
