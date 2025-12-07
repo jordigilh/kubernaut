@@ -1,9 +1,9 @@
 # Notification Service - Implementation Checklist
 
-**Version**: 1.3
-**Last Updated**: December 6, 2025
+**Version**: 1.4
+**Last Updated**: December 7, 2025
 **Service Type**: CRD Controller
-**Status**: ✅ PRODUCTION-READY + Day 13 ✅ + BR-NOT-067 ✅ + Day 14 Scheduled
+**Status**: ✅ PRODUCTION-READY + Day 13 ✅ + BR-NOT-067 ✅ + Day 14 (DD-005) ✅
 
 ---
 
@@ -303,8 +303,8 @@ test/e2e/notification/            ✅ E2E tests (10%)
 | **DO-REFACTOR** | 2-3 days | Sophisticated enhancements |
 | **CHECK** | 1 day | Comprehensive validation |
 | **Day 13: Enhancements** | 4 hours | Skip-reason routing (BR-NOT-065) ✅ |
-| **Day 14: DD-005 Compliance** | 2 hours | Metrics naming standardization |
-| **TOTAL** | **8-10 days + 6h** | Production-ready service + enhancements |
+| **Day 14: DD-005 Compliance** | 1.5 hours | Metrics naming standardization ✅ |
+| **TOTAL** | **8-10 days + 5.5h** | Production-ready service + enhancements ✅ |
 
 ---
 
@@ -349,8 +349,8 @@ Add `kubernaut.ai/skip-reason` routing label support per DD-WE-004 v1.1:
 
 ## 📋 **Day 14: DD-005 Metrics Compliance**
 
-**Duration**: 2 hours
-**Status**: ⏳ Scheduled
+**Duration**: 1.5 hours
+**Status**: ✅ COMPLETE (2025-12-07)
 **Reference**: [NOTICE_DD005_METRICS_NAMING_COMPLIANCE.md](../../../../docs/handoff/NOTICE_DD005_METRICS_NAMING_COMPLIANCE.md)
 
 ### **Scope**
@@ -359,38 +359,40 @@ Rename notification metrics to follow DD-005 naming convention:
 - Component-level granularity: `notification_<component>_<action>_<unit>`
 - Counters end with `_total`
 - Histograms end with `_seconds` or `_bytes`
+- **Gauges have NO suffix** (per DD-005 line 122)
 
 ### **Tasks**
 
-- [ ] Update `internal/controller/notification/metrics.go` (8 metrics)
-- [ ] Update `pkg/notification/metrics/metrics.go` (10 metrics)
-- [ ] Run all tests to verify no breakage
-- [ ] Update Prometheus alert rules (if any)
-- [ ] Update Grafana dashboards (if any)
+- [x] Update `internal/controller/notification/metrics.go` (6 metrics renamed) ✅
+- [x] Update `pkg/notification/metrics/metrics.go` (6 metrics renamed) ✅
+- [x] Update `test/e2e/notification/04_metrics_validation_test.go` ✅
+- [x] Run all tests to verify no breakage (315 tests passing) ✅
+- [x] Prometheus alert rules: None currently defined
+- [x] Grafana dashboards: None currently defined
 
-### **Metrics to Rename**
+### **Metrics Renamed**
 
-| Current | DD-005 Compliant |
-|---------|------------------|
-| `notification_failure_rate` | `notification_delivery_failure_rate` |
-| `notification_stuck_duration_seconds` | `notification_delivery_stuck_duration_seconds` |
-| `notification_deliveries_total` | `notification_delivery_requests_total` |
-| `notification_phase` | `notification_reconciler_phase` |
-| `notification_retry_count` | `notification_delivery_retries_total` |
-| `notification_slack_retry_count` | `notification_slack_retries_total` |
-| `notification_requests_total` | `notification_reconciler_requests_total` |
-| `notification_retry_count_total` | `notification_delivery_retries_total` |
-| `notification_circuit_breaker_state` | `notification_channel_circuit_breaker_state` |
-| `notification_reconciliation_duration_seconds` | `notification_reconciler_duration_seconds` |
-| `notification_reconciliation_errors_total` | `notification_reconciler_errors_total` |
-| `notification_active_total` | `notification_reconciler_active_total` |
+| Old Name | DD-005 Compliant | Type |
+|----------|------------------|------|
+| `notification_failure_rate` | `notification_delivery_failure_ratio` | Gauge |
+| `notification_stuck_duration_seconds` | `notification_delivery_stuck_duration_seconds` | Histogram |
+| `notification_deliveries_total` | `notification_delivery_requests_total` | Counter |
+| `notification_phase` | `notification_reconciler_phase` | Gauge |
+| `notification_retry_count` | `notification_delivery_retries` | Histogram |
+| `notification_slack_retry_count` | `notification_slack_retries_total` | Counter |
+| `notification_requests_total` | `notification_reconciler_requests_total` | Counter |
+| `notification_retry_count_total` | `notification_delivery_retries_total` | Counter |
+| `notification_circuit_breaker_state` | `notification_channel_circuit_breaker_state` | Gauge |
+| `notification_reconciliation_duration_seconds` | `notification_reconciler_duration_seconds` | Histogram |
+| `notification_reconciliation_errors_total` | `notification_reconciler_errors_total` | Counter |
+| `notification_active_total` | `notification_reconciler_active` | Gauge (no _total!) |
 
 **Already Compliant** (no changes needed):
-- `notification_delivery_duration_seconds`
-- `notification_delivery_attempts_total`
-- `notification_slack_backoff_duration_seconds`
-- `notification_sanitization_redactions_total`
-- `notification_channel_health_score`
+- `notification_delivery_duration_seconds` (Histogram)
+- `notification_delivery_attempts_total` (Counter)
+- `notification_slack_backoff_duration_seconds` (Histogram)
+- `notification_sanitization_redactions_total` (Counter)
+- `notification_channel_health_score` (Gauge)
 
 ---
 
