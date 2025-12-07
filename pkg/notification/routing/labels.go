@@ -61,6 +61,13 @@ const (
 	// See: docs/handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md
 	// Added per cross-team agreement: WE→NOT Q7 (2025-12-06)
 	LabelSkipReason = "kubernaut.ai/skip-reason"
+
+	// LabelInvestigationOutcome is the label key for HolmesGPT-API investigation outcome routing.
+	// Enables routing based on how an investigation concluded before workflow selection.
+	// Values: resolved, inconclusive, workflow_selected
+	// See: docs/handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md
+	// Added per BR-HAPI-200: Investigation Outcome Reporting (2025-12-07)
+	LabelInvestigationOutcome = "kubernaut.ai/investigation-outcome"
 )
 
 // NotificationTypeValues are the standard notification type label values.
@@ -111,5 +118,26 @@ const (
 	// Temporary condition - will auto-resolve after cooldown expires.
 	// Severity: LOW - typically bulk notifications (BR-ORCH-034).
 	SkipReasonRecentlyRemediated = "RecentlyRemediated"
+)
+
+// InvestigationOutcomeValues are the HolmesGPT-API investigation outcome label values.
+// These map to the investigation conclusion before workflow selection.
+// See: BR-HAPI-200 (Investigation Outcome Reporting)
+const (
+	// InvestigationOutcomeResolved indicates the alert resolved during investigation.
+	// The problem self-corrected before any remediation was needed.
+	// Action: Skip notification - no human action required (alert fatigue prevention).
+	InvestigationOutcomeResolved = "resolved"
+
+	// InvestigationOutcomeInconclusive indicates LLM could not determine root cause.
+	// Analysis completed but no confident diagnosis was reached.
+	// Action: Route to ops channel (Slack #ops) for human review.
+	// Severity: MEDIUM - requires human attention but not critical.
+	InvestigationOutcomeInconclusive = "inconclusive"
+
+	// InvestigationOutcomeWorkflowSelected indicates normal workflow selection.
+	// Investigation successfully identified root cause and selected a workflow.
+	// Action: Standard routing based on other labels (severity, environment, etc.)
+	InvestigationOutcomeWorkflowSelected = "workflow_selected"
 )
 

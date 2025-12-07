@@ -575,4 +575,94 @@ receivers:
 			})
 		})
 	})
+
+	// =============================================================================
+	// BR-HAPI-200: Investigation Outcome Routing Tests
+	// Purpose: Verify investigation-outcome based routing for HolmesGPT-API results
+	// Cross-Team: HAPI→NOT (2025-12-07)
+	// =============================================================================
+
+	Describe("Investigation-Outcome Label Routing (BR-HAPI-200)", func() {
+
+		Context("Label Constants Verification", func() {
+
+			// Test 1: Verify label key constant
+			It("should define correct investigation-outcome label key", func() {
+				Expect(routing.LabelInvestigationOutcome).To(Equal("kubernaut.ai/investigation-outcome"))
+			})
+
+			// Test 2: Verify investigation outcome value constants
+			It("should define all BR-HAPI-200 investigation outcome values", func() {
+				Expect(routing.InvestigationOutcomeResolved).To(Equal("resolved"))
+				Expect(routing.InvestigationOutcomeInconclusive).To(Equal("inconclusive"))
+				Expect(routing.InvestigationOutcomeWorkflowSelected).To(Equal("workflow_selected"))
+			})
+		})
+
+		Context("Investigation-Outcome Routing Rules", func() {
+			var config *routing.Config
+
+			BeforeEach(func() {
+				// Production-like routing config with investigation-outcome rules
+				configYAML := `
+route:
+  receiver: default-slack
+  routes:
+    # Resolved: Skip notification (route to no-op/silent receiver)
+    - match:
+        kubernaut.ai/investigation-outcome: resolved
+      receiver: silent-noop
+    # Inconclusive: Route to ops for human review
+    - match:
+        kubernaut.ai/investigation-outcome: inconclusive
+      receiver: slack-ops
+    # Workflow selected: Standard routing (falls through to default)
+    - match:
+        kubernaut.ai/investigation-outcome: workflow_selected
+      receiver: default-slack
+receivers:
+  - name: silent-noop
+    # No delivery configs = silent/skip notification
+  - name: slack-ops
+    slack_configs:
+      - channel: '#ops'
+  - name: default-slack
+    slack_configs:
+      - channel: '#alerts'
+`
+				var err error
+				config, err = routing.ParseConfig([]byte(configYAML))
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			// Test 3: DescribeTable for all investigation-outcome routing scenarios
+			DescribeTable("should route to correct receiver based on investigation-outcome",
+				func(outcome, expectedReceiver, description string) {
+					labels := map[string]string{
+						routing.LabelInvestigationOutcome: outcome,
+					}
+					receiverName := config.Route.FindReceiver(labels)
+					Expect(receiverName).To(Equal(expectedReceiver), description)
+				},
+				Entry("SKIP: resolved → silent-noop",
+					routing.InvestigationOutcomeResolved, "silent-noop",
+					"Self-resolved alerts skip notification to prevent alert fatigue"),
+				Entry("OPS: inconclusive → slack-ops",
+					routing.InvestigationOutcomeInconclusive, "slack-ops",
+					"Inconclusive investigations route to ops for human review"),
+				Entry("DEFAULT: workflow_selected → default-slack",
+					routing.InvestigationOutcomeWorkflowSelected, "default-slack",
+					"Normal workflow selection uses default routing"),
+				Entry("FALLBACK: unknown-outcome → default-slack",
+					"unknown-outcome", "default-slack",
+					"Unknown outcomes fall back to default receiver"),
+			)
+
+			// Test 4: Empty labels fallback
+			It("should fall back to default receiver when no investigation-outcome label present", func() {
+				emptyLabels := map[string]string{}
+				Expect(config.Route.FindReceiver(emptyLabels)).To(Equal("default-slack"))
+			})
+		})
+	})
 })

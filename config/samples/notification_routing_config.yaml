@@ -1,10 +1,14 @@
-# Notification Routing Configuration - Skip-Reason Based Routing
+# Notification Routing Configuration - Label-Based Routing
 #
 # BR-NOT-065: Channel Routing Based on Labels
 # BR-NOT-066: Alertmanager-Compatible Configuration Format
 # DD-WE-004: WorkflowExecution Exponential Backoff Skip Reasons
+# BR-HAPI-200: Investigation Outcome Reporting
 #
-# This configuration demonstrates routing based on WorkflowExecution skip reasons.
+# This configuration demonstrates routing based on:
+# - WorkflowExecution skip reasons (DD-WE-004)
+# - HolmesGPT-API investigation outcomes (BR-HAPI-200)
+#
 # Use as a ConfigMap for the Notification Controller.
 #
 # Usage:
@@ -14,9 +18,10 @@
 #
 # Cross-Team References:
 #   - NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md (Q7, Q8)
+#   - NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md
 #   - Labels set by RemediationOrchestrator (mandatory per BR-NOT-065)
 #
-# Last Updated: 2025-12-06
+# Last Updated: 2025-12-07
 
 # Global routing configuration (Alertmanager-compatible format)
 route:
@@ -24,6 +29,7 @@ route:
   group_by:
     - kubernaut.ai/environment
     - kubernaut.ai/skip-reason
+    - kubernaut.ai/investigation-outcome
     - kubernaut.ai/remediation-request
 
   # Wait time before sending first notification for a group
@@ -84,6 +90,32 @@ route:
       group_interval: 30m
 
     # =================================================================
+    # SKIP: Resolved (BR-HAPI-200)
+    # =================================================================
+    # Alert self-resolved during HolmesGPT investigation.
+    # No human action required - prevent alert fatigue.
+    # Route to silent receiver (no delivery).
+    #
+    - match:
+        kubernaut.ai/investigation-outcome: resolved
+      receiver: silent-noop
+      # No need to repeat - alert is already resolved
+      repeat_interval: 168h  # 1 week (effectively disable repeats)
+
+    # =================================================================
+    # OPS: Investigation Inconclusive (BR-HAPI-200)
+    # =================================================================
+    # HolmesGPT could not determine root cause.
+    # Human review required to understand the alert.
+    # Route to Slack #ops for triage.
+    #
+    - match:
+        kubernaut.ai/investigation-outcome: inconclusive
+      receiver: slack-ops-inconclusive
+      group_wait: 1m
+      repeat_interval: 2h
+
+    # =================================================================
     # Production Critical (any notification type)
     # =================================================================
     # Catch-all for production environment critical notifications
@@ -127,6 +159,22 @@ route:
 # Receiver definitions
 receivers:
   # ===================================================================
+  # SILENT: No delivery (BR-HAPI-200 resolved alerts)
+  # ===================================================================
+  # Used for alerts that self-resolved during investigation.
+  # Prevents alert fatigue by not delivering notifications.
+  - name: silent-noop
+    # No delivery configs = silent/no-op
+
+  # ===================================================================
+  # OPS: Slack for inconclusive investigations (BR-HAPI-200)
+  # ===================================================================
+  - name: slack-ops-inconclusive
+    slack_configs:
+      - channel: '#kubernaut-ops-triage'
+        # Note: actual Slack config would include webhook URL
+
+  # ===================================================================
   # CRITICAL: PagerDuty for 24/7 on-call alerting
   # ===================================================================
   - name: pagerduty-oncall-critical
@@ -163,4 +211,5 @@ receivers:
   - name: slack-default
     slack_configs:
       - channel: '#kubernaut-alerts'
+
 
