@@ -1,13 +1,25 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.28.md`
-**Version**: v1.28
+**Filename**: `IMPLEMENTATION_PLAN_V1.29.md`
+**Version**: v1.29
 **Last Updated**: 2025-12-07
 **Timeline**: 14-17 days (quality-focused, includes label detection)
 **Status**: ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Production-Ready Standard (100% Confidence - All Dependencies Validated)
 
 **Change Log**:
+- **v1.29** (2025-12-07): Day 9 Triage - CustomLabels Rego Extraction Gap Fixes
+  - 🔴 **CRD Type Fix**: `CustomLabels map[string]string` → `map[string][]string` (DD-WORKFLOW-001 v1.9)
+  - 🔴 **Label Domain Fix**: Security wrapper updated from `kubernaut.io/` to `kubernaut.ai/`
+  - ✅ **Test Matrix Expanded**: 6 → 16 tests (Happy Path 5 + Edge Cases 6 + Error Handling 3 + Security 2)
+  - ✅ **Test Files Specified**: `rego_engine_test.go` (BR-SP-102), `rego_security_wrapper_test.go` (BR-SP-104)
+  - ✅ **Test Naming**: TC-CL-XXX → CL-HP-XX/CL-EC-XX/CL-ER-XX/CL-SEC-XX
+  - ✅ **Sandbox Config**: Added 5s timeout, 128MB memory, StrictBuiltinErrors per DD-WORKFLOW-001 v1.9
+  - ✅ **Input Types**: RegoInput now uses sharedtypes.KubernetesContext (authoritative source)
+  - ✅ **Hot-Reload Integration**: Uses pkg/shared/hotreload/FileWatcher (Day 5 pattern)
+  - ✅ **OPA v1 Syntax**: Updated Rego examples to use `import rego.v1` and `if` keyword
+  - ✅ **ConfigMap Example**: Updated to use correct domain and OPA v1 syntax
+  - 📏 **Triage Source**: Day 9 pre-implementation triage against DD-WORKFLOW-001 v1.9, TESTING_GUIDELINES.md
 - **v1.28** (2025-12-07): Day 8 Post-Implementation Triage - Plan-to-Code Alignment
   - ✅ **Helper Function Signatures**: Updated to match implementation (detectPDB, detectHPA, etc.)
   - ✅ **API Call Clarity**: Functions that don't make API calls (detectGitOps, detectHelm, detectServiceMesh) now pass result directly, no error return
@@ -3216,7 +3228,24 @@ func (d *LabelDetector) detectServiceMesh(k8sCtx *sharedtypes.KubernetesContext,
 
 **Purpose**: Extract user-defined labels via Rego policies with security wrapper
 
-**File**: `pkg/signalprocessing/rego/engine.go`
+**Business Requirements**: BR-SP-102 (CustomLabels Rego Extraction), BR-SP-104 (Mandatory Label Protection)
+
+**Authoritative Reference**: DD-WORKFLOW-001 v1.9
+
+**Files**:
+- `pkg/signalprocessing/rego/engine.go` - Main Rego engine
+- `pkg/signalprocessing/rego/security.go` - Security wrapper (BR-SP-104)
+
+**Test Files** (per BR mapping):
+- `test/unit/signalprocessing/rego_engine_test.go` - BR-SP-102 tests
+- `test/unit/signalprocessing/rego_security_wrapper_test.go` - BR-SP-104 tests
+
+> ⚠️ **SANDBOX REQUIREMENTS (DD-WORKFLOW-001 v1.9)**:
+> - Network access: ❌ Disabled
+> - Filesystem access: ❌ Disabled
+> - Evaluation timeout: **5 seconds**
+> - Memory limit: **128 MB**
+> - External data: ❌ Disabled (V1.0)
 
 ```go
 package rego
@@ -3224,58 +3253,116 @@ package rego
 import (
     "context"
     "fmt"
+    "sync"
+    "time"
 
     "github.com/go-logr/logr"
     "github.com/open-policy-agent/opa/rego"
-    corev1 "k8s.io/api/core/v1"
-    "sigs.k8s.io/controller-runtime/pkg/client"
 
-    signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+    "github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+    sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+)
+
+// Sandbox configuration per DD-WORKFLOW-001 v1.9
+const (
+    evaluationTimeout = 5 * time.Second  // Max Rego evaluation time
+    maxKeys           = 10               // Max keys (subdomains)
+    maxValuesPerKey   = 5                // Max values per key
+    maxKeyLength      = 63               // K8s label key compatibility
+    maxValueLength    = 100              // Prompt efficiency
 )
 
 // Engine evaluates customer Rego policies for CustomLabels
-// Security: Wrapped with security policy that strips 5 mandatory labels
+// BR-SP-102: CustomLabels Rego Extraction
+// BR-SP-104: Mandatory Label Protection (via security wrapper)
+// DD-WORKFLOW-001 v1.9: Sandboxed OPA Runtime
 type Engine struct {
-    client       client.Client
     logger       logr.Logger
-    policyModule string // Compiled policy with security wrapper
+    policyModule string    // Compiled policy with security wrapper
+    policyPath   string    // Path to labels.rego (for hot-reload)
+    mu           sync.RWMutex
 }
 
-func NewEngine(c client.Client, logger logr.Logger) *Engine {
+// NewEngine creates a new CustomLabels Rego engine.
+// Per BR-SP-102: Extract customer labels via sandboxed OPA policies.
+func NewEngine(logger logr.Logger, policyPath string) *Engine {
     return &Engine{
-        client: c,
-        logger: logger.WithName("rego"),
+        logger:     logger.WithName("rego"),
+        policyPath: policyPath,
     }
 }
 
-// LoadPolicy loads customer policy from ConfigMap and wraps with security policy
-func (e *Engine) LoadPolicy(ctx context.Context) error {
-    // Load ConfigMap: signal-processing-policies in kubernaut-system
-    cm := &corev1.ConfigMap{}
-    if err := e.client.Get(ctx, client.ObjectKey{
-        Namespace: "kubernaut-system",
-        Name:      "signal-processing-policies",
-    }, cm); err != nil {
-        return fmt.Errorf("failed to load policy ConfigMap: %w", err)
+// SetupHotReload configures hot-reload using pkg/shared/hotreload/FileWatcher.
+// Per Day 5 pattern: FileWatcher watches for ConfigMap changes.
+func (e *Engine) SetupHotReload(ctx context.Context) error {
+    watcher, err := hotreload.NewFileWatcher(e.policyPath, e.logger)
+    if err != nil {
+        return fmt.Errorf("failed to create file watcher: %w", err)
     }
 
-    customerPolicy := cm.Data["labels.rego"]
-    e.policyModule = e.wrapWithSecurityPolicy(customerPolicy)
+    watcher.OnChange(func(data []byte) {
+        e.mu.Lock()
+        defer e.mu.Unlock()
+        e.policyModule = e.wrapWithSecurityPolicy(string(data))
+        e.logger.Info("Rego policy hot-reloaded", "policySize", len(data))
+    })
 
-    e.logger.Info("Rego policy loaded", "policySize", len(customerPolicy))
+    go watcher.Start(ctx)
     return nil
 }
 
-// EvaluatePolicy evaluates the policy and returns CustomLabels
+// LoadPolicy loads customer policy from file and wraps with security policy.
+// Called at startup, then hot-reloaded via SetupHotReload.
+func (e *Engine) LoadPolicy(policyContent string) error {
+    e.mu.Lock()
+    defer e.mu.Unlock()
+
+    e.policyModule = e.wrapWithSecurityPolicy(policyContent)
+    e.logger.Info("Rego policy loaded", "policySize", len(policyContent))
+    return nil
+}
+
+// RegoInput wraps shared types for Rego policy evaluation.
+// Uses sharedtypes.KubernetesContext (authoritative source).
+type RegoInput struct {
+    Kubernetes     *sharedtypes.KubernetesContext `json:"kubernetes"`
+    Signal         SignalContext                   `json:"signal"`
+    DetectedLabels *sharedtypes.DetectedLabels     `json:"detected_labels,omitempty"`
+}
+
+// SignalContext contains signal-specific data for Rego policies.
+type SignalContext struct {
+    Type     string `json:"type"`
+    Severity string `json:"severity"`
+    Source   string `json:"source"`
+}
+
+// EvaluatePolicy evaluates the policy and returns CustomLabels.
 // Output format: map[string][]string (subdomain → list of values)
-func (e *Engine) EvaluatePolicy(ctx context.Context, input *Input) (map[string][]string, error) {
+// DD-WORKFLOW-001 v1.9: 5s timeout, sandboxed execution
+func (e *Engine) EvaluatePolicy(ctx context.Context, input *RegoInput) (map[string][]string, error) {
+    e.mu.RLock()
+    policyModule := e.policyModule
+    e.mu.RUnlock()
+
+    if policyModule == "" {
+        e.logger.V(1).Info("No policy loaded, returning empty labels")
+        return make(map[string][]string), nil
+    }
+
+    // Sandboxed execution: 5s timeout per DD-WORKFLOW-001 v1.9
+    evalCtx, cancel := context.WithTimeout(ctx, evaluationTimeout)
+    defer cancel()
+
     r := rego.New(
         rego.Query("data.signalprocessing.security.labels"),
-        rego.Module("policy.rego", e.policyModule),
+        rego.Module("policy.rego", policyModule),
         rego.Input(input),
+        rego.StrictBuiltinErrors(true),     // Strict mode for safety
+        rego.EnablePrintStatements(false),  // Disable debugging in prod
     )
 
-    rs, err := r.Eval(ctx)
+    rs, err := r.Eval(evalCtx)
     if err != nil {
         return nil, fmt.Errorf("rego evaluation failed: %w", err)
     }
@@ -3285,30 +3372,51 @@ func (e *Engine) EvaluatePolicy(ctx context.Context, input *Input) (map[string][
     }
 
     // Convert result to map[string][]string
-    result := make(map[string][]string)
-    // ... conversion logic
+    result, err := e.convertResult(rs[0].Expressions[0].Value)
+    if err != nil {
+        return nil, fmt.Errorf("invalid rego output type: %w", err)
+    }
 
     // Validate and sanitize (DD-WORKFLOW-001 v1.9)
     result = e.validateAndSanitize(result)
 
-    e.logger.Info("CustomLabels evaluated",
-        "labelCount", len(result))
+    e.logger.Info("CustomLabels evaluated", "labelCount", len(result))
+    return result, nil
+}
+
+// convertResult converts OPA output to map[string][]string.
+func (e *Engine) convertResult(value interface{}) (map[string][]string, error) {
+    result := make(map[string][]string)
+
+    valueMap, ok := value.(map[string]interface{})
+    if !ok {
+        return nil, fmt.Errorf("expected map[string]interface{}, got %T", value)
+    }
+
+    for key, val := range valueMap {
+        switch v := val.(type) {
+        case []interface{}:
+            var strValues []string
+            for _, item := range v {
+                if strVal, ok := item.(string); ok {
+                    strValues = append(strValues, strVal)
+                }
+            }
+            result[key] = strValues
+        case string:
+            result[key] = []string{v}
+        }
+    }
 
     return result, nil
 }
 
-// validateAndSanitize enforces validation limits per DD-WORKFLOW-001 v1.9
+// validateAndSanitize enforces validation limits per DD-WORKFLOW-001 v1.9.
+// Strips reserved prefixes (BR-SP-104) and enforces size limits.
 func (e *Engine) validateAndSanitize(labels map[string][]string) map[string][]string {
     result := make(map[string][]string)
 
-    const (
-        maxKeys         = 10   // Max keys (subdomains)
-        maxValuesPerKey = 5    // Max values per key
-        maxKeyLength    = 63   // K8s label key compatibility
-        maxValueLength  = 100  // Prompt efficiency
-    )
-
-    // Reserved prefixes - strip these for security
+    // Reserved prefixes - strip these for security (BR-SP-104)
     reservedPrefixes := []string{"kubernaut.ai/", "system/"}
 
     keyCount := 0
@@ -3320,10 +3428,9 @@ func (e *Engine) validateAndSanitize(labels map[string][]string) map[string][]st
             break
         }
 
-        // Skip reserved prefixes
+        // Skip reserved prefixes (BR-SP-104: Mandatory Label Protection)
         if hasReservedPrefix(key, reservedPrefixes) {
-            e.logger.Info("CustomLabels reserved prefix stripped",
-                "key", key)
+            e.logger.Info("CustomLabels reserved prefix stripped", "key", key)
             continue
         }
 
@@ -3357,93 +3464,73 @@ func (e *Engine) validateAndSanitize(labels map[string][]string) map[string][]st
     return result
 }
 
-// wrapWithSecurityPolicy wraps customer policy with security wrapper
-// Security wrapper blocks override of 5 mandatory labels
+func hasReservedPrefix(key string, prefixes []string) bool {
+    for _, prefix := range prefixes {
+        if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+            return true
+        }
+    }
+    return false
+}
+
+// wrapWithSecurityPolicy wraps customer policy with security wrapper.
+// BR-SP-104: Security wrapper blocks override of 5 mandatory labels.
+// Uses kubernaut.ai/ domain (corrected from kubernaut.io/).
 func (e *Engine) wrapWithSecurityPolicy(customerPolicy string) string {
     securityWrapper := `
 package signalprocessing.security
 
+import rego.v1
 import data.signalprocessing.labels as customer_labels
 
 # 5 mandatory system labels (DD-WORKFLOW-001 v1.9) - cannot be overridden
-system_labels := {
-    "kubernaut.io/signal-type",
-    "kubernaut.io/severity",
-    "kubernaut.io/component",
-    "kubernaut.io/environment",
-    "kubernaut.io/priority"
-}
+# BR-SP-104: Mandatory Label Protection
+system_prefixes := {"kubernaut.ai/", "system/"}
 
 # Final output: customer labels minus system labels
-labels[key] = value {
-    customer_labels.labels[key] = value
-    not startswith_any(key, system_labels)
+labels[key] := value if {
+    some key, value in customer_labels.labels
+    not has_reserved_prefix(key)
 }
 
-startswith_any(key, prefixes) {
-    some prefix
-    prefixes[prefix]
+has_reserved_prefix(key) if {
+    some prefix in system_prefixes
     startswith(key, prefix)
 }
 `
     return securityWrapper + "\n\n" + customerPolicy
 }
-
-// Input contains all data available to Rego policies
-// See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
-type Input struct {
-    Namespace      NamespaceContext           `json:"namespace"`
-    Pod            PodContext                 `json:"pod,omitempty"`
-    Deployment     DeploymentContext          `json:"deployment,omitempty"`
-    Node           NodeContext                `json:"node,omitempty"`
-    Signal         SignalContext              `json:"signal"`
-    DetectedLabels map[string]interface{}     `json:"detected_labels,omitempty"`
-}
-
-// Context types...
-type NamespaceContext struct {
-    Name        string            `json:"name"`
-    Labels      map[string]string `json:"labels,omitempty"`
-    Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-type PodContext struct {
-    Name        string            `json:"name"`
-    Labels      map[string]string `json:"labels,omitempty"`
-    Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-type DeploymentContext struct {
-    Name        string            `json:"name"`
-    Replicas    int32             `json:"replicas"`
-    Labels      map[string]string `json:"labels,omitempty"`
-    Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-type NodeContext struct {
-    Name   string            `json:"name"`
-    Labels map[string]string `json:"labels,omitempty"`
-}
-
-type SignalContext struct {
-    Type     string `json:"type"`
-    Severity string `json:"severity"`
-    Source   string `json:"source"`
-}
 ```
 
-**Test Scenarios (Day 9)**:
+**Test Scenarios (Day 9)** - 16 tests per TESTING_GUIDELINES.md:
 
-| ID | Input | Expected Outcome |
-|----|-------|------------------|
-| TC-CL-001 | Rego extracts `team` from ns label | `{"kubernaut.io": ["team=payments"]}` |
-| TC-CL-002 | Rego sets risk-tolerance | `{"kubernaut.io": ["risk-tolerance=high"]}` |
-| TC-CL-003 | Rego sets constraint | `{"constraint.kubernaut.io": ["cost-constrained"]}` |
-| TC-CL-004 | Policy tries to set `signal-type` | Label stripped from output (security) |
-| TC-CL-005 | Empty/missing policy | Empty map returned |
-| TC-CL-006 | Policy evaluation error | Empty map returned (non-fatal) |
+**BR-SP-102 Tests** (`test/unit/signalprocessing/rego_engine_test.go`):
 
-**ConfigMap Example**:
+| ID | Category | Input | Expected Outcome | BR |
+|----|----------|-------|------------------|-----|
+| **CL-HP-01** | Happy Path | Rego extracts `team` from ns label | `{"team": ["payments"]}` | BR-SP-102 |
+| **CL-HP-02** | Happy Path | Rego sets `risk_tolerance` | `{"risk_tolerance": ["low"]}` | BR-SP-102 |
+| **CL-HP-03** | Happy Path | Multi-subdomain extraction | Multiple keys in result | BR-SP-102 |
+| **CL-HP-04** | Happy Path | Multi-value per subdomain | `{"constraint": ["cost", "stateful"]}` | BR-SP-102 |
+| **CL-HP-05** | Happy Path | Hot-reload triggers callback | Policy refreshed | BR-SP-102 |
+| **CL-EC-01** | Edge Case | Empty policy | Empty map returned | BR-SP-102 |
+| **CL-EC-02** | Edge Case | Policy returns nil | Empty map returned | BR-SP-102 |
+| **CL-EC-03** | Edge Case | Max keys (10) exceeded | Truncated to 10 keys | BR-SP-102 |
+| **CL-EC-04** | Edge Case | Max values (5) exceeded | Truncated to 5 values | BR-SP-102 |
+| **CL-EC-05** | Edge Case | Key length > 63 chars | Key truncated | BR-SP-102 |
+| **CL-EC-06** | Edge Case | Value length > 100 chars | Value truncated | BR-SP-102 |
+| **CL-ER-01** | Error | Rego syntax error | Error returned | BR-SP-102 |
+| **CL-ER-02** | Error | Rego timeout (>5s) | Context deadline error | BR-SP-102 |
+| **CL-ER-03** | Error | Invalid output type | Type validation error | BR-SP-102 |
+
+**BR-SP-104 Tests** (`test/unit/signalprocessing/rego_security_wrapper_test.go`):
+
+| ID | Category | Input | Expected Outcome | BR |
+|----|----------|-------|------------------|-----|
+| **CL-SEC-01** | Security | Policy sets `kubernaut.ai/environment` | Label stripped | BR-SP-104 |
+| **CL-SEC-02** | Security | Policy sets `system/internal` | Label stripped | BR-SP-104 |
+
+**ConfigMap Example** (uses correct `kubernaut.ai/` domain):
 ```yaml
 apiVersion: v1
 kind: ConfigMap
@@ -3454,18 +3541,32 @@ data:
   labels.rego: |
     package signalprocessing.labels
 
+    import rego.v1
+
     # Extract team from namespace label
-    labels["kubernaut.io/team"] = input.namespace.labels["kubernaut.io/team"] {
-      input.namespace.labels["kubernaut.io/team"]
+    labels["team"] := input.kubernetes.namespaceLabels["kubernaut.ai/team"] if {
+      input.kubernetes.namespaceLabels["kubernaut.ai/team"]
     }
 
-    # Derive risk-tolerance from environment
-    labels["kubernaut.io/risk-tolerance"] = "low" {
-      input.namespace.labels["environment"] == "production"
+    # Derive risk_tolerance from environment classification
+    labels["risk_tolerance"] := "low" if {
+      input.signal.severity == "critical"
     }
-    labels["kubernaut.io/risk-tolerance"] = "high" {
-      input.namespace.labels["environment"] != "production"
+    labels["risk_tolerance"] := "high" if {
+      input.signal.severity != "critical"
     }
+
+    # Multi-value constraint example
+    labels["constraint"] := constraints if {
+      constraints := array.concat(
+        ["cost-aware"],
+        _stateful_constraint
+      )
+    }
+
+    _stateful_constraint := ["stateful-safe"] if {
+      input.detected_labels.stateful == true
+    } else := []
 ```
 
 ---

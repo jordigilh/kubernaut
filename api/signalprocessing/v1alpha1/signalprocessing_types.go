@@ -213,7 +213,9 @@ type KubernetesContext struct {
 	// Detected labels (auto-detected cluster characteristics)
 	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
 	// Custom labels (extracted via Rego policies)
-	CustomLabels map[string]string `json:"customLabels,omitempty"`
+	// DD-WORKFLOW-001 v1.9: map[string][]string (subdomain → list of values)
+	// Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
+	CustomLabels map[string][]string `json:"customLabels,omitempty"`
 	// DegradedMode indicates context was built from signal labels (K8s API failed)
 	// DD-4: K8s Enrichment Failure Handling
 	DegradedMode bool `json:"degradedMode,omitempty"`

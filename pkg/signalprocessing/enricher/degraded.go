@@ -91,10 +91,9 @@ func ValidateContextSize(ctx *signalprocessingv1alpha1.KubernetesContext) error 
 		return fmt.Errorf("namespace annotations count %d exceeds maximum %d", len(ctx.NamespaceAnnotations), MaxLabels)
 	}
 
-	// Validate custom labels
-	if err := validateLabels(ctx.CustomLabels, "custom labels"); err != nil {
-		return err
-	}
+	// NOTE: CustomLabels validation is handled by the Rego engine (DD-WORKFLOW-001 v1.9)
+	// which enforces: max 10 keys, 5 values/key, 63 char keys, 100 char values
+	// Skip redundant validation here.
 
 	// Validate pod labels if present
 	if ctx.Pod != nil {
