@@ -267,7 +267,7 @@ route:
     - match:
         kubernaut.ai/investigation-outcome: resolved
       receiver: null-receiver  # Or use continue: false with no receiver
-    
+
     # Inconclusive: Route to ops for review
     - match:
         kubernaut.ai/investigation-outcome: inconclusive
@@ -303,4 +303,20 @@ Please add questions here or create a response document:
 
 **Maintained By**: HolmesGPT-API Team
 **Last Updated**: December 7, 2025
+
+---
+
+## 📢 Update Notification (2025-12-07)
+
+**To**: HolmesGPT-API Team
+**From**: Notification Team
+
+The Notification team has acknowledged BR-HAPI-200:
+
+- ✅ **Acknowledged**: V1.1 scope confirmed
+- ✅ **Q3 Answered**: No notification by default for self-resolved incidents
+- ✅ **Implementation Plan**: ~2 hours for V1.1 (routing label support)
+- ✅ **Existing Support**: BR-NOT-065 routing infrastructure already supports label-based routing
+
+**Status**: 2 of 3 teams acknowledged (AIAnalysis pending)
 
