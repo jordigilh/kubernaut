@@ -1147,9 +1147,9 @@ We should either:
 - `reconciliation-phases.md` (line 189) says AIAnalysis validates ← **OUTDATED**
 - `DD-HAPI-002 v1.1` principle says HAPI should validate ← **AUTHORITATIVE**
 
-**HAPI Implementation Gap (V1.0)**:
-- Current: HAPI does **NOT** validate workflow existence before returning
-- Needed: Add `validate_workflow_exists` check after LLM selects workflow
+**✅ HAPI Implementation Complete (V1.0)**:
+- ~~Current: HAPI does **NOT** validate workflow existence before returning~~
+- **IMPLEMENTED**: `_validate_workflow_exists()` in `src/validation/workflow_response_validator.py`
 - If invalid: Return error to LLM, LLM self-corrects (picks different workflow)
 
 **Proposed HAPI Enhancement**:
@@ -1173,11 +1173,16 @@ if selected_workflow:
 - But primary validation should be in HAPI where LLM can self-correct
 
 **Action Items**:
-| Owner | Action | Priority |
-|-------|--------|----------|
-| **HAPI Team** | Implement `validate_workflow_exists` check | 🔴 V1.0 |
-| **Docs Team** | Update `reconciliation-phases.md` to reflect HAPI validates | 🟡 V1.0 |
-| **AIAnalysis Team** | Keep defense-in-depth validation (optional) | 🟢 V1.1 |
+| Owner | Action | Priority | Status |
+|-------|--------|----------|--------|
+| **HAPI Team** | Implement `validate_workflow_exists` check | 🔴 V1.0 | ✅ **DONE** (BR-AI-023) |
+| **Docs Team** | Update `reconciliation-phases.md` to reflect HAPI validates | 🟡 V1.0 | ⏳ Pending |
+| **AIAnalysis Team** | Keep defense-in-depth validation (optional) | 🟢 V1.1 | ⏳ Pending |
+
+**✅ HAPI Implementation Confirmation (December 7, 2025)**:
+- `_validate_workflow_exists()` implemented in `src/validation/workflow_response_validator.py`
+- Calls Data Storage `GET /api/v1/workflows/{workflow_id}` to validate existence
+- Returns error to LLM for self-correction if workflow not found (hallucination detection)
 
 ---
 
@@ -1292,7 +1297,7 @@ if not validate_oci_reference(container_image):
 
 | Status | Behavior |
 |--------|----------|
-| **V1.0 Current** | ❌ `validate_workflow_parameters` tool **NOT YET IMPLEMENTED** ← **GAP** |
+| **V1.0 Current** | ✅ `_validate_parameters()` **IMPLEMENTED** in `workflow_response_validator.py` |
 | **V1.0 Required** | ✅ HAPI is **SOLE VALIDATOR** per DD-HAPI-002 v1.1 |
 
 **DD-HAPI-002 v1.1 Architecture**:
@@ -1313,10 +1318,11 @@ HolmesGPT-API (SOLE VALIDATOR)
 2. **If validation fails at AIAnalysis**: Must restart entire RCA flow (expensive, poor UX)
 3. **Workflow Immutability**: No schema drift between validation and execution
 
-**Current State (V1.0)**:
-- `validate_workflow_parameters` tool is **NOT IMPLEMENTED**
-- LLM generates parameters based on prompt instructions (implicit constraint)
-- **No explicit schema validation** before HAPI returns response
+**✅ Current State (V1.0) - IMPLEMENTED**:
+- ~~`validate_workflow_parameters` tool is **NOT IMPLEMENTED**~~
+- **IMPLEMENTED**: `_validate_parameters()` in `src/validation/workflow_response_validator.py`
+- LLM generates parameters based on prompt instructions + explicit schema validation
+- **Schema validation** performs required/type/enum/range checks before returning
 
 **AIAnalysis Options for V1.0**:
 | Option | Approach | Risk |

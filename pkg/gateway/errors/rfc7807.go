@@ -27,6 +27,7 @@ const (
 	ErrorTypeMethodNotAllowed     = "https://kubernaut.ai/errors/method-not-allowed"
 	ErrorTypeInternalError        = "https://kubernaut.ai/errors/internal-error"
 	ErrorTypeServiceUnavailable   = "https://kubernaut.ai/errors/service-unavailable"
+	ErrorTypeTooManyRequests      = "https://kubernaut.ai/errors/too-many-requests"
 	ErrorTypeUnknown              = "https://kubernaut.ai/errors/unknown"
 )
 
@@ -38,5 +39,6 @@ const (
 	TitleMethodNotAllowed     = "Method Not Allowed"
 	TitleInternalServerError  = "Internal Server Error"
 	TitleServiceUnavailable   = "Service Unavailable"
+	TitleTooManyRequests      = "Too Many Requests"
 	TitleUnknown              = "Error"
 )

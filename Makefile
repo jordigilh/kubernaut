@@ -885,6 +885,79 @@ test-holmesgpt-all: ## Run ALL HolmesGPT API tests (Python)
 	@echo ""
 	@echo "✅ HolmesGPT API: ALL tests passed"
 
+# ════════════════════════════════════════════════════════════════════════════════
+# WorkflowExecution Controller Tests
+# Per TESTING_GUIDELINES.md and 03-testing-strategy.mdc
+# ════════════════════════════════════════════════════════════════════════════════
+
+.PHONY: test-unit-workflowexecution
+test-unit-workflowexecution: ## Run WorkflowExecution unit tests (4 parallel procs)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 WorkflowExecution Controller - Unit Tests (4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	ginkgo -v --timeout=5m --procs=4 ./test/unit/workflowexecution/...
+
+.PHONY: test-integration-workflowexecution
+test-integration-workflowexecution: ## Run WorkflowExecution integration tests (4 parallel procs, EnvTest)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 WorkflowExecution Controller - Integration Tests (4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	ginkgo -v --timeout=15m --procs=4 ./test/integration/workflowexecution/...
+
+.PHONY: test-e2e-workflowexecution
+test-e2e-workflowexecution: ## Run WorkflowExecution E2E tests (4 parallel procs, Kind + Tekton)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 WorkflowExecution Controller - E2E Tests (Kind + Tekton, 4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	ginkgo -v --timeout=15m --procs=4 ./test/e2e/workflowexecution/...
+
+.PHONY: test-workflowexecution-all
+test-workflowexecution-all: ## Run ALL WorkflowExecution tests (unit + integration + e2e, 4 parallel each)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 WorkflowExecution Controller - Complete Test Suite (3 Tiers)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
+	@echo "🏗️  E2E Infrastructure: Kind cluster + Tekton Pipelines"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	PROCS=4; \
+	echo ""; \
+	echo "1️⃣  Unit Tests ($$PROCS parallel procs)..."; \
+	ginkgo -v --timeout=5m --procs=$$PROCS ./test/unit/workflowexecution/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests ($$PROCS parallel procs)..."; \
+	ginkgo -v --timeout=15m --procs=$$PROCS ./test/integration/workflowexecution/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  E2E Tests (Kind + Tekton, $$PROCS parallel procs)..."; \
+	ginkgo -v --timeout=15m --procs=$$PROCS ./test/e2e/workflowexecution/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		echo "✅ WorkflowExecution: ALL tests passed (3/3 tiers)"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+	else \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		echo "❌ WorkflowExecution: $$FAILED tier(s) failed"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		exit 1; \
+	fi
+
+.PHONY: test-coverage-workflowexecution
+test-coverage-workflowexecution: ## Run WorkflowExecution unit tests with coverage report
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 WorkflowExecution Controller - Coverage Report"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	go test -cover -coverprofile=coverage-workflowexecution.out -coverpkg=./internal/controller/workflowexecution/... ./test/unit/workflowexecution/...
+	@echo ""
+	@echo "📊 Coverage Summary:"
+	@go tool cover -func=coverage-workflowexecution.out | tail -1
+	go tool cover -html=coverage-workflowexecution.out -o coverage-workflowexecution.html
+	@echo "📄 Full report: coverage-workflowexecution.html"
+
+.PHONY: build-workflowexecution
+build-workflowexecution: ## Build WorkflowExecution controller binary
+	go build -o bin/workflowexecution-controller ./cmd/workflowexecution
+
 .PHONY: test-all-services
 test-all-services: ## Run ALL tests for ALL services (sequential - use CI for parallel)
 	@echo "════════════════════════════════════════════════════════════════════════"

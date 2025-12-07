@@ -118,3 +118,4 @@ func getFirstFoundEnvTestBinaryDir() string {
 
 // Placeholder for manager - will be added when controller is setup
 var _ ctrl.Manager = nil
+

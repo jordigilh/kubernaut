@@ -309,6 +309,12 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📞 Support & Documentation
 
+### User & Operations Guides
+- **Workflow Author's Guide**: [docs/guides/user/workflow-authoring.md](../../../guides/user/workflow-authoring.md) - How to create Tekton workflows
+- **Troubleshooting Guide**: [docs/troubleshooting/service-specific/workflowexecution-issues.md](../../../troubleshooting/service-specific/workflowexecution-issues.md) - Common issues and solutions
+- **Production Runbook**: [docs/operations/runbooks/workflowexecution-runbook.md](../../../operations/runbooks/workflowexecution-runbook.md) - Operational procedures
+
+### Technical References
 - **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
 - **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
@@ -319,13 +325,14 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📝 Document Maintenance
 
-**Last Updated**: 2025-12-04
-**Document Structure Version**: 4.1
+**Last Updated**: 2025-12-06
+**Document Structure Version**: 4.2
 **Status**: ✅ Implementation Complete
 
 **Changelog**:
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.2 | 2025-12-06 | Added links to new user guides, troubleshooting, and runbook in centralized docs/ |
 | 4.1 | 2025-12-04 | **Implementation Complete** - Full controller implemented with tests |
 | 4.0 | 2025-12-02 | Simplified documentation, updated architecture section |
 | 3.1 | 2025-12-02 | Updated API group to `.ai`, port to 8081, BR-WE-* prefix, Tekton architecture |

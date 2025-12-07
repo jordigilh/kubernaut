@@ -303,6 +303,20 @@ type RemediationRequestStatus struct {
 	// +optional
 	RequiresManualReview bool `json:"requiresManualReview,omitempty"`
 
+	// ========================================
+	// COMPLETION OUTCOME (BR-ORCH-037)
+	// ========================================
+
+	// Outcome indicates the remediation result when completed.
+	// Values:
+	// - "Remediated": Workflow executed successfully
+	// - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
+	// - "ManualReviewRequired": Requires operator intervention
+	// Reference: BR-ORCH-037, BR-HAPI-200
+	// +optional
+	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired
+	Outcome string `json:"outcome,omitempty"`
+
 	// TimeoutPhase indicates which phase timed out
 	// Only set when OverallPhase = "timeout"
 	TimeoutPhase *string `json:"timeoutPhase,omitempty"`

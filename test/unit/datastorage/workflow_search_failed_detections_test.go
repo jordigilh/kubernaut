@@ -54,6 +54,8 @@ var _ = Describe("BR-STORAGE-020: FailedDetections Support", func() {
 
 	Describe("DetectedLabels Model", func() {
 		Context("when FailedDetections field is present", func() {
+			// BEHAVIOR: DetectedLabels model supports FailedDetections field
+			// CORRECTNESS: Field is accessible and stores correct values
 			It("should allow setting and getting FailedDetections", func() {
 				// ARRANGE: Create DetectedLabels with FailedDetections
 				dl := &models.DetectedLabels{

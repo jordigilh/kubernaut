@@ -32,10 +32,13 @@ func TestAuditEventBuilder(t *testing.T) {
 // - BR-STORAGE-033-002: Type-safe event building API
 // - BR-STORAGE-033-003: Consistent field naming across services
 //
+// Testing Principle: Behavior + Correctness
 // ========================================
 
 var _ = Describe("BaseEventBuilder", func() {
 	Context("BR-STORAGE-033-001: Standardized event_data JSONB structure", func() {
+		// BEHAVIOR: Builder creates event with correct version field
+		// CORRECTNESS: Version is exactly "1.0"
 		It("should create event with version 1.0", func() {
 			// TDD RED: This test will FAIL until we implement BaseEventBuilder
 			builder := audit.NewEventBuilder("test-service", "test.event")

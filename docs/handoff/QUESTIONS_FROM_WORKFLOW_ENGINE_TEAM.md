@@ -326,6 +326,104 @@ RR → SP → AIAnalysis → (Approval?) → ONE WE → (Fail?) → NEW AIAnalys
 
 ---
 
+### 📝 **RO Team Addendum** (December 6, 2025)
+
+#### **Update 1: Missing `PreviousExecutionFailed` Handling**
+
+The WE→RO-002 response table is incomplete. Adding clarification:
+
+| Skip Reason | RO Action | Notification |
+|-------------|-----------|--------------|
+| **ResourceBusy** | Mark RR as `Skipped`, track on parent RR | Bulk notification (BR-ORCH-034) |
+| **RecentlyRemediated** | Mark RR as `Skipped`, track on parent RR | Bulk notification (BR-ORCH-034) |
+| **PreviousExecutionFailed** | Mark RR as `Skipped`, **DO NOT track as duplicate** | Individual notification (requires investigation) |
+
+**Rationale**: `PreviousExecutionFailed` is different from `ResourceBusy`/`RecentlyRemediated`:
+- It indicates the target resource has an unresolved failure state
+- NOT a duplicate - it's a new remediation blocked by prior failure
+- Operator needs to resolve prior failure before retry
+
+---
+
+#### **Update 2: New NotificationType for Manual Review (BR-ORCH-036)**
+
+Per recent discussions with AIAnalysis team ([NOTICE_AIANALYSIS_WORKFLOW_RESOLUTION_FAILURE.md](./NOTICE_AIANALYSIS_WORKFLOW_RESOLUTION_FAILURE.md)), a new notification type `manual-review` has been added to the API:
+
+```go
+// Updated NotificationType enum (December 6, 2025)
+const (
+    NotificationTypeEscalation   NotificationType = "escalation"
+    NotificationTypeSimple       NotificationType = "simple"
+    NotificationTypeStatusUpdate NotificationType = "status-update"
+    NotificationTypeApproval     NotificationType = "approval"      // NEW - BR-ORCH-001
+    NotificationTypeManualReview NotificationType = "manual-review" // NEW - BR-ORCH-036
+)
+```
+
+**Notification Type Selection Matrix** (updated):
+
+| Scenario | Source | NotificationType | Priority |
+|----------|--------|------------------|----------|
+| AIAnalysis `WorkflowResolutionFailed` | AIAnalysis | `manual-review` | high |
+| WE `wasExecutionFailure: true` | WE | `escalation` | high |
+| WE `Skipped` (ResourceBusy) | WE | `status-update` | low |
+| WE `Skipped` (PreviousExecutionFailed) | WE | `escalation` | medium |
+| Approval Required (confidence 60-79%) | AIAnalysis | `approval` | high |
+
+**Updated WE→RO-003 Code Example**:
+```go
+func (r *Reconciler) handleWorkflowExecutionFailed(ctx context.Context, rr *RemediationRequest, we *WorkflowExecution) error {
+    if we.Status.FailureDetails.WasExecutionFailure {
+        // During-execution failure - DO NOT retry
+        rr.Status.Phase = "Failed"
+        rr.Status.RequiresManualReview = true
+
+        // Use escalation type (not manual-review - that's for AIAnalysis failures)
+        nr := &notificationv1.NotificationRequest{
+            Spec: notificationv1.NotificationRequestSpec{
+                Type:     notificationv1.NotificationTypeEscalation, // execution failure
+                Priority: notificationv1.NotificationPriorityHigh,
+                Subject:  fmt.Sprintf("⚠️ Workflow Execution Failed: %s", we.Spec.WorkflowRef.WorkflowID),
+                Body:     we.Status.FailureDetails.NaturalLanguageSummary,
+                Channels: []notificationv1.Channel{
+                    notificationv1.ChannelConsole,
+                    notificationv1.ChannelSlack,
+                    notificationv1.ChannelEmail,
+                },
+            },
+        }
+        return r.client.Create(ctx, nr)
+    }
+
+    // Pre-execution failure - MAY consider recovery
+    return r.evaluateRecoveryOptions(ctx, rr, we)
+}
+```
+
+---
+
+#### **Update 3: New BRs for RO**
+
+| BR | Description | Status |
+|----|-------------|--------|
+| **BR-ORCH-035** | NotificationRequest reference tracking in RR.Status | ✅ Implemented |
+| **BR-ORCH-036** | Handle AIAnalysis `WorkflowResolutionFailed` | ✅ **READY** - HAPI Q18/Q19 resolved |
+
+---
+
+#### **Update 4: Clarification on `manual-review` vs `escalation`**
+
+| NotificationType | Use Case | Description |
+|------------------|----------|-------------|
+| `manual-review` | AIAnalysis failure | AI couldn't recommend a workflow (catalog issues, low confidence, LLM errors) |
+| `escalation` | WE failure | Workflow execution failed (cluster state may be modified, dangerous to retry) |
+
+**Key Distinction**:
+- `manual-review`: "AI needs help selecting a workflow" → investigate catalog/configuration
+- `escalation`: "Workflow ran but failed" → investigate cluster state, potential rollback
+
+---
+
 ## Questions for Gateway Team ✅ ALL RESOLVED
 
 ### WE→GW-001: Namespace for Cluster-Scoped Resources ✅

@@ -45,7 +45,7 @@ spec:
             type: string
         steps:
           - name: fail
-            image: alpine:3.19
+            image: registry.access.redhat.com/ubi9/ubi-minimal:latest
             script: |
               #!/bin/sh
               echo "============================================"

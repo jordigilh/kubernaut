@@ -15,6 +15,13 @@ import (
 // 	RunSpecs(t, "...")
 // }
 
+// ========================================
+// CONFIG LOADING UNIT TESTS (ADR-030)
+// 📋 Business Requirements:
+//    - BR-STORAGE-010: Structured Configuration via YAML/ConfigMaps
+//    - BR-STORAGE-028: Graceful Shutdown (requires valid config)
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("Config Loading (ADR-030)", func() {
 	var tempDir string
 

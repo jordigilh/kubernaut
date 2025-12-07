@@ -1,6 +1,6 @@
 ## Testing Strategy
 
-**Version**: 5.0
+**Version**: 5.1
 **Last Updated**: 2025-12-03
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Status**: ✅ Aligned with TESTING_GUIDELINES.md
@@ -8,6 +8,11 @@
 ---
 
 ## Changelog
+
+### Version 5.1 (2025-12-06)
+- ✅ **Fixed**: Aligned integration coverage with [03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc) microservices mandate
+- ✅ **Changed**: Integration test coverage from ~20% to >50% (microservices architecture)
+- ✅ **Added**: Rationale for higher integration coverage (CRD-based coordination, watch patterns)
 
 ### Version 5.0 (2025-12-03)
 - ✅ **Fixed**: Aligned with [TESTING_GUIDELINES.md](../../../../development/business-requirements/TESTING_GUIDELINES.md)
@@ -54,13 +59,19 @@ Per [TESTING_GUIDELINES.md](../../../../development/business-requirements/TESTIN
 
 ### Testing Pyramid
 
-Following Kubernaut's defense-in-depth testing strategy:
+Following Kubernaut's defense-in-depth testing strategy per [03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc):
 
 | Test Type | Target Coverage | Focus | Confidence |
 |-----------|----------------|-------|------------|
 | **Unit Tests** | 70%+ | Controller logic, PipelineRun building, resource locking | 85-90% |
-| **Integration Tests** | ~20% | CRD interactions, Tekton PipelineRun creation, status sync | 80-85% |
-| **E2E / BR Tests** | ~10% | Complete workflow execution, business SLAs | 90-95% |
+| **Integration Tests** | **>50%** | CRD interactions, Tekton PipelineRun creation, status sync, cross-namespace coordination | 80-85% |
+| **E2E / BR Tests** | 10-15% | Complete workflow execution, business SLAs | 90-95% |
+
+**Rationale for >50% Integration Coverage** (microservices mandate):
+- CRD-based coordination between WorkflowExecution and Tekton
+- Watch-based status propagation (difficult to unit test)
+- Cross-namespace PipelineRun lifecycle (requires real K8s API)
+- Owner reference and finalizer lifecycle management
 
 **WorkflowExecution Focus Areas**:
 1. **PipelineRun creation** - Bundle resolver, parameter passing
@@ -481,9 +492,9 @@ var _ = Describe("extractFailureDetails", func() {
 ## Integration Tests
 
 **Test Directory**: `test/integration/workflowexecution/`
-**Coverage Target**: ~20%
+**Coverage Target**: >50% (microservices mandate per [03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc))
 **Confidence**: 80-85%
-**Execution**: `make test-integration-workflowexecution`
+**Execution**: `make test-integration-workflowexecution` (4 parallel procs by default)
 
 **Focus Areas**:
 - Real Tekton PipelineRun creation with EnvTest

@@ -17,10 +17,13 @@ limitations under the License.
 package middleware
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
+
+	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 )
 
 // Constants for timestamp validation
@@ -130,9 +133,17 @@ func validateTimestampWindow(requestTime time.Time, tolerance time.Duration) err
 	return nil
 }
 
-// respondTimestampError writes a structured JSON error response for timestamp validation failures
+// respondTimestampError writes an RFC 7807 compliant error response for timestamp validation failures
+// BR-GATEWAY-101: RFC 7807 error format
 func respondTimestampError(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(http.StatusBadRequest)
-	_, _ = w.Write([]byte(`{"error":"` + message + `"}`))
+
+	errorResponse := gwerrors.RFC7807Error{
+		Type:   gwerrors.ErrorTypeValidationError,
+		Title:  gwerrors.TitleBadRequest,
+		Detail: message,
+		Status: http.StatusBadRequest,
+	}
+	_ = json.NewEncoder(w).Encode(errorResponse)
 }

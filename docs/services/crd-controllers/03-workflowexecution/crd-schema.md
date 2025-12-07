@@ -1,8 +1,8 @@
 ## CRD Schema Specification
 
-**Version**: 4.0
-**Last Updated**: 2025-12-02
-**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043
+**Version**: 4.1
+**Last Updated**: 2025-12-06
+**Status**: ✅ Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043, DD-WE-004
 
 **Full Schema**: See [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
 
@@ -132,6 +132,7 @@ type ExecutionConfig struct {
 // Simplified per ADR-044 - just tracks PipelineRun status
 // Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for recovery flow
 // Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
+// Enhanced per DD-WE-004 - exponential backoff cooldown
 type WorkflowExecutionStatus struct {
     // Phase tracks current execution stage
     // Skipped: Resource is busy (another workflow running) or recently remediated
@@ -156,6 +157,22 @@ type WorkflowExecutionStatus struct {
     // FailureReason explains why execution failed (if applicable)
     // DEPRECATED: Use FailureDetails for structured failure information
     FailureReason string `json:"failureReason,omitempty"`
+
+    // ========================================
+    // EXPONENTIAL BACKOFF (v4.1)
+    // DD-WE-004: Prevents remediation storms via adaptive cooldown
+    // ========================================
+
+    // ConsecutiveFailures tracks consecutive failures for this target resource
+    // Resets to 0 on successful completion
+    // Used for exponential backoff calculation
+    // +optional
+    ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
+
+    // NextAllowedExecution is the earliest timestamp when execution is allowed
+    // Calculated using exponential backoff: Base × 2^(failures-1)
+    // +optional
+    NextAllowedExecution *metav1.Time `json:"nextAllowedExecution,omitempty"`
 
     // ========================================
     // ENHANCED FAILURE INFORMATION (v3.0)
@@ -215,7 +232,18 @@ const (
     SkipReasonResourceBusy = "ResourceBusy"
 
     // SkipReasonRecentlyRemediated indicates same workflow+target was recently executed
+    // Also used during exponential backoff for pre-execution failures
     SkipReasonRecentlyRemediated = "RecentlyRemediated"
+
+    // SkipReasonExhaustedRetries indicates max consecutive pre-execution failures reached (DD-WE-004)
+    // Requires manual intervention to clear failure count
+    SkipReasonExhaustedRetries = "ExhaustedRetries"
+
+    // SkipReasonPreviousExecutionFailed indicates the previous workflow execution
+    // ran and failed (wasExecutionFailure: true). No automatic retry is allowed
+    // because non-idempotent actions may have occurred. Requires manual intervention.
+    // Per cross-team agreement: WE→RO-003
+    SkipReasonPreviousExecutionFailed = "PreviousExecutionFailed"
 )
 
 // ConflictingWorkflowRef identifies the workflow blocking this execution
@@ -1229,6 +1257,7 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.1 | 2025-12-06 | **Exponential Backoff (DD-WE-004)**: Added `ConsecutiveFailures` and `NextAllowedExecution` status fields. Added `SkipReasonExhaustedRetries` and `SkipReasonPreviousExecutionFailed` constants. Backoff applies only to pre-execution failures; execution failures block retries immediately. |
 | 3.1 | 2025-12-01 | **Resource Locking (V1.0 Safety)**: Added `targetResource` to spec. Added `Skipped` phase with `SkipDetails` struct. Prevents parallel workflows on same target (ResourceBusy). Prevents redundant sequential workflows with same workflow+target (RecentlyRemediated). Added `SkipDetails`, `ConflictingWorkflowRef`, `RecentRemediationRef` types. Added controller logic for `checkResourceLock()`. Aligned with DD-CONTRACT-001 v1.4. Audit trail for skipped executions. |
 | 3.0 | 2025-12-01 | **Enhanced Failure Details**: Added `FailureDetails` struct with structured failure information for recovery flow. Includes `failedTaskIndex`, `failedTaskName`, `reason` (K8s-style enum), `naturalLanguageSummary` for LLM context. Deprecated `failureReason` string field. Added controller logic for extracting failure details from PipelineRun. Aligned with DD-CONTRACT-001 v1.3. |
 | 2.0 | 2025-11-28 | **Breaking**: Simplified schema per ADR-044. Replaced `WorkflowDefinition` with `WorkflowRef`. Removed step orchestration, status tracking, rollback logic. Controller now creates single PipelineRun and watches status. |

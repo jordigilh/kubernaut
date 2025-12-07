@@ -31,9 +31,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			Expect(cfg.Server.WriteTimeout).To(Equal(30 * time.Second))
 			Expect(cfg.Server.IdleTimeout).To(Equal(120 * time.Second))
 
-			// Validate middleware settings
-			Expect(cfg.Middleware.RateLimit.RequestsPerMinute).To(Equal(100))
-			Expect(cfg.Middleware.RateLimit.Burst).To(Equal(10))
+			// Middleware: Rate limiting removed (ADR-048) - delegated to proxy
 
 			// Validate infrastructure settings
 			Expect(cfg.Infrastructure.Redis.Addr).To(Equal("redis-gateway:6379"))
@@ -78,7 +76,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			os.Unsetenv("GATEWAY_REDIS_ADDR")
 			os.Unsetenv("GATEWAY_REDIS_DB")
 			os.Unsetenv("GATEWAY_REDIS_PASSWORD")
-			os.Unsetenv("GATEWAY_RATE_LIMIT_RPM")
+			// GATEWAY_RATE_LIMIT_RPM removed (ADR-048)
 			os.Unsetenv("GATEWAY_DEDUP_TTL")
 		})
 
@@ -114,13 +112,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			Expect(cfg.Infrastructure.Redis.DB).To(Equal(2))
 		})
 
-		It("should override rate limit from environment variable", func() {
-			os.Setenv("GATEWAY_RATE_LIMIT_RPM", "200")
-
-			cfg.LoadFromEnv()
-
-			Expect(cfg.Middleware.RateLimit.RequestsPerMinute).To(Equal(200))
-		})
+		// Rate limit env override test removed (ADR-048) - delegated to proxy
 
 		It("should override deduplication TTL from environment variable", func() {
 			os.Setenv("GATEWAY_DEDUP_TTL", "10m")
@@ -187,50 +179,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			Expect(err.Error()).To(ContainSubstring("redis address required"))
 		})
 
-		It("should reject negative rate limit", func() {
-			cfg := &config.ServerConfig{
-				Server: config.ServerSettings{
-					ListenAddr: ":8080",
-				},
-				Infrastructure: config.InfrastructureSettings{
-					Redis: &rediscache.Options{
-						Addr: "redis:6379",
-					},
-				},
-				Middleware: config.MiddlewareSettings{
-					RateLimit: config.RateLimitSettings{
-						RequestsPerMinute: -1,
-					},
-				},
-			}
-
-			err := cfg.Validate()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("requests_per_minute must be positive"))
-		})
-
-		It("should reject negative burst", func() {
-			cfg := &config.ServerConfig{
-				Server: config.ServerSettings{
-					ListenAddr: ":8080",
-				},
-				Infrastructure: config.InfrastructureSettings{
-					Redis: &rediscache.Options{
-						Addr: "redis:6379",
-					},
-				},
-				Middleware: config.MiddlewareSettings{
-					RateLimit: config.RateLimitSettings{
-						RequestsPerMinute: 100,
-						Burst:             -1,
-					},
-				},
-			}
-
-			err := cfg.Validate()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("burst must be non-negative"))
-		})
+		// Rate limit validation tests removed (ADR-048) - delegated to proxy
 
 		It("should reject negative storm threshold", func() {
 			cfg := &config.ServerConfig{
@@ -242,12 +191,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 						Addr: "redis:6379",
 					},
 				},
-				Middleware: config.MiddlewareSettings{
-					RateLimit: config.RateLimitSettings{
-						RequestsPerMinute: 100,
-						Burst:             10,
-					},
-				},
+				// Middleware: Rate limiting removed (ADR-048)
 				Processing: config.ProcessingSettings{
 					Storm: config.StormSettings{
 						RateThreshold: -1,

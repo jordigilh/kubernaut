@@ -108,6 +108,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - tekton.dev
+  resources:
+  - taskruns
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - workflowexecution.kubernaut.ai
   resources:
   - workflowexecutions

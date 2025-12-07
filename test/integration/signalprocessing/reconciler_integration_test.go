@@ -15,7 +15,18 @@ limitations under the License.
 */
 
 // Package signalprocessing_test contains integration tests for the SignalProcessing reconciler.
-// These tests validate end-to-end reconciliation with real Kubernetes API via ENVTEST.
+// These tests validate CRD coordination and business outcomes with real Kubernetes API via ENVTEST.
+//
+// Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
+// - Unit tests (70%+): Business logic in isolation (test/unit/signalprocessing/)
+// - Integration tests (>50%): CRD coordination, status propagation (this file)
+// - E2E/BR tests (10-15%): Complete workflow validation (test/e2e/signalprocessing/)
+//
+// NOTE: These integration tests validate BOTH infrastructure behavior (CRD lifecycle)
+// AND business outcomes (priority assignment, classification). This hybrid approach
+// is appropriate because business outcomes depend on CRD status propagation which
+// requires real K8s API. Pure business outcome tests are duplicated in E2E/BR tests
+// for defense-in-depth coverage.
 //
 // TDD Phase: RED - Tests define expected controller behavior
 // Implementation Plan: Day 10, Tier 2 - Reconciler Integration Tests
@@ -24,6 +35,19 @@ limitations under the License.
 // - Happy Path: IT-HP-01 to IT-HP-10 (10 tests)
 // - Edge Cases: IT-EC-01 to IT-EC-08 (8 tests)
 // - Error Handling: IT-ER-01 to IT-ER-07 (7 tests)
+//
+// Business Requirements Coverage:
+// - BR-SP-001: K8s Context Enrichment (IT-EC-02, IT-EC-07)
+// - BR-SP-002: Business Classification (IT-HP-06)
+// - BR-SP-051: Namespace Label Environment (IT-HP-01, IT-HP-02, IT-HP-03, IT-HP-04)
+// - BR-SP-052: ConfigMap Fallback (IT-HP-05)
+// - BR-SP-053: Default Environment (IT-EC-01)
+// - BR-SP-070: Priority Assignment (IT-HP-01, IT-HP-02, IT-HP-03)
+// - BR-SP-100: Owner Chain Traversal (IT-HP-07, IT-EC-06)
+// - BR-SP-101: Detected Labels PDB/HPA (IT-HP-08, IT-HP-09)
+// - BR-SP-102: CustomLabels Rego (IT-HP-10, IT-EC-08)
+// - BR-SP-103: Failed Detections (IT-EC-07)
+// - ADR-038: Audit Non-Blocking (IT-ER-06)
 package signalprocessing_test
 
 import (
@@ -42,12 +66,12 @@ import (
 
 var _ = Describe("SignalProcessing Reconciler Integration", func() {
 	// ========================================
-	// HAPPY PATH TESTS (IT-HP-01 to IT-HP-10)
+	// HAPPY PATH TESTS - Business Outcome Validation
 	// ========================================
 
 	Context("Happy Path - Phase Transitions", func() {
-		// IT-HP-01: Production pod → P0 (BR-SP-070, BR-SP-051)
-		It("IT-HP-01: should process production pod signal and assign P0 priority", func() {
+		// Production pod → P0 priority assignment
+		It("BR-SP-070, BR-SP-051: should process production pod signal and assign P0 priority", func() {
 			By("Creating production namespace")
 			ns := createTestNamespaceWithLabels("prod", map[string]string{
 				"kubernaut.ai/environment": "production",
@@ -102,8 +126,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.PriorityAssignment.Confidence).To(BeNumerically(">=", 0.9))
 		})
 
-		// IT-HP-02: Staging deployment → P1 (BR-SP-070, BR-SP-051)
-		It("IT-HP-02: should process staging deployment signal and assign P1 priority", func() {
+		// Staging deployment → P2 priority assignment
+		It("BR-SP-070, BR-SP-051: should process staging deployment signal and assign P2 priority", func() {
 			By("Creating staging namespace")
 			ns := createTestNamespaceWithLabels("staging", map[string]string{
 				"kubernaut.ai/environment": "staging",
@@ -156,8 +180,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P2"))
 		})
 
-		// IT-HP-03: Dev service → P3 (BR-SP-070, BR-SP-051)
-		It("IT-HP-03: should process dev service signal and assign P3 priority", func() {
+		// Dev service → P3 priority assignment
+		It("BR-SP-070, BR-SP-051: should process dev service signal and assign P3 priority", func() {
 			By("Creating development namespace")
 			ns := createTestNamespaceWithLabels("dev", map[string]string{
 				"kubernaut.ai/environment": "development",
@@ -204,8 +228,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P3"))
 		})
 
-		// IT-HP-04: Environment from label (BR-SP-051)
-		It("IT-HP-04: should classify environment from namespace label", func() {
+		// Environment classification from namespace label
+		It("BR-SP-051: should classify environment from namespace label with high confidence", func() {
 			By("Creating namespace with explicit production label")
 			ns := createTestNamespaceWithLabels("custom", map[string]string{
 				"kubernaut.ai/environment": "production",
@@ -251,8 +275,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.EnvironmentClassification.Confidence).To(BeNumerically(">=", 0.95))
 		})
 
-		// IT-HP-05: ConfigMap fallback (BR-SP-052)
-		It("IT-HP-05: should classify environment from ConfigMap fallback", func() {
+		// ConfigMap fallback for environment classification
+		It("BR-SP-052: should classify environment from ConfigMap fallback", func() {
 			By("Creating namespace with 'staging' prefix (no label)")
 			ns := createTestNamespace("staging-app")
 			defer deleteTestNamespace(ns)
@@ -295,8 +319,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.EnvironmentClassification.Source).To(Equal("configmap"))
 		})
 
-		// IT-HP-06: Business classification (BR-SP-002)
-		It("IT-HP-06: should classify business unit from namespace labels", func() {
+		// Business unit classification from namespace labels
+		It("BR-SP-002: should classify business unit from namespace labels", func() {
 			By("Creating namespace with team label")
 			ns := createTestNamespaceWithLabels("payments", map[string]string{
 				"kubernaut.ai/environment": "production",
@@ -341,8 +365,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.BusinessClassification.BusinessUnit).To(Equal("payments"))
 		})
 
-		// IT-HP-07: Owner chain traversal (BR-SP-100)
-		It("IT-HP-07: should build owner chain from Pod to Deployment", func() {
+		// Owner chain traversal from Pod to Deployment
+		It("BR-SP-100: should build owner chain from Pod to Deployment", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("ownerchain")
 			defer deleteTestNamespace(ns)
@@ -426,8 +450,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.KubernetesContext.OwnerChain[1].Kind).To(Equal("Deployment"))
 		})
 
-		// IT-HP-08: PDB detection (BR-SP-101)
-		It("IT-HP-08: should detect PDB protection", func() {
+		// PDB detection for pod protection
+		It("BR-SP-101: should detect PDB protection", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("pdb-test")
 			defer deleteTestNamespace(ns)
@@ -477,8 +501,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.KubernetesContext.DetectedLabels.HasPDB).To(BeTrue())
 		})
 
-		// IT-HP-09: HPA detection (BR-SP-101)
-		It("IT-HP-09: should detect HPA enabled", func() {
+		// HPA detection for auto-scaling
+		It("BR-SP-101: should detect HPA enabled", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("hpa-test")
 			defer deleteTestNamespace(ns)
@@ -528,8 +552,8 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.KubernetesContext.DetectedLabels.HasHPA).To(BeTrue())
 		})
 
-		// IT-HP-10: CustomLabels from Rego (BR-SP-102)
-		It("IT-HP-10: should populate CustomLabels from Rego policy", func() {
+		// CustomLabels extraction from Rego policy
+		It("BR-SP-102: should populate CustomLabels from Rego policy", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("rego-labels")
 			defer deleteTestNamespace(ns)
@@ -593,12 +617,12 @@ labels["team"] := ["platform"] if {
 	})
 
 	// ========================================
-	// EDGE CASE TESTS (IT-EC-01 to IT-EC-08)
+	// EDGE CASE TESTS - Boundary and Error Conditions
 	// ========================================
 
 	Context("Edge Cases", func() {
-		// IT-EC-01: Default environment (BR-SP-053)
-		It("IT-EC-01: should default to unknown environment when no labels", func() {
+		// Default environment fallback when no labels present
+		It("BR-SP-053: should default to unknown environment when no labels", func() {
 			By("Creating namespace without environment label")
 			ns := createTestNamespace("unknown-env")
 			defer deleteTestNamespace(ns)
@@ -641,8 +665,8 @@ labels["team"] := ["platform"] if {
 			Expect(final.Status.EnvironmentClassification.Source).To(Equal("default"))
 		})
 
-		// IT-EC-02: Degraded mode (BR-SP-001)
-		It("IT-EC-02: should enter degraded mode when pod not found", func() {
+		// Degraded mode when target resource not found
+		It("BR-SP-001: should enter degraded mode when pod not found", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("degraded")
 			defer deleteTestNamespace(ns)
@@ -688,8 +712,8 @@ labels["team"] := ["platform"] if {
 			Expect(final.Status.KubernetesContext.Confidence).To(BeNumerically("<=", 0.5))
 		})
 
-		// IT-EC-03: Concurrent reconciliation
-		It("IT-EC-03: should handle concurrent reconciliation of 10 CRs", func() {
+		// Concurrent reconciliation stress test
+		It("Controller: should handle concurrent reconciliation of 10 CRs", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("concurrent")
 			defer deleteTestNamespace(ns)
@@ -742,8 +766,8 @@ labels["team"] := ["platform"] if {
 			}
 		})
 
-		// IT-EC-04: Minimal spec
-		It("IT-EC-04: should handle minimal spec with default values", func() {
+		// Minimal spec with defaults
+		It("Robustness: should handle minimal spec with default values", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("minimal")
 			defer deleteTestNamespace(ns)
@@ -784,8 +808,8 @@ labels["team"] := ["platform"] if {
 			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 		})
 
-		// IT-EC-05: Special namespace
-		It("IT-EC-05: should handle special characters in namespace", func() {
+		// Special namespace handling
+		It("Robustness: should handle special characters in namespace", func() {
 			By("Creating namespace with special characters")
 			ns := createTestNamespace("my-ns-123")
 			defer deleteTestNamespace(ns)
@@ -826,8 +850,8 @@ labels["team"] := ["platform"] if {
 			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 		})
 
-		// IT-EC-06: Max owner depth (BR-SP-100)
-		It("IT-EC-06: should stop owner chain traversal at 5 levels", func() {
+		// Max owner chain depth limit
+		It("BR-SP-100: should stop owner chain traversal at 5 levels", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("deep-owner")
 			defer deleteTestNamespace(ns)
@@ -911,8 +935,8 @@ labels["team"] := ["platform"] if {
 			Expect(len(final.Status.KubernetesContext.OwnerChain)).To(BeNumerically("<=", 5))
 		})
 
-		// IT-EC-07: No failed detections (BR-SP-103)
-		It("IT-EC-07: should have empty FailedDetections when all queries succeed", func() {
+		// No failed detections on successful queries
+		It("BR-SP-103: should have empty FailedDetections when all queries succeed", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("success-detect")
 			defer deleteTestNamespace(ns)
@@ -958,8 +982,8 @@ labels["team"] := ["platform"] if {
 			Expect(final.Status.KubernetesContext.DetectedLabels).ToNot(BeNil())
 		})
 
-		// IT-EC-08: Multi-key Rego (BR-SP-102)
-		It("IT-EC-08: should handle Rego policy returning multiple keys", func() {
+		// Multi-key Rego policy evaluation
+		It("BR-SP-102: should handle Rego policy returning multiple keys", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("multi-key-rego")
 			defer deleteTestNamespace(ns)
@@ -1029,15 +1053,15 @@ labels["cost-center"] := ["engineering"] if { true }
 	// ========================================
 
 	Context("Error Handling", func() {
-		// IT-ER-01: K8s API timeout (Error Cat. B)
+		// K8s API timeout retry behavior (Error Category B)
 		// Note: This test verifies retry behavior - difficult to simulate in ENVTEST
 		// Controller should retry on transient errors
-		It("IT-ER-01: should retry on K8s API timeout", func() {
-			Skip("Transient timeout simulation requires custom client wrapper - covered by unit tests")
+		It("Error-Cat-B: should retry on K8s API timeout", func() {
+			Skip("Covered by unit test: test/unit/signalprocessing/controller_error_handling_test.go - transient timeout simulation requires custom client wrapper")
 		})
 
-		// IT-ER-02: Status conflict (Error Cat. D)
-		It("IT-ER-02: should handle status update conflicts gracefully", func() {
+		// Status update conflict handling (Error Category D)
+		It("Error-Cat-D: should handle status update conflicts gracefully", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("conflict")
 			defer deleteTestNamespace(ns)
@@ -1072,9 +1096,9 @@ labels["cost-center"] := ["engineering"] if { true }
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		// IT-ER-03: Context cancelled (Error Cat. B)
-		It("IT-ER-03: should exit cleanly on context cancellation", func() {
-			Skip("Context cancellation testing requires controller restart - covered by unit tests")
+		// Context cancellation clean exit (Error Category B)
+		It("Error-Cat-B: should exit cleanly on context cancellation", func() {
+			Skip("Covered by unit test: test/unit/signalprocessing/controller_shutdown_test.go - context cancellation requires controller restart")
 		})
 
 		// IT-ER-04: Rego syntax error (Error Cat. C)
@@ -1231,4 +1255,3 @@ labels["team"] := ["platform"  // Missing closing bracket
 		})
 	})
 })
-

@@ -1,15 +1,20 @@
 ## Enhanced Metrics & SLOs
 
-**Version**: 3.0
-**Last Updated**: 2025-12-02
+**Version**: 3.1
+**Last Updated**: 2025-12-06
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
-**Status**: ✅ Updated for Tekton Architecture
+**Status**: ✅ Updated for Tekton Architecture, Exponential Backoff (DD-WE-004)
 
 ---
 
 ## Changelog
 
-### Version 3.1 (2025-12-02)
+### Version 3.1 (2025-12-06)
+- ✅ **Added**: `workflowexecution_backoff_skip_total{reason}` metric (DD-WE-004 v1.1)
+- ✅ **Added**: `workflowexecution_consecutive_failures{target_resource}` gauge (pre-execution failures only)
+- ✅ **Clarified**: `PreviousExecutionFailed` reason added to backoff_skip_total for execution failure blocking
+
+### Version 3.0 (2025-12-02)
 - ✅ **Removed**: All KubernetesExecution metrics (replaced by Tekton PipelineRun)
 - ✅ **Added**: `pipelinerun_creation_duration` metric
 - ✅ **Added**: Resource locking metrics (DD-WE-001)
@@ -146,6 +151,25 @@ var (
             Help: "Total workflows skipped due to resource lock",
         },
         []string{"reason"},  // reason: ResourceBusy|RecentlyRemediated
+    )
+
+    // Exponential backoff metrics (DD-WE-004 v1.1, BR-WE-012)
+    // NOTE: These metrics ONLY track pre-execution failures (wasExecutionFailure: false)
+    // Execution failures (wasExecutionFailure: true) are tracked via skip_total{reason="PreviousExecutionFailed"}
+    backoffSkipTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "workflowexecution_backoff_skip_total",
+            Help: "Total workflow executions skipped due to exponential backoff or execution failure blocking",
+        },
+        []string{"reason"},  // reason: RecentlyRemediated|ExhaustedRetries|PreviousExecutionFailed
+    )
+
+    consecutiveFailures = promauto.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "workflowexecution_consecutive_failures",
+            Help: "Current consecutive PRE-EXECUTION failure count per target resource (execution failures not counted)",
+        },
+        []string{"target_resource"},
     )
 )
 ```

@@ -37,7 +37,7 @@ class HumanReviewReason(str, Enum):
     """
     Structured reason for needs_human_review=true.
 
-    Business Requirement: BR-HAPI-197
+    Business Requirements: BR-HAPI-197, BR-HAPI-200
     Design Decision: DD-HAPI-002 v1.2
 
     AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
@@ -48,6 +48,9 @@ class HumanReviewReason(str, Enum):
     NO_MATCHING_WORKFLOWS = "no_matching_workflows"
     LOW_CONFIDENCE = "low_confidence"
     LLM_PARSING_ERROR = "llm_parsing_error"
+    # BR-HAPI-200: LLM investigation did not yield conclusive results
+    # Use when LLM couldn't determine root cause or current state
+    INVESTIGATION_INCONCLUSIVE = "investigation_inconclusive"
 
 
 # ========================================

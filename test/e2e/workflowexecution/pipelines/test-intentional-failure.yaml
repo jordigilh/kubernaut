@@ -1,0 +1,25 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: workflow
+spec:
+  params:
+    - name: TARGET_RESOURCE
+      type: string
+      description: Target resource being remediated
+  tasks:
+    - name: fail-task
+      taskSpec:
+        params:
+          - name: target
+            type: string
+        steps:
+          - name: fail
+            image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+            script: |
+              #!/bin/sh
+              echo "Intentionally failing for target: $(params.target)"
+              exit 1
+      params:
+        - name: target
+          value: "$(params.TARGET_RESOURCE)"

@@ -297,3 +297,212 @@ All duplicate signals have been handled by this remediation.`,
 	)
 }
 
+// ========================================
+// MANUAL REVIEW NOTIFICATIONS (BR-ORCH-036)
+// ========================================
+
+// ManualReviewSource indicates the source of the manual review requirement.
+type ManualReviewSource string
+
+const (
+	// ManualReviewSourceAIAnalysis indicates AIAnalysis WorkflowResolutionFailed
+	ManualReviewSourceAIAnalysis ManualReviewSource = "AIAnalysis"
+	// ManualReviewSourceWorkflowExecution indicates WE ExhaustedRetries or ExecutionFailure
+	ManualReviewSourceWorkflowExecution ManualReviewSource = "WorkflowExecution"
+)
+
+// ManualReviewContext provides context for manual review notifications.
+// Used by both AIAnalysis and WorkflowExecution failure scenarios.
+type ManualReviewContext struct {
+	// Source indicates which component triggered the manual review
+	Source ManualReviewSource
+	// Reason is the high-level failure reason (e.g., "WorkflowResolutionFailed", "ExhaustedRetries")
+	Reason string
+	// SubReason provides granular detail (e.g., "WorkflowNotFound", "LowConfidence")
+	SubReason string
+	// Message is a human-readable description of the failure
+	Message string
+	// RootCauseAnalysis if available (from AIAnalysis)
+	RootCauseAnalysis string
+	// Warnings if available (from AIAnalysis)
+	Warnings []string
+}
+
+// CreateManualReviewNotification creates a NotificationRequest for manual review (BR-ORCH-036).
+// This is triggered by:
+// - AIAnalysis WorkflowResolutionFailed (SubReasons: WorkflowNotFound, ImageMismatch, etc.)
+// - WorkflowExecution ExhaustedRetries or PreviousExecutionFailed
+// Reference: BR-ORCH-036 (manual review), BR-ORCH-031 (cascade deletion), BR-ORCH-035 (ref tracking)
+func (c *NotificationCreator) CreateManualReviewNotification(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	reviewCtx *ManualReviewContext,
+) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+		"source", reviewCtx.Source,
+		"reason", reviewCtx.Reason,
+		"subReason", reviewCtx.SubReason,
+	)
+
+	// Generate deterministic name based on source to allow separate notifications
+	name := fmt.Sprintf("nr-manual-review-%s-%s", string(reviewCtx.Source), rr.Name)
+
+	// Check if already exists (idempotency)
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		logger.Info("Manual review notification already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing NotificationRequest")
+		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+	}
+
+	// Determine priority based on source and reason (per BR-ORCH-036 priority mapping)
+	priority := c.mapManualReviewPriority(reviewCtx)
+
+	// Determine channels based on priority
+	channels := c.determineManualReviewChannels(priority)
+
+	// Build NotificationRequest for manual review
+	nr := &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+			Labels: map[string]string{
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/notification-type":   "manual-review",
+				"kubernaut.ai/failure-source":      string(reviewCtx.Source),
+				"kubernaut.ai/failure-reason":      reviewCtx.Reason,
+				"kubernaut.ai/severity":            rr.Spec.Severity,
+				"kubernaut.ai/component":           "remediation-orchestrator",
+			},
+		},
+		Spec: notificationv1.NotificationRequestSpec{
+			Type:     notificationv1.NotificationTypeManualReview,
+			Priority: priority,
+			Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
+			Body:     c.buildManualReviewBody(rr, reviewCtx),
+			Channels: channels,
+			Metadata: map[string]string{
+				"remediationRequest": rr.Name,
+				"failureSource":      string(reviewCtx.Source),
+				"failureReason":      reviewCtx.Reason,
+				"subReason":          reviewCtx.SubReason,
+				"severity":           rr.Spec.Severity,
+			},
+		},
+	}
+
+	// Set owner reference for cascade deletion (BR-ORCH-031)
+	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	// Create the CRD
+	if err := c.client.Create(ctx, nr); err != nil {
+		logger.Error(err, "Failed to create manual review NotificationRequest")
+		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
+	}
+
+	logger.Info("Created manual review NotificationRequest",
+		"name", name,
+		"priority", priority,
+		"channels", channels,
+	)
+
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	return name, nil
+}
+
+// mapManualReviewPriority maps manual review context to notification priority.
+// Per BR-ORCH-036 priority mapping:
+// - WE failures (ExhaustedRetries, PreviousExecutionFailed, ExecutionFailure) → critical
+// - AI WorkflowNotFound, ImageMismatch, ParameterValidationFailed, LLMParsingError → high
+// - AI NoMatchingWorkflows, LowConfidence, InvestigationInconclusive → medium
+func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) notificationv1.NotificationPriority {
+	if ctx.Source == ManualReviewSourceWorkflowExecution {
+		// All WE failures are critical (cluster state may be unknown)
+		return notificationv1.NotificationPriorityCritical
+	}
+
+	// AIAnalysis failures - map by SubReason
+	switch ctx.SubReason {
+	case "WorkflowNotFound", "ImageMismatch", "ParameterValidationFailed", "LLMParsingError":
+		return notificationv1.NotificationPriorityHigh
+	case "NoMatchingWorkflows", "LowConfidence", "InvestigationInconclusive":
+		return notificationv1.NotificationPriorityMedium
+	default:
+		return notificationv1.NotificationPriorityMedium
+	}
+}
+
+// determineManualReviewChannels determines channels based on priority.
+func (c *NotificationCreator) determineManualReviewChannels(priority notificationv1.NotificationPriority) []notificationv1.Channel {
+	switch priority {
+	case notificationv1.NotificationPriorityCritical:
+		// Critical: Slack + Email for immediate attention
+		return []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}
+	case notificationv1.NotificationPriorityHigh:
+		// High: Slack + Email
+		return []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}
+	default:
+		// Medium/Low: Slack only
+		return []notificationv1.Channel{notificationv1.ChannelSlack}
+	}
+}
+
+// buildManualReviewBody builds the manual review notification body.
+func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.RemediationRequest, ctx *ManualReviewContext) string {
+	body := fmt.Sprintf(`⚠️ **Manual Review Required**
+
+**Signal**: %s
+**Severity**: %s
+
+---
+
+**Failure Source**: %s
+**Reason**: %s`,
+		rr.Spec.SignalName,
+		rr.Spec.Severity,
+		ctx.Source,
+		ctx.Reason,
+	)
+
+	if ctx.SubReason != "" {
+		body += fmt.Sprintf("\n**Sub-Reason**: %s", ctx.SubReason)
+	}
+
+	if ctx.Message != "" {
+		body += fmt.Sprintf("\n\n**Details**:\n%s", ctx.Message)
+	}
+
+	if ctx.RootCauseAnalysis != "" {
+		body += fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", ctx.RootCauseAnalysis)
+	}
+
+	if len(ctx.Warnings) > 0 {
+		body += "\n\n**Warnings**:"
+		for _, w := range ctx.Warnings {
+			body += fmt.Sprintf("\n- %s", w)
+		}
+	}
+
+	body += `
+
+---
+
+**Action Required**: Please investigate this remediation failure and take appropriate action.
+
+**Options**:
+1. Fix the underlying issue and re-trigger the signal
+2. Manually apply the remediation
+3. Mark as resolved if no action is needed`
+
+	return body
+}
+

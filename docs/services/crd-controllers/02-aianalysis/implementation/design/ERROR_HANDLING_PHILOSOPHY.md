@@ -233,3 +233,4 @@ When adding new error handling:
 - [ ] Consider graceful degradation if non-critical
 - [ ] Document in this file if new pattern
 
+

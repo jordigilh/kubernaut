@@ -295,3 +295,4 @@ func computeHash(content []byte) string {
 	return hex.EncodeToString(hash[:8]) // First 8 bytes for brevity
 }
 
+

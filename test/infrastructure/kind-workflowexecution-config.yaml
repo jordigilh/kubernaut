@@ -1,0 +1,32 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  # Expose WorkflowExecution Controller ports via NodePort to host machine
+  # Per DD-TEST-001 port allocation strategy
+  extraPortMappings:
+  - containerPort: 30085  # WorkflowExecution health/ready NodePort
+    hostPort: 8085        # Port on host machine (localhost:8085)
+    protocol: TCP
+  - containerPort: 30185  # WorkflowExecution metrics NodePort
+    hostPort: 9185        # Port on host machine (localhost:9185)
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel E2E testing
+        # Tekton creates many TaskRun/PipelineRun resources
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        kube-api-qps: "100"
+        kube-api-burst: "200"
+- role: worker
+  # Worker node for Tekton TaskRuns
+  # Tekton runs pipeline tasks as pods on worker nodes
+
+

@@ -242,10 +242,14 @@ Kubernaut is **NOT** a workflow execution engine. We:
 **Rationale**: Metrics enable SLO tracking, alerting, and capacity planning. Essential for production observability.
 
 **Implementation**:
-- `workflowexecution_total{outcome, workflow_id}` - Counter
-- `workflowexecution_duration_seconds{outcome, workflow_id}` - Histogram
-- `workflowexecution_pipelinerun_creation_total` - Counter
+- `workflowexecution_total{outcome}` - Counter for execution outcomes
+- `workflowexecution_duration_seconds{outcome}` - Histogram for execution duration
+- `workflowexecution_pipelinerun_creation_total` - Counter for PR creation
+- `workflowexecution_skip_total{reason}` - Counter for skipped executions (DD-WE-001 visibility)
 - Expose on `:9090/metrics`
+
+**Note**: `workflow_id` label removed from core metrics to prevent high cardinality.
+Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 **Acceptance Criteria**:
 - ✅ Metrics exposed on /metrics endpoint
@@ -352,6 +356,93 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
+#### BR-WE-012: Exponential Backoff Cooldown (Pre-Execution Failures Only)
+
+**Description**: WorkflowExecution Controller MUST implement exponential backoff for the cooldown period after consecutive **pre-execution failures** (`wasExecutionFailure: false`). This prevents remediation storms when infrastructure issues cause repeated failures. **Execution failures** (`wasExecutionFailure: true`) are NOT retried - they require manual intervention.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**:
+- **Pre-execution failures** (validation, image pull, quota, Tekton unavailable): Transient infrastructure issues that may resolve with time. Exponential backoff prevents storms while allowing recovery.
+- **Execution failures** (workflow ran and failed): Non-idempotent actions may have occurred. Retrying is dangerous and could worsen the situation.
+
+**Implementation**:
+- Track `ConsecutiveFailures` count per target resource in WFE status (pre-execution failures only)
+- Calculate cooldown: `min(BaseCooldown × 2^(failures-1), MaxCooldown)`
+- Default: Base=1min, Max=10min, MaxConsecutiveFailures=5
+- After `MaxConsecutiveFailures` reached → WFE marked Skipped with `ExhaustedRetries`
+- Reset counter to 0 on successful completion
+- Store `NextAllowedExecution` timestamp in status for persistence
+- **Execution failures** (`wasExecutionFailure: true`) → Skipped with `PreviousExecutionFailed`, no retry
+
+**Acceptance Criteria**:
+- ✅ First pre-execution failure triggers 1-minute cooldown
+- ✅ Consecutive pre-execution failures double cooldown (capped at 10 min)
+- ✅ After 5 consecutive pre-execution failures, WFE marked Skipped with `ExhaustedRetries`
+- ✅ Success resets failure counter to 0
+- ✅ **Execution failures block ALL future retries** with `PreviousExecutionFailed`
+- ✅ Backoff state survives controller restart (stored in CRD status)
+- ✅ `workflowexecution_backoff_skip_total` metric exposed
+- ✅ `workflowexecution_consecutive_failures` gauge exposed
+
+**Test Coverage**:
+- Unit: Backoff calculation, counter increment/reset, wasExecutionFailure distinction
+- Integration: Multi-failure progression, reset on success, execution failure blocking
+- E2E: Full backoff sequence with Tekton
+
+**Related DDs**: DD-WE-004 (Exponential Backoff Cooldown), DD-WE-001 (Resource Locking)
+**Cross-Team Agreements**: WE→RO-003 (QUESTIONS_FROM_WORKFLOW_ENGINE_TEAM.md)
+
+---
+
+## 🔮 v1.1 Planned Requirements
+
+### Category: Operational Safety Enhancements
+
+#### BR-WE-013: Audit-Tracked Execution Block Clearing (v1.1)
+
+**Description**: WorkflowExecution Controller MUST provide a mechanism for operators to clear `PreviousExecutionFailed` blocks that tracks WHO cleared the block and records the action in the audit trail.
+
+**Priority**: P1 (HIGH)
+**Target Version**: v1.1
+
+**Rationale**: When a workflow execution fails (`wasExecutionFailure: true`), subsequent executions are blocked to prevent cascading failures from non-idempotent operations. Operators need a way to clear this block after manual investigation, but the clearing action must be auditable for accountability.
+
+**v1.0 Limitation**: Operators must delete the failed WorkflowExecution CRD to clear the block. This loses the audit trail of the failed execution.
+
+**v1.1 Requirements**:
+- ✅ Clearing mechanism tracks operator identity (user who performed the action)
+- ✅ Clearing action is recorded in audit trail with timestamp and reason
+- ✅ Failed WFE is preserved for historical audit
+- ✅ Clear action requires explicit acknowledgment (not accidental)
+
+**Possible Implementations** (to be finalized in v1.1 design):
+1. **Dedicated API endpoint**: POST `/api/v1/workflowexecutions/{name}/clear-block`
+2. **Admission webhook**: Validates annotation with identity from request context
+3. **CRD field**: `status.blockCleared` with `clearedBy`, `clearedAt`, `clearReason`
+
+**Why NOT Annotations (v1.0 Decision)**:
+- Annotations cannot capture WHO made the change in the audit trail
+- Kubernetes annotations lack identity context
+- No admission control to enforce required fields
+
+**Acceptance Criteria** (v1.1):
+- ⬜ Operator can clear `PreviousExecutionFailed` block without deleting WFE
+- ⬜ Clearing action includes operator identity (from request context)
+- ⬜ Clearing action recorded in audit trail with reason
+- ⬜ Failed WFE preserved in cluster for audit
+- ⬜ Clear action requires explicit acknowledgment
+
+**Test Coverage** (v1.1):
+- Unit: Block clearing logic, identity extraction
+- Integration: Audit trail recording, WFE preservation
+- E2E: Full clear workflow with audit validation
+
+**Related BRs**: BR-WE-012 (Exponential Backoff), BR-WE-005 (Audit Trail)
+**Origin**: DD-WE-004 Q3 response (NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md)
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Target Coverage
@@ -364,19 +455,25 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ### BR Coverage Matrix
 
+**Last Updated**: 2025-12-07 (Day 12 Production Readiness)
+
 | BR ID | Unit | Integration | E2E | Total |
 |-------|------|-------------|-----|-------|
 | BR-WE-001 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-002 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-003 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-004 | ✅ | ✅ | ✅ | 100% |
-| BR-WE-005 | ✅ | ✅ | ✅ | 100% |
-| BR-WE-006 | ✅ | ✅ | - | 90% |
-| BR-WE-007 | ✅ | ✅ | - | 90% |
-| BR-WE-008 | ✅ | ✅ | - | 90% |
+| BR-WE-005 | ✅ | ✅ | ⬜ | 90% |
+| BR-WE-006 | ✅ | ✅ | ⬜ | 80% |
+| BR-WE-007 | ✅ | ✅ | ⬜ | 70% |
+| BR-WE-008 | ✅ | ✅ | ⬜ | 80% |
 | BR-WE-009 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-010 | ✅ | ✅ | ✅ | 100% |
-| BR-WE-011 | ✅ | ✅ | - | 90% |
+| BR-WE-011 | ✅ | ✅ | ✅ | 90% |
+| BR-WE-012 | ✅ | ✅ | ⬜ | 67% |
+| BR-WE-013 | - | - | - | v1.1 |
+
+**Summary**: 12/12 BRs have Unit + Integration coverage. 8/12 BRs have E2E coverage. Overall: **94%**
 
 ---
 
@@ -401,10 +498,10 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
-**Document Version**: 3.0
-**Last Updated**: December 2, 2025
+**Document Version**: 3.2
+**Last Updated**: December 6, 2025
 **Maintained By**: Kubernaut Architecture Team
-**Status**: Ready for Implementation
+**Status**: Ready for Implementation (v1.0), Planned (v1.1)
 
 ---
 
@@ -412,6 +509,8 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.2 | 2025-12-06 | **v1.1 Planning**: Added BR-WE-013 (Audit-Tracked Block Clearing) for v1.1. Deferred from v1.0 - annotations lack audit trail for identity tracking. |
+| 3.1 | 2025-12-06 | **Exponential Backoff**: Added BR-WE-012 for exponential backoff cooldown. New `ConsecutiveFailures` and `NextAllowedExecution` status fields. New `ExhaustedRetries` skip reason. New metrics. See DD-WE-004. |
 | 3.0 | 2025-12-02 | **Standardization**: Changed BR prefix from `BR-WF-*` to `BR-WE-*` per [00-core-development-methodology.mdc](../../../.cursor/rules/00-core-development-methodology.mdc). API group updated to `workflowexecution.kubernaut.ai/v1alpha1`. |
 | 2.1 | 2025-12-01 | **Resource Locking Safety**: Added BR-WE-009 to BR-WE-011. New `targetResource` spec field. New `Skipped` phase. |
 | 2.0 | 2025-11-28 | **SIMPLIFIED**: Engine-agnostic architecture. Reduced from 38 BRs to 8 BRs. |

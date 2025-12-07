@@ -26,10 +26,13 @@ import (
 // This struct represents the unified format for all signal types (Prometheus alerts,
 // Kubernetes events, etc.) after adapter-specific parsing. It contains only the
 // data needed for Gateway's processing pipeline (deduplication, storm detection,
-// classification, priority assignment, and CRD creation).
+// and CRD creation).
+//
+// Note: Classification and priority assignment removed from Gateway (2025-12-06).
+// Signal Processing service now owns these per DD-CATEGORIZATION-001.
 //
 // Design Decision: Minimal fields for fast processing (target: <50ms p95 latency).
-// Downstream services (RemediationProcessing, AIAnalysis) enrich with additional context.
+// Downstream services (SignalProcessing, AIAnalysis) enrich with additional context.
 type NormalizedSignal struct {
 	// Fingerprint is the unique identifier for deduplication
 	// Format: SHA256 hash of "alertname:namespace:kind:name"
@@ -42,11 +45,11 @@ type NormalizedSignal struct {
 
 	// Severity indicates signal criticality
 	// Valid values: "critical", "warning", "info"
-	// Used for priority assignment (critical + prod → P0)
+	// Passed to Signal Processing for priority assignment
 	Severity string
 
 	// Namespace is the Kubernetes namespace where the signal originated
-	// Used for environment classification (prod/staging/dev)
+	// Passed to Signal Processing for environment classification
 	Namespace string
 
 	// Resource identifies the Kubernetes resource affected by the signal

@@ -214,11 +214,10 @@ var _ = Describe("BR-GATEWAY-025: Multi-Pod Deduplication (Integration)", func()
 						SignalFingerprint: signal.Fingerprint,
 						SignalName:        signal.AlertName,
 						Severity:          signal.Severity,
-						Environment:       "test",
-						Priority:          "P1",
-						TargetType:        "kubernetes",
-						FiringTime:        now,
-						ReceivedTime:      now,
+						// Environment and Priority removed (2025-12-06) - SP owns classification
+						TargetType:   "kubernetes",
+						FiringTime:   now,
+						ReceivedTime: now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
 							LastOccurrence:  now,

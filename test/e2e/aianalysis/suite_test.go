@@ -129,6 +129,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	// Set service URLs (per DD-TEST-001 port allocation)
+	// AIAnalysis ports: API=8084/30084, Metrics=9184/30184, Health=8184/30284
 	healthURL = "http://localhost:8184"   // AIAnalysis health via NodePort 30284
 	metricsURL = "http://localhost:9184"  // AIAnalysis metrics via NodePort 30184
 
@@ -200,4 +201,5 @@ func checkServicesReady() bool {
 func randomSuffix() string {
 	return time.Now().Format("20060102150405")
 }
+
 

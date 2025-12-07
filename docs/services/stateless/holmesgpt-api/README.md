@@ -1,6 +1,6 @@
 # HolmesGPT API Service
 
-**Version**: v3.8
+**Version**: v3.10
 **Status**: ✅ **PRODUCTION READY**
 **Service Type**: Stateless HTTP API (Python/FastAPI)
 **Port**: 8080 (REST API), 9090 (Metrics)
@@ -12,6 +12,8 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v3.10 | 2025-12-07 | ConfigMap hot-reload implementation (V1.0): FileWatcher + ConfigManager + Metrics, `INVESTIGATION_INCONCLUSIVE` enum, 474 unit tests | [DD-HAPI-004](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md), [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md), [BR-HAPI-200](../../../requirements/BR-HAPI-200-resolved-stale-signals.md) |
+| v3.9 | 2025-12-06 | ConfigMap hot-reload spec (V1.0): LLM config, toolsets, log_level | [DD-HAPI-004](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md), [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md) |
 | v3.8 | 2025-12-06 | ADR-034 audit compliance fix, E2E audit pipeline tests passing, 437 unit tests, 557 total tests | [ADR-034](../../../architecture/decisions/ADR-034-unified-audit-table-design.md) |
 | v3.7 | 2025-12-06 | Full LLM I/O audit, `validation_attempts_history` field, E2E audit tests (real DB only) | [BR-AUDIT-005](../../../requirements/BR-AUDIT-005.md) |
 | v3.6 | 2025-12-06 | LLM self-correction loop (max 3 retries), `needs_human_review` + `human_review_reason`, 429 unit tests | [DD-HAPI-002 v1.2](../../../architecture/decisions/DD-HAPI-002-workflow-parameter-validation.md) |
@@ -159,12 +161,34 @@ holmesgpt-api/
 
 ---
 
+## ✅ V1.0 Features (Complete)
+
+| Feature | Status | BR | DD |
+|---------|--------|-----|-----|
+| **ConfigMap Hot-Reload** | ✅ Complete | [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md) | [DD-HAPI-004](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md) |
+| **Investigation Inconclusive** | ✅ Complete | [BR-HAPI-200](../../../requirements/BR-HAPI-200-resolved-stale-signals.md) | - |
+
+### Hot-Reload Scope
+| Field | Hot-Reload | Business Use Case |
+|-------|------------|-------------------|
+| `llm.model` | ✅ | Cost/quality switching |
+| `llm.provider` | ✅ | Provider failover |
+| `llm.endpoint` | ✅ | Endpoint switching |
+| `llm.max_retries` | ✅ | Retry tuning |
+| `llm.timeout_seconds` | ✅ | Timeout adjustment |
+| `llm.temperature` | ✅ | Response tuning |
+| `toolsets.*` | ✅ | Feature toggles |
+| `log_level` | ✅ | Debug enablement |
+
+---
+
 ## 🔗 Related Documents
 
 ### Architecture Decisions
 - **[DD-HOLMESGPT-012](../../../architecture/decisions/DD-HOLMESGPT-012-Minimal-Internal-Service-Architecture.md)** - Minimal internal service architecture
-- **[DD-004](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md)** - RFC 7807 error responses
-- **[DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)** - Kubernetes-aware graceful shutdown
+- **[DD-HAPI-004](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md)** - ConfigMap hot-reload ✅
+- **[DD-004](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md)** - RFC 7807 error responses ✅
+- **[DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)** - Kubernetes-aware graceful shutdown ✅
 - **[ADR-045](../../../architecture/decisions/ADR-045-aianalysis-holmesgpt-api-contract.md)** - AIAnalysis ↔ HolmesGPT-API contract
 
 ### Parent Documentation

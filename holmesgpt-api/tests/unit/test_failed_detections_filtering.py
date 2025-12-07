@@ -440,3 +440,4 @@ class TestRecoveryClusterContextFailedDetections:
         # GitOps still mentioned
         assert "GitOps" in context
 
+

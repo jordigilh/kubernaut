@@ -52,17 +52,19 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 
 ### **Kind NodePort Allocation for E2E Tests (AUTHORITATIVE)**
 
-| Service | Host Port | NodePort | Metrics NodePort | Kind Config Location |
-|---------|-----------|----------|------------------|---------------------|
-| **Gateway** | 8080 | 30080 | 30090 | `test/infrastructure/kind-gateway-config.yaml` |
-| **Signal Processing** | 8082 | 30082 | 30182 | `test/infrastructure/kind-signalprocessing-config.yaml` |
-| **Remediation Orchestrator** | 8083 | 30083 | 30183 | `test/infrastructure/kind-remediationorchestrator-config.yaml` |
-| **AIAnalysis** | 8084 | 30084 | 30184 | `test/infrastructure/kind-aianalysis-config.yaml` |
-| **WorkflowExecution** | 8085 | 30085 | 30185 | `test/infrastructure/kind-workflowexecution-config.yaml` |
-| **Notification** | 8086 | 30086 | 30186 | `test/infrastructure/kind-notification-config.yaml` |
-| **Data Storage** | 8081 | 30081 | 30181 | `test/infrastructure/kind-datastorage-config.yaml` |
-| **Toolset** | 8087 | 30087 | 30187 | `test/infrastructure/kind-toolset-config.yaml` |
-| **HolmesGPT API** | 8088 | 30088 | 30188 | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
+| Service | Host Port | NodePort | Metrics Host | Metrics NodePort | Health Host | Health NodePort | Kind Config Location |
+|---------|-----------|----------|--------------|------------------|-------------|-----------------|---------------------|
+| **Gateway** | 8080 | 30080 | 9090 | 30090 | — | — | `test/infrastructure/kind-gateway-config.yaml` |
+| **Signal Processing** | 8082 | 30082 | 9182 | 30182 | — | — | `test/infrastructure/kind-signalprocessing-config.yaml` |
+| **Remediation Orchestrator** | 8083 | 30083 | 9183 | 30183 | — | — | `test/infrastructure/kind-remediationorchestrator-config.yaml` |
+| **AIAnalysis** | 8084 | 30084 | 9184 | 30184 | 8184 | 30284 | `test/infrastructure/kind-aianalysis-config.yaml` |
+| **WorkflowExecution** | 8085 | 30085 | 9185 | 30185 | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` |
+| **Notification** | 8086 | 30086 | 9186 | 30186 | — | — | `test/infrastructure/kind-notification-config.yaml` |
+| **Data Storage** | 8081 | 30081 | 9181 | 30181 | — | — | `test/infrastructure/kind-datastorage-config.yaml` |
+| **Toolset** | 8087 | 30087 | 9187 | 30187 | — | — | `test/infrastructure/kind-toolset-config.yaml` |
+| **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 | — | — | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
+
+**Note**: Health ports (8184/30284) are only needed for services with separate health probe endpoints. Most services expose health on their API port.
 
 **Allocation Rules**:
 - **Integration Tests**: 15433-18139 range (Podman containers)
@@ -601,6 +603,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.3 | 2025-12-07 | AI Assistant | Added Health NodePort columns to E2E allocation table; AIAnalysis health ports (8184/30284) documented; expanded table with Metrics Host column for clarity |
 | 1.2 | 2025-12-06 | AI Assistant | Added HolmesGPT API Kind NodePort allocation (8088/30088/30188), added dependency ports for HAPI E2E (PostgreSQL+pgvector: 5488/30488, Embedding: 8188/30288, Data Storage: 8089/30089, Redis: 6388/30388) |
 | 1.1 | 2025-11-28 | AI Assistant | Added Kind NodePort allocations for E2E tests (CRD controllers), added all services including Signal Processing, Notification, AIAnalysis, Remediation Orchestrator, Remediation Execution, HolmesGPT API, Dynamic Toolset |
 | 1.0 | 2025-11-26 | AI Assistant | Initial port allocation strategy |

@@ -1,13 +1,19 @@
 # WorkflowExecution Controller - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V3.2.md`
-**Version**: v3.2 - Day 5 Status Synchronization
+**Filename**: `IMPLEMENTATION_PLAN_V3.3.md`
+**Version**: v3.3 - Day 6 Cooldown & Cleanup Alignment
 **Last Updated**: 2025-12-05
 **Timeline**: 12 days
 **Status**: ✅ VALIDATED - Ready for Implementation
 **Confidence**: 93%
 
 **Change Log**:
+- **v3.3** (2025-12-05): Day 6 Cooldown & Cleanup alignment with authoritative docs
+  - ✅ **Updated**: Finalizer name to `workflowexecution.kubernaut.ai/workflowexecution-cleanup` per finalizers-lifecycle.md
+  - ✅ **Updated**: `reconcileDelete()` to use deterministic PipelineRun name per DD-WE-003
+  - ✅ **Added**: `WorkflowExecutionDeleted` event emission per finalizers-lifecycle.md
+  - ✅ **Aligned**: `reconcileTerminal()` implementation with DD-WE-003 spec
+  - ✅ **Added**: Lock release event after cooldown expiry
 - **v3.2** (2025-12-05): Day 5 Status Synchronization implementation
   - ✅ **Added**: TaskRun RBAC for FailureDetails extraction from failed tasks
   - ✅ **Added**: PipelineRunStatusSummary population during Running phase
@@ -562,44 +568,123 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(
 
 ### Day 6: Cooldown + Cleanup (8h)
 
-#### Morning (4h): Cooldown Enforcement
+#### Morning (4h): Cooldown Enforcement (reconcileTerminal)
 
-- [ ] Implement `reconcileTerminal()` per DD-WE-003
-- [ ] Wait for cooldown before deleting PipelineRun
-- [ ] Requeue with remaining cooldown duration
-- [ ] Release lock after cooldown
+**Reference**: DD-WE-003 Section "4. Lock Lifecycle (Deletion)" lines 342-382
+
+- [ ] Update finalizer constant to `workflowexecution.kubernaut.ai/workflowexecution-cleanup` (v3.3)
+- [ ] Implement `reconcileTerminal()` per DD-WE-003:
+  - [ ] Check `CompletionTime` is set (guard clause)
+  - [ ] Calculate elapsed time since completion
+  - [ ] If `elapsed < CooldownPeriod`: requeue with remaining duration
+  - [ ] If `elapsed >= CooldownPeriod`: delete PipelineRun using **deterministic name**
+- [ ] Emit `LockReleased` event after PipelineRun deletion
+- [ ] Write TDD tests for cooldown enforcement
 
 ```go
+// DD-WE-003 aligned implementation
 func (r *WorkflowExecutionReconciler) reconcileTerminal(
     ctx context.Context,
     wfe *workflowexecutionv1.WorkflowExecution,
 ) (ctrl.Result, error) {
+    log := log.FromContext(ctx)
+
+    if wfe.Status.CompletionTime == nil {
+        return ctrl.Result{}, nil  // Guard: no completion time
+    }
+
     elapsed := time.Since(wfe.Status.CompletionTime.Time)
 
+    // Wait for cooldown before releasing lock
     if elapsed < r.CooldownPeriod {
         remaining := r.CooldownPeriod - elapsed
+        log.V(1).Info("Waiting for cooldown", "remaining", remaining)
         return ctrl.Result{RequeueAfter: remaining}, nil
     }
 
-    // Delete PipelineRun to release lock
-    prName := pipelineRunName(wfe.Spec.TargetResource)
-    return r.deletePipelineRun(ctx, prName)
+    // Cooldown expired - delete PipelineRun to release lock
+    prName := PipelineRunName(wfe.Spec.TargetResource)  // DETERMINISTIC NAME (DD-WE-003)
+    pr := &tektonv1.PipelineRun{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      prName,
+            Namespace: r.ExecutionNamespace,
+        },
+    }
+
+    if err := r.Delete(ctx, pr); err != nil && !apierrors.IsNotFound(err) {
+        log.Error(err, "Failed to delete PipelineRun")
+        return ctrl.Result{}, err
+    }
+
+    log.Info("Lock released after cooldown", "targetResource", wfe.Spec.TargetResource)
+    r.Recorder.Event(wfe, "Normal", "LockReleased",
+        fmt.Sprintf("Lock released for %s after cooldown", wfe.Spec.TargetResource))
+
+    return ctrl.Result{}, nil
 }
 ```
 
-#### Afternoon (4h): Finalizer Cleanup
+#### Afternoon (4h): Enhance reconcileDelete (Finalizer Cleanup)
 
-- [ ] Implement `reconcileDelete()` per finalizers-lifecycle.md
-- [ ] Delete PipelineRun if exists
-- [ ] Remove finalizer
-- [ ] Handle deletion during Running phase
+**Reference**: DD-WE-003 Section "4. Lock Lifecycle (Deletion)" lines 384-415, finalizers-lifecycle.md
+
+- [ ] Update `reconcileDelete()` to use **deterministic name** for PipelineRun deletion (v3.3)
+- [ ] Add `WorkflowExecutionDeleted` event emission per finalizers-lifecycle.md (v3.3)
+- [ ] Handle deletion during Running phase (cancels execution)
+- [ ] Write TDD tests for finalizer cleanup
+
+```go
+// DD-WE-003 + finalizers-lifecycle.md aligned implementation
+func (r *WorkflowExecutionReconciler) reconcileDelete(
+    ctx context.Context,
+    wfe *workflowexecutionv1.WorkflowExecution,
+) (ctrl.Result, error) {
+    log := log.FromContext(ctx)
+
+    if !controllerutil.ContainsFinalizer(wfe, FinalizerName) {
+        return ctrl.Result{}, nil
+    }
+
+    // Delete associated PipelineRun using DETERMINISTIC NAME (DD-WE-003)
+    prName := PipelineRunName(wfe.Spec.TargetResource)
+    pr := &tektonv1.PipelineRun{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      prName,
+            Namespace: r.ExecutionNamespace,
+        },
+    }
+
+    if err := r.Delete(ctx, pr); err != nil && !apierrors.IsNotFound(err) {
+        log.Error(err, "Failed to delete PipelineRun during finalization")
+        return ctrl.Result{}, err
+    }
+
+    log.Info("Finalizer: deleted associated PipelineRun", "pipelineRun", prName)
+
+    // Emit deletion event (finalizers-lifecycle.md)
+    r.Recorder.Event(wfe, "Normal", "WorkflowExecutionDeleted",
+        fmt.Sprintf("WorkflowExecution cleanup completed (phase: %s)", wfe.Status.Phase))
+
+    // Remove finalizer
+    controllerutil.RemoveFinalizer(wfe, FinalizerName)
+    if err := r.Update(ctx, wfe); err != nil {
+        return ctrl.Result{}, err
+    }
+
+    return ctrl.Result{}, nil
+}
+```
 
 ### Day 6 EOD Checklist
 
+- [ ] Finalizer name updated to match spec (v3.3)
 - [ ] Cooldown enforced (5 min default)
-- [ ] PipelineRun deleted after cooldown
+- [ ] PipelineRun deleted using deterministic name (v3.3)
+- [ ] `LockReleased` event emitted after cooldown (v3.3)
+- [ ] `WorkflowExecutionDeleted` event emitted on deletion (v3.3)
 - [ ] Finalizer cleanup works
 - [ ] Error handling complete
+- [ ] TDD tests for cooldown and cleanup
 
 ---
 

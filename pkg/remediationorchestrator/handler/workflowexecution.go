@@ -24,6 +24,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -224,19 +225,31 @@ func (h *WorkflowExecutionHandler) TrackDuplicate(
 		"parentRR", parentRRName,
 	)
 
-	// Fetch the parent RR
+	// Update parent RR with retry to preserve Gateway-owned fields (DD-GATEWAY-011, BR-ORCH-038)
 	parentRR := &remediationv1.RemediationRequest{}
-	if err := h.client.Get(ctx, client.ObjectKey{Name: parentRRName, Namespace: childRR.Namespace}, parentRR); err != nil {
-		logger.Error(err, "Failed to fetch parent RR for duplicate tracking")
-		return fmt.Errorf("failed to fetch parent RR: %w", err)
-	}
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Refetch to get latest resourceVersion (preserves Gateway deduplication/storm fields)
+		if err := h.client.Get(ctx, client.ObjectKey{Name: parentRRName, Namespace: childRR.Namespace}, parentRR); err != nil {
+			return err
+		}
 
-	// Update duplicate count and refs
-	parentRR.Status.DuplicateCount++
-	parentRR.Status.DuplicateRefs = append(parentRR.Status.DuplicateRefs, childRR.Name)
+		// Update only RO-owned fields - Gateway fields preserved via refetch
+		parentRR.Status.DuplicateCount++
+		// Avoid duplicates in refs list
+		alreadyTracked := false
+		for _, ref := range parentRR.Status.DuplicateRefs {
+			if ref == childRR.Name {
+				alreadyTracked = true
+				break
+			}
+		}
+		if !alreadyTracked {
+			parentRR.Status.DuplicateRefs = append(parentRR.Status.DuplicateRefs, childRR.Name)
+		}
 
-	// Update the parent's status
-	if err := h.client.Status().Update(ctx, parentRR); err != nil {
+		return h.client.Status().Update(ctx, parentRR)
+	})
+	if err != nil {
 		logger.Error(err, "Failed to update parent RR status with duplicate tracking")
 		return fmt.Errorf("failed to update parent RR status: %w", err)
 	}

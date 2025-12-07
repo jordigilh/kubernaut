@@ -3,6 +3,9 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.7 | 2025-12-07 | **ADR-049 Alignment**: RO owns RR schema; Gateway imports types from `api/remediation/v1alpha1/`. Updated `crd-integration.md`. Added DD-GATEWAY-011 status ownership. | [ADR-049](../../../architecture/decisions/ADR-049-remediationrequest-crd-ownership.md) |
+> | v1.6 | 2025-12-06 | **RemediationPathDecider REMOVED**: Path decision logic removed from Gateway. SP owns risk_tolerance via Rego policies per DD-WORKFLOW-001. Updated package structure. | [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.5 | 2025-12-06 | **Classification REMOVED**: Environment/priority classification completely removed from Gateway (not placeholder). Updated architecture diagram, package structure, and examples. | [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md) |
 > | v1.4 | 2025-12-03 | Added TargetResource, TargetType fields; resource validation rejects signals without K8s info | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) |
 > | v1.3 | 2025-12-01 | DeduplicationInfo aligned with shared types (firstOccurrence/lastOccurrence) | [RemediationRequest CRD](../../../../api/remediation/v1alpha1/remediationrequest_types.go) |
 > | v1.2 | 2025-11-27 | Categorization delegated to SignalProcessing; Gateway sets placeholder values | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
@@ -10,9 +13,9 @@
 > | v1.0 | 2025-10-04 | Initial design specification | - |
 
 > **📋 Design Decision: DD-CATEGORIZATION-001 - Categorization Delegation**
-> **Status**: ✅ Approved Design | **Confidence**: 95%
-> **Impact on Gateway**: Gateway sets placeholder priority values; SignalProcessing performs final categorization with richer K8s context
-> **See**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+> **Status**: ✅ **IMPLEMENTED** (2025-12-06) | **Confidence**: 95%
+> **Impact on Gateway**: Classification code **completely removed** from Gateway. Signal Processing owns all environment/priority classification.
+> **See**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md), [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
 > **📋 Design Decision: DD-GATEWAY-NON-K8S-SIGNALS - Non-Kubernetes Signal Support**
 > **Status**: ✅ V1.0 Decision: Kubernetes-only | **Future**: V1.x/V2.0 expansion
@@ -28,15 +31,15 @@
 2. **Validate** signal completeness and resource information
 3. **Deduplicate** repetitive alerts to prevent redundant processing
 4. **Detect** alert storms to aggregate related incidents
-5. **Classify** environment context for risk assessment (placeholder for SignalProcessing)
-6. **Create** RemediationRequest CRDs for downstream orchestration
+5. **Create** RemediationRequest CRDs for downstream orchestration
+
+> **Note**: Environment/priority classification **removed from Gateway** (2025-12-06). Signal Processing service now owns all classification per [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md).
 
 **V1 Scope - Signal Ingestion, Deduplication, Storm Detection**:
 - **Signal Ingestion**: Prometheus AlertManager webhooks, Kubernetes Event API
 - **Resource Validation**: Reject signals without Kubernetes resource information ([DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md))
 - **Deduplication**: Redis-based fingerprinting with 5-minute TTL window
 - **Storm Detection**: Rate-based (>10 alerts/min) + Pattern-based (>5 similar alerts)
-- **Environment Classification**: Placeholder values; final classification by SignalProcessing
 - **CRD Creation**: RemediationRequest with TargetResource, TargetType fields
 
 **Key Architectural Decisions**:
@@ -71,11 +74,11 @@
 - Fingerprint-based deduplication
 - RemediationRequest CRD creation
 
-#### Environment & Priority (BR-GATEWAY-051 to BR-GATEWAY-053)
-**Count**: 3 BRs
-**Focus**: Environment classification with fallback heuristics
+#### Environment & Priority ⚠️ **REMOVED (2025-12-06)**
+**Status**: Classification functionality **completely removed** from Gateway
+**Affected BRs**: BR-GATEWAY-007, BR-GATEWAY-014, BR-GATEWAY-015, BR-GATEWAY-016, BR-GATEWAY-017
 
-**Note**: Gateway sets placeholder values; SignalProcessing performs final categorization per [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md).
+**Note**: Environment/priority classification now owned by Signal Processing service. See [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md).
 
 #### Resource Validation (BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 **Count**: 1 BR
@@ -127,7 +130,6 @@ graph TB
         Norm[Signal Normalizer]
         Dedup[Deduplicator]
         Storm[Storm Detector]
-        Class[Environment Classifier]
         Creator[CRD Creator]
     end
 
@@ -140,6 +142,7 @@ graph TB
     subgraph "Downstream"
         RR[RemediationRequest CRD]
         RO[Remediation Orchestrator]
+        SP[Signal Processing]
     end
 
     PM -->|Webhook| WH
@@ -152,16 +155,19 @@ graph TB
     Dedup <-->|Check/Store| Redis
     Dedup --> Storm
     Storm <-->|Rate Counters| Redis
-    Storm --> Class
-    Class --> Creator
+    Storm --> Creator
     Creator -->|Create| RR
     RR -->|Watch| RO
+    RR -->|Classification| SP
 
     style WH fill:#e1f5ff
     style Dedup fill:#fff4e1
     style Storm fill:#fff4e1
     style RR fill:#ffe1e1
+    style SP fill:#e1ffe1
 ```
+
+> **Note**: Environment Classifier removed (2025-12-06). Classification now performed by Signal Processing service.
 
 ### Sequence Diagram - Signal Processing Flow
 
@@ -187,14 +193,11 @@ sequenceDiagram
         GW->>Redis: INCR alert:storm:rate:<alertname>
         Redis-->>GW: count
 
-        Note over GW: 4. Classify Environment
-        GW->>GW: namespace labels → placeholder
-
-        Note over GW: 5. Create CRD
+        Note over GW: 4. Create CRD
         GW->>K8S: Create RemediationRequest
         K8S-->>GW: Created
 
-        Note over GW: 6. Store Dedup Metadata
+        Note over GW: 5. Store Dedup Metadata
         GW->>Redis: SET alert:fingerprint:<hash>
 
         GW-->>PM: 201 Created
@@ -205,6 +208,8 @@ sequenceDiagram
 
     deactivate GW
 ```
+
+> **Note**: "Classify Environment" step removed (2025-12-06). Classification now performed by Signal Processing after CRD creation.
 
 ### State Machine - Storm Detection
 
@@ -255,15 +260,18 @@ pkg/gateway/               → Business logic (PUBLIC API)
   │   ├── deduplication.go
   │   ├── storm_detector.go
   │   ├── storm_aggregator.go
-  │   ├── classifier.go
   │   ├── crd_creator.go
   │   └── crd_updater.go
+  ├── errors/                 → RFC7807 error types
+  │   └── rfc7807.go
   └── metrics/                → Prometheus metrics
       └── metrics.go
 
 internal/gateway/          → Internal utilities (INTERNAL)
   └── (future internal types)
 ```
+
+> **Note**: `classifier.go`, `priority.go`, and `remediation_path.go` removed (2025-12-06). Classification and path decision moved to Signal Processing service.
 
 ---
 
@@ -424,14 +432,11 @@ metadata:
   namespace: kubernaut-system
   labels:
     kubernaut.ai/alert-name: HighMemoryUsage
-    kubernaut.ai/environment: prod
-    kubernaut.ai/priority: P0
+    kubernaut.ai/severity: critical
 spec:
   alertFingerprint: "a1b2c3d4..."
   alertName: "HighMemoryUsage"
   severity: "critical"
-  environment: "prod"  # Placeholder - SignalProcessing finalizes
-  priority: "P0"       # Placeholder - SignalProcessing finalizes
   targetResource:
     kind: Pod
     name: payment-api-789
@@ -447,6 +452,8 @@ status:
   phase: "Pending"
 ```
 
+> **Note (2025-12-06)**: `environment` and `priority` labels/fields removed from Gateway CRD creation. Signal Processing service now adds these after classification.
+
 #### 7. **Response** (Total: 30-50ms)
 
 ```http
@@ -457,23 +464,27 @@ Content-Type: application/json
   "status": "created",
   "fingerprint": "a1b2c3d4...",
   "remediationRequestRef": "remediation-abc123",
-  "environment": "prod",
-  "priority": "P0"
+  "isStorm": false
 }
 ```
+
+> **Note (2025-12-06)**: `environment` and `priority` removed from response. Classification owned by Signal Processing.
 
 ---
 
 ## Key Architectural Decisions
 
-### Decision 1: Categorization Delegation to SignalProcessing
+### Decision 1: Categorization Delegation to SignalProcessing ✅ **IMPLEMENTED**
 
-**Choice**: Gateway sets placeholder values; SignalProcessing performs final categorization
+**Choice**: Classification code **completely removed** from Gateway (2025-12-06). Signal Processing owns all environment/priority classification.
 
 **Rationale** ([DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)):
 - ✅ **Richer Context**: SignalProcessing has access to enriched K8s context
 - ✅ **Single Responsibility**: Gateway focuses on ingestion, not business logic
 - ✅ **Simpler Gateway**: Reduced complexity in critical path
+- ✅ **No Duplication**: Classification logic exists in one place only
+
+**Implementation**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
 ### Decision 2: Resource Validation (V1.0)
 
@@ -543,9 +554,9 @@ Content-Type: application/json
 - Rate-based (>10 alerts/min)
 - Pattern-based (>5 similar alerts across resources)
 
-✅ **Environment Classification**:
-- Placeholder values only
-- Final classification by SignalProcessing
+❌ **Environment Classification** (REMOVED 2025-12-06):
+- Classification code **completely removed** from Gateway
+- Signal Processing service owns all classification (DD-CATEGORIZATION-001)
 
 ### Excluded from V1 (Deferred to V2)
 

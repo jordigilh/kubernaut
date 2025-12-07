@@ -87,11 +87,24 @@ class ExecutionFailure(BaseModel):
 
 
 class PreviousExecution(BaseModel):
-    """Complete context about the previous execution attempt that failed"""
+    """
+    Complete context about the previous execution attempt that failed.
+
+    Business Requirement: BR-HAPI-192 (Recovery Context Consumption)
+    - natural_language_summary is WE-generated LLM-friendly failure description
+    - Provides context for better recovery workflow selection
+    """
     workflow_execution_ref: str = Field(..., description="Name of failed WorkflowExecution CRD")
     original_rca: OriginalRCA = Field(..., description="RCA from initial AIAnalysis")
     selected_workflow: SelectedWorkflowSummary = Field(..., description="Workflow that was executed")
     failure: ExecutionFailure = Field(..., description="Structured failure details")
+    # BR-HAPI-192: WE-generated natural language summary for LLM context
+    natural_language_summary: Optional[str] = Field(
+        None,
+        description="WE-generated LLM-friendly failure description. "
+                    "Includes workflow name, failure step, exit code, and human-readable context. "
+                    "Used by LLM to understand what went wrong and avoid similar approaches."
+    )
 
 
 class RecoveryRequest(BaseModel):

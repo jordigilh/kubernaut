@@ -152,6 +152,23 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	SkipDetails *SkipDetails `json:"skipDetails,omitempty"`
 
+	// ========================================
+	// EXPONENTIAL BACKOFF (v4.1)
+	// DD-WE-004: Prevents remediation storms for pre-execution failures
+	// ========================================
+
+	// ConsecutiveFailures tracks pre-execution failures for this target resource
+	// Incremented when wasExecutionFailure=false, reset to 0 on success
+	// NOT incremented for execution failures (wasExecutionFailure=true)
+	// +optional
+	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
+
+	// NextAllowedExecution is the timestamp when next execution is allowed
+	// Calculated using exponential backoff: Base * 2^(min(failures-1, maxExponent))
+	// Only set for pre-execution failures, not for execution failures
+	// +optional
+	NextAllowedExecution *metav1.Time `json:"nextAllowedExecution,omitempty"`
+
 	// Conditions provide detailed status information
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -166,7 +183,7 @@ type WorkflowExecutionStatus struct {
 // Provides context for notifications and audit trail
 type SkipDetails struct {
 	// Reason explains why execution was skipped
-	// +kubebuilder:validation:Enum=ResourceBusy;RecentlyRemediated
+	// +kubebuilder:validation:Enum=ResourceBusy;RecentlyRemediated;ExhaustedRetries;PreviousExecutionFailed
 	Reason string `json:"reason"`
 
 	// Message is a human-readable explanation
@@ -279,6 +296,19 @@ type FailureDetails struct {
 	//   - RO: Included in AIAnalysis.Spec.PreviousExecutions for LLM context
 	//   - Notification: Included in user-facing failure alerts
 	NaturalLanguageSummary string `json:"naturalLanguageSummary"`
+
+	// ========================================
+	// EXECUTION VS PRE-EXECUTION FAILURE (v4.1)
+	// DD-WE-004: Critical for retry/backoff decisions
+	// ========================================
+
+	// WasExecutionFailure indicates whether the failure occurred during workflow execution
+	// true = workflow RAN and failed (non-idempotent actions may have occurred)
+	// false = workflow failed BEFORE execution (validation, image pull, quota, etc.)
+	// CRITICAL: Execution failures (true) block ALL future retries for this target
+	//           Pre-execution failures (false) get exponential backoff
+	// +optional
+	WasExecutionFailure bool `json:"wasExecutionFailure,omitempty"`
 }
 
 // PipelineRunStatusSummary captures key PipelineRun status fields
@@ -334,7 +364,18 @@ const (
 	SkipReasonResourceBusy = "ResourceBusy"
 
 	// SkipReasonRecentlyRemediated indicates same workflow+target was recently executed
+	// Also used during exponential backoff for pre-execution failures
 	SkipReasonRecentlyRemediated = "RecentlyRemediated"
+
+	// SkipReasonExhaustedRetries indicates max consecutive pre-execution failures reached (DD-WE-004)
+	// Requires manual intervention to clear failure count
+	SkipReasonExhaustedRetries = "ExhaustedRetries"
+
+	// SkipReasonPreviousExecutionFailed indicates the previous workflow execution
+	// ran and failed (wasExecutionFailure: true). No automatic retry is allowed
+	// because non-idempotent actions may have occurred. Requires manual intervention.
+	// Per cross-team agreement: WE→RO-003
+	SkipReasonPreviousExecutionFailed = "PreviousExecutionFailed"
 )
 
 // ========================================
@@ -359,6 +400,10 @@ const (
 
 	// FailureReasonImagePullBackOff indicates container image could not be pulled
 	FailureReasonImagePullBackOff = "ImagePullBackOff"
+
+	// FailureReasonTaskFailed indicates a Tekton task failed during execution
+	// This is an execution failure (wasExecutionFailure=true)
+	FailureReasonTaskFailed = "TaskFailed"
 
 	// FailureReasonUnknown for unclassified failures
 	FailureReasonUnknown = "Unknown"

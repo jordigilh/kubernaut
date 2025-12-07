@@ -90,18 +90,17 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 				"Gateway MUST accept valid Prometheus alert (BR-001)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// BUSINESS OUTCOME 2: Priority correctly classified as P0
+			// NOTE: Priority classification removed from Gateway (2025-12-06)
+			// Signal Processing service now owns priority classification
+			// per DD-CATEGORIZATION-001. Gateway only validates acceptance.
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			var response map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&response)
 			Expect(err).ToNot(HaveOccurred())
 
-			// TDD GREEN FIX: Priority is a top-level field per API specification
-			// See: docs/services/stateless/gateway-service/api-specification.md:71-80
-			priority, ok := response["priority"].(string)
-			Expect(ok).To(BeTrue(), "Response MUST include priority field (BR-001)")
-			Expect(priority).To(Equal("P0"),
-				"Critical + production MUST be classified as P0 (BR-001)")
+			// Verify CRD was created (priority classification now done by SP)
+			_, hasStatus := response["status"].(string)
+			Expect(hasStatus).To(BeTrue(), "Response MUST include status field")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS VALUE ACHIEVED
@@ -164,17 +163,17 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 				"Gateway MUST accept valid K8s Event (BR-002)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// BUSINESS OUTCOME 2: Priority correctly classified as P1
+			// NOTE: Priority classification removed from Gateway (2025-12-06)
+			// Signal Processing service now owns priority classification
+			// per DD-CATEGORIZATION-001. Gateway only validates acceptance.
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			var response map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&response)
 			Expect(err).ToNot(HaveOccurred())
 
-			// TDD FIX: Priority is top-level field per api-specification.md:78
-			priority, ok := response["priority"].(string)
-			Expect(ok).To(BeTrue(), "Response MUST include priority field (BR-002)")
-			Expect(priority).To(Equal("P1"),
-				"Warning + production MUST be classified as P1 (BR-002)")
+			// Verify CRD was created (priority classification now done by SP)
+			_, hasStatus := response["status"].(string)
+			Expect(hasStatus).To(BeTrue(), "Response MUST include status field")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS VALUE ACHIEVED

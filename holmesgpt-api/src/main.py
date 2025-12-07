@@ -33,12 +33,15 @@ import os
 import signal
 import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import centralized logging configuration
 from src.config import setup_logging
+
+# Import hot-reload ConfigManager (BR-HAPI-199, DD-HAPI-004)
+from src.config.hot_reload import ConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +207,50 @@ config = load_config()
 setup_logging(config)
 logger.info(f"holmesgpt-api starting with log level: {config.get('log_level', 'INFO')}")
 
+# ========================================
+# HOT-RELOAD CONFIG MANAGER (BR-HAPI-199)
+# ========================================
+# ConfigManager provides hot-reload capability for config changes
+# without pod restart. Falls back to static config if file not found.
+
+config_manager: Optional[ConfigManager] = None
+HOT_RELOAD_ENABLED = os.getenv("HOT_RELOAD_ENABLED", "true").lower() == "true"
+
+def init_config_manager() -> Optional[ConfigManager]:
+    """
+    Initialize ConfigManager for hot-reload support.
+
+    BR-HAPI-199: ConfigMap Hot-Reload
+    DD-HAPI-004: ConfigMap Hot-Reload Design
+
+    Returns None if config file doesn't exist or hot-reload is disabled.
+    """
+    if not HOT_RELOAD_ENABLED:
+        logger.info("Hot-reload disabled via HOT_RELOAD_ENABLED=false")
+        return None
+
+    config_file = os.getenv("CONFIG_FILE", "/etc/holmesgpt/config.yaml")
+    config_path = Path(config_file)
+
+    if not config_path.exists():
+        logger.warning(f"Config file not found: {config_file}, hot-reload disabled")
+        return None
+
+    try:
+        manager = ConfigManager(config_file, logger, enable_hot_reload=True)
+        manager.start()
+        logger.info({
+            "event": "config_manager_started",
+            "br": "BR-HAPI-199",
+            "dd": "DD-HAPI-004",
+            "path": config_file,
+            "hot_reload": True,
+        })
+        return manager
+    except Exception as e:
+        logger.error(f"Failed to start ConfigManager: {e}, using static config")
+        return None
+
 # Create FastAPI application
 app = FastAPI(
     title="HolmesGPT API Service",
@@ -264,16 +311,44 @@ async def metrics():
 
 @app.on_event("startup")
 async def startup_event():
+    global config_manager
+
     logger.info(f"Starting {config.get('service_name', 'holmesgpt-api')} v{config.get('version', '1.0.0')}")
     logger.info(f"LLM Provider: {config.get('llm', {}).get('provider', 'unknown')}")
     logger.info(f"Dev mode: {config.get('dev_mode', False)}")
     logger.info(f"Auth enabled: {config.get('auth_enabled', False)}")
+
+    # Initialize ConfigManager for hot-reload (BR-HAPI-199)
+    config_manager = init_config_manager()
+    if config_manager:
+        app.state.config_manager = config_manager
+        logger.info({
+            "event": "hot_reload_enabled",
+            "br": "BR-HAPI-199",
+            "fields": ["llm.model", "llm.provider", "llm.endpoint", "toolsets", "log_level"],
+        })
+    else:
+        app.state.config_manager = None
+        logger.info("Hot-reload not available, using static configuration")
+
     logger.info("Service started successfully")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    global config_manager
+
     logger.info("Service shutting down")
+
+    # Stop ConfigManager (BR-HAPI-199)
+    if config_manager:
+        config_manager.stop()
+        logger.info({
+            "event": "config_manager_stopped",
+            "br": "BR-HAPI-199",
+            "reload_count": config_manager.reload_count,
+            "error_count": config_manager.error_count,
+        })
 
 
 if __name__ == "__main__":

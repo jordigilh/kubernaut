@@ -965,4 +965,3 @@ func (r *stringReaderImpl) Read(p []byte) (n int, err error) {
 	r.pos += n
 	return n, nil
 }
-

@@ -3,174 +3,330 @@
 **Service**: RemediationOrchestrator Controller
 **Category**: V1.0 Core Requirements
 **Priority**: P0 (CRITICAL)
-**Version**: 1.0
-**Date**: 2025-12-06
+**Version**: 2.0
+**Date**: 2025-12-07
 **Status**: 🚧 Planned
-**Related BRs**: BR-ORCH-032 (WE Skip Handling), BR-ORCH-001 (Approval Notification)
-**Related DDs**: DD-WE-004 (Exponential Backoff Cooldown)
+**Related BRs**: BR-ORCH-032 (WE Skip Handling), BR-ORCH-001 (Approval Notification), BR-HAPI-197 (needs_human_review), BR-HAPI-200 (resolved/inconclusive)
+**Related DDs**: DD-WE-004 (Exponential Backoff Cooldown), DD-AIANALYSIS-003 (Completion Substates)
 
 ---
 
 ## Overview
 
-RemediationOrchestrator MUST create NotificationRequest CRDs with `type=manual-review` when WorkflowExecution enters a state requiring operator intervention due to exhausted retries or previous execution failures.
+RemediationOrchestrator MUST create NotificationRequest CRDs with `type=manual-review` when:
+1. **WorkflowExecution** enters a state requiring operator intervention (exhausted retries, execution failures)
+2. **AIAnalysis** fails to produce a valid workflow recommendation (`WorkflowResolutionFailed`)
 
 **Business Value**: Ensures operators are immediately notified of remediation failures that cannot be automatically resolved, reducing MTTR for critical infrastructure issues by 40-60%.
 
 ---
 
-## BR-ORCH-036: Manual Review Notification
+## Trigger Conditions (Complete)
 
-### Description
+### Source: WorkflowExecution Failures
 
-When WorkflowExecution is skipped due to `ExhaustedRetries` or `PreviousExecutionFailed`, RemediationOrchestrator creates a NotificationRequest CRD with `type=manual-review` to alert operators that manual intervention is required.
+| Skip/Failure Reason | Description | Priority | Source |
+|---------------------|-------------|----------|--------|
+| `ExhaustedRetries` | 5+ consecutive pre-execution failures | Critical | DD-WE-004 |
+| `PreviousExecutionFailed` | Prior workflow execution failed during run | Critical | DD-WE-004 |
 
-### Priority
+### Source: AIAnalysis WorkflowResolutionFailed
 
-**P0 (CRITICAL)** - Core V1.0 feature for failure escalation
+| SubReason | Description | Priority | Source |
+|-----------|-------------|----------|--------|
+| `WorkflowNotFound` | LLM hallucinated workflow ID not in catalog | High | BR-HAPI-197 |
+| `ImageMismatch` | Container image doesn't match catalog | High | BR-HAPI-197 |
+| `ParameterValidationFailed` | Parameters don't conform to workflow schema | High | BR-HAPI-197 |
+| `NoMatchingWorkflows` | Catalog search returned no results | Medium | BR-HAPI-197 |
+| `LowConfidence` | Confidence below 70% threshold | Medium | BR-HAPI-197 |
+| `LLMParsingError` | Cannot parse LLM response (after 3 HAPI retries) | High | BR-HAPI-197 |
+| `InvestigationInconclusive` | LLM couldn't determine root cause or state | Medium | BR-HAPI-200 |
 
-### Rationale
+---
 
-**Why a distinct notification type (`manual-review`) instead of `escalation`?**
+## Detection Logic
 
-| Type | Purpose | Operator Action |
-|------|---------|-----------------|
-| `escalation` | General failures, timeouts | Investigate and possibly retry |
-| `manual-review` | Pre-execution exhaustion, prior execution failures | **Must clear backoff state or investigate cluster** |
+### WorkflowExecution Detection
 
-**Distinct routing enables:**
-- Different notification channels (e.g., PagerDuty for manual-review)
-- Different priorities based on failure type
-- Label-based routing rules (BR-NOT-065): `kubernaut.ai/notification-type=manual-review`
-- Separate metrics and dashboards
+```go
+// Detect WE failures requiring manual review
+if we.Status.Phase == "Skipped" || we.Status.Phase == "Failed" {
+    reason := we.Status.SkipDetails.Reason
+    if reason == "ExhaustedRetries" || reason == "PreviousExecutionFailed" {
+        return c.CreateManualReviewNotification(ctx, rr, we, nil)
+    }
+    if we.Status.FailureDetails != nil && we.Status.FailureDetails.WasExecutionFailure {
+        return c.CreateManualReviewNotification(ctx, rr, we, nil)
+    }
+}
+```
 
-### Trigger Conditions
+### AIAnalysis Detection
 
-| Skip Reason | Description | Notification Type |
-|-------------|-------------|-------------------|
-| `ExhaustedRetries` | 5+ consecutive pre-execution failures | `manual-review` |
-| `PreviousExecutionFailed` | Prior workflow execution failed during run | `manual-review` |
+```go
+// Detect AIAnalysis failures requiring manual review
+if ai.Status.Phase == "Failed" && ai.Status.Reason == "WorkflowResolutionFailed" {
+    // SubReason: WorkflowNotFound, ImageMismatch, ParameterValidationFailed,
+    //            NoMatchingWorkflows, LowConfidence, LLMParsingError,
+    //            InvestigationInconclusive
+    return c.CreateManualReviewNotification(ctx, rr, nil, ai)
+}
+```
 
-### Implementation
+### Priority Mapping
 
-1. Watch `WorkflowExecution.status.phase` for `Skipped` or `Failed`
-2. Extract skip reason from `status.skipDetails.reason` or failure details
-3. If reason is `ExhaustedRetries` or `PreviousExecutionFailed`:
-   - Create NotificationRequest with `type=manual-review`
-   - Set `priority=critical`
-   - Include `kubernaut.ai/skip-reason` label for routing
-   - Include context from WE's `SkipDetails.Message` or `FailureDetails.NaturalLanguageSummary`
-4. Set OwnerReference to RemediationRequest for cascade deletion
-5. Do NOT requeue - wait for operator intervention
+| Source | Reason/SubReason | Notification Priority |
+|--------|------------------|----------------------|
+| WE | `ExhaustedRetries` | `critical` |
+| WE | `PreviousExecutionFailed` | `critical` |
+| WE | Execution failure (`WasExecutionFailure=true`) | `critical` |
+| AI | `WorkflowNotFound` | `high` |
+| AI | `ImageMismatch` | `high` |
+| AI | `ParameterValidationFailed` | `high` |
+| AI | `LLMParsingError` | `high` |
+| AI | `NoMatchingWorkflows` | `medium` |
+| AI | `LowConfidence` | `medium` |
+| AI | `InvestigationInconclusive` | `medium` |
 
-### Acceptance Criteria
+---
 
-| ID | Criterion | Test Coverage |
-|----|-----------|---------------|
-| AC-036-1 | NotificationRequest created with `type=manual-review` for `ExhaustedRetries` | Unit |
-| AC-036-2 | NotificationRequest created with `type=manual-review` for `PreviousExecutionFailed` | Unit |
-| AC-036-3 | Notification priority is `critical` | Unit |
-| AC-036-4 | Notification includes `kubernaut.ai/skip-reason` label | Unit |
-| AC-036-5 | Notification body includes WE failure context | Unit |
-| AC-036-6 | OwnerReference set for cascade deletion (BR-ORCH-031) | Unit |
-| AC-036-7 | Notification reference tracked in RR status (BR-ORCH-035) | Unit |
-| AC-036-8 | Distinct from `approval` notifications (different routing) | Unit |
-| AC-036-9 | End-to-end latency <5 seconds from WE skip to notification | Integration |
+## Implementation
 
-### Test Scenarios
+### Unified Handler
 
-```gherkin
-Scenario: Manual review notification for ExhaustedRetries
-  Given WorkflowExecution "we-1" is Skipped with reason "ExhaustedRetries"
-  And SkipDetails.Message contains "5 consecutive pre-execution failures"
-  When RemediationOrchestrator reconciles "rr-1"
-  Then NotificationRequest should be created with:
-    | type | manual-review |
-    | priority | critical |
-    | labels.kubernaut.ai/skip-reason | ExhaustedRetries |
-  And notification body should contain:
-    | Content | "5 consecutive pre-execution failures" |
-    | Content | "Manual intervention required" |
-  And RemediationRequest "rr-1" phase should be "Failed"
-  And RemediationRequest "rr-1" should have requiresManualReview = true
+```go
+// CreateManualReviewNotification handles both WE and AI failure scenarios
+func (c *NotificationCreator) CreateManualReviewNotification(
+    ctx context.Context,
+    rr *remediationv1.RemediationRequest,
+    we *workflowexecutionv1.WorkflowExecution, // nil if AI source
+    ai *aianalysisv1.AIAnalysis,               // nil if WE source
+) (string, error) {
 
-Scenario: Manual review notification for PreviousExecutionFailed
-  Given WorkflowExecution "we-1" is Skipped with reason "PreviousExecutionFailed"
-  And SkipDetails.Message contains "cluster state may be inconsistent"
-  When RemediationOrchestrator reconciles "rr-1"
-  Then NotificationRequest should be created with:
-    | type | manual-review |
-    | priority | critical |
-    | labels.kubernaut.ai/skip-reason | PreviousExecutionFailed |
-  And notification body should contain:
-    | Content | "Previous execution failed" |
-    | Content | "cluster state may be inconsistent" |
+    var (
+        source      string
+        reason      string
+        subReason   string
+        message     string
+        priority    notificationv1.NotificationPriority
+    )
 
-Scenario: Manual review notification distinct from approval
-  Given AIAnalysis "ai-1" requires approval (confidence 72%)
-  And WorkflowExecution "we-2" is Skipped with reason "ExhaustedRetries"
-  When both reconciliations complete
-  Then two distinct NotificationRequests should exist:
-    | Name | Type | Routing Label |
-    | nr-approval-rr-1 | approval | notification-type=approval |
-    | nr-manual-review-rr-2 | manual-review | notification-type=manual-review |
+    if we != nil {
+        source = "WorkflowExecution"
+        if we.Status.SkipDetails != nil {
+            reason = we.Status.SkipDetails.Reason
+            message = we.Status.SkipDetails.Message
+        } else if we.Status.FailureDetails != nil {
+            reason = "ExecutionFailure"
+            message = we.Status.FailureDetails.NaturalLanguageSummary
+        }
+        priority = c.MapWEReasonToPriority(reason)
+    } else if ai != nil {
+        source = "AIAnalysis"
+        reason = ai.Status.Reason      // WorkflowResolutionFailed
+        subReason = ai.Status.SubReason
+        message = ai.Status.Message
+        priority = c.MapAISubReasonToPriority(subReason)
+    }
+
+    // Create NotificationRequest
+    nr := &notificationv1.NotificationRequest{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("nr-manual-review-%s-%d", rr.Name, time.Now().Unix()),
+            Namespace: rr.Namespace,
+            Labels: map[string]string{
+                "kubernaut.ai/remediation-request": rr.Name,
+                "kubernaut.ai/notification-type":   "manual-review",
+                "kubernaut.ai/failure-source":      source,
+                "kubernaut.ai/failure-reason":      reason,
+                "kubernaut.ai/component":           "remediation-orchestrator",
+            },
+        },
+        Spec: notificationv1.NotificationRequestSpec{
+            Type:     notificationv1.NotificationTypeManualReview,
+            Priority: priority,
+            Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
+            Body:     c.buildManualReviewBody(rr, source, reason, subReason, message),
+            Channels: c.determineChannelsForPriority(priority),
+            Metadata: map[string]string{
+                "remediationRequest": rr.Name,
+                "failureSource":      source,
+                "failureReason":      reason,
+                "subReason":          subReason,
+            },
+        },
+    }
+
+    // Set OwnerReference for cascade deletion
+    controllerutil.SetControllerReference(rr, nr, c.scheme)
+
+    return nr.Name, c.client.Create(ctx, nr)
+}
 ```
 
 ---
 
-## Notification Content Template
+## Acceptance Criteria
+
+### WorkflowExecution Source
+
+| ID | Criterion | Test Coverage |
+|----|-----------|---------------|
+| AC-036-01 | NotificationRequest created with `type=manual-review` for `ExhaustedRetries` | Unit |
+| AC-036-02 | NotificationRequest created with `type=manual-review` for `PreviousExecutionFailed` | Unit |
+| AC-036-03 | NotificationRequest created with `type=manual-review` for `WasExecutionFailure=true` | Unit |
+| AC-036-04 | Priority is `critical` for WE failures | Unit |
+| AC-036-05 | Label `kubernaut.ai/failure-source=WorkflowExecution` set | Unit |
+
+### AIAnalysis Source
+
+| ID | Criterion | Test Coverage |
+|----|-----------|---------------|
+| AC-036-10 | NotificationRequest created for `WorkflowNotFound` | Unit |
+| AC-036-11 | NotificationRequest created for `ImageMismatch` | Unit |
+| AC-036-12 | NotificationRequest created for `ParameterValidationFailed` | Unit |
+| AC-036-13 | NotificationRequest created for `NoMatchingWorkflows` | Unit |
+| AC-036-14 | NotificationRequest created for `LowConfidence` | Unit |
+| AC-036-15 | NotificationRequest created for `LLMParsingError` | Unit |
+| AC-036-16 | NotificationRequest created for `InvestigationInconclusive` | Unit |
+| AC-036-17 | Priority mapped correctly per SubReason | Unit |
+| AC-036-18 | Label `kubernaut.ai/failure-source=AIAnalysis` set | Unit |
+| AC-036-19 | Label `kubernaut.ai/failure-reason=WorkflowResolutionFailed` set | Unit |
+
+### Common
+
+| ID | Criterion | Test Coverage |
+|----|-----------|---------------|
+| AC-036-20 | OwnerReference set for cascade deletion (BR-ORCH-031) | Unit |
+| AC-036-21 | Notification reference tracked in RR status (BR-ORCH-035) | Unit |
+| AC-036-22 | RR `requiresManualReview=true` set | Unit |
+| AC-036-23 | RR phase set appropriately (`Failed` or `Blocked`) | Unit |
+| AC-036-24 | No auto-retry for any manual review scenario | Unit |
+| AC-036-25 | End-to-end latency <5 seconds | Integration |
+
+---
+
+## Test Scenarios
+
+```gherkin
+# WorkflowExecution Failures
+Scenario: Manual review notification for WE ExhaustedRetries
+  Given WorkflowExecution "we-1" is Skipped with reason "ExhaustedRetries"
+  When RemediationOrchestrator reconciles "rr-1"
+  Then NotificationRequest should be created with:
+    | type | manual-review |
+    | priority | critical |
+    | labels.kubernaut.ai/failure-source | WorkflowExecution |
+  And RemediationRequest "rr-1" should have requiresManualReview = true
+
+# AIAnalysis Failures
+Scenario: Manual review notification for AIAnalysis WorkflowNotFound
+  Given AIAnalysis "ai-1" has:
+    | phase | Failed |
+    | reason | WorkflowResolutionFailed |
+    | subReason | WorkflowNotFound |
+    | message | Workflow 'restart-pod-v99' not found in catalog |
+  When RemediationOrchestrator reconciles "rr-1"
+  Then NotificationRequest should be created with:
+    | type | manual-review |
+    | priority | high |
+    | labels.kubernaut.ai/failure-source | AIAnalysis |
+    | labels.kubernaut.ai/failure-reason | WorkflowResolutionFailed |
+  And notification body should contain "Workflow 'restart-pod-v99' not found"
+  And RemediationRequest "rr-1" should have requiresManualReview = true
+
+Scenario: Manual review notification for AIAnalysis LowConfidence
+  Given AIAnalysis "ai-1" has:
+    | phase | Failed |
+    | reason | WorkflowResolutionFailed |
+    | subReason | LowConfidence |
+    | message | Confidence (0.55) below threshold (0.70) |
+  When RemediationOrchestrator reconciles "rr-1"
+  Then NotificationRequest should be created with:
+    | type | manual-review |
+    | priority | medium |
+  And notification body should contain "low confidence"
+
+Scenario: Manual review notification for AIAnalysis InvestigationInconclusive
+  Given AIAnalysis "ai-1" has:
+    | phase | Failed |
+    | reason | WorkflowResolutionFailed |
+    | subReason | InvestigationInconclusive |
+    | message | Unable to determine root cause. Pod status ambiguous. |
+  When RemediationOrchestrator reconciles "rr-1"
+  Then NotificationRequest should be created with:
+    | type | manual-review |
+    | priority | medium |
+  And notification body should contain "investigation inconclusive"
+```
+
+---
+
+## Notification Content Templates
+
+### WorkflowExecution Failure Template
 
 ```yaml
-kind: NotificationRequest
-metadata:
-  name: nr-manual-review-{rr-name}
-  namespace: {namespace}
-  labels:
-    kubernaut.ai/remediation-request: {rr-name}
-    kubernaut.ai/notification-type: manual-review
-    kubernaut.ai/skip-reason: {ExhaustedRetries|PreviousExecutionFailed}
-    kubernaut.ai/severity: critical
-    kubernaut.ai/environment: {environment}
-    kubernaut.ai/component: remediation-orchestrator
 spec:
   type: manual-review
   priority: critical
-  subject: "⚠️ Manual Review Required: {rr-name} - {skip-reason}"
+  subject: "⚠️ Manual Review Required: {signalName} - Workflow Execution Failed"
   body: |
-    Remediation requires manual intervention:
+    Remediation requires manual intervention due to workflow execution failure.
 
     **Signal**: {signalName}
     **Target**: {namespace}/{kind}/{name}
     **Environment**: {environment}
 
-    **Reason**: {skip-reason}
-    **Details**: {WE.SkipDetails.Message or FailureDetails.NaturalLanguageSummary}
+    **Failure Source**: WorkflowExecution
+    **Reason**: {ExhaustedRetries|PreviousExecutionFailed|ExecutionFailure}
+    **Details**: {message}
 
     **Action Required**:
-    - For ExhaustedRetries: Clear backoff state or investigate root cause
-    - For PreviousExecutionFailed: Verify cluster state before retry
+    - ExhaustedRetries: Clear backoff state or investigate root cause
+    - PreviousExecutionFailed: Verify cluster state before retry
+    - ExecutionFailure: Review workflow logs and cluster state
+```
 
-    **Consecutive Failures**: {ConsecutiveFailures}
-    **Next Allowed Execution**: {NextAllowedExecution}
-  channels:
-    - console
-    - slack
-    - email  # Critical = all channels
-  metadata:
-    remediationRequest: {rr-name}
-    workflowExecution: {we-name}
-    skipReason: {skip-reason}
-    consecutiveFailures: "{N}"
-    environment: {environment}
+### AIAnalysis Failure Template
+
+```yaml
+spec:
+  type: manual-review
+  priority: {high|medium}
+  subject: "⚠️ Manual Review Required: {signalName} - AI Could Not Recommend Workflow"
+  body: |
+    AI analysis completed but could not produce a valid workflow recommendation.
+
+    **Signal**: {signalName}
+    **Target**: {namespace}/{kind}/{name}
+    **Environment**: {environment}
+
+    **Failure Source**: AIAnalysis
+    **Reason**: WorkflowResolutionFailed
+    **SubReason**: {subReason}
+    **Details**: {message}
+
+    **Root Cause Analysis**:
+    {rootCauseAnalysis.summary}
+
+    **Attempted Workflow** (if any):
+    {selectedWorkflow.workflowId} (confidence: {selectedWorkflow.confidence})
+
+    **Action Required**:
+    - WorkflowNotFound/ImageMismatch: Update workflow catalog
+    - ParameterValidationFailed: Fix workflow schema
+    - NoMatchingWorkflows: Add workflows for this incident type
+    - LowConfidence: Manual investigation and decision
+    - LLMParsingError: Contact AI team if persistent
+    - InvestigationInconclusive: Manual investigation required
 ```
 
 ---
 
 ## API Change
 
-### NotificationType Enum Addition
-
-**File**: `api/notification/v1alpha1/notificationrequest_types.go`
+### NotificationType Enum
 
 ```go
 // +kubebuilder:validation:Enum=escalation;simple;status-update;approval;manual-review
@@ -181,8 +337,22 @@ const (
     NotificationTypeSimple       NotificationType = "simple"
     NotificationTypeStatusUpdate NotificationType = "status-update"
     NotificationTypeApproval     NotificationType = "approval"      // BR-ORCH-001
-    NotificationTypeManualReview NotificationType = "manual-review" // BR-ORCH-036 (this BR)
+    NotificationTypeManualReview NotificationType = "manual-review" // BR-ORCH-036
 )
+```
+
+---
+
+## Metrics
+
+```prometheus
+# Counter for manual review notifications sent
+kubernaut_remediationorchestrator_manual_review_notifications_total{
+  source="WorkflowExecution|AIAnalysis",
+  reason="ExhaustedRetries|PreviousExecutionFailed|ExecutionFailure|WorkflowResolutionFailed",
+  sub_reason="WorkflowNotFound|ImageMismatch|ParameterValidationFailed|NoMatchingWorkflows|LowConfidence|LLMParsingError|InvestigationInconclusive",
+  namespace="<rr_namespace>"
+}
 ```
 
 ---
@@ -192,8 +362,13 @@ const (
 - [BR-ORCH-032: Handle WE Skipped Phase](./BR-ORCH-032-034-resource-lock-deduplication.md)
 - [BR-ORCH-001: Approval Notification Creation](./BR-ORCH-001-approval-notification-creation.md)
 - [BR-ORCH-035: Notification Reference Tracking](./BR-ORCH-035-notification-reference-tracking.md)
+- [BR-ORCH-037: Handle AIAnalysis WorkflowNotNeeded](./BR-ORCH-037-workflow-not-needed.md)
+- [BR-HAPI-197: needs_human_review Field](./BR-HAPI-197-needs-human-review-field.md)
+- [BR-HAPI-200: Resolved/Inconclusive Signals](./BR-HAPI-200-resolved-stale-signals.md)
 - [DD-WE-004: Exponential Backoff Cooldown](../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
-- [NOTICE: WE Exponential Backoff](../handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md)
+- [DD-AIANALYSIS-003: Completion Substates](../architecture/decisions/DD-AIANALYSIS-003-completion-substates.md)
+- [NOTICE: AIAnalysis WorkflowResolutionFailed](../handoff/NOTICE_AIANALYSIS_WORKFLOW_RESOLUTION_FAILURE.md)
+- [NOTICE: Investigation Inconclusive BR-HAPI-200](../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md)
 
 ---
 
@@ -201,11 +376,11 @@ const (
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2025-12-06 | Initial BR creation based on DD-WE-004 requirements and cross-team alignment |
+| 2.0 | 2025-12-07 | Extended to include all AIAnalysis WorkflowResolutionFailed scenarios (7 SubReasons), added BR-HAPI-200 InvestigationInconclusive |
+| 1.0 | 2025-12-06 | Initial BR creation for WE failures only |
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: December 6, 2025
+**Document Version**: 2.0
+**Last Updated**: December 7, 2025
 **Maintained By**: Kubernaut Architecture Team
-

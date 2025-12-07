@@ -304,3 +304,4 @@ rate(holmesgpt_investigations_total{status=~"2.."}[5m])
 **Author**: Kubernaut Development Team
 **Review Required**: Yes (architecture review for pricing configuration)
 
+

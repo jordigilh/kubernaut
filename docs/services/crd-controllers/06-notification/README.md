@@ -1,7 +1,7 @@
 # Notification Controller
 
 **Version**: v1.4.0
-**Status**: ✅ Production-Ready (249 tests, 100% pass rate) + Day 13 Enhancement Scheduled
+**Status**: ✅ Production-Ready (35 test files, 100% pass rate) + Day 13 Enhancement Scheduled
 **Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
 **Metrics Port**: 9186 (`/metrics` - with auth filter, DD-TEST-001 compliant)
 **CRD**: NotificationRequest
@@ -326,8 +326,12 @@ status:
 | **BR-NOT-062** | Unified Audit Table | ADR-034 unified `audit_events` table | 100% |
 | **BR-NOT-063** | Audit Graceful Degradation | Fire-and-forget + DLQ fallback | 100% |
 | **BR-NOT-064** | Event Correlation | Remediation ID propagation | 100% |
+| **BR-NOT-065** | Channel Routing | Label-based routing (DD-WE-004) | 100% |
+| **BR-NOT-066** | Alertmanager Config | Alertmanager-compatible routing format | 100% |
+| **BR-NOT-067** | Config Hot-Reload | ConfigMap hot-reload without restart | 100% |
+| **BR-NOT-068** | Multi-Channel Fanout | Single notification to multiple channels | 100% |
 
-**Overall BR Coverage**: **96.3%** ✅ (12/12 BRs, avg 96.3%)
+**Overall BR Coverage**: **96.9%** ✅ (17/17 BRs, avg 96.9%)
 
 See [BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md) for detailed BR specifications.
 
@@ -440,14 +444,14 @@ See [Security Configuration](./security-configuration.md) for complete sanitizat
 
 ## 🧪 Testing
 
-### **Test Coverage** (v1.2.0)
+### **Test Coverage** (v1.4.0)
 
-| Test Type | Count | Coverage | Status |
+| Test Type | Files | Coverage | Status |
 |-----------|-------|----------|--------|
-| **Unit Tests** | 140 | 70%+ code coverage | ✅ 100% passing |
-| **Integration Tests** | 97 | >50% BR coverage | ✅ 100% passing |
-| **E2E Tests** | 12 | <10% BR coverage | ✅ 100% passing |
-| **TOTAL** | **249** | **96.3% BR coverage** | **✅ Production-Ready** |
+| **Unit Tests** | 12 | 70%+ code coverage | ✅ 100% passing |
+| **Integration Tests** | 18 | >50% BR coverage | ✅ 100% passing |
+| **E2E Tests** | 4 | <10% BR coverage | ✅ 100% passing |
+| **TOTAL** | **35 files** | **96.9% BR coverage** | **✅ Production-Ready** |
 
 ### **Test Execution**
 
@@ -803,16 +807,17 @@ See [LICENSE](../../../../../LICENSE) file in repository root.
 ## ✅ Production Readiness Status
 
 ### **Implementation** ✅
-- [x] 100% BR coverage (12/12 BRs implemented)
-- [x] All 3 channels operational (console, slack, file for E2E)
+- [x] 100% BR coverage (17/17 BRs implemented)
+- [x] All channels operational (console, slack, file for E2E)
 - [x] Exponential backoff retry with circuit breakers
 - [x] Data sanitization (22 secret patterns)
 - [x] ADR-034 unified audit table integration
+- [x] Channel routing with hot-reload (BR-NOT-065 to BR-NOT-068)
 
 ### **Testing** ✅
-- [x] 140 unit tests (70%+ coverage)
-- [x] 97 integration tests (>50% coverage - microservices architecture)
-- [x] 12 E2E tests (<10% coverage - Kind-based)
+- [x] 12 unit test files (70%+ coverage)
+- [x] 18 integration test files (>50% coverage - microservices architecture)
+- [x] 4 E2E test files (<10% coverage - Kind-based)
 - [x] Zero flaky tests
 - [x] 100% pass rate in CI/CD
 - [x] Parallel execution (4 concurrent processes)

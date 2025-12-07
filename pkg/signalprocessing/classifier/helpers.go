@@ -42,3 +42,4 @@ func extractConfidence(value interface{}) float64 {
 	return 0.0
 }
 
+

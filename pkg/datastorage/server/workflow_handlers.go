@@ -358,8 +358,17 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGetWorkflowByID handles GET /api/v1/workflows/{workflowID}
-// BR-STORAGE-014: Workflow catalog management
+// BR-STORAGE-039: Workflow Catalog Retrieval API
 // DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
+//
+// Returns complete workflow object including:
+// - spec.container_image: OCI container image reference (for HAPI validation)
+// - spec.parameters[]: Parameter schema (for LLM parameter validation)
+// - detected_labels: Signal type, severity labels (for workflow filtering)
+//
+// Cross-Service Integration:
+// - HolmesGPT-API: Uses for validate_workflow_exists tool (Q17 in handoff doc)
+// - AIAnalysis: May use for defense-in-depth validation
 func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) {
 	// Get workflow ID from URL path
 	workflowID := chi.URLParam(r, "workflowID")

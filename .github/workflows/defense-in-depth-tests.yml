@@ -118,16 +118,35 @@ jobs:
       timeout: 10
       infrastructure: none
 
-  # Slow Lane: Dynamic Toolset (5-15 min)
-  integration-toolset:
-    name: integration (dynamic-toolset)
+  # Slow Lane: WorkflowExecution Service (5-15 min)
+  # Requires: EnvTest (envtest-based integration tests)
+  integration-workflowexecution:
+    name: integration (workflowexecution)
     needs: unit
-    # Smart path detection: Only run if Toolset code changed
+    # Smart path detection: Only run if WorkflowExecution code changed
     if: |
       github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/toolset/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/toolset/') ||
-      contains(github.event.pull_request.changed_files, 'test/integration/toolset/')
+      contains(github.event.pull_request.changed_files, 'internal/controller/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'api/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'test/integration/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'test/unit/workflowexecution/')
+    uses: ./.github/workflows/integration-test-template.yml
+    with:
+      service: workflowexecution
+      timeout: 15
+      infrastructure: none  # EnvTest based - no Kind needed for integration
+
+  # Slow Lane: Dynamic Toolset (5-15 min)
+  # 🚫 DEFERRED TO V2.0: Dynamic Toolset Service (DD-016)
+  # Rationale: V1.x only needs Prometheus discovery (already in HolmesGPT-API)
+  # Will return in V2.0 when expanding to multi-service observability
+  integration-toolset:
+    name: integration (dynamic-toolset) [V2.0 DEFERRED]
+    needs: unit
+    # 🚫 DISABLED FOR V1.x: Integration tests excluded per DD-016
+    # Re-enable in V2.0 when multi-service observability is prioritized
+    if: false  # Always skip for V1.x releases
     uses: ./.github/workflows/integration-test-template.yml
     with:
       service: toolset
@@ -176,17 +195,14 @@ jobs:
       timeout: 30
       skip_on_draft: true
 
+  # 🚫 DEFERRED TO V2.0: Dynamic Toolset Service (DD-016)
+  # E2E tests preserved for V2.0 but excluded from V1.x CI/CD
   e2e-toolset:
-    name: e2e (dynamic-toolset)
+    name: e2e (dynamic-toolset) [V2.0 DEFERRED]
     needs: [integration-toolset]
-    # Smart path detection: Only run if Toolset code changed
-    # Skip if integration tests were skipped
-    if: |
-      needs.integration-toolset.result == 'success' &&
-      (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/toolset/') ||
-       contains(github.event.pull_request.changed_files, 'cmd/toolset/') ||
-       contains(github.event.pull_request.changed_files, 'test/e2e/toolset/'))
+    # 🚫 DISABLED FOR V1.x: E2E tests excluded per DD-016
+    # Re-enable in V2.0 when multi-service observability is prioritized
+    if: false  # Always skip for V1.x releases
     uses: ./.github/workflows/e2e-test-template.yml
     with:
       service: toolset
@@ -216,12 +232,12 @@ jobs:
           echo "  Data Storage:      ${{ needs.integration-datastorage.result }}"
           echo "  Gateway Service:   ${{ needs.integration-gateway.result }}"
           echo "  Notification:      ${{ needs.integration-notification.result }}"
-          echo "  Dynamic Toolset:   ${{ needs.integration-toolset.result }}"
+          echo "  Dynamic Toolset:   ⏭️  SKIPPED (V2.0 DEFERRED - DD-016)"
           echo ""
           echo "Tier 3 - E2E Tests (10-15% BRs):"
           echo "  Data Storage:      ${{ needs.e2e-datastorage.result }}"
           echo "  Gateway Service:   ${{ needs.e2e-gateway.result }}"
-          echo "  Dynamic Toolset:   ${{ needs.e2e-toolset.result }}"
+          echo "  Dynamic Toolset:   ⏭️  SKIPPED (V2.0 DEFERRED - DD-016)"
           echo ""
           echo "Smart Path Detection: ✅ Only affected services tested"
           echo "Draft PR Skip: ✅ E2E skipped for draft PRs"
@@ -239,8 +255,8 @@ jobs:
             FAILED=1
           fi
 
-          # Integration tests: Check only if they ran
-          for service in holmesgpt datastorage gateway notification toolset; do
+          # Integration tests: Check only if they ran (exclude toolset - V2.0 deferred)
+          for service in holmesgpt datastorage gateway notification; do
             result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"integration-${service}\".result")
             if [ "$result" == "failure" ]; then
               echo "❌ Integration tests failed for ${service}"
@@ -248,14 +264,16 @@ jobs:
             fi
           done
 
-          # E2E tests: Check only if they ran
-          for service in datastorage gateway toolset; do
+          # E2E tests: Check only if they ran (exclude toolset - V2.0 deferred)
+          for service in datastorage gateway; do
             result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"e2e-${service}\".result")
             if [ "$result" == "failure" ]; then
               echo "❌ E2E tests failed for ${service}"
               FAILED=1
             fi
           done
+
+          # Note: Dynamic Toolset (integration-toolset, e2e-toolset) excluded per DD-016 (V2.0 deferral)
 
           if [ $FAILED -eq 0 ]; then
             echo ""

@@ -483,6 +483,9 @@ You must understand what was attempted and why it failed before recommending alt
         for key, value in params.items():
             prompt += f"- `{key}`: `{value}`\n"
 
+    # BR-HAPI-192: Extract WE-generated natural language summary
+    natural_language_summary = previous.get('natural_language_summary', '')
+
     # Add failure details with Kubernetes reason code
     prompt += f"""
 ---
@@ -496,7 +499,16 @@ You must understand what was attempted and why it failed before recommending alt
 - **Exit Code**: {failure.get('exit_code', 'N/A')}
 - **Execution Duration**: {failure.get('execution_time', 'Unknown')} before failure
 - **Failed At**: {failure.get('failed_at', 'Unknown')}
+"""
 
+    # BR-HAPI-192: Include WE-generated natural language summary if available
+    if natural_language_summary:
+        prompt += f"""
+**Workflow Engine Summary** (LLM-friendly context from WE):
+> {natural_language_summary}
+"""
+
+    prompt += f"""
 **Failure Reason Interpretation** (`{failure_reason}`):
 {_get_failure_reason_guidance(failure_reason)}
 

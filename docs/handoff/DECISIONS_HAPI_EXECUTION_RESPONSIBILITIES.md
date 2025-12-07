@@ -178,10 +178,12 @@ When adding Ansible or other runtimes:
 
 | Item | Owner | Status |
 |------|-------|--------|
-| WE continues generating `naturalLanguageSummary` | WE Team | ✅ No change |
+| WE generates `naturalLanguageSummary` | WE Team | ✅ **Implemented** (Dec 7, 2025) |
+| WE reports `wasExecutionFailure` flag | WE Team | ✅ **Implemented** (Dec 7, 2025) |
+| WE passes parameters as-is (no transformation) | WE Team | ✅ **Implemented** (Dec 7, 2025) |
 | RO passes `naturalLanguageSummary` to recovery AIAnalysis | RO Team | ✅ **Confirmed** (Dec 2, 2025) |
 | RO owns retry/recovery decisions | RO Team | ✅ Confirmed |
-| HAPI consumes `naturalLanguageSummary` in recovery prompts | HAPI Team | ⏳ Implementation |
+| HAPI consumes `naturalLanguageSummary` in recovery prompts | HAPI Team | ✅ **Implemented** (Dec 7, 2025) |
 | Workflow schemas define parameter format | Data Storage Team | ✅ No change |
 
 ---
@@ -209,12 +211,104 @@ aiAnalysis.Spec.PreviousExecutions = []PreviousExecution{
 
 ---
 
+## WE Team Confirmation (December 7, 2025)
+
+**Confirmed**: All three decisions are fully implemented in WorkflowExecution controller.
+
+### Decision 1: naturalLanguageSummary Generation
+
+```go
+// internal/controller/workflowexecution/workflowexecution_controller.go:1078
+wfe.Status.FailureDetails.NaturalLanguageSummary = r.GenerateNaturalLanguageSummary(wfe, wfe.Status.FailureDetails)
+
+// GenerateNaturalLanguageSummary creates human/LLM-readable failure description
+// Format: "Workflow '[workflowID]' targeting '[targetResource]' failed: [reason] - [message]"
+```
+
+### Decision 2: wasExecutionFailure Flag
+
+```go
+// internal/controller/workflowexecution/workflowexecution_controller.go:1250
+details.WasExecutionFailure = r.determineWasExecutionFailure(pr, details.Reason)
+
+// Logic:
+// - true: Failure during execution (TaskFailed, OOMKilled, Timeout)
+// - false: Pre-execution failure (PipelineNotFound, ConfigurationError)
+```
+
+### Decision 3: Parameter Pass-through
+
+```go
+// internal/controller/workflowexecution/workflowexecution_controller.go:893
+func (r *WorkflowExecutionReconciler) ConvertParameters(params map[string]string) []tektonv1.Param {
+    // Direct conversion - NO casing transformation
+    // Parameters passed as-is from AIAnalysis → WE → PipelineRun
+}
+```
+
+**Test Coverage**: All implementations verified by unit tests in `test/unit/workflowexecution/controller_test.go`.
+
+---
+
+## HAPI Team Implementation Confirmation (December 7, 2025)
+
+**Confirmed**: BR-HAPI-192 (Recovery Context Consumption) is fully implemented.
+
+### Implementation Details
+
+**Model Change** (`src/models/recovery_models.py`):
+```python
+class PreviousExecution(BaseModel):
+    # ... existing fields ...
+    # BR-HAPI-192: WE-generated natural language summary for LLM context
+    natural_language_summary: Optional[str] = Field(
+        None,
+        description="WE-generated LLM-friendly failure description. "
+                    "Includes workflow name, failure step, exit code, and human-readable context. "
+                    "Used by LLM to understand what went wrong and avoid similar approaches."
+    )
+```
+
+**Prompt Enhancement** (`src/extensions/recovery.py`):
+```python
+# BR-HAPI-192: Include WE-generated natural language summary if available
+if natural_language_summary:
+    prompt += f"""
+**Workflow Engine Summary** (LLM-friendly context from WE):
+> {natural_language_summary}
+"""
+```
+
+**Test Coverage**: 7 new unit tests in `tests/unit/test_br_hapi_192_natural_language_summary.py`:
+- `test_previous_execution_accepts_natural_language_summary`
+- `test_natural_language_summary_is_optional`
+- `test_natural_language_summary_serialization`
+- `test_recovery_request_with_full_context`
+- `test_recovery_prompt_includes_natural_language_summary`
+- `test_recovery_prompt_without_natural_language_summary`
+- `test_warning_when_recovery_without_summary`
+
+---
+
+## ✅ V1.0 Implementation Complete
+
+All action items from this document are now complete:
+
+| Decision | WE | RO | HAPI |
+|----------|----|----|------|
+| naturalLanguageSummary | ✅ Generates | ✅ Passes | ✅ Consumes |
+| wasExecutionFailure | ✅ Reports | ✅ Uses for decisions | N/A |
+| Parameter format | ✅ Pass-through | ✅ Pass-through | ✅ Pass-through |
+
+---
+
 ## Questions?
 
 Please respond in this document or reach out to the HolmesGPT-API team.
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: December 1, 2025
+**Document Version**: 1.2
+**Last Updated**: December 7, 2025
+**Changes**: Added HAPI Team implementation confirmation for BR-HAPI-192
 

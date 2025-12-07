@@ -47,7 +47,7 @@ spec:
             type: string
         steps:
           - name: echo-info
-            image: alpine:3.19
+            image: registry.access.redhat.com/ubi9/ubi-minimal:latest
             script: |
               #!/bin/sh
               set -e

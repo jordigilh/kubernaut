@@ -64,8 +64,7 @@ import (
 // 2. Processing pipeline:
 //   - Deduplication: Check if signal was seen before (Redis lookup)
 //   - Storm detection: Identify alert storms (rate-based, pattern-based)
-//   - Classification: Determine environment (prod/staging/dev)
-//   - Priority assignment: Calculate priority (P0/P1/P2)
+//   - Note: Classification and priority removed (2025-12-06) - now owned by Signal Processing
 //
 // 3. CRD creation:
 //   - Build RemediationRequest CRD from normalized signal
@@ -99,10 +98,10 @@ type Server struct {
 	crdUpdater      *processing.CRDUpdater // DD-GATEWAY-009: CRD updater for state-based deduplication
 	stormDetector   *processing.StormDetector
 	stormAggregator *processing.StormAggregator
-	// Note: classifier and priorityEngine removed (2025-12-06)
-	// Environment/Priority classification now owned by Signal Processing per DD-CATEGORIZATION-001
-	pathDecider *processing.RemediationPathDecider
-	crdCreator  *processing.CRDCreator
+	// Note: classifier, priorityEngine, and pathDecider removed (2025-12-06)
+	// Environment/Priority classification and remediation path now owned by Signal Processing
+	// per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
+	crdCreator *processing.CRDCreator
 
 	// Infrastructure clients
 	redisClient *rediscache.Client // DD-CACHE-001: Shared Redis Library
@@ -140,7 +139,7 @@ type Server struct {
 // This initializes:
 // - Redis client with connection pooling
 // - Kubernetes client (controller-runtime)
-// - Processing pipeline components (deduplication, storm, classification, priority, CRD)
+// - Processing pipeline components (deduplication, storm, CRD creation)
 // - Middleware (authentication, rate limiting)
 // - HTTP routes (adapters, health, metrics)
 //
@@ -220,7 +219,7 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	_ = remediationv1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
 
-	// controller-runtime client (for environment classification and CRD creation)
+	// controller-runtime client (for CRD creation)
 	ctrlClient, err := client.New(kubeConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
@@ -291,11 +290,11 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 			"aggregation_window", cfg.Processing.Storm.AggregationWindow)
 	}
 
-	// Note: Environment classifier and Priority engine removed (2025-12-06)
+	// Note: Environment classifier, Priority engine, and RemediationPathDecider removed (2025-12-06)
 	// Environment/Priority classification now owned by Signal Processing per DD-CATEGORIZATION-001
+	// Remediation path (risk_tolerance) derived by SP via Rego per DD-WORKFLOW-001
 	// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 
-	pathDecider := processing.NewRemediationPathDecider(logger)
 	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
 
 	// 4. Initialize middleware
@@ -310,9 +309,8 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		crdUpdater:      crdUpdater, // DD-GATEWAY-009: CRD updater for state-based deduplication
 		stormDetector:   stormDetector,
 		stormAggregator: stormAggregator,
-		// Note: classifier and priorityEngine removed - SP owns classification
-		pathDecider: pathDecider,
-		crdCreator:  crdCreator,
+		// Note: classifier, priorityEngine, pathDecider removed - SP owns classification and path
+		crdCreator: crdCreator,
 		redisClient:     redisClient,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
@@ -810,18 +808,17 @@ func (s *Server) Stop(ctx context.Context) error {
 // 1. Deduplication check (Redis lookup)
 // 2. If duplicate: Update Redis metadata, return HTTP 202
 // 3. Storm detection (rate-based + pattern-based)
-// 4. Environment classification (namespace labels + ConfigMap)
-// 5. Priority assignment (Rego policy or fallback table)
-// 6. CRD creation (Kubernetes API)
-// 7. Store deduplication metadata (Redis)
-// 8. Return HTTP 201 with CRD details
+// 4. CRD creation (Kubernetes API)
+// 5. Store deduplication metadata (Redis)
+// 6. Return HTTP 201 with CRD details
+//
+// Note: Environment classification and Priority assignment removed (2025-12-06)
+// These are now owned by Signal Processing service per DD-CATEGORIZATION-001
 //
 // Performance:
-// - Typical latency (new signal): p95 ~80ms, p99 ~120ms
+// - Typical latency (new signal): p95 ~50ms, p99 ~80ms
 //   - Deduplication check: ~3ms
 //   - Storm detection: ~3ms
-//   - Environment classification: ~15ms (namespace label lookup)
-//   - Priority assignment: ~1ms
 //   - CRD creation: ~30ms (Kubernetes API)
 //   - Redis store: ~3ms
 //
@@ -843,8 +840,8 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	start := time.Now()
 	logger := middleware.GetLogger(ctx)
 
-	// Record ingestion metric
-	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity, "unknown").Inc()
+	// Record ingestion metric (environment label removed - SP owns classification)
+	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity).Inc()
 
 	// 1. Deduplication check
 	isDuplicate, metadata, err := s.deduplicator.Check(ctx, signal)
@@ -1006,8 +1003,8 @@ type ProcessingResponse struct {
 	Duplicate                   bool                              `json:"duplicate"`
 	RemediationRequestName      string                            `json:"remediationRequestName,omitempty"`
 	RemediationRequestNamespace string                            `json:"remediationRequestNamespace,omitempty"`
-	RemediationPath             string                            `json:"remediationPath,omitempty"`
-	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"` // Deduplication info only
+	// Note: RemediationPath removed (2025-12-06) - SP derives risk_tolerance via Rego per DD-WORKFLOW-001
+	Metadata *processing.DeduplicationMetadata `json:"metadata,omitempty"` // Deduplication info only
 	// Storm aggregation fields (BR-GATEWAY-016)
 	IsStorm   bool   `json:"isStorm,omitempty"`   // true if alert is part of a storm
 	StormType string `json:"stormType,omitempty"` // "rate" or "pattern"
@@ -1060,9 +1057,10 @@ func NewStormAggregationResponse(fingerprint, windowID, stormType string, resour
 // TDD REFACTOR: Extracted factory function for CRD creation response pattern
 // Business Outcome: Consistent CRD creation handling (BR-004)
 //
-// Note: Environment and Priority parameters removed (2025-12-06)
-// Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001
-func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, remediationPath string) *ProcessingResponse {
+// Note: Environment, Priority, and RemediationPath parameters removed (2025-12-06)
+// Classification and path decision now owned by Signal Processing service
+// per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
+func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace string) *ProcessingResponse {
 	return &ProcessingResponse{
 		Status:                      StatusCreated,
 		Message:                     "RemediationRequest CRD created successfully",
@@ -1070,7 +1068,6 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, remediationPath s
 		Duplicate:                   false,
 		RemediationRequestName:      crdName,
 		RemediationRequestNamespace: crdNamespace,
-		RemediationPath:             remediationPath,
 	}
 }
 
@@ -1100,8 +1097,8 @@ func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.Norma
 			"name", name)
 	}
 
-	// Fast path: duplicate signal, no CRD creation needed
-	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
+	// Fast path: duplicate signal, no CRD creation needed (environment label removed - SP owns classification)
+	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
 
 	logger.V(1).Info("Duplicate signal detected",
 		"fingerprint", signal.Fingerprint,
@@ -1261,23 +1258,14 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 // TDD REFACTOR: Extracted from ProcessSignal for clarity
 // Business Outcome: Consistent CRD creation (BR-004)
 //
-// Note: Environment and Priority classification removed from Gateway (2025-12-06)
-// Signal Processing service now owns classification per DD-CATEGORIZATION-001.
+// Note: Environment, Priority, and RemediationPath removed from Gateway (2025-12-06)
+// Signal Processing service now owns classification and path decision
+// per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
 // See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.NormalizedSignal, start time.Time) (*ProcessingResponse, error) {
 	logger := middleware.GetLogger(ctx)
 
-	// Remediation path decision (simplified - no longer depends on environment/priority)
-	signalCtx := &processing.SignalContext{
-		Signal: signal,
-	}
-	remediationPath := s.pathDecider.DeterminePath(ctx, signalCtx)
-
-	logger.V(1).Info("Remediation path decided",
-		"fingerprint", signal.Fingerprint,
-		"remediationPath", remediationPath)
-
-	// Create RemediationRequest CRD (environment/priority classification moved to SP)
+	// Create RemediationRequest CRD (classification and path moved to SP)
 	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal)
 	if err != nil {
 		logger.Error(err, "Failed to create RemediationRequest CRD",
@@ -1303,10 +1291,9 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 	logger.Info("Signal processed successfully",
 		"fingerprint", signal.Fingerprint,
 		"crdName", rr.Name,
-		"remediationPath", remediationPath,
 		"duration_ms", duration.Milliseconds())
 
-	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace, remediationPath), nil
+	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace), nil
 }
 
 // createAggregatedCRDAfterWindow creates a single aggregated RemediationRequest CRD

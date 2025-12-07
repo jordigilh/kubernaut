@@ -24,6 +24,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
+// ========================================
+// INPUT SANITIZATION UNIT TESTS
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("BR-STORAGE-011: Input Sanitization", func() {
 	var validator *validation.Validator
 
@@ -33,6 +37,8 @@ var _ = Describe("BR-STORAGE-011: Input Sanitization", func() {
 	})
 
 	// ⭐ TABLE-DRIVEN: Sanitization test cases
+	// BEHAVIOR: Sanitizer removes XSS attack vectors from input
+	// CORRECTNESS: Script tags, iframes, onerror handlers are removed
 	DescribeTable("should sanitize malicious input",
 		func(input string, shouldContainMalicious bool, description string) {
 			result := validator.SanitizeString(input)

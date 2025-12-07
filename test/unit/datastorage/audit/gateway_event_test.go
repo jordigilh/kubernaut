@@ -28,10 +28,13 @@ import (
 // - BR-STORAGE-033-005: Support for Prometheus and K8s Event signals
 // - BR-STORAGE-033-006: Deduplication and storm metadata tracking
 //
+// Testing Principle: Behavior + Correctness
 // ========================================
 
 var _ = Describe("GatewayEventBuilder", func() {
 	Context("BR-STORAGE-033-004: Gateway-specific event data structure", func() {
+		// BEHAVIOR: Builder creates gateway event with correct service identifier
+		// CORRECTNESS: Service is "gateway", version is "1.0"
 		It("should create gateway event with base structure", func() {
 			// TDD RED: This test will FAIL until we implement GatewayEventBuilder
 			builder := audit.NewGatewayEvent("signal.received")

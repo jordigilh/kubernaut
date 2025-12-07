@@ -1,10 +1,16 @@
 # Gateway Service - API Specification
 
-**Version**: v2.25
-**Last Updated**: November 7, 2025
+**Version**: v2.26
+**Last Updated**: December 6, 2025
 **Service Type**: Stateless HTTP API Service
 **HTTP Port**: 8080
 **Metrics Port**: 9090
+
+> **📋 Changelog**
+> | Version | Date | Changes |
+> |---------|------|---------|
+> | v2.26 | 2025-12-06 | Removed `environment` and `priority` from HTTP response; Classification owned by SP |
+> | v2.25 | 2025-11-07 | K8s API retry logic and error responses |
 
 ---
 

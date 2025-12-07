@@ -268,3 +268,4 @@ class TestAlternativeWorkflowsPurpose:
         assert alt["workflow_id"] == "restart-pod-v1"
         assert "doesn't prevent recurrence" in alt["rationale"]  # Explains why not selected
 
+

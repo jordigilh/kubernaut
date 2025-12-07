@@ -1,9 +1,9 @@
 # Notification Service - Testing Strategy
 
-**Version**: 3.0
-**Last Updated**: November 23, 2025
+**Version**: v1.4.0
+**Last Updated**: December 7, 2025
 **Service Type**: CRD Controller with ADR-034 Audit Integration + File-Based E2E Validation
-**Status**: ✅ PRODUCTION-READY (133 tests, 100% passing)
+**Status**: ✅ PRODUCTION-READY (35 test files, 100% passing)
 
 ---
 
@@ -47,14 +47,14 @@ mailhogContainer := testcontainers.GenericContainer{
 
 Comprehensive testing strategy for the Notification Service following APDC-Enhanced TDD methodology and defense-in-depth testing pyramid.
 
-### **Current Test Status** (v3.0)
+### **Current Test Status** (v1.4.0)
 
-| Test Type | Count | Status | Coverage |
+| Test Type | Files | Status | Coverage |
 |-----------|-------|--------|----------|
-| **Unit Tests** | 117 | ✅ 100% passing | 70%+ code coverage |
-| **Integration Tests** | 9 | ✅ 100% passing | Audit (4) + TLS (5) |
-| **E2E Tests** | 7 | ✅ 100% passing | Audit (2) + File Delivery (5) |
-| **TOTAL** | **133** | **✅ 100% passing** | **Complete BR coverage** |
+| **Unit Tests** | 12 | ✅ 100% passing | 70%+ code coverage |
+| **Integration Tests** | 18 | ✅ 100% passing | Audit (4) + TLS (5) + Performance (9) |
+| **E2E Tests** | 4 | ✅ 100% passing | Audit (2) + File Delivery (1) + Metrics (1) |
+| **TOTAL** | **35 files** | **✅ 100% passing** | **Complete BR coverage** |
 
 **Key Achievements**:
 - ✅ BR-NOT-062: Unified Audit Table (4 integration + 2 E2E tests)
@@ -1420,6 +1420,6 @@ Describe("Integration: SMTP Delivery", func() {
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 6, 2025
+**Last Updated**: December 7, 2025
 **Status**: ✅ Complete Specification
 

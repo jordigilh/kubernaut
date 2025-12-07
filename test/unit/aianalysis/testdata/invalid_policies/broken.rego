@@ -6,3 +6,4 @@ rule_with_error {
     input.foo == "bar"
 # Missing closing brace
 
+

@@ -12,6 +12,13 @@ import (
 
 // Test entry point moved to notification_audit_validator_test.go to avoid "Rerunning Suite" error
 
+// ========================================
+// VALIDATION ERROR UNIT TESTS
+// 📋 Business Requirements:
+//    - BR-STORAGE-024: RFC 7807 Error Responses
+//    - BR-STORAGE-006: Input Validation for Audit Writes
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("ValidationError", func() {
 	var validationErr *validation.ValidationError
 

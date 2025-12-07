@@ -100,9 +100,8 @@ type Metrics struct {
 	RedisPoolMissesTotal       prometheus.Counter
 	RedisPoolTimeoutsTotal     prometheus.Counter
 
-	// Rate Limiting Metrics
-	RateLimitExceededTotal          *prometheus.CounterVec
-	RateLimitingDroppedSignalsTotal *prometheus.CounterVec // Alias for consistency
+	// Rate Limiting: REMOVED (ADR-048) - delegated to Ingress/Route proxy
+	// Metrics now exposed by proxy, not Gateway
 
 	// Additional Handler Metrics
 	SignalsReceived             *prometheus.CounterVec
@@ -153,32 +152,26 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		gatherer = prometheus.DefaultGatherer
 	}
 
-	// Create rate limit metric first (used as alias)
-	rateLimitExceeded := factory.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "gateway_rate_limit_exceeded_total",
-			Help: "Total rate limit violations by source IP",
-		},
-		[]string{"source_ip"},
-	)
+	// Rate limiting metrics REMOVED (ADR-048) - proxy handles rate limiting
 
 	return &Metrics{
 		// Store registry for /metrics endpoint
 		registry: gatherer,
 		// Signal Ingestion Metrics (BR-GATEWAY-001: Multi-source signal processing)
+		// Note: "environment" label removed (2025-12-06) - classification now owned by Signal Processing
 		AlertsReceivedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "gateway_signals_received_total",
-				Help: "Total signals received by source, severity, and environment (Prometheus alerts, K8s events, etc.)",
+				Help: "Total signals received by source type and severity (Prometheus alerts, K8s events, etc.)",
 			},
-			[]string{"source", "severity", "environment"},
+			[]string{"source_type", "severity"},
 		),
 		AlertsDeduplicatedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "gateway_signals_deduplicated_total",
 				Help: "Total signals deduplicated (duplicate fingerprint detected)",
 			},
-			[]string{"signal_name", "environment"},
+			[]string{"signal_name"},
 		),
 		AlertStormsDetectedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
@@ -198,12 +191,14 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		),
 
 		// CRD Creation Metrics
+		// Note: Labels changed from (environment, priority) to (source_type, status) (2025-12-06)
+		// Environment/priority classification now owned by Signal Processing per DD-CATEGORIZATION-001
 		CRDsCreatedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "gateway_crds_created_total",
-				Help: "Total RemediationRequest CRDs created by environment and priority",
+				Help: "Total RemediationRequest CRDs created by source type and creation status",
 			},
-			[]string{"environment", "priority"},
+			[]string{"source_type", "status"},
 		),
 		CRDCreationErrors: factory.NewCounterVec(
 			prometheus.CounterOpts{
@@ -405,9 +400,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 		),
 
-		// Rate Limiting Metrics
-		RateLimitExceededTotal:          rateLimitExceeded,
-		RateLimitingDroppedSignalsTotal: rateLimitExceeded, // Alias for consistency
+		// Rate Limiting: REMOVED (ADR-048) - delegated to proxy
 
 		// Additional Handler Metrics
 		SignalsReceived: factory.NewCounterVec(
@@ -464,12 +457,13 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"namespace"},
 		),
+		// Note: "environment" label changed to "source_type" (2025-12-06) - classification now owned by SP
 		SignalsProcessed: factory.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "gateway_signals_processed_total",
-				Help: "Total signals successfully processed",
+				Help: "Total signals successfully processed by source type",
 			},
-			[]string{"environment"},
+			[]string{"source_type"},
 		),
 		StormProtectionActive: factory.NewGauge(
 			prometheus.GaugeOpts{

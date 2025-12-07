@@ -148,3 +148,4 @@ func (m *MockRegoEvaluator) AssertInputEnvironment(expectedEnv string) error {
 	}
 	return nil
 }
+

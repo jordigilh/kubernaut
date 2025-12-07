@@ -10,18 +10,18 @@
 
 Integration tests were written for an old `NewServer` API that took 12+ individual component parameters.
 
-**Note (2025-12-06)**: `EnvironmentClassifier` and `PriorityEngine` components have been removed from Gateway.
-Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001.
+**Note (2025-12-06)**: `EnvironmentClassifier`, `PriorityEngine`, and `RemediationPathDecider` components have been removed from Gateway.
+Classification and path decision now owned by Signal Processing service per DD-CATEGORIZATION-001 and DD-WORKFLOW-001.
 See: `docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md`
 
 ```go
 // OLD API (what integration tests expect) - OUTDATED
-// classifier and priorityEngine no longer exist (removed 2025-12-06)
+// classifier, priorityEngine, and pathDecider no longer exist (removed 2025-12-06)
 func NewServer(
     adapterRegistry *adapters.AdapterRegistry,
-    // classifier *processing.EnvironmentClassifier,  // REMOVED
-    // priorityEngine *processing.PriorityEngine,     // REMOVED
-    pathDecider *processing.RemediationPathDecider,
+    // classifier *processing.EnvironmentClassifier,  // REMOVED (2025-12-06)
+    // priorityEngine *processing.PriorityEngine,     // REMOVED (2025-12-06)
+    // pathDecider *processing.RemediationPathDecider, // REMOVED (2025-12-06) - SP owns via risk_tolerance
     crdCreator *processing.CRDCreator,
     dedupService *processing.DeduplicationService,
     stormDetector *processing.StormDetector,

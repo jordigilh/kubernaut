@@ -25,6 +25,13 @@ func TestDLQClient(t *testing.T) {
 	RunSpecs(t, "DLQ Client Unit Test Suite")
 }
 
+// ========================================
+// DEAD LETTER QUEUE CLIENT UNIT TESTS (DD-009)
+// 📋 Business Requirements:
+//    - BR-STORAGE-017: DLQ Fallback on Database Unavailability
+//    - BR-AUDIT-001: Complete Audit Trail (no data loss)
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 	var (
 		miniRedis   *miniredis.Miniredis
@@ -66,6 +73,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 	// ============================================================================
 	// TEST 1: EnqueueAuditEvent - Success Path
+	// BEHAVIOR: Failed audit events are enqueued to Redis Stream DLQ
+	// CORRECTNESS: Message structure preserves event data and original error
 	// ============================================================================
 	Context("EnqueueAuditEvent - Success Path", func() {
 		It("should successfully enqueue audit event to Redis Stream", func() {
@@ -123,6 +132,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 	// ============================================================================
 	// TEST 2: EnqueueAuditEvent - Marshal Error
+	// BEHAVIOR: Valid audit events are serialized and queued successfully
+	// CORRECTNESS: JSON marshaling handles standard audit event structures
 	// ============================================================================
 	Context("EnqueueAuditEvent - Marshal Error", func() {
 		It("should return error when audit event cannot be marshaled", func() {
@@ -159,6 +170,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 	// ============================================================================
 	// TEST 3: EnqueueAuditEvent - Redis Connection Error
+	// BEHAVIOR: DLQ client reports errors when Redis backend is unavailable
+	// CORRECTNESS: Error contains descriptive message for debugging
 	// ============================================================================
 	Context("EnqueueAuditEvent - Redis Connection Error", func() {
 		It("should return error when Redis is unavailable", func() {
@@ -193,6 +206,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 	// ============================================================================
 	// TEST 4: EnqueueNotificationAudit - Success Path (Legacy)
+	// BEHAVIOR: Legacy notification audits are queued for retry processing
+	// CORRECTNESS: Complete notification data is preserved in DLQ message
 	// ============================================================================
 	Context("EnqueueNotificationAudit - Success Path (Legacy)", func() {
 		It("should successfully enqueue notification audit to Redis Stream", func() {
@@ -236,6 +251,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 	// ============================================================================
 	// TEST 5: EnqueueNotificationAudit - Redis Error (Legacy)
+	// BEHAVIOR: Legacy API fails gracefully when Redis is unavailable
+	// CORRECTNESS: Error is propagated with descriptive context
 	// ============================================================================
 	Context("EnqueueNotificationAudit - Redis Error (Legacy)", func() {
 		It("should return error when Redis is unavailable", func() {
@@ -263,6 +280,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 	// ============================================================================
 	// TEST 6: NewClient - Constructor Validation
+	// BEHAVIOR: DLQ client constructor validates required dependencies
+	// CORRECTNESS: Nil Redis client is rejected, valid inputs create usable client
 	// ============================================================================
 	Context("NewClient - Constructor Validation", func() {
 		It("should create DLQ client with valid parameters", func() {
@@ -290,6 +309,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 	// ============================================================================
 	// TEST 7: Client HealthCheck - Redis Connectivity
+	// BEHAVIOR: HealthCheck verifies Redis backend availability
+	// CORRECTNESS: Returns nil when healthy, error when Redis unavailable
 	// ============================================================================
 	Context("Client HealthCheck - Redis Connectivity", func() {
 		It("should return healthy when Redis is available", func() {
@@ -315,6 +336,8 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 	// ============================================================================
 	// ADDITIONAL TEST: Stream Key Isolation
+	// BEHAVIOR: Different event types use separate Redis Streams
+	// CORRECTNESS: audit:dlq:events and audit:dlq:notifications are isolated
 	// ============================================================================
 	Context("Stream Key Isolation", func() {
 		It("should use separate Redis Streams for audit events and notification audits", func() {

@@ -13,7 +13,7 @@
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.2 | 2025-12-06 | Q18/Q19 resolved: threshold ownership (AIAnalysis), retry matrix finalized, `validation_attempts_history` field |
-| 1.1 | 2025-12-06 | Added DD-AIANALYSIS-003 proposal, pending HAPI questions (Q18, Q19), threshold clarification |
+| 1.1 | 2025-12-06 | Added DD-AIANALYSIS-003 proposal, HAPI questions (Q18, Q19) resolved, threshold clarification |
 | 1.0 | 2025-12-06 | Initial notice |
 
 ---
@@ -332,8 +332,8 @@ This data is available for operator context in notifications.
 |-----------|-------|--------|
 | AIAnalysis implementation | AIAnalysis | ✅ **DONE** |
 | Unit tests (11 new) | AIAnalysis | ✅ **DONE** |
-| RO acknowledges notice | RO Team | ⏳ **PENDING** |
-| RO implements handling | RO Team | ⏳ **PENDING** |
+| RO acknowledges notice | RO Team | ✅ **DONE** (2025-12-07) |
+| RO implements handling | RO Team | ⏳ **Day 4** (BR-ORCH-036 v2.0) |
 | Integration testing | Both | ⏳ **PENDING** |
 
 ---
@@ -440,7 +440,7 @@ confidence_thresholds:
 
 | Team | Acknowledged | Date | Notes |
 |------|--------------|------|-------|
-| RemediationOrchestrator | ⏳ | 2025-12-06 | [Response](./RESPONSE_RO_ACKNOWLEDGES_WORKFLOW_RESOLUTION_FAILURE.md) - Q1,Q2,Q5 answered; Q3,Q4 blocked on HAPI Q18/Q19 |
+| RemediationOrchestrator | ✅ | 2025-12-07 | [Response](./RESPONSE_RO_ACKNOWLEDGES_WORKFLOW_RESOLUTION_FAILURE.md) - All questions answered. BR-ORCH-036 v2.0 covers all SubReasons. |
 | Platform | ⏳ | | |
 | Observability | ⏳ | | |
 

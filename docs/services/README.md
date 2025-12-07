@@ -1,200 +1,383 @@
 # Kubernaut Services Documentation
 
-**Version**: 2.3
-**Last Updated**: 2025-12-01
-**Purpose**: Navigation hub for all Kubernaut V1.0 service specifications (8 active services)
+**Purpose**: This directory contains specifications, implementation plans, and documentation for all Kubernaut services.
+
+**Last Updated**: 2025-12-07
 
 ---
 
-## 📋 Quick Navigation
+## 📋 Template Index - Quick Reference
 
-### **🎯 CRD Controllers** (5 services)
-Kubernetes controllers that reconcile Custom Resource Definitions:
+### **Primary Templates** (Start Here)
 
-1. **[Remediation Processor](./crd-controllers/01-signalprocessing/)** - Signal enrichment and context gathering
-2. **[AI Analysis](./crd-controllers/02-aianalysis/)** - AI-powered root cause analysis
-3. **[Workflow Execution](./crd-controllers/03-workflowexecution/)** - Multi-step workflow orchestration
-4. **[Kubernetes Executor](./crd-controllers/04-kubernetesexecutor/)** - Kubernetes action execution with safety
-5. **[Remediation Orchestrator](./crd-controllers/05-remediationorchestrator/)** - Orchestrates entire remediation workflow
-
-### **🌐 HTTP Services** (5 services)
-Stateless HTTP API services:
-
-6. **[Gateway Service](./stateless/gateway-service/)** - ✅ **v1.0 PRODUCTION-READY** - Signal ingestion and triage (221 tests)
-7. **[Data Storage](./stateless/data-storage/)** - ✅ **Phase 1 PRODUCTION-READY** - REST API Gateway for PostgreSQL with unified audit table (~535 tests)
-8. **[HolmesGPT API](./stateless/holmesgpt-api/)** - ✅ **v3.2 PRODUCTION-READY** - AI investigation wrapper (172 tests)
-9. **[Dynamic Toolset](./stateless/dynamic-toolset/)** - ⏸️ **Deferred to V2.0** - HolmesGPT toolset configuration (DD-016: V1.x uses static config)
-10. **[Notification Controller](./crd-controllers/06-notification/)** - ✅ **PRODUCTION-READY** - CRD-based multi-channel delivery (249 tests: 140 unit + 97 integration + 12 E2E)
+| Template | Use When | Location | Version | Lines |
+|----------|----------|----------|---------|-------|
+| **[SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)** | Creating a **NEW service** from scratch | `docs/services/` | v3.0 | 8,187 |
+| **[FEATURE_EXTENSION_PLAN_TEMPLATE.md](FEATURE_EXTENSION_PLAN_TEMPLATE.md)** | Adding features to **EXISTING service** | `docs/services/` | v1.4 | 1,279 |
+| **[CRD_SERVICE_SPECIFICATION_TEMPLATE.md](../development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md)** | Writing specs for **CRD controllers** | `docs/development/templates/` | v1.1 | 2,095 |
 
 ---
 
-## 🏗️ Service Architecture
+## 🎯 Decision Matrix: Which Template to Use?
 
-### **CRD Controllers** (Port 8080 health, Port 9090 metrics)
-- Watch Kubernetes Custom Resources
-- Event-driven reconciliation loops
-- No REST APIs (use Kubernetes API)
-- Metrics exposed on port 9090
-
-**Common Pattern**: `controller-runtime` based reconcilers
-
-### **HTTP Services** (Port 8080 API/health, Port 9090 metrics)
-- Stateless HTTP REST APIs
-- Kubernetes TokenReviewer authentication
-- Correlation IDs for distributed tracing
-- Prometheus metrics on port 9090
-
-**Common Pattern**: `go.uber.org/zap` logging, standardized error handling
-
----
-
-## 📊 Service Status Overview
-
-| # | Service | Type | Status | Tests | BR Coverage |
-|---|---------|------|--------|-------|-------------|
-| 1 | Signal Processing | CRD | ⏸️ Phase 3 | - | - |
-| 2 | AI Analysis | CRD | ⏸️ Phase 4 | - | - |
-| 3 | Remediation Execution | CRD | ⏸️ Phase 3 | - | - |
-| 4 | Remediation Orchestrator | CRD | ⏸️ Phase 5 | - | - |
-| 5 | Gateway Service | HTTP | ✅ **v1.0 PRODUCTION-READY** | 240 (120U+114I+6E2E) | 20 BRs (100%) |
-| 6 | Data Storage | HTTP | ✅ **Phase 1 PRODUCTION-READY** | ~535 (475U+60I) | 34 BRs (100%) |
-| 7 | HolmesGPT API | HTTP | ✅ **v3.2 PRODUCTION-READY** | 172 (151U+21I) | 47 BRs (100%) |
-| 8 | Notification Controller | CRD | ✅ **PRODUCTION-READY** | 249 (140U+97I+12E2E) | 12 BRs (100%) |
-| 9 | ~~Dynamic Toolset~~ | HTTP | ❌ **Deferred to V2.0** | - | 8 BRs (DD-016: static config in V1.x) |
-| 10 | ~~Effectiveness Monitor~~ | HTTP | ❌ **Deferred to V1.1** | - | 10 BRs (DD-017: requires 8+ weeks of data) |
-| 11 | ~~Context API~~ | HTTP | ❌ **DEPRECATED** | - | Replaced by Data Storage (DD-CONTEXT-006) |
-
-**Overall**: ✅ **4/8 services** (50%) production-ready | **~1,196 tests** passing (100% pass rate)
-
----
-
-## 🎯 Getting Started
-
-### **For New Developers**
-1. Start with [CRD Controllers README](./crd-controllers/README.md) (if applicable)
-2. Or start with [Stateless Services README](./stateless/README.md) (if applicable)
-3. Read individual service README.md for quick overview
-4. Deep dive into specific documents as needed
-
-**Total Time**: 15-30 minutes to understand any service
-
-### **For Implementation**
-1. Review service `overview.md` for architecture
-2. Read `api-specification.md` for endpoints/schemas
-3. Follow `implementation-checklist.md` for APDC-TDD approach
-4. Check `testing-strategy.md` for test patterns
-
-### **For Integration**
-1. Read `integration-points.md` for dependencies
-2. Review `api-specification.md` for endpoints
-3. Check `security-configuration.md` for auth requirements
-
----
-
-## 📁 Documentation Structure
-
-### **CRD Controllers** (Directory per service)
 ```
-crd-controllers/
-├── 01-signalprocessing/
-│   ├── README.md
-│   ├── overview.md
-│   ├── crd-schema.md
-│   ├── controller-implementation.md
-│   └── [10+ more focused documents]
-└── [4 more services...]
-```
-
-### **HTTP Services** (Directory per service)
-```
-stateless/
-├── gateway-service/
-│   ├── README.md
-│   ├── overview.md
-│   ├── api-specification.md
-│   └── [5+ more focused documents]
-└── [5 more services...]
+┌─────────────────────────────────────────────────────────────────┐
+│ Are you creating a NEW service or extending an EXISTING one?   │
+└─────────────────────────────────────────────────────────────────┘
+                         │
+         ┌───────────────┴───────────────┐
+         │                               │
+    Creating NEW                  Extending EXISTING
+         │                               │
+         ▼                               ▼
+┌─────────────────────┐       ┌─────────────────────┐
+│ What type of        │       │ FEATURE_EXTENSION_  │
+│ service?            │       │ PLAN_TEMPLATE.md    │
+└─────────────────────┘       └─────────────────────┘
+         │
+    ┌────┴────┐
+    │         │
+Stateless  CRD Controller
+    │         │
+    ▼         ▼
+┌──────────┐ ┌──────────────────────┐
+│ SERVICE_ │ │ 1. CRD_SERVICE_     │
+│ IMPLEM-  │ │    SPECIFICATION_   │
+│ ENTATION_│ │    TEMPLATE.md      │
+│ PLAN_    │ │ 2. SERVICE_         │
+│ TEMPLATE │ │    IMPLEMENTATION_  │
+│ .md      │ │    PLAN_TEMPLATE.md │
+└──────────┘ └──────────────────────┘
 ```
 
 ---
 
-## 🔗 Cross-Cutting Documentation
+## 📚 Template Descriptions
 
-### **Architecture**
-- [CRD Schemas](../architecture/CRD_SCHEMAS.md) - Authoritative CRD definitions
-- [Service Dependency Map](../architecture/SERVICE_DEPENDENCY_MAP.md) - Visual service interactions
-- [Kubernetes TokenReviewer Auth](../architecture/KUBERNETES_TOKENREVIEWER_AUTH.md) - Authentication standard
-- [Notification Payload Schema](../architecture/specifications/notification-payload-schema.md) - Escalation format
-- [Logging Standard](../architecture/LOGGING_STANDARD.md) - Zap split strategy
+### 1. SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md (v3.0)
 
-### **Standards**
-- [Prometheus ServiceMonitor Pattern](../architecture/PROMETHEUS_SERVICEMONITOR_PATTERN.md)
-- [Prometheus AlertRules](../architecture/PROMETHEUS_ALERTRULES.md) - 58 production alerts
-- [Log Correlation ID Standard](../architecture/LOG_CORRELATION_ID_STANDARD.md)
-- [CRD Field Naming Convention](../architecture/CRD_FIELD_NAMING_CONVENTION.md)
+**Purpose**: Comprehensive 11-12 day implementation plan for new services (stateless or CRD controller).
 
----
+**Key Features**:
+- ✅ Cross-team validation patterns (HANDOFF/RESPONSE)
+- ✅ Pre-implementation validation gate
+- ✅ CRD API group standard (DD-CRD-001)
+- ✅ Day-by-day implementation phases (Day 1-12)
+- ✅ Business Requirements (BR) documentation
+- ✅ Design Decisions (DD) templates
+- ✅ Testing strategy (Unit → Integration → E2E)
+- ✅ Port allocation standards (DD-TEST-001)
+- ✅ Logging framework (DD-005 unified `logr.Logger`)
+- ✅ Industry best practices tables
 
-## 🎯 Implementation Priorities
+**Use For**:
+- New stateless services (Gateway, Data Storage, HolmesGPT API)
+- New CRD controllers (SignalProcessing, AIAnalysis, WorkflowExecution)
+- Services requiring 11-12+ days of implementation
 
-### **Phase 1: Foundation** (Weeks 1-2)
-- Deploy PostgreSQL + Vector DB
-- Deploy Redis
-- Deploy Data Storage Service
+**File Naming Convention**: `IMPLEMENTATION_PLAN_V<semantic_version>.md`
 
-### **Phase 2: Core Services** (Weeks 3-4)
-- Deploy Gateway Service
-- Deploy Remediation Orchestrator + Processor
-- Deploy HolmesGPT API
-
-### **Phase 3: Workflow & Execution** (Weeks 5-6)
-- Deploy AI Analysis + Workflow Execution
-- Deploy Kubernetes Executor
-- Deploy Notification Service
-
-### **Phase 4: Observability** (Week 7)
-- ServiceMonitors + AlertRules
-- Grafana dashboards
-- Correlation ID validation
-
-**Total**: 7-8 weeks to full production deployment
+**Example Usage**:
+```bash
+# Copy template for new service
+cp docs/services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md \
+   docs/services/stateless/my-new-service/IMPLEMENTATION_PLAN_V1.0.md
+```
 
 ---
 
-## 📊 Documentation Metrics
+### 2. FEATURE_EXTENSION_PLAN_TEMPLATE.md (v1.4)
 
-| Category | Count | Status |
-|----------|-------|--------|
-| **Services Active (V1.0)** | 8/8 | ✅ 100% (1 deprecated, 1 deferred to V2.0, 1 deferred to V1.1) |
-| **Production-Ready** | 4/8 | ✅ 50% |
-| **CRD Controllers** | 4 (1 ready, 3 in progress) | 🔄 In Progress (Phases 3 & 4 simultaneous) |
-| **HTTP Services** | 4 (3 ready, 1 deferred) | ✅ 75% Complete |
-| **Total Tests** | ~1,196 | ✅ 100% Pass Rate |
-| **Total Test Coverage** | Unit 70%+ / Integration >50% / E2E <10% | ✅ Meeting Standards |
+**Purpose**: Implementation plan for adding features to existing services (3-12 days).
 
----
+**Key Features**:
+- ✅ APDC methodology integration (Analysis-Plan-Do-Check)
+- ✅ Feature-scoped implementation (not full service)
+- ✅ TDD discipline and test pyramid compliance
+- ✅ Critical pitfalls from past implementations
+- ✅ Phase-by-phase breakdown with validation gates
+- ✅ Design Decision (DD) integration
+- ✅ Business Requirement (BR) mapping
 
-## 🔄 Documentation Versions
+**Use For**:
+- Adding new endpoints to existing HTTP services
+- Extending CRD controller reconciliation logic
+- Feature flags and capability extensions
+- Bug fixes requiring significant refactoring
 
-| Version | Date | Changes |
-|---------|------|---------|
-| **2.3** | 2025-12-01 | **DD-017 Integration + Parallel Development**: Effectiveness Monitor deferred to V1.1 (DD-017, year-end timeline); V1.0 service count 9→8 services; Production-ready 4/9 (44%)→4/8 (50%); Added parallel development strategy (Phases 3 & 4 simultaneous for API contract validation); Updated CRD Controllers status (3 in progress) |
-| **2.2** | 2025-12-01 | **Test Count Corrections**: Gateway 221→240 tests (120U+114I+6E2E per GATEWAY_V1_PRODUCTION_READY.md); Total tests ~1,177→~1,196; Service count corrected to 4/9 (44%) - V1.0 has 9 services (11 original - Context API deprecated - Dynamic Toolset deferred) |
-| **2.1** | 2025-12-01 | **DD-016 Integration**: Dynamic Toolset deferred to V2.0 (static config in V1.x); Updated service count to 4/10 production-ready (40%); Updated test count to ~1,177 (removed Dynamic Toolset's 245 tests); Corrected HTTP Services to 3 ready (60%); Fixed Implementation Priorities (removed Context API reference) |
-| **2.0** | 2025-12-01 | Updated to reflect production-ready services: Gateway v1.0, Data Storage Phase 1, HolmesGPT API v3.2, Notification Controller (249 tests); Context API deprecated per DD-CONTEXT-006; Updated service count to 10 active services |
-| **1.0** | 2025-10-06 | Initial top-level navigation hub created |
+**File Naming Convention**: `[CONTEXT_PREFIX_]IMPLEMENTATION_PLAN[_FEATURE_SUFFIX]_V1.4.md`
 
----
-
-## 📞 Quick Links
-
-- **Templates**: [CRD Service Specification Template](../development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md)
-- **Maintenance**: [MAINTENANCE_GUIDE.md](./crd-controllers/MAINTENANCE_GUIDE.md)
-- **Triage Reports**: [COMPREHENSIVE_SERVICES_TRIAGE_REPORT.md](./COMPREHENSIVE_SERVICES_TRIAGE_REPORT.md)
-- **Completion Summary**: [ALL_SERVICE_SPECIFICATIONS_COMPLETE.md](./ALL_SERVICE_SPECIFICATIONS_COMPLETE.md)
+**Example Usage**:
+```bash
+# Copy template for feature extension
+cp docs/services/FEATURE_EXTENSION_PLAN_TEMPLATE.md \
+   docs/services/stateless/gateway-service/STORM_AGGREGATION_IMPLEMENTATION_V1.0.md
+```
 
 ---
 
-**Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: 2025-12-01
-**Status**: 🔄 Phases 3 & 4 Simultaneous - 4/8 Services Production-Ready (50%) | 1 Deferred to V2.0 (DD-016), 1 Deferred to V1.1 (DD-017)
+### 3. CRD_SERVICE_SPECIFICATION_TEMPLATE.md (v1.1)
+
+**Purpose**: Specification template for CRD-based services (directory structure format).
+
+**Key Features**:
+- ✅ Directory-per-service structure (modern approach)
+- ✅ CRD schema design patterns
+- ✅ Controller reconciliation logic patterns
+- ✅ Finalizer and cleanup patterns
+- ✅ Event recording standards
+- ✅ Business Requirements mapping (`BR_MAPPING.md`)
+- ✅ Service-specific file guidelines
+
+**Use For**:
+- Defining new CRD controllers
+- Documenting CRD schema evolution
+- Planning controller reconciliation logic
+- Cross-referencing with implementation plans
+
+**Directory Structure**:
+```
+docs/services/crd-controllers/
+└── 06-newservice/
+    ├── README.md                    # Service navigation hub
+    ├── SPECIFICATION.md             # Core specification
+    ├── CRD_SCHEMA.md               # Custom Resource Definition
+    ├── CONTROLLER_LOGIC.md         # Reconciliation logic
+    ├── BR_MAPPING.md               # Business Requirements
+    └── implementation/
+        └── IMPLEMENTATION_PLAN_V1.0.md
+```
+
+**Example Usage**:
+```bash
+# Create new CRD service directory
+mkdir -p docs/services/crd-controllers/06-newservice
+cp docs/development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md \
+   docs/services/crd-controllers/06-newservice/SPECIFICATION.md
+```
+
+---
+
+## 🗂️ Service Directory Structure
+
+```
+docs/services/
+├── README.md                                    (THIS FILE)
+├── SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md      (v3.0 - New services)
+├── FEATURE_EXTENSION_PLAN_TEMPLATE.md           (v1.4 - Feature extensions)
+│
+├── stateless/                                   (HTTP-based services)
+│   ├── gateway-service/
+│   │   ├── SPECIFICATION.md
+│   │   ├── BUSINESS_REQUIREMENTS.md
+│   │   └── implementation/
+│   │       └── IMPLEMENTATION_PLAN_V*.md
+│   ├── data-storage/
+│   ├── holmesgpt-api/
+│   └── notification/
+│
+└── crd-controllers/                             (Kubernetes controllers)
+    ├── 01-remediation-processor/
+    ├── 02-aianalysis/
+    ├── 03-workflowexecution/
+    ├── 04-signalprocessing/
+    ├── 05-remediationorchestrator/
+    └── 06-newservice/                           (Example structure)
+        ├── README.md
+        ├── SPECIFICATION.md
+        ├── CRD_SCHEMA.md
+        ├── CONTROLLER_LOGIC.md
+        ├── BR_MAPPING.md
+        └── implementation/
+            └── IMPLEMENTATION_PLAN_V1.0.md
+```
+
+---
+
+## 📖 Additional Templates and Resources
+
+### Supporting Templates
+
+| Template | Purpose | Location |
+|----------|---------|----------|
+| **EOD_TEMPLATES.md** | End-of-Day reporting format | Various service directories |
+| **DEPLOYMENT_YAML_TEMPLATE.md** | Kubernetes deployment manifests | `docs/architecture/` |
+| **PODMAN_INTEGRATION_TEST_TEMPLATE.md** | Podman-based integration tests | `docs/testing/` |
+| **KIND_CLUSTER_TEST_TEMPLATE.md** | KIND cluster test setup | `docs/testing/` |
+| **GO_CODE_SAMPLE_TEMPLATE.md** | Go code examples and patterns | `docs/services/` |
+
+### Key Design Decisions
+
+| DD | Title | Relevance |
+|----|-------|-----------|
+| **DD-005** | Unified Logging Framework (`logr.Logger`) | All services MUST use `logr.Logger` for logging |
+| **DD-CRD-001** | CRD API Group Standard (`.ai` domain) | All CRD controllers use unified API group |
+| **DD-TEST-001** | Port Allocation Standards | Service port assignments |
+| **DD-API-001** | HTTP Header vs JSON Body Pattern | API design consistency |
+| **DD-006** | Controller Scaffolding Strategy | CRD controller patterns |
+
+---
+
+## 🚀 Quick Start Guide
+
+### Creating a New Stateless Service
+
+```bash
+# Step 1: Create service directory
+mkdir -p docs/services/stateless/my-service/implementation
+
+# Step 2: Copy implementation plan template
+cp docs/services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md \
+   docs/services/stateless/my-service/implementation/IMPLEMENTATION_PLAN_V1.0.md
+
+# Step 3: Edit the implementation plan
+# - Replace [Service Name] with your service name
+# - Define Business Requirements (BR-MYSERVICE-XXX)
+# - Document Design Decisions (DD-MYSERVICE-XXX)
+# - Plan Day 1-12 implementation phases
+
+# Step 4: Create SPECIFICATION.md and BUSINESS_REQUIREMENTS.md
+```
+
+### Creating a New CRD Controller
+
+```bash
+# Step 1: Create CRD service directory
+mkdir -p docs/services/crd-controllers/06-mycontroller/implementation
+
+# Step 2: Copy CRD specification template
+cp docs/development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md \
+   docs/services/crd-controllers/06-mycontroller/SPECIFICATION.md
+
+# Step 3: Copy implementation plan template
+cp docs/services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md \
+   docs/services/crd-controllers/06-mycontroller/implementation/IMPLEMENTATION_PLAN_V1.0.md
+
+# Step 4: Edit both templates
+# - Define CRD schema (API version: *.ai/v1alpha1)
+# - Document reconciliation logic
+# - Plan implementation phases (11-12 days)
+```
+
+### Extending an Existing Service
+
+```bash
+# Step 1: Navigate to service directory
+cd docs/services/stateless/gateway-service/implementation
+
+# Step 2: Copy feature extension template
+cp ../../FEATURE_EXTENSION_PLAN_TEMPLATE.md \
+   MY_FEATURE_IMPLEMENTATION_V1.0.md
+
+# Step 3: Edit the feature plan
+# - Reference existing Design Decision (DD-XXX-YYY)
+# - Document new Business Requirements (BR-GATEWAY-XXX)
+# - Plan 3-12 day implementation phases
+```
+
+---
+
+## 📋 Standard File Naming Conventions
+
+| File Type | Naming Convention | Example |
+|-----------|-------------------|---------|
+| **Implementation Plan** | `IMPLEMENTATION_PLAN_V<version>.md` | `IMPLEMENTATION_PLAN_V1.3.md` |
+| **Feature Extension** | `[CONTEXT_]IMPLEMENTATION_PLAN[_FEATURE]_V<version>.md` | `STORM_AGGREGATION_IMPLEMENTATION_V1.0.md` |
+| **Specification** | `SPECIFICATION.md` | `SPECIFICATION.md` |
+| **Business Requirements** | `BUSINESS_REQUIREMENTS.md` | `BUSINESS_REQUIREMENTS.md` |
+| **Design Decision** | `DD-<SERVICE>-<NUMBER>-<title>.md` | `DD-GATEWAY-009-state-based-deduplication.md` |
+
+---
+
+## 🔍 Template Version History
+
+### SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md
+
+| Version | Date | Key Changes |
+|---------|------|-------------|
+| v3.0 | 2025-12-01 | Cross-team validation + CRD API group standard |
+| v2.9 | 2025-11-30 | Code example DD-005 compliance |
+| v2.8 | 2025-11-28 | Unified logging framework (DD-005 v2.0) |
+| v2.7 | 2025-11-28 | Scope annotations + test helpers + OpenAPI pre-phase |
+| v2.6 | 2025-11-28 | Pre-implementation design decisions + API patterns |
+
+### FEATURE_EXTENSION_PLAN_TEMPLATE.md
+
+| Version | Date | Key Changes |
+|---------|------|-------------|
+| v1.4 | 2025-11-28 | APDC methodology integration |
+| v1.3 | 2025-11-20 | TDD discipline and test pyramid |
+
+### CRD_SERVICE_SPECIFICATION_TEMPLATE.md
+
+| Version | Date | Key Changes |
+|---------|------|-------------|
+| v1.1 | 2025-11-30 | Document classification + BR_MAPPING.md |
+| v1.0 | 2025-10-15 | Initial template structure |
+
+---
+
+## 🛠️ Validation and Compliance
+
+### Before Starting Implementation
+
+- [ ] Template version matches filename version
+- [ ] Business Requirements (BR-XXX-XXX) documented
+- [ ] Design Decisions (DD-XXX-XXX) created and referenced
+- [ ] Cross-team dependencies identified (if applicable)
+- [ ] Port allocation validated (DD-TEST-001)
+- [ ] Logging framework compliance (DD-005)
+- [ ] CRD API group compliance (DD-CRD-001, if CRD controller)
+
+### Validation Scripts
+
+```bash
+# Validate ADR/DD references
+./scripts/validate_adr_references.sh
+
+# Check service port allocations
+grep -r "ServicePort" docs/services/ --include="*.md"
+
+# Verify BR documentation
+find docs/services -name "BUSINESS_REQUIREMENTS.md" -type f
+```
+
+---
+
+## 📞 Support and Questions
+
+**Template Issues**: If you find issues with templates, update them and bump the version number.
+
+**Design Decision Conflicts**: Refer to [DD-013-conflict-resolution-matrix.md](../architecture/decisions/DD-013-conflict-resolution-matrix.md)
+
+**BR Template Standards**: Refer to [ADR-037-business-requirement-template-standard.md](../architecture/decisions/ADR-037-business-requirement-template-standard.md)
+
+---
+
+## 🎯 Template Selection Checklist
+
+Use this checklist to select the right template:
+
+```
+□ Are you creating a NEW service?
+  └─ YES → Use SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md
+  └─ NO  → Continue to next question
+
+□ Are you extending an EXISTING service?
+  └─ YES → Use FEATURE_EXTENSION_PLAN_TEMPLATE.md
+  └─ NO  → Continue to next question
+
+□ Are you documenting a CRD controller specification?
+  └─ YES → Use CRD_SERVICE_SPECIFICATION_TEMPLATE.md
+  └─ NO  → Consult with team lead
+
+□ Is your implementation < 3 days?
+  └─ YES → Consider if a formal plan is needed
+  └─ NO  → Use appropriate template above
+```
+
+---
+
+**Last Updated**: 2025-12-07
+**Maintained By**: Kubernaut Development Team
+**Template Versions**: SERVICE v3.0 | FEATURE v1.4 | CRD v1.1

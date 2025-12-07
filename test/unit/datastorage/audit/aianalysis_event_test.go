@@ -30,8 +30,11 @@ import (
 //
 // ========================================
 
+// Testing Principle: Behavior + Correctness
 var _ = Describe("AIAnalysisEventBuilder", func() {
 	Context("BR-STORAGE-033-007: AI Analysis-specific event data structure", func() {
+		// BEHAVIOR: Builder creates properly structured event data with base fields
+		// CORRECTNESS: Version, service, and event_type fields are set correctly
 		It("should create AI analysis event with base structure", func() {
 			builder := audit.NewAIAnalysisEvent("analysis.started")
 			Expect(builder).ToNot(BeNil())

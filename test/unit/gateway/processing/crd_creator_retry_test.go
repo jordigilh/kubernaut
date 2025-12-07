@@ -692,7 +692,8 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-ctx-cancel", "TestAlertCtxCancel")
 
 			// Execute: Create CRD with retry (context will be cancelled)
-			rr, err := creator.CreateRemediationRequest(cancelCtx, signal, "prod", "P0")
+			// Note: environment/priority parameters removed (2025-12-06) - SP owns classification
+			rr, err := creator.CreateRemediationRequest(cancelCtx, signal)
 
 			// Verify: Failure due to context cancellation (no retry)
 			Expect(err).To(HaveOccurred())
@@ -731,7 +732,8 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			signal := newTestSignal("test-fingerprint-ctx-deadline", "TestAlertCtxDeadline")
 
 			// Execute: Create CRD with retry (context will timeout during backoff)
-			rr, err := creator.CreateRemediationRequest(deadlineCtx, signal, "prod", "P0")
+			// Note: environment/priority parameters removed (2025-12-06) - SP owns classification
+			rr, err := creator.CreateRemediationRequest(deadlineCtx, signal)
 
 			// Verify: Failure due to context deadline
 			Expect(err).To(HaveOccurred())

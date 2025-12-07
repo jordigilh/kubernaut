@@ -1,15 +1,81 @@
 # DD-GATEWAY-008: Storm Aggregation First-Alert Handling Strategy
 
 ## Status
-**✅ APPROVED** (2025-11-18) - Alternative 2: Buffered First-Alert Aggregation
-**Last Reviewed**: 2025-11-18
-**Confidence**: 95% (industry-aligned, comprehensive implementation details)
-**Next Action**: Ready for v1.0 implementation
+**⚠️ PARTIALLY SUPERSEDED** (2025-12-07) by DD-GATEWAY-011
+**Original Approval**: 2025-11-18 - Alternative 2: Buffered First-Alert Aggregation
+**Last Reviewed**: 2025-12-07
+**Confidence**: 95%
+**Next Action**: Implement Async Storm Aggregation (see Supersession Notice below)
+
+---
+
+## 🚨 SUPERSESSION NOTICE (2025-12-07)
+
+### What Changed
+
+**Alternative 2 (Sync Buffering in Redis)** is superseded by **Async Storm Aggregation** per DD-GATEWAY-011.
+
+| Aspect | Alternative 2 (Superseded) | Async Storm Aggregation (Current) |
+|--------|---------------------------|-----------------------------------|
+| **Buffering** | Sync in Redis, wait for threshold | Async in RR status, process immediately |
+| **RR Creation** | After window closes | On first alert |
+| **Redis** | Required | **Not required** |
+| **First alert delay** | Up to 5 minutes | **None** |
+| **Single CRD guarantee** | ✅ Yes | ✅ Yes |
+
+### Why the Change
+
+1. **DD-GATEWAY-011** approved status-based persistence, enabling Redis deprecation
+2. **DD-ORCHESTRATOR-001** confirms RCA uses point-in-time snapshots (storm context not blocking)
+3. **Business goal**: Zero external infrastructure dependencies
+
+### New Approach: Async Storm Aggregation
+
+**Core Principle**: Storm detection prevents multiple CRDs, but does NOT block RCA processing.
+
+```
+Alert 1 → Create RR immediately (phase="Pending", isStorm=false, count=1)
+          → RO processes → AIAnalysis created → RCA starts
+
+Alert 2-4 → Dedup: RR exists → Update status.stormAggregation.count++
+            → RO already processing (point-in-time snapshot)
+
+Alert 5 → Threshold! Update RR (isStorm=true, count=5)
+          → RO/AI continue with original snapshot (OK per DD-ORCHESTRATOR-001)
+
+If remediation ineffective:
+          → Retry creates new AIAnalysis with updated snapshot
+          → Storm context now available for coordinated remediation
+```
+
+**Benefits**:
+- ✅ **No Redis** - storm state in RR status
+- ✅ **No delay** - first alert processed immediately
+- ✅ **Single CRD** - deduplication prevents multiple CRDs
+- ✅ **Storm context for retry** - if first remediation ineffective
+
+### What Remains Valid
+
+The following from Alternative 2 **remain valid**:
+- ✅ Sliding window with inactivity timeout (for storm window tracking in status)
+- ✅ Maximum window duration (5 minutes)
+- ✅ Configurable threshold (default=5)
+- ✅ Multi-tenant isolation (per-namespace)
+
+**Removed** (no longer needed):
+- ❌ Redis buffering
+- ❌ Buffer overflow handling (RR status has no size limit for counts)
+- ❌ Blocking first alert until threshold
+
+---
+
+## Original Decision (Historical Reference)
+
 **Decision**: User approved Alternative 2 with v1.0 enhancements:
 - ✅ Sliding window with inactivity timeout (industry best practice)
 - ✅ Maximum window duration (5 minutes)
 - ✅ Configurable threshold (default=5)
-- ✅ Buffer overflow handling (sampling + force close)
+- ~~Buffer overflow handling (sampling + force close)~~ - SUPERSEDED
 - ✅ Multi-tenant isolation (per-namespace buffers)
 
 ## Context & Problem
@@ -603,137 +669,18 @@ gateway_storm_buffer_overflow_total{namespace="dev-test"}
 
 ## Next Steps
 
-1. **User Decision**: Approve Alternative 2 (or select different alternative)
-2. **Implementation**: Create `storm_buffer.go` with buffer management logic
-3. **Testing**: Update integration tests to account for buffering delay
-4. **Documentation**: Update API specification with new 202 Accepted semantics
-5. **Metrics**: Add buffer hit rate, expiration rate, fallback rate metrics
-6. **Deployment**: Gradual rollout with monitoring for buffer failure rate
-
-
-- Validate latency impact is acceptable (<60s P95)
-- Rollback criteria: Failure rate >5% OR latency P95 >60s
-
-**Phase 3: Gradual Rollout (Week 3-4)**
-- 25% → 50% → 75% → 100% traffic
-- Monitor cost savings improvement (target: 80% → 93%)
-- Validate aggregation rate >95%
-- Rollback criteria: Cost savings <85% OR aggregation rate <90%
-
-**Phase 4: Feature Flag Removal (Week 5)**
-- Remove feature flag after 2 weeks of stable 100% rollout
-- Document lessons learned
-- Update runbooks with buffer troubleshooting procedures
+1. ~~**User Decision**: Approve Alternative 2~~ ✅ DONE (2025-11-18), then SUPERSEDED (2025-12-07)
+2. ~~**Implementation**: Create `storm_buffer.go`~~ ❌ SUPERSEDED - Use RR status instead
+3. **Implementation**: Update deduplication to track storm aggregation in `status.stormAggregation`
+4. **Testing**: Update tests for async storm aggregation (no buffering delay)
+5. **Documentation**: Update API specification - 202 means "deduplicated/aggregated"
+6. **Metrics**: Add storm detection metrics (threshold reached, aggregated count)
 
 ---
 
-## Consequences
+## Changelog
 
-### Positive
-
-- ✅ **Full BR-GATEWAY-016 compliance**: 93% cost reduction achieved
-- ✅ **Consistent storm handling**: All alerts aggregated uniformly
-- ✅ **Better AI analysis**: Complete context for root cause analysis
-- ✅ **Simplified downstream logic**: No mixed CRD types for storms
-- ✅ **Complete audit trail**: Single CRD contains full storm context
-
-### Negative
-
-- ⚠️ **Increased latency**: First N alerts delayed by 5-60 seconds
-  - **Mitigation**: Acceptable for storm scenarios (high-volume, low-urgency)
-- ⚠️ **Implementation complexity**: Buffer management in Redis
-  - **Mitigation**: Comprehensive error handling and fallback logic
-- ⚠️ **Memory overhead**: Buffering N signals before threshold
-  - **Mitigation**: TTL-based expiration (60s), max buffer size limit (100 alerts)
-
-### Neutral
-
-- 🔄 **Test updates required**: Integration tests must account for buffering delay
-- 🔄 **Metrics changes**: New metrics for buffer hit rate, expiration rate
-- 🔄 **Documentation updates**: API behavior change (202 Accepted means buffered, not aggregated)
-
----
-
-## Validation Results
-
-### Confidence Assessment Progression
-
-- **Initial assessment**: 60% confidence (problem identified, alternatives outlined)
-- **After user decision**: TBD
-- **After implementation review**: TBD
-
-### Key Validation Points
-
-- ✅ **Problem identified**: Current implementation creates 3 CRDs instead of 1
-- ✅ **Business impact quantified**: 13% cost savings gap
-- ✅ **Alternatives evaluated**: 4 approaches with pros/cons
-- ⏸️ **User decision pending**: Awaiting approval for Alternative 2
-
----
-
-## Related Decisions
-
-- **Builds On**: [BR-GATEWAY-016](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-016-storm-aggregation) - Storm aggregation requirement
-- **Builds On**: [BR-GATEWAY-008](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-008-storm-detection) - Storm detection requirement
-- **Related**: [DD-GATEWAY-004](DD-GATEWAY-004-redis-memory-optimization.md) - Redis memory optimization
-- **Related**: [DD-015](DD-015-timestamp-based-crd-naming.md) - Timestamp-based CRD naming for unique occurrences
-
----
-
-## Review & Evolution
-
-### When to Revisit
-
-- If storm aggregation cost savings < 90% in production
-- If first-alert latency becomes user complaint
-- If buffer failure rate > 5%
-- If V2.0 considers ML-based prediction (Alternative 3)
-
-### Success Metrics
-
-- **Cost reduction**: ≥90% AI analysis cost savings for storms
-- **Aggregation rate**: ≥95% of storm alerts fully aggregated
-- **Buffer hit rate**: ≥90% of buffered alerts reach threshold
-- **Latency P95**: <60 seconds for first-alert CRD creation
-- **Fallback rate**: <5% buffer failures requiring individual CRDs
-
----
-
-## Next Steps
-
-1. **User Decision**: Approve Alternative 2 (or select different alternative)
-2. **Implementation**: Create `storm_buffer.go` with buffer management logic
-3. **Testing**: Update integration tests to account for buffering delay
-4. **Documentation**: Update API specification with new 202 Accepted semantics
-5. **Metrics**: Add buffer hit rate, expiration rate, fallback rate metrics
-6. **Deployment**: Gradual rollout with monitoring for buffer failure rate
-
-
-## Review & Evolution
-
-### When to Revisit
-
-- If storm aggregation cost savings < 90% in production
-- If first-alert latency becomes user complaint
-- If buffer failure rate > 5%
-- If V2.0 considers ML-based prediction (Alternative 3)
-
-### Success Metrics
-
-- **Cost reduction**: ≥90% AI analysis cost savings for storms
-- **Aggregation rate**: ≥95% of storm alerts fully aggregated
-- **Buffer hit rate**: ≥90% of buffered alerts reach threshold
-- **Latency P95**: <60 seconds for first-alert CRD creation
-- **Fallback rate**: <5% buffer failures requiring individual CRDs
-
----
-
-## Next Steps
-
-1. **User Decision**: Approve Alternative 2 (or select different alternative)
-2. **Implementation**: Create `storm_buffer.go` with buffer management logic
-3. **Testing**: Update integration tests to account for buffering delay
-4. **Documentation**: Update API specification with new 202 Accepted semantics
-5. **Metrics**: Add buffer hit rate, expiration rate, fallback rate metrics
-6. **Deployment**: Gradual rollout with monitoring for buffer failure rate
-
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| v1.0 | 2025-11-18 | Gateway Team | Initial decision - Alternative 2 (Sync Redis Buffering) approved |
+| v2.0 | 2025-12-07 | Gateway Team | **PARTIALLY SUPERSEDED** by DD-GATEWAY-011: Sync buffering replaced with Async Storm Aggregation. Redis dependency removed. First alert no longer delayed. Core goal preserved: single CRD per signal/storm. |

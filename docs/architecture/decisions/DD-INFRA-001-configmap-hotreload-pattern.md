@@ -846,6 +846,45 @@ The hot-reloader exposes metrics for monitoring:
 - Workflow Execution: Playbook selection policies (planned)
 - Gateway: Rate limiting rules (planned)
 
+**Services NOT Using This Pattern** (by design):
+- **Data Storage**: Excluded - see rationale below
+
+---
+
+## Appendix: Data Storage Exclusion Rationale
+
+**Decision**: Data Storage does NOT implement ConfigMap hot-reload.
+
+**Confidence**: 98%
+
+**Rationale**:
+
+Hot-reload provides value when services have **runtime-configurable business logic**. Data Storage lacks this characteristic:
+
+| Data Storage Component | Core Service? | Hot-Reloadable? |
+|------------------------|---------------|-----------------|
+| PostgreSQL connection pool | ✅ Core | ❌ No (stateful) |
+| Redis DLQ operations | ✅ Core | ❌ No (stateful) |
+| Audit event storage (ADR-034) | ✅ Core | ❌ No (stateful) |
+| Workflow semantic search | ✅ Core | ❌ No (stateful) |
+| HTTP server timeouts | ❌ Peripheral | ✅ Yes (only this) |
+
+**Key Insight**: The only hot-reloadable configuration in Data Storage is HTTP server timeouts (`ReadTimeout`, `WriteTimeout`), which:
+1. Are peripheral HTTP plumbing, not core business logic
+2. Rarely need runtime adjustment (typically set once)
+3. Provide marginal benefit (~30s saved) vs pod restart (~30s)
+4. Would require 4-6 hours implementation for near-zero ROI
+
+**Comparison with Services That DO Benefit**:
+
+| Service | Hot-Reloadable Asset | Business Value |
+|---------|---------------------|----------------|
+| Signal Processing | Rego policies | **HIGH** - Policy tuning without downtime |
+| Gateway | Rate limiting rules | **MEDIUM** - Operational tuning |
+| Data Storage | HTTP timeouts only | **NEAR-ZERO** - Core unchanged |
+
+**Conclusion**: Data Storage configuration changes should use standard Kubernetes restart-based deployment updates. This is the canonical pattern for services without runtime-configurable business logic.
+
 ---
 
 ## Review & Evolution
@@ -866,4 +905,13 @@ The hot-reloader exposes metrics for monitoring:
 
 **Last Updated**: December 6, 2025
 **Next Review**: June 6, 2026 (6 months)
+
+---
+
+## Change Log
+
+| Date | Change | Author |
+|------|--------|--------|
+| 2025-12-06 | Added Data Storage exclusion rationale - hot-reload provides no value for stateless DB proxy services | AI Assistant |
+| 2025-12-06 | Initial approval | Architecture Team |
 

@@ -35,3 +35,4 @@ type PhaseManager interface {
 	// Returns an error if the transition is invalid.
 	TransitionTo(rr *remediationv1.RemediationRequest, target phase.Phase) error
 }
+

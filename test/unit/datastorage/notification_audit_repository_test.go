@@ -22,6 +22,14 @@ import (
 // 	RunSpecs(t, "...")
 // }
 
+// ========================================
+// NOTIFICATION AUDIT REPOSITORY UNIT TESTS (DD-010)
+// 📋 Business Requirements:
+//    - BR-STORAGE-001: Notification Audit Persistence
+//    - BR-STORAGE-002: Audit Write Operations
+//    - BR-STORAGE-007: Query Performance Tracking
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("NotificationAuditRepository", func() {
 	var (
 		repo   *repository.NotificationAuditRepository
@@ -63,6 +71,8 @@ var _ = Describe("NotificationAuditRepository", func() {
 
 	Describe("Create", func() {
 		Context("with valid audit record", func() {
+			// BEHAVIOR: Repository inserts valid audit records into database
+			// CORRECTNESS: Returns created audit with ID, timestamps populated
 			It("should insert successfully and return audit with ID", func() {
 				expectedID := int64(123)
 				expectedCreatedAt := now

@@ -17,6 +17,13 @@ import (
 // 	RunSpecs(t, "...")
 // }
 
+// ========================================
+// DATA STORAGE CLIENT UNIT TESTS
+// 📋 Business Requirements:
+//    - BR-STORAGE-020: HTTP Client for Data Storage API
+//    - BR-STORAGE-021: SQL Injection Protection (client-side validation)
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("DataStorageClient", func() {
 	var (
 		server   *httptest.Server

@@ -8,9 +8,7 @@ server:
   idle_timeout: "120s"
 
 middleware:
-  rate_limit:
-    requests_per_minute: 100
-    burst: 10
+  # Rate limiting removed (ADR-048) - delegated to Ingress/Route proxy
 
 infrastructure:
   redis:
@@ -31,12 +29,7 @@ processing:
     pattern_threshold: 5
     aggregation_window: "1m"
 
-  environment:
-    cache_ttl: "30s"
-    configmap_namespace: "kubernaut-system"
-    configmap_name: "kubernaut-environment-overrides"
-
-  priority:
-    policy_path: "/etc/gateway/policies/priority.rego"
+  # Note: environment and priority configuration removed (2025-12-06)
+  # Classification now owned by Signal Processing per DD-CATEGORIZATION-001
 
 

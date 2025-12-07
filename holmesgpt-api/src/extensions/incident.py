@@ -574,6 +574,61 @@ Provide natural language summary + structured JSON with workflow and parameters.
 }}
 ```
 
+## Special Investigation Outcomes (BR-HAPI-200)
+
+**IMPORTANT**: Not all investigations result in a workflow recommendation. Handle these cases explicitly:
+
+### Outcome A: Problem Self-Resolved (No Remediation Needed)
+
+If your investigation confirms the problem has **already resolved** (e.g., pod recovered, resource pressure normalized):
+
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "Problem self-resolved. [Describe what you found]",
+    "severity": "low",
+    "contributing_factors": ["Transient condition", "Auto-recovery"]
+  }},
+  "selected_workflow": null,
+  "confidence": 0.85,
+  "investigation_outcome": "resolved",
+  "rationale": "Investigation confirms problem no longer exists. Current state: [describe healthy state]. No remediation required."
+}}
+```
+
+**When to use**: High confidence (≥0.7) that the problem is resolved:
+- Pod status shows Running/Ready after previous OOMKilled
+- Resource metrics normalized (CPU/memory within limits)
+- Error rate returned to baseline
+- Node conditions cleared
+
+### Outcome B: Investigation Inconclusive (Human Review Required)
+
+If your investigation **cannot determine** the root cause or current state:
+
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "Unable to determine root cause. [Describe ambiguity]",
+    "severity": "unknown",
+    "contributing_factors": ["Insufficient data", "Conflicting signals"]
+  }},
+  "selected_workflow": null,
+  "confidence": 0.3,
+  "investigation_outcome": "inconclusive",
+  "rationale": "Investigation inconclusive: [specific reason]. Human review recommended."
+}}
+```
+
+**When to use**: Low confidence (<0.5) due to:
+- Metrics/events unavailable or stale
+- Conflicting information from different sources
+- Resource state ambiguous (neither clearly healthy nor clearly failing)
+- Cannot reproduce or verify the reported condition
+- Insufficient access to relevant data
+
+**DO NOT** guess or hallucinate when uncertain. Return `investigation_outcome: "inconclusive"` instead.
+
 ## RCA Severity Assessment
 
 After your investigation, assess the severity of the root cause using these levels.
@@ -1165,6 +1220,7 @@ def _parse_and_validate_investigation_result(
     rca = {"summary": "No structured RCA found", "severity": "unknown", "contributing_factors": []}
     confidence = 0.0
     validation_result = None
+    json_data = None  # BR-HAPI-200: Initialize for investigation_outcome check
 
     if json_match:
         try:
@@ -1215,11 +1271,36 @@ def _parse_and_validate_investigation_result(
                 "Target resource not found in OwnerChain - DetectedLabels may not apply to affected resource"
             )
 
-    # Generate warnings for other conditions (BR-HAPI-197)
+    # Generate warnings for other conditions (BR-HAPI-197, BR-HAPI-200)
     needs_human_review = False
     human_review_reason = None
 
-    if selected_workflow is None:
+    # BR-HAPI-200: Handle special investigation outcomes
+    investigation_outcome = json_data.get("investigation_outcome") if json_data else None
+
+    # BR-HAPI-200: Outcome A - Problem self-resolved (high confidence, no workflow needed)
+    if investigation_outcome == "resolved":
+        warnings.append("Problem self-resolved - no remediation required")
+        needs_human_review = False
+        human_review_reason = None
+        logger.info({
+            "event": "problem_self_resolved",
+            "incident_id": incident_id,
+            "confidence": confidence,
+            "message": "BR-HAPI-200: Investigation confirmed problem has resolved"
+        })
+    # BR-HAPI-200: Outcome B - Investigation inconclusive (human review required)
+    elif investigation_outcome == "inconclusive":
+        warnings.append("Investigation inconclusive - human review recommended")
+        needs_human_review = True
+        human_review_reason = "investigation_inconclusive"
+        logger.warning({
+            "event": "investigation_inconclusive",
+            "incident_id": incident_id,
+            "confidence": confidence,
+            "message": "BR-HAPI-200: Investigation could not determine root cause"
+        })
+    elif selected_workflow is None:
         warnings.append("No workflows matched the search criteria")
         needs_human_review = True
         human_review_reason = "no_matching_workflows"
@@ -1363,11 +1444,42 @@ def _parse_investigation_result(
                 "message": "DD-WORKFLOW-001 v1.7: RCA target not in OwnerChain, DetectedLabels may be from different scope"
             })
 
-    # Generate warnings for other conditions (BR-HAPI-197)
+    # Generate warnings for other conditions (BR-HAPI-197, BR-HAPI-200)
     needs_human_review = False
     human_review_reason = None
 
-    if selected_workflow is None:
+    # BR-HAPI-200: Handle special investigation outcomes
+    investigation_outcome = None
+    if json_match:
+        try:
+            json_data_outcome = json.loads(json_match.group(1))
+            investigation_outcome = json_data_outcome.get("investigation_outcome")
+        except json.JSONDecodeError:
+            pass
+
+    # BR-HAPI-200: Outcome A - Problem self-resolved (high confidence, no workflow needed)
+    if investigation_outcome == "resolved":
+        warnings.append("Problem self-resolved - no remediation required")
+        needs_human_review = False
+        human_review_reason = None
+        logger.info({
+            "event": "problem_self_resolved",
+            "incident_id": incident_id,
+            "confidence": confidence,
+            "message": "BR-HAPI-200: Investigation confirmed problem has resolved"
+        })
+    # BR-HAPI-200: Outcome B - Investigation inconclusive (human review required)
+    elif investigation_outcome == "inconclusive":
+        warnings.append("Investigation inconclusive - human review recommended")
+        needs_human_review = True
+        human_review_reason = "investigation_inconclusive"
+        logger.warning({
+            "event": "investigation_inconclusive",
+            "incident_id": incident_id,
+            "confidence": confidence,
+            "message": "BR-HAPI-200: Investigation could not determine root cause"
+        })
+    elif selected_workflow is None:
         warnings.append("No workflows matched the search criteria")
         needs_human_review = True
         human_review_reason = "no_matching_workflows"

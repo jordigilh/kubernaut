@@ -259,6 +259,10 @@ func (in *WorkflowExecutionStatus) DeepCopyInto(out *WorkflowExecutionStatus) {
 		*out = new(SkipDetails)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.NextAllowedExecution != nil {
+		in, out := &in.NextAllowedExecution, &out.NextAllowedExecution
+		*out = (*in).DeepCopy()
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]v1.Condition, len(*in))

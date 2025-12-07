@@ -11,6 +11,13 @@ import (
 
 // Test entry point moved to notification_audit_validator_test.go to avoid "Rerunning Suite" error
 
+// ========================================
+// SANITIZE STRING UNIT TESTS (P2-1 Regression)
+// 📋 Business Requirements:
+//    - BR-STORAGE-011: Input Sanitization (data preservation)
+//    - BR-STORAGE-021: SQL Injection Protection
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 	var (
 		validator *validation.Validator
@@ -40,6 +47,8 @@ var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 
 	Context("Data Preservation - SQL Keywords in Legitimate Strings", func() {
 		// BR-STORAGE-011: Input sanitization should preserve legitimate data
+		// BEHAVIOR: Sanitizer preserves legitimate data containing SQL keywords
+		// CORRECTNESS: SQL keywords in namespace/alert names are NOT stripped
 
 		DescribeTable("should preserve legitimate strings containing SQL keywords",
 			func(input, expected string) {

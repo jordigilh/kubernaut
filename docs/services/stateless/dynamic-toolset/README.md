@@ -1,29 +1,53 @@
 # Dynamic Toolset Service
 
-**Version**: V1.0 (Production Ready)
-**Last Updated**: November 10, 2025
+**Version**: V2.0 DEFERRED (Code Preserved)
+**Last Updated**: December 7, 2025
 **Service Type**: Stateless Controller (Discovery Loop)
-**Status**: ✅ **PRODUCTION READY** - All Tests Passing (100%)
+**Status**: 🚫 **DEFERRED TO V2.0** - See [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md)
+
+---
+
+## ⚠️ **V2.0 DEFERRAL NOTICE**
+
+This service is **DEFERRED to V2.0** per Design Decision [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md).
+
+**Rationale**: V1.x only requires Prometheus integration, which HolmesGPT-API already handles with built-in service discovery logic. Dynamic Toolset Service will **become relevant in V2.0** when expanding HolmesGPT-API to identify multiple observability services (Grafana, Jaeger, Elasticsearch, custom services).
+
+**Status**:
+- ✅ Code and tests **PRESERVED** in repository for V2.0
+- ❌ **NOT INCLUDED** in V1.x releases
+- ❌ CI/CD tests **EXCLUDED** from V1.x pipelines
+- ✅ Will **RETURN** in V2.0 for multi-service observability
+
+**What This Means**:
+- **DO NOT** deploy this service in V1.x environments
+- **DO NOT** include in V1.x release planning
+- **DO** preserve code for V2.0 development
+- **DO** review when V2.0 multi-service observability is prioritized
 
 ---
 
 ## 🎯 Executive Summary
 
-The **Dynamic Toolset Service** automatically discovers Kubernetes services (Prometheus, Grafana, Jaeger, Elasticsearch, custom) and generates HolmesGPT-compatible toolset ConfigMaps. V1.0 is production-ready with **100% test pass rate** and comprehensive operational documentation.
+The **Dynamic Toolset Service** was designed to automatically discover Kubernetes services (Prometheus, Grafana, Jaeger, Elasticsearch, custom) and generate HolmesGPT-compatible toolset ConfigMaps.
 
-**Key Achievements V1.0**:
+**V2.0 Deferral Summary**:
+- 🚫 **DEFERRED TO V2.0** per [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md)
+- ✅ **Code PRESERVED** - All implementation, tests, and documentation remain in repository
+- ❌ **NOT DEPLOYED** - Excluded from V1.x releases and CI/CD pipelines
+- ⏳ **V2.0 TARGET** - Will return when HolmesGPT-API expands to multi-service observability
+
+**Implementation Status** (Preserved for V2.0):
 - ✅ **245/245 tests passing** (100%) - 194 unit + 38 integration + 13 E2E tests
 - ✅ **E2E tests complete** - 2m37s execution time with parallel execution
-- ✅ **Deployment manifests complete** - Production-ready Kubernetes manifests
+- ✅ **Deployment manifests complete** - Kubernetes manifests ready for V2.0
 - ✅ **Operations runbook complete** - Comprehensive troubleshooting guide
 - ✅ **8/8 business requirements** (100% coverage)
 
-**Production Readiness**: **Ready for production deployment** (E2E validated, deployment manifests complete, operations documentation ready)
-
-**Deferred to V1.1**:
-- Load/Performance testing and benchmarks
-- Performance SLOs and baselines
-- Monitoring dashboards and alerting rules
+**Why Deferred**:
+- **V1.x Scope**: Prometheus-only observability (HolmesGPT-API already handles Prometheus discovery)
+- **V2.0 Value**: Multi-service observability (Grafana, Jaeger, Elasticsearch, custom services)
+- **Current Redundancy**: HolmesGPT-API's built-in Prometheus discovery makes this service redundant for V1.x
 
 ---
 

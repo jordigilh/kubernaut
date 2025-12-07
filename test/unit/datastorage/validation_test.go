@@ -28,6 +28,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
+// ========================================
+// INPUT VALIDATION UNIT TESTS
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("BR-STORAGE-010: Input Validation", func() {
 	var validator *validation.Validator
 
@@ -37,6 +41,8 @@ var _ = Describe("BR-STORAGE-010: Input Validation", func() {
 	})
 
 	// ⭐ TABLE-DRIVEN: Validation test cases
+	// BEHAVIOR: Validator accepts valid audit records and rejects invalid ones
+	// CORRECTNESS: Required fields must be present, invalid values are rejected
 	DescribeTable("should validate RemediationAudit records",
 		func(audit *models.RemediationAudit, shouldPass bool, expectedErrorContains string) {
 			err := validator.ValidateRemediationAudit(audit)

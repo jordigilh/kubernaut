@@ -27,10 +27,13 @@ import (
 // - BR-STORAGE-033-011: Workflow execution phase tracking
 // - BR-STORAGE-033-012: Approval and outcome metadata
 //
+// Testing Principle: Behavior + Correctness
 // ========================================
 
 var _ = Describe("WorkflowEventBuilder", func() {
 	Context("BR-STORAGE-033-010: Workflow-specific event data structure", func() {
+		// BEHAVIOR: Builder creates workflow event with correct service identifier
+		// CORRECTNESS: Service is "workflow", version is "1.0"
 		It("should create workflow event with base structure", func() {
 			builder := audit.NewWorkflowEvent("workflow.started")
 			Expect(builder).ToNot(BeNil())

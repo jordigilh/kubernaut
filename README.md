@@ -61,11 +61,11 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 |---------|--------|---------|-------------|
 | **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (240 tests: 120U+114I+6E2E) |
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (727 tests: 551U+163I+13E2E) |
-| **HolmesGPT API** | ✅ **v3.5 PRODUCTION-READY** | AI investigation wrapper | 47 BRs (500 tests: 385U+71I+40E2E) |
+| **HolmesGPT API** | ✅ **v3.10 PRODUCTION-READY** | AI investigation wrapper | 48 BRs (601 tests: 474U+77I+45E2E+5smoke) |
 | **Notification Service** | ✅ **PRODUCTION-READY** | Multi-channel delivery | 12 BRs (249 tests: 140U+97I+12E2E) |
 | **Signal Processing** | 🔄 **Phase 3 (In Progress)** | Signal enrichment | - |
 | **AI Analysis** | 🔄 **Phase 4 (In Progress)** | AI-powered analysis | - |
-| **Remediation Execution** | 🔄 **Phase 3 (In Progress)** | Tekton workflow orchestration | - |
+| **Remediation Execution** | ✅ **Implementation Complete** | Tekton workflow orchestration | 12 BRs (106U+12I+5E2E) |
 | **Remediation Orchestrator** | ⏸️ Phase 5 | Cross-CRD coordination | - |
 | **~~Dynamic Toolset~~** | ❌ **Deferred to V2.0** | Service discovery (DD-016) | 8 BRs (redundant with HolmesGPT-API) |
 | **~~Effectiveness Monitor~~** | ❌ **Deferred to V1.1** | Continuous improvement (DD-017) | 10 BRs (requires 8+ weeks of data) |
@@ -77,7 +77,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 - ⏸️ **Effectiveness Monitor Deferred to V1.1**: Per DD-017, deferred to V1.1 due to year-end timeline constraints (requires 8+ weeks of remediation data for meaningful assessments)
 - ✅ **Notification Service Production-Ready**: 249 tests (140U+97I+12E2E), Kind-based E2E, DD-TEST-001 compliant, zero flaky tests
 - ⏸️ **Dynamic Toolset Deferred to V2.0**: Per DD-016, deferred to V2.0 (V1.x uses static config, redundant with HolmesGPT-API's built-in Prometheus discovery)
-- ✅ **HolmesGPT API v3.5**: 500 tests (385U+71I+40E2E), Recovery prompt, DetectedLabels, `failedDetections`, `alternativeWorkflows`, RFC 7807, Graceful Shutdown
+- ✅ **HolmesGPT API v3.10**: 601 tests (474U+77I+45E2E+5smoke), ConfigMap hot-reload (BR-HAPI-199), `INVESTIGATION_INCONCLUSIVE`, LLM self-correction loop, `needs_human_review`, `validation_attempts_history`, E2E audit tests (real DB only)
 - ✅ **Gateway Service v1.0**: 240 tests (120U+114I+6E2E), 20 BRs, production-ready
 - ✅ **Data Storage Service Phase 1**: Unified audit table (ADR-034), PostgreSQL access layer (ADR-032), ~535 tests
 - 📊 **V1.0 Service Count**: 8 active services (11 original - Context API deprecated - Dynamic Toolset deferred - Effectiveness Monitor deferred)
@@ -255,9 +255,9 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 | **Data Storage** | 551 | 163 | 13 | **727** | **98%** |
 | **Dynamic Toolset** | - | - | - | **Deferred to V2.0** | **DD-016** |
 | **Notification Service** | 140 | 97 | 12 | **249** | **100%** |
-| **HolmesGPT API v3.5** | 385 | 71 | 40 | **500** | **98%** |
+| **HolmesGPT API v3.10** | 474 | 77 | 45 | **601** | **98%** |
 
-**Total**: ~1,196 unit specs + ~445 integration specs + 71 E2E specs = **~1,716 test specs**
+**Total**: ~1,240 unit specs + ~445 integration specs + ~80 E2E specs = **~1,765 test specs**
 
 *Note: Gateway v1.0 has 2 E2E specs (Storm TTL, K8s API Rate Limiting), 12 additional E2E tests deferred to v1.1. Notification Service has 12 E2E specs (Kind-based file delivery + metrics validation). Dynamic Toolset (245 tests) deferred to V2.0 per DD-016. Integration spec counts are estimates.*
 

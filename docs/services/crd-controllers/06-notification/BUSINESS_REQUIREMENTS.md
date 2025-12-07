@@ -4,8 +4,8 @@
 **Service Type**: CRD Controller
 **CRD**: NotificationRequest
 **Controller**: NotificationRequestReconciler
-**Version**: 1.0
-**Last Updated**: November 8, 2025
+**Version**: v1.4.0
+**Last Updated**: December 7, 2025
 **Status**: Production-Ready
 
 ---
@@ -46,11 +46,11 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ### 📊 Summary
 
-**Total Business Requirements**: 12
-**Categories**: 8
+**Total Business Requirements**: 17
+**Categories**: 9
 **Priority Breakdown**:
-- P0 (Critical): 8 BRs (BR-NOT-050, 051, 052, 053, 054, 055, 058, 060, 061)
-- P1 (High): 4 BRs (BR-NOT-056, 057, 059)
+- P0 (Critical): 10 BRs (BR-NOT-050, 051, 052, 053, 054, 055, 058, 060, 061, 065)
+- P1 (High): 7 BRs (BR-NOT-056, 057, 059, 066, 067, 068)
 
 **Test Coverage**:
 - Unit: 82 test specs (95% confidence)
@@ -648,9 +648,9 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 - **Planned**: Real Slack webhook delivery, end-to-end lifecycle validation
 
 ### BR Coverage
-- **Total BRs**: 9
-- **Unit Test Coverage**: 100% (9/9 BRs)
-- **Integration Test Coverage**: 100% (9/9 BRs)
+- **Total BRs**: 17
+- **Unit Test Coverage**: 100% (17/17 BRs)
+- **Integration Test Coverage**: 100% (17/17 BRs)
 - **Overall Coverage**: 100%
 
 ---
@@ -668,6 +668,13 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 
 ## 📝 Version History
 
+### Version 1.4.0 (2025-12-07)
+- Updated documentation to reflect actual implementation status
+- 17 business requirements implemented (added BR-NOT-065 to BR-NOT-068)
+- Channel routing with hot-reload (DD-WE-004 integration)
+- 100% BR coverage (unit + integration + E2E tests)
+- 35 test files (12 unit + 18 integration + 4 E2E)
+
 ### Version 1.0 (2025-10-12)
 - Initial production-ready release
 - 9 business requirements implemented
@@ -676,8 +683,8 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: November 8, 2025
+**Document Version**: v1.4.0
+**Last Updated**: December 7, 2025
 **Maintained By**: Kubernaut Architecture Team
 **Status**: Production-Ready
 

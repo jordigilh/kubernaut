@@ -154,3 +154,4 @@ matched_specific_rule if {
     lower(input.signal.severity) == "info"
 }
 
+

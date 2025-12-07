@@ -6,8 +6,14 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// ========================================
+// SQL QUERY BUILDER UNIT TESTS
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("SQL Query Builder - BR-STORAGE-021, BR-STORAGE-022", func() {
 	// BR-STORAGE-022: Query filtering
+	// BEHAVIOR: Builder generates SQL with proper WHERE clauses for filters
+	// CORRECTNESS: Filter values are parameterized, not inlined
 	DescribeTable("should build queries with filters",
 		func(params query.QueryParams, expectedSQL string, filterArgIndex int, expectedFilterValue interface{}) {
 			builder := query.NewBuilder()

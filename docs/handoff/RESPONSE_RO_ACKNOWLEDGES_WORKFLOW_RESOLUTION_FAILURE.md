@@ -57,7 +57,7 @@ The notice introduces a **new notification scenario** distinct from what we plan
 | Scenario | BR | Trigger | Notification Type | Description |
 |----------|------|---------|-------------------|-------------|
 | **Approval Required** | BR-ORCH-001 | `AIAnalysis.Status.ApprovalRequired=true` | `approval` | AI found workflow, confidence 60-79%, operator decides |
-| **Manual Review Required** | **NEW** | `AIAnalysis.Status.Phase=Failed` + `Reason=WorkflowResolutionFailed` | **TBD** | AI couldn't produce valid workflow, human investigates |
+| **Manual Review Required** | **NEW** | `AIAnalysis.Status.Phase=Failed` + `Reason=WorkflowResolutionFailed` | `manual-review` | AI couldn't produce valid workflow, human investigates |
 
 ### Key Distinction
 

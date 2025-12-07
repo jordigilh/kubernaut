@@ -31,3 +31,4 @@ func TestSignalProcessing(t *testing.T) {
 	RunSpecs(t, "SignalProcessing Suite")
 }
 
+

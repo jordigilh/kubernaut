@@ -54,14 +54,13 @@ type ServerSettings struct {
 
 // MiddlewareSettings contains middleware configuration.
 // Single Responsibility: Request processing middleware
+//
+// Note: RateLimitSettings removed (2025-12-07)
+// Rate limiting now delegated to Ingress/Route proxy per ADR-048.
+// See: docs/architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md
 type MiddlewareSettings struct {
-	RateLimit RateLimitSettings `yaml:"rate_limit"`
-}
-
-// RateLimitSettings contains rate limiting configuration.
-type RateLimitSettings struct {
-	RequestsPerMinute int `yaml:"requests_per_minute"` // Default: 100
-	Burst             int `yaml:"burst"`               // Default: 10
+	// Empty - rate limiting delegated to proxy (ADR-048)
+	// Future middleware config can be added here
 }
 
 // InfrastructureSettings contains external dependency configuration.
@@ -276,11 +275,8 @@ func (c *ServerConfig) LoadFromEnv() {
 	}
 
 	// Middleware settings
-	if rpmStr := os.Getenv("GATEWAY_RATE_LIMIT_RPM"); rpmStr != "" {
-		if rpm, err := strconv.Atoi(rpmStr); err == nil {
-			c.Middleware.RateLimit.RequestsPerMinute = rpm
-		}
-	}
+	// Rate limiting removed (ADR-048) - delegated to proxy
+	// No environment variables needed for middleware
 
 	// Processing settings
 	if dedupTTLStr := os.Getenv("GATEWAY_DEDUP_TTL"); dedupTTLStr != "" {
@@ -306,12 +302,8 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	// Middleware validation
-	if c.Middleware.RateLimit.RequestsPerMinute < 0 {
-		return fmt.Errorf("middleware.rate_limit.requests_per_minute must be positive")
-	}
-	if c.Middleware.RateLimit.Burst < 0 {
-		return fmt.Errorf("middleware.rate_limit.burst must be non-negative")
-	}
+	// Rate limiting removed (ADR-048) - delegated to proxy
+	// No validation needed for middleware
 
 	// Processing validation
 	if c.Processing.Storm.RateThreshold < 0 {

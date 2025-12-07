@@ -15,12 +15,153 @@ limitations under the License.
 */
 
 // Package metrics provides Prometheus metrics for the Remediation Orchestrator.
+// All metrics follow DD-005 naming convention: kubernaut_remediationorchestrator_<metric_name>
 package metrics
 
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
+)
+
+const (
+	// Namespace for all RO metrics (DD-005 compliant)
+	namespace = "kubernaut"
+	subsystem = "remediationorchestrator"
+)
+
+var (
+	// ReconcileTotal counts total reconciliation attempts
+	// Reference: Standard controller metric
+	ReconcileTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "reconcile_total",
+			Help:      "Total number of reconciliation attempts",
+		},
+		[]string{"namespace", "phase", "result"},
+	)
+
+	// ManualReviewNotificationsTotal counts manual review notifications created
+	// Reference: BR-ORCH-036
+	ManualReviewNotificationsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "manual_review_notifications_total",
+			Help:      "Total number of manual review notifications created",
+		},
+		[]string{"source", "reason", "sub_reason", "namespace"},
+	)
+
+	// NoActionNeededTotal counts remediations where no action was required
+	// Reference: BR-ORCH-037, BR-HAPI-200
+	NoActionNeededTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "no_action_needed_total",
+			Help:      "Total number of remediations where no action was needed (problem self-resolved)",
+		},
+		[]string{"reason", "namespace"},
+	)
+
+	// ApprovalNotificationsTotal counts approval notifications created
+	// Reference: BR-ORCH-001
+	ApprovalNotificationsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "approval_notifications_total",
+			Help:      "Total number of approval notifications created",
+		},
+		[]string{"namespace"},
+	)
+
+	// PhaseTransitionsTotal counts phase transitions
+	// Reference: Standard controller metric
+	PhaseTransitionsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "phase_transitions_total",
+			Help:      "Total number of phase transitions",
+		},
+		[]string{"from_phase", "to_phase", "namespace"},
+	)
+
+	// ReconcileDurationSeconds measures reconciliation duration
+	// Reference: Standard controller metric
+	ReconcileDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "reconcile_duration_seconds",
+			Help:      "Duration of reconciliation in seconds",
+			Buckets:   prometheus.ExponentialBuckets(0.01, 2, 10), // 10ms to ~10s
+		},
+		[]string{"namespace", "phase"},
+	)
+
+	// ChildCRDCreationsTotal counts child CRD creations
+	// Reference: BR-ORCH-025 (child CRD orchestration)
+	ChildCRDCreationsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "child_crd_creations_total",
+			Help:      "Total number of child CRD creations",
+		},
+		[]string{"crd_type", "namespace"},
+	)
+
+	// DuplicatesSkippedTotal counts duplicate remediations skipped
+	// Reference: BR-ORCH-032, BR-ORCH-033
+	DuplicatesSkippedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "duplicates_skipped_total",
+			Help:      "Total number of duplicate remediations skipped",
+		},
+		[]string{"skip_reason", "namespace"},
+	)
+
+	// TimeoutsTotal counts remediation timeouts
+	// Reference: BR-ORCH-027, BR-ORCH-028
+	TimeoutsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "timeouts_total",
+			Help:      "Total number of remediation timeouts",
+		},
+		[]string{"phase", "namespace"},
+	)
+)
+
+func init() {
+	// Register all metrics with controller-runtime registry
+	metrics.Registry.MustRegister(
+		ReconcileTotal,
+		ManualReviewNotificationsTotal,
+		NoActionNeededTotal,
+		ApprovalNotificationsTotal,
+		PhaseTransitionsTotal,
+		ReconcileDurationSeconds,
+		ChildCRDCreationsTotal,
+		DuplicatesSkippedTotal,
+		TimeoutsTotal,
+	)
+}
+
 // Collector holds all Prometheus metrics for the orchestrator.
+// Deprecated: Use package-level metrics directly instead.
 type Collector struct{}
 
 // NewCollector creates a new metrics Collector.
+// Deprecated: Use package-level metrics directly instead.
 func NewCollector() *Collector {
 	return &Collector{}
 }
+

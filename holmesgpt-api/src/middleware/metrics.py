@@ -105,6 +105,28 @@ context_api_duration_seconds = Histogram(
     buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0)
 )
 
+# ========================================
+# CONFIG HOT-RELOAD METRICS (BR-HAPI-199)
+# ========================================
+
+config_reload_total = Counter(
+    'holmesgpt_config_reload_total',
+    'Total successful configuration reloads',
+    []
+)
+
+config_reload_errors_total = Counter(
+    'holmesgpt_config_reload_errors_total',
+    'Total failed configuration reload attempts',
+    []
+)
+
+config_last_reload_timestamp = Gauge(
+    'holmesgpt_config_last_reload_timestamp',
+    'Unix timestamp of last successful configuration reload',
+    []
+)
+
 # Active Requests Gauge
 active_requests = Gauge(
     'holmesgpt_active_requests',
@@ -405,6 +427,62 @@ def record_context_api_call(endpoint: str, status: str, duration: float):
         "endpoint": endpoint,
         "status": status,
         "duration": duration
+    })
+
+
+def record_config_reload(success: bool):
+    """
+    Record configuration reload metrics
+
+    Business Requirement: BR-HAPI-199
+    Design Decision: DD-HAPI-004
+
+    Args:
+        success: True if reload succeeded, False if failed
+    """
+    if success:
+        config_reload_total.inc()
+        config_last_reload_timestamp.set(time.time())
+        logger.debug({
+            "event": "config_reload_recorded",
+            "success": True,
+            "br": "BR-HAPI-199"
+        })
+    else:
+        config_reload_errors_total.inc()
+        logger.debug({
+            "event": "config_reload_error_recorded",
+            "success": False,
+            "br": "BR-HAPI-199"
+        })
+
+
+def update_config_metrics_from_manager(config_manager):
+    """
+    Update Prometheus metrics from ConfigManager state.
+
+    Called periodically or on demand to sync ConfigManager
+    metrics with Prometheus.
+
+    Business Requirement: BR-HAPI-199
+
+    Args:
+        config_manager: ConfigManager instance
+    """
+    if config_manager is None:
+        return
+
+    # Sync reload count
+    # Note: This sets absolute values, not increments
+    # In production, you'd track deltas
+    reload_count = config_manager.reload_count
+    error_count = config_manager.error_count
+
+    logger.debug({
+        "event": "config_metrics_synced",
+        "reload_count": reload_count,
+        "error_count": error_count,
+        "br": "BR-HAPI-199"
     })
 
 

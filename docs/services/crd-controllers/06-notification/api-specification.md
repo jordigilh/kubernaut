@@ -1,7 +1,7 @@
 # Notification Service - API Specification
 
-**Version**: 2.1
-**Last Updated**: 2025-12-06
+**Version**: 2.2
+**Last Updated**: 2025-12-07
 **Service Type**: CRD Controller (NotificationRequest CRD)
 **Architecture**: Declarative Kubernetes-native notification delivery
 **Audit Integration**: ADR-034 Unified Audit Table (v2.0)
@@ -510,6 +510,7 @@ All labels use the `kubernaut.ai/` domain (NOT `kubernaut.io/`).
 | `kubernaut.ai/component` | Source component routing | `remediation-orchestrator`, `workflow-execution`, etc. | Route by source |
 | `kubernaut.ai/remediation-request` | Correlation routing | RemediationRequest CRD name | Link to parent remediation |
 | `kubernaut.ai/skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
+| `kubernaut.ai/investigation-outcome` | HolmesGPT investigation outcome routing (BR-HAPI-200) | `resolved`, `inconclusive`, `workflow-selected` | Route inconclusive to ops for review |
 
 ### **Skip-Reason Label (DD-WE-004 Integration)**
 
@@ -558,19 +559,67 @@ receivers:
       - channel: '#kubernaut-alerts'
 ```
 
+### **Investigation-Outcome Label (BR-HAPI-200)**
+
+The `kubernaut.ai/investigation-outcome` label enables routing based on HolmesGPT investigation results:
+
+| Investigation Outcome | Scenario | Recommended Routing | Rationale |
+|-----------------------|----------|---------------------|-----------|
+| `resolved` | Problem self-resolved before AI intervention | **Skip notification** (null-receiver) | No action needed - prevent alert fatigue |
+| `inconclusive` | LLM cannot determine root cause | Slack (#ops channel) | Human review required |
+| `workflow-selected` | Normal workflow execution | Continue to default routing | Standard flow |
+
+**Example Routing Configuration** (Alertmanager-compatible):
+```yaml
+route:
+  routes:
+    # Self-resolved: Skip notification by default
+    - match:
+        kubernaut.ai/investigation-outcome: resolved
+      receiver: null-receiver  # No notification
+
+    # Inconclusive: Route to ops for manual review
+    - match:
+        kubernaut.ai/investigation-outcome: inconclusive
+      receiver: slack-ops
+
+    # Workflow selected: Fall through to normal routing
+    - match:
+        kubernaut.ai/investigation-outcome: workflow-selected
+      continue: true
+
+  receiver: default-slack
+
+receivers:
+  - name: null-receiver  # Drops notifications silently
+  - name: slack-ops
+    slack_configs:
+      - channel: '#kubernaut-ops'
+  - name: default-slack
+    slack_configs:
+      - channel: '#kubernaut-alerts'
+```
+
+**Related Documentation**:
+- [BR-HAPI-200](../../../../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md) - Cross-team notice
+- [BR-HAPI-197](../../../../docs/requirements/BR-HAPI-197-needs-human-review-field.md) - Parent requirement
+
+---
+
 ### **Go Constants** (`pkg/notification/routing/labels.go`)
 
 ```go
 // Label keys
 const (
-    LabelNotificationType   = "kubernaut.ai/notification-type"
-    LabelSeverity          = "kubernaut.ai/severity"
-    LabelEnvironment       = "kubernaut.ai/environment"
-    LabelPriority          = "kubernaut.ai/priority"
-    LabelNamespace         = "kubernaut.ai/namespace"
-    LabelComponent         = "kubernaut.ai/component"
-    LabelRemediationRequest = "kubernaut.ai/remediation-request"
-    LabelSkipReason        = "kubernaut.ai/skip-reason"
+    LabelNotificationType    = "kubernaut.ai/notification-type"
+    LabelSeverity            = "kubernaut.ai/severity"
+    LabelEnvironment         = "kubernaut.ai/environment"
+    LabelPriority            = "kubernaut.ai/priority"
+    LabelNamespace           = "kubernaut.ai/namespace"
+    LabelComponent           = "kubernaut.ai/component"
+    LabelRemediationRequest  = "kubernaut.ai/remediation-request"
+    LabelSkipReason          = "kubernaut.ai/skip-reason"
+    LabelInvestigationOutcome = "kubernaut.ai/investigation-outcome"  // BR-HAPI-200
 )
 
 // Skip reason values (DD-WE-004)
@@ -579,6 +628,13 @@ const (
     SkipReasonExhaustedRetries        = "ExhaustedRetries"         // HIGH
     SkipReasonResourceBusy            = "ResourceBusy"             // LOW
     SkipReasonRecentlyRemediated      = "RecentlyRemediated"       // LOW
+)
+
+// Investigation outcome values (BR-HAPI-200)
+const (
+    InvestigationOutcomeResolved        = "resolved"          // No action needed
+    InvestigationOutcomeInconclusive    = "inconclusive"      // Human review required
+    InvestigationOutcomeWorkflowSelected = "workflow-selected" // Normal flow
 )
 ```
 

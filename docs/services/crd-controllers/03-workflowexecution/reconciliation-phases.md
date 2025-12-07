@@ -1,13 +1,22 @@
 ## Reconciliation Architecture
 
-**Version**: 4.1
-**Last Updated**: 2025-12-05
+**Version**: 4.2
+**Last Updated**: 2025-12-06
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
-**Status**: ✅ Updated for Tekton Architecture (ADR-044)
+**Status**: ✅ Updated for Tekton Architecture (ADR-044), Exponential Backoff (DD-WE-004)
 
 ---
 
 ## Changelog
+
+### Version 4.2 (2025-12-06)
+- ✅ **Added**: Exponential backoff cooldown per DD-WE-004 v1.1
+- ✅ **CRITICAL**: Backoff ONLY applies to pre-execution failures (`wasExecutionFailure: false`)
+- ✅ **CRITICAL**: Execution failures (`wasExecutionFailure: true`) block ALL retries immediately
+- ✅ **Updated**: Cooldown check first checks `wasExecutionFailure` before applying backoff
+- ✅ **Updated**: Failed phase only increments `ConsecutiveFailures` for pre-execution failures
+- ✅ **Updated**: Completed phase resets `ConsecutiveFailures` to 0
+- ✅ **Added**: `ExhaustedRetries` and `PreviousExecutionFailed` skip reasons
 
 ### Version 4.1 (2025-12-05)
 - ✅ **Added**: PipelineRunStatusSummary population during Running phase for task progress visibility
@@ -60,10 +69,15 @@
 - If found: Set `phase = "Skipped"`, `skipDetails.reason = "ResourceBusy"`
 - Include `skipDetails.conflictingWorkflow` with blocking WFE info
 
-**Step 3: Cooldown Check** (BR-WE-010)
-- Query for recent Completed WorkflowExecutions with same `targetResource` + `workflowId`
-- If within cooldown period: Set `phase = "Skipped"`, `skipDetails.reason = "RecentlyRemediated"`
-- Include `skipDetails.cooldownRemaining`
+**Step 3: Cooldown Check with Execution Failure Blocking + Exponential Backoff** (BR-WE-010, BR-WE-012, DD-WE-004)
+- Query for recent terminal WorkflowExecutions with same `targetResource` + `workflowId`
+- **FIRST**: Check if previous WFE failed with `wasExecutionFailure: true`:
+  - Set `phase = "Skipped"`, `skipDetails.reason = "PreviousExecutionFailed"`
+  - **NO retry allowed** - non-idempotent actions may have occurred
+- **THEN** (only for pre-execution failures):
+  - Check if `ConsecutiveFailures >= MaxConsecutiveFailures`: Set `phase = "Skipped"`, `skipDetails.reason = "ExhaustedRetries"`
+  - Check `NextAllowedExecution` timestamp: If future, set `phase = "Skipped"`, `skipDetails.reason = "RecentlyRemediated"`
+- Include `skipDetails.cooldownRemaining` with backoff time
 
 **Step 4: Create PipelineRun** (BR-WE-001)
 - Build PipelineRun with bundle resolver
@@ -232,6 +246,13 @@ if pipelineRunDeleted  → phase = "Failed"
   - `naturalLanguageSummary`: LLM-friendly description for recovery
   - `wasExecutionFailure`: true if workflow started executing
   - `requiresManualReview`: true for non-idempotent failure scenarios
+- **If `wasExecutionFailure: false` (pre-execution failure)**:
+  - Increment `ConsecutiveFailures`
+  - Calculate and set `NextAllowedExecution` with exponential backoff
+  - Metrics: `workflowexecution_consecutive_failures` gauge
+- **If `wasExecutionFailure: true` (execution failure)**:
+  - **NO backoff tracking** - future WFEs will be blocked with `PreviousExecutionFailed`
+  - Set `requiresManualReview: true`
 - Record audit event
 - Emit Kubernetes event
 

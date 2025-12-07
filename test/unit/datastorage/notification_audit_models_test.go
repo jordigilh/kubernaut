@@ -13,6 +13,13 @@ import (
 // 	RunSpecs(t, "...")
 // }
 
+// ========================================
+// NOTIFICATION AUDIT MODEL UNIT TESTS
+// 📋 Business Requirements:
+//    - BR-STORAGE-001: Notification Audit Schema (migration 010)
+//    - BR-NOTIFICATION-001: Track Notification Delivery Attempts
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("NotificationAudit Model", func() {
 	var audit *models.NotificationAudit
 
@@ -36,6 +43,8 @@ var _ = Describe("NotificationAudit Model", func() {
 	})
 
 	Context("Model Structure", func() {
+		// BEHAVIOR: NotificationAudit model exposes all required fields
+		// CORRECTNESS: All fields are correctly typed and accessible
 		It("should have all required fields", func() {
 			Expect(audit.ID).To(Equal(int64(1)))
 			Expect(audit.RemediationID).To(Equal("test-remediation-1"))

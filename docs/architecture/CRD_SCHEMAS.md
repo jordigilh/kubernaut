@@ -1,7 +1,7 @@
 # Authoritative CRD Schemas
 
-**Version**: v1.0
-**Last Updated**: October 5, 2025
+**Version**: v1.1
+**Last Updated**: December 7, 2025
 **Status**: ✅ Authoritative Reference
 
 ---
@@ -10,9 +10,9 @@
 
 This document defines the **authoritative CRD schemas** for the Kubernaut project. All services must reference and implement these schemas exactly as specified.
 
-**Schema Authority**:
-- Gateway Service creates CRDs and is the **source of truth** for field definitions
-- Central Controller orchestrates CRDs but **follows Gateway's schema**
+**Schema Authority** (Updated per [ADR-049](decisions/ADR-049-remediationrequest-crd-ownership.md)):
+- **Remediation Orchestrator (RO)** owns the RemediationRequest CRD schema definition
+- Gateway Service creates RR instances by importing RO's types
 - All other services consume CRDs according to these specifications
 
 ---
@@ -23,24 +23,34 @@ This document defines the **authoritative CRD schemas** for the Kubernaut projec
 
 **API Group**: `remediation.kubernaut.io/v1`
 **Kind**: `RemediationRequest`
-**Owner**: Central Controller Service
-**Created By**: Gateway Service
+**Schema Owner**: Remediation Orchestrator (RO) - per [ADR-049](decisions/ADR-049-remediationrequest-crd-ownership.md)
+**Instances Created By**: Gateway Service
 **Scope**: Namespaced
 
 ### Purpose
 
-Entry point for the remediation workflow. Gateway Service creates one RemediationRequest CRD per unique signal (Prometheus alert, Kubernetes event). Central Controller orchestrates downstream service CRDs based on this request.
+Entry point for the remediation workflow. Gateway Service creates one RemediationRequest CRD per unique signal (Prometheus alert, Kubernetes event). Remediation Orchestrator owns the schema and orchestrates downstream service CRDs based on this request.
 
-### Source of Truth
+### Ownership Clarification (ADR-049)
 
-**Gateway Service** creates RemediationRequest CRDs and populates all fields based on ingested signals. The schema below reflects Gateway's comprehensive data collection.
+| Aspect | Owner |
+|--------|-------|
+| **Schema Definition** | Remediation Orchestrator (RO) |
+| **Instance Creation** | Gateway Service |
+| **Reconciliation** | Remediation Orchestrator (RO) |
+| **Status (Deduplication, Storm)** | Gateway Service (per DD-GATEWAY-011) |
+| **Status (Lifecycle)** | Remediation Orchestrator (RO) |
 
-**Why Gateway is Authoritative**:
-- Gateway performs deduplication and storm detection
-- Gateway assigns priority based on Rego policies
-- Gateway enriches signal with environment classification
-- Gateway captures all temporal and source metadata
-- Central Controller was designed before Gateway's full capabilities were known
+**Why RO Owns the Schema**:
+- RO is the controller that reconciles RR (K8s pattern: reconciler owns schema)
+- RR represents remediation lifecycle, which is RO's domain
+- Clean dependency direction: Gateway → RO types (not reverse)
+- RO can evolve schema based on orchestration needs
+
+**Gateway's Role**:
+- Creates RR instances using types imported from RO
+- Owns `status.deduplication` and `status.stormAggregation` (per DD-GATEWAY-011)
+- Performs deduplication and storm detection before instance creation
 
 ### Multi-Provider Architecture
 

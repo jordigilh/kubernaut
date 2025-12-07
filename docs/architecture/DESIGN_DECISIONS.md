@@ -96,6 +96,7 @@
 | DD-WE-002 | Dedicated Execution Namespace | ✅ Approved | 2025-12-01 | [DD-WE-002-dedicated-execution-namespace.md](decisions/DD-WE-002-dedicated-execution-namespace.md) |
 | DD-WE-003 | Resource Lock Persistence (Deterministic PipelineRun Name) | ✅ Approved | 2025-12-01 | [DD-WE-003-resource-lock-persistence.md](decisions/DD-WE-003-resource-lock-persistence.md) |
 | DD-WE-004 | Exponential Backoff Cooldown | ✅ Approved | 2025-12-06 | [DD-WE-004-exponential-backoff-cooldown.md](decisions/DD-WE-004-exponential-backoff-cooldown.md) |
+| DD-PROD-001 | Production Readiness Checklist Standard | ✅ Approved | 2025-12-07 | [DD-PROD-001-production-readiness-checklist-standard.md](decisions/DD-PROD-001-production-readiness-checklist-standard.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 

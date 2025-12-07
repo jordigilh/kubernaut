@@ -83,9 +83,10 @@ var _ = Describe("Gateway Metrics", func() {
 
 		It("should increment AlertsReceivedTotal with correct labels", func() {
 			// BR-GATEWAY-018: Signal processing metrics (renamed from alerts to signals)
-			// Test counter with multiple labels
-			m.AlertsReceivedTotal.WithLabelValues("prometheus", "critical", "production").Inc()
-			m.AlertsReceivedTotal.WithLabelValues("prometheus", "warning", "staging").Inc()
+			// Note: environment label removed (2025-12-06) - SP owns classification
+			// Labels: source_type, severity (2 labels)
+			m.AlertsReceivedTotal.WithLabelValues("prometheus", "critical").Inc()
+			m.AlertsReceivedTotal.WithLabelValues("prometheus", "warning").Inc()
 
 			metricFamilies, err := registry.Gather()
 			Expect(err).ToNot(HaveOccurred())
@@ -227,27 +228,28 @@ var _ = Describe("Gateway Metrics", func() {
 
 		It("should export metrics with correct labels", func() {
 			// BR-GATEWAY-024: Metrics with labels
-			// Verify label structure
-			m.AlertsReceivedTotal.WithLabelValues("prometheus", "critical", "production").Inc()
+			// Note: environment label removed (2025-12-06) - SP owns classification
+			// Labels: source_type, severity (2 labels)
+			m.AlertsReceivedTotal.WithLabelValues("prometheus", "critical").Inc()
 
 			metricFamilies, err := registry.Gather()
 			Expect(err).ToNot(HaveOccurred())
 
 			for _, mf := range metricFamilies {
-				if mf.GetName() == "gateway_alerts_received_total" {
+				if mf.GetName() == "gateway_signals_received_total" {
 					metrics := mf.GetMetric()
 					Expect(metrics).ToNot(BeEmpty())
 					labels := metrics[0].GetLabel()
-					Expect(labels).To(HaveLen(3))
+					Expect(labels).To(HaveLen(2))
 
 					labelMap := make(map[string]string)
 					for _, label := range labels {
 						labelMap[label.GetName()] = label.GetValue()
 					}
 
-					Expect(labelMap["source"]).To(Equal("prometheus"))
+					// Labels: source_type, severity (environment removed 2025-12-06)
+					Expect(labelMap["source_type"]).To(Equal("prometheus"))
 					Expect(labelMap["severity"]).To(Equal("critical"))
-					Expect(labelMap["environment"]).To(Equal("production"))
 				}
 			}
 		})

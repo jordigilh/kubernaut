@@ -402,5 +402,343 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 	})
+
+	// =====================================================
+	// BR-ORCH-036: Manual Review Notification Tests
+	// =====================================================
+	Describe("CreateManualReviewNotification", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		Context("BR-ORCH-036: Manual Review Notification Creation", func() {
+			// Test #22: Generates deterministic name for AIAnalysis source
+			It("should generate deterministic name nr-manual-review-{rr.Name}", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:    creator.ManualReviewSourceAIAnalysis,
+					Reason:    "WorkflowResolutionFailed",
+					SubReason: "WorkflowNotFound",
+					Message:   "No matching workflow found",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("nr-manual-review-test-rr"))
+			})
+
+			// Test #23: Sets owner reference for cascade deletion
+			It("should set owner reference to RemediationRequest for cascade deletion (BR-ORCH-031)", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:    creator.ManualReviewSourceAIAnalysis,
+					Reason:    "WorkflowResolutionFailed",
+					SubReason: "ImageMismatch",
+					Message:   "Workflow image version mismatch",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.OwnerReferences).To(HaveLen(1))
+				Expect(nr.OwnerReferences[0].Name).To(Equal(rr.Name))
+				Expect(nr.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+			})
+
+			// Test #24: Idempotency
+			It("should be idempotent - return existing name without creating duplicate", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:    creator.ManualReviewSourceAIAnalysis,
+					Reason:    "WorkflowResolutionFailed",
+					SubReason: "NoMatchingWorkflows",
+					Message:   "No workflows matched",
+				}
+
+				// First call creates the notification
+				name1, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Second call should return same name without error
+				name2, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name2).To(Equal(name1))
+
+				// Verify only one notification exists
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+			})
+
+			// Test #25: Uses manual-review notification type
+			It("should use NotificationTypeManualReview type", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:    creator.ManualReviewSourceAIAnalysis,
+					Reason:    "WorkflowResolutionFailed",
+					SubReason: "LowConfidence",
+					Message:   "Confidence too low",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			})
+		})
+
+		Context("BR-ORCH-036: Priority Mapping by SubReason", func() {
+			// Test #26-30: Priority mapping via DescribeTable
+			DescribeTable("should map SubReason to correct priority",
+				func(subReason string, expectedPriority notificationv1.NotificationPriority) {
+					client := fakeClient.Build()
+					nc = creator.NewNotificationCreator(client, scheme)
+
+					rr := testutil.NewRemediationRequest("test-rr", "default")
+					reviewCtx := &creator.ManualReviewContext{
+						Source:    creator.ManualReviewSourceAIAnalysis,
+						Reason:    "WorkflowResolutionFailed",
+						SubReason: subReason,
+						Message:   "Test message",
+					}
+
+					name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+					Expect(err).ToNot(HaveOccurred())
+
+					nr := &notificationv1.NotificationRequest{}
+					err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(nr.Spec.Priority).To(Equal(expectedPriority))
+				},
+				Entry("WorkflowNotFound → High", "WorkflowNotFound", notificationv1.NotificationPriorityHigh),
+				Entry("ImageMismatch → High", "ImageMismatch", notificationv1.NotificationPriorityHigh),
+				Entry("ParameterValidationFailed → High", "ParameterValidationFailed", notificationv1.NotificationPriorityHigh),
+				Entry("NoMatchingWorkflows → Medium", "NoMatchingWorkflows", notificationv1.NotificationPriorityMedium),
+				Entry("LowConfidence → Medium", "LowConfidence", notificationv1.NotificationPriorityMedium),
+				Entry("InvestigationInconclusive → Medium", "InvestigationInconclusive", notificationv1.NotificationPriorityMedium),
+			)
+		})
+
+		Context("BR-ORCH-036: WorkflowExecution Source (Critical Priority)", func() {
+			// Test #31: ExhaustedRetries → Critical priority
+			It("should set Critical priority for ExhaustedRetries", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:       creator.ManualReviewSourceWorkflowExecution,
+					Reason:       "ExhaustedRetries",
+					SubReason:    "",
+					Message:      "Maximum retry count reached",
+					RetryCount:   3,
+					MaxRetries:   3,
+					LastExitCode: 1,
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityCritical))
+			})
+
+			// Test #32: PreviousExecutionFailed → Critical priority
+			It("should set Critical priority for PreviousExecutionFailed", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:            creator.ManualReviewSourceWorkflowExecution,
+					Reason:            "PreviousExecutionFailed",
+					SubReason:         "",
+					Message:           "Previous execution failed",
+					PreviousExecution: "we-abc123",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityCritical))
+			})
+		})
+
+		Context("BR-ORCH-036: Labels for Routing (BR-NOT-065)", func() {
+			// Test #33: Sets correct labels for manual review notification
+			It("should set kubernaut.ai labels including manual-review type for routing", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr.Spec.Severity = "critical"
+				reviewCtx := &creator.ManualReviewContext{
+					Source:    creator.ManualReviewSourceAIAnalysis,
+					Reason:    "WorkflowResolutionFailed",
+					SubReason: "WorkflowNotFound",
+					Message:   "Test",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "manual-review"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/severity", "critical"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/review-source", "ai_analysis"))
+			})
+		})
+
+		Context("BR-ORCH-036: Metadata for Context", func() {
+			// Test #34: Sets metadata for AIAnalysis source
+			It("should set Metadata with AIAnalysis context", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:           creator.ManualReviewSourceAIAnalysis,
+					Reason:           "WorkflowResolutionFailed",
+					SubReason:        "WorkflowNotFound",
+					Message:          "No workflow found for alert type",
+					RootCauseAnalysis: "Pod crash loop detected",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", "test-rr"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("source", "ai_analysis"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "WorkflowResolutionFailed"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("subReason", "WorkflowNotFound"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Pod crash loop detected"))
+			})
+
+			// Test #35: Sets metadata for WorkflowExecution source with retry info
+			It("should set Metadata with WorkflowExecution retry context", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:       creator.ManualReviewSourceWorkflowExecution,
+					Reason:       "ExhaustedRetries",
+					SubReason:    "",
+					Message:      "Max retries exceeded",
+					RetryCount:   3,
+					MaxRetries:   3,
+					LastExitCode: 137,
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", "test-rr"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("source", "workflow_execution"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "ExhaustedRetries"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("retryCount", "3"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("maxRetries", "3"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("lastExitCode", "137"))
+			})
+		})
+
+		Context("BR-ORCH-036: Channel Determination", func() {
+			// Test #36: Critical priority → Slack + Email
+			It("should use Slack + Email for Critical priority", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:  creator.ManualReviewSourceWorkflowExecution,
+					Reason:  "ExhaustedRetries",
+					Message: "Critical failure",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Channels).To(ConsistOf(
+					notificationv1.ChannelSlack,
+					notificationv1.ChannelEmail,
+				))
+			})
+
+			// Test #37: High/Medium priority → Slack only
+			It("should use Slack only for High/Medium priority", func() {
+				client := fakeClient.Build()
+				nc = creator.NewNotificationCreator(client, scheme)
+
+				rr := testutil.NewRemediationRequest("test-rr", "default")
+				reviewCtx := &creator.ManualReviewContext{
+					Source:    creator.ManualReviewSourceAIAnalysis,
+					Reason:    "WorkflowResolutionFailed",
+					SubReason: "LowConfidence",
+					Message:   "Medium priority failure",
+				}
+
+				name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+				Expect(err).ToNot(HaveOccurred())
+
+				nr := &notificationv1.NotificationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(nr.Spec.Channels).To(ConsistOf(notificationv1.ChannelSlack))
+			})
+		})
+	})
 })
 

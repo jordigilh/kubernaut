@@ -42,6 +42,13 @@ import (
 // 	RunSpecs(t, "Embedding Client Unit Suite")
 // }
 
+// ========================================
+// EMBEDDING CLIENT UNIT TESTS
+// 📋 Business Requirements:
+//    - BR-STORAGE-012: Workflow Semantic Search (embedding generation)
+//    - BR-STORAGE-008: Embedding Generation with Retry
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("Embedding Client", func() {
 	var (
 		ctx         context.Context
@@ -88,6 +95,8 @@ var _ = Describe("Embedding Client", func() {
 	})
 
 	Describe("NewClient", func() {
+		// BEHAVIOR: Client constructor creates functional embedding client
+		// CORRECTNESS: Client is non-nil and can generate embeddings
 		It("should create a new embedding client", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
@@ -99,6 +108,8 @@ var _ = Describe("Embedding Client", func() {
 	})
 
 	Describe("Embed", func() {
+		// BEHAVIOR: Embedding service generates 768-dimensional vectors for text
+		// CORRECTNESS: Vectors are properly sized and cached for subsequent requests
 		Context("when service returns valid embedding", func() {
 			BeforeEach(func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,6 +164,8 @@ var _ = Describe("Embedding Client", func() {
 		})
 
 		Context("when text is empty", func() {
+			// BEHAVIOR: Empty text input is rejected with validation error
+			// CORRECTNESS: Error message indicates text must be non-empty
 			BeforeEach(func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusOK)
@@ -168,6 +181,8 @@ var _ = Describe("Embedding Client", func() {
 		})
 
 		Context("when service returns error", func() {
+			// BEHAVIOR: 4xx errors are not retried (client errors)
+			// CORRECTNESS: Error propagates without retry for non-transient failures
 			BeforeEach(func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusBadRequest)
@@ -184,6 +199,8 @@ var _ = Describe("Embedding Client", func() {
 		})
 
 		Context("when service is temporarily unavailable", func() {
+			// BEHAVIOR: 5xx errors trigger exponential backoff retry (BR-STORAGE-008)
+			// CORRECTNESS: Retry succeeds after transient failures
 			var callCount int
 
 			BeforeEach(func() {
@@ -219,6 +236,8 @@ var _ = Describe("Embedding Client", func() {
 		})
 
 		Context("when service returns invalid dimensions", func() {
+			// BEHAVIOR: Embeddings with incorrect dimensions are rejected
+			// CORRECTNESS: pgvector requires exact 768 dimensions
 			BeforeEach(func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					// Return wrong dimensions
@@ -242,6 +261,8 @@ var _ = Describe("Embedding Client", func() {
 		})
 
 		Context("when cache is unavailable", func() {
+			// BEHAVIOR: Graceful degradation when cache unavailable
+			// CORRECTNESS: Embedding generation succeeds without cache
 			BeforeEach(func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					mockEmbedding := make([]float32, 768)
@@ -267,6 +288,8 @@ var _ = Describe("Embedding Client", func() {
 		})
 
 		Context("when context is cancelled", func() {
+			// BEHAVIOR: Context cancellation interrupts embedding request
+			// CORRECTNESS: Context deadline exceeded error propagates
 			BeforeEach(func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					// Slow response

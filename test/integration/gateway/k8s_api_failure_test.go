@@ -112,7 +112,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// BUSINESS SCENARIO: Kubernetes API down during CRD creation
 			// Expected: Error returned, caller (webhook handler) returns 500
 
-			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
 			// BUSINESS OUTCOME: K8s API failure detected
 			Expect(err).To(HaveOccurred(),
@@ -132,15 +132,15 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// Expected: Each attempt fails gracefully, Gateway remains operational
 
 			// Attempt 1: Failure
-			_, err1 := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err1 := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 			Expect(err1).To(HaveOccurred())
 
 			// Attempt 2: Failure
-			_, err2 := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err2 := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 			Expect(err2).To(HaveOccurred())
 
 			// Attempt 3: Failure
-			_, err3 := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err3 := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 			Expect(err3).To(HaveOccurred())
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -153,7 +153,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// BR-GATEWAY-019: Operational visibility during failures
 			// Expected: Error messages contain K8s-specific details
 
-			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("connection refused"),
@@ -173,13 +173,13 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			// Simulate K8s API down
 			failingK8sClient.failCreate = true
-			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 			Expect(err).To(HaveOccurred(),
 				"First attempt fails when K8s API down")
 
 			// Simulate K8s API recovery
 			failingK8sClient.failCreate = false
-			rr, err := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
 			Expect(err).NotTo(HaveOccurred(),
 				"Second attempt succeeds when K8s API recovers")
@@ -210,7 +210,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				},
 			}
 			failingK8sClient.failCreate = true
-			_, err1 := crdCreator.CreateRemediationRequest(ctx, signal1, "P0", "production")
+			_, err1 := crdCreator.CreateRemediationRequest(ctx, signal1) // environment/priority removed - SP owns classification
 			Expect(err1).To(HaveOccurred(),
 				"First signal fails when K8s API down")
 
@@ -225,7 +225,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				},
 			}
 			failingK8sClient.failCreate = false
-			_, err2 := crdCreator.CreateRemediationRequest(ctx, signal2, "P1", "staging")
+			_, err2 := crdCreator.CreateRemediationRequest(ctx, signal2) // environment/priority removed - SP owns classification
 			Expect(err2).NotTo(HaveOccurred(),
 				"Second signal succeeds when K8s API recovers")
 

@@ -1,13 +1,43 @@
 # Signal Processing Service - Implementation Plan
 
-**Filename**: `IMPLEMENTATION_PLAN_V1.21.md`
-**Version**: v1.21
-**Last Updated**: 2025-12-04
+**Filename**: `IMPLEMENTATION_PLAN_V1.27.md`
+**Version**: v1.27
+**Last Updated**: 2025-12-06
 **Timeline**: 14-17 days (quality-focused, includes label detection)
 **Status**: ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Production-Ready Standard (100% Confidence - All Dependencies Validated)
 
 **Change Log**:
+- **v1.27** (2025-12-06): Day 8 Triage - DetectedLabels Test Matrix Expansion + Gap Fixes
+  - ✅ **Test File Location**: Added `test/unit/signalprocessing/label_detector_test.go` per BR-SP-101
+  - ✅ **Test Matrix Expanded**: 7 → 15 tests (Happy Path 8 + Edge Cases 3 + Error Handling 4)
+  - ✅ **BR-SP-103 Coverage**: Added 4 FailedDetections error handling tests
+  - ✅ **ServiceMesh Test**: Added DL-HP-08 for Istio/Linkerd detection (8th detection type)
+  - ✅ **Comment Fixed**: "9 label types" → "8 label types" (PodSecurityLevel removed v2.2)
+  - ✅ **Code Fixed**: Removed PodSecurityLevel detection (deprecated PSP, inconsistent PSS)
+  - ✅ **Import Clarified**: Added explicit `sharedtypes` import to plan code
+  - ✅ **Test ID Naming**: TC-DL-XXX → DL-HP-XX/DL-EC-XX/DL-ER-XX (consistency with Day 7)
+  - ✅ **SLA Tier Documentation**: Added industry-standard metallic tier explanation (ITIL, MSP)
+  - 📏 **Triage Source**: Day 8 pre-implementation triage against TESTING_GUIDELINES.md
+- **v1.26** (2025-12-06): Day 7 Triage - OwnerChain Schema Alignment + Test Matrix
+  - ✅ **OwnerChainEntry Schema**: Fixed to include Namespace, exclude APIVersion/UID (DD-WORKFLOW-001 v1.8)
+  - ✅ **Max Depth**: Specified MaxOwnerChainDepth = 5 per BR-SP-100
+  - ✅ **Source Not In Chain**: Clarified chain contains owners only (source not included)
+  - ✅ **Test Matrix Expanded**: 5 → 14 tests (Happy Path 4 + Edge Cases 4 + Error Handling 4 + Bonus 2)
+  - ✅ **CRD Types Updated**: `api/signalprocessing/v1alpha1/signalprocessing_types.go` aligned
+  - ✅ **K8s Enricher Fixed**: `buildOwnerChain` now uses correct schema
+  - 📏 **Triage Source**: Day 7 pre-implementation triage against DD-WORKFLOW-001 v1.8
+- **v1.25** (2025-12-06): Day 6 Triage - Business Classifier Complete Compliance
+  - ✅ **Incremental Fill**: Classification uses all 4 tiers progressively (not early return)
+  - ✅ **Default Values**: Criticality=medium, SLARequirement=bronze (per plan)
+  - ✅ **Per-Field Confidence**: Added internal tracking for weighted average
+  - ✅ **collectLabels**: Merges namespace + deployment labels
+  - ✅ **Test Matrix**: 23 tests (Happy Path 7 + Edge Cases 8 + Confidence 4 + Error 4)
+- **v1.24** (2025-12-06): Day 5 Complete + RO/Gateway Coordination
+  - ✅ **Priority Engine**: Rego-based priority assignment complete
+  - ✅ **HotReloader**: pkg/shared/hotreload/FileWatcher implemented
+  - ✅ **Gateway Notice Updated**: SP environment + priority ready, Gateway unblocked
+  - ✅ **RO Notice Updated**: SP Day 5 complete, RO may proceed with schema updates
 - **v1.21** (2025-12-04): Template v3.0 Full Compliance + Implementation Start
   - ✅ **Template Reference Updated**: v2.8 → v3.0 in "Based on" section
   - ✅ **HANDOFF/RESPONSE Pattern**: Added documentation section (Template v3.0)
@@ -2190,6 +2220,19 @@ const (
 )
 
 // Valid enum values per BR-SP-081
+//
+// Criticality levels: standard incident/alert severity classification
+//
+// SLA Tier naming: Industry-standard "metallic tier" model (ITIL, MSP, Insurance)
+// Used by: ITIL frameworks, managed service providers, enterprise SLAs
+// Order: platinum (highest) > gold > silver > bronze (lowest/default)
+//
+// Alternative naming conventions (not used here, documented for reference):
+// - Cloud Providers: Basic, Standard, Premium, Enterprise (AWS, Azure, GCP support tiers)
+// - Numeric: Tier 1, Tier 2, Tier 3, Tier 4
+// - Priority: Critical, High, Medium, Low
+//
+// Kubernaut uses metallic tiers as they're widely recognized and imply service quality expectations.
 var (
     validCriticality = map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
     validSLATier     = map[string]bool{"platinum": true, "gold": true, "silver": true, "bronze": true}
@@ -2951,7 +2994,18 @@ func isClusterScoped(kind string) bool {
 
 **Purpose**: Auto-detect 8 cluster characteristics from K8s resources
 
+**Business Requirements**: BR-SP-101 (DetectedLabels Auto-Detection), BR-SP-103 (FailedDetections Tracking)
+
+**Authoritative Reference**: DD-WORKFLOW-001 v2.2
+
 **File**: `pkg/signalprocessing/detection/labels.go`
+
+**Test File**: `test/unit/signalprocessing/label_detector_test.go`
+
+> ⚠️ **CRITICAL DETECTION FAILURE HANDLING (DD-WORKFLOW-001 v2.2)**:
+> - Resource doesn't exist (no PDB) → `false` value, NOT in FailedDetections
+> - Query failed (RBAC denied, timeout) → `false` value, field name IN FailedDetections
+> - Use plain `bool` fields (NOT `*bool`) + `FailedDetections []string` array
 
 ```go
 package detection
@@ -2962,16 +3016,20 @@ import (
     "github.com/go-logr/logr"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
-    signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+    sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// LabelDetector auto-detects cluster characteristics (V1.0)
-// Convention: Boolean fields only included when true, omit when false
+// LabelDetector auto-detects 8 cluster characteristics from K8s resources.
+// BR-SP-101: DetectedLabels Auto-Detection
+// BR-SP-103: FailedDetections Tracking
+// DD-WORKFLOW-001 v2.2: Plain bool fields + FailedDetections array
 type LabelDetector struct {
     client client.Client
     logger logr.Logger
 }
 
+// NewLabelDetector creates a new LabelDetector.
+// Per BR-SP-101: Auto-detect cluster characteristics without customer configuration.
 func NewLabelDetector(c client.Client, logger logr.Logger) *LabelDetector {
     return &LabelDetector{
         client: c,
@@ -2979,10 +3037,19 @@ func NewLabelDetector(c client.Client, logger logr.Logger) *LabelDetector {
     }
 }
 
-// DetectLabels detects 9 label types from K8s context
-// Per DD-WORKFLOW-001 v2.1: Tracks QUERY FAILURES in FailedDetections field
+// DetectLabels detects 8 label types from K8s context.
+// Per DD-WORKFLOW-001 v2.2: Tracks QUERY FAILURES in FailedDetections field.
 //
-// IMPORTANT DISTINCTION:
+// 8 Detection Types:
+//   1. gitOpsManaged/gitOpsTool (ArgoCD/Flux)
+//   2. pdbProtected (PodDisruptionBudget)
+//   3. hpaEnabled (HorizontalPodAutoscaler)
+//   4. stateful (StatefulSet/PVC)
+//   5. helmManaged (Helm labels)
+//   6. networkIsolated (NetworkPolicy)
+//   7. serviceMesh (Istio/Linkerd)
+//
+// IMPORTANT DISTINCTION (BR-SP-103):
 // - Resource doesn't exist (PDB not found) → false (normal, NOT an error)
 // - Can't query resource (RBAC denied, timeout) → false + FailedDetections + warn log
 func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) *sharedtypes.DetectedLabels {
@@ -2991,7 +3058,7 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *sharedtypes.Ku
     }
 
     labels := &sharedtypes.DetectedLabels{}
-    var failedDetections []string  // Track QUERY failures only (DD-WORKFLOW-001 v2.1)
+    var failedDetections []string  // Track QUERY failures only (DD-WORKFLOW-001 v2.2)
 
     // 1. GitOps detection (ArgoCD/Flux)
     tool, err := d.detectGitOpsTool(ctx, k8sCtx)
@@ -3049,16 +3116,7 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *sharedtypes.Ku
         labels.NetworkIsolated = hasNetPol
     }
 
-    // 7. Pod Security Level detection
-    level, err := d.getPodSecurityLevel(ctx, k8sCtx)
-    if err != nil {
-        d.logger.V(1).Info("Could not read namespace PSS label", "error", err)
-        failedDetections = append(failedDetections, "podSecurityLevel")
-    } else {
-        labels.PodSecurityLevel = level  // "" is valid - just means no PSS label
-    }
-
-    // 8. Service Mesh detection
+    // 7. Service Mesh detection (Istio/Linkerd)
     mesh, err := d.detectServiceMesh(ctx, k8sCtx)
     if err != nil {
         d.logger.V(1).Info("Could not detect service mesh", "error", err)
@@ -3067,7 +3125,7 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *sharedtypes.Ku
         labels.ServiceMesh = mesh  // "" is valid - just means no mesh
     }
 
-    // Set FailedDetections only if we had QUERY failures (DD-WORKFLOW-001 v2.1)
+    // Set FailedDetections only if we had QUERY failures (DD-WORKFLOW-001 v2.2)
     if len(failedDetections) > 0 {
         labels.FailedDetections = failedDetections
         d.logger.Info("Some label detections failed (RBAC or timeout)",
@@ -3077,7 +3135,7 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *sharedtypes.Ku
     return labels
 }
 
-// Helper functions now return (value, error) for FailedDetections tracking (DD-WORKFLOW-001 v2.1)
+// Helper functions now return (value, error) for FailedDetections tracking (DD-WORKFLOW-001 v2.2)
 
 func (d *LabelDetector) detectGitOpsTool(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (string, error) {
     // Check for ArgoCD: argocd.argoproj.io/instance annotation
@@ -3094,48 +3152,54 @@ func (d *LabelDetector) hasPDB(ctx context.Context, k8sCtx *sharedtypes.Kubernet
 
 func (d *LabelDetector) hasHPA(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Query HorizontalPodAutoscalers targeting deployment
+    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
     return false, nil
 }
 
 func (d *LabelDetector) isStateful(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Check if pod is owned by StatefulSet or has PVCs
+    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
     return false, nil
 }
 
 func (d *LabelDetector) isHelmManaged(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Check for app.kubernetes.io/managed-by: Helm or helm.sh/chart annotation
+    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
     return false, nil
 }
 
 func (d *LabelDetector) hasNetworkPolicy(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (bool, error) {
     // Query NetworkPolicies in namespace
+    // Returns (true/false, nil) on success, (false, err) on RBAC/timeout
     return false, nil
-}
-
-func (d *LabelDetector) getPodSecurityLevel(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (string, error) {
-    // Check namespace label: pod-security.kubernetes.io/enforce
-    // Returns ("privileged" | "baseline" | "restricted" | "", nil) on success
-    return "", nil
 }
 
 func (d *LabelDetector) detectServiceMesh(ctx context.Context, k8sCtx *sharedtypes.KubernetesContext) (string, error) {
     // Check for Istio sidecar or Linkerd proxy annotations
-    // Returns ("istio" | "linkerd" | "", nil) on success
+    // Returns ("istio" | "linkerd" | "", nil) on success, ("", err) on RBAC/timeout
     return "", nil
 }
 ```
 
-**Test Scenarios (Day 8)**:
+**Test Scenarios (Day 8)** - 15 tests per TESTING_GUIDELINES.md:
 
-| ID | Input | Expected Outcome |
-|----|-------|------------------|
-| TC-DL-001 | ArgoCD-annotated Deployment | `gitOpsManaged: true, gitOpsTool: "argocd"` |
-| TC-DL-002 | Flux-labeled Deployment | `gitOpsManaged: true, gitOpsTool: "flux"` |
-| TC-DL-003 | Deployment with PDB | `pdbProtected: true` |
-| TC-DL-004 | Deployment with HPA | `hpaEnabled: true` |
-| TC-DL-005 | StatefulSet Pod | `stateful: true` |
-| TC-DL-006 | Helm-managed Deployment | `helmManaged: true` |
-| TC-DL-007 | Namespace with NetworkPolicy | `networkIsolated: true` |
+| ID | Category | Input | Expected Outcome | BR |
+|----|----------|-------|------------------|-----|
+| **DL-HP-01** | Happy Path | ArgoCD-annotated Deployment | `gitOpsManaged: true, gitOpsTool: "argocd"` | BR-SP-101 |
+| **DL-HP-02** | Happy Path | Flux-labeled Deployment | `gitOpsManaged: true, gitOpsTool: "flux"` | BR-SP-101 |
+| **DL-HP-03** | Happy Path | Deployment with PDB | `pdbProtected: true` | BR-SP-101 |
+| **DL-HP-04** | Happy Path | Deployment with HPA | `hpaEnabled: true` | BR-SP-101 |
+| **DL-HP-05** | Happy Path | StatefulSet Pod | `stateful: true` | BR-SP-101 |
+| **DL-HP-06** | Happy Path | Helm-managed Deployment | `helmManaged: true` | BR-SP-101 |
+| **DL-HP-07** | Happy Path | Namespace with NetworkPolicy | `networkIsolated: true` | BR-SP-101 |
+| **DL-HP-08** | Happy Path | Istio sidecar-injected Pod | `serviceMesh: "istio"` | BR-SP-101 |
+| **DL-EC-01** | Edge Case | Clean deployment (no detections) | All fields `false`, no FailedDetections | BR-SP-101 |
+| **DL-EC-02** | Edge Case | Nil KubernetesContext | Return `nil` | BR-SP-101 |
+| **DL-EC-03** | Edge Case | Multiple detections true | GitOps + PDB + HPA all true simultaneously | BR-SP-101 |
+| **DL-ER-01** | Error | RBAC denied (PDB query) | `pdbProtected: false`, `FailedDetections: ["pdbProtected"]` | BR-SP-103 |
+| **DL-ER-02** | Error | API timeout (HPA query) | `hpaEnabled: false`, `FailedDetections: ["hpaEnabled"]` | BR-SP-103 |
+| **DL-ER-03** | Error | Multiple query failures | `FailedDetections: ["pdbProtected", "hpaEnabled", "networkIsolated"]` | BR-SP-103 |
+| **DL-ER-04** | Error | Context cancellation | Return partial results with detected labels so far | BR-SP-103 |
 
 ---
 

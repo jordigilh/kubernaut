@@ -247,11 +247,12 @@ var _ = Describe("Full User Journey E2E", func() {
             Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
             By("Verifying phase transitions")
+            // Per reconciliation-phases.md v2.0: 4-phase flow
+            // Validating and Recommending phases removed in v1.4 and v1.8
             phases := []string{
-                "Validating",
+                "Pending",
                 "Investigating",
                 "Analyzing",
-                "Recommending",
                 "Completed",
             }
 
@@ -269,8 +270,8 @@ var _ = Describe("Full User Journey E2E", func() {
             // Production should require approval
             Expect(analysis.Status.ApprovalRequired).To(BeTrue())
 
-            // Should have recommendations
-            Expect(analysis.Status.Recommendations).NotTo(BeEmpty())
+            // Should have workflow selected
+            Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
 
             // Should have completion timestamp
             Expect(analysis.Status.CompletedAt).NotTo(BeZero())

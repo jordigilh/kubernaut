@@ -1,15 +1,33 @@
 ## Controller Implementation
 
-**Version**: 4.2
-**Last Updated**: 2025-12-05
+**Version**: 4.4
+**Last Updated**: 2025-12-06
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
-**Status**: ✅ Updated for Tekton Architecture (ADR-044)
+**Status**: ✅ Updated for Tekton Architecture (ADR-044), Exponential Backoff (DD-WE-004)
 
 **Location**: `internal/controller/workflowexecution/workflowexecution_controller.go`
 
 ---
 
 ## Changelog
+
+### Version 4.4 (2025-12-06)
+- ✅ **Added**: Exponential backoff cooldown per DD-WE-004 v1.1 and BR-WE-012
+- ✅ **CRITICAL**: Backoff ONLY applies to pre-execution failures (`wasExecutionFailure: false`)
+- ✅ **CRITICAL**: Execution failures (`wasExecutionFailure: true`) block ALL retries with `PreviousExecutionFailed`
+- ✅ **Added**: `BaseCooldownPeriod`, `MaxCooldownPeriod`, `MaxBackoffExponent`, `MaxConsecutiveFailures` reconciler config
+- ✅ **Updated**: `CheckCooldown()` to first check `wasExecutionFailure` → block if true
+- ✅ **Updated**: `MarkFailed()` to only apply backoff when `wasExecutionFailure: false`
+- ✅ **Updated**: `MarkCompleted()` to reset `ConsecutiveFailures` and clear `NextAllowedExecution`
+- ✅ **Added**: `ExhaustedRetries` and `PreviousExecutionFailed` skip reasons
+- ✅ **Added**: `workflowexecution_backoff_skip_total` and `workflowexecution_consecutive_failures` metrics
+
+### Version 4.3 (2025-12-05)
+- ✅ **Updated**: Finalizer name to `workflowexecution.kubernaut.ai/workflowexecution-cleanup` per finalizers-lifecycle.md
+- ✅ **Updated**: `reconcileDelete()` to use deterministic PipelineRun name per DD-WE-003
+- ✅ **Updated**: `reconcileTerminal()` implementation aligned with DD-WE-003
+- ✅ **Added**: `WorkflowExecutionDeleted` event emission per finalizers-lifecycle.md
+- ✅ **Added**: `LockReleased` event emission after cooldown expiry
 
 ### Version 4.2 (2025-12-05)
 - ✅ **Added**: TaskRun RBAC for extracting failure details from failed tasks
@@ -67,14 +85,14 @@ import (
 )
 
 const (
-    // Finalizer for cleanup coordination
-    workflowExecutionFinalizer = "workflowexecution.kubernaut.ai/finalizer"
+    // Finalizer for cleanup coordination (v4.3: aligned with finalizers-lifecycle.md)
+    FinalizerName = "workflowexecution.kubernaut.ai/workflowexecution-cleanup"
 
     // Cooldown period for same workflow on same target
-    defaultCooldownPeriod = 5 * time.Minute
+    DefaultCooldownPeriod = 5 * time.Minute
 
     // Status check interval for running PipelineRuns
-    statusCheckInterval = 10 * time.Second
+    StatusCheckInterval = 10 * time.Second
 )
 
 // WorkflowExecutionReconciler reconciles a WorkflowExecution object
@@ -82,9 +100,15 @@ type WorkflowExecutionReconciler struct {
     client.Client
     Scheme             *runtime.Scheme
     Recorder           record.EventRecorder
-    CooldownPeriod     time.Duration
-    ExecutionNamespace string  // "kubernaut-workflows" (DD-WE-002)
-    ServiceAccountName string  // "kubernaut-workflow-runner"
+    CooldownPeriod     time.Duration  // DEPRECATED: Use BaseCooldownPeriod (DD-WE-004)
+    ExecutionNamespace string         // "kubernaut-workflows" (DD-WE-002)
+    ServiceAccountName string         // "kubernaut-workflow-runner"
+
+    // Exponential Backoff Configuration (DD-WE-004)
+    BaseCooldownPeriod     time.Duration  // Default: 1 minute
+    MaxCooldownPeriod      time.Duration  // Default: 10 minutes
+    MaxBackoffExponent     int            // Default: 4
+    MaxConsecutiveFailures int            // Default: 5
 }
 
 // ========================================
@@ -340,19 +364,16 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
     return false, nil
 }
 
-// checkCooldown checks if same workflow ran recently on same target (DD-WE-001)
+// checkCooldown checks cooldown and execution failure blocking (DD-WE-001, DD-WE-004)
+// CRITICAL: Execution failures (wasExecutionFailure: true) block ALL retries
+// Pre-execution failures use exponential backoff
 func (r *WorkflowExecutionReconciler) checkCooldown(
     ctx context.Context,
     wfe *workflowexecutionv1.WorkflowExecution,
-) *workflowexecutionv1.WorkflowExecution {
-    cooldown := r.CooldownPeriod
-    if cooldown == 0 {
-        cooldown = defaultCooldownPeriod
-    }
-
+) (blocked bool, skipDetails *workflowexecutionv1.SkipDetails) {
     var wfeList workflowexecutionv1.WorkflowExecutionList
     if err := r.List(ctx, &wfeList, client.InNamespace(wfe.Namespace)); err != nil {
-        return nil
+        return false, nil
     }
 
     for i := range wfeList.Items {
@@ -366,14 +387,53 @@ func (r *WorkflowExecutionReconciler) checkCooldown(
         if other.Spec.WorkflowRef.WorkflowID != wfe.Spec.WorkflowRef.WorkflowID {
             continue
         }
+
+        // CRITICAL: Check if previous execution FAILED DURING EXECUTION
+        // Per cross-team agreement (WE→RO-003): NO retry for execution failures
+        if other.Status.Phase == workflowexecutionv1.PhaseFailed &&
+           other.Status.FailureDetails != nil &&
+           other.Status.FailureDetails.WasExecutionFailure {
+            return true, &workflowexecutionv1.SkipDetails{
+                Reason:  SkipReasonPreviousExecutionFailed,
+                Message: "Previous execution failed during workflow run. Manual intervention required.",
+                SkippedAt: metav1.Now(),
+            }
+        }
+
+        // Check exponential backoff for pre-execution failures (DD-WE-004)
+        if other.Status.Phase == workflowexecutionv1.PhaseFailed &&
+           other.Status.NextAllowedExecution != nil &&
+           time.Now().Before(other.Status.NextAllowedExecution.Time) {
+            remaining := time.Until(other.Status.NextAllowedExecution.Time)
+            return true, &workflowexecutionv1.SkipDetails{
+                Reason:  SkipReasonRecentlyRemediated,
+                Message: fmt.Sprintf("Backoff active, next execution allowed in %s", remaining.Round(time.Second)),
+                SkippedAt: metav1.Now(),
+            }
+        }
+
+        // Check max consecutive failures (pre-execution only)
+        if other.Status.ConsecutiveFailures >= int32(r.MaxConsecutiveFailures) {
+            return true, &workflowexecutionv1.SkipDetails{
+                Reason:  SkipReasonExhaustedRetries,
+                Message: fmt.Sprintf("Exhausted %d consecutive pre-execution retries", r.MaxConsecutiveFailures),
+                SkippedAt: metav1.Now(),
+            }
+        }
+
+        // Standard cooldown for successful completions
         if other.Status.Phase == workflowexecutionv1.PhaseCompleted &&
            other.Status.CompletionTime != nil &&
-           time.Since(other.Status.CompletionTime.Time) < cooldown {
-            return other
+           time.Since(other.Status.CompletionTime.Time) < r.BaseCooldownPeriod {
+            return true, &workflowexecutionv1.SkipDetails{
+                Reason:  SkipReasonRecentlyRemediated,
+                Message: "Same workflow completed recently",
+                SkippedAt: metav1.Now(),
+            }
         }
     }
 
-    return nil
+    return false, nil
 }
 
 // markCompleted transitions to Completed phase

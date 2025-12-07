@@ -337,12 +337,7 @@ func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClie
 			IdleTimeout:  opts.IdleTimeout,
 		},
 
-		Middleware: gatewayconfig.MiddlewareSettings{
-			RateLimit: gatewayconfig.RateLimitSettings{
-				RequestsPerMinute: 20, // Production: 100
-				Burst:             5,  // Production: 10
-			},
-		},
+		// Middleware: Rate limiting removed (ADR-048) - delegated to proxy
 
 		Infrastructure: gatewayconfig.InfrastructureSettings{
 			Redis: &rediscache.Options{
@@ -375,7 +370,7 @@ func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClie
 	logger.Info("Creating Gateway server for integration tests",
 		zap.Duration("deduplication_ttl", cfg.Processing.Deduplication.TTL),
 		zap.Int("storm_rate_threshold", cfg.Processing.Storm.RateThreshold),
-		zap.Int("rate_limit", cfg.Middleware.RateLimit.RequestsPerMinute),
+		// rate_limit removed (ADR-048) - delegated to proxy
 	)
 
 	// Create isolated Prometheus registry for this test

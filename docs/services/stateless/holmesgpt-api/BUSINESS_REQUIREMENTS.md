@@ -4,7 +4,7 @@
 **Service Type**: Stateless HTTP API (Python)
 **Version**: v3.0 (Minimal Internal Service)
 **Last Updated**: November 8, 2025
-**Status**: Production-Ready (with 2 pending enhancements)
+**Status**: ✅ Production-Ready (V1.0 Complete)
 
 ---
 
@@ -45,22 +45,24 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### 📊 Summary
 
-**Total Business Requirements**: 47 essential BRs (140 deferred BRs for v2.0)
+**Total Business Requirements**: 49 essential BRs (139 deferred BRs for v2.0)
 **Categories**: 7
 **Priority Breakdown**:
-- P0 (Critical): 44 BRs (core business logic + graceful shutdown)
-- P1 (High): 3 BRs (RFC 7807 + enhancements)
+- P0 (Critical): 45 BRs (core business logic + graceful shutdown + recovery context)
+- P1 (High): 4 BRs (RFC 7807 + hot-reload + enhancements)
 
 **Implementation Status**:
-- ✅ Implemented: 47 BRs (100%)
-- ⏸️ Pending: 0 BRs
+- ✅ Implemented: 50 BRs (100%)
+- BR-HAPI-192 (Recovery Context Consumption): ✅ Complete
+- BR-HAPI-199 (ConfigMap Hot-Reload): ✅ Complete
+- BR-HAPI-200 (Investigation Inconclusive): ✅ Complete
 
 **Test Coverage**:
-- Unit: 111 test specs (7 RFC 7807 tests added, 100% passing, 95% confidence)
+- Unit: 481 test specs (100% passing, 95% confidence)
 - Integration: 5 test scenarios (SDK, Context API, Real LLM, RFC 7807, Graceful Shutdown)
 - E2E: Not yet implemented (planned for v2.0)
 
-**Deferred BRs**: 140 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
+**Deferred BRs**: 139 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
 
 ---
 
@@ -548,7 +550,44 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-## 📋 Deferred BRs (140 BRs for v2.0)
+### BR-HAPI-199: ConfigMap Hot-Reload (V1.0)
+**Status**: ✅ **Complete**
+**Priority**: P1 (HIGH)
+**Implementation Time**: ~9 hours
+**Design Reference**: [DD-HAPI-004: ConfigMap Hot-Reload](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md)
+
+**Description**: The HolmesGPT API Service MUST support hot-reload of configuration from mounted ConfigMap without pod restart.
+
+**Hot-Reloadable Fields**:
+| Field | Business Use Case |
+|-------|-------------------|
+| `llm.model` | Cost/quality switching |
+| `llm.provider` | Provider failover |
+| `llm.endpoint` | Endpoint switching |
+| `llm.max_retries` | Retry tuning |
+| `llm.timeout_seconds` | Timeout adjustment |
+| `llm.temperature` | Response tuning |
+| `toolsets.*` | Feature toggles |
+| `log_level` | Debug enablement |
+
+**Acceptance Criteria**:
+- [x] Service reloads config from ConfigMap within 90 seconds
+- [x] Invalid config gracefully degrades (keeps previous)
+- [x] Configuration hash logged on reload for audit
+- [x] Metrics exposed for reload count and errors
+
+**Implementation** (December 7, 2025):
+- `FileWatcher` class with `watchdog` library for file system monitoring
+- `ConfigManager` class for thread-safe config access
+- Prometheus metrics: `hapi_config_reload_total`, `hapi_config_reload_errors_total`, `hapi_config_last_reload_timestamp_seconds`
+- Graceful degradation on invalid config
+- Integration with `main.py` startup
+
+**Full Specification**: [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md)
+
+---
+
+## 📋 Deferred BRs (139 BRs for v2.0)
 
 The following 140 BRs are deferred to v2.0 and only needed if the service becomes externally exposed:
 
@@ -575,14 +614,14 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 
 ---
 
-### Advanced Configuration (BR-HAPI-146 to 165) - 20 BRs
-- Dynamic configuration reloading
+### Advanced Configuration (BR-HAPI-146 to 165) - 19 BRs (1 moved to V1.0)
+- ~~Dynamic configuration reloading~~ → **Moved to V1.0 as BR-HAPI-199**
 - Feature flags
 - A/B testing configuration
 - Multi-environment config
 - Configuration validation
 
-**Reason for Deferral**: Minimal config sufficient for internal service
+**Reason for Deferral**: Advanced config features not needed for internal service (basic hot-reload in V1.0)
 
 ---
 
@@ -624,13 +663,15 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 - [api-specification.md](./api-specification.md) - API specification with examples
 - [overview.md](./overview.md) - Service architecture and design decisions
 - [DD-HOLMESGPT-012](../../../architecture/decisions/DD-HOLMESGPT-012-Minimal-Internal-Service-Architecture.md) - Minimal service architecture decision
+- [DD-HAPI-004](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md) - ConfigMap hot-reload (V1.0) ⏳
 - [DD-004](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md) - RFC 7807 error responses
 - [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) - Graceful shutdown pattern
+- [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md) - Hot-reload business requirements
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: November 8, 2025
+**Document Version**: 1.2
+**Last Updated**: December 7, 2025
 **Maintained By**: Kubernaut Architecture Team
-**Status**: Production-Ready (with 2 pending enhancements)
+**Status**: ✅ V1.0 Complete (49 BRs implemented)
 

@@ -434,3 +434,4 @@ duration_ms:>500 AND service:data-storage
 **Changelog**:
 - v1.0 (Dec 4, 2025): Initial document - consolidated from observability/ folder per SERVICE_DOCUMENTATION_GUIDE.md
 
+
