@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -198,11 +199,28 @@ func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.W
 }
 
 func findAIAnalysisKindConfig() string {
+	// First, try to find via runtime caller location (most reliable)
+	_, currentFile, _, ok := runtime.Caller(0)
+	if ok {
+		dir := filepath.Dir(currentFile)
+		configPath := filepath.Join(dir, "kind-aianalysis-config.yaml")
+		if _, err := os.Stat(configPath); err == nil {
+			return configPath
+		}
+	}
+
 	// Try relative paths from different working directories
 	candidates := []string{
 		"test/infrastructure/kind-aianalysis-config.yaml",
 		"../test/infrastructure/kind-aianalysis-config.yaml",
 		"../../test/infrastructure/kind-aianalysis-config.yaml",
+		"../../../test/infrastructure/kind-aianalysis-config.yaml",
+		// Also try from the test directory itself
+		"../infrastructure/kind-aianalysis-config.yaml",
+		"../../infrastructure/kind-aianalysis-config.yaml",
+		"infrastructure/kind-aianalysis-config.yaml",
+		// Try from this package's location
+		"kind-aianalysis-config.yaml",
 	}
 
 	for _, path := range candidates {
@@ -211,6 +229,7 @@ func findAIAnalysisKindConfig() string {
 			return absPath
 		}
 	}
+
 	return ""
 }
 
@@ -307,10 +326,22 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 }
 
 func findCRDFile(name string) string {
+	// Try to find via runtime caller location first
+	_, currentFile, _, ok := runtime.Caller(0)
+	if ok {
+		// Go up to project root (from test/infrastructure/)
+		projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+		crdPath := filepath.Join(projectRoot, "config/crd/bases", name)
+		if _, err := os.Stat(crdPath); err == nil {
+			return crdPath
+		}
+	}
+
 	candidates := []string{
 		"config/crd/bases/" + name,
 		"../config/crd/bases/" + name,
 		"../../config/crd/bases/" + name,
+		"../../../config/crd/bases/" + name,
 		"config/crd/" + name,
 		"../config/crd/" + name,
 		"../../config/crd/" + name,
@@ -462,15 +493,22 @@ spec:
 }
 
 func deployDataStorage(clusterName, kubeconfigPath string, writer io.Writer) error {
+	// Get project root for build context
+	projectRoot := getProjectRoot()
+
 	// Build Data Storage image
 	fmt.Fprintln(writer, "  Building Data Storage image...")
-	buildCmd := exec.Command("make", "build-datastorage")
+	// Try podman build first (macOS)
+	buildCmd := exec.Command("podman", "build", "-t", "kubernaut-datastorage:latest",
+		"-f", "docker/data-storage.Dockerfile", ".")
+	buildCmd.Dir = projectRoot
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 	if err := buildCmd.Run(); err != nil {
-		// Try docker/podman build directly
-		buildCmd = exec.Command("podman", "build", "-t", "kubernaut-datastorage:latest",
+		// Try docker as fallback
+		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-datastorage:latest",
 			"-f", "docker/data-storage.Dockerfile", ".")
+		buildCmd.Dir = projectRoot
 		buildCmd.Stdout = writer
 		buildCmd.Stderr = writer
 		if err := buildCmd.Run(); err != nil {
@@ -480,11 +518,7 @@ func deployDataStorage(clusterName, kubeconfigPath string, writer io.Writer) err
 
 	// Load into Kind
 	fmt.Fprintln(writer, "  Loading Data Storage image into Kind...")
-	loadCmd := exec.Command("kind", "load", "docker-image", "kubernaut-datastorage:latest",
-		"--name", clusterName)
-	loadCmd.Stdout = writer
-	loadCmd.Stderr = writer
-	if err := loadCmd.Run(); err != nil {
+	if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", writer); err != nil {
 		return fmt.Errorf("failed to load image: %w", err)
 	}
 
@@ -549,23 +583,33 @@ spec:
 }
 
 func deployHolmesGPTAPI(clusterName, kubeconfigPath string, writer io.Writer) error {
+	// Get project root for build context
+	projectRoot := getProjectRoot()
+
 	// Build HolmesGPT-API image
 	fmt.Fprintln(writer, "  Building HolmesGPT-API image...")
-	buildCmd := exec.Command("make", "build-holmesgpt-api")
+	// Try podman build first (macOS)
+	buildCmd := exec.Command("podman", "build", "-t", "kubernaut-holmesgpt-api:latest",
+		"-f", "holmesgpt-api/Dockerfile", ".")
+	buildCmd.Dir = projectRoot
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("failed to build HolmesGPT-API: %w", err)
+		// Try docker as fallback
+		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-holmesgpt-api:latest",
+			"-f", "holmesgpt-api/Dockerfile", ".")
+		buildCmd.Dir = projectRoot
+		buildCmd.Stdout = writer
+		buildCmd.Stderr = writer
+		if err := buildCmd.Run(); err != nil {
+			return fmt.Errorf("failed to build HolmesGPT-API: %w", err)
+		}
 	}
 
 	// Load into Kind
 	fmt.Fprintln(writer, "  Loading HolmesGPT-API image into Kind...")
-	loadCmd := exec.Command("kind", "load", "docker-image", "kubernaut-holmesgpt-api:latest",
-		"--name", clusterName)
-	loadCmd.Stdout = writer
-	loadCmd.Stderr = writer
-	if err := loadCmd.Run(); err != nil {
-		return fmt.Errorf("failed to load image: %w", err)
+	if err := loadImageToKind(clusterName, "kubernaut-holmesgpt-api:latest", writer); err != nil {
+		return fmt.Errorf("failed to load HolmesGPT-API image: %w", err)
 	}
 
 	// Deploy manifest with mock LLM
@@ -623,15 +667,22 @@ spec:
 }
 
 func deployAIAnalysisController(clusterName, kubeconfigPath string, writer io.Writer) error {
+	// Get project root for build context
+	projectRoot := getProjectRoot()
+
 	// Build AIAnalysis controller image
 	fmt.Fprintln(writer, "  Building AIAnalysis controller image...")
-	buildCmd := exec.Command("make", "build-aianalysis")
+	// Try podman build first (macOS)
+	buildCmd := exec.Command("podman", "build", "-t", "kubernaut-aianalysis:latest",
+		"-f", "docker/aianalysis.Dockerfile", ".")
+	buildCmd.Dir = projectRoot
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 	if err := buildCmd.Run(); err != nil {
-		// Try docker build directly
-		buildCmd = exec.Command("podman", "build", "-t", "kubernaut-aianalysis:latest",
+		// Try docker as fallback
+		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-aianalysis:latest",
 			"-f", "docker/aianalysis.Dockerfile", ".")
+		buildCmd.Dir = projectRoot
 		buildCmd.Stdout = writer
 		buildCmd.Stderr = writer
 		if err := buildCmd.Run(); err != nil {
@@ -641,12 +692,8 @@ func deployAIAnalysisController(clusterName, kubeconfigPath string, writer io.Wr
 
 	// Load into Kind
 	fmt.Fprintln(writer, "  Loading AIAnalysis image into Kind...")
-	loadCmd := exec.Command("kind", "load", "docker-image", "kubernaut-aianalysis:latest",
-		"--name", clusterName)
-	loadCmd.Stdout = writer
-	loadCmd.Stderr = writer
-	if err := loadCmd.Run(); err != nil {
-		return fmt.Errorf("failed to load image: %w", err)
+	if err := loadImageToKind(clusterName, "kubernaut-aianalysis:latest", writer); err != nil {
+		return fmt.Errorf("failed to load AIAnalysis image: %w", err)
 	}
 
 	// Deploy controller with RBAC
@@ -791,10 +838,22 @@ func deployRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
 }
 
 func findRegoPolicy() string {
+	// Try to find via runtime caller location first
+	_, currentFile, _, ok := runtime.Caller(0)
+	if ok {
+		// Go up to project root (from test/infrastructure/)
+		projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+		policyPath := filepath.Join(projectRoot, "config/rego/aianalysis/approval.rego")
+		if _, err := os.Stat(policyPath); err == nil {
+			return policyPath
+		}
+	}
+
 	candidates := []string{
 		"config/rego/aianalysis/approval.rego",
 		"../config/rego/aianalysis/approval.rego",
 		"../../config/rego/aianalysis/approval.rego",
+		"../../../config/rego/aianalysis/approval.rego",
 	}
 	for _, path := range candidates {
 		if _, err := os.Stat(path); err == nil {
@@ -803,6 +862,47 @@ func findRegoPolicy() string {
 		}
 	}
 	return ""
+}
+
+// loadImageToKind loads a container image into the Kind cluster
+// Handles both Podman (localhost/ prefix) and Docker image naming
+func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
+	// For Podman on macOS, images are tagged with localhost/ prefix
+	// Try with localhost/ prefix first (Podman), then without (Docker)
+	loadCmd := exec.Command("kind", "load", "docker-image", "localhost/"+imageName,
+		"--name", clusterName)
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+	if err := loadCmd.Run(); err != nil {
+		// Try without localhost prefix (for docker)
+		loadCmd = exec.Command("kind", "load", "docker-image", imageName,
+			"--name", clusterName)
+		loadCmd.Stdout = writer
+		loadCmd.Stderr = writer
+		if err := loadCmd.Run(); err != nil {
+			return fmt.Errorf("failed to load image %s: %w", imageName, err)
+		}
+	}
+	return nil
+}
+
+// getProjectRoot returns the absolute path to the project root directory
+func getProjectRoot() string {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if ok {
+		// Go up from test/infrastructure/ to project root
+		return filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+	}
+
+	// Fallback: try to find go.mod
+	candidates := []string{".", "..", "../..", "../../.."}
+	for _, dir := range candidates {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			absPath, _ := filepath.Abs(dir)
+			return absPath
+		}
+	}
+	return "."
 }
 
 func createInlineRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
