@@ -156,10 +156,10 @@ class HumanReviewReason(str, Enum):
 |-------|--------|----------------|
 | Enum added | ✅ Complete | HolmesGPT-API |
 | BR-HAPI-200 documented | ✅ Complete | All |
-| LLM prompt update | V1.1 | HolmesGPT-API |
-| AIAnalysis handler | V1.1 | AIAnalysis |
-| RO handler | V1.1 | RO |
-| Notification routing | V1.1+ | Notification |
+| LLM prompt update | V1.0 | HolmesGPT-API |
+| AIAnalysis handler | V1.0 | AIAnalysis |
+| RO handler | ✅ V1.0 (planned) | RO |
+| Notification routing | ✅ V1.0 (Day 15) | Notification |
 
 ---
 
