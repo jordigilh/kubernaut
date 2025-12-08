@@ -267,7 +267,7 @@ default priority := "P3"
 	// ========================================
 
 	Context("Graceful - Invalid Policy Fallback", func() {
-		// IT-HR-03: Invalid policy → old retained
+		// BR-SP-072: Invalid policy → old retained
 		It("BR-SP-072: should retain old policy when update is invalid", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("hr-graceful")
@@ -364,7 +364,7 @@ labels["broken" := ["syntax"  // Missing bracket
 	// ========================================
 
 	Context("Concurrent - Update During Reconciliation", func() {
-		// IT-HR-04: Update during active reconciliation
+		// BR-SP-072: Update during active reconciliation
 		It("BR-SP-072: should handle policy update during active reconciliation", func() {
 			By("Creating namespace")
 			ns := createTestNamespaceWithLabels("hr-concurrent", map[string]string{
@@ -470,7 +470,7 @@ labels["concurrent-test"] := ["updated"] if { true }
 	// ========================================
 
 	Context("Recovery - Watcher Restart", func() {
-		// IT-HR-05: Watcher restart after error
+		// BR-SP-072: Watcher restart after error
 		It("BR-SP-072: should recover and process new CRs after ConfigMap delete/recreate", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("hr-recovery")

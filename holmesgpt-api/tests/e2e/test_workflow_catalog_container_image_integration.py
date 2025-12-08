@@ -32,31 +32,31 @@ import requests
 import json
 import os
 
-# Note: Uses fixtures from tests/e2e/conftest.py (DD-TEST-001 compliant)
-# DATA_STORAGE_URL and EMBEDDING_SERVICE_URL are provided via integration_infrastructure fixture
+# Note: Uses fixtures from tests/e2e/conftest.py (V1.0 Go infrastructure)
+# DATA_STORAGE_URL is provided via data_storage_stack fixture
 
 
 @pytest.fixture(scope="module")
-def workflow_catalog_tool(integration_infrastructure):
+def workflow_catalog_tool(data_storage_stack):
     """
     Create WorkflowCatalogTool configured for E2E testing
 
-    Configures tool to use integration test Data Storage Service URL from DD-TEST-001.
+    Configures tool to use Data Storage Service from Go infrastructure.
     """
     from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 
     toolset = WorkflowCatalogToolset()
     tool = toolset.tools[0]
 
-    # Override Data Storage URL for integration testing (DD-TEST-001: port 18090)
-    tool.data_storage_url = integration_infrastructure["data_storage_url"]
+    # Override Data Storage URL for E2E testing (Go infrastructure: port 8081)
+    tool.data_storage_url = data_storage_stack
 
     print(f"🔧 Workflow Catalog Tool configured: {tool.data_storage_url}")
     return tool
 
 
 @pytest.fixture(scope="module")
-def ensure_test_workflows(integration_infrastructure):
+def ensure_test_workflows(data_storage_stack):
     """
     Verify test workflows with container_image are present in database
 

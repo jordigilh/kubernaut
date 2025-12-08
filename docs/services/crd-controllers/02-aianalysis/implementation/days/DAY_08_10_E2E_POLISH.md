@@ -515,7 +515,7 @@ AIAnalysis V1.0 implementation complete with all business requirements met.
 ## Handoff Notes
 1. Rego policies in config/rego/aianalysis/
 2. HolmesGPT-API required at startup
-3. Data Storage optional (audit events)
+3. Data Storage **REQUIRED** for audit events (per DD-AUDIT-003, TESTING_GUIDELINES.md)
 4. NodePort 30084 for E2E tests
 
 ## Next Steps

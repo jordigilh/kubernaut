@@ -1,0 +1,473 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package remediationorchestrator_test
+
+import (
+	"fmt"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+// ============================================================================
+// LIFECYCLE INTEGRATION TESTS
+// Tests the complete RO lifecycle: RR → SP → AI → (Approval) → WE → Notification
+// Reference: BR-ORCH-025 (data pass-through), BR-ORCH-031 (cascade deletion)
+// ============================================================================
+
+var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "lifecycle"), func() {
+
+	Context("Basic RemediationRequest Creation", func() {
+		var (
+			namespace string
+			rrName    string
+		)
+
+		BeforeEach(func() {
+			namespace = createTestNamespace("ro-lifecycle")
+			rrName = fmt.Sprintf("rr-%d", time.Now().UnixNano())
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("should create RemediationRequest and transition to Processing phase", func() {
+			By("Creating a RemediationRequest")
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rrName,
+					Namespace: namespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: "fp12345678901234567890123456789012345678901234567890123456789012",
+					SignalName:        "TestHighMemoryAlert",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app",
+						Namespace: namespace,
+					},
+					FiringTime:   metav1.Now(),
+					ReceivedTime: metav1.Now(),
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Waiting for RO to process the RemediationRequest")
+			Eventually(func() string {
+				fetched := &remediationv1.RemediationRequest{}
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetched)
+				if err != nil {
+					return ""
+				}
+				return fetched.Status.OverallPhase
+			}, timeout, interval).ShouldNot(BeEmpty())
+
+			By("Verifying the RemediationRequest has been processed")
+			fetched := &remediationv1.RemediationRequest{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetched)).To(Succeed())
+			GinkgoWriter.Printf("✅ RR phase: %s\n", fetched.Status.OverallPhase)
+		})
+
+		It("should create SignalProcessing child CRD with owner reference", func() {
+			By("Creating a RemediationRequest")
+			rr := createRemediationRequest(namespace, rrName)
+
+			By("Waiting for SignalProcessing CRD to be created")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			sp := &signalprocessingv1.SignalProcessing{}
+
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying owner reference is set (BR-ORCH-031)")
+			Expect(sp.OwnerReferences).To(HaveLen(1))
+			Expect(sp.OwnerReferences[0].Name).To(Equal(rrName))
+			Expect(sp.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+			Expect(*sp.OwnerReferences[0].Controller).To(BeTrue())
+
+			By("Verifying SP spec contains RR reference")
+			Expect(sp.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+
+			GinkgoWriter.Printf("✅ SignalProcessing created: %s with owner ref to %s\n", spName, rrName)
+		})
+	})
+
+	Context("Phase Progression with Simulated Child Status Updates", func() {
+		var (
+			namespace string
+			rrName    string
+		)
+
+		BeforeEach(func() {
+			namespace = createTestNamespace("ro-phase")
+			rrName = fmt.Sprintf("rr-phase-%d", time.Now().UnixNano())
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("should progress through phases when child CRDs complete", func() {
+			By("Creating a RemediationRequest")
+			_ = createRemediationRequest(namespace, rrName)
+
+			By("Waiting for SignalProcessing to be created")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			sp := &signalprocessingv1.SignalProcessing{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed())
+
+			By("Simulating SignalProcessing completion")
+			err := updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Waiting for RR to transition to Analyzing phase")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+					return ""
+				}
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(Equal("Analyzing"))
+
+			By("Waiting for AIAnalysis to be created")
+			aiName := fmt.Sprintf("ai-%s", rrName)
+			ai := &aianalysisv1.AIAnalysis{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying AIAnalysis has owner reference")
+			Expect(ai.OwnerReferences).To(HaveLen(1))
+			Expect(ai.OwnerReferences[0].Name).To(Equal(rrName))
+
+			GinkgoWriter.Printf("✅ Phase progression: Pending → Processing → Analyzing\n")
+			GinkgoWriter.Printf("✅ Child CRDs created: sp-%s, ai-%s\n", rrName, rrName)
+		})
+	})
+})
+
+// ============================================================================
+// AIANALYSIS → MANUAL REVIEW INTEGRATION TESTS
+// Tests BR-ORCH-036: Manual Review Notification Creation
+// Tests BR-ORCH-037: WorkflowNotNeeded Handling
+// ============================================================================
+
+var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-review"), func() {
+
+	Context("BR-ORCH-036: WorkflowResolutionFailed triggers ManualReview notification", func() {
+		var (
+			namespace string
+			rrName    string
+		)
+
+		BeforeEach(func() {
+			namespace = createTestNamespace("ro-manual-review")
+			rrName = fmt.Sprintf("rr-mr-%d", time.Now().UnixNano())
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("should create ManualReview notification when AIAnalysis fails with WorkflowResolutionFailed", func() {
+			By("Creating a RemediationRequest")
+			_ = createRemediationRequest(namespace, rrName)
+
+			By("Waiting for SignalProcessing to be created")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed())
+
+			By("Simulating SignalProcessing completion")
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+
+			By("Waiting for AIAnalysis to be created")
+			aiName := fmt.Sprintf("ai-%s", rrName)
+			Eventually(func() error {
+				ai := &aianalysisv1.AIAnalysis{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+			}, timeout, interval).Should(Succeed())
+
+			By("Simulating AIAnalysis failure with WorkflowResolutionFailed")
+			ai := &aianalysisv1.AIAnalysis{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+
+			ai.Status.Phase = "Failed"
+			ai.Status.FailureReason = "WorkflowResolutionFailed"
+			ai.Status.FailureSubReason = "NoMatchingWorkflow"
+			ai.Status.FailureMessage = "No workflow found matching the investigation outcome"
+			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+			By("Waiting for ManualReview NotificationRequest to be created")
+			nrName := fmt.Sprintf("nr-manual-review-%s", rrName)
+			Eventually(func() error {
+				nr := &notificationv1.NotificationRequest{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying NotificationRequest properties")
+			nr := &notificationv1.NotificationRequest{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)).To(Succeed())
+
+			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			Expect(nr.Labels["kubernaut.ai/notification-type"]).To(Equal("manual-review"))
+			Expect(nr.Labels["kubernaut.ai/remediation-request"]).To(Equal(rrName))
+
+			By("Verifying RR status updated")
+			rr := &remediationv1.RemediationRequest{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+			Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+			Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"))
+
+			GinkgoWriter.Printf("✅ BR-ORCH-036: ManualReview notification created for WorkflowResolutionFailed\n")
+		})
+	})
+
+	Context("BR-ORCH-037: WorkflowNotNeeded completes with NoActionRequired", func() {
+		var (
+			namespace string
+			rrName    string
+		)
+
+		BeforeEach(func() {
+			namespace = createTestNamespace("ro-no-action")
+			rrName = fmt.Sprintf("rr-na-%d", time.Now().UnixNano())
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("should complete RR with NoActionRequired when AIAnalysis returns WorkflowNotNeeded", func() {
+			By("Creating a RemediationRequest")
+			_ = createRemediationRequest(namespace, rrName)
+
+			By("Waiting for SignalProcessing and completing it")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed())
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+
+			By("Waiting for AIAnalysis to be created")
+			aiName := fmt.Sprintf("ai-%s", rrName)
+			Eventually(func() error {
+				ai := &aianalysisv1.AIAnalysis{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+			}, timeout, interval).Should(Succeed())
+
+			By("Simulating AIAnalysis completion with WorkflowNotNeeded")
+			ai := &aianalysisv1.AIAnalysis{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+
+			ai.Status.Phase = "Completed"
+			ai.Status.InvestigationOutcome = "resolved"
+			ai.Status.RootCause = "Problem self-resolved - container restarted successfully"
+			now := metav1.Now()
+			ai.Status.CompletionTime = &now
+			// No SelectedWorkflow - indicates WorkflowNotNeeded
+			ai.Status.SelectedWorkflow = nil
+			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+			By("Waiting for RR to complete with NoActionRequired")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+					return ""
+				}
+				return rr.Status.Outcome
+			}, timeout, interval).Should(Equal("NoActionRequired"))
+
+			By("Verifying RR status")
+			rr := &remediationv1.RemediationRequest{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+			Expect(rr.Status.OverallPhase).To(Equal("Completed"))
+
+			GinkgoWriter.Printf("✅ BR-ORCH-037: RR completed with NoActionRequired for WorkflowNotNeeded\n")
+		})
+	})
+})
+
+// ============================================================================
+// APPROVAL FLOW INTEGRATION TESTS
+// Tests BR-ORCH-026: Approval Orchestration via RemediationApprovalRequest
+// Reference: ADR-040
+// ============================================================================
+
+var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
+
+	Context("BR-ORCH-026: RemediationApprovalRequest creation and handling", func() {
+		var (
+			namespace string
+			rrName    string
+		)
+
+		BeforeEach(func() {
+			namespace = createTestNamespace("ro-approval")
+			rrName = fmt.Sprintf("rr-appr-%d", time.Now().UnixNano())
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("should create RemediationApprovalRequest when AIAnalysis requires approval", func() {
+			By("Creating a RemediationRequest")
+			_ = createRemediationRequest(namespace, rrName)
+
+			By("Progressing through SP phase")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed())
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+
+			By("Waiting for AIAnalysis to be created")
+			aiName := fmt.Sprintf("ai-%s", rrName)
+			Eventually(func() error {
+				ai := &aianalysisv1.AIAnalysis{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+			}, timeout, interval).Should(Succeed())
+
+			By("Simulating AIAnalysis completion requiring approval (confidence 60-79%)")
+			ai := &aianalysisv1.AIAnalysis{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+
+			ai.Status.Phase = "Completed"
+			ai.Status.RequiresApproval = true
+			ai.Status.ApprovalReason = "Confidence below 80% threshold"
+			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowID:     "wf-restart-pods",
+				Version:        "v1.0.0",
+				Confidence:     0.72,
+				ContainerImage: "kubernaut/workflows:latest",
+				Rationale:      "Pod restart recommended based on OOM patterns",
+			}
+			ai.Status.RootCause = "Memory leak causing OOM kills"
+			now := metav1.Now()
+			ai.Status.CompletionTime = &now
+			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+			By("Waiting for RR to transition to AwaitingApproval")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+					return ""
+				}
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(Equal("AwaitingApproval"))
+
+			By("Waiting for RemediationApprovalRequest to be created")
+			rarName := fmt.Sprintf("rar-%s", rrName)
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying RAR spec")
+			Expect(rar.Spec.Confidence).To(BeNumerically("==", 0.72))
+			Expect(rar.Spec.RecommendedWorkflow.WorkflowID).To(Equal("wf-restart-pods"))
+			Expect(rar.OwnerReferences).To(HaveLen(1))
+			Expect(rar.OwnerReferences[0].Name).To(Equal(rrName))
+
+			GinkgoWriter.Printf("✅ BR-ORCH-026: RemediationApprovalRequest created for approval-required scenario\n")
+		})
+
+		It("should proceed to Executing when RAR is approved", func() {
+			By("Creating RemediationRequest and progressing to AwaitingApproval")
+			_ = createRemediationRequest(namespace, rrName)
+
+			// Progress through SP
+			spName := fmt.Sprintf("sp-%s", rrName)
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed())
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+
+			// Progress through AI with approval required
+			aiName := fmt.Sprintf("ai-%s", rrName)
+			Eventually(func() error {
+				ai := &aianalysisv1.AIAnalysis{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+			}, timeout, interval).Should(Succeed())
+
+			ai := &aianalysisv1.AIAnalysis{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+			ai.Status.Phase = "Completed"
+			ai.Status.RequiresApproval = true
+			ai.Status.ApprovalReason = "Confidence below threshold"
+			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowID:     "wf-restart-pods",
+				Version:        "v1.0.0",
+				Confidence:     0.70,
+				ContainerImage: "kubernaut/workflows:latest",
+				Rationale:      "Restart recommended",
+			}
+			now := metav1.Now()
+			ai.Status.CompletionTime = &now
+			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+			// Wait for RAR
+			rarName := fmt.Sprintf("rar-%s", rrName)
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+			}, timeout, interval).Should(Succeed())
+
+			By("Approving the RemediationApprovalRequest")
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)).To(Succeed())
+			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+			rar.Status.DecidedBy = "test-admin@kubernaut.ai"
+			rar.Status.DecisionMessage = "Approved for testing"
+			decidedAt := metav1.Now()
+			rar.Status.DecidedAt = &decidedAt
+			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+
+			By("Waiting for RR to transition to Executing")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+					return ""
+				}
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(Equal("Executing"))
+
+			GinkgoWriter.Printf("✅ BR-ORCH-026: RR transitioned to Executing after RAR approval\n")
+		})
+	})
+})
+

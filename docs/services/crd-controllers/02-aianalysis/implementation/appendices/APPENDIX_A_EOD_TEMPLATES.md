@@ -302,13 +302,13 @@ See [BR_MAPPING.md](../../BR_MAPPING.md) for details.
 - [ ] RBAC configured
 - [ ] ConfigMaps deployed (Rego policies)
 - [ ] HolmesGPT-API accessible
-- [ ] Data Storage configured (optional)
+- [ ] Data Storage configured (**REQUIRED** per DD-AUDIT-003)
 - [ ] Monitoring dashboards created
 
 ## Handoff Notes
 1. **Rego Policies**: Located in `config/rego/aianalysis/`
 2. **HolmesGPT-API**: Required dependency, must be running
-3. **Data Storage**: Optional for audit events
+3. **Data Storage**: **REQUIRED** for audit events (per DD-AUDIT-003, TESTING_GUIDELINES.md)
 4. **NodePorts**: 30084 (API), 30184 (Metrics), 30284 (Health)
 
 ## Technical Debt

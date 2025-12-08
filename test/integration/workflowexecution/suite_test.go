@@ -31,6 +31,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"sync"
+
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/clock"
@@ -44,6 +46,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -69,13 +72,79 @@ import (
 // - Complies with testing-strategy.md >50% integration coverage requirement
 
 var (
-	ctx        context.Context
-	cancel     context.CancelFunc
-	testEnv    *envtest.Environment
-	cfg        *rest.Config
-	k8sClient  client.Client
-	k8sManager ctrl.Manager
+	ctx            context.Context
+	cancel         context.CancelFunc
+	testEnv        *envtest.Environment
+	cfg            *rest.Config
+	k8sClient      client.Client
+	k8sManager     ctrl.Manager
+	testAuditStore *testableAuditStore
 )
+
+// testableAuditStore is a thread-safe audit store for integration testing
+// Implements audit.AuditStore interface
+type testableAuditStore struct {
+	mu     sync.Mutex
+	events []audit.AuditEvent
+}
+
+func newTestableAuditStore() *testableAuditStore {
+	return &testableAuditStore{
+		events: make([]audit.AuditEvent, 0),
+	}
+}
+
+// StoreAudit implements audit.AuditStore
+func (s *testableAuditStore) StoreAudit(ctx context.Context, event *audit.AuditEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if event != nil {
+		s.events = append(s.events, *event)
+	}
+	return nil
+}
+
+// Close implements audit.AuditStore
+func (s *testableAuditStore) Close() error {
+	return nil
+}
+
+// GetEvents returns a copy of all captured audit events (test helper)
+func (s *testableAuditStore) GetEvents() []audit.AuditEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Return a copy to avoid race conditions
+	result := make([]audit.AuditEvent, len(s.events))
+	copy(result, s.events)
+	return result
+}
+
+// ClearEvents clears all captured events (test helper)
+func (s *testableAuditStore) ClearEvents() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = make([]audit.AuditEvent, 0)
+}
+
+// EventCount returns the number of captured events (test helper)
+func (s *testableAuditStore) EventCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.events)
+}
+
+// GetEventsOfType returns events matching the given type (test helper)
+func (s *testableAuditStore) GetEventsOfType(eventType string) []audit.AuditEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var result []audit.AuditEvent
+	for _, e := range s.events {
+		if e.EventType == eventType {
+			result = append(result, e)
+		}
+	}
+	return result
+}
 
 // Test namespaces (unique per test run for parallel safety)
 const (
@@ -164,6 +233,9 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	By("Setting up the testable audit store")
+	testAuditStore = newTestableAuditStore()
+
 	By("Setting up the WorkflowExecution controller")
 	// Create controller with integration test configuration
 	reconciler := &workflowexecution.WorkflowExecutionReconciler{
@@ -176,6 +248,7 @@ var _ = BeforeSuite(func() {
 		BaseCooldownPeriod:     DefaultBaseCooldownPeriod,
 		MaxCooldownPeriod:      DefaultMaxCooldownPeriod,
 		MaxConsecutiveFailures: DefaultMaxConsecutiveFailures,
+		AuditStore:             testAuditStore, // Enable audit tracking for integration tests
 	}
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

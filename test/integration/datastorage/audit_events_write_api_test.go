@@ -135,6 +135,40 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE event_id = $1", eventID).Scan(&count)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(count).To(Equal(1))
+
+				// ✅ CORRECTNESS TEST: Data in database matches input exactly (BR-STORAGE-033)
+				By("Verifying audit event content matches sent payload (CORRECTNESS)")
+				var dbEventType, dbService, dbCorrelationID, dbResourceType, dbResourceID, dbOutcome, dbOperation string
+				var dbEventData []byte
+
+				row := db.QueryRow(`
+					SELECT event_type, service, correlation_id, resource_type, resource_id,
+					       outcome, operation, event_data
+					FROM audit_events
+					WHERE event_id = $1
+				`, eventID)
+
+				err = row.Scan(&dbEventType, &dbService, &dbCorrelationID, &dbResourceType,
+					&dbResourceID, &dbOutcome, &dbOperation, &dbEventData)
+				Expect(err).ToNot(HaveOccurred(), "Should retrieve audit event from database")
+
+				// Verify each field matches what was sent
+				Expect(dbEventType).To(Equal("gateway.signal.received"), "event_type should match")
+				Expect(dbService).To(Equal("gateway"), "service should match")
+				Expect(dbCorrelationID).To(Equal(testCorrelationID), "correlation_id should match")
+				Expect(dbResourceType).To(Equal("pod"), "resource_type should match")
+				Expect(dbResourceID).To(Equal("api-server-xyz-123"), "resource_id should match")
+				Expect(dbOutcome).To(Equal("success"), "outcome should match")
+				Expect(dbOperation).To(Equal("signal_received"), "operation should match")
+
+				// Verify event_data JSONB content
+				var storedEventData map[string]interface{}
+				err = json.Unmarshal(dbEventData, &storedEventData)
+				Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
+				Expect(storedEventData).To(HaveKey("signal_type"), "event_data should contain signal_type")
+				Expect(storedEventData["signal_type"]).To(Equal("prometheus"), "signal_type should match")
+				Expect(storedEventData).To(HaveKey("alert_name"), "event_data should contain alert_name")
+				Expect(storedEventData["alert_name"]).To(Equal("PodOOMKilled"), "alert_name should match")
 			})
 		})
 
@@ -174,6 +208,42 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				defer resp.Body.Close()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+
+				// Extract event_id from response for CORRECTNESS validation
+				var response map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred())
+				eventID, ok := response["event_id"].(string)
+				Expect(ok).To(BeTrue())
+
+				// ✅ CORRECTNESS TEST: Verify AI Analysis event stored correctly (BR-STORAGE-033)
+				By("Verifying AI Analysis audit event content matches sent payload (CORRECTNESS)")
+				var dbEventType, dbService, dbCorrelationID, dbOutcome, dbOperation string
+				var dbEventData []byte
+
+				row := db.QueryRow(`
+					SELECT event_type, service, correlation_id, outcome, operation, event_data
+					FROM audit_events
+					WHERE event_id = $1
+				`, eventID)
+
+				err = row.Scan(&dbEventType, &dbService, &dbCorrelationID, &dbOutcome, &dbOperation, &dbEventData)
+				Expect(err).ToNot(HaveOccurred(), "Should retrieve AI Analysis audit event from database")
+
+				Expect(dbEventType).To(Equal("aianalysis.analysis.completed"), "event_type should match")
+				Expect(dbService).To(Equal("aianalysis"), "service should match")
+				Expect(dbCorrelationID).To(Equal(testCorrelationID), "correlation_id should match")
+				Expect(dbOutcome).To(Equal("success"), "outcome should match")
+				Expect(dbOperation).To(Equal("analysis"), "operation should match")
+
+				// Verify AI-specific event_data content
+				var storedEventData map[string]interface{}
+				err = json.Unmarshal(dbEventData, &storedEventData)
+				Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
+				Expect(storedEventData).To(HaveKey("analysis_id"), "event_data should contain analysis_id")
+				Expect(storedEventData["analysis_id"]).To(Equal("analysis-2025-001"), "analysis_id should match")
+				Expect(storedEventData).To(HaveKey("llm_provider"), "event_data should contain llm_provider")
+				Expect(storedEventData["llm_provider"]).To(Equal("anthropic"), "llm_provider should match")
 			})
 		})
 
@@ -213,6 +283,42 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				defer resp.Body.Close()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+
+				// Extract event_id from response for CORRECTNESS validation
+				var response map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred())
+				eventID, ok := response["event_id"].(string)
+				Expect(ok).To(BeTrue())
+
+				// ✅ CORRECTNESS TEST: Verify Workflow event stored correctly (BR-STORAGE-033)
+				By("Verifying Workflow audit event content matches sent payload (CORRECTNESS)")
+				var dbEventType, dbService, dbCorrelationID, dbOutcome, dbOperation string
+				var dbEventData []byte
+
+				row := db.QueryRow(`
+					SELECT event_type, service, correlation_id, outcome, operation, event_data
+					FROM audit_events
+					WHERE event_id = $1
+				`, eventID)
+
+				err = row.Scan(&dbEventType, &dbService, &dbCorrelationID, &dbOutcome, &dbOperation, &dbEventData)
+				Expect(err).ToNot(HaveOccurred(), "Should retrieve Workflow audit event from database")
+
+				Expect(dbEventType).To(Equal("workflow.workflow.completed"), "event_type should match")
+				Expect(dbService).To(Equal("workflow"), "service should match")
+				Expect(dbCorrelationID).To(Equal(testCorrelationID), "correlation_id should match")
+				Expect(dbOutcome).To(Equal("success"), "outcome should match")
+				Expect(dbOperation).To(Equal("workflow_execution"), "operation should match")
+
+				// Verify Workflow-specific event_data content
+				var storedEventData map[string]interface{}
+				err = json.Unmarshal(dbEventData, &storedEventData)
+				Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
+				Expect(storedEventData).To(HaveKey("workflow_id"), "event_data should contain workflow_id")
+				Expect(storedEventData["workflow_id"]).To(Equal("workflow-increase-memory"), "workflow_id should match")
+				Expect(storedEventData).To(HaveKey("execution_id"), "event_data should contain execution_id")
+				Expect(storedEventData["execution_id"]).To(Equal("exec-2025-001"), "execution_id should match")
 			})
 		})
 

@@ -194,7 +194,16 @@ Please acknowledge receipt of this notice by updating this section:
 
 ---
 
-**Document Version**: 1.0
+## 📋 Follow-up Items (Cosmetic)
+
+| Item | Priority | Owner | Notes |
+|------|----------|-------|-------|
+| **Sync test counts** | Low | HAPI Team | This document shows "377 unit + 71 integration + 40 E2E + 4 smoke = 492" but BUSINESS_REQUIREMENTS.md shows "481 unit tests". Please sync counts between documents. |
+
+---
+
+**Document Version**: 1.1
 **Created**: December 7, 2025
+**Updated**: December 8, 2025
 **Author**: HolmesGPT-API Team
 

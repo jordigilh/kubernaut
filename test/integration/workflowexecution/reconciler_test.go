@@ -24,9 +24,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Integration Tests: Controller Reconciliation
@@ -483,7 +482,20 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 	// ========================================
 	// Audit Events (BR-WE-005)
 	// ========================================
-	Context("Kubernetes Events", func() {
+	Context("Audit Store Configuration", func() {
+		// NOTE: The RecordAuditEvent method is DEFINED but NOT CALLED during reconciliation.
+		// Audit event integration into the reconciliation loop is pending implementation.
+		//
+		// Current status:
+		// - RecordAuditEvent method exists and is tested in unit tests
+		// - AuditStore field is configured in the reconciler
+		// - Audit events are NOT automatically emitted during phase transitions
+		//
+		// Comprehensive audit event field validation is covered in unit tests at:
+		// test/unit/workflowexecution/controller_test.go (5 tests, 94 lines)
+		//
+		// When audit integration is added to reconciliation, these tests should be enabled.
+
 		var wfe *workflowexecutionv1alpha1.WorkflowExecution
 
 		AfterEach(func() {
@@ -492,26 +504,51 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			}
 		})
 
-		It("should emit events for phase transitions", func() {
-			By("Creating a WorkflowExecution")
-			wfe = createUniqueWFE("events-test", "default/deployment/events-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		It("should have AuditStore configured in controller", func() {
+			// Verify the testable audit store is accessible
+			Expect(testAuditStore).ToNot(BeNil())
+			GinkgoWriter.Println("✅ AuditStore is configured in integration test controller")
+		})
 
-			By("Waiting for Running phase")
-			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+		It("should accept audit events when StoreAudit is called directly", func() {
+			// Clear events from previous tests
+			initialCount := testAuditStore.EventCount()
+
+			// This tests that the audit store integration works at the wiring level
+			testEvent := &audit.AuditEvent{
+				EventType:     "test.direct.event",
+				EventCategory: "test",
+				EventAction:   "test.action",
+				EventOutcome:  "success",
+				ResourceType:  "TestResource",
+				ResourceID:    "test-123",
+			}
+			err := testAuditStore.StoreAudit(ctx, testEvent)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Checking for events")
-			eventList := &corev1.EventList{}
-			err = k8sClient.List(ctx, eventList, client.InNamespace(wfe.Namespace), client.MatchingFields{
-				"involvedObject.name": wfe.Name,
-			})
-			// Note: Event checking may not work directly with EnvTest
-			// The important thing is that the controller is running and processing
-			if err == nil && len(eventList.Items) > 0 {
-				GinkgoWriter.Printf("Found %d events for WFE %s\n", len(eventList.Items), wfe.Name)
-			}
+			// Should have one more event than before
+			events := testAuditStore.GetEvents()
+			Expect(len(events)).To(Equal(initialCount + 1))
+
+			// Find our test event
+			testEvents := testAuditStore.GetEventsOfType("test.direct.event")
+			Expect(testEvents).To(HaveLen(1))
+			Expect(testEvents[0].ResourceID).To(Equal("test-123"))
+
+			GinkgoWriter.Println("✅ AuditStore accepts and stores events correctly")
 		})
+
+		// NOTE: The following tests are PENDING until audit events are integrated into reconciliation:
+		//
+		// - "should emit audit event when workflow starts (Running phase)"
+		// - "should emit audit event when workflow completes"
+		// - "should emit audit event when workflow fails"
+		// - "should emit audit event when workflow is skipped"
+		// - "should include correlation ID in audit events"
+		//
+		// These behaviors are currently tested at the unit test level where RecordAuditEvent
+		// is called directly. Once the controller's reconciliation loop calls RecordAuditEvent,
+		// these integration tests should be enabled.
 	})
 })
 

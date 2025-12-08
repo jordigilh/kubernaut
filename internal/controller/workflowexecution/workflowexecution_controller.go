@@ -266,6 +266,12 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	r.Recorder.Event(wfe, "Normal", "PipelineRunCreated",
 		fmt.Sprintf("Created PipelineRun %s/%s", pr.Namespace, pr.Name))
 
+	// Day 8: Record audit event for workflow start (BR-WE-005, ADR-032)
+	if err := r.RecordAuditEvent(ctx, wfe, "workflow.started", "success"); err != nil {
+		// Audit failures don't block business logic - log and continue
+		logger.V(1).Info("Failed to record workflow.started audit event", "error", err)
+	}
+
 	// Requeue to check PipelineRun status
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
@@ -965,6 +971,12 @@ func (r *WorkflowExecutionReconciler) MarkSkipped(ctx context.Context, wfe *work
 	// Emit event
 	r.Recorder.Event(wfe, "Normal", "Skipped", details.Message)
 
+	// Day 8: Record audit event for workflow skip (BR-WE-005, ADR-032)
+	if err := r.RecordAuditEvent(ctx, wfe, "workflow.skipped", "skipped"); err != nil {
+		// Audit failures don't block business logic - log and continue
+		logger.V(1).Info("Failed to record workflow.skipped audit event", "error", err)
+	}
+
 	return nil
 }
 
@@ -1043,6 +1055,12 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	// Emit event
 	r.Recorder.Event(wfe, "Normal", "WorkflowCompleted",
 		fmt.Sprintf("Workflow %s completed successfully in %s", wfe.Spec.WorkflowRef.WorkflowID, wfe.Status.Duration))
+
+	// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
+	if err := r.RecordAuditEvent(ctx, wfe, "workflow.completed", "success"); err != nil {
+		// Audit failures don't block business logic - log and continue
+		logger.V(1).Info("Failed to record workflow.completed audit event", "error", err)
+	}
 
 	return ctrl.Result{}, nil
 }
