@@ -77,6 +77,15 @@ const (
 	NotificationTypeFailed           = "failed"
 	NotificationTypeEscalation       = "escalation"
 	NotificationTypeStatusUpdate     = "status_update"
+	// NotificationTypeManualReview indicates manual review is required (BR-ORCH-036).
+	// Triggered by AIAnalysis WorkflowResolutionFailed or WE ExhaustedRetries.
+	// Distinct from 'approval' - this requires human investigation, not just a yes/no decision.
+	// Severity: HIGH/CRITICAL - route to appropriate channel based on source.
+	NotificationTypeManualReview = "manual-review"
+	// NotificationTypeBulkDuplicate indicates a bulk duplicate notification (BR-ORCH-034).
+	// Informational notification about multiple duplicate remediations.
+	// Severity: LOW - typically Slack only.
+	NotificationTypeBulkDuplicate = "bulk-duplicate"
 )
 
 // SeverityValues are the standard severity label values.

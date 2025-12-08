@@ -6,7 +6,7 @@
 
 **Full Schema**: See [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
 
-**Location**: `api/v1alpha1/workflowexecution_types.go`
+**Location**: `api/workflowexecution/v1alpha1/workflowexecution_types.go`
 
 ---
 

@@ -324,15 +324,19 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 // This is used as a fallback when Redis doesn't have the CRD reference.
 // Deduplication relies on Redis storing the full CRD name (with timestamp).
 //
+// GetCRDNameFromFingerprint generates a unique CRD name from fingerprint + timestamp
+// DD-015: Timestamp-Based CRD Naming for Unique Occurrences
 // This method is public so server.go can use it for fallback CRD name generation
+// See: docs/architecture/decisions/DD-015-timestamp-based-crd-naming.md
 func (s *DeduplicationService) GetCRDNameFromFingerprint(fingerprint string) string {
-	// Use first 12 chars of fingerprint for CRD name prefix
-	// (matches DD-015 naming logic in crd_creator.go)
+	// Use first 12 chars of fingerprint for CRD name prefix + Unix timestamp
+	// Example: rr-bd773c9f25ac-1731868032
 	fingerprintPrefix := fingerprint
 	if len(fingerprintPrefix) > 12 {
 		fingerprintPrefix = fingerprintPrefix[:12]
 	}
-	return fmt.Sprintf("rr-%s", fingerprintPrefix)
+	timestamp := time.Now().Unix()
+	return fmt.Sprintf("rr-%s-%d", fingerprintPrefix, timestamp)
 }
 
 // checkRedisDeduplication performs time-based deduplication using Redis

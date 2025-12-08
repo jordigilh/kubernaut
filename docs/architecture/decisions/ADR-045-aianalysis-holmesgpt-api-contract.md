@@ -488,14 +488,14 @@ ProblemDetails:
 | Item | Owner | Status |
 |------|-------|--------|
 | Create `holmesgpt-api/api/` directory | HAPI Team | ✅ Done |
-| Export OpenAPI spec to `api/openapi.json` | HAPI Team | ✅ Done (17 schemas) |
+| Export OpenAPI spec to `api/openapi.json` | HAPI Team | ✅ Done (19 schemas) |
 | Add `targetInOwnerChain` field to response | HAPI Team | ✅ Done (v1.1) |
 | Add `warnings[]` field to response | HAPI Team | ✅ Done (v1.1) |
 | Implement OwnerChain validation logic | HAPI Team | ✅ Done (11 tests) |
 | Add `alternativeWorkflows[]` for audit/context | HAPI Team | ✅ Done (v1.2) |
-| Add export script to Makefile | HAPI Team | ⏳ Pending |
+| Add export script to Makefile | HAPI Team | ✅ Done (`make export-openapi`) |
 | Generate Go client for AIAnalysis | AIAnalysis Team | ⏳ Ready (OpenAPI available, 17 schemas) |
-| Add OpenAPI spec to CI validation | HAPI Team | ⏳ Pending |
+| Add OpenAPI spec to CI validation | HAPI Team | ✅ Done (`.github/workflows/holmesgpt-api-ci.yml`) |
 
 ---
 

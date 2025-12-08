@@ -22,9 +22,16 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/controller"
 )
 
@@ -34,16 +41,27 @@ func TestController(t *testing.T) {
 }
 
 // BR-ORCH-025: Core Orchestration Workflow
-// Note: Full implementation tests will be added when reconciler is completed (Day 8+)
 var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 	var (
 		ctx        context.Context
+		scheme     *runtime.Scheme
 		reconciler *controller.Reconciler
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		reconciler = controller.NewReconciler()
+
+		// Build scheme with all required types
+		scheme = runtime.NewScheme()
+		_ = remediationv1.AddToScheme(scheme)
+		_ = signalprocessingv1.AddToScheme(scheme)
+		_ = aianalysisv1.AddToScheme(scheme)
+		_ = workflowexecutionv1.AddToScheme(scheme)
+		_ = notificationv1.AddToScheme(scheme)
+
+		// Create fake client and reconciler
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		reconciler = controller.NewReconciler(fakeClient, scheme)
 	})
 
 	Describe("NewReconciler", func() {
@@ -53,11 +71,11 @@ var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 	})
 
 	Describe("Reconcile", func() {
-		It("should return without error for any request (stub implementation)", func() {
-			// This is a stub test - full tests will be added when reconciler is implemented
+		It("should return without error for non-existent RemediationRequest", func() {
+			// Non-existent RR returns no error (object not found is graceful)
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{
-					Name:      "test-rr",
+					Name:      "non-existent-rr",
 					Namespace: "default",
 				},
 			})
@@ -67,10 +85,6 @@ var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 		})
 	})
 
-	Describe("SetupWithManager", func() {
-		It("should return nil for stub implementation", func() {
-			err := reconciler.SetupWithManager(nil)
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
+	// Note: Additional tests for phase transitions and handler integration
+	// are in test/unit/remediationorchestrator/ following TDD patterns
 })

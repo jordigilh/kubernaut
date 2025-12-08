@@ -47,6 +47,10 @@ const (
 
 	// ExecutionNamespace is where PipelineRuns are created
 	ExecutionNamespace = "kubernaut-workflows"
+
+	// WorkflowExecutionMetricsHostPort is the host port for metrics endpoint
+	// Mapped via Kind NodePort extraPortMappings (container: 30185 -> host: 9185)
+	WorkflowExecutionMetricsHostPort = 9185
 )
 
 // CreateWorkflowExecutionCluster creates a Kind cluster for WorkflowExecution E2E tests

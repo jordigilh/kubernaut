@@ -625,7 +625,7 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "manual-review"))
 				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/severity", "critical"))
 				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/review-source", "ai_analysis"))
+				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/review-source", "AIAnalysis"))
 			})
 		})
 
@@ -652,7 +652,7 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", "test-rr"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("source", "ai_analysis"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("source", "AIAnalysis"))
 				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "WorkflowResolutionFailed"))
 				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("subReason", "WorkflowNotFound"))
 				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("rootCauseAnalysis", "Pod crash loop detected"))
@@ -682,7 +682,7 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", "test-rr"))
-				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("source", "workflow_execution"))
+				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("source", "WorkflowExecution"))
 				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "ExhaustedRetries"))
 				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("retryCount", "3"))
 				Expect(nr.Spec.Metadata).To(HaveKeyWithValue("maxRetries", "3"))

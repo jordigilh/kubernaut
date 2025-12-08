@@ -39,9 +39,13 @@ func (r *RemediationOrchestratorReconciler) createWorkflowExecution(
             },
         },
         Spec: workflowexecutionv1.WorkflowExecutionSpec{
-            RemediationRequestRef: workflowexecutionv1.RemediationRequestReference{
-                Name:      rr.Name,
-                Namespace: rr.Namespace,
+            // RemediationRequestRef uses corev1.ObjectReference (not custom type)
+            RemediationRequestRef: corev1.ObjectReference{
+                APIVersion: remediationv1.GroupVersion.String(),
+                Kind:       "RemediationRequest",
+                Name:       rr.Name,
+                Namespace:  rr.Namespace,
+                UID:        rr.UID,
             },
             WorkflowRef: workflowexecutionv1.WorkflowReference{
                 WorkflowID:     aiAnalysis.Status.SelectedWorkflow.WorkflowID,

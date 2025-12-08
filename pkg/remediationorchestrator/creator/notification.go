@@ -326,6 +326,16 @@ type ManualReviewContext struct {
 	RootCauseAnalysis string
 	// Warnings if available (from AIAnalysis)
 	Warnings []string
+
+	// WorkflowExecution-specific fields (for ExhaustedRetries)
+	// RetryCount is the number of retries attempted
+	RetryCount int
+	// MaxRetries is the maximum configured retry count
+	MaxRetries int
+	// LastExitCode is the exit code from the last execution attempt
+	LastExitCode int
+	// PreviousExecution is the name of the previous failed WorkflowExecution (for PreviousExecutionFailed)
+	PreviousExecution string
 }
 
 // CreateManualReviewNotification creates a NotificationRequest for manual review (BR-ORCH-036).
@@ -346,8 +356,8 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 		"subReason", reviewCtx.SubReason,
 	)
 
-	// Generate deterministic name based on source to allow separate notifications
-	name := fmt.Sprintf("nr-manual-review-%s-%s", string(reviewCtx.Source), rr.Name)
+	// Generate deterministic name (single manual review per RR)
+	name := fmt.Sprintf("nr-manual-review-%s", rr.Name)
 
 	// Check if already exists (idempotency)
 	existing := &notificationv1.NotificationRequest{}
@@ -367,6 +377,9 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 	// Determine channels based on priority
 	channels := c.determineManualReviewChannels(priority)
 
+	// Build metadata with context-specific fields
+	metadata := c.buildManualReviewMetadata(rr, reviewCtx)
+
 	// Build NotificationRequest for manual review
 	nr := &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -375,8 +388,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 			Labels: map[string]string{
 				"kubernaut.ai/remediation-request": rr.Name,
 				"kubernaut.ai/notification-type":   "manual-review",
-				"kubernaut.ai/failure-source":      string(reviewCtx.Source),
-				"kubernaut.ai/failure-reason":      reviewCtx.Reason,
+				"kubernaut.ai/review-source":       string(reviewCtx.Source),
 				"kubernaut.ai/severity":            rr.Spec.Severity,
 				"kubernaut.ai/component":           "remediation-orchestrator",
 			},
@@ -387,13 +399,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 			Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
 			Body:     c.buildManualReviewBody(rr, reviewCtx),
 			Channels: channels,
-			Metadata: map[string]string{
-				"remediationRequest": rr.Name,
-				"failureSource":      string(reviewCtx.Source),
-				"failureReason":      reviewCtx.Reason,
-				"subReason":          reviewCtx.SubReason,
-				"severity":           rr.Spec.Severity,
-			},
+			Metadata: metadata,
 		},
 	}
 
@@ -456,6 +462,42 @@ func (c *NotificationCreator) determineManualReviewChannels(priority notificatio
 	}
 }
 
+// buildManualReviewMetadata builds the metadata map for manual review notifications.
+// Includes source-specific fields for context.
+func (c *NotificationCreator) buildManualReviewMetadata(rr *remediationv1.RemediationRequest, ctx *ManualReviewContext) map[string]string {
+	metadata := map[string]string{
+		"remediationRequest": rr.Name,
+		"source":             string(ctx.Source),
+		"reason":             ctx.Reason,
+	}
+
+	// Add SubReason if present
+	if ctx.SubReason != "" {
+		metadata["subReason"] = ctx.SubReason
+	}
+
+	// Add RootCauseAnalysis if present (from AIAnalysis)
+	if ctx.RootCauseAnalysis != "" {
+		metadata["rootCauseAnalysis"] = ctx.RootCauseAnalysis
+	}
+
+	// Add WorkflowExecution-specific fields
+	if ctx.Source == ManualReviewSourceWorkflowExecution {
+		if ctx.RetryCount > 0 || ctx.MaxRetries > 0 {
+			metadata["retryCount"] = fmt.Sprintf("%d", ctx.RetryCount)
+			metadata["maxRetries"] = fmt.Sprintf("%d", ctx.MaxRetries)
+		}
+		if ctx.LastExitCode != 0 {
+			metadata["lastExitCode"] = fmt.Sprintf("%d", ctx.LastExitCode)
+		}
+		if ctx.PreviousExecution != "" {
+			metadata["previousExecution"] = ctx.PreviousExecution
+		}
+	}
+
+	return metadata
+}
+
 // buildManualReviewBody builds the manual review notification body.
 func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.RemediationRequest, ctx *ManualReviewContext) string {
 	body := fmt.Sprintf(`⚠️ **Manual Review Required**
@@ -489,6 +531,19 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 		body += "\n\n**Warnings**:"
 		for _, w := range ctx.Warnings {
 			body += fmt.Sprintf("\n- %s", w)
+		}
+	}
+
+	// Add WorkflowExecution-specific context
+	if ctx.Source == ManualReviewSourceWorkflowExecution {
+		if ctx.RetryCount > 0 || ctx.MaxRetries > 0 {
+			body += fmt.Sprintf("\n\n**Retry Information**:\n- Retries attempted: %d/%d", ctx.RetryCount, ctx.MaxRetries)
+		}
+		if ctx.LastExitCode != 0 {
+			body += fmt.Sprintf("\n- Last exit code: %d", ctx.LastExitCode)
+		}
+		if ctx.PreviousExecution != "" {
+			body += fmt.Sprintf("\n- Previous execution: %s", ctx.PreviousExecution)
 		}
 	}
 

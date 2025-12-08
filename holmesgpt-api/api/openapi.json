@@ -470,10 +470,11 @@
           "parameter_validation_failed",
           "no_matching_workflows",
           "low_confidence",
-          "llm_parsing_error"
+          "llm_parsing_error",
+          "investigation_inconclusive"
         ],
         "title": "HumanReviewReason",
-        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirement: BR-HAPI-197\nDesign Decision: DD-HAPI-002 v1.2\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings."
+        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirements: BR-HAPI-197, BR-HAPI-200\nDesign Decision: DD-HAPI-002 v1.2\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings."
       },
       "IncidentRequest": {
         "properties": {
@@ -1102,6 +1103,18 @@
           "failure": {
             "$ref": "#/components/schemas/ExecutionFailure",
             "description": "Structured failure details"
+          },
+          "natural_language_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Natural Language Summary",
+            "description": "WE-generated LLM-friendly failure description. Includes workflow name, failure step, exit code, and human-readable context. Used by LLM to understand what went wrong and avoid similar approaches."
           }
         },
         "type": "object",
@@ -1112,7 +1125,7 @@
           "failure"
         ],
         "title": "PreviousExecution",
-        "description": "Complete context about the previous execution attempt that failed"
+        "description": "Complete context about the previous execution attempt that failed.\n\nBusiness Requirement: BR-HAPI-192 (Recovery Context Consumption)\n- natural_language_summary is WE-generated LLM-friendly failure description\n- Provides context for better recovery workflow selection"
       },
       "RecoveryRequest": {
         "properties": {

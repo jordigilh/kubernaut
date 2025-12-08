@@ -18,8 +18,9 @@ package processing
 
 import (
 	"context"
-	"fmt"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -55,6 +56,10 @@ func NewStatusUpdater(k8sClient client.Client) *StatusUpdater {
 	}
 }
 
+// GatewayRetryBackoff is the retry configuration for Gateway status updates.
+// DD-GATEWAY-011: Optimized for Gateway latency requirements (P95 <50ms)
+var GatewayRetryBackoff = retry.DefaultBackoff
+
 // UpdateDeduplicationStatus updates the status.deduplication fields for a duplicate signal
 //
 // DD-GATEWAY-011: Status-Based Deduplication
@@ -75,9 +80,29 @@ func NewStatusUpdater(k8sClient client.Client) *StatusUpdater {
 // Returns:
 // - error: K8s API errors (not found, timeout, etc.)
 func (u *StatusUpdater) UpdateDeduplicationStatus(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-	// DD-GATEWAY-011: RED phase - return not implemented error
-	// This will be implemented in Day 2 (GREEN phase)
-	return fmt.Errorf("UpdateDeduplicationStatus not implemented yet (DD-GATEWAY-011 Day 1 RED phase)")
+	return retry.RetryOnConflict(GatewayRetryBackoff, func() error {
+		// Refetch to get latest resourceVersion
+		if err := u.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			return err
+		}
+
+		// Update ONLY Gateway-owned status.deduplication fields
+		now := metav1.Now()
+		if rr.Status.Deduplication == nil {
+			// Initialize deduplication status on first update
+			rr.Status.Deduplication = &remediationv1alpha1.DeduplicationStatus{
+				FirstSeenAt:     &now,
+				OccurrenceCount: 1,
+			}
+		} else {
+			// Increment occurrence count for duplicate
+			rr.Status.Deduplication.OccurrenceCount++
+		}
+		rr.Status.Deduplication.LastSeenAt = &now
+
+		// Use Status().Update() to update only the status subresource
+		return u.client.Status().Update(ctx, rr)
+	})
 }
 
 // UpdateStormAggregationStatus updates the status.stormAggregation fields
@@ -96,8 +121,32 @@ func (u *StatusUpdater) UpdateDeduplicationStatus(ctx context.Context, rr *remed
 // Returns:
 // - error: K8s API errors
 func (u *StatusUpdater) UpdateStormAggregationStatus(ctx context.Context, rr *remediationv1alpha1.RemediationRequest, isThresholdReached bool) error {
-	// DD-GATEWAY-011: RED phase - return not implemented error
-	// This will be implemented in Day 3 (GREEN phase)
-	return fmt.Errorf("UpdateStormAggregationStatus not implemented yet (DD-GATEWAY-011 Day 3)")
+	return retry.RetryOnConflict(GatewayRetryBackoff, func() error {
+		// Refetch to get latest resourceVersion
+		if err := u.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			return err
+		}
+
+		// Update ONLY Gateway-owned status.stormAggregation fields
+		now := metav1.Now()
+		if rr.Status.StormAggregation == nil {
+			// Initialize storm aggregation status
+			rr.Status.StormAggregation = &remediationv1alpha1.StormAggregationStatus{
+				AggregatedCount: 1,
+				StormDetectedAt: &now,
+			}
+		} else {
+			// Increment aggregated count
+			rr.Status.StormAggregation.AggregatedCount++
+		}
+
+		// Set storm flag if threshold reached
+		if isThresholdReached {
+			rr.Status.StormAggregation.IsPartOfStorm = true
+		}
+
+		// Use Status().Update() to update only the status subresource
+		return u.client.Status().Update(ctx, rr)
+	})
 }
 

@@ -867,22 +867,41 @@ func findRegoPolicy() string {
 // loadImageToKind loads a container image into the Kind cluster
 // Handles both Podman (localhost/ prefix) and Docker image naming
 func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
-	// For Podman on macOS, images are tagged with localhost/ prefix
-	// Try with localhost/ prefix first (Podman), then without (Docker)
-	loadCmd := exec.Command("kind", "load", "docker-image", "localhost/"+imageName,
-		"--name", clusterName)
+	// For Podman on macOS, kind load docker-image doesn't work well
+	// Use podman save + kind load image-archive as workaround
+
+	// Create temp file for image archive
+	tmpFile, err := os.CreateTemp("", "kind-image-*.tar")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Try Podman first (macOS)
+	fmt.Fprintf(writer, "  Exporting image %s...\n", imageName)
+	saveCmd := exec.Command("podman", "save", "-o", tmpFile.Name(), "localhost/"+imageName)
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+	if err := saveCmd.Run(); err != nil {
+		// Try Docker as fallback
+		saveCmd = exec.Command("docker", "save", "-o", tmpFile.Name(), imageName)
+		saveCmd.Stdout = writer
+		saveCmd.Stderr = writer
+		if err := saveCmd.Run(); err != nil {
+			return fmt.Errorf("failed to save image %s: %w", imageName, err)
+		}
+	}
+
+	// Load image archive into Kind
+	fmt.Fprintf(writer, "  Loading image archive into Kind...\n")
+	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile.Name(), "--name", clusterName)
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 	if err := loadCmd.Run(); err != nil {
-		// Try without localhost prefix (for docker)
-		loadCmd = exec.Command("kind", "load", "docker-image", imageName,
-			"--name", clusterName)
-		loadCmd.Stdout = writer
-		loadCmd.Stderr = writer
-		if err := loadCmd.Run(); err != nil {
-			return fmt.Errorf("failed to load image %s: %w", imageName, err)
-		}
+		return fmt.Errorf("failed to load image %s: %w", imageName, err)
 	}
+
 	return nil
 }
 

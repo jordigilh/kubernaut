@@ -14,25 +14,44 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package remediationorchestrator
+package remediationorchestrator_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/controller"
 )
 
 var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
+	var (
+		scheme     *runtime.Scheme
+		reconciler *controller.Reconciler
+	)
+
+	BeforeEach(func() {
+		// Build scheme with all required types
+		scheme = runtime.NewScheme()
+		_ = remediationv1.AddToScheme(scheme)
+		_ = signalprocessingv1.AddToScheme(scheme)
+		_ = aianalysisv1.AddToScheme(scheme)
+		_ = workflowexecutionv1.AddToScheme(scheme)
+		_ = notificationv1.AddToScheme(scheme)
+
+		// Create fake client and reconciler
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		reconciler = controller.NewReconciler(fakeClient, scheme)
+	})
 
 	Describe("Reconciler", func() {
-		var reconciler *controller.Reconciler
-
-		BeforeEach(func() {
-			reconciler = controller.NewReconciler()
-		})
-
 		Context("when creating a new Reconciler", func() {
 			It("should return a non-nil Reconciler", func() {
 				Expect(reconciler).ToNot(BeNil())

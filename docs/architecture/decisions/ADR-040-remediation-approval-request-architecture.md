@@ -417,7 +417,66 @@ Kubernetes garbage collector deletes ALL owned CRDs in parallel:
 
 - **AIAnalysis Service**: [docs/services/crd-controllers/02-aianalysis/](../../services/crd-controllers/02-aianalysis/) - AI analysis controller that watches RemediationApprovalRequest decisions
 - **RemediationOrchestrator Service**: [docs/services/crd-controllers/05-remediationorchestrator/](../../services/crd-controllers/05-remediationorchestrator/) - Orchestrator that creates RemediationApprovalRequest CRDs
-- **RemediationApprovalRequest Controller**: [docs/services/crd-controllers/06-remediationapproval/](../../services/crd-controllers/06-remediationapproval/) - Dedicated controller for approval lifecycle management (to be created)
+- **RemediationApprovalRequest Controller**: [docs/services/crd-controllers/06-remediationapproval/](../../services/crd-controllers/06-remediationapproval/) - Dedicated controller for approval lifecycle management (V1.1 scope)
+
+---
+
+## V1.0 Implementation Scope
+
+**Date**: December 7, 2025
+**Status**: ✅ Approved
+
+### V1.0 Implemented Features
+
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| RO creates `RemediationApprovalRequest` | ✅ V1.0 | `pkg/remediationorchestrator/creator/approval.go` |
+| Operator approves via `status.decision` | ✅ V1.0 | `kubectl patch --subresource=status` |
+| RO watches decision and transitions | ✅ V1.0 | `handleAwaitingApprovalPhase()` |
+| Full audit trail (`decidedBy`, K8s audit) | ✅ V1.0 | K8s audit log captures all status updates |
+| Cascade deletion via ownerReference | ✅ V1.0 | Standard K8s garbage collection |
+
+### V1.1 Deferred Features
+
+| Feature | Reason | Impact |
+|---------|--------|--------|
+| Dedicated `RemediationApprovalRequest` controller | Complexity reduction | Timeout via RR global timeout (30m default) |
+| `status.timeRemaining` periodic updates | Requires dedicated controller | Operators use `spec.requiredBy` timestamp directly |
+| Per-request timeout hierarchy | Complexity reduction | All approvals use default 15m (within RR 30m timeout) |
+
+### V1.0 Timeout Behavior
+
+Instead of a dedicated controller managing fine-grained expiration:
+
+1. `spec.requiredBy` timestamp is set on RAR creation (15m default)
+2. RR global timeout (30m default) covers the entire AwaitingApproval phase
+3. If approval not granted within RR timeout → entire remediation fails
+
+**Risk Assessment**: Slightly coarser timeout granularity. Acceptable for V1.0.
+
+**V1.1 Enhancement**: Dedicated controller will:
+- Emit `status.expired = true` when `spec.requiredBy` passes
+- Update `status.timeRemaining` periodically for UI/notifications
+- Transition to `Expired` decision automatically
+
+### V1.0 Operator Workflow
+
+```bash
+# View pending approvals
+kubectl get rar -A
+
+# Approve a remediation
+kubectl patch rar rar-<rr-name> -n <namespace> \
+  --type=merge --subresource=status \
+  -p '{"status":{"decision":"Approved","decidedBy":"admin@example.com","decisionMessage":"Reviewed and approved"}}'
+
+# Reject a remediation
+kubectl patch rar rar-<rr-name> -n <namespace> \
+  --type=merge --subresource=status \
+  -p '{"status":{"decision":"Rejected","decidedBy":"admin@example.com","decisionMessage":"Risk too high"}}'
+```
+
+---
 
 ## Review & Evolution
 

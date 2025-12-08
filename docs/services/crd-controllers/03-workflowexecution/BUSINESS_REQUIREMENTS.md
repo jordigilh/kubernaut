@@ -6,7 +6,7 @@
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Controller**: WorkflowExecutionReconciler
 **Version**: 3.0 (Standardized BR-WE-* + API Group)
-**Last Updated**: December 2, 2025
+**Last Updated**: December 7, 2025
 **Status**: Ready for Implementation
 
 ---
@@ -463,17 +463,17 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 | BR-WE-002 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-003 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-004 | ✅ | ✅ | ✅ | 100% |
-| BR-WE-005 | ✅ | ✅ | ⬜ | 90% |
+| BR-WE-005 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-006 | ✅ | ✅ | ⬜ | 80% |
-| BR-WE-007 | ✅ | ✅ | ⬜ | 70% |
-| BR-WE-008 | ✅ | ✅ | ⬜ | 80% |
+| BR-WE-007 | ✅ | ✅ | ✅ | 100% |
+| BR-WE-008 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-009 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-010 | ✅ | ✅ | ✅ | 100% |
 | BR-WE-011 | ✅ | ✅ | ✅ | 90% |
 | BR-WE-012 | ✅ | ✅ | ⬜ | 67% |
 | BR-WE-013 | - | - | - | v1.1 |
 
-**Summary**: 12/12 BRs have Unit + Integration coverage. 8/12 BRs have E2E coverage. Overall: **94%**
+**Summary**: 12/12 BRs have Unit + Integration coverage. **11/12 BRs have E2E coverage**. Overall: **98%**
 
 ---
 

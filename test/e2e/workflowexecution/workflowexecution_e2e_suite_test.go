@@ -49,10 +49,13 @@ import (
 //
 // This suite tests:
 // - BR-WE-001: Remediation completes within SLA
+// - BR-WE-003: Monitor Execution Status (status sync)
 // - BR-WE-004: Failure details actionable for recovery
+// - BR-WE-005: Audit events for execution lifecycle
+// - BR-WE-007: Handle externally deleted PipelineRun
+// - BR-WE-008: Prometheus metrics for execution outcomes
 // - BR-WE-009: Parallel execution prevention
 // - BR-WE-010: Cooldown enforcement
-// - BR-WE-012: Exponential backoff skip reasons
 
 func TestWorkflowExecutionE2E(t *testing.T) {
 	RegisterFailHandler(Fail)

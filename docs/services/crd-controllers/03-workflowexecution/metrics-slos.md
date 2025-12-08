@@ -1,191 +1,239 @@
-## Enhanced Metrics & SLOs
+## Metrics & SLOs
 
-**Version**: 3.1
-**Last Updated**: 2025-12-06
+**Version**: 4.0
+**Last Updated**: 2025-12-07
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
-**Status**: ✅ Updated for Tekton Architecture, Exponential Backoff (DD-WE-004)
+**Status**: ✅ Aligned with BR-WE-008, DD-WE-004, DD-005
 
 ---
 
 ## Changelog
 
+### Version 4.0 (2025-12-07)
+- ✅ **BREAKING**: Aligned metrics with BR-WE-008 authoritative requirements
+- ✅ **Removed**: Step orchestration metrics (Tekton handles steps per ADR-044)
+- ✅ **Removed**: Non-required metrics (active_total, phase_transition_total, parallel_efficiency)
+- ✅ **Updated**: Grafana dashboard to use only implemented metrics
+- ✅ **Updated**: Alert rules to use only implemented metrics
+- ✅ **Updated**: Query examples to use only implemented metrics
+- ✅ **Reference**: Implementation at `internal/controller/workflowexecution/metrics.go`
+
 ### Version 3.1 (2025-12-06)
 - ✅ **Added**: `workflowexecution_backoff_skip_total{reason}` metric (DD-WE-004 v1.1)
 - ✅ **Added**: `workflowexecution_consecutive_failures{target_resource}` gauge (pre-execution failures only)
-- ✅ **Clarified**: `PreviousExecutionFailed` reason added to backoff_skip_total for execution failure blocking
 
 ### Version 3.0 (2025-12-02)
 - ✅ **Removed**: All KubernetesExecution metrics (replaced by Tekton PipelineRun)
-- ✅ **Added**: `pipelinerun_creation_duration` metric
 - ✅ **Added**: Resource locking metrics (DD-WE-001)
 
 ---
 
-### SLI/SLO Definitions
+## Authoritative Requirements
+
+### BR-WE-008: Prometheus Metrics for Execution Outcomes
+
+**Source**: [BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md#br-we-008-prometheus-metrics-for-execution-outcomes)
+
+**Required Metrics**:
+1. `workflowexecution_total{outcome}` - Counter for execution outcomes
+2. `workflowexecution_duration_seconds{outcome}` - Histogram for execution duration
+3. `workflowexecution_pipelinerun_creation_total` - Counter for PR creation
+4. `workflowexecution_skip_total{reason}` - Counter for skipped executions (DD-WE-001)
+
+### DD-WE-004: Exponential Backoff Cooldown
+
+**Source**: [DD-WE-004](../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
+
+**Additional Metrics**:
+5. `workflowexecution_backoff_skip_total{reason}` - Backoff skip visibility
+6. `workflowexecution_consecutive_failures{target_resource}` - Real-time failure state
+
+### DD-005: Observability Standards
+
+**Naming Convention**: `{service}_{component}_{metric_name}_{unit}` per [DD-005](../../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md)
+
+---
+
+## SLI/SLO Definitions
 
 **Service Level Indicators (SLIs)**:
 
 | SLI | Measurement | Target | Business Impact |
 |-----|-------------|--------|----------------|
-| **Workflow Success Rate** | `successful_workflows / total_workflows` | ≥98% | Remediation reliability |
+| **Workflow Success Rate** | `workflowexecution_total{outcome="Completed"} / workflowexecution_total` | ≥98% | Remediation reliability |
 | **Workflow Execution Latency (P95)** | `histogram_quantile(0.95, workflowexecution_duration_seconds)` | <120s | Fast remediation completion |
-| **Step Success Rate** | `successful_steps / total_steps` | ≥99% | Individual action reliability |
-| **Parallel Execution Efficiency** | `parallel_steps / total_steps` | ≥30% | Resource optimization |
-| **Dependency Resolution Time (P95)** | `histogram_quantile(0.95, workflowexecution_dependency_resolution_seconds)` | <5s | Fast orchestration startup |
+| **Skip Rate** | `workflowexecution_skip_total / (workflowexecution_total + workflowexecution_skip_total)` | <10% | Resource locking efficiency |
+
+**Note**: Step-level SLIs are provided by Tekton Pipelines metrics:
+- `tekton_pipelinerun_duration_seconds`
+- `tekton_taskrun_duration_seconds`
+- `tekton_taskrun_count`
 
 **Service Level Objectives (SLOs)**:
 
 ```yaml
 slos:
   - name: "WorkflowExecution Success Rate"
-    sli: "successful_workflows / total_workflows"
+    sli: "sum(workflowexecution_total{outcome='Completed'}) / sum(workflowexecution_total)"
     target: 0.98  # 98%
     window: "30d"
     burn_rate_fast: 14.4
     burn_rate_slow: 6
 
   - name: "WorkflowExecution P95 Latency"
-    sli: "histogram_quantile(0.95, workflowexecution_duration_seconds)"
+    sli: "histogram_quantile(0.95, rate(workflowexecution_duration_seconds_bucket[5m]))"
     target: 120  # 120 seconds
     window: "30d"
 
-  - name: "Step Success Rate"
-    sli: "successful_steps / total_steps"
-    target: 0.99  # 99%
-    window: "30d"
+  - name: "Backoff Exhaustion Rate"
+    sli: "sum(workflowexecution_backoff_skip_total{reason='ExhaustedRetries'}) / sum(workflowexecution_total)"
+    target: 0.01  # <1% - infrastructure issues rare
+    window: "7d"
 ```
 
 ---
 
-### Service-Specific Metrics
+## Implemented Metrics (BR-WE-008, DD-WE-004)
 
-**Workflow Orchestration Metrics**:
+**Implementation**: `internal/controller/workflowexecution/metrics.go`
 
 ```go
-package metrics
+package workflowexecution
 
 import (
     "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promauto"
+    "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+// ========================================
+// BR-WE-008: Business-Value Metrics
+// 4 metrics per BR-WE-008:
+// - workflowexecution_total{outcome}
+// - workflowexecution_duration_seconds{outcome}
+// - workflowexecution_pipelinerun_creation_total
+// - workflowexecution_skip_total{reason}
+//
+// DD-WE-004 Extension (BR-WE-012):
+// - workflowexecution_backoff_skip_total{reason}
+// - workflowexecution_consecutive_failures{target_resource}
+// ========================================
+
 var (
-    // Workflow lifecycle metrics
-    workflowTotal = promauto.NewCounterVec(
+    // WorkflowExecutionTotal tracks total workflow executions by outcome
+    // Labels: outcome (Completed, Failed)
+    // Business value: SLO success rate tracking
+    WorkflowExecutionTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
             Name: "workflowexecution_total",
-            Help: "Total number of workflow executions",
+            Help: "Total number of workflow executions by outcome",
         },
-        []string{"status"},  // status: completed|failed
+        []string{"outcome"},
     )
 
-    workflowDuration = promauto.NewHistogram(
+    // WorkflowExecutionDuration tracks workflow execution duration
+    // Labels: outcome (Completed, Failed)
+    // Business value: SLO P95 latency tracking
+    WorkflowExecutionDuration = prometheus.NewHistogramVec(
         prometheus.HistogramOpts{
-            Name:    "workflowexecution_duration_seconds",
-            Help:    "Workflow execution duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(5, 2, 10),  // 5s to 5120s
+            Name: "workflowexecution_duration_seconds",
+            Help: "Workflow execution duration in seconds",
+            // Buckets: 5s, 10s, 20s, 40s, 80s, 160s, 320s
+            Buckets: prometheus.ExponentialBuckets(5, 2, 7),
         },
+        []string{"outcome"},
     )
 
-    workflowActive = promauto.NewGauge(
-        prometheus.GaugeOpts{
-            Name: "workflowexecution_active_total",
-            Help: "Number of currently executing workflows",
-        },
-    )
-
-    // NOTE: Step execution metrics are provided by Tekton Pipelines
-    // - tekton_pipelinerun_duration_seconds
-    // - tekton_taskrun_duration_seconds
-    // - tekton_taskrun_count
-    // See: Tekton Metrics documentation
-
-    // Phase transition metrics
-    phaseTransitionTotal = promauto.NewCounterVec(
+    // PipelineRunCreationTotal tracks PipelineRun creation attempts
+    // Business value: Tracks execution initiation success
+    PipelineRunCreationTotal = prometheus.NewCounter(
         prometheus.CounterOpts{
-            Name: "workflowexecution_phase_transition_total",
-            Help: "Total phase transitions",
+            Name: "workflowexecution_pipelinerun_creation_total",
+            Help: "Total number of PipelineRun creations",
         },
-        []string{"from_phase", "to_phase"},
     )
 
-    // Skip reason metrics (DD-WE-001 resource locking)
-    skipTotal = promauto.NewCounterVec(
+    // WorkflowExecutionSkipTotal tracks skipped executions by reason
+    // Labels: reason (ResourceBusy, RecentlyRemediated, ExhaustedRetries, PreviousExecutionFailed)
+    // Business value: DD-WE-001 resource locking visibility
+    WorkflowExecutionSkipTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
             Name: "workflowexecution_skip_total",
-            Help: "Total workflows skipped",
+            Help: "Total number of skipped workflow executions by reason",
         },
-        []string{"reason"},  // ResourceBusy, RecentlyRemediated
+        []string{"reason"},
     )
 
-    // Outcome metrics
-    outcomeTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "workflowexecution_outcome_total",
-            Help: "Total workflow outcomes",
-        },
-        []string{"outcome", "workflow_id"},  // outcome: Success, Failed
-    )
+    // ========================================
+    // DD-WE-004 Extension: Backoff Metrics (BR-WE-012)
+    // ========================================
 
-    // PipelineRun creation metrics
-    pipelineRunCreationDuration = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "workflowexecution_pipelinerun_creation_duration_seconds",
-            Help:    "Tekton PipelineRun creation duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(0.01, 2, 8),  // 10ms to 2.56s
-        },
-    )
-
-    // Resource locking metrics (DD-WE-001)
-    resourceLockCheckDuration = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "workflowexecution_resource_lock_check_duration_seconds",
-            Help:    "Resource lock check duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(0.001, 2, 8),  // 1ms to 256ms
-        },
-    )
-
-    resourceLockSkipped = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "workflowexecution_resource_lock_skipped_total",
-            Help: "Total workflows skipped due to resource lock",
-        },
-        []string{"reason"},  // reason: ResourceBusy|RecentlyRemediated
-    )
-
-    // Exponential backoff metrics (DD-WE-004 v1.1, BR-WE-012)
-    // NOTE: These metrics ONLY track pre-execution failures (wasExecutionFailure: false)
-    // Execution failures (wasExecutionFailure: true) are tracked via skip_total{reason="PreviousExecutionFailed"}
-    backoffSkipTotal = promauto.NewCounterVec(
+    // BackoffSkipTotal tracks workflows skipped due to exponential backoff
+    // Labels: reason (ExhaustedRetries, PreviousExecutionFailed)
+    // Business value: Visibility into remediation storm prevention
+    BackoffSkipTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
             Name: "workflowexecution_backoff_skip_total",
-            Help: "Total workflow executions skipped due to exponential backoff or execution failure blocking",
+            Help: "Total workflows skipped due to backoff (ExhaustedRetries, PreviousExecutionFailed)",
         },
-        []string{"reason"},  // reason: RecentlyRemediated|ExhaustedRetries|PreviousExecutionFailed
+        []string{"reason"},
     )
 
-    consecutiveFailures = promauto.NewGaugeVec(
+    // ConsecutiveFailuresGauge tracks current consecutive failure count per target
+    // Labels: target_resource (e.g., "default/deployment/payment-api")
+    // Business value: Real-time visibility into retry state
+    ConsecutiveFailuresGauge = prometheus.NewGaugeVec(
         prometheus.GaugeOpts{
             Name: "workflowexecution_consecutive_failures",
-            Help: "Current consecutive PRE-EXECUTION failure count per target resource (execution failures not counted)",
+            Help: "Current consecutive failure count per target resource",
         },
         []string{"target_resource"},
     )
 )
+
+func init() {
+    // Register metrics with controller-runtime metrics registry
+    metrics.Registry.MustRegister(
+        WorkflowExecutionTotal,
+        WorkflowExecutionDuration,
+        PipelineRunCreationTotal,
+        WorkflowExecutionSkipTotal,
+        // DD-WE-004 Extension: Backoff metrics (BR-WE-012)
+        BackoffSkipTotal,
+        ConsecutiveFailuresGauge,
+    )
+}
 ```
 
 ---
 
-### Grafana Dashboard JSON
+## Metrics Cardinality Audit
 
-**WorkflowExecution Controller Dashboard** (key panels):
+**Status**: ✅ SAFE - Total < 100 unique combinations
+
+| Metric | Labels | Max Cardinality | Status |
+|--------|--------|-----------------|--------|
+| `workflowexecution_total` | outcome(2) | 2 | ✅ |
+| `workflowexecution_duration_seconds` | outcome(2) | 2 | ✅ |
+| `workflowexecution_pipelinerun_creation_total` | (none) | 1 | ✅ |
+| `workflowexecution_skip_total` | reason(4) | 4 | ✅ |
+| `workflowexecution_backoff_skip_total` | reason(2) | 2 | ✅ |
+| `workflowexecution_consecutive_failures` | target_resource(~100) | ~100 | ✅ |
+| **TOTAL** | | **~111** | ✅ |
+
+**Note**: `target_resource` cardinality is bounded by active remediation targets, typically < 100 in production.
+
+---
+
+## Grafana Dashboard JSON
+
+**WorkflowExecution Controller Dashboard** (aligned with BR-WE-008):
 
 ```json
 {
   "dashboard": {
-    "title": "WorkflowExecution Controller - Orchestration Observability",
+    "title": "WorkflowExecution Controller - Business Metrics (BR-WE-008)",
     "uid": "workflowexecution-controller",
-    "tags": ["kubernaut", "workflowexecution", "orchestration", "controller"],
+    "tags": ["kubernaut", "workflowexecution", "controller", "br-we-008"],
     "panels": [
       {
         "id": 1,
@@ -193,7 +241,7 @@ var (
         "type": "graph",
         "targets": [
           {
-            "expr": "sum(rate(workflowexecution_total{status='completed'}[5m])) / sum(rate(workflowexecution_total[5m]))",
+            "expr": "sum(rate(workflowexecution_total{outcome='Completed'}[5m])) / sum(rate(workflowexecution_total[5m]))",
             "legendFormat": "Success Rate"
           }
         ],
@@ -212,42 +260,43 @@ var (
       },
       {
         "id": 3,
-        "title": "Step Success Rate by Action",
+        "title": "Workflow Outcomes",
         "type": "graph",
         "targets": [
-          {"expr": "sum by (action) (rate(workflowexecution_step_execution_total{status='completed'}[5m])) / sum by (action) (rate(workflowexecution_step_execution_total[5m]))"}
+          {"expr": "sum(rate(workflowexecution_total{outcome='Completed'}[5m]))", "legendFormat": "Completed"},
+          {"expr": "sum(rate(workflowexecution_total{outcome='Failed'}[5m]))", "legendFormat": "Failed"}
         ]
       },
       {
         "id": 4,
-        "title": "Parallel Execution Efficiency",
+        "title": "Skip Reasons (DD-WE-001)",
         "type": "graph",
         "targets": [
-          {"expr": "workflowexecution_parallel_execution_efficiency", "legendFormat": "Efficiency (parallel/total)"}
+          {"expr": "sum by (reason) (rate(workflowexecution_skip_total[5m]))", "legendFormat": "{{reason}}"}
         ]
       },
       {
         "id": 5,
-        "title": "Active Workflows",
+        "title": "PipelineRun Creations",
         "type": "stat",
         "targets": [
-          {"expr": "workflowexecution_active_total"}
+          {"expr": "rate(workflowexecution_pipelinerun_creation_total[5m])"}
         ]
       },
       {
         "id": 6,
-        "title": "Dependency Resolution Performance",
+        "title": "Backoff Skip Rate (DD-WE-004)",
         "type": "graph",
         "targets": [
-          {"expr": "histogram_quantile(0.95, rate(workflowexecution_dependency_resolution_duration_seconds_bucket[5m]))", "legendFormat": "P95"}
+          {"expr": "sum by (reason) (rate(workflowexecution_backoff_skip_total[5m]))", "legendFormat": "{{reason}}"}
         ]
       },
       {
         "id": 7,
-        "title": "Step Execution Duration by Action",
-        "type": "heatmap",
+        "title": "Consecutive Failures per Target (Top 10)",
+        "type": "table",
         "targets": [
-          {"expr": "sum by (action, le) (rate(workflowexecution_step_execution_duration_seconds_bucket[5m]))"}
+          {"expr": "topk(10, workflowexecution_consecutive_failures)", "legendFormat": "{{target_resource}}"}
         ]
       }
     ]
@@ -257,116 +306,176 @@ var (
 
 ---
 
-### Alert Rules YAML
+## Alert Rules YAML
+
+**Aligned with BR-WE-008 implemented metrics**:
 
 ```yaml
 groups:
 - name: workflowexecution-slos
   interval: 30s
   rules:
-  # SLO: Workflow Success Rate
+  # SLO: Workflow Success Rate (BR-WE-008)
   - alert: WorkflowExecutionSuccessRateSLOBreach
     expr: |
       (
-        sum(rate(workflowexecution_total{status="completed"}[1h])) /
+        sum(rate(workflowexecution_total{outcome="Completed"}[1h])) /
         sum(rate(workflowexecution_total[1h]))
       ) < 0.98
     for: 5m
     labels:
       severity: critical
       slo: workflow_success_rate
+      br: BR-WE-008
     annotations:
       summary: "Workflow execution success rate below SLO"
       description: "Workflow success rate is {{ $value | humanizePercentage }}, below 98% SLO"
+      runbook: "docs/operations/runbooks/workflowexecution-runbook.md#success-rate-breach"
 
-  # SLO: Step Success Rate
-  - alert: WorkflowStepSuccessRateSLOBreach
+  # SLO: Workflow Latency P95 (BR-WE-008)
+  - alert: WorkflowExecutionLatencySLOBreach
     expr: |
-      (
-        sum(rate(workflowexecution_step_execution_total{status="completed"}[1h])) /
-        sum(rate(workflowexecution_step_execution_total[1h]))
-      ) < 0.99
+      histogram_quantile(0.95, rate(workflowexecution_duration_seconds_bucket[5m])) > 120
     for: 5m
     labels:
-      severity: critical
-      slo: step_success_rate
-    annotations:
-      summary: "Workflow step success rate below SLO"
-      description: "Step success rate is {{ $value | humanizePercentage }}, below 99% SLO"
-
-  # Operational: Low Parallel Execution Efficiency
-  - alert: WorkflowLowParallelEfficiency
-    expr: |
-      workflowexecution_parallel_execution_efficiency < 0.30
-    for: 15m
-    labels:
       severity: warning
+      slo: workflow_latency_p95
+      br: BR-WE-008
     annotations:
-      summary: "Low parallel execution efficiency"
-      description: "Only {{ $value | humanizePercentage }} of steps executed in parallel (threshold: 30%)"
+      summary: "Workflow execution P95 latency above SLO"
+      description: "P95 latency is {{ $value | humanizeDuration }}, above 120s SLO"
+      runbook: "docs/operations/runbooks/workflowexecution-runbook.md#latency-breach"
 
-  # Operational: High Step Failure Rate for Specific Action
-  - alert: WorkflowStepHighFailureRate
+  # Operational: High Skip Rate (DD-WE-001)
+  - alert: WorkflowExecutionHighSkipRate
     expr: |
-      (
-        sum by (action) (rate(workflowexecution_step_execution_total{status="failed"}[5m])) /
-        sum by (action) (rate(workflowexecution_step_execution_total[5m]))
-      ) > 0.05
+      sum(rate(workflowexecution_skip_total[5m])) /
+      (sum(rate(workflowexecution_total[5m])) + sum(rate(workflowexecution_skip_total[5m]))) > 0.10
     for: 10m
     labels:
       severity: warning
+      dd: DD-WE-001
     annotations:
-      summary: "High step failure rate for action {{ $labels.action }}"
-      description: "{{ $value | humanizePercentage }} of {{ $labels.action }} steps failing (threshold: 5%)"
+      summary: "High workflow skip rate"
+      description: "{{ $value | humanizePercentage }} of workflows skipped (threshold: 10%)"
+      runbook: "docs/operations/runbooks/workflowexecution-runbook.md#high-skip-rate"
 
-  # Operational: Workflow Stuck (long execution time)
-  - alert: WorkflowExecutionStuck
+  # Operational: Backoff Exhaustion (DD-WE-004)
+  - alert: WorkflowExecutionBackoffExhausted
     expr: |
-      time() - workflowexecution_start_timestamp > 600
+      sum(rate(workflowexecution_backoff_skip_total{reason="ExhaustedRetries"}[5m])) > 0
+    for: 5m
+    labels:
+      severity: warning
+      dd: DD-WE-004
+      br: BR-WE-012
+    annotations:
+      summary: "Workflows exhausting retry attempts"
+      description: "Workflows failing due to exhausted retries - infrastructure issue likely"
+      runbook: "docs/operations/runbooks/workflowexecution-runbook.md#backoff-exhausted"
+
+  # Operational: Execution Failure Blocking (DD-WE-004)
+  - alert: WorkflowExecutionFailureBlocking
+    expr: |
+      sum(rate(workflowexecution_backoff_skip_total{reason="PreviousExecutionFailed"}[5m])) > 0
     for: 5m
     labels:
       severity: critical
+      dd: DD-WE-004
+      br: BR-WE-012
     annotations:
-      summary: "Workflow execution stuck"
-      description: "Workflow {{ $labels.name }} has been executing for over 10 minutes"
+      summary: "Workflows blocked by previous execution failure"
+      description: "Workflows blocked due to previous execution failure - manual review required"
+      runbook: "docs/operations/runbooks/workflowexecution-runbook.md#execution-failure-blocking"
+
+  # Operational: High Consecutive Failures (DD-WE-004)
+  - alert: WorkflowExecutionHighConsecutiveFailures
+    expr: |
+      workflowexecution_consecutive_failures >= 3
+    for: 5m
+    labels:
+      severity: warning
+      dd: DD-WE-004
+    annotations:
+      summary: "Target resource has high consecutive failures"
+      description: "Target {{ $labels.target_resource }} has {{ $value }} consecutive failures"
+      runbook: "docs/operations/runbooks/workflowexecution-runbook.md#high-consecutive-failures"
 ```
 
 ---
 
-### Query Examples
+## Query Examples
 
-**Orchestration-Specific Queries**:
+**Business Metrics Queries (BR-WE-008)**:
 
 ```promql
 # 1. Workflow Success Rate (SLI)
-sum(rate(workflowexecution_total{status="completed"}[5m])) /
+sum(rate(workflowexecution_total{outcome="Completed"}[5m])) /
 sum(rate(workflowexecution_total[5m]))
 
-# 2. Step Success Rate by Action
-sum by (action) (rate(workflowexecution_step_execution_total{status="completed"}[5m])) /
-sum by (action) (rate(workflowexecution_step_execution_total[5m]))
-
-# 3. Parallel Execution Efficiency
-workflowexecution_parallel_execution_efficiency
-
-# 4. Average Workflow Duration
+# 2. Average Workflow Duration
 rate(workflowexecution_duration_seconds_sum[5m]) /
 rate(workflowexecution_duration_seconds_count[5m])
 
-# 5. Dependency Resolution P95
-histogram_quantile(0.95,
-  rate(workflowexecution_dependency_resolution_duration_seconds_bucket[5m])
-)
+# 3. Workflow Duration P95
+histogram_quantile(0.95, rate(workflowexecution_duration_seconds_bucket[5m]))
 
-# 6. Active Workflows by Phase
-workflowexecution_active_total
+# 4. PipelineRun Creation Rate
+rate(workflowexecution_pipelinerun_creation_total[5m])
 
-# 7. Step Execution Rate
-sum(rate(workflowexecution_step_execution_total[5m]))
+# 5. Skip Rate by Reason (DD-WE-001)
+sum by (reason) (rate(workflowexecution_skip_total[5m]))
 
-# 8. Average Steps per Workflow
-rate(workflowexecution_step_count_sum[5m]) /
-rate(workflowexecution_step_count_count[5m])
+# 6. Backoff Skip Rate by Reason (DD-WE-004)
+sum by (reason) (rate(workflowexecution_backoff_skip_total[5m]))
+
+# 7. Targets with Consecutive Failures (DD-WE-004)
+topk(10, workflowexecution_consecutive_failures > 0)
+
+# 8. Total Workflows (Success + Failed + Skipped)
+sum(rate(workflowexecution_total[5m])) + sum(rate(workflowexecution_skip_total[5m]))
 ```
+
+**Tekton Metrics (Step-Level - Provided by Tekton)**:
+
+```promql
+# Step-level metrics are handled by Tekton Pipelines:
+# - tekton_pipelinerun_duration_seconds
+# - tekton_taskrun_duration_seconds
+# - tekton_taskrun_count
+
+# Example: Tekton PipelineRun duration for Kubernaut workflows
+histogram_quantile(0.95, rate(tekton_pipelinerun_duration_seconds_bucket{
+  pipeline=~"kubernaut-.*"
+}[5m]))
+```
+
+---
+
+## Step-Level Observability Note
+
+Per **ADR-044** (Workflow Execution Engine Delegation), step orchestration is delegated to Tekton Pipelines. Therefore:
+
+1. **Kubernaut WE Controller** provides:
+   - Workflow lifecycle metrics (BR-WE-008)
+   - Resource locking visibility (DD-WE-001)
+   - Backoff state tracking (DD-WE-004)
+
+2. **Tekton Pipelines** provides:
+   - Step execution metrics
+   - Task duration metrics
+   - Pipeline parallelism metrics
+
+This separation follows the principle of "delegate to specialized engines" and avoids metric duplication.
+
+---
+
+## References
+
+- [BR-WE-008: Prometheus Metrics](./BUSINESS_REQUIREMENTS.md#br-we-008-prometheus-metrics-for-execution-outcomes)
+- [DD-WE-004: Exponential Backoff Cooldown](../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
+- [DD-WE-001: Resource Locking Safety](../../../architecture/decisions/DD-WE-001-resource-locking-safety.md)
+- [DD-005: Observability Standards](../../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md)
+- [ADR-044: Workflow Execution Engine Delegation](../../../architecture/decisions/ADR-044-workflow-execution-engine-delegation.md)
 
 ---

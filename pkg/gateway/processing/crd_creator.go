@@ -301,13 +301,18 @@ func (c *CRDCreator) CreateRemediationRequest(
 		return nil, err
 	}
 
-	// Generate CRD name from fingerprint (first 16 chars, or full fingerprint if shorter)
-	// Example: rr-a1b2c3d4e5f6789
+	// DD-015: Timestamp-Based CRD Naming for Unique Occurrences
+	// Generate CRD name from fingerprint (first 12 chars) + Unix timestamp
+	// Example: rr-bd773c9f25ac-1731868032
+	// This ensures each signal occurrence creates a unique CRD, even if the
+	// same problem reoccurs after a previous remediation completed.
+	// See: docs/architecture/decisions/DD-015-timestamp-based-crd-naming.md
 	fingerprintPrefix := signal.Fingerprint
-	if len(fingerprintPrefix) > 16 {
-		fingerprintPrefix = fingerprintPrefix[:16]
+	if len(fingerprintPrefix) > 12 {
+		fingerprintPrefix = fingerprintPrefix[:12]
 	}
-	crdName := fmt.Sprintf("rr-%s", fingerprintPrefix)
+	timestamp := time.Now().Unix()
+	crdName := fmt.Sprintf("rr-%s-%d", fingerprintPrefix, timestamp)
 
 	// Build RemediationRequest CRD
 	rr := &remediationv1alpha1.RemediationRequest{

@@ -49,6 +49,13 @@ import (
 // - BR-GATEWAY-184: Check RR phase for deduplication decisions
 // ========================================
 
+// Helper to create a valid 64-char SHA256 fingerprint
+func testFingerprint(prefix string) string {
+	// SHA256 hashes are 64 hex characters
+	base := prefix + "0000000000000000000000000000000000000000000000000000000000000000"
+	return base[:64]
+}
+
 var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 	var (
 		ctx       context.Context
@@ -87,8 +94,16 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Namespace: "kubernaut-system",
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "abc123def456",
-						SignalName:  "PodCrashLooping",
+						SignalFingerprint: testFingerprint("abc123"),
+						SignalName:        "PodCrashLooping",
+						Severity:          "warning",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 1,
+						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						Deduplication: &remediationv1alpha1.DeduplicationStatus{
@@ -122,14 +137,23 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 			It("should set LastSeenAt timestamp on update", func() {
 				// Setup: Create RR with initial deduplication status
 				initialTime := metav1.NewTime(time.Now().Add(-1 * time.Hour))
+				now := metav1.Now()
 				rr := &remediationv1alpha1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-rr-002",
 						Namespace: "kubernaut-system",
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "xyz789",
-						SignalName:  "HighMemoryUsage",
+						SignalFingerprint: testFingerprint("xyz789"),
+						SignalName:        "HighMemoryUsage",
+						Severity:          "warning",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 3,
+						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						Deduplication: &remediationv1alpha1.DeduplicationStatus{
@@ -158,14 +182,23 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 			It("should initialize deduplication status if nil", func() {
 				// Setup: Create RR WITHOUT initial deduplication status
+				now := metav1.Now()
 				rr := &remediationv1alpha1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-rr-003",
 						Namespace: "kubernaut-system",
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "new-signal-123",
-						SignalName:  "NewAlert",
+						SignalFingerprint: testFingerprint("newsig"),
+						SignalName:        "NewAlert",
+						Severity:          "info",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 1,
+						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						// No Deduplication field set
@@ -201,13 +234,15 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						Namespace: "kubernaut-system",
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "immutable-test",
-						SignalName:  "TestAlert",
-						Deduplication: remediationv1alpha1.DeduplicationInfo{
-							FirstOccurrence:  now,
-							LastOccurrence:   now,
-							OccurrenceCount:  1,
-							IsStormAggregate: false,
+						SignalFingerprint: testFingerprint("immut"),
+						SignalName:        "TestAlert",
+						Severity:          "warning",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 1,
 						},
 					},
 				}
@@ -242,17 +277,27 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 		Context("when checking for existing RR by fingerprint (BR-GATEWAY-184)", func() {
 			It("should return true for in-progress RR (Pending phase)", func() {
 				// Setup: Create RR in Pending phase
+				now := metav1.Now()
+				fp := testFingerprint("pending")
 				rr := &remediationv1alpha1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "pending-rr",
 						Namespace: "kubernaut-system",
 						Labels: map[string]string{
-							"kubernaut.ai/fingerprint": "pending-fingerprint",
+							"kubernaut.ai/signal-fingerprint": fp[:63],
 						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "pending-fingerprint",
-						SignalName:  "PendingAlert",
+						SignalFingerprint: fp,
+						SignalName:        "PendingAlert",
+						Severity:          "warning",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 1,
+						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						OverallPhase: "Pending",
@@ -262,7 +307,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 				// BEHAVIOR: Check if should deduplicate
 				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
-				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", "pending-fingerprint")
+				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should deduplicate (RR is in-progress)
 				Expect(err).ToNot(HaveOccurred())
@@ -275,17 +320,27 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 			It("should return true for in-progress RR (Processing phase)", func() {
 				// Setup: Create RR in Processing phase
+				now := metav1.Now()
+				fp := testFingerprint("proces")
 				rr := &remediationv1alpha1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "processing-rr",
 						Namespace: "kubernaut-system",
 						Labels: map[string]string{
-							"kubernaut.ai/fingerprint": "processing-fingerprint",
+							"kubernaut.ai/signal-fingerprint": fp[:63],
 						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "processing-fingerprint",
-						SignalName:  "ProcessingAlert",
+						SignalFingerprint: fp,
+						SignalName:        "ProcessingAlert",
+						Severity:          "warning",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 1,
+						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						OverallPhase: "Processing",
@@ -295,7 +350,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 				// BEHAVIOR: Check if should deduplicate
 				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
-				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", "processing-fingerprint")
+				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should deduplicate (RR is in-progress)
 				Expect(err).ToNot(HaveOccurred())
@@ -305,17 +360,27 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 			It("should return false for terminal RR (Completed phase)", func() {
 				// Setup: Create RR in Completed phase (terminal)
+				now := metav1.Now()
+				fp := testFingerprint("complt")
 				rr := &remediationv1alpha1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "completed-rr",
 						Namespace: "kubernaut-system",
 						Labels: map[string]string{
-							"kubernaut.ai/fingerprint": "completed-fingerprint",
+							"kubernaut.ai/signal-fingerprint": fp[:63],
 						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "completed-fingerprint",
-						SignalName:  "CompletedAlert",
+						SignalFingerprint: fp,
+						SignalName:        "CompletedAlert",
+						Severity:          "warning",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 1,
+						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						OverallPhase: "Completed",
@@ -325,7 +390,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 				// BEHAVIOR: Check if should deduplicate
 				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
-				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", "completed-fingerprint")
+				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should NOT deduplicate (RR is terminal)
 				Expect(err).ToNot(HaveOccurred())
@@ -337,17 +402,27 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 			It("should return false for terminal RR (Failed phase)", func() {
 				// Setup: Create RR in Failed phase (terminal)
+				now := metav1.Now()
+				fp := testFingerprint("failed")
 				rr := &remediationv1alpha1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "failed-rr",
 						Namespace: "kubernaut-system",
 						Labels: map[string]string{
-							"kubernaut.ai/fingerprint": "failed-fingerprint",
+							"kubernaut.ai/signal-fingerprint": fp[:63],
 						},
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "failed-fingerprint",
-						SignalName:  "FailedAlert",
+						SignalFingerprint: fp,
+						SignalName:        "FailedAlert",
+						Severity:          "warning",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 1,
+						},
 					},
 					Status: remediationv1alpha1.RemediationRequestStatus{
 						OverallPhase: "Failed",
@@ -357,7 +432,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 				// BEHAVIOR: Check if should deduplicate
 				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
-				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", "failed-fingerprint")
+				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should NOT deduplicate (RR is terminal)
 				Expect(err).ToNot(HaveOccurred())
@@ -369,10 +444,11 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 			It("should return false when no RR exists for fingerprint", func() {
 				// No RR created - empty state
+				fp := testFingerprint("nonext")
 
 				// BEHAVIOR: Check if should deduplicate
 				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
-				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", "nonexistent-fingerprint")
+				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should NOT deduplicate (no existing RR)
 				Expect(err).ToNot(HaveOccurred())
@@ -400,14 +476,23 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				Expect(updater).ToNot(BeNil(), "StatusUpdater should be initialized")
 
 				// Create a simple RR for update
+				now := metav1.Now()
 				rr := &remediationv1alpha1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "conflict-test-rr",
 						Namespace: "kubernaut-system",
 					},
 					Spec: remediationv1alpha1.RemediationRequestSpec{
-						Fingerprint: "conflict-test",
-						SignalName:  "ConflictAlert",
+						SignalFingerprint: testFingerprint("conflt"),
+						SignalName:        "ConflictAlert",
+						Severity:          "warning",
+						SignalType:        "prometheus",
+						ReceivedTime:      now,
+						Deduplication: sharedtypes.DeduplicationInfo{
+							FirstOccurrence: now,
+							LastOccurrence:  now,
+							OccurrenceCount: 1,
+						},
 					},
 				}
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -424,4 +509,3 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 		})
 	})
 })
-

@@ -2,19 +2,23 @@
 #
 # Business Requirement: BR-HAPI-250 - Workflow Catalog Integration
 # Design Decision: DD-WORKFLOW-002 v2.4 - Generated models with container_image
+# ADR-045: OpenAPI spec export and CI validation
 #
 # Usage:
 #   make generate-models  - Regenerate Data Storage client models from OpenAPI spec
+#   make export-openapi   - Export OpenAPI spec from FastAPI app (ADR-045)
+#   make validate-openapi - Validate OpenAPI spec consistency (CI)
 #   make test             - Run all tests
 #   make test-unit        - Run unit tests only
 #   make test-integration - Run integration tests only
 #   make lint             - Run linter
 #   make clean            - Clean generated files
 
-.PHONY: generate-models test test-unit test-integration lint clean help
+.PHONY: generate-models export-openapi validate-openapi test test-unit test-integration lint clean help
 
-# OpenAPI spec location
-OPENAPI_SPEC := ../docs/services/stateless/data-storage/openapi/v3.yaml
+# OpenAPI spec locations (ADR-045)
+DS_OPENAPI_SPEC := ../docs/services/stateless/data-storage/openapi/v3.yaml
+HAPI_OPENAPI_OUTPUT := api/openapi.json
 MODELS_OUTPUT := src/clients/datastorage/models.py
 
 # Default target
@@ -22,21 +26,45 @@ help:
 	@echo "HolmesGPT API Build Targets"
 	@echo ""
 	@echo "  make generate-models  - Regenerate Data Storage client models from OpenAPI spec"
+	@echo "  make export-openapi   - Export OpenAPI spec from FastAPI app (ADR-045)"
+	@echo "  make validate-openapi - Validate OpenAPI spec consistency (CI)"
 	@echo "  make test             - Run all tests with coverage"
-	@echo "  make test-unit        - Run unit tests only"
-	@echo "  make test-integration - Run integration tests only"
+	@echo "  make test-unit        - Run unit tests only (CI Tier 1)"
+	@echo "  make test-integration - Run integration tests only (CI Tier 2)"
 	@echo "  make lint             - Run linter (ruff)"
 	@echo "  make clean            - Clean generated files"
 	@echo ""
+
+# Export OpenAPI spec from FastAPI application (ADR-045)
+# This generates the authoritative OpenAPI spec from the running application
+export-openapi:
+	@echo "📄 Exporting OpenAPI spec from FastAPI app..."
+	@mkdir -p api
+	python3 -c "from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))" > $(HAPI_OPENAPI_OUTPUT)
+	@echo "✅ OpenAPI spec exported: $(HAPI_OPENAPI_OUTPUT)"
+	@echo "📊 Schema count: $$(python3 -c \"import json; spec=json.load(open('$(HAPI_OPENAPI_OUTPUT)')); print(len(spec.get('components', {}).get('schemas', {})))\")"
+
+# Validate OpenAPI spec consistency (CI validation per ADR-045)
+# Ensures exported spec matches committed spec
+validate-openapi: export-openapi
+	@echo "🔍 Validating OpenAPI spec consistency..."
+	@if [ -f "$(HAPI_OPENAPI_OUTPUT).committed" ]; then \
+		diff -q $(HAPI_OPENAPI_OUTPUT) $(HAPI_OPENAPI_OUTPUT).committed > /dev/null 2>&1 || \
+		(echo "❌ OpenAPI spec drift detected! Run 'make export-openapi' and commit changes." && exit 1); \
+		echo "✅ OpenAPI spec is consistent"; \
+	else \
+		echo "⚠️  No committed spec found. Copying current as baseline..."; \
+		cp $(HAPI_OPENAPI_OUTPUT) $(HAPI_OPENAPI_OUTPUT).committed; \
+	fi
 
 # Generate Pydantic models from OpenAPI spec
 # DD-WORKFLOW-002 v2.4: Ensures container_image and container_digest are included
 generate-models:
 	@echo "📦 Installing datamodel-code-generator..."
 	pip3 install datamodel-code-generator --index-url https://pypi.org/simple/ --quiet
-	@echo "🔄 Generating models from OpenAPI spec: $(OPENAPI_SPEC)"
+	@echo "🔄 Generating models from OpenAPI spec: $(DS_OPENAPI_SPEC)"
 	python3 -m datamodel_code_generator \
-		--input $(OPENAPI_SPEC) \
+		--input $(DS_OPENAPI_SPEC) \
 		--output $(MODELS_OUTPUT) \
 		--output-model-type pydantic_v2.BaseModel \
 		--use-double-quotes \
@@ -50,11 +78,11 @@ generate-models:
 
 # Run all tests with coverage
 test:
-	python3 -m pytest tests/ -v --tb=short --cov=src --cov-report=html -p 4
+	python3 -m pytest tests/ -v --tb=short --cov=src --cov-report=html
 
-# Run unit tests only (parallel execution per DD-TEST-002)
+# Run unit tests only (CI Tier 1)
 test-unit:
-	python3 -m pytest tests/unit/ -v --tb=short --cov=src -p 4
+	python3 -m pytest tests/unit/ -v --tb=short --cov=src
 
 # Run integration tests only
 test-integration:

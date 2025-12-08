@@ -18,7 +18,6 @@ package processing
 
 import (
 	"context"
-	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -77,9 +76,38 @@ func NewPhaseBasedDeduplicationChecker(k8sClient client.Client) *PhaseBasedDedup
 // - *RemediationRequest: existing in-progress RR (nil if none)
 // - error: K8s API errors
 func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, namespace, fingerprint string) (bool, *remediationv1alpha1.RemediationRequest, error) {
-	// DD-GATEWAY-011: RED phase - return not implemented error
-	// This will be implemented in Day 2 (GREEN phase)
-	return false, nil, fmt.Errorf("ShouldDeduplicate not implemented yet (DD-GATEWAY-011 Day 1 RED phase)")
+	// List RRs matching the fingerprint label
+	rrList := &remediationv1alpha1.RemediationRequestList{}
+
+	// Use label selector to find RRs with matching fingerprint
+	// Label format: kubernaut.ai/signal-fingerprint (truncated to 63 chars for K8s label limit)
+	labelFingerprint := fingerprint
+	if len(labelFingerprint) > 63 {
+		labelFingerprint = labelFingerprint[:63]
+	}
+
+	if err := c.client.List(ctx, rrList,
+		client.InNamespace(namespace),
+		client.MatchingLabels{"kubernaut.ai/signal-fingerprint": labelFingerprint},
+	); err != nil {
+		return false, nil, err
+	}
+
+	// Check each RR for non-terminal phase
+	for i := range rrList.Items {
+		rr := &rrList.Items[i]
+
+		// Skip if in terminal phase (allow new RR creation)
+		if IsTerminalPhase(rr.Status.OverallPhase) {
+			continue
+		}
+
+		// Found in-progress RR → should deduplicate
+		return true, rr, nil
+	}
+
+	// No in-progress RR found → allow new RR creation
+	return false, nil, nil
 }
 
 // IsTerminalPhase checks if a phase is terminal (allows new RR creation)
