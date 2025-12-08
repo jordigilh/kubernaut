@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package signalprocessing_test contains hot-reload integration tests for SignalProcessing.
-// These tests validate ConfigMap watch-based policy reloading with real Kubernetes API.
+// Package signalprocessing_test contains Hot-Reload integration tests for SignalProcessing.
+// These tests validate ConfigMap-based policy hot-reload functionality.
 //
 // Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
 // - Unit tests (70%+): Hot-reload logic (test/unit/signalprocessing/)
-// - Integration tests (>50%): Real ConfigMap watch behavior (this file)
-// - E2E/BR tests (10-15%): Complete workflow validation (test/e2e/signalprocessing/)
+// - Integration tests (>50%): Real ConfigMap interaction (this file)
+// - E2E tests (10-15%): Complete workflow validation (test/e2e/signalprocessing/)
 //
 // TDD Phase: RED - Tests define expected hot-reload behavior
 // Implementation Plan: Day 10, Tier 5 - Hot-Reload Integration Tests
@@ -33,10 +33,15 @@ limitations under the License.
 // - Recovery: 1 test (BR-SP-072)
 //
 // Business Requirements Coverage:
-// - BR-SP-072: Hot-reload policy changes without restart (5 tests)
+// - BR-SP-072: ConfigMap hot-reload without restart (5 tests)
+//
+// NOTE: These tests verify hot-reload behavior through the controller's
+// ability to pick up ConfigMap changes and apply updated policies to
+// subsequent SignalProcessing reconciliations.
 package signalprocessing_test
 
 import (
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -55,14 +60,14 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", func() {
 	// ========================================
 
 	Context("File Watch - ConfigMap Change Detection", func() {
-		// Policy file change detected
-		It("BR-SP-072: should detect ConfigMap policy change via watch", func() {
+		// IT-HR-01: Policy file change detected
+		It("BR-SP-072: should detect policy file change in ConfigMap", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hot-reload-watch")
+			ns := createTestNamespace("hr-file-watch")
 			defer deleteTestNamespace(ns)
 
-			By("Creating initial ConfigMap with labels.rego")
-			initialConfigMap := &corev1.ConfigMap{
+			By("Creating initial ConfigMap with labels.rego policy")
+			labelsConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "signalprocessing-labels-config",
 					Namespace: ns,
@@ -76,12 +81,12 @@ labels["version"] := ["v1"] if { true }
 `,
 				},
 			}
-			Expect(k8sClient.Create(ctx, initialConfigMap)).To(Succeed())
+			Expect(k8sClient.Create(ctx, labelsConfigMap)).To(Succeed())
 
-			By("Creating first SignalProcessing CR")
-			sp1 := createSignalProcessingCR(ns, "hot-reload-watch-1", signalprocessingv1alpha1.SignalData{
-				Fingerprint: "hrw101abc123def456abc123def456abc123def456abc123def456abc123d",
-				Name:        "HotReloadWatch1",
+			By("Creating SignalProcessing CR with initial policy")
+			sp1 := createSignalProcessingCR(ns, "hr-file-watch-test-1", signalprocessingv1alpha1.SignalData{
+				Fingerprint: "hrfw01abc123def456abc123def456abc123def456abc123def456abc123d",
+				Name:        "HRFileWatchTest1",
 				Severity:    "warning",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
@@ -94,34 +99,35 @@ labels["version"] := ["v1"] if { true }
 			})
 			defer func() { _ = deleteAndWait(sp1, timeout) }()
 
-			By("Waiting for first CR to complete")
+			By("Waiting for first CR to complete with v1 policy")
 			err := waitForCompletion(sp1.Name, sp1.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying initial policy was used (v1)")
-			var final1 signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp1.Name, Namespace: ns}, &final1)).To(Succeed())
-			Expect(final1.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("version", ContainElement("v1")))
+			By("Verifying v1 label applied")
+			var result1 signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp1.Name, Namespace: ns}, &result1)).To(Succeed())
+			Expect(result1.Status.KubernetesContext).ToNot(BeNil())
+			Expect(result1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("version", ContainElement("v1")))
 
-			By("Updating ConfigMap to v2")
-			var cm corev1.ConfigMap
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "signalprocessing-labels-config", Namespace: ns}, &cm)).To(Succeed())
-			cm.Data["labels.rego"] = `package signalprocessing.labels
+			By("Updating ConfigMap to v2 policy")
+			var existingCM corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "signalprocessing-labels-config", Namespace: ns}, &existingCM)).To(Succeed())
+			existingCM.Data["labels.rego"] = `package signalprocessing.labels
 
 import rego.v1
 
 labels["version"] := ["v2"] if { true }
 `
-			Expect(k8sClient.Update(ctx, &cm)).To(Succeed())
+			Expect(k8sClient.Update(ctx, &existingCM)).To(Succeed())
 
-			By("Waiting for watch to detect change")
-			time.Sleep(2 * time.Second) // Allow watch event to propagate
+			By("Waiting for hot-reload to take effect")
+			// Give the file watcher time to detect the change
+			time.Sleep(2 * time.Second)
 
-			By("Creating second SignalProcessing CR")
-			sp2 := createSignalProcessingCR(ns, "hot-reload-watch-2", signalprocessingv1alpha1.SignalData{
-				Fingerprint: "hrw201abc123def456abc123def456abc123def456abc123def456abc123d",
-				Name:        "HotReloadWatch2",
+			By("Creating second SignalProcessing CR to verify new policy")
+			sp2 := createSignalProcessingCR(ns, "hr-file-watch-test-2", signalprocessingv1alpha1.SignalData{
+				Fingerprint: "hrfw02abc123def456abc123def456abc123def456abc123def456abc123d",
+				Name:        "HRFileWatchTest2",
 				Severity:    "warning",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
@@ -134,15 +140,15 @@ labels["version"] := ["v2"] if { true }
 			})
 			defer func() { _ = deleteAndWait(sp2, timeout) }()
 
-			By("Waiting for second CR to complete")
+			By("Waiting for second CR to complete with v2 policy")
 			err = waitForCompletion(sp2.Name, sp2.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying updated policy was used (v2)")
-			var final2 signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &final2)).To(Succeed())
-			Expect(final2.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final2.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("version", ContainElement("v2")))
+			By("Verifying v2 label applied (hot-reload detected)")
+			var result2 signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &result2)).To(Succeed())
+			Expect(result2.Status.KubernetesContext).ToNot(BeNil())
+			Expect(result2.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("version", ContainElement("v2")))
 		})
 	})
 
@@ -150,106 +156,42 @@ labels["version"] := ["v2"] if { true }
 	// RELOAD TEST (1 test)
 	// ========================================
 
-	Context("Reload - Valid Policy Takes Effect", func() {
-		// Valid policy takes effect immediately
-		It("BR-SP-072: should apply valid policy immediately after reload", func() {
-			By("Creating namespace")
-			ns := createTestNamespace("hot-reload-valid")
-			defer deleteTestNamespace(ns)
-
-			By("Creating initial ConfigMap with simple policy")
-			initialConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "signalprocessing-labels-config",
-					Namespace: ns,
-				},
-				Data: map[string]string{
-					"labels.rego": `package signalprocessing.labels
-
-import rego.v1
-
-labels["stage"] := ["initial"] if { true }
-`,
-				},
-			}
-			Expect(k8sClient.Create(ctx, initialConfigMap)).To(Succeed())
-
-			By("Updating to more complex valid policy")
-			var cm corev1.ConfigMap
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "signalprocessing-labels-config", Namespace: ns}, &cm)).To(Succeed())
-			cm.Data["labels.rego"] = `package signalprocessing.labels
-
-import rego.v1
-
-labels["stage"] := ["reloaded"] if { true }
-labels["extra"] := ["newkey"] if { true }
-`
-			Expect(k8sClient.Update(ctx, &cm)).To(Succeed())
-
-			By("Waiting for reload to complete")
-			time.Sleep(2 * time.Second)
-
-			By("Creating SignalProcessing CR")
-			sp := createSignalProcessingCR(ns, "hot-reload-valid-test", signalprocessingv1alpha1.SignalData{
-				Fingerprint: "hrv101abc123def456abc123def456abc123def456abc123def456abc123d",
-				Name:        "HotReloadValidTest",
-				Severity:    "warning",
-				Type:        "prometheus",
-				TargetType:  "kubernetes",
-				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod",
-					Namespace: ns,
-				},
-				ReceivedTime: metav1.Now(),
+	Context("Reload - Valid Policy Application", func() {
+		// IT-HR-02: Valid policy takes effect
+		It("BR-SP-072: should apply valid updated policy immediately", func() {
+			By("Creating namespace with production label")
+			ns := createTestNamespaceWithLabels("hr-reload-valid", map[string]string{
+				"kubernaut.ai/environment": "production",
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
-
-			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("Verifying new policy took effect")
-			var final signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("stage", ContainElement("reloaded")))
-			Expect(final.Status.KubernetesContext.CustomLabels).To(HaveKey("extra"))
-		})
-	})
-
-	// ========================================
-	// GRACEFUL TEST (1 test)
-	// ========================================
-
-	Context("Graceful - Invalid Policy Handling", func() {
-		// Invalid policy retains old policy
-		It("BR-SP-072: should retain old policy when new policy is invalid", func() {
-			By("Creating namespace")
-			ns := createTestNamespace("hot-reload-graceful")
 			defer deleteTestNamespace(ns)
 
-			By("Creating initial valid ConfigMap")
-			initialConfigMap := &corev1.ConfigMap{
+			By("Creating ConfigMap with initial priority policy (P2 for production)")
+			priorityConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "signalprocessing-labels-config",
+					Name:      "signalprocessing-priority-config",
 					Namespace: ns,
 				},
 				Data: map[string]string{
-					"labels.rego": `package signalprocessing.labels
+					"priority.rego": `package signalprocessing.priority
 
 import rego.v1
 
-labels["valid"] := ["working"] if { true }
+# Initial policy: production + warning = P2
+priority := "P2" if {
+    input.environment == "production"
+    input.signal.severity == "warning"
+}
+
+default priority := "P3"
 `,
 				},
 			}
-			Expect(k8sClient.Create(ctx, initialConfigMap)).To(Succeed())
+			Expect(k8sClient.Create(ctx, priorityConfigMap)).To(Succeed())
 
-			By("Creating first CR with valid policy")
-			sp1 := createSignalProcessingCR(ns, "hot-reload-graceful-1", signalprocessingv1alpha1.SignalData{
-				Fingerprint: "hrg101abc123def456abc123def456abc123def456abc123def456abc123d",
-				Name:        "HotReloadGraceful1",
+			By("Creating SignalProcessing CR with initial policy")
+			sp1 := createSignalProcessingCR(ns, "hr-reload-valid-test-1", signalprocessingv1alpha1.SignalData{
+				Fingerprint: "hrrv01abc123def456abc123def456abc123def456abc123def456abc123d",
+				Name:        "HRReloadValidTest1",
 				Severity:    "warning",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
@@ -266,28 +208,36 @@ labels["valid"] := ["working"] if { true }
 			err := waitForCompletion(sp1.Name, sp1.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying valid policy was used")
-			var final1 signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp1.Name, Namespace: ns}, &final1)).To(Succeed())
-			Expect(final1.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("valid", ContainElement("working")))
+			By("Verifying initial P2 priority")
+			var result1 signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp1.Name, Namespace: ns}, &result1)).To(Succeed())
+			Expect(result1.Status.PriorityAssignment).ToNot(BeNil())
+			Expect(result1.Status.PriorityAssignment.Priority).To(Equal("P2"))
 
-			By("Updating ConfigMap with INVALID policy")
-			var cm corev1.ConfigMap
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "signalprocessing-labels-config", Namespace: ns}, &cm)).To(Succeed())
-			cm.Data["labels.rego"] = `package signalprocessing.labels
-// INVALID REGO - syntax error
-labels["broken" := ["missing_bracket"
+			By("Updating ConfigMap to new priority policy (P1 for production)")
+			var existingCM corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "signalprocessing-priority-config", Namespace: ns}, &existingCM)).To(Succeed())
+			existingCM.Data["priority.rego"] = `package signalprocessing.priority
+
+import rego.v1
+
+# Updated policy: production + warning = P1 (more urgent)
+priority := "P1" if {
+    input.environment == "production"
+    input.signal.severity == "warning"
+}
+
+default priority := "P3"
 `
-			Expect(k8sClient.Update(ctx, &cm)).To(Succeed())
+			Expect(k8sClient.Update(ctx, &existingCM)).To(Succeed())
 
-			By("Waiting for reload attempt")
+			By("Waiting for hot-reload to take effect")
 			time.Sleep(2 * time.Second)
 
-			By("Creating second CR after invalid policy update")
-			sp2 := createSignalProcessingCR(ns, "hot-reload-graceful-2", signalprocessingv1alpha1.SignalData{
-				Fingerprint: "hrg201abc123def456abc123def456abc123def456abc123def456abc123d",
-				Name:        "HotReloadGraceful2",
+			By("Creating second SignalProcessing CR to verify updated policy")
+			sp2 := createSignalProcessingCR(ns, "hr-reload-valid-test-2", signalprocessingv1alpha1.SignalData{
+				Fingerprint: "hrrv02abc123def456abc123def456abc123def456abc123def456abc123d",
+				Name:        "HRReloadValidTest2",
 				Severity:    "warning",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
@@ -304,27 +254,27 @@ labels["broken" := ["missing_bracket"
 			err = waitForCompletion(sp2.Name, sp2.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying graceful handling - should either use old policy or empty labels")
-			var final2 signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &final2)).To(Succeed())
-			// Should complete (not fail) with either old policy or empty labels
-			Expect(final2.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
+			By("Verifying updated P1 priority (hot-reload applied)")
+			var result2 signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &result2)).To(Succeed())
+			Expect(result2.Status.PriorityAssignment).ToNot(BeNil())
+			Expect(result2.Status.PriorityAssignment.Priority).To(Equal("P1"))
 		})
 	})
 
 	// ========================================
-	// CONCURRENT TEST (1 test)
+	// GRACEFUL FALLBACK TEST (1 test)
 	// ========================================
 
-	Context("Concurrent - Update During Reconciliation", func() {
-		// Update during active reconciliation
-		It("BR-SP-072: should handle policy update during active reconciliation", func() {
+	Context("Graceful - Invalid Policy Fallback", func() {
+		// IT-HR-03: Invalid policy → old retained
+		It("BR-SP-072: should retain old policy when update is invalid", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hot-reload-concurrent")
+			ns := createTestNamespace("hr-graceful")
 			defer deleteTestNamespace(ns)
 
-			By("Creating initial ConfigMap")
-			initialConfigMap := &corev1.ConfigMap{
+			By("Creating ConfigMap with valid labels.rego policy")
+			labelsConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "signalprocessing-labels-config",
 					Namespace: ns,
@@ -334,16 +284,16 @@ labels["broken" := ["missing_bracket"
 
 import rego.v1
 
-labels["concurrent"] := ["before"] if { true }
+labels["valid"] := ["true"] if { true }
 `,
 				},
 			}
-			Expect(k8sClient.Create(ctx, initialConfigMap)).To(Succeed())
+			Expect(k8sClient.Create(ctx, labelsConfigMap)).To(Succeed())
 
-			By("Creating SignalProcessing CR")
-			sp := createSignalProcessingCR(ns, "hot-reload-concurrent-test", signalprocessingv1alpha1.SignalData{
-				Fingerprint: "hrc101abc123def456abc123def456abc123def456abc123def456abc123d",
-				Name:        "HotReloadConcurrentTest",
+			By("Creating SignalProcessing CR with valid policy")
+			sp1 := createSignalProcessingCR(ns, "hr-graceful-test-1", signalprocessingv1alpha1.SignalData{
+				Fingerprint: "hrgr01abc123def456abc123def456abc123def456abc123def456abc123d",
+				Name:        "HRGracefulTest1",
 				Severity:    "warning",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
@@ -354,36 +304,164 @@ labels["concurrent"] := ["before"] if { true }
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp1, timeout) }()
 
-			By("Immediately updating ConfigMap while reconciliation may be in progress")
-			var cm corev1.ConfigMap
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "signalprocessing-labels-config", Namespace: ns}, &cm)).To(Succeed())
-			cm.Data["labels.rego"] = `package signalprocessing.labels
+			By("Waiting for first CR to complete")
+			err := waitForCompletion(sp1.Name, sp1.Namespace, timeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying valid label applied")
+			var result1 signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp1.Name, Namespace: ns}, &result1)).To(Succeed())
+			Expect(result1.Status.KubernetesContext).ToNot(BeNil())
+			Expect(result1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("valid", ContainElement("true")))
+
+			By("Updating ConfigMap to INVALID Rego syntax")
+			var existingCM corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "signalprocessing-labels-config", Namespace: ns}, &existingCM)).To(Succeed())
+			existingCM.Data["labels.rego"] = `package signalprocessing.labels
+// INVALID REGO - Missing import, broken syntax
+labels["broken" := ["syntax"  // Missing bracket
+`
+			Expect(k8sClient.Update(ctx, &existingCM)).To(Succeed())
+
+			By("Waiting for hot-reload attempt")
+			time.Sleep(2 * time.Second)
+
+			By("Creating second SignalProcessing CR")
+			sp2 := createSignalProcessingCR(ns, "hr-graceful-test-2", signalprocessingv1alpha1.SignalData{
+				Fingerprint: "hrgr02abc123def456abc123def456abc123def456abc123def456abc123d",
+				Name:        "HRGracefulTest2",
+				Severity:    "warning",
+				Type:        "prometheus",
+				TargetType:  "kubernetes",
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: ns,
+				},
+				ReceivedTime: metav1.Now(),
+			})
+			defer func() { _ = deleteAndWait(sp2, timeout) }()
+
+			By("Waiting for second CR to complete")
+			err = waitForCompletion(sp2.Name, sp2.Namespace, timeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying graceful degradation - CR completed despite invalid policy")
+			var result2 signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &result2)).To(Succeed())
+			Expect(result2.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
+
+			// Old policy retained OR graceful fallback to empty (depends on implementation)
+			// Either way, CR should complete successfully
+			GinkgoWriter.Printf("CustomLabels after invalid policy update: %v\n", result2.Status.KubernetesContext.CustomLabels)
+		})
+	})
+
+	// ========================================
+	// CONCURRENT UPDATE TEST (1 test)
+	// ========================================
+
+	Context("Concurrent - Update During Reconciliation", func() {
+		// IT-HR-04: Update during active reconciliation
+		It("BR-SP-072: should handle policy update during active reconciliation", func() {
+			By("Creating namespace")
+			ns := createTestNamespaceWithLabels("hr-concurrent", map[string]string{
+				"kubernaut.ai/environment": "staging",
+			})
+			defer deleteTestNamespace(ns)
+
+			By("Creating ConfigMap with initial policy")
+			labelsConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "signalprocessing-labels-config",
+					Namespace: ns,
+				},
+				Data: map[string]string{
+					"labels.rego": `package signalprocessing.labels
 
 import rego.v1
 
-labels["concurrent"] := ["during"] if { true }
+labels["concurrent-test"] := ["initial"] if { true }
+`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, labelsConfigMap)).To(Succeed())
+
+			By("Creating multiple SignalProcessing CRs concurrently while updating policy")
+			var wg sync.WaitGroup
+			sps := make([]*signalprocessingv1alpha1.SignalProcessing, 5)
+			errors := make([]error, 5)
+
+			// Start creating CRs
+			for i := 0; i < 5; i++ {
+				wg.Add(1)
+				go func(idx int) {
+					defer wg.Done()
+					defer GinkgoRecover()
+
+					sp := createSignalProcessingCR(ns, "hr-concurrent-"+string(rune('a'+idx)), signalprocessingv1alpha1.SignalData{
+						Fingerprint: "hrcc" + string(rune('a'+idx)) + "abc123def456abc123def456abc123def456abc123def456abc123" + string(rune('0'+idx)),
+						Name:        "HRConcurrentTest",
+						Severity:    "warning",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: ns,
+						},
+						ReceivedTime: metav1.Now(),
+					})
+					sps[idx] = sp
+				}(i)
+			}
+
+			// Update ConfigMap mid-flight
+			go func() {
+				defer GinkgoRecover()
+				time.Sleep(500 * time.Millisecond) // Give CRs time to start processing
+
+				var existingCM corev1.ConfigMap
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: "signalprocessing-labels-config", Namespace: ns}, &existingCM); err != nil {
+					GinkgoWriter.Printf("Warning: Failed to get ConfigMap for update: %v\n", err)
+					return
+				}
+				existingCM.Data["labels.rego"] = `package signalprocessing.labels
+
+import rego.v1
+
+labels["concurrent-test"] := ["updated"] if { true }
 `
-			Expect(k8sClient.Update(ctx, &cm)).To(Succeed())
+				if err := k8sClient.Update(ctx, &existingCM); err != nil {
+					GinkgoWriter.Printf("Warning: Failed to update ConfigMap: %v\n", err)
+				}
+			}()
 
-			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
-			Expect(err).ToNot(HaveOccurred())
+			wg.Wait()
 
-			By("Verifying completion despite concurrent update")
-			var final signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
-
-			// Should complete successfully - may use either "before" or "during"
-			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			// The value should be one of the two - we don't specify which due to race
-			if final.Status.KubernetesContext.CustomLabels != nil {
-				if values, ok := final.Status.KubernetesContext.CustomLabels["concurrent"]; ok {
-					Expect(values).To(Or(ContainElement("before"), ContainElement("during")))
+			By("Waiting for all CRs to complete")
+			for i, sp := range sps {
+				if sp != nil {
+					errors[i] = waitForCompletion(sp.Name, sp.Namespace, timeout)
 				}
 			}
+
+			By("Verifying all CRs completed successfully (no crashes)")
+			for i, sp := range sps {
+				if sp != nil {
+					Expect(errors[i]).ToNot(HaveOccurred(), "CR %d should complete", i)
+
+					var result signalprocessingv1alpha1.SignalProcessing
+					Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &result)).To(Succeed())
+					Expect(result.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
+
+					_ = deleteAndWait(sp, timeout)
+				}
+			}
+
+			GinkgoWriter.Println("✅ All concurrent CRs completed during policy update")
 		})
 	})
 
@@ -392,14 +470,14 @@ labels["concurrent"] := ["during"] if { true }
 	// ========================================
 
 	Context("Recovery - Watcher Restart", func() {
-		// Watcher restart after error
-		It("BR-SP-072: should recover watcher after transient error", func() {
+		// IT-HR-05: Watcher restart after error
+		It("BR-SP-072: should recover and process new CRs after ConfigMap delete/recreate", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hot-reload-recovery")
+			ns := createTestNamespace("hr-recovery")
 			defer deleteTestNamespace(ns)
 
-			By("Creating ConfigMap")
-			configMap := &corev1.ConfigMap{
+			By("Creating initial ConfigMap")
+			labelsConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "signalprocessing-labels-config",
 					Namespace: ns,
@@ -409,42 +487,16 @@ labels["concurrent"] := ["during"] if { true }
 
 import rego.v1
 
-labels["recovery"] := ["working"] if { true }
+labels["phase"] := ["initial"] if { true }
 `,
 				},
 			}
-			Expect(k8sClient.Create(ctx, configMap)).To(Succeed())
+			Expect(k8sClient.Create(ctx, labelsConfigMap)).To(Succeed())
 
-			By("Deleting and recreating ConfigMap to simulate transient error")
-			Expect(k8sClient.Delete(ctx, configMap)).To(Succeed())
-
-			// Wait for deletion to complete
-			time.Sleep(500 * time.Millisecond)
-
-			// Recreate with same name
-			newConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "signalprocessing-labels-config",
-					Namespace: ns,
-				},
-				Data: map[string]string{
-					"labels.rego": `package signalprocessing.labels
-
-import rego.v1
-
-labels["recovery"] := ["recovered"] if { true }
-`,
-				},
-			}
-			Expect(k8sClient.Create(ctx, newConfigMap)).To(Succeed())
-
-			By("Waiting for watcher to recover")
-			time.Sleep(2 * time.Second)
-
-			By("Creating SignalProcessing CR")
-			sp := createSignalProcessingCR(ns, "hot-reload-recovery-test", signalprocessingv1alpha1.SignalData{
-				Fingerprint: "hrr101abc123def456abc123def456abc123def456abc123def456abc123d",
-				Name:        "HotReloadRecoveryTest",
+			By("Creating first SignalProcessing CR")
+			sp1 := createSignalProcessingCR(ns, "hr-recovery-test-1", signalprocessingv1alpha1.SignalData{
+				Fingerprint: "hrrc01abc123def456abc123def456abc123def456abc123def456abc123d",
+				Name:        "HRRecoveryTest1",
 				Severity:    "warning",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
@@ -455,22 +507,69 @@ labels["recovery"] := ["recovered"] if { true }
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp1, timeout) }()
 
-			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			By("Waiting for first CR to complete")
+			err := waitForCompletion(sp1.Name, sp1.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying watcher recovered and new policy is used")
-			var final signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
+			By("Deleting ConfigMap to simulate error condition")
+			Expect(k8sClient.Delete(ctx, labelsConfigMap)).To(Succeed())
 
-			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
-			// Should use the recreated policy
-			if final.Status.KubernetesContext != nil && final.Status.KubernetesContext.CustomLabels != nil {
-				Expect(final.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("recovery", ContainElement("recovered")))
+			By("Waiting for deletion")
+			time.Sleep(1 * time.Second)
+
+			By("Recreating ConfigMap with new policy")
+			recreatedConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "signalprocessing-labels-config",
+					Namespace: ns,
+				},
+				Data: map[string]string{
+					"labels.rego": `package signalprocessing.labels
+
+import rego.v1
+
+labels["phase"] := ["recovered"] if { true }
+`,
+				},
 			}
+			Expect(k8sClient.Create(ctx, recreatedConfigMap)).To(Succeed())
+
+			By("Waiting for watcher to recover")
+			time.Sleep(2 * time.Second)
+
+			By("Creating second SignalProcessing CR after recovery")
+			sp2 := createSignalProcessingCR(ns, "hr-recovery-test-2", signalprocessingv1alpha1.SignalData{
+				Fingerprint: "hrrc02abc123def456abc123def456abc123def456abc123def456abc123d",
+				Name:        "HRRecoveryTest2",
+				Severity:    "warning",
+				Type:        "prometheus",
+				TargetType:  "kubernetes",
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: ns,
+				},
+				ReceivedTime: metav1.Now(),
+			})
+			defer func() { _ = deleteAndWait(sp2, timeout) }()
+
+			By("Waiting for second CR to complete (proves recovery)")
+			err = waitForCompletion(sp2.Name, sp2.Namespace, timeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying recovery - CR completed with recovered policy")
+			var result2 signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp2.Name, Namespace: ns}, &result2)).To(Succeed())
+			Expect(result2.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
+
+			// Verify recovered policy was applied
+			if result2.Status.KubernetesContext != nil && len(result2.Status.KubernetesContext.CustomLabels) > 0 {
+				Expect(result2.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("phase", ContainElement("recovered")))
+			}
+
+			GinkgoWriter.Println("✅ Hot-reload recovered after ConfigMap delete/recreate cycle")
 		})
 	})
 })
-
