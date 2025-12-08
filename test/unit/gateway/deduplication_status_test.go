@@ -71,9 +71,11 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 		scheme = runtime.NewScheme()
 		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
 
-		// Create fake K8s client
+		// Create fake K8s client with status subresource support
+		// DD-GATEWAY-011: Required for Status().Update() calls
 		k8sClient = fake.NewClientBuilder().
 			WithScheme(scheme).
+			WithStatusSubresource(&remediationv1alpha1.RemediationRequest{}).
 			Build()
 
 		// Create status updater (NEW component for DD-GATEWAY-011)
@@ -164,7 +166,8 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				}
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-				beforeUpdate := time.Now()
+				// Capture time before update (with tolerance for serialization precision loss)
+				beforeUpdate := time.Now().Add(-1 * time.Second)
 
 				// BEHAVIOR: Update deduplication status
 				err := updater.UpdateDeduplicationStatus(ctx, rr)
@@ -178,6 +181,9 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				Expect(updatedRR.Status.Deduplication.LastSeenAt).ToNot(BeNil())
 				Expect(updatedRR.Status.Deduplication.LastSeenAt.Time).To(BeTemporally(">=", beforeUpdate),
 					"LastSeenAt should be updated to current time")
+				// Also verify it's more recent than initialTime (1 hour ago)
+				Expect(updatedRR.Status.Deduplication.LastSeenAt.Time).To(BeTemporally(">", initialTime.Time),
+					"LastSeenAt should be more recent than initial time")
 			})
 
 			It("should initialize deduplication status if nil", func() {
@@ -248,12 +254,14 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				}
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-				// Capture original spec values
-				originalSpecCount := rr.Spec.Deduplication.OccurrenceCount
-				originalFirstOccurrence := rr.Spec.Deduplication.FirstOccurrence
+				// Capture original spec values AFTER create (to handle serialization precision)
+				createdRR := &remediationv1alpha1.RemediationRequest{}
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
+				originalSpecCount := createdRR.Spec.Deduplication.OccurrenceCount
+				originalFirstOccurrence := createdRR.Spec.Deduplication.FirstOccurrence
 
 				// BEHAVIOR: Update deduplication STATUS (not spec)
-				err := updater.UpdateDeduplicationStatus(ctx, rr)
+				err := updater.UpdateDeduplicationStatus(ctx, createdRR)
 				Expect(err).ToNot(HaveOccurred())
 
 				// CORRECTNESS: Spec is unchanged

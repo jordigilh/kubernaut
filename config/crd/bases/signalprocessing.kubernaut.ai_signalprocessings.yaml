@@ -308,8 +308,13 @@ spec:
                     type: number
                   customLabels:
                     additionalProperties:
-                      type: string
-                    description: Custom labels (extracted via Rego policies)
+                      items:
+                        type: string
+                      type: array
+                    description: |-
+                      Custom labels (extracted via Rego policies)
+                      DD-WORKFLOW-001 v1.9: map[string][]string (subdomain → list of values)
+                      Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
                     type: object
                   daemonSet:
                     description: DaemonSet details if target is a daemonset

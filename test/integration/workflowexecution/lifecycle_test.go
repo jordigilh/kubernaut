@@ -26,18 +26,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 )
 
 // WorkflowExecution CRD Lifecycle Integration Tests
 //
+// V2.0 UPDATE: Controller IS running - tests work WITH the controller
+//
 // These tests validate CRD operations with real Kubernetes API (EnvTest):
 // - Create, Read, Update, Delete operations
-// - Status updates (manual - no controller running)
+// - Status is managed BY THE CONTROLLER (not manually set)
 // - CRD schema validation
-//
-// NOTE: Controller is NOT running in EnvTest (Tekton CRDs not available)
-// Controller behavior tests are in E2E suite (KIND + Tekton)
 //
 // Per 03-testing-strategy.mdc: >50% integration coverage for microservices
 
@@ -52,7 +50,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 			// Cleanup in defer (parallel-safe pattern per 03-testing-strategy.mdc)
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			// Create WFE
@@ -74,7 +72,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			wfe.Spec.Confidence = 0.95
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -91,48 +89,96 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 		})
 	})
 
-	Context("CRD Status Updates (Manual)", func() {
-		It("should allow status subresource updates", func() {
+	Context("CRD Status Updates (Controller-Driven)", func() {
+		// V2.0: Controller is running, so we observe status changes
+
+		It("should update status to Running via controller", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-status-%d", time.Now().UnixNano())
 			wfe := createUniqueWFE("status", targetResource)
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Manually update status (simulating controller)
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseRunning
-			now := metav1.Now()
-			wfe.Status.StartTime = &now
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			// Wait for controller to set status to Running (creates PipelineRun)
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 10*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
-			// Verify status updated
+			// Verify status fields set by controller
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning))
 			Expect(updated.Status.StartTime).ToNot(BeNil())
 
-			GinkgoWriter.Printf("✅ Status updated to: %s\n", updated.Status.Phase)
+			GinkgoWriter.Printf("✅ Status updated by controller to: %s\n", updated.Status.Phase)
 		})
 
-		It("should update ConsecutiveFailures and NextAllowedExecution", func() {
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-backoff-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("backoff", targetResource)
+		It("should set PipelineRunRef when Running", func() {
+			targetResource := fmt.Sprintf("default/deployment/lifecycle-prref-%d", time.Now().UnixNano())
+			wfe := createUniqueWFE("prref", targetResource)
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Manually set failure status with backoff fields
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseFailed
-			wfe.Status.ConsecutiveFailures = 3
-			nextAllowed := metav1.NewTime(time.Now().Add(30 * time.Second))
-			wfe.Status.NextAllowedExecution = &nextAllowed
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			// Wait for controller to set PipelineRunRef
+			Eventually(func() bool {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return false
+				}
+				return updated.Status.PipelineRunRef != nil && updated.Status.PipelineRunRef.Name != ""
+			}, 10*time.Second, 200*time.Millisecond).Should(BeTrue())
+
+			// Verify PipelineRunRef
+			updated, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Status.PipelineRunRef).ToNot(BeNil())
+			Expect(updated.Status.PipelineRunRef.Name).ToNot(BeEmpty())
+
+			GinkgoWriter.Printf("✅ PipelineRunRef set: %s\n", updated.Status.PipelineRunRef.Name)
+		})
+
+		It("should persist ConsecutiveFailures from status", func() {
+			targetResource := fmt.Sprintf("default/deployment/lifecycle-backoff-%d", time.Now().UnixNano())
+			wfe := createUniqueWFE("backoff", targetResource)
+
+			defer func() {
+				cleanupWFE(wfe)
+			}()
+
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			// Wait for Running phase first
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 10*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
+
+			// Get fresh copy and update ConsecutiveFailures
+			// Note: This simulates what the controller does after a failure
+			Eventually(func() error {
+				fresh, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return err
+				}
+				fresh.Status.ConsecutiveFailures = 3
+				nextAllowed := metav1.NewTime(time.Now().Add(30 * time.Second))
+				fresh.Status.NextAllowedExecution = &nextAllowed
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 5*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify backoff fields persisted
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -145,20 +191,23 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 	})
 
 	Context("CRD Deletion", func() {
-		It("should delete WorkflowExecution without finalizer", func() {
+		It("should delete WorkflowExecution with controller cleanup", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-delete-%d", time.Now().UnixNano())
 			wfe := createUniqueWFE("delete", targetResource)
 
-			// Create first (without finalizer since controller not running)
+			// Create first
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Wait for creation
-			Eventually(func() error {
-				_, err := getWFE(wfe.Name, wfe.Namespace)
-				return err
-			}, 5*time.Second).Should(Succeed())
+			// Wait for Running phase (controller adds finalizer)
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 10*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
-			// Delete (should succeed immediately without finalizer)
+			// Delete - controller will handle cleanup
 			err := deleteWFEAndWait(wfe, 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -166,37 +215,40 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			_, err = getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).To(HaveOccurred(), "WFE should be deleted")
 
-			GinkgoWriter.Println("✅ WFE deleted successfully")
+			GinkgoWriter.Println("✅ WFE deleted successfully with controller cleanup")
 		})
 
-		It("should block deletion when finalizer is present", func() {
+		It("should handle finalizer during deletion", func() {
 			targetResource := fmt.Sprintf("default/deployment/lifecycle-finalizer-%d", time.Now().UnixNano())
 			wfe := createUniqueWFE("finalizer", targetResource)
-			// Manually add finalizer (simulating controller)
-			wfe.Finalizers = []string{workflowexecution.FinalizerName}
 
-			defer func() {
-				// Remove finalizer to allow cleanup
-				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					updated.Finalizers = nil
-					_ = k8sClient.Update(ctx, updated)
-					_ = deleteWFEAndWait(wfe, 10*time.Second)
-				}
-			}()
-
+			// Create WFE
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Try to delete - should not be removed immediately due to finalizer
+			// Wait for controller to add finalizer (happens when Running)
+			Eventually(func() bool {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return false
+				}
+				return len(updated.Finalizers) > 0
+			}, 10*time.Second, 200*time.Millisecond).Should(BeTrue())
+
+			// Verify finalizer is present
+			withFinalizer, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(withFinalizer.Finalizers).ToNot(BeEmpty())
+
+			// Delete - controller will remove finalizer after cleanup
 			Expect(k8sClient.Delete(ctx, wfe)).To(Succeed())
 
-			// WFE should still exist (deletion timestamp set, but not removed)
-			time.Sleep(500 * time.Millisecond)
-			existing, err := getWFE(wfe.Name, wfe.Namespace)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(existing.DeletionTimestamp).ToNot(BeNil(), "DeletionTimestamp should be set")
+			// Eventually should be fully deleted
+			Eventually(func() bool {
+				_, err := getWFE(wfe.Name, wfe.Namespace)
+				return err != nil
+			}, 15*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-			GinkgoWriter.Println("✅ Finalizer blocks immediate deletion")
+			GinkgoWriter.Println("✅ Finalizer handled correctly during deletion")
 		})
 	})
 
@@ -206,7 +258,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			wfe := createUniqueWFE("valid", targetResource)
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			// Should succeed
@@ -216,4 +268,3 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 		})
 	})
 })
-

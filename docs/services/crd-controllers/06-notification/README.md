@@ -26,7 +26,7 @@
 | **[Database Integration](./database-integration.md)** | ADR-034 audit storage, fire-and-forget pattern | ~606 | ✅ Complete |
 | **[Integration Points](./integration-points.md)** | RemediationOrchestrator coordination, external channels | ~549 | ✅ Complete |
 | **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~339 | ✅ Complete |
-| **[Business Requirements](./BUSINESS_REQUIREMENTS.md)** | 12 BRs with acceptance criteria and test mapping | ~638 | ✅ Complete |
+| **[Business Requirements](./BUSINESS_REQUIREMENTS.md)** | 17 BRs with acceptance criteria and test mapping | ~691 | ✅ Complete |
 
 **Total**: ~6,913 lines across 11 core specification documents
 **Status**: ✅ **100% Complete** - Production-ready with comprehensive documentation
@@ -53,7 +53,7 @@
 ├── 💾 database-integration.md               - Audit storage ✅ (606 lines)
 ├── 🔗 integration-points.md                 - Service coordination ✅ (549 lines)
 ├── ✅ implementation-checklist.md           - APDC-TDD phases ✅ (339 lines)
-├── 📋 BUSINESS_REQUIREMENTS.md              - 12 BRs with test mapping ✅ (638 lines)
+├── 📋 BUSINESS_REQUIREMENTS.md              - 17 BRs with test mapping ✅ (691 lines)
 ├── 📚 runbooks/                             - Production operational guides
 │   ├── HIGH_FAILURE_RATE.md                - Failure rate >10% runbook
 │   └── STUCK_NOTIFICATIONS.md              - Stuck notifications >10min runbook

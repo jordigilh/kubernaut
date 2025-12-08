@@ -253,7 +253,7 @@ jobs:
             fi
           done
 
-          # E2E tests: Check only if they ran (exclude toolset - V2.0 deferred)
+          # E2E tests: Check only if they ran
           for service in datastorage gateway workflowexecution; do
             result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"e2e-${service}\".result")
             if [ "$result" == "failure" ]; then
@@ -261,8 +261,6 @@ jobs:
               FAILED=1
             fi
           done
-
-          # Note: Dynamic Toolset (integration-toolset, e2e-toolset) excluded per DD-016 (V2.0 deferral)
 
           if [ $FAILED -eq 0 ]; then
             echo ""

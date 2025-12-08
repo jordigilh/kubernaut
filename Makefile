@@ -83,6 +83,55 @@ test-integration-holmesgpt: ## Run HolmesGPT API integration tests (Python/pytes
 		pip install -q -r requirements-dev.txt && \
 		MOCK_LLM=true pytest tests/integration/ -v --tb=short
 
+##@ HolmesGPT API E2E Tests (V1.0 Critical Service)
+
+.PHONY: test-e2e-holmesgpt-setup
+test-e2e-holmesgpt-setup: ## Set up infrastructure for HolmesGPT API E2E tests (Kind + Data Storage)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🏗️  HolmesGPT API E2E Infrastructure Setup"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "Setting up Kind cluster with Data Storage stack..."
+	@echo "  • Kind cluster: datastorage-e2e (2 nodes)"
+	@echo "  • Data Storage: http://localhost:8081 (NodePort 30081)"
+	@echo "  • PostgreSQL: localhost:5432 (NodePort 30432)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@go test -v -timeout 10m ./test/e2e/datastorage/... -run "^$$" -ginkgo.skip=".*" 2>&1 | head -100 || true
+	@echo "✅ Infrastructure setup triggered (check Kind cluster status)"
+
+.PHONY: test-e2e-holmesgpt
+test-e2e-holmesgpt: ## Run HolmesGPT API E2E tests (requires Data Storage infrastructure, ~10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 HolmesGPT API - E2E Test Suite (V1.0 Critical)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Test Scenarios:"
+	@echo "   • Workflow Catalog Integration"
+	@echo "   • Container Image Validation"
+	@echo "   • Audit Pipeline E2E"
+	@echo "   • Recovery Context Flow"
+	@echo ""
+	@echo "🏗️  Infrastructure: Uses existing Data Storage Kind cluster"
+	@echo "   Data Storage: http://localhost:8081"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "⚠️  Checking if Data Storage is available..."
+	@curl -s http://localhost:8081/health/ready > /dev/null 2>&1 || \
+		(echo "❌ Data Storage not available at localhost:8081" && \
+		 echo "   Run 'make test-e2e-datastorage' first to set up infrastructure" && \
+		 exit 1)
+	@echo "✅ Data Storage is ready"
+	@echo ""
+	@cd holmesgpt-api && \
+		pip install -q -r requirements.txt && \
+		pip install -q -r requirements-dev.txt 2>/dev/null || true && \
+		DATA_STORAGE_URL=http://localhost:8081 \
+		MOCK_LLM=true \
+		HAPI_USE_GO_INFRA=true \
+		pytest tests/e2e/ -v --tb=short -x
+
+.PHONY: test-e2e-holmesgpt-full
+test-e2e-holmesgpt-full: test-e2e-datastorage test-e2e-holmesgpt ## Run full HolmesGPT E2E (sets up infra + runs tests)
+	@echo "✅ HolmesGPT API E2E tests complete"
+
 .PHONY: test-integration-datastorage
 test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~4 min)
 	@if [ -z "$$POSTGRES_HOST" ]; then \

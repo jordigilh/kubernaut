@@ -48,7 +48,8 @@ The **HolmesGPT-API service is now V1.0 feature complete**. All business require
 | Item | Status |
 |------|--------|
 | GitHub Actions Workflow | ✅ `.github/workflows/holmesgpt-api-ci.yml` |
-| Makefile Test Tiers | ✅ `make test-unit`, `make test-integration` |
+| Makefile Test Tiers | ✅ `make test-unit`, `make test-integration`, `make test-e2e` |
+| E2E Infrastructure | ✅ Uses Go infrastructure (`make test-e2e-holmesgpt`) |
 | OpenAPI Export | ✅ `make export-openapi` |
 | Lint Validation | ✅ `make lint` |
 
@@ -150,12 +151,24 @@ The **HolmesGPT-API service is now V1.0 feature complete**. All business require
 
 ## 📋 Deferred to V2.0
 
-| Feature | Reason |
-|---------|--------|
-| E2E Tests | Requires full Kind cluster with all services |
-| Advanced Rate Limiting | Not needed for internal service |
-| Multi-tenant Support | V2.0 scope |
-| Historical Success Rate | Per DD-HAPI-003 V1.0 methodology |
+| Feature | Version | Reason |
+|---------|---------|--------|
+| Advanced Rate Limiting | V2.0 | Not needed for internal service |
+| Multi-tenant Support | V2.0 | V2.0 scope |
+| Historical Success Rate | V2.0 | Per DD-HAPI-003 V1.0 methodology |
+
+### E2E Tests - V1.0 COMPLETE ✅
+
+E2E tests are now working in V1.0 using shared Go infrastructure:
+
+```bash
+# Run HAPI E2E tests (uses Go-managed Kind cluster)
+make test-e2e-datastorage     # Set up infrastructure (once)
+make test-e2e-holmesgpt       # Run HAPI E2E tests
+
+# Or run full suite
+make test-e2e-holmesgpt-full  # Sets up infra + runs tests
+```
 
 ---
 
@@ -174,7 +187,7 @@ Please acknowledge receipt of this notice by updating this section:
 
 | Team | Acknowledged | Date | Notes |
 |------|--------------|------|-------|
-| AIAnalysis | ⏳ Pending | | |
+| AIAnalysis | ✅ **Acknowledged** | Dec 8, 2025 | V1.0 Complete: All HAPI contracts consumed. `human_review_reason` enum (7 values), `InvestigationInconclusive`/`ProblemResolved` SubReasons, validation_attempts_history. 163 unit tests, 87.6% coverage. Controller-handler wiring in progress. |
 | RemediationOrchestrator | ✅ **Acknowledged** | Dec 7, 2025 | BR-ORCH-036 complete (7 SubReasons including `InvestigationInconclusive`). BR-ORCH-037 complete (`WorkflowNotNeeded`). 177 unit tests passing. Reconciler wired. |
 | WorkflowExecution | ✅ **Acknowledged** | Dec 7, 2025 | All contracts verified. No blocking items for WE. |
 | Notification | ✅ **Acknowledged** | Dec 7, 2025 | V1.0 Complete: `LabelInvestigationOutcome` + 5 unit tests. All routing ready. |

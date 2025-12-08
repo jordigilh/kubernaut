@@ -30,12 +30,14 @@ import (
 
 // Exponential Backoff State Persistence Integration Tests
 //
+// V2.0 UPDATE: Controller IS running - tests use Eventually to handle race conditions
+//
 // Purpose: Validate that ConsecutiveFailures and NextAllowedExecution
 // are correctly persisted to the CRD status subresource.
 //
 // Test Approach (per IMPLEMENTATION_PLAN_V3.8.md):
-// - EnvTest doesn't restart the controller
-// - We test state persistence by updating CRD status directly
+// - EnvTest with controller running
+// - Use Eventually to handle concurrent status updates
 // - Verify values are stored and retrieved correctly via K8s API
 //
 // Note: Full backoff behavior with timing is tested in unit tests.
@@ -49,27 +51,27 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			// Create WFE with default (zero) ConsecutiveFailures
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backoff-test-zero-" + time.Now().Format("150405"),
+					Name:      "backoff-test-zero-" + time.Now().Format("150405000"),
 					Namespace: DefaultNamespace,
 				},
-			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: "default/deployment/test-app",
-				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:     "test-workflow",
-					Version:        "v1.0.0",
-					ContainerImage: "quay.io/kubernaut/workflows/test:v1.0.0",
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/test-app",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						Version:        "v1.0.0",
+						ContainerImage: "quay.io/kubernaut/workflows/test:v1.0.0",
+					},
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "test-rr",
+						Namespace: "default",
+					},
 				},
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "test-rr",
-					Namespace: "default",
-				},
-			},
 			}
 
 			// Create the WFE
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() {
-				_ = k8sClient.Delete(ctx, wfe)
+				cleanupWFE(wfe)
 			}()
 
 			// Verify ConsecutiveFailures defaults to 0
@@ -86,31 +88,40 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			// Create WFE
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backoff-test-inc-" + time.Now().Format("150405"),
+					Name:      "backoff-test-inc-" + time.Now().Format("150405000"),
 					Namespace: DefaultNamespace,
 				},
-			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: "default/deployment/test-app-inc",
-				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:     "test-workflow",
-					Version:        "v1.0.0",
-					ContainerImage: "quay.io/kubernaut/workflows/test:v1.0.0",
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/test-app-inc",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						Version:        "v1.0.0",
+						ContainerImage: "quay.io/kubernaut/workflows/test:v1.0.0",
+					},
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "test-rr-inc",
+						Namespace: "default",
+					},
 				},
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "test-rr-inc",
-					Namespace: "default",
-				},
-			},
 			}
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() {
-				_ = k8sClient.Delete(ctx, wfe)
+				cleanupWFE(wfe)
 			}()
 
-			// Update status with ConsecutiveFailures = 1
-			wfe.Status.ConsecutiveFailures = 1
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			// Use Eventually to handle controller concurrent updates
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.ConsecutiveFailures = 1
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Fetch and verify
 			fetchedWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -122,8 +133,17 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			Expect(fetchedWFE.Status.ConsecutiveFailures).To(Equal(int32(1)))
 
 			// Increment again to 2
-			fetchedWFE.Status.ConsecutiveFailures = 2
-			Expect(k8sClient.Status().Update(ctx, fetchedWFE)).To(Succeed())
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.ConsecutiveFailures = 2
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Fetch and verify persistence
 			finalWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -139,31 +159,40 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			// Create WFE with existing failure count
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backoff-test-reset-" + time.Now().Format("150405"),
+					Name:      "backoff-test-reset-" + time.Now().Format("150405000"),
 					Namespace: DefaultNamespace,
 				},
-			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				TargetResource: "default/deployment/test-app-reset",
-				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:     "test-workflow",
-					Version:        "v1.0.0",
-					ContainerImage: "quay.io/kubernaut/workflows/test:v1.0.0",
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/test-app-reset",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						Version:        "v1.0.0",
+						ContainerImage: "quay.io/kubernaut/workflows/test:v1.0.0",
+					},
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "test-rr-reset",
+						Namespace: "default",
+					},
 				},
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "test-rr-reset",
-					Namespace: "default",
-				},
-			},
 			}
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() {
-				_ = k8sClient.Delete(ctx, wfe)
+				cleanupWFE(wfe)
 			}()
 
 			// Set ConsecutiveFailures = 3 (simulating previous failures)
-			wfe.Status.ConsecutiveFailures = 3
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.ConsecutiveFailures = 3
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify it was set
 			fetchedWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -174,8 +203,17 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			Expect(fetchedWFE.Status.ConsecutiveFailures).To(Equal(int32(3)))
 
 			// Reset to 0 (simulating success)
-			fetchedWFE.Status.ConsecutiveFailures = 0
-			Expect(k8sClient.Status().Update(ctx, fetchedWFE)).To(Succeed())
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.ConsecutiveFailures = 0
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify reset persisted
 			finalWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -194,7 +232,7 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			// Create WFE
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backoff-test-next-" + time.Now().Format("150405"),
+					Name:      "backoff-test-next-" + time.Now().Format("150405000"),
 					Namespace: DefaultNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -211,14 +249,23 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() {
-				_ = k8sClient.Delete(ctx, wfe)
+				cleanupWFE(wfe)
 			}()
 
 			// Set NextAllowedExecution (simulating backoff calculation)
 			futureTime := metav1.NewTime(time.Now().Add(5 * time.Minute))
-			wfe.Status.NextAllowedExecution = &futureTime
-			wfe.Status.ConsecutiveFailures = 2
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.NextAllowedExecution = &futureTime
+				fresh.Status.ConsecutiveFailures = 2
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Fetch and verify
 			fetchedWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -236,7 +283,7 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			// Create WFE
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backoff-test-nil-" + time.Now().Format("150405"),
+					Name:      "backoff-test-nil-" + time.Now().Format("150405000"),
 					Namespace: DefaultNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -253,14 +300,23 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() {
-				_ = k8sClient.Delete(ctx, wfe)
+				cleanupWFE(wfe)
 			}()
 
 			// Set NextAllowedExecution first
 			futureTime := metav1.NewTime(time.Now().Add(5 * time.Minute))
-			wfe.Status.NextAllowedExecution = &futureTime
-			wfe.Status.ConsecutiveFailures = 2
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.NextAllowedExecution = &futureTime
+				fresh.Status.ConsecutiveFailures = 2
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify it was set
 			fetchedWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -271,9 +327,18 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			Expect(fetchedWFE.Status.NextAllowedExecution).ToNot(BeNil())
 
 			// Reset to nil (simulating success)
-			fetchedWFE.Status.NextAllowedExecution = nil
-			fetchedWFE.Status.ConsecutiveFailures = 0
-			Expect(k8sClient.Status().Update(ctx, fetchedWFE)).To(Succeed())
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.NextAllowedExecution = nil
+				fresh.Status.ConsecutiveFailures = 0
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify reset persisted
 			finalWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -293,7 +358,7 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			// Create WFE
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backoff-test-exhausted-" + time.Now().Format("150405"),
+					Name:      "backoff-test-exhausted-" + time.Now().Format("150405000"),
 					Namespace: DefaultNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -310,18 +375,27 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() {
-				_ = k8sClient.Delete(ctx, wfe)
+				cleanupWFE(wfe)
 			}()
 
 			// Set SkipDetails with ExhaustedRetries
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
-			wfe.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
-				Reason:    workflowexecutionv1alpha1.SkipReasonExhaustedRetries,
-				Message:   "Maximum consecutive failures (5) reached for target resource",
-				SkippedAt: metav1.Now(),
-			}
-			wfe.Status.ConsecutiveFailures = 5
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
+				fresh.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
+					Reason:    workflowexecutionv1alpha1.SkipReasonExhaustedRetries,
+					Message:   "Maximum consecutive failures (5) reached for target resource",
+					SkippedAt: metav1.Now(),
+				}
+				fresh.Status.ConsecutiveFailures = 5
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Fetch and verify
 			fetchedWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -340,7 +414,7 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 			// Create WFE
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "backoff-test-prevfail-" + time.Now().Format("150405"),
+					Name:      "backoff-test-prevfail-" + time.Now().Format("150405000"),
 					Namespace: DefaultNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -357,17 +431,26 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer func() {
-				_ = k8sClient.Delete(ctx, wfe)
+				cleanupWFE(wfe)
 			}()
 
 			// Set SkipDetails with PreviousExecutionFailed (wasExecutionFailure=true case)
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
-			wfe.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
-				Reason:    workflowexecutionv1alpha1.SkipReasonPreviousExecutionFailed,
-				Message:   "Previous workflow execution failed - manual intervention required",
-				SkippedAt: metav1.Now(),
-			}
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			Eventually(func() error {
+				fresh := &workflowexecutionv1alpha1.WorkflowExecution{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      wfe.Name,
+					Namespace: wfe.Namespace,
+				}, fresh); err != nil {
+					return err
+				}
+				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
+				fresh.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
+					Reason:    workflowexecutionv1alpha1.SkipReasonPreviousExecutionFailed,
+					Message:   "Previous workflow execution failed - manual intervention required",
+					SkippedAt: metav1.Now(),
+				}
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Fetch and verify
 			fetchedWFE := &workflowexecutionv1alpha1.WorkflowExecution{}
@@ -382,4 +465,3 @@ var _ = Describe("Exponential Backoff State Persistence", func() {
 		})
 	})
 })
-

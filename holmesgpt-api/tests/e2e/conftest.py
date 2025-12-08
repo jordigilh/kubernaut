@@ -17,24 +17,33 @@ limitations under the License.
 """
 E2E Test Configuration and Fixtures
 
-Provides session-scoped fixtures for E2E testing:
-- Kind cluster with Data Storage stack (programmatic, per DD-TEST-001)
-- Mock LLM server (per TESTING_GUIDELINES.md - LLM mock only due to cost)
+V1.0 ARCHITECTURE (December 2025):
+- Uses SHARED Go infrastructure from test/infrastructure/*.go
+- Data Storage stack deployed via `make test-e2e-datastorage`
+- HAPI E2E tests connect to existing NodePort services
+- No Python-based Kind/Podman management needed
 
 Per TESTING_GUIDELINES.md section 4:
 - E2E tests must use all real services EXCEPT the LLM
 - If Data Storage is unavailable, E2E tests should FAIL, not skip
+
+USAGE:
+  # Option 1: Run with Go infrastructure (recommended)
+  make test-e2e-datastorage          # Set up infrastructure (once)
+  make test-e2e-holmesgpt            # Run HAPI E2E tests
+
+  # Option 2: Full suite (sets up infra + runs tests)
+  make test-e2e-holmesgpt-full
 """
 
 import os
 import sys
+import time
 import pytest
+import requests
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
-# Import infrastructure utilities
-from tests.infrastructure import KindCluster, DataStorageDeployment, PORTS
 
 
 def pytest_configure(config):
@@ -48,57 +57,85 @@ def pytest_configure(config):
 
 
 # ============================================================================
+# Go Infrastructure Detection
+# ============================================================================
+
+def _check_go_infrastructure():
+    """
+    Check if Go-managed Data Storage infrastructure is available.
+
+    The Go infrastructure exposes services via NodePort:
+    - Data Storage: http://localhost:8081 (NodePort 30081)
+    - PostgreSQL: localhost:5432 (NodePort 30432)
+
+    Returns:
+        tuple: (is_available, data_storage_url)
+    """
+    # Check if using Go infrastructure (set by Makefile)
+    use_go_infra = os.environ.get("HAPI_USE_GO_INFRA", "").lower() == "true"
+
+    # NodePort URLs from Go infrastructure (kind-datastorage-config.yaml)
+    data_storage_url = os.environ.get("DATA_STORAGE_URL", "http://localhost:8081")
+
+    try:
+        # Check if Data Storage is responding
+        response = requests.get(f"{data_storage_url}/health/ready", timeout=5)
+        if response.status_code == 200:
+            print(f"\n✅ Go infrastructure detected: Data Storage at {data_storage_url}")
+            return True, data_storage_url
+    except requests.exceptions.RequestException:
+        pass
+
+    if use_go_infra:
+        # User explicitly requested Go infra but it's not available
+        pytest.fail(
+            f"HAPI_USE_GO_INFRA=true but Data Storage not available at {data_storage_url}.\n"
+            "Run 'make test-e2e-datastorage' first to set up infrastructure."
+        )
+
+    return False, data_storage_url
+
+
+# ============================================================================
 # Session-Scoped Infrastructure Fixtures
 # ============================================================================
 
 @pytest.fixture(scope="session")
-def kind_cluster():
+def data_storage_stack():
     """
-    Session-scoped Kind cluster for E2E tests.
+    Session-scoped Data Storage stack.
 
-    Per DD-TEST-001 v1.2: Uses dedicated ports for HAPI (8088/30088).
-    Per ADR-016: Uses Podman as container runtime.
-
-    The cluster is created once per test session and reused.
-    """
-    cluster = KindCluster("holmesgpt-e2e")
-
-    # Create cluster (will reuse if already exists)
-    cluster.create()
-    cluster.wait_for_ready()
-
-    yield cluster
-
-    # Note: We don't delete the cluster by default to speed up development
-    # Set HAPI_E2E_CLEANUP=true to delete after tests
-    if os.environ.get("HAPI_E2E_CLEANUP", "").lower() == "true":
-        cluster.delete()
-
-
-@pytest.fixture(scope="session")
-def data_storage_stack(kind_cluster):
-    """
-    Session-scoped Data Storage stack deployment.
-
-    Deploys:
-    - PostgreSQL + pgvector (port 5488/30488)
-    - Redis (port 6388/30388)
-    - Embedding Service (port 8188/30288) - optional
-    - Data Storage Service (port 8089/30089)
+    V1.0: Uses Go-managed infrastructure via NodePort.
+    The infrastructure should be set up via `make test-e2e-datastorage`.
 
     Per TESTING_GUIDELINES.md: Real infrastructure, mock LLM only.
     """
-    deployment = DataStorageDeployment(kind_cluster)
+    is_available, data_storage_url = _check_go_infrastructure()
 
-    # Deploy full stack (skip embedding if HAPI_SKIP_EMBEDDING=true)
-    skip_embedding = os.environ.get("HAPI_SKIP_EMBEDDING", "").lower() == "true"
-    data_storage_url = deployment.deploy(skip_embedding=skip_embedding)
+    if not is_available:
+        pytest.skip(
+            "Data Storage infrastructure not available.\n"
+            "Run 'make test-e2e-datastorage' first, then 'make test-e2e-holmesgpt'.\n"
+            "Or run 'make test-e2e-holmesgpt-full' for complete setup."
+        )
+
+    # Wait for full readiness
+    print(f"\n⏳ Verifying Data Storage readiness at {data_storage_url}...")
+    max_retries = 30
+    for i in range(max_retries):
+        try:
+            response = requests.get(f"{data_storage_url}/health/ready", timeout=5)
+            if response.status_code == 200:
+                print(f"✅ Data Storage is ready")
+                break
+        except requests.exceptions.RequestException:
+            pass
+
+        if i == max_retries - 1:
+            pytest.fail(f"Data Storage not ready after {max_retries} attempts")
+        time.sleep(2)
 
     yield data_storage_url
-
-    # Teardown namespace
-    if os.environ.get("HAPI_E2E_CLEANUP", "").lower() == "true":
-        deployment.teardown()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -106,27 +143,25 @@ def setup_e2e_environment(data_storage_stack):
     """
     Set up environment variables for E2E testing.
 
-    Uses real Data Storage URL from Kind cluster deployment.
+    Uses real Data Storage URL from Go-managed Kind cluster.
     """
     # LLM is mocked (per TESTING_GUIDELINES.md - cost constraint)
     os.environ.setdefault("LLM_PROVIDER", "openai")
     os.environ.setdefault("LLM_MODEL", "mock-model")
     os.environ.setdefault("OPENAI_API_KEY", "mock-key-for-e2e")
 
-    # Data Storage is REAL (from Kind cluster deployment)
+    # Data Storage is REAL (from Go-managed Kind cluster)
     os.environ["DATA_STORAGE_URL"] = data_storage_stack
     os.environ.setdefault("DATA_STORAGE_TIMEOUT", "30")
 
     print(f"\n{'='*60}")
-    print(f"E2E Environment Ready")
+    print(f"E2E Environment Ready (V1.0 - Go Infrastructure)")
     print(f"{'='*60}")
     print(f"Data Storage URL: {data_storage_stack}")
     print(f"LLM: Mock (per TESTING_GUIDELINES.md)")
     print(f"{'='*60}\n")
 
     yield
-
-    # Cleanup if needed
 
 
 @pytest.fixture(scope="session")
@@ -145,3 +180,16 @@ def mock_llm_server_e2e():
         # Set environment to use this server
         os.environ["LLM_ENDPOINT"] = server.url
         yield server
+
+
+@pytest.fixture
+def mock_config():
+    """
+    Fixture to provide mock configuration for tests.
+    Prevents MagicMock serialization issues in audit events.
+    """
+    return {
+        "llm_provider": "mock",
+        "llm_model": "mock-model",
+        "data_storage_url": os.environ.get("DATA_STORAGE_URL", "http://localhost:8081"),
+    }

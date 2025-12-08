@@ -232,20 +232,74 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 
 // handleAwaitingApprovalPhase handles the AwaitingApproval phase.
 // Waits for human approval before proceeding.
-// Approval is granted via annotation: kubernaut.ai/approved=true
+// V1.0: Operator approves via `kubectl patch rar <name> --subresource=status -p '{"status":{"decision":"Approved"}}'`
+// Audit trail: K8s audit log captures who made the patch.
+// V1.1: Will add CEL validation requiring decidedBy when decision is set.
+// Reference: ADR-040, BR-ORCH-026
 func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	// Check if approval has been granted via annotation
-	// Operators set this annotation to approve the remediation
-	if rr.Annotations != nil && rr.Annotations["kubernaut.ai/approved"] == "true" {
-		logger.Info("Approval granted via annotation, transitioning to Executing")
-		return r.transitionPhase(ctx, rr, phase.Executing)
+	// Check if RemediationApprovalRequest exists
+	rarName := fmt.Sprintf("rar-%s", rr.Name)
+	rar := &remediationv1.RemediationApprovalRequest{}
+	err := r.client.Get(ctx, client.ObjectKey{Name: rarName, Namespace: rr.Namespace}, rar)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// RAR should have been created when transitioning to AwaitingApproval
+			// This is unexpected - log warning and requeue
+			logger.Info("RemediationApprovalRequest not found, will be created by approval handler")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		logger.Error(err, "Failed to get RemediationApprovalRequest")
+		return ctrl.Result{}, err
 	}
 
-	// Still waiting for approval
-	logger.V(1).Info("Waiting for approval (set annotation kubernaut.ai/approved=true)")
-	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	// Check the decision
+	switch rar.Status.Decision {
+	case remediationv1.ApprovalDecisionApproved:
+		logger.Info("Approval granted via RemediationApprovalRequest",
+			"decidedBy", rar.Status.DecidedBy,
+			"message", rar.Status.DecisionMessage,
+		)
+		return r.transitionPhase(ctx, rr, phase.Executing)
+
+	case remediationv1.ApprovalDecisionRejected:
+		logger.Info("Approval rejected via RemediationApprovalRequest",
+			"decidedBy", rar.Status.DecidedBy,
+			"message", rar.Status.DecisionMessage,
+		)
+		reason := "Rejected by operator"
+		if rar.Status.DecisionMessage != "" {
+			reason = rar.Status.DecisionMessage
+		}
+		return r.transitionToFailed(ctx, rr, "approval", reason)
+
+	case remediationv1.ApprovalDecisionExpired:
+		logger.Info("Approval expired (timeout)")
+		return r.transitionToFailed(ctx, rr, "approval", "Approval request expired (timeout)")
+
+	default:
+		// Still pending - check if deadline passed (V1.0 timeout handling)
+		if time.Now().After(rar.Spec.RequiredBy.Time) {
+			logger.Info("Approval deadline passed, marking as expired")
+			// Update RAR status to Expired (best effort)
+			rar.Status.Decision = remediationv1.ApprovalDecisionExpired
+			rar.Status.DecidedBy = "system"
+			now := metav1.Now()
+			rar.Status.DecidedAt = &now
+			if updateErr := r.client.Status().Update(ctx, rar); updateErr != nil {
+				logger.Error(updateErr, "Failed to update RAR status to Expired")
+			}
+			return r.transitionToFailed(ctx, rr, "approval", "Approval request expired (timeout)")
+		}
+
+		// Still waiting for approval
+		logger.V(1).Info("Waiting for approval decision",
+			"rarName", rarName,
+			"requiredBy", rar.Spec.RequiredBy.Format(time.RFC3339),
+		)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
 }
 
 // handleExecutingPhase handles the Executing phase.

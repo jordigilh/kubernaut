@@ -26,11 +26,11 @@ limitations under the License.
 // Implementation Plan: Day 10, Tier 5 - Hot-Reload Integration Tests
 //
 // Test Matrix: 5 tests per IMPLEMENTATION_PLAN_V1.30.md
-// - File Watch: 1 test (BR-SP-072)
-// - Reload: 1 test (BR-SP-072)
-// - Graceful: 1 test (BR-SP-072)
-// - Concurrent: 1 test (BR-SP-072)
-// - Recovery: 1 test (BR-SP-072)
+// - BR-SP-072: File watch - policy file change detected
+// - BR-SP-072: Reload - valid policy takes effect
+// - BR-SP-072: Graceful - invalid policy → old retained
+// - BR-SP-072: Concurrent - update during active reconciliation
+// - BR-SP-072: Recovery - watcher restart after error
 //
 // Business Requirements Coverage:
 // - BR-SP-072: ConfigMap hot-reload without restart (5 tests)
@@ -60,7 +60,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", func() {
 	// ========================================
 
 	Context("File Watch - ConfigMap Change Detection", func() {
-		// IT-HR-01: Policy file change detected
+		// BR-SP-072: Policy file change detected
 		It("BR-SP-072: should detect policy file change in ConfigMap", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("hr-file-watch")
@@ -157,7 +157,7 @@ labels["version"] := ["v2"] if { true }
 	// ========================================
 
 	Context("Reload - Valid Policy Application", func() {
-		// IT-HR-02: Valid policy takes effect
+		// BR-SP-072: Valid policy takes effect
 		It("BR-SP-072: should apply valid updated policy immediately", func() {
 			By("Creating namespace with production label")
 			ns := createTestNamespaceWithLabels("hr-reload-valid", map[string]string{

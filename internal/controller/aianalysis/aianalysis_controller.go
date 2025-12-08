@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 )
 
 const (
@@ -57,6 +58,10 @@ type AIAnalysisReconciler struct {
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 	Log      logr.Logger
+
+	// Phase handlers (wired in via dependency injection)
+	InvestigatingHandler *handlers.InvestigatingHandler
+	AnalyzingHandler     *handlers.AnalyzingHandler
 }
 
 // +kubebuilder:rbac:groups=aianalysis.kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
@@ -146,23 +151,71 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 
 // reconcileInvestigating handles AIAnalysis in Investigating phase
 // BR-AI-023: HolmesGPT-API integration
-// TODO: Implement in Day 3
 func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("phase", "Investigating", "name", analysis.Name)
-	log.Info("Processing Investigating phase - stub")
+	log.Info("Processing Investigating phase")
 
-	// TODO: Implement HolmesGPT-API call in Day 3
+	// Use handler if wired in, otherwise stub for backward compatibility
+	if r.InvestigatingHandler != nil {
+		// Capture phase before handler
+		phaseBefore := analysis.Status.Phase
+
+		result, err := r.InvestigatingHandler.Handle(ctx, analysis)
+		if err != nil {
+			log.Error(err, "InvestigatingHandler failed")
+			return result, err
+		}
+		// Update status after handler completes
+		if err := r.Status().Update(ctx, analysis); err != nil {
+			log.Error(err, "Failed to update status after Investigating phase")
+			return ctrl.Result{}, err
+		}
+		// Requeue if phase changed to ensure next phase is processed
+		// (GenerationChangedPredicate doesn't trigger on status-only updates)
+		if analysis.Status.Phase != phaseBefore {
+			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return result, nil
+	}
+
+	// Stub fallback (for tests without handler wiring)
+	log.Info("No InvestigatingHandler configured - using stub")
 	return ctrl.Result{}, nil
 }
 
 // reconcileAnalyzing handles AIAnalysis in Analyzing phase
 // BR-AI-030: Rego policy evaluation
-// TODO: Implement in Day 4
 func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("phase", "Analyzing", "name", analysis.Name)
-	log.Info("Processing Analyzing phase - stub")
+	log.Info("Processing Analyzing phase")
 
-	// TODO: Implement Rego evaluation in Day 4
+	// Use handler if wired in, otherwise stub for backward compatibility
+	if r.AnalyzingHandler != nil {
+		// Capture phase before handler
+		phaseBefore := analysis.Status.Phase
+
+		result, err := r.AnalyzingHandler.Handle(ctx, analysis)
+		if err != nil {
+			log.Error(err, "AnalyzingHandler failed")
+			return result, err
+		}
+		// Update status after handler completes
+		if err := r.Status().Update(ctx, analysis); err != nil {
+			log.Error(err, "Failed to update status after Analyzing phase")
+			return ctrl.Result{}, err
+		}
+		// Requeue if phase changed to ensure next phase is processed
+		// (GenerationChangedPredicate doesn't trigger on status-only updates)
+		if analysis.Status.Phase != phaseBefore {
+			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return result, nil
+	}
+
+	// Stub fallback (for tests without handler wiring)
+	log.Info("No AnalyzingHandler configured - using stub")
 	return ctrl.Result{}, nil
 }
 

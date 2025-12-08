@@ -84,9 +84,23 @@ test:
 test-unit:
 	python3 -m pytest tests/unit/ -v --tb=short --cov=src
 
-# Run integration tests only
+# Run integration tests only (CI Tier 2)
 test-integration:
 	python3 -m pytest tests/integration/ -v --tb=short
+
+# Run E2E tests (CI Tier 3 - requires Go infrastructure)
+# Usage: First run `make test-e2e-datastorage` from project root
+test-e2e:
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 HolmesGPT API - E2E Tests (requires Go infrastructure)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@curl -s http://localhost:8081/health/ready > /dev/null 2>&1 || \
+		(echo "❌ Data Storage not available at localhost:8081" && \
+		 echo "   Run 'make test-e2e-datastorage' from project root first" && \
+		 exit 1)
+	@echo "✅ Data Storage available"
+	DATA_STORAGE_URL=http://localhost:8081 MOCK_LLM=true HAPI_USE_GO_INFRA=true \
+		python3 -m pytest tests/e2e/ -v --tb=short
 
 # Run linter
 lint:

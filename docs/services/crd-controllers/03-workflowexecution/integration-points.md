@@ -1,13 +1,16 @@
 ## Integration Points
 
-**Version**: 4.0
-**Last Updated**: 2025-12-02
+**Version**: 4.1
+**Last Updated**: 2025-12-07
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Status**: ✅ Updated for Tekton Architecture (ADR-044)
 
 ---
 
 ## Changelog
+
+### Version 4.1 (2025-12-07)
+- ✅ **Fixed**: RemediationRequestRef type corrected to `corev1.ObjectReference` (was incorrectly documented as custom type)
 
 ### Version 4.0 (2025-12-02)
 - ✅ **Updated**: Tekton PipelineRun integration patterns

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -59,6 +60,17 @@ func (c *ApprovalCreator) Create(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 ) (string, error) {
+	// Precondition validation
+	if ai == nil {
+		return "", fmt.Errorf("AIAnalysis is nil")
+	}
+	if ai.Status.SelectedWorkflow == nil {
+		return "", fmt.Errorf("AIAnalysis %s/%s missing SelectedWorkflow for approval request", ai.Namespace, ai.Name)
+	}
+	if ai.Status.SelectedWorkflow.WorkflowID == "" {
+		return "", fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing WorkflowID", ai.Namespace, ai.Name)
+	}
+
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
 		"namespace", rr.Namespace,
@@ -152,6 +164,15 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		investigationSummary = ai.Status.RootCauseAnalysis.Summary
 	}
 
+	// Build RemediationRequestRef using RR's ObjectMeta
+	rrRef := corev1.ObjectReference{
+		APIVersion: remediationv1.GroupVersion.String(),
+		Kind:       "RemediationRequest",
+		Name:       rr.Name,
+		Namespace:  rr.Namespace,
+		UID:        rr.UID,
+	}
+
 	return &remediationv1.RemediationApprovalRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -160,11 +181,11 @@ func (c *ApprovalCreator) buildApprovalRequest(
 				"kubernaut.ai/remediation-request": rr.Name,
 				"kubernaut.ai/ai-analysis":         ai.Name,
 				"kubernaut.ai/confidence-level":    confidenceLevel,
-				"kubernaut.ai/component":           "remediation-orchestrator",
+				"kubernaut.ai/component":           "approval",
 			},
 		},
 		Spec: remediationv1.RemediationApprovalRequestSpec{
-			RemediationRequestRef: *rr.Status.SignalProcessingRef, // Use existing ref pattern
+			RemediationRequestRef: rrRef,
 			AIAnalysisRef: remediationv1.ObjectRef{
 				Name: ai.Name,
 			},

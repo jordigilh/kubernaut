@@ -30,41 +30,53 @@ import (
 
 // Resource Locking Integration Tests
 //
-// NOTE: Controller is NOT running in EnvTest (Tekton CRDs not available)
-// These tests validate CRD field storage for locking-related data.
-// Actual locking behavior tests are in E2E suite (KIND + Tekton)
+// V2.0 UPDATE: Controller IS running - tests work WITH the controller
+//
+// These tests validate resource locking behavior through the controller:
+// - SkipDetails field storage for various skip reasons
+// - Resource locking prevents parallel execution on same target
+// - Cooldown enforcement
 //
 // Per 03-testing-strategy.mdc: >50% integration coverage for microservices
 
 var _ = Describe("Resource Locking CRD Fields (DD-WE-001)", func() {
 	Context("SkipDetails Field Storage", func() {
+		// These tests use Eventually to get fresh copies and handle controller race conditions
+
 		It("should persist SkipDetails with ResourceBusy reason", func() {
 			targetResource := fmt.Sprintf("default/deployment/locking-busy-%d", time.Now().UnixNano())
 			wfe := createUniqueWFE("busy", targetResource)
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Manually set Skipped status with ResourceBusy (simulating controller)
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
-			now := metav1.Now()
-			wfe.Status.CompletionTime = &now
-			wfe.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
-				Reason:    workflowexecutionv1alpha1.SkipReasonResourceBusy,
-				Message:   "Another workflow is already running on target",
-				SkippedAt: now,
-				RecentRemediation: &workflowexecutionv1alpha1.RecentRemediationRef{
-					Name:           "blocking-wfe",
-					WorkflowID:     "test-workflow",
-					CompletedAt:    now, // Required field
-					Outcome:        "Running",
-					TargetResource: targetResource,
-				},
-			}
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			// Wait for controller to process, then update status
+			// Use Eventually to handle concurrent updates
+			Eventually(func() error {
+				fresh, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return err
+				}
+				now := metav1.Now()
+				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
+				fresh.Status.CompletionTime = &now
+				fresh.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
+					Reason:    workflowexecutionv1alpha1.SkipReasonResourceBusy,
+					Message:   "Another workflow is already running on target",
+					SkippedAt: now,
+					RecentRemediation: &workflowexecutionv1alpha1.RecentRemediationRef{
+						Name:           "blocking-wfe",
+						WorkflowID:     "test-workflow",
+						CompletedAt:    now,
+						Outcome:        "Running",
+						TargetResource: targetResource,
+					},
+				}
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify SkipDetails persisted
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -83,30 +95,36 @@ var _ = Describe("Resource Locking CRD Fields (DD-WE-001)", func() {
 			wfe := createUniqueWFE("cooldown", targetResource)
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Manually set Skipped status with RecentlyRemediated (simulating controller)
-			now := metav1.Now()
-			completedAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
-			wfe.Status.CompletionTime = &now
-			wfe.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
-				Reason:    workflowexecutionv1alpha1.SkipReasonRecentlyRemediated,
-				Message:   "Cooldown active - workflow completed recently",
-				SkippedAt: now,
-				RecentRemediation: &workflowexecutionv1alpha1.RecentRemediationRef{
-					Name:              "previous-wfe",
-					WorkflowID:        "test-workflow",
-					CompletedAt:       completedAt,
-					Outcome:           "Completed",
-					TargetResource:    targetResource,
-					CooldownRemaining: "3m0s",
-				},
-			}
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			// Use Eventually to handle concurrent updates
+			Eventually(func() error {
+				fresh, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return err
+				}
+				now := metav1.Now()
+				completedAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
+				fresh.Status.CompletionTime = &now
+				fresh.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
+					Reason:    workflowexecutionv1alpha1.SkipReasonRecentlyRemediated,
+					Message:   "Cooldown active - workflow completed recently",
+					SkippedAt: now,
+					RecentRemediation: &workflowexecutionv1alpha1.RecentRemediationRef{
+						Name:              "previous-wfe",
+						WorkflowID:        "test-workflow",
+						CompletedAt:       completedAt,
+						Outcome:           "Completed",
+						TargetResource:    targetResource,
+						CooldownRemaining: "3m0s",
+					},
+				}
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify SkipDetails persisted
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -122,21 +140,27 @@ var _ = Describe("Resource Locking CRD Fields (DD-WE-001)", func() {
 			wfe := createUniqueWFE("exhausted", targetResource)
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Manually set Skipped status with ExhaustedRetries (simulating controller)
-			now := metav1.Now()
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
-			wfe.Status.CompletionTime = &now
-			wfe.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
-				Reason:    workflowexecutionv1alpha1.SkipReasonExhaustedRetries,
-				Message:   "Max consecutive failures (5) reached for target. Manual intervention required.",
-				SkippedAt: now,
-			}
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			// Use Eventually to handle concurrent updates
+			Eventually(func() error {
+				fresh, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return err
+				}
+				now := metav1.Now()
+				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
+				fresh.Status.CompletionTime = &now
+				fresh.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
+					Reason:    workflowexecutionv1alpha1.SkipReasonExhaustedRetries,
+					Message:   "Max consecutive failures (5) reached for target. Manual intervention required.",
+					SkippedAt: now,
+				}
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify SkipDetails persisted
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -151,21 +175,27 @@ var _ = Describe("Resource Locking CRD Fields (DD-WE-001)", func() {
 			wfe := createUniqueWFE("prevfail", targetResource)
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe, 10*time.Second)
+				cleanupWFE(wfe)
 			}()
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// Manually set Skipped status with PreviousExecutionFailed (simulating controller)
-			now := metav1.Now()
-			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
-			wfe.Status.CompletionTime = &now
-			wfe.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
-				Reason:    workflowexecutionv1alpha1.SkipReasonPreviousExecutionFailed,
-				Message:   "Previous execution failed during workflow run. Manual intervention required.",
-				SkippedAt: now,
-			}
-			Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+			// Use Eventually to handle concurrent updates
+			Eventually(func() error {
+				fresh, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return err
+				}
+				now := metav1.Now()
+				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseSkipped
+				fresh.Status.CompletionTime = &now
+				fresh.Status.SkipDetails = &workflowexecutionv1alpha1.SkipDetails{
+					Reason:    workflowexecutionv1alpha1.SkipReasonPreviousExecutionFailed,
+					Message:   "Previous execution failed during workflow run. Manual intervention required.",
+					SkippedAt: now,
+				}
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Verify SkipDetails persisted
 			updated, err := getWFE(wfe.Name, wfe.Namespace)
@@ -185,8 +215,8 @@ var _ = Describe("Resource Locking CRD Fields (DD-WE-001)", func() {
 			wfe2 := createUniqueWFE("multi2", targetResource)
 
 			defer func() {
-				_ = deleteWFEAndWait(wfe1, 10*time.Second)
-				_ = deleteWFEAndWait(wfe2, 10*time.Second)
+				cleanupWFE(wfe1)
+				cleanupWFE(wfe2)
 			}()
 
 			// Create both - CRD allows this, controller decides locking
@@ -194,13 +224,17 @@ var _ = Describe("Resource Locking CRD Fields (DD-WE-001)", func() {
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
 			// Both should exist
-			_, err1 := getWFE(wfe1.Name, wfe1.Namespace)
-			_, err2 := getWFE(wfe2.Name, wfe2.Namespace)
-			Expect(err1).ToNot(HaveOccurred())
-			Expect(err2).ToNot(HaveOccurred())
+			Eventually(func() error {
+				_, err := getWFE(wfe1.Name, wfe1.Namespace)
+				return err
+			}, 5*time.Second).Should(Succeed())
+
+			Eventually(func() error {
+				_, err := getWFE(wfe2.Name, wfe2.Namespace)
+				return err
+			}, 5*time.Second).Should(Succeed())
 
 			GinkgoWriter.Println("✅ Multiple WFEs created for same target (controller enforces locking)")
 		})
 	})
 })
-

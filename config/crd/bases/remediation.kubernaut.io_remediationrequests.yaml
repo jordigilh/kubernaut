@@ -343,6 +343,28 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              deduplication:
+                description: |-
+                  Deduplication tracks signal occurrence for this remediation.
+                  OWNER: Gateway Service (exclusive write access)
+                  Reference: DD-GATEWAY-011, BR-GATEWAY-181
+                properties:
+                  firstSeenAt:
+                    description: FirstSeenAt is when this signal fingerprint was first
+                      observed
+                    format: date-time
+                    type: string
+                  lastSeenAt:
+                    description: LastSeenAt is when this signal fingerprint was last
+                      observed
+                    format: date-time
+                    type: string
+                  occurrenceCount:
+                    description: OccurrenceCount tracks how many times this signal
+                      has been seen
+                    format: int32
+                    type: integer
+                type: object
               duplicateCount:
                 description: |-
                   DuplicateCount tracks the number of duplicate remediations that were skipped
@@ -432,6 +454,19 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
+              outcome:
+                description: |-
+                  Outcome indicates the remediation result when completed.
+                  Values:
+                  - "Remediated": Workflow executed successfully
+                  - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
+                  - "ManualReviewRequired": Requires operator intervention
+                  Reference: BR-ORCH-037, BR-HAPI-200
+                enum:
+                - Remediated
+                - NoActionRequired
+                - ManualReviewRequired
+                type: string
               overallPhase:
                 description: |-
                   Phase tracking for orchestration
@@ -561,6 +596,30 @@ spec:
                 description: Timestamps
                 format: date-time
                 type: string
+              stormAggregation:
+                description: |-
+                  StormAggregation tracks storm detection for this remediation.
+                  OWNER: Gateway Service (exclusive write access)
+                  Reference: DD-GATEWAY-011, DD-GATEWAY-008 v2.0
+                properties:
+                  aggregatedCount:
+                    description: AggregatedCount is the number of signals aggregated
+                      in this storm
+                    format: int32
+                    type: integer
+                  isPartOfStorm:
+                    description: IsPartOfStorm indicates if this signal is part of
+                      a detected storm
+                    type: boolean
+                  stormDetectedAt:
+                    description: StormDetectedAt is when the storm was first detected
+                    format: date-time
+                    type: string
+                  stormId:
+                    description: StormID is the unique identifier for the storm this
+                      signal belongs to
+                    type: string
+                type: object
               timeoutPhase:
                 description: |-
                   TimeoutPhase indicates which phase timed out
