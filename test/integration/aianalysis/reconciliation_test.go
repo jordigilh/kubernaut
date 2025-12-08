@@ -214,58 +214,8 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		})
 	})
 
-	Context("Phase observability - BR-AI-022", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
-
-		BeforeEach(func() {
-			analysis = &aianalysisv1alpha1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "observability-" + randomSuffix(),
-					Namespace: "default",
-				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-remediation",
-						Namespace: "default",
-					},
-					RemediationID: "test-rem-003",
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "test-fingerprint-003",
-							Severity:         "warning",
-							SignalType:       "OOMKilled",
-							Environment:      "staging",
-							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
-								Name:      "test-pod",
-								Namespace: "default",
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []string{"investigation"},
-					},
-				},
-			}
-		})
-
-		AfterEach(func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		})
-
-		// TODO: Implement status conditions in handlers for observability
-		PIt("should record phase transitions in status conditions", func() {
-			By("Creating AIAnalysis")
-			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-			By("Waiting for completion")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, timeout, interval).Should(Equal("Completed"))
-
-			By("Verifying status conditions exist")
-			Expect(analysis.Status.Conditions).NotTo(BeEmpty())
-		})
-	})
+	// NOTE: Status conditions (Status.Conditions) are NOT in V1.0 scope.
+	// BR-AI-022 is about confidence thresholds (80% auto-approval), which is
+	// tested in the Rego policy evaluation tests.
+	// Status conditions for phase observability may be added in V2.0 if needed.
 })
