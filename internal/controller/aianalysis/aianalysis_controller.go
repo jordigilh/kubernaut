@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -212,6 +213,10 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 	defer func() {
 		metrics.RecordReconcileDuration(PhasePending, time.Since(phaseStart).Seconds())
 	}()
+
+	// Set StartedAt timestamp (per crd-schema.md)
+	now := metav1.Now()
+	analysis.Status.StartedAt = &now
 
 	// Transition to Investigating phase (first processing phase per CRD schema)
 	analysis.Status.Phase = PhaseInvestigating

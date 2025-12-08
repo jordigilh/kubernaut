@@ -115,7 +115,9 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		if retryCount >= MaxRetries {
 			// Max retries exceeded - mark as Failed
 			h.log.Info("Max retries exceeded", "retryCount", retryCount)
+			now := metav1.Now()
 			analysis.Status.Phase = aianalysis.PhaseFailed
+			analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
 			analysis.Status.Message = fmt.Sprintf("HolmesGPT-API max retries exceeded: %v", err)
 			analysis.Status.Reason = "MaxRetriesExceeded"
 			return ctrl.Result{}, nil
@@ -134,7 +136,9 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 
 	// Permanent error - mark as Failed immediately
 	h.log.Info("Permanent error", "error", err)
+	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
 	analysis.Status.Message = fmt.Sprintf("HolmesGPT-API error: %v", err)
 	analysis.Status.Reason = "APIError"
 	return ctrl.Result{}, nil
@@ -275,8 +279,10 @@ func (h *InvestigatingHandler) handleWorkflowResolutionFailure(ctx context.Conte
 		"hasPartialWorkflow", resp.SelectedWorkflow != nil,
 	)
 
-	// Set structured failure
+	// Set structured failure with timestamp
+	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
 	analysis.Status.Reason = "WorkflowResolutionFailed"
 
 	// Use HumanReviewReason enum if available (preferred), else fallback to warning parsing
@@ -338,7 +344,9 @@ func (h *InvestigatingHandler) handleProblemResolved(ctx context.Context, analys
 	)
 
 	// Set terminal success state per BR-HAPI-200
+	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
 	analysis.Status.Reason = "WorkflowNotNeeded"
 	analysis.Status.SubReason = "ProblemResolved"
 

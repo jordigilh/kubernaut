@@ -265,15 +265,29 @@ Per `docs/development/business-requirements/TESTING_GUIDELINES.md`:
 > **E2E tests must use all real services EXCEPT the LLM.**
 > **If Data Storage is unavailable, E2E tests should FAIL, not skip.**
 
+### Test Tier Matrix from TESTING_GUIDELINES.md
+
+| Test Type | Infrastructure (DB, APIs) | LLM |
+|-----------|---------------------------|-----|
+| **Unit Tests** | Mock ✅ | Mock ✅ |
+| **Integration Tests** | Mock ✅ | Mock ✅ |
+| **E2E Tests** | **REAL** ❌ No mocking | Mock ✅ (cost) |
+
 ### Violations Found
 
 | File | Type | Violation | Severity |
 |------|------|-----------|----------|
 | `test/e2e/notification/01_notification_lifecycle_audit_test.go` | E2E | Uses `httptest.Server` mock for Data Storage | 🔴 **CRITICAL** |
 | `test/e2e/notification/02_audit_correlation_test.go` | E2E | Uses `httptest.Server` mock for Data Storage | 🔴 **CRITICAL** |
-| `test/integration/notification/audit_integration_test.go` | Integration | Uses `httptest.Server` mock | 🟡 **ACCEPTABLE** (see note) |
+| `test/e2e/workflowexecution/02_observability_test.go` | E2E | Tests K8s Events, NOT audit to Data Storage | 🔴 **MISLEADING** |
 
-**Note on Integration Tests**: Per TESTING_GUIDELINES.md, integration tests CAN use mocks (`Mock ✅`), but they should use `podman-compose.test.yml` for real services when testing audit persistence.
+### Tests INCORRECTLY Named as "Audit" Tests
+
+| File | What It Actually Tests | What It SHOULD Test |
+|------|------------------------|---------------------|
+| `test/e2e/workflowexecution/02_observability_test.go` (BR-WE-005) | Kubernetes native `corev1.Event` | Audit events in Data Storage via `pkg/audit` |
+
+**Note on Integration Tests**: Per TESTING_GUIDELINES.md, integration tests CAN use mocks (`Mock ✅`), which is why `test/integration/notification/audit_integration_test.go` is acceptable.
 
 ### Compliant E2E Tests
 
