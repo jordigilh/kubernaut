@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
@@ -46,15 +47,15 @@ const (
 	FinalizerName = "aianalysis.kubernaut.ai/finalizer"
 )
 
-// Phase constants imported from pkg/aianalysis/handler.go to avoid duplication
+// Phase constants: Imported from pkg/aianalysis/handler.go (single source of truth)
 // Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
 // NOTE: Recommending phase REMOVED in v1.8 - workflow data captured in Investigating phase
 const (
-	PhasePending       = "Pending"
-	PhaseInvestigating = "Investigating"
-	PhaseAnalyzing     = "Analyzing"
-	PhaseCompleted     = "Completed"
-	PhaseFailed        = "Failed"
+	PhasePending       = aianalysispkg.PhasePending
+	PhaseInvestigating = aianalysispkg.PhaseInvestigating
+	PhaseAnalyzing     = aianalysispkg.PhaseAnalyzing
+	PhaseCompleted     = aianalysispkg.PhaseCompleted
+	PhaseFailed        = aianalysispkg.PhaseFailed
 )
 
 // AIAnalysisReconciler reconciles an AIAnalysis object

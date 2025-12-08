@@ -339,6 +339,11 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/audit/events", s.handleCreateAuditEvent)
 		r.Get("/audit/events", s.handleQueryAuditEvents)
 
+		// DD-AUDIT-002: Batch audit events API for HTTPDataStorageClient.StoreBatch()
+		// BR-AUDIT-001: Complete audit trail with no data loss
+		s.logger.V(1).Info("Registering /api/v1/audit/events/batch handler (DD-AUDIT-002)")
+		r.Post("/audit/events/batch", s.handleCreateAuditEventsBatch)
+
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
 		// DD-STORAGE-008: Workflow catalog schema

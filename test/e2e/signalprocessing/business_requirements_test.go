@@ -22,6 +22,9 @@ limitations under the License.
 // - Integration tests (>50%): CRD coordination (test/integration/signalprocessing/)
 // - E2E/BR tests (10-15%): Complete workflow validation (this directory)
 //
+// TDD Phase: RED - Tests define expected business behavior
+// These tests will FAIL until controller implementation is complete (GREEN phase)
+//
 // Purpose: Validate that SignalProcessing delivers business value as specified
 // Audience: Business stakeholders + developers
 // Execution: make test-e2e-signalprocessing
@@ -39,116 +42,699 @@ limitations under the License.
 package signalprocessing_e2e
 
 import (
-	"testing"
+	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
-func TestSignalProcessingE2E(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "SignalProcessing E2E/BR Tests Suite")
-}
-
-// TODO: Day 11 - Implement E2E test suite with Kind cluster
-// Per DD-TEST-001 Port Allocation:
-// - NodePort: 30082 (API access)
-// - Metrics NodePort: 30182 (Prometheus metrics)
-// - Host Port: 8082 (Kind extraPortMappings)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BR-SP-070: Priority Assignment
+// BUSINESS VALUE: Operations team gets correct priority for alert triage
+// STAKEHOLDER: On-call engineers need accurate priority for response decisions
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outcomes", func() {
-	// BUSINESS VALUE: Operations team gets correct priority for alert triage
-	// STAKEHOLDER: On-call engineers need accurate priority for response decisions
 
 	Context("Production Environment Prioritization", func() {
-		It("should assign P0 to production critical alerts (highest urgency)", func() {
-			Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-			// Given: Production namespace with critical severity alert
-			// When: SignalProcessing CRD is created
-			// Then: Priority should be P0 with high confidence
-			// Business Outcome: On-call responds immediately to production critical issues
+		var testNs string
+
+		BeforeEach(func() {
+			testNs = fmt.Sprintf("e2e-prod-%d", time.Now().UnixNano())
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: testNs,
+					Labels: map[string]string{
+						"kubernaut.ai/environment": "production",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 		})
 
-		It("should assign P1 to production warning alerts (high urgency)", func() {
-			Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-			// Business Outcome: Warnings in production get prompt attention
+		AfterEach(func() {
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}}
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		// TDD RED: This test will FAIL until controller assigns P0 priority
+		It("BR-SP-070: should assign P0 to production critical alerts (highest urgency)", func() {
+			By("Creating SignalProcessing CR for production critical alert")
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-priority-p0",
+					Namespace: testNs,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "e2e-p0-test-fingerprint-abc123def456abc123def456abc123def456abc1",
+						Name:        "HighCPU",
+						Severity:    "critical",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "api-server-xyz",
+							Namespace: testNs,
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			By("Waiting for priority assignment")
+			// TDD RED: Controller stub won't set this - test will FAIL
+			Eventually(func() string {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				return updated.Status.PriorityAssignment.Priority
+			}, timeout, interval).Should(Equal("P0"))
+
+			By("Verifying business outcome: production critical = highest urgency")
+			var final signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
+			Expect(final.Status.PriorityAssignment.Confidence).To(BeNumerically(">=", 0.9))
+		})
+
+		// TDD RED: This test will FAIL until controller assigns P1 priority
+		It("BR-SP-070: should assign P1 to production warning alerts (high urgency)", func() {
+			By("Creating SignalProcessing CR for production warning alert")
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-priority-p1",
+					Namespace: testNs,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "e2e-p1-test-fingerprint-abc123def456abc123def456abc123def456abc1",
+						Name:        "MemoryPressure",
+						Severity:    "warning",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "worker-abc",
+							Namespace: testNs,
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			By("Waiting for priority assignment")
+			Eventually(func() string {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				return updated.Status.PriorityAssignment.Priority
+			}, timeout, interval).Should(Equal("P1"))
 		})
 	})
 
 	Context("Non-Production Environment Prioritization", func() {
-		It("should assign P2 to staging critical alerts (medium urgency)", func() {
-			Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-			// Business Outcome: Staging issues don't distract from production
+		var stagingNs, devNs string
+
+		BeforeEach(func() {
+			stagingNs = fmt.Sprintf("e2e-staging-%d", time.Now().UnixNano())
+			devNs = fmt.Sprintf("e2e-dev-%d", time.Now().UnixNano())
+
+			// Create staging namespace
+			Expect(k8sClient.Create(ctx, &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   stagingNs,
+					Labels: map[string]string{"kubernaut.ai/environment": "staging"},
+				},
+			})).To(Succeed())
+
+			// Create development namespace
+			Expect(k8sClient.Create(ctx, &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   devNs,
+					Labels: map[string]string{"kubernaut.ai/environment": "development"},
+				},
+			})).To(Succeed())
 		})
 
-		It("should assign P3 to development alerts (low urgency)", func() {
-			Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-			// Business Outcome: Dev alerts are tracked but don't create noise
+		AfterEach(func() {
+			_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: stagingNs}})
+			_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: devNs}})
+		})
+
+		// TDD RED: This test will FAIL until controller assigns P2 priority
+		It("BR-SP-070: should assign P2 to staging critical alerts (medium urgency)", func() {
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-priority-p2",
+					Namespace: stagingNs,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "e2e-p2-test-fingerprint-abc123def456abc123def456abc123def456abc1",
+						Name:        "StagingCritical",
+						Severity:    "critical",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "staging-pod",
+							Namespace: stagingNs,
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			Eventually(func() string {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				return updated.Status.PriorityAssignment.Priority
+			}, timeout, interval).Should(Equal("P2"))
+		})
+
+		// TDD RED: This test will FAIL until controller assigns P3 priority
+		It("BR-SP-070: should assign P3 to development alerts (low urgency)", func() {
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-priority-p3",
+					Namespace: devNs,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "e2e-p3-test-fingerprint-abc123def456abc123def456abc123def456abc1",
+						Name:        "DevInfo",
+						Severity:    "info",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "dev-pod",
+							Namespace: devNs,
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			Eventually(func() string {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				return updated.Status.PriorityAssignment.Priority
+			}, timeout, interval).Should(Equal("P3"))
 		})
 	})
 })
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BR-SP-051: Environment Classification
+// BUSINESS VALUE: Alerts are routed to correct team based on environment
+// STAKEHOLDER: Operations team needs environment context for escalation
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing", func() {
-	// BUSINESS VALUE: Alerts are routed to correct team based on environment
-	// STAKEHOLDER: Operations team needs environment context for escalation
+	var testNs string
 
-	It("should classify production from namespace label with high confidence", func() {
-		Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-		// Given: Namespace with kubernaut.ai/environment=production label
-		// When: Alert triggers SignalProcessing
-		// Then: Environment should be "production" with >=0.95 confidence
-		// Business Outcome: Production alerts reach production on-call team
+	BeforeEach(func() {
+		testNs = fmt.Sprintf("e2e-env-%d", time.Now().UnixNano())
 	})
 
-	It("should use ConfigMap fallback when label missing", func() {
-		Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-		// Business Outcome: Environment still detected even without explicit labels
+	AfterEach(func() {
+		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
 	})
 
-	It("should default to unknown for unclassifiable namespaces", func() {
-		Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-		// Business Outcome: Unclassified alerts are flagged for manual review
+	// TDD RED: This test will FAIL until controller classifies environment
+	It("BR-SP-051: should classify production from namespace label with high confidence", func() {
+		By("Creating namespace with production label")
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNs,
+				Labels: map[string]string{
+					"kubernaut.ai/environment": "production",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+		By("Creating SignalProcessing CR")
+		sp := &signalprocessingv1alpha1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-env-prod",
+				Namespace: testNs,
+			},
+			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint: "e2e-env-prod-fingerprint-abc123def456abc123def456abc123def456abc",
+					Name:        "TestAlert",
+					Severity:    "warning",
+					Type:        "prometheus",
+					TargetType:  "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "test-pod",
+						Namespace: testNs,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for environment classification")
+		Eventually(func() string {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return ""
+			}
+			return updated.Status.EnvironmentClassification.Environment
+		}, timeout, interval).Should(Equal("production"))
+
+		By("Verifying high confidence classification")
+		var final signalprocessingv1alpha1.SignalProcessing
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+		Expect(final.Status.EnvironmentClassification.Confidence).To(BeNumerically(">=", 0.95))
+	})
+
+	// TDD RED: This test will FAIL until controller defaults to unknown
+	It("BR-SP-053: should default to unknown for unclassifiable namespaces", func() {
+		By("Creating namespace without environment label")
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNs,
+				// No kubernaut.ai/environment label
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+		By("Creating SignalProcessing CR")
+		sp := &signalprocessingv1alpha1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-env-unknown",
+				Namespace: testNs,
+			},
+			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint: "e2e-env-unknown-fingerprint-abc123def456abc123def456abc123def456",
+					Name:        "UnclassifiedAlert",
+					Severity:    "warning",
+					Type:        "prometheus",
+					TargetType:  "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "unclassified-pod",
+						Namespace: testNs,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for default environment classification")
+		Eventually(func() string {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return ""
+			}
+			return updated.Status.EnvironmentClassification.Environment
+		}, timeout, interval).Should(Equal("unknown"))
 	})
 })
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BR-SP-100: Owner Chain Traversal
+// BUSINESS VALUE: AI analysis can identify deployment-level issues from pod alerts
+// STAKEHOLDER: AI Analysis service needs owner context for recommendations
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
-	// BUSINESS VALUE: AI analysis can identify deployment-level issues from pod alerts
-	// STAKEHOLDER: AI Analysis service needs owner context for recommendations
+	var testNs string
 
-	It("should build complete owner chain for accurate root cause identification", func() {
-		Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-		// Given: Pod owned by ReplicaSet owned by Deployment
-		// When: Alert triggers SignalProcessing
-		// Then: Owner chain includes [ReplicaSet, Deployment]
-		// Business Outcome: HolmesGPT can recommend deployment-level fixes
+	BeforeEach(func() {
+		testNs = fmt.Sprintf("e2e-owner-%d", time.Now().UnixNano())
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: testNs},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+	})
+
+	// TDD RED: This test will FAIL until controller builds owner chain
+	It("BR-SP-100: should build complete owner chain for accurate root cause identification", func() {
+		By("Creating Deployment with Pod")
+		replicas := int32(1)
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "api-deployment",
+				Namespace: testNs,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "api"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "api"},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "api",
+							Image: "nginx:latest",
+						}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, deployment)).To(Succeed())
+
+		By("Waiting for Pod to be created by Deployment")
+		var podName string
+		Eventually(func() bool {
+			pods := &corev1.PodList{}
+			if err := k8sClient.List(ctx, pods, client.InNamespace(testNs)); err != nil {
+				return false
+			}
+			for _, pod := range pods.Items {
+				if len(pod.OwnerReferences) > 0 {
+					podName = pod.Name
+					return true
+				}
+			}
+			return false
+		}, timeout, interval).Should(BeTrue())
+
+		By("Creating SignalProcessing CR targeting the Pod")
+		sp := &signalprocessingv1alpha1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-owner-chain",
+				Namespace: testNs,
+			},
+			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint: "e2e-owner-chain-fingerprint-abc123def456abc123def456abc123def4",
+					Name:        "PodAlert",
+					Severity:    "critical",
+					Type:        "prometheus",
+					TargetType:  "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      podName,
+						Namespace: testNs,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for owner chain to be populated")
+		Eventually(func() int {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return 0
+			}
+			return len(updated.Status.KubernetesContext.OwnerChain)
+		}, timeout, interval).Should(BeNumerically(">=", 2))
+
+		By("Verifying owner chain includes ReplicaSet and Deployment")
+		var final signalprocessingv1alpha1.SignalProcessing
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+		ownerKinds := make([]string, len(final.Status.KubernetesContext.OwnerChain))
+		for i, owner := range final.Status.KubernetesContext.OwnerChain {
+			ownerKinds[i] = owner.Kind
+		}
+		Expect(ownerKinds).To(ContainElement("ReplicaSet"))
+		Expect(ownerKinds).To(ContainElement("Deployment"))
 	})
 })
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BR-SP-101: Detected Labels (PDB, HPA)
+// BUSINESS VALUE: Remediation workflows respect cluster safety features
+// STAKEHOLDER: Platform team needs remediation to honor PDB/HPA
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions", func() {
-	// BUSINESS VALUE: Remediation workflows respect cluster safety features
-	// STAKEHOLDER: Platform team needs remediation to honor PDB/HPA
+	var testNs string
 
-	It("should detect PDB protection to prevent unsafe pod deletion", func() {
-		Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-		// Business Outcome: Remediation respects PodDisruptionBudget
+	BeforeEach(func() {
+		testNs = fmt.Sprintf("e2e-detect-%d", time.Now().UnixNano())
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: testNs},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 	})
 
-	It("should detect HPA to prevent conflicting scale operations", func() {
-		Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-		// Business Outcome: Remediation doesn't fight HPA autoscaling
+	AfterEach(func() {
+		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+	})
+
+	// TDD RED: This test will FAIL until controller detects PDB
+	It("BR-SP-101: should detect PDB protection to prevent unsafe pod deletion", func() {
+		By("Creating Pod with labels")
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "protected-pod",
+				Namespace: testNs,
+				Labels:    map[string]string{"app": "protected"},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Name:  "main",
+					Image: "nginx:latest",
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+		By("Creating PDB matching pod labels")
+		minAvailable := intstr.FromInt(1)
+		pdb := &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "protected-pdb",
+				Namespace: testNs,
+			},
+			Spec: policyv1.PodDisruptionBudgetSpec{
+				MinAvailable: &minAvailable,
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "protected"},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, pdb)).To(Succeed())
+
+		By("Creating SignalProcessing CR")
+		sp := &signalprocessingv1alpha1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-pdb-detect",
+				Namespace: testNs,
+			},
+			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint: "e2e-pdb-detect-fingerprint-abc123def456abc123def456abc123def45",
+					Name:        "PDBAlert",
+					Severity:    "critical",
+					Type:        "prometheus",
+					TargetType:  "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "protected-pod",
+						Namespace: testNs,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for PDB detection")
+		Eventually(func() bool {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return false
+			}
+			return updated.Status.KubernetesContext.DetectedLabels.PDBProtected
+		}, timeout, interval).Should(BeTrue())
+	})
+
+	// TDD RED: This test will FAIL until controller detects HPA
+	It("BR-SP-101: should detect HPA to prevent conflicting scale operations", func() {
+		By("Creating Deployment")
+		replicas := int32(1)
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "scalable-deployment",
+				Namespace: testNs,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "scalable"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "scalable"},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "main",
+							Image: "nginx:latest",
+						}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, deployment)).To(Succeed())
+
+		By("Creating HPA targeting deployment")
+		minReplicas := int32(1)
+		hpa := &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "scalable-hpa",
+				Namespace: testNs,
+			},
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "scalable-deployment",
+				},
+				MinReplicas: &minReplicas,
+				MaxReplicas: 5,
+			},
+		}
+		Expect(k8sClient.Create(ctx, hpa)).To(Succeed())
+
+		By("Waiting for Pod to be created")
+		var podName string
+		Eventually(func() bool {
+			pods := &corev1.PodList{}
+			if err := k8sClient.List(ctx, pods, client.InNamespace(testNs)); err != nil {
+				return false
+			}
+			for _, pod := range pods.Items {
+				if pod.Labels["app"] == "scalable" {
+					podName = pod.Name
+					return true
+				}
+			}
+			return false
+		}, timeout, interval).Should(BeTrue())
+
+		By("Creating SignalProcessing CR targeting the Pod")
+		sp := &signalprocessingv1alpha1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-hpa-detect",
+				Namespace: testNs,
+			},
+			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint: "e2e-hpa-detect-fingerprint-abc123def456abc123def456abc123def45",
+					Name:        "HPAAlert",
+					Severity:    "warning",
+					Type:        "prometheus",
+					TargetType:  "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      podName,
+						Namespace: testNs,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for HPA detection")
+		Eventually(func() bool {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return false
+			}
+			return updated.Status.KubernetesContext.DetectedLabels.HPAEnabled
+		}, timeout, interval).Should(BeTrue())
 	})
 })
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BR-SP-102: CustomLabels from Rego
+// BUSINESS VALUE: Customer-defined labels enable custom alert routing
+// STAKEHOLDER: Platform customers need custom classification rules
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 var _ = Describe("BR-SP-102: CustomLabels Enable Business-Specific Routing", func() {
-	// BUSINESS VALUE: Customer-defined labels enable custom alert routing
-	// STAKEHOLDER: Platform customers need custom classification rules
+	var testNs string
 
-	It("should extract custom labels from Rego policies", func() {
-		Skip("TODO: Implement in Day 11 E2E tests with Kind cluster")
-		// Given: ConfigMap with labels.rego defining team=payments
-		// When: Alert triggers SignalProcessing
-		// Then: CustomLabels contains team: [payments]
-		// Business Outcome: Alerts route to customer-defined teams
+	BeforeEach(func() {
+		testNs = fmt.Sprintf("e2e-custom-%d", time.Now().UnixNano())
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNs,
+				Labels: map[string]string{
+					"kubernaut.ai/team": "payments",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+	})
+
+	// TDD RED: This test will FAIL until controller extracts custom labels
+	It("BR-SP-102: should extract custom labels from Rego policies", func() {
+		By("Creating SignalProcessing CR")
+		sp := &signalprocessingv1alpha1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-custom-labels",
+				Namespace: testNs,
+			},
+			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint: "e2e-custom-labels-fingerprint-abc123def456abc123def456abc123de",
+					Name:        "PaymentsAlert",
+					Severity:    "critical",
+					Type:        "prometheus",
+					TargetType:  "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "payments-api",
+						Namespace: testNs,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for custom labels to be populated")
+		Eventually(func() int {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return 0
+			}
+			return len(updated.Status.KubernetesContext.CustomLabels)
+		}, timeout, interval).Should(BeNumerically(">", 0))
+
+		By("Verifying team label was extracted")
+		var final signalprocessingv1alpha1.SignalProcessing
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+		Expect(final.Status.KubernetesContext.CustomLabels).To(HaveKey("team"))
 	})
 })
-
