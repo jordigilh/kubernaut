@@ -4970,23 +4970,23 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 
 **Test Matrix** (15 tests):
 
-| ID | Category | Scenario | BR |
-|----|----------|----------|-----|
-| **IT-REGO-01** | Policy Load | ConfigMap environment.rego | BR-SP-051 |
-| **IT-REGO-02** | Policy Load | ConfigMap priority.rego | BR-SP-070 |
-| **IT-REGO-03** | Policy Load | ConfigMap labels.rego | BR-SP-102 |
-| **IT-REGO-04** | Evaluation | Environment classification | BR-SP-051 |
-| **IT-REGO-05** | Evaluation | Priority assignment | BR-SP-070 |
-| **IT-REGO-06** | Evaluation | CustomLabels extraction | BR-SP-102 |
-| **IT-REGO-07** | Security | System prefix stripping | BR-SP-104 |
-| **IT-REGO-08** | Fallback | Invalid policy → defaults | BR-SP-071 |
-| **IT-REGO-09** | Fallback | Missing ConfigMap → defaults | BR-SP-053 |
-| **IT-REGO-10** | Concurrent | 10 parallel evaluations | Stability |
-| **IT-REGO-11** | Concurrent | Policy update during eval | BR-SP-072 |
-| **IT-REGO-12** | Timeout | 5s timeout enforcement | DD-WORKFLOW-001 |
-| **IT-REGO-13** | Validation | Key truncation (63 chars) | DD-WORKFLOW-001 |
-| **IT-REGO-14** | Validation | Value truncation (100 chars) | DD-WORKFLOW-001 |
-| **IT-REGO-15** | Validation | Max keys truncation (10) | DD-WORKFLOW-001 |
+| BR | Category | Scenario |
+|----|----------|----------|
+| **BR-SP-051** | Policy Load | ConfigMap environment.rego |
+| **BR-SP-070** | Policy Load | ConfigMap priority.rego |
+| **BR-SP-102** | Policy Load | ConfigMap labels.rego |
+| **BR-SP-051** | Evaluation | Environment classification |
+| **BR-SP-070** | Evaluation | Priority assignment |
+| **BR-SP-102** | Evaluation | CustomLabels extraction |
+| **BR-SP-104** | Security | System prefix stripping |
+| **BR-SP-071** | Fallback | Invalid policy → defaults |
+| **BR-SP-053** | Fallback | Missing ConfigMap → defaults |
+| **Stability** | Concurrent | 10 parallel evaluations |
+| **BR-SP-072** | Concurrent | Policy update during eval |
+| **DD-WORKFLOW-001** | Timeout | 5s timeout enforcement |
+| **DD-WORKFLOW-001** | Validation | Key truncation (63 chars) |
+| **DD-WORKFLOW-001** | Validation | Value truncation (100 chars) |
+| **DD-WORKFLOW-001** | Validation | Max keys truncation (10) |
 
 ---
 
@@ -4994,13 +4994,13 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 
 **Test Matrix** (5 tests):
 
-| ID | Category | Scenario | BR |
-|----|----------|----------|-----|
-| **IT-HR-01** | File Watch | Policy file change detected | BR-SP-072 |
-| **IT-HR-02** | Reload | Valid policy takes effect | BR-SP-072 |
-| **IT-HR-03** | Graceful | Invalid policy → old retained | BR-SP-072 |
-| **IT-HR-04** | Concurrent | Update during active reconciliation | BR-SP-072 |
-| **IT-HR-05** | Recovery | Watcher restart after error | BR-SP-072 |
+| BR | Category | Scenario |
+|----|----------|----------|
+| **BR-SP-072** | File Watch | Policy file change detected |
+| **BR-SP-072** | Reload | Valid policy takes effect |
+| **BR-SP-072** | Graceful | Invalid policy → old retained |
+| **BR-SP-072** | Concurrent | Update during active reconciliation |
+| **BR-SP-072** | Recovery | Watcher restart after error |
 
 ---
 
