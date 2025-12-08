@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -69,6 +71,14 @@ func main() {
 	var serviceAccountName string
 	flag.StringVar(&serviceAccountName, "service-account", "kubernaut-workflow-runner",
 		"ServiceAccount name for PipelineRuns")
+
+	// ========================================
+	// DD-AUDIT-003 P0 MUST: Audit Store Configuration
+	// WorkflowExecution (Remediation Execution Controller) MUST generate audit traces
+	// ========================================
+	var dataStorageURL string
+	flag.StringVar(&dataStorageURL, "datastorage-url", "http://datastorage-service:8080",
+		"Data Storage Service URL for audit events (DD-AUDIT-003, DD-AUDIT-002)")
 
 	opts := zap.Options{
 		Development: true,
@@ -111,7 +121,46 @@ func main() {
 		"serviceAccountName", serviceAccountName,
 		"metricsAddr", metricsAddr,
 		"probeAddr", probeAddr,
+		"dataStorageURL", dataStorageURL,
 	)
+
+	// ========================================
+	// DD-AUDIT-003 P0 MUST: Initialize AuditStore
+	// Per DD-AUDIT-002: Use pkg/audit/ shared library
+	// Per ADR-038: Async buffered audit ingestion
+	// ========================================
+	setupLog.Info("Initializing audit store (DD-AUDIT-003, DD-AUDIT-002)",
+		"dataStorageURL", dataStorageURL,
+	)
+
+	// Create HTTP client for Data Storage Service
+	httpClient := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	dsClient := audit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
+
+	// Create buffered audit store using shared library (DD-AUDIT-002)
+	// Use recommended config for workflowexecution service
+	auditConfig := audit.RecommendedConfig("workflowexecution")
+	auditStore, err := audit.NewBufferedStore(
+		dsClient,
+		auditConfig,
+		"workflowexecution",
+		ctrl.Log.WithName("audit"),
+	)
+	if err != nil {
+		// Per DD-AUDIT-002: Log error but don't crash - graceful degradation
+		// Audit store initialization failure should NOT prevent controller from starting
+		// The controller will operate without audit if Data Storage is unavailable
+		setupLog.Error(err, "Failed to initialize audit store - controller will operate without audit (graceful degradation)")
+		auditStore = nil
+	} else {
+		setupLog.Info("Audit store initialized successfully",
+			"buffer_size", auditConfig.BufferSize,
+			"batch_size", auditConfig.BatchSize,
+			"flush_interval", auditConfig.FlushInterval,
+		)
+	}
 
 	// Setup WorkflowExecution controller
 	if err = (&workflowexecution.WorkflowExecutionReconciler{
@@ -121,6 +170,7 @@ func main() {
 		ExecutionNamespace: executionNamespace,
 		CooldownPeriod:     time.Duration(cooldownPeriodMinutes) * time.Minute,
 		ServiceAccountName: serviceAccountName,
+		AuditStore:         auditStore, // DD-AUDIT-003: Audit store for BR-WE-005
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
 		os.Exit(1)
@@ -140,6 +190,19 @@ func main() {
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
+	}
+
+	// ========================================
+	// DD-AUDIT-002: Graceful Shutdown - Flush Audit Events
+	// Per DD-007: Kubernetes-aware graceful shutdown
+	// ========================================
+	if auditStore != nil {
+		setupLog.Info("Flushing audit events on shutdown (DD-AUDIT-002)")
+		if err := auditStore.Close(); err != nil {
+			setupLog.Error(err, "Failed to close audit store")
+		} else {
+			setupLog.Info("Audit store closed successfully")
+		}
 	}
 }
 

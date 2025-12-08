@@ -79,11 +79,17 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 	// Build request from spec
 	req := h.buildRequest(analysis)
 
-	// Call HolmesGPT-API
+	// Call HolmesGPT-API and track duration (per crd-schema.md: InvestigationTime)
+	startTime := time.Now()
 	resp, err := h.hgClient.Investigate(ctx, req)
+	investigationTime := time.Since(startTime).Milliseconds()
+
 	if err != nil {
 		return h.handleError(ctx, analysis, err)
 	}
+
+	// Set investigation time on successful response
+	analysis.Status.InvestigationTime = investigationTime
 
 	// Process successful response
 	return h.processResponse(ctx, analysis, resp)

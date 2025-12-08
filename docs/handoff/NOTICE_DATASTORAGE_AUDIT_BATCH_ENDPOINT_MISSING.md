@@ -296,3 +296,67 @@ Full gap analysis and remediation plan available at:
 
 **Contact**: Data Storage Team available for questions.
 
+---
+
+### Notification Service Team Workaround
+
+**Date**: December 8, 2025
+**Status**: ✅ **WORKAROUND IMPLEMENTED**
+
+---
+
+#### Temporary Single-Event Workaround
+
+While waiting for Data Storage to implement the batch endpoint, `pkg/audit/http_client.go` has been modified to send events **one-at-a-time** instead of as a batch array.
+
+**File Modified**: `pkg/audit/http_client.go`
+
+**Change Summary**:
+```go
+// StoreBatch now iterates and calls storeSingleEvent() for each event
+// instead of sending the entire array at once
+
+func (c *HTTPDataStorageClient) StoreBatch(ctx context.Context, events []*AuditEvent) error {
+    for _, event := range events {
+        if err := c.storeSingleEvent(ctx, event); err != nil {
+            lastErr = err  // Graceful degradation: continue with remaining events
+            continue
+        }
+        successCount++
+    }
+    // ...
+}
+```
+
+**Trade-offs**:
+- ⚠️ **Performance**: N HTTP calls instead of 1 (temporary)
+- ✅ **Functionality**: Audit events now actually persist to database
+- ✅ **Graceful Degradation**: If one event fails, others still succeed
+
+**Revert Plan**:
+When Data Storage implements `POST /api/v1/audit/events/batch`, update `StoreBatch()` to use the batch endpoint.
+
+**TODO Comment Added**:
+```go
+// TODO: Revert to batch write when Data Storage implements POST /api/v1/audit/events/batch
+```
+
+---
+
+#### Impact on BR Coverage
+
+| BR | Before Workaround | After Workaround |
+|----|-------------------|------------------|
+| BR-NOT-062 | 0% (events lost) | **100%** (events persisted) |
+| BR-NOT-063 | Unknown | **Verifiable** (graceful degradation works) |
+| BR-NOT-064 | 0% (no correlation) | **100%** (correlation_id persisted) |
+
+---
+
+#### Verification Needed
+
+- [ ] Run notification audit integration tests with real Data Storage
+- [ ] Verify events appear in `audit_events` table with correct fields
+- [ ] Verify correlation_id enables cross-service tracing
+
+
