@@ -4753,11 +4753,11 @@ func createTestNamespace(prefix string) string {
 
 var _ = Describe("SignalProcessing Reconciler Integration", func() {
     // ========================================
-    // HAPPY PATH TESTS (IT-HP-01 to IT-HP-10)
+    // HAPPY PATH TESTS (10 tests)
     // ========================================
 
     Context("Happy Path - Phase Transitions", func() {
-        It("IT-HP-01: should process production pod signal and assign P0 priority (BR-SP-070, BR-SP-051)", func() {
+        It("BR-SP-070, BR-SP-051: should process production pod signal and assign P0 priority", func() {
             ns := createTestNamespace("it-hp-01")
             defer k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
 
@@ -4792,111 +4792,111 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
             Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
         })
 
-        It("IT-HP-02: should process staging deployment signal and assign P1 priority (BR-SP-070, BR-SP-051)", func() {
+        It("BR-SP-070, BR-SP-051: should process staging deployment signal and assign P1 priority", func() {
             // Similar structure with staging namespace
         })
 
-        It("IT-HP-03: should process dev service signal and assign P3 priority (BR-SP-070, BR-SP-051)", func() {
+        It("BR-SP-070, BR-SP-051: should process dev service signal and assign P3 priority", func() {
             // Similar structure with dev namespace
         })
 
-        It("IT-HP-04: should detect environment from namespace label (BR-SP-051)", func() {
+        It("BR-SP-051: should detect environment from namespace label", func() {
             // Create namespace with kubernaut.ai/environment label
         })
 
-        It("IT-HP-05: should fallback to ConfigMap for environment (BR-SP-052)", func() {
+        It("BR-SP-052: should fallback to ConfigMap for environment", func() {
             // Create ConfigMap with environment mapping
         })
 
-        It("IT-HP-06: should classify business context with labels (BR-SP-002)", func() {
+        It("BR-SP-002: should classify business context with labels", func() {
             // Create namespace with business labels
         })
 
-        It("IT-HP-07: should build owner chain (Pod→RS→Deployment) (BR-SP-100)", func() {
+        It("BR-SP-100: should build owner chain (Pod→RS→Deployment)", func() {
             // Create Pod with owner references
         })
 
-        It("IT-HP-08: should detect PDB protection (BR-SP-101)", func() {
+        It("BR-SP-101: should detect PDB protection", func() {
             // Create PDB matching pod labels
         })
 
-        It("IT-HP-09: should detect HPA enabled (BR-SP-101)", func() {
+        It("BR-SP-101: should detect HPA enabled", func() {
             // Create HPA targeting deployment
         })
 
-        It("IT-HP-10: should populate CustomLabels from Rego policy (BR-SP-102)", func() {
+        It("BR-SP-102: should populate CustomLabels from Rego policy", func() {
             // Create ConfigMap with labels.rego policy
         })
     })
 
     // ========================================
-    // EDGE CASE TESTS (IT-EC-01 to IT-EC-08)
+    // EDGE CASE TESTS (8 tests)
     // ========================================
 
     Context("Edge Cases", func() {
-        It("IT-EC-01: should default to unknown environment (BR-SP-053)", func() {
+        It("BR-SP-053: should default to unknown environment", func() {
             // No namespace labels, no ConfigMap mapping
         })
 
-        It("IT-EC-02: should use degraded mode when pod not found (BR-SP-001)", func() {
+        It("BR-SP-001: should use degraded mode when pod not found", func() {
             // Signal references non-existent pod
         })
 
-        It("IT-EC-03: should handle concurrent reconciliation (Controller stability)", func() {
+        It("Controller: should handle concurrent reconciliation", func() {
             // Create 10 SignalProcessing CRs simultaneously
         })
 
-        It("IT-EC-04: should handle empty signal data gracefully", func() {
+        It("Robustness: should handle empty signal data gracefully", func() {
             // Minimal valid SignalProcessing spec
         })
 
-        It("IT-EC-05: should handle namespace with special characters", func() {
+        It("Robustness: should handle namespace with special characters", func() {
             // Namespace with dashes and numbers
         })
 
-        It("IT-EC-06: should handle max owner chain depth (5 levels)", func() {
+        It("BR-SP-100: should handle max owner chain depth (5 levels)", func() {
             // Create deep owner chain (Pod→RS→Deployment→...)
         })
 
-        It("IT-EC-07: should handle empty FailedDetections on success", func() {
+        It("BR-SP-103: should handle empty FailedDetections on success", func() {
             // Verify FailedDetections is empty when all queries succeed
         })
 
-        It("IT-EC-08: should handle multiple Rego policy keys", func() {
+        It("BR-SP-102: should handle multiple Rego policy keys", func() {
             // Policy returns multiple custom labels
         })
     })
 
     // ========================================
-    // ERROR HANDLING TESTS (IT-ER-01 to IT-ER-07)
+    // ERROR HANDLING TESTS (7 tests)
     // ========================================
 
     Context("Error Handling", func() {
-        It("IT-ER-01: should retry on K8s API timeout (Error Cat. B)", func() {
+        It("Error Cat. B: should retry on K8s API timeout", func() {
             // Simulate transient API error
         })
 
-        It("IT-ER-02: should retry on status update conflict (Error Cat. D)", func() {
+        It("Error Cat. D: should retry on status update conflict", func() {
             // Simulate optimistic locking conflict
         })
 
-        It("IT-ER-03: should handle context cancellation gracefully (Error Cat. B)", func() {
+        It("Error Cat. B: should handle context cancellation gracefully", func() {
             // Cancel context during reconciliation
         })
 
-        It("IT-ER-04: should log Rego policy syntax error (Error Cat. C)", func() {
+        It("Error Cat. C: should log Rego policy syntax error", func() {
             // Create ConfigMap with invalid Rego
         })
 
-        It("IT-ER-05: should track PDB query failure in FailedDetections (BR-SP-103)", func() {
+        It("BR-SP-103: should track PDB query failure in FailedDetections", func() {
             // Simulate RBAC denial for PDB list
         })
 
-        It("IT-ER-06: should complete even if audit write fails (ADR-038)", func() {
+        It("ADR-038: should complete even if audit write fails", func() {
             // Audit client returns error
         })
 
-        It("IT-ER-07: should mark failed for permanent errors", func() {
+        It("Error Cat. A: should mark failed for permanent errors", func() {
             // Invalid CRD spec that can't be processed
         })
     })
@@ -4907,33 +4907,33 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 
 ##### **Reconciler Integration Test Matrix** (25 tests)
 
-| ID | Category | Scenario | Input | Expected | BR |
-|----|----------|----------|-------|----------|-----|
-| **IT-HP-01** | Happy Path | Production pod → P0 | `namespace: production, severity: critical` | P0, env: production | BR-SP-070, BR-SP-051 |
-| **IT-HP-02** | Happy Path | Staging deployment → P1 | `namespace: staging, severity: warning` | P1, env: staging | BR-SP-070, BR-SP-051 |
-| **IT-HP-03** | Happy Path | Dev service → P3 | `namespace: dev, severity: info` | P3, env: development | BR-SP-070, BR-SP-051 |
-| **IT-HP-04** | Happy Path | Environment from label | `namespace.labels[kubernaut.ai/environment]=prod` | env: production | BR-SP-051 |
-| **IT-HP-05** | Happy Path | ConfigMap fallback | ConfigMap mapping `test-ns→staging` | env: staging | BR-SP-052 |
-| **IT-HP-06** | Happy Path | Business classification | `namespace.labels[kubernaut.ai/team]=payments` | businessUnit: payments | BR-SP-002 |
-| **IT-HP-07** | Happy Path | Owner chain traversal | Pod with RS→Deployment owners | Chain: [RS, Deployment] | BR-SP-100 |
-| **IT-HP-08** | Happy Path | PDB detection | PDB selector matches pod | pdbProtected: true | BR-SP-101 |
-| **IT-HP-09** | Happy Path | HPA detection | HPA targets deployment | hpaEnabled: true | BR-SP-101 |
-| **IT-HP-10** | Happy Path | CustomLabels from Rego | ConfigMap with labels.rego | CustomLabels populated | BR-SP-102 |
-| **IT-EC-01** | Edge Case | Default environment | No labels, no ConfigMap | env: unknown | BR-SP-053 |
-| **IT-EC-02** | Edge Case | Degraded mode | Pod not found | DegradedMode: true | BR-SP-001 |
-| **IT-EC-03** | Edge Case | Concurrent reconciliation | 10 CRs at once | All complete | Controller |
-| **IT-EC-04** | Edge Case | Minimal spec | Empty labels | Default values | Robustness |
-| **IT-EC-05** | Edge Case | Special namespace | `my-ns-123` | Handles correctly | Robustness |
-| **IT-EC-06** | Edge Case | Max owner depth | 5+ levels | Stops at 5 | BR-SP-100 |
-| **IT-EC-07** | Edge Case | No failed detections | All queries succeed | FailedDetections: [] | BR-SP-103 |
-| **IT-EC-08** | Edge Case | Multi-key Rego | Policy returns 3 keys | All 3 in CustomLabels | BR-SP-102 |
-| **IT-ER-01** | Error | K8s API timeout | Transient 503 | Retry + succeed | Error Cat. B |
-| **IT-ER-02** | Error | Status conflict | Concurrent update | Retry + succeed | Error Cat. D |
-| **IT-ER-03** | Error | Context cancelled | Cancel during reconcile | Clean exit | Error Cat. B |
-| **IT-ER-04** | Error | Rego syntax error | Invalid policy | Log error, use defaults | Error Cat. C |
-| **IT-ER-05** | Error | PDB RBAC denied | No list permission | FailedDetections: [pdb] | BR-SP-103 |
-| **IT-ER-06** | Error | Audit write failure | Audit returns error | Continue processing | ADR-038 |
-| **IT-ER-07** | Error | Permanent error | Invalid spec | Phase: Failed | Error Cat. A |
+| BR | Category | Scenario | Input | Expected |
+|----|----------|----------|-------|----------|
+| **BR-SP-070, BR-SP-051** | Happy Path | Production pod → P0 | `namespace: production, severity: critical` | P0, env: production |
+| **BR-SP-070, BR-SP-051** | Happy Path | Staging deployment → P1 | `namespace: staging, severity: warning` | P1, env: staging |
+| **BR-SP-070, BR-SP-051** | Happy Path | Dev service → P3 | `namespace: dev, severity: info` | P3, env: development |
+| **BR-SP-051** | Happy Path | Environment from label | `namespace.labels[kubernaut.ai/environment]=prod` | env: production |
+| **BR-SP-052** | Happy Path | ConfigMap fallback | ConfigMap mapping `test-ns→staging` | env: staging |
+| **BR-SP-002** | Happy Path | Business classification | `namespace.labels[kubernaut.ai/team]=payments` | businessUnit: payments |
+| **BR-SP-100** | Happy Path | Owner chain traversal | Pod with RS→Deployment owners | Chain: [RS, Deployment] |
+| **BR-SP-101** | Happy Path | PDB detection | PDB selector matches pod | pdbProtected: true |
+| **BR-SP-101** | Happy Path | HPA detection | HPA targets deployment | hpaEnabled: true |
+| **BR-SP-102** | Happy Path | CustomLabels from Rego | ConfigMap with labels.rego | CustomLabels populated |
+| **BR-SP-053** | Edge Case | Default environment | No labels, no ConfigMap | env: unknown |
+| **BR-SP-001** | Edge Case | Degraded mode | Pod not found | DegradedMode: true |
+| **Controller** | Edge Case | Concurrent reconciliation | 10 CRs at once | All complete |
+| **Robustness** | Edge Case | Minimal spec | Empty labels | Default values |
+| **Robustness** | Edge Case | Special namespace | `my-ns-123` | Handles correctly |
+| **BR-SP-100** | Edge Case | Max owner depth | 5+ levels | Stops at 5 |
+| **BR-SP-103** | Edge Case | No failed detections | All queries succeed | FailedDetections: [] |
+| **BR-SP-102** | Edge Case | Multi-key Rego | Policy returns 3 keys | All 3 in CustomLabels |
+| **Error Cat. B** | Error | K8s API timeout | Transient 503 | Retry + succeed |
+| **Error Cat. D** | Error | Status conflict | Concurrent update | Retry + succeed |
+| **Error Cat. B** | Error | Context cancelled | Cancel during reconcile | Clean exit |
+| **Error Cat. C** | Error | Rego syntax error | Invalid policy | Log error, use defaults |
+| **BR-SP-103** | Error | PDB RBAC denied | No list permission | FailedDetections: [pdb] |
+| **ADR-038** | Error | Audit write failure | Audit returns error | Continue processing |
+| **Error Cat. A** | Error | Permanent error | Invalid spec | Phase: Failed |
 
 ---
 
@@ -4941,28 +4941,28 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 
 **Test Matrix** (20 tests):
 
-| ID | Category | Component | Scenario | BR |
-|----|----------|-----------|----------|-----|
-| **IT-CMP-01** | K8sEnricher | Enricher | Pod enrichment with real K8s | BR-SP-001 |
-| **IT-CMP-02** | K8sEnricher | Enricher | Deployment enrichment | BR-SP-001 |
-| **IT-CMP-03** | K8sEnricher | Enricher | Node enrichment | BR-SP-001 |
-| **IT-CMP-04** | K8sEnricher | Enricher | StatefulSet enrichment | BR-SP-001 |
-| **IT-CMP-05** | K8sEnricher | Enricher | Service enrichment | BR-SP-001 |
-| **IT-CMP-06** | K8sEnricher | Enricher | Namespace context | BR-SP-001 |
-| **IT-CMP-07** | K8sEnricher | Enricher | Degraded mode fallback | BR-SP-001 |
-| **IT-CMP-08** | Environment | Classifier | Real ConfigMap lookup | BR-SP-052 |
-| **IT-CMP-09** | Environment | Classifier | Namespace label priority | BR-SP-051 |
-| **IT-CMP-10** | Environment | Classifier | Hot-reload policy change | BR-SP-072 |
-| **IT-CMP-11** | Priority | Engine | Real Rego evaluation | BR-SP-070 |
-| **IT-CMP-12** | Priority | Engine | Severity fallback | BR-SP-071 |
-| **IT-CMP-13** | Priority | Engine | ConfigMap policy load | BR-SP-072 |
-| **IT-CMP-14** | Business | Classifier | Label-based classification | BR-SP-002 |
-| **IT-CMP-15** | Business | Classifier | Pattern-based classification | BR-SP-002 |
-| **IT-CMP-16** | OwnerChain | Builder | Real K8s traversal | BR-SP-100 |
-| **IT-CMP-17** | OwnerChain | Builder | Cross-namespace owner | BR-SP-100 |
-| **IT-CMP-18** | Detection | LabelDetector | Real PDB query | BR-SP-101 |
-| **IT-CMP-19** | Detection | LabelDetector | Real HPA query | BR-SP-101 |
-| **IT-CMP-20** | Detection | LabelDetector | Real NetworkPolicy query | BR-SP-101 |
+| BR | Category | Component | Scenario |
+|----|----------|-----------|----------|
+| **BR-SP-001** | K8sEnricher | Enricher | Pod enrichment with real K8s |
+| **BR-SP-001** | K8sEnricher | Enricher | Deployment enrichment |
+| **BR-SP-001** | K8sEnricher | Enricher | Node enrichment |
+| **BR-SP-001** | K8sEnricher | Enricher | StatefulSet enrichment |
+| **BR-SP-001** | K8sEnricher | Enricher | Service enrichment |
+| **BR-SP-001** | K8sEnricher | Enricher | Namespace context |
+| **BR-SP-001** | K8sEnricher | Enricher | Degraded mode fallback |
+| **BR-SP-052** | Environment | Classifier | Real ConfigMap lookup |
+| **BR-SP-051** | Environment | Classifier | Namespace label priority |
+| **BR-SP-072** | Environment | Classifier | Hot-reload policy change |
+| **BR-SP-070** | Priority | Engine | Real Rego evaluation |
+| **BR-SP-071** | Priority | Engine | Severity fallback |
+| **BR-SP-072** | Priority | Engine | ConfigMap policy load |
+| **BR-SP-002** | Business | Classifier | Label-based classification |
+| **BR-SP-002** | Business | Classifier | Pattern-based classification |
+| **BR-SP-100** | OwnerChain | Builder | Real K8s traversal |
+| **BR-SP-100** | OwnerChain | Builder | Cross-namespace owner |
+| **BR-SP-101** | Detection | LabelDetector | Real PDB query |
+| **BR-SP-101** | Detection | LabelDetector | Real HPA query |
+| **BR-SP-101** | Detection | LabelDetector | Real NetworkPolicy query |
 
 ---
 

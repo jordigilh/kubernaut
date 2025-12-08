@@ -55,7 +55,8 @@ var _ = Describe("AIAnalysis Controller", func() {
 	})
 
 	// R-HP-02: Phase transition Pending → Investigating
-	// Per CRD schema: Pending;Investigating;Analyzing;Recommending;Completed;Failed
+	// Per CRD schema (reconciliation-phases.md v2.1): Pending;Investigating;Analyzing;Completed;Failed
+	// NOTE: Recommending phase REMOVED in v1.8 - workflow data captured in Investigating phase
 	Context("when reconciling a new AIAnalysis", func() {
 		It("should transition from Pending to Investigating phase", func() {
 			// Create test AIAnalysis in Pending phase
@@ -110,6 +111,24 @@ var _ = Describe("AIAnalysis Controller", func() {
 			Expect(fakeClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
 				"Analysis should progress to Investigating phase to query HolmesGPT-API")
+		})
+	})
+
+	// BR-AI-001: Phase state machine validation
+	// Per reconciliation-phases.md v2.1: Recommending phase REMOVED in v1.8
+	Context("phase constants validation", func() {
+		It("should NOT have Recommending phase constant", func() {
+			// Validate phase constants match authoritative docs
+			// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
+			validPhases := []string{
+				aianalysis.PhasePending,
+				aianalysis.PhaseInvestigating,
+				aianalysis.PhaseAnalyzing,
+				aianalysis.PhaseCompleted,
+				aianalysis.PhaseFailed,
+			}
+			Expect(validPhases).To(HaveLen(5), "Should have exactly 5 phases (no Recommending)")
+			Expect(validPhases).NotTo(ContainElement("Recommending"), "Recommending phase was removed in v1.8")
 		})
 	})
 })

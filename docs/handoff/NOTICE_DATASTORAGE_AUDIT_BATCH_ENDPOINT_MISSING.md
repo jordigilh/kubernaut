@@ -85,7 +85,7 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
     if err := json.NewDecoder(r.Body).Decode(&events); err != nil {
         // Handle error
     }
-    
+
     // Process each event in batch
     for _, event := range events {
         // ... existing single event logic
@@ -167,7 +167,7 @@ case []interface{}:
    ```
    ERROR: Failed to write audit batch
    error: "Data Storage Service batch write returned status 400"
-   
+
    Data Storage logs:
    Invalid JSON in request body: json: cannot unmarshal array into Go value of type map[string]interface {}
    ```

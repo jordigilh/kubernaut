@@ -310,17 +310,43 @@ var _ = Describe("Audit Helpers", func() {
 					return helpers.CreateMessageEscalatedEvent(notification)
 				}, true, ""),
 
-			// ERROR CASES (Edge Cases)
-			Entry("nil notification returns error",
+			// ERROR CASES (Edge Cases) - CreateMessageSentEvent
+			Entry("nil notification for CreateMessageSentEvent returns error",
 				"", "", "",
 				func() (*audit.AuditEvent, error) {
 					return helpers.CreateMessageSentEvent(nil, "slack")
 				}, false, "notification cannot be nil"),
-			Entry("empty channel string returns error",
+			Entry("empty channel for CreateMessageSentEvent returns error",
 				"", "", "",
 				func() (*audit.AuditEvent, error) {
 					return helpers.CreateMessageSentEvent(notification, "")
 				}, false, "channel cannot be empty"),
+
+			// ERROR CASES - CreateMessageFailedEvent (100% coverage fix)
+			Entry("nil notification for CreateMessageFailedEvent returns error",
+				"", "", "",
+				func() (*audit.AuditEvent, error) {
+					return helpers.CreateMessageFailedEvent(nil, "slack", fmt.Errorf("test error"))
+				}, false, "notification cannot be nil"),
+			Entry("empty channel for CreateMessageFailedEvent returns error",
+				"", "", "",
+				func() (*audit.AuditEvent, error) {
+					return helpers.CreateMessageFailedEvent(notification, "", fmt.Errorf("test error"))
+				}, false, "channel cannot be empty"),
+
+			// ERROR CASES - CreateMessageAcknowledgedEvent (100% coverage fix)
+			Entry("nil notification for CreateMessageAcknowledgedEvent returns error",
+				"", "", "",
+				func() (*audit.AuditEvent, error) {
+					return helpers.CreateMessageAcknowledgedEvent(nil)
+				}, false, "notification cannot be nil"),
+
+			// ERROR CASES - CreateMessageEscalatedEvent (100% coverage fix)
+			Entry("nil notification for CreateMessageEscalatedEvent returns error",
+				"", "", "",
+				func() (*audit.AuditEvent, error) {
+					return helpers.CreateMessageEscalatedEvent(nil)
+				}, false, "notification cannot be nil"),
 		)
 	})
 
@@ -376,6 +402,43 @@ var _ = Describe("Audit Helpers", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("channel cannot be empty"))
 				Expect(event).To(BeNil())
+			})
+		})
+
+		// ===== 100% COVERAGE FIX: Additional Input Validation =====
+
+		Context("when Metadata is nil (not empty map)", func() {
+			It("should use notification name as correlation_id fallback", func() {
+				// Edge Case: nil Metadata (different from empty map)
+				// BEHAVIOR: Event creation succeeds
+				// CORRECTNESS: correlation_id falls back to notification.Name
+				notification.Spec.Metadata = nil // nil, not map[string]string{}
+
+				event, err := helpers.CreateMessageSentEvent(notification, "slack")
+
+				Expect(err).ToNot(HaveOccurred(),
+					"BEHAVIOR: Event creation should succeed with nil Metadata")
+				Expect(event.CorrelationID).To(Equal(notification.Name),
+					"CORRECTNESS: Correlation ID MUST fallback to notification.Name when Metadata is nil")
+			})
+		})
+
+		Context("when error is nil for CreateMessageFailedEvent", func() {
+			It("should create event without error details", func() {
+				// Edge Case: nil error for failed event
+				// BEHAVIOR: Event creation succeeds
+				// CORRECTNESS: ErrorMessage is nil, event_data has no "error" key
+				event, err := helpers.CreateMessageFailedEvent(notification, "slack", nil)
+
+				Expect(err).ToNot(HaveOccurred(),
+					"BEHAVIOR: Event creation should succeed with nil error")
+				Expect(event.ErrorMessage).To(BeNil(),
+					"CORRECTNESS: ErrorMessage should be nil when no error provided")
+
+				var eventData map[string]interface{}
+				json.Unmarshal(event.EventData, &eventData)
+				Expect(eventData).ToNot(HaveKey("error"),
+					"CORRECTNESS: event_data should not have 'error' key when error is nil")
 			})
 		})
 

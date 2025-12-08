@@ -40,13 +40,15 @@ import (
 const (
 	// FinalizerName is the finalizer for AIAnalysis resources
 	FinalizerName = "aianalysis.kubernaut.ai/finalizer"
+)
 
-	// Phase constants for AIAnalysis lifecycle
-	// Per CRD enum: Pending;Investigating;Analyzing;Recommending;Completed;Failed
+// Phase constants imported from pkg/aianalysis/handler.go to avoid duplication
+// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
+// NOTE: Recommending phase REMOVED in v1.8 - workflow data captured in Investigating phase
+const (
 	PhasePending       = "Pending"
 	PhaseInvestigating = "Investigating"
 	PhaseAnalyzing     = "Analyzing"
-	PhaseRecommending  = "Recommending"
 	PhaseCompleted     = "Completed"
 	PhaseFailed        = "Failed"
 )
@@ -71,7 +73,8 @@ type AIAnalysisReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 // Reconcile implements the reconciliation loop for AIAnalysis
-// BR-AI-001: Phase state machine: Pending → Investigating → Analyzing → Recommending → Completed/Failed
+// BR-AI-001: Phase state machine: Pending → Investigating → Analyzing → Completed/Failed
+// Per reconciliation-phases.md v2.1: Recommending phase REMOVED in v1.8
 func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("aianalysis", req.NamespacedName)
 	log.Info("Reconciling AIAnalysis")
@@ -99,7 +102,8 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// 4. PHASE STATE MACHINE
-	// Per CRD enum: Pending;Investigating;Analyzing;Recommending;Completed;Failed
+	// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
+	// NOTE: Recommending phase REMOVED in v1.8 - workflow data captured in Investigating phase
 	switch analysis.Status.Phase {
 	case "", PhasePending:
 		return r.reconcilePending(ctx, analysis)
@@ -107,8 +111,6 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.reconcileInvestigating(ctx, analysis)
 	case PhaseAnalyzing:
 		return r.reconcileAnalyzing(ctx, analysis)
-	case PhaseRecommending:
-		return r.reconcileRecommending(ctx, analysis)
 	case PhaseCompleted, PhaseFailed:
 		// Terminal states - no action needed
 		log.Info("AIAnalysis in terminal state", "phase", analysis.Status.Phase)
@@ -216,17 +218,6 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 
 	// Stub fallback (for tests without handler wiring)
 	log.Info("No AnalyzingHandler configured - using stub")
-	return ctrl.Result{}, nil
-}
-
-// reconcileRecommending handles AIAnalysis in Recommending phase
-// BR-AI-075: Workflow selection output
-// TODO: Implement in Day 4
-func (r *AIAnalysisReconciler) reconcileRecommending(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	log := r.Log.WithValues("phase", "Recommending", "name", analysis.Name)
-	log.Info("Processing Recommending phase - stub")
-
-	// TODO: Implement workflow recommendation in Day 4
 	return ctrl.Result{}, nil
 }
 

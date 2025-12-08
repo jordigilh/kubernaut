@@ -18,7 +18,6 @@ package gateway
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,10 +32,8 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-func TestStormAggregationStatus(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Storm Aggregation Status Suite (DD-GATEWAY-011 Day 3)")
-}
+// Note: Test function is in suite_test.go (TestGatewayUnit)
+// This file only contains Describe blocks that are registered with the suite
 
 // ========================================
 // DD-GATEWAY-011 Day 3: Storm Aggregation Status Tests (TDD RED Phase)
@@ -114,7 +111,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 
 				// BEHAVIOR: Update storm aggregation status (first alert)
 				threshold := int32(5) // Default threshold
-				err := updater.UpdateStormAggregationStatus(ctx, rr, false, threshold)
+				err := updater.UpdateStormAggregationStatus(ctx, rr, false)
 
 				// CORRECTNESS: Storm aggregation initialized
 				Expect(err).ToNot(HaveOccurred())
@@ -156,7 +153,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 				beforeUpdate := time.Now().Add(-1 * time.Second)
 
 				// BEHAVIOR: Initialize storm aggregation
-				err := updater.UpdateStormAggregationStatus(ctx, rr, false, 5)
+				err := updater.UpdateStormAggregationStatus(ctx, rr, false)
 				Expect(err).ToNot(HaveOccurred())
 
 				// CORRECTNESS: StormDetectedAt is set
@@ -206,7 +203,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: Update storm aggregation (4th alert)
-				err := updater.UpdateStormAggregationStatus(ctx, rr, false, 5)
+				err := updater.UpdateStormAggregationStatus(ctx, rr, false)
 
 				// CORRECTNESS: Count incremented from 3 to 4
 				Expect(err).ToNot(HaveOccurred())
@@ -306,7 +303,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 				// BEHAVIOR: 5th alert arrives (threshold reached)
 				threshold := int32(5)
 				isThresholdReached := true // Caller determines this
-				err := updater.UpdateStormAggregationStatus(ctx, rr, isThresholdReached, threshold)
+				err := updater.UpdateStormAggregationStatus(ctx, rr, isThresholdReached)
 
 				// CORRECTNESS: IsPartOfStorm set to true
 				Expect(err).ToNot(HaveOccurred())
@@ -354,7 +351,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: 11th alert arrives (already past threshold)
-				err := updater.UpdateStormAggregationStatus(ctx, rr, true, 5)
+				err := updater.UpdateStormAggregationStatus(ctx, rr, true)
 
 				// CORRECTNESS: IsPartOfStorm stays true
 				Expect(err).ToNot(HaveOccurred())
@@ -401,7 +398,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 
 				// BEHAVIOR: 3rd alert (still below threshold)
 				isThresholdReached := false // Caller determines count < threshold
-				err := updater.UpdateStormAggregationStatus(ctx, rr, isThresholdReached, 5)
+				err := updater.UpdateStormAggregationStatus(ctx, rr, isThresholdReached)
 
 				// CORRECTNESS: IsPartOfStorm stays false
 				Expect(err).ToNot(HaveOccurred())
@@ -444,7 +441,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: Update should succeed (uses retry pattern internally)
-				err := updater.UpdateStormAggregationStatus(ctx, rr, false, 5)
+				err := updater.UpdateStormAggregationStatus(ctx, rr, false)
 
 				// CORRECTNESS: Update succeeds (retry handles conflicts)
 				Expect(err).ToNot(HaveOccurred())
@@ -459,4 +456,3 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 		})
 	})
 })
-
