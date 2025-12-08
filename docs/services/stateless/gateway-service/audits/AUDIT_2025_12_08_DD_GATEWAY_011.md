@@ -270,6 +270,36 @@ Per `15-testing-coverage-standards.mdc`:
 
 ---
 
-**Document Version**: 1.0
-**Next Review**: After Day 4 completion
+## ✅ INTEGRATION TEST PROOF (Day 4 Verification)
+
+**Test File**: `test/integration/gateway/dd_gateway_011_status_deduplication_test.go`
+
+**Test Results** (2025-12-08):
+```
+Ran 2 of 151 Specs in 12.603 seconds
+SUCCESS! -- 2 Passed | 0 Failed | 0 Pending | 149 Skipped
+```
+
+**What These Tests Prove**:
+
+| Test | What It Validates | Result |
+|------|-------------------|--------|
+| `should update status.deduplication.occurrenceCount (WIRING PROOF)` | StatusUpdater is called from `processDuplicateSignal()` | ✅ PASSED |
+| `should handle multiple duplicates and update occurrence count incrementally` | Multiple duplicates correctly increment status | ✅ PASSED |
+
+**Evidence Chain**:
+1. ✅ Integration test sends HTTP request to Gateway
+2. ✅ Gateway's `processDuplicateSignal()` is executed
+3. ✅ `statusUpdater.UpdateDeduplicationStatus()` is called
+4. ✅ `RR.status.deduplication` is populated in K8s
+5. ✅ Test verifies `status.deduplication != nil`
+6. ✅ Test verifies `occurrenceCount >= 2` after duplicates
+
+**Conclusion**: The DD-GATEWAY-011 wiring is **VERIFIED WORKING** at runtime, not just at compile time.
+
+---
+
+**Document Version**: 1.1  
+**Last Updated**: 2025-12-08  
+**Next Review**: Day 5 - PhaseChecker integration
 

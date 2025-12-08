@@ -34,6 +34,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 const (
@@ -89,18 +90,81 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 }
 
 // buildRequest constructs the HolmesGPT-API request from AIAnalysis spec
+// Per crd-schema.md: Include enrichment data (owner chain, detected labels) for AI context
 func (h *InvestigatingHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *client.IncidentRequest {
 	spec := analysis.Spec.AnalysisRequest.SignalContext
 
-	return &client.IncidentRequest{
-		Context: fmt.Sprintf("Incident in %s environment, target: %s/%s/%s, signal: %s",
-			spec.Environment,
-			spec.TargetResource.Namespace,
-			spec.TargetResource.Kind,
-			spec.TargetResource.Name,
-			spec.SignalType,
-		),
+	// Build context string
+	contextStr := fmt.Sprintf("Incident in %s environment, target: %s/%s/%s, signal: %s",
+		spec.Environment,
+		spec.TargetResource.Namespace,
+		spec.TargetResource.Kind,
+		spec.TargetResource.Name,
+		spec.SignalType,
+	)
+
+	req := &client.IncidentRequest{
+		Context: contextStr,
 	}
+
+	// Add enrichment data if available
+	enrichment := spec.EnrichmentResults
+
+	// Add owner chain for RCA context (DD-WORKFLOW-001 v1.7)
+	if len(enrichment.OwnerChain) > 0 {
+		req.OwnerChain = make([]client.OwnerChainEntry, 0, len(enrichment.OwnerChain))
+		for _, entry := range enrichment.OwnerChain {
+			req.OwnerChain = append(req.OwnerChain, client.OwnerChainEntry{
+				Namespace: entry.Namespace,
+				Kind:      entry.Kind,
+				Name:      entry.Name,
+			})
+		}
+	}
+
+	// Add detected labels for workflow filtering (DD-WORKFLOW-001)
+	if enrichment.DetectedLabels != nil {
+		req.DetectedLabels = h.convertDetectedLabelsToMap(enrichment.DetectedLabels)
+	}
+
+	// Add custom labels if present
+	if len(enrichment.CustomLabels) > 0 {
+		req.CustomLabels = enrichment.CustomLabels
+	}
+
+	return req
+}
+
+// convertDetectedLabelsToMap converts DetectedLabels struct to map for API request
+func (h *InvestigatingHandler) convertDetectedLabelsToMap(labels *sharedtypes.DetectedLabels) map[string]interface{} {
+	if labels == nil {
+		return nil
+	}
+
+	result := make(map[string]interface{})
+
+	// Boolean detection flags
+	result["gitOpsManaged"] = labels.GitOpsManaged
+	result["pdbProtected"] = labels.PDBProtected
+	result["hpaEnabled"] = labels.HPAEnabled
+	result["stateful"] = labels.Stateful
+	result["helmManaged"] = labels.HelmManaged
+	result["networkIsolated"] = labels.NetworkIsolated
+
+	// String values (only include if set)
+	if labels.GitOpsTool != "" {
+		result["gitOpsTool"] = labels.GitOpsTool
+	}
+	if labels.ServiceMesh != "" {
+		result["serviceMesh"] = labels.ServiceMesh
+	}
+
+	// Failed detections (for transparency)
+	if len(labels.FailedDetections) > 0 {
+		result["failedDetections"] = labels.FailedDetections
+	}
+
+	return result
 }
 
 // handleError processes errors from HolmesGPT-API
