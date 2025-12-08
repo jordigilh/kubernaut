@@ -197,10 +197,23 @@ To achieve this, we need **all services deployable and functional** in a Kind cl
 - `POST /api/v1/signals/prometheus` - Alert ingestion endpoint
 - Creates `RemediationRequest` CRDs in cluster
 
+**Kubeconfig Location** (per DD-TEST-001):
+```bash
+# Standard location: ~/.kube/kind-{cluster-name}
+~/.kube/kind-config   # Current Gateway E2E kubeconfig
+
+# Example for RO E2E with multiple services:
+~/.kube/kubernaut-e2e-kubeconfig
+```
+
 **To integrate with RO E2E**:
 ```go
 // Use existing Gateway infrastructure
 import "github.com/jordigilh/kubernaut/test/infrastructure"
+
+// Set kubeconfig path (standard location: ~/.kube/)
+homeDir, _ := os.UserHomeDir()
+kubeconfigPath := filepath.Join(homeDir, ".kube", "kubernaut-e2e-kubeconfig")
 
 // In BeforeSuite (once)
 infrastructure.CreateGatewayCluster("kubernaut-e2e", kubeconfigPath, GinkgoWriter)
@@ -209,7 +222,7 @@ infrastructure.CreateGatewayCluster("kubernaut-e2e", kubeconfigPath, GinkgoWrite
 infrastructure.DeployTestServices(ctx, namespace, kubeconfigPath, GinkgoWriter)
 
 // Gateway will be available at:
-// http://gateway-service.<namespace>.svc.cluster.local:8080
+// http://localhost:8080 (via NodePort per DD-TEST-001)
 ```
 
 **CRD Flow**: Gateway creates `RemediationRequest` → RO watches and reconciles
@@ -261,7 +274,7 @@ infrastructure.DeployTestServices(ctx, namespace, kubeconfigPath, GinkgoWriter)
 - Ready for Kind E2E: **~2 days** (Day 11 work)
   - Day 11 AM: Create `test/infrastructure/signalprocessing.go`
   - Day 11 PM: Create E2E test suite
-  
+
 #### 7. Integration Notes for RO Team
 
 **SignalProcessing exposes**:

@@ -6,8 +6,15 @@
 #   NodePort (API): 30082
 #   NodePort (Metrics): 30182
 #
+# Kubeconfig Convention (per TESTING_GUIDELINES.md):
+#   Path: ~/.kube/signalprocessing-kubeconfig
+#   Pattern: ~/.kube/<service>-kubeconfig
+#
 # Usage:
-#   kind create cluster --name signalprocessing-e2e --config test/infrastructure/kind-signalprocessing-config.yaml
+#   kind create cluster \
+#     --name signalprocessing-e2e \
+#     --config test/infrastructure/kind-signalprocessing-config.yaml \
+#     --kubeconfig ~/.kube/signalprocessing-kubeconfig
 
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
