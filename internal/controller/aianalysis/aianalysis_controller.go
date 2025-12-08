@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 )
@@ -57,6 +58,7 @@ const (
 
 // AIAnalysisReconciler reconciles an AIAnalysis object
 // BR-AI-001: CRD Lifecycle Management
+// DD-AUDIT-003: P0 priority for audit traces
 type AIAnalysisReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
@@ -66,6 +68,9 @@ type AIAnalysisReconciler struct {
 	// Phase handlers (wired in via dependency injection)
 	InvestigatingHandler *handlers.InvestigatingHandler
 	AnalyzingHandler     *handlers.AnalyzingHandler
+
+	// Audit client for recording audit events (DD-AUDIT-003)
+	AuditClient *audit.AuditClient
 }
 
 // +kubebuilder:rbac:groups=aianalysis.kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
@@ -139,15 +144,16 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	// BR-AI-017: Record metrics after phase processing
-	r.recordPhaseMetrics(currentPhase, analysis, err)
+	// BR-AI-017: Record metrics and audit events after phase processing
+	r.recordPhaseMetrics(ctx, currentPhase, analysis, err)
 
 	return result, err
 }
 
-// recordPhaseMetrics records metrics after phase processing
+// recordPhaseMetrics records metrics and audit events after phase processing
 // BR-AI-017: Track reconciliation outcomes and failures
-func (r *AIAnalysisReconciler) recordPhaseMetrics(phase string, analysis *aianalysisv1.AIAnalysis, err error) {
+// DD-AUDIT-003: Record audit events for terminal states
+func (r *AIAnalysisReconciler) recordPhaseMetrics(ctx context.Context, phase string, analysis *aianalysisv1.AIAnalysis, err error) {
 	result := "success"
 	if err != nil {
 		result = "error"
@@ -165,6 +171,11 @@ func (r *AIAnalysisReconciler) recordPhaseMetrics(phase string, analysis *aianal
 			subReason = "Unknown"
 		}
 		metrics.RecordFailure(reason, subReason)
+
+		// DD-AUDIT-003: Record error audit event
+		if r.AuditClient != nil && err != nil {
+			r.AuditClient.RecordError(ctx, analysis, phase, err)
+		}
 	}
 
 	// Track confidence scores for successful analyses
@@ -172,6 +183,11 @@ func (r *AIAnalysisReconciler) recordPhaseMetrics(phase string, analysis *aianal
 		signalType := analysis.Spec.AnalysisRequest.SignalContext.SignalType
 		confidence := analysis.Status.SelectedWorkflow.Confidence
 		metrics.RecordConfidenceScore(signalType, confidence)
+	}
+
+	// DD-AUDIT-003: Record analysis complete audit event for terminal states
+	if r.AuditClient != nil && (analysis.Status.Phase == PhaseCompleted || analysis.Status.Phase == PhaseFailed) {
+		r.AuditClient.RecordAnalysisComplete(ctx, analysis)
 	}
 }
 

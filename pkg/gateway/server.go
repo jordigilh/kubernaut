@@ -99,8 +99,8 @@ type Server struct {
 	stormDetector   *processing.StormDetector
 	stormAggregator *processing.StormAggregator
 	// DD-GATEWAY-011: Status-based deduplication and storm aggregation (Redis deprecation)
-	statusUpdater *processing.StatusUpdater                        // Updates RR status.deduplication and status.stormAggregation
-	phaseChecker  *processing.PhaseBasedDeduplicationChecker       // Phase-based deduplication logic
+	statusUpdater *processing.StatusUpdater                  // Updates RR status.deduplication and status.stormAggregation
+	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	// Note: classifier, priorityEngine, and pathDecider removed (2025-12-06)
 	// Environment/Priority classification and remediation path now owned by Signal Processing
 	// per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
@@ -321,10 +321,10 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		statusUpdater: statusUpdater,
 		phaseChecker:  phaseChecker,
 		// Note: classifier, priorityEngine, pathDecider removed - SP owns classification and path
-		crdCreator: crdCreator,
-		redisClient:     redisClient,
-		k8sClient:       k8sClient,
-		ctrlClient:      ctrlClient,
+		crdCreator:  crdCreator,
+		redisClient: redisClient,
+		k8sClient:   k8sClient,
+		ctrlClient:  ctrlClient,
 		// DD-GATEWAY-004: Authentication middleware removed
 		// authMiddleware:  authMiddleware, // REMOVED
 		// rateLimiter:     rateLimiter,    // REMOVED
@@ -1008,12 +1008,12 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 // if the alert was accepted (HTTP status code).
 // See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type ProcessingResponse struct {
-	Status                      string                            `json:"status"` // "created", "duplicate", or "accepted"
-	Message                     string                            `json:"message"`
-	Fingerprint                 string                            `json:"fingerprint"`
-	Duplicate                   bool                              `json:"duplicate"`
-	RemediationRequestName      string                            `json:"remediationRequestName,omitempty"`
-	RemediationRequestNamespace string                            `json:"remediationRequestNamespace,omitempty"`
+	Status                      string `json:"status"` // "created", "duplicate", or "accepted"
+	Message                     string `json:"message"`
+	Fingerprint                 string `json:"fingerprint"`
+	Duplicate                   bool   `json:"duplicate"`
+	RemediationRequestName      string `json:"remediationRequestName,omitempty"`
+	RemediationRequestNamespace string `json:"remediationRequestNamespace,omitempty"`
 	// Note: RemediationPath removed (2025-12-06) - SP derives risk_tolerance via Rego per DD-WORKFLOW-001
 	Metadata *processing.DeduplicationMetadata `json:"metadata,omitempty"` // Deduplication info only
 	// Storm aggregation fields (BR-GATEWAY-016)
@@ -1453,7 +1453,7 @@ func (s *Server) monitorWindowExpiration(ctx context.Context, windowID string) {
 
 	select {
 	case <-time.After(windowDuration):
-	s.logger.Info("Storm aggregation window expired, cleaning up",
+		s.logger.Info("Storm aggregation window expired, cleaning up",
 			"windowID", windowID)
 	// Cleanup: Window resources are already in CRD, just remove Redis keys
 	// Note: Resources have 2x TTL for retrieval, will auto-expire

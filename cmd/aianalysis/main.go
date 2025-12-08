@@ -23,6 +23,7 @@ package main
 
 import (
 	"flag"
+	"net/http"
 	"os"
 	"time"
 
@@ -36,9 +37,11 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/client"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 )
 
 var (
@@ -63,6 +66,7 @@ func main() {
 	var holmesGPTURL string
 	var holmesGPTTimeout time.Duration
 	var regoPolicyPath string
+	var dataStorageURL string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -70,6 +74,7 @@ func main() {
 	flag.StringVar(&holmesGPTURL, "holmesgpt-api-url", getEnvOrDefault("HOLMESGPT_API_URL", "http://holmesgpt-api:8080"), "HolmesGPT-API base URL.")
 	flag.DurationVar(&holmesGPTTimeout, "holmesgpt-api-timeout", 60*time.Second, "HolmesGPT-API request timeout.")
 	flag.StringVar(&regoPolicyPath, "rego-policy-path", getEnvOrDefault("REGO_POLICY_PATH", "/etc/kubernaut/policies/approval.rego"), "Path to Rego approval policy file.")
+	flag.StringVar(&dataStorageURL, "datastorage-url", getEnvOrDefault("DATASTORAGE_URL", "http://datastorage:8080"), "Data Storage Service URL for audit events.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -117,6 +122,29 @@ func main() {
 	})
 
 	// ========================================
+	// DD-AUDIT-003: Wire audit client for P0 audit traces
+	// ========================================
+	setupLog.Info("Creating audit client", "dataStorageURL", dataStorageURL)
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	dsClient := sharedaudit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
+	auditStore, err := sharedaudit.NewBufferedStore(
+		dsClient,
+		sharedaudit.DefaultConfig(),
+		"aianalysis",
+		ctrl.Log.WithName("audit"),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create audit store, audit will be disabled")
+		// Continue without audit - graceful degradation per DD-AUDIT-002
+	}
+
+	// Create service-specific audit client
+	var auditClient *audit.AuditClient
+	if auditStore != nil {
+		auditClient = audit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
+	}
+
+	// ========================================
 	// Create phase handlers (BR-AI-007, BR-AI-012)
 	// ========================================
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
@@ -130,6 +158,7 @@ func main() {
 		Log:                  controllerLog,
 		InvestigatingHandler: investigatingHandler, // BR-AI-007: HolmesGPT integration
 		AnalyzingHandler:     analyzingHandler,     // BR-AI-012: Rego policy evaluation
+		AuditClient:          auditClient,          // DD-AUDIT-003: P0 audit traces
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AIAnalysis")
 		os.Exit(1)
