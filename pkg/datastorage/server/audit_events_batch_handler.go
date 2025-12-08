@@ -307,7 +307,7 @@ func (s *Server) parseAndValidateBatchEvent(payload map[string]interface{}) (*re
 		ResourceType:      resourceType,
 		ResourceID:        resourceID,
 		ResourceNamespace: resourceNamespace,
-		ClusterName:       clusterName,
+		ClusterID:         clusterName, // ClusterID per ADR-034 schema
 		Severity:          severity,
 		EventData:         eventData,
 	}, nil

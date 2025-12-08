@@ -41,18 +41,13 @@ func NewHTTPDataStorageClient(baseURL string, httpClient *http.Client) DataStora
 
 // StoreBatch writes a batch of audit events to Data Storage Service via HTTP POST
 //
-// Endpoint: POST {baseURL}/api/v1/audit/events
+// Endpoint: POST {baseURL}/api/v1/audit/events/batch
 // Content-Type: application/json
 //
 // This method implements the DataStorageClient interface and is used by BufferedAuditStore
-// for efficient batch writes.
+// for efficient batch writes. Per DD-AUDIT-002, the batch endpoint accepts JSON arrays.
 //
-// TEMPORARY WORKAROUND (Dec 2025):
-// Data Storage currently only accepts single events, not batch arrays.
-// This implementation sends events one-at-a-time until Data Storage implements
-// the batch endpoint per DD-AUDIT-002.
-// See: docs/handoff/NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md
-//
+// See: DD-AUDIT-002 (Audit Shared Library Design)
 // See: ADR-038 (Async Buffered Audit Ingestion)
 // See: docs/services/stateless/data-storage/api-specification.md
 func (c *HTTPDataStorageClient) StoreBatch(ctx context.Context, events []*AuditEvent) error {
@@ -60,40 +55,44 @@ func (c *HTTPDataStorageClient) StoreBatch(ctx context.Context, events []*AuditE
 		return nil // No events to write
 	}
 
-	// WORKAROUND: Send events one-at-a-time until Data Storage implements batch endpoint
-	// See: NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md
-	// TODO: Revert to batch write when Data Storage implements POST /api/v1/audit/events/batch
-	var lastErr error
-	successCount := 0
+	endpoint := fmt.Sprintf("%s/api/v1/audit/events/batch", c.baseURL)
 
-	for _, event := range events {
-		if err := c.storeSingleEvent(ctx, event); err != nil {
-			// Log error but continue with remaining events (graceful degradation per BR-NOT-063)
-			lastErr = err
-			continue
-		}
-		successCount++
+	// Convert all events to the format Data Storage expects
+	payloads := make([]map[string]interface{}, len(events))
+	for i, event := range events {
+		payloads[i] = c.eventToPayload(event)
 	}
 
-	// Return error only if ALL events failed
-	if successCount == 0 && lastErr != nil {
-		return fmt.Errorf("all %d audit events failed to write: %w", len(events), lastErr)
+	jsonData, err := json.Marshal(payloads)
+	if err != nil {
+		return fmt.Errorf("failed to marshal audit events batch: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("Data Storage Service returned status %d", resp.StatusCode)
 	}
 
 	return nil
 }
 
-// storeSingleEvent writes a single audit event to Data Storage Service
-//
-// WORKAROUND: This method is used until Data Storage implements batch endpoint
-// See: docs/handoff/NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md
-func (c *HTTPDataStorageClient) storeSingleEvent(ctx context.Context, event *AuditEvent) error {
-	endpoint := fmt.Sprintf("%s/api/v1/audit/events", c.baseURL)
-
-	// Convert AuditEvent to the format Data Storage expects (map[string]interface{})
+// eventToPayload converts an AuditEvent to the format Data Storage expects
+func (c *HTTPDataStorageClient) eventToPayload(event *AuditEvent) map[string]interface{} {
 	payload := map[string]interface{}{
 		"version":         event.EventVersion,
-		"service":         "notification", // TODO: Make configurable per service
+		"service":         "aianalysis", // Per DD-AUDIT-003
 		"event_type":      event.EventType,
 		"event_timestamp": event.EventTimestamp.Format("2006-01-02T15:04:05.000Z07:00"),
 		"correlation_id":  event.CorrelationID,
@@ -134,6 +133,18 @@ func (c *HTTPDataStorageClient) storeSingleEvent(ctx context.Context, event *Aud
 	if event.SpanID != nil && *event.SpanID != "" {
 		payload["span_id"] = *event.SpanID
 	}
+
+	return payload
+}
+
+// storeSingleEvent writes a single audit event to Data Storage Service
+//
+// WORKAROUND: This method is used until Data Storage implements batch endpoint
+// See: docs/handoff/NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md
+func (c *HTTPDataStorageClient) storeSingleEvent(ctx context.Context, event *AuditEvent) error {
+	endpoint := fmt.Sprintf("%s/api/v1/audit/events", c.baseURL)
+
+	payload := c.eventToPayload(event)
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {

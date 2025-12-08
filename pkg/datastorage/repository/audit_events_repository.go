@@ -267,6 +267,165 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	return event, nil
 }
 
+// CreateBatch inserts multiple audit events in a single transaction
+// DD-AUDIT-002: StoreBatch interface for batch audit event storage
+// BR-AUDIT-001: Complete audit trail with no data loss
+// Uses a single transaction for atomic batch insert (all succeed or all fail)
+func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*AuditEvent) ([]*AuditEvent, error) {
+	if len(events) == 0 {
+		return nil, fmt.Errorf("batch cannot be empty")
+	}
+
+	// Start transaction for atomic batch insert
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	createdEvents := make([]*AuditEvent, 0, len(events))
+
+	// Prepare batch insert statement
+	query := `
+		INSERT INTO audit_events (
+			event_id, event_timestamp, event_date, event_type,
+			event_category, event_action, event_outcome,
+			correlation_id, parent_event_id, parent_event_date,
+			resource_type, resource_id, namespace, cluster_name,
+			actor_id, actor_type,
+			severity, duration_ms, error_code, error_message,
+			retention_days, is_sensitive, event_data
+		) VALUES (
+			$1, $2, $3, $4,
+			$5, $6, $7,
+			$8, $9, $10,
+			$11, $12, $13, $14,
+			$15, $16,
+			$17, $18, $19, $20,
+			$21, $22, $23
+		)
+		RETURNING event_timestamp
+	`
+
+	stmt, err := tx.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for _, event := range events {
+		// Generate UUID if not provided
+		if event.EventID == uuid.Nil {
+			event.EventID = uuid.New()
+		}
+
+		// Set event_timestamp if not provided
+		if event.EventTimestamp.IsZero() {
+			event.EventTimestamp = time.Now().UTC()
+		}
+
+		// Set event_date from event_timestamp (for partitioning)
+		eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
+		event.EventDate = eventDate
+
+		// Marshal event_data to JSONB
+		eventDataJSON, marshalErr := json.Marshal(event.EventData)
+		if marshalErr != nil {
+			err = fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
+			return nil, err
+		}
+
+		// Handle optional fields with sql.Null* types
+		var parentEventID sql.NullString
+		var parentEventDate sql.NullTime
+		if event.ParentEventID != nil {
+			parentEventID = sql.NullString{String: event.ParentEventID.String(), Valid: true}
+			if event.ParentEventDate != nil {
+				parentEventDate = sql.NullTime{Time: *event.ParentEventDate, Valid: true}
+			}
+		}
+
+		var namespace, clusterName sql.NullString
+		var errorCode, errorMessage, severity sql.NullString
+		var durationMs sql.NullInt32
+		if event.ResourceNamespace != "" {
+			namespace = sql.NullString{String: event.ResourceNamespace, Valid: true}
+		}
+		if event.ClusterID != "" {
+			clusterName = sql.NullString{String: event.ClusterID, Valid: true}
+		}
+		if event.ErrorCode != "" {
+			errorCode = sql.NullString{String: event.ErrorCode, Valid: true}
+		}
+		if event.ErrorMessage != "" {
+			errorMessage = sql.NullString{String: event.ErrorMessage, Valid: true}
+		}
+		if event.Severity != "" {
+			severity = sql.NullString{String: event.Severity, Valid: true}
+		}
+		if event.DurationMs != 0 {
+			durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
+		}
+
+		// Set default retention days
+		retentionDays := event.RetentionDays
+		if retentionDays == 0 {
+			retentionDays = 2555
+		}
+
+		// Execute insert
+		var returnedTimestamp time.Time
+		execErr := stmt.QueryRowContext(ctx,
+			event.EventID,
+			event.EventTimestamp,
+			eventDate,
+			event.EventType,
+			event.EventCategory,
+			event.EventAction,
+			event.EventOutcome,
+			event.CorrelationID,
+			parentEventID,
+			parentEventDate,
+			event.ResourceType,
+			event.ResourceID,
+			namespace,
+			clusterName,
+			event.ActorID,
+			event.ActorType,
+			severity,
+			durationMs,
+			errorCode,
+			errorMessage,
+			retentionDays,
+			event.IsSensitive,
+			eventDataJSON,
+		).Scan(&returnedTimestamp)
+
+		if execErr != nil {
+			err = fmt.Errorf("failed to insert event %s: %w", event.EventID, execErr)
+			return nil, err
+		}
+
+		event.EventTimestamp = returnedTimestamp
+		createdEvents = append(createdEvents, event)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit batch transaction: %w", err)
+	}
+
+	r.logger.Info("Batch audit events created",
+		"count", len(createdEvents),
+	)
+
+	return createdEvents, nil
+}
+
 // PaginationMetadata contains pagination information for query results
 // DD-STORAGE-010: Offset-based pagination metadata
 type PaginationMetadata struct {
