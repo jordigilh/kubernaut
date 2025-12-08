@@ -27,12 +27,15 @@ services:
 
   # PostgreSQL for integration tests
   # Using self-hosted multi-arch image to avoid Docker Hub rate limits
+  # Port mapping per DD-TEST-001: 15433 (host) → 5432 (container)
   postgres:
     image: quay.io/jordigilh/pgvector:pg16
     environment:
       POSTGRES_DB: action_history
       POSTGRES_USER: slm_user
       POSTGRES_PASSWORD: test_password
+    ports:
+      - "15433:5432"
     networks:
       - test-network
     healthcheck:
@@ -43,8 +46,11 @@ services:
 
   # Redis for integration tests
   # Using self-hosted multi-arch image to avoid Docker Hub rate limits
+  # Port mapping per DD-TEST-001: 16379 (host) → 6379 (container)
   redis:
     image: quay.io/jordigilh/redis:7-alpine
+    ports:
+      - "16379:6379"
     networks:
       - test-network
     healthcheck:
@@ -54,12 +60,16 @@ services:
       retries: 10
 
   # Data Storage Service for integration tests
+  # Port mapping per DD-TEST-001: 18090 (host) → 8080 (container)
   datastorage:
     build:
       context: .
       dockerfile: docker/data-storage.Dockerfile
     environment:
       - CONFIG_PATH=/etc/datastorage/config.yaml
+    ports:
+      - "18090:8080"
+      - "19090:9090"  # Metrics port
     volumes:
       - ./test/integration/datastorage/config:/etc/datastorage:ro
     networks:

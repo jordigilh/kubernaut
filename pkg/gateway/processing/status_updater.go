@@ -117,36 +117,12 @@ func (u *StatusUpdater) UpdateDeduplicationStatus(ctx context.Context, rr *remed
 // - ctx: Context for cancellation and timeout
 // - rr: RemediationRequest to update
 // - isThresholdReached: Whether storm threshold has been reached
+// - threshold: Storm threshold from config (default: 5)
 //
 // Returns:
 // - error: K8s API errors
-func (u *StatusUpdater) UpdateStormAggregationStatus(ctx context.Context, rr *remediationv1alpha1.RemediationRequest, isThresholdReached bool) error {
-	return retry.RetryOnConflict(GatewayRetryBackoff, func() error {
-		// Refetch to get latest resourceVersion
-		if err := u.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
-			return err
-		}
-
-		// Update ONLY Gateway-owned status.stormAggregation fields
-		now := metav1.Now()
-		if rr.Status.StormAggregation == nil {
-			// Initialize storm aggregation status
-			rr.Status.StormAggregation = &remediationv1alpha1.StormAggregationStatus{
-				AggregatedCount: 1,
-				StormDetectedAt: &now,
-			}
-		} else {
-			// Increment aggregated count
-			rr.Status.StormAggregation.AggregatedCount++
-		}
-
-		// Set storm flag if threshold reached
-		if isThresholdReached {
-			rr.Status.StormAggregation.IsPartOfStorm = true
-		}
-
-		// Use Status().Update() to update only the status subresource
-		return u.client.Status().Update(ctx, rr)
-	})
+func (u *StatusUpdater) UpdateStormAggregationStatus(ctx context.Context, rr *remediationv1alpha1.RemediationRequest, isThresholdReached bool, threshold int32) error {
+	// DD-GATEWAY-011 Day 3: RED phase stub - return not implemented error
+	// This will be implemented following strict TDD after tests are written
+	return fmt.Errorf("UpdateStormAggregationStatus not implemented yet (DD-GATEWAY-011 Day 3 RED phase)")
 }
-

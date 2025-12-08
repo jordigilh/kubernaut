@@ -141,12 +141,14 @@ var _ = Describe("Metrics Endpoint E2E", func() {
             body, _ := io.ReadAll(resp.Body)
             metricsText := string(body)
 
-            // Verify expected metrics exist
+            // Verify expected metrics exist per DD-005 naming convention
+            // Format: {service}_{component}_{metric_name}_{unit}
+            // Note: HAPI client-side metrics removed in v1.13 (HAPI tracks server-side)
             expectedMetrics := []string{
-                "aianalysis_reconciliations_total",
-                "aianalysis_phase_duration_seconds",
-                "aianalysis_holmesgpt_api_calls_total",
-                "aianalysis_errors_total",
+                "aianalysis_reconciler_reconciliations_total",   // Throughput SLA
+                "aianalysis_reconciler_duration_seconds",        // Latency SLA (<60s)
+                "aianalysis_failures_total",                     // Failure mode tracking
+                "aianalysis_rego_evaluations_total",             // Policy decision tracking
             }
 
             for _, metric := range expectedMetrics {

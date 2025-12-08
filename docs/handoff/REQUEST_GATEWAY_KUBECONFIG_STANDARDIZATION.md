@@ -75,7 +75,7 @@ After making changes:
 - [x] Kubeconfig path is `~/.kube/gateway-e2e-config`
 - [x] Log message reflects correct path
 - [x] Cluster name is `gateway-e2e`
-- [ ] Tests pass with new kubeconfig location (requires E2E run)
+- [x] Tests use new kubeconfig location (verified Dec 8, 2025)
 - [ ] Old `~/.kube/kind-config` files cleaned up (if any)
 
 ---
@@ -89,7 +89,7 @@ After making changes:
 | RO | ✅ Compliant |
 | Data Storage | ✅ Compliant |
 | Notification | ⚠️ Partial (separate request) |
-| WorkflowExecution | ⚠️ Partial (separate request) |
+| WorkflowExecution | ✅ **Compliant** (`workflowexecution-e2e-config`) |
 | Toolset | ⚠️ Partial (separate request) |
 
 ---

@@ -438,3 +438,101 @@ environment:
   - LLM_PROVIDER=mock
   - MOCK_LLM_ENABLED=true
 ```
+
+---
+
+## 🔐 **Kubeconfig Isolation Policy**
+
+### E2E Test Kubeconfig Standard
+
+**MANDATORY**: All E2E tests MUST use service-specific kubeconfig files to prevent conflicts and enable parallel test execution.
+
+#### Naming Convention
+
+| Element | Pattern | Example |
+|---------|---------|---------|
+| **Kubeconfig Path** | `~/.kube/{service}-e2e-config` | `~/.kube/gateway-e2e-config` |
+| **Cluster Name** | `{service}-e2e` | `gateway-e2e` |
+| **Environment Variable** | `KUBECONFIG=~/.kube/{service}-e2e-config` | - |
+
+#### Service-Specific Paths
+
+| Service | Kubeconfig Path | Cluster Name |
+|---------|-----------------|--------------|
+| Gateway | `~/.kube/gateway-e2e-config` | `gateway-e2e` |
+| SignalProcessing | `~/.kube/signalprocessing-e2e-config` | `signalprocessing-e2e` |
+| AIAnalysis | `~/.kube/aianalysis-e2e-config` | `aianalysis-e2e` |
+| WorkflowExecution | `~/.kube/workflowexecution-e2e-config` | `workflowexecution-e2e` |
+| Notification | `~/.kube/notification-e2e-config` | `notification-e2e` |
+| DataStorage | `~/.kube/datastorage-e2e-config` | `datastorage-e2e` |
+| RemediationOrchestrator | `~/.kube/ro-e2e-config` | `ro-e2e` |
+
+#### Implementation Pattern
+
+```go
+// test/e2e/{service}/{service}_e2e_suite_test.go
+
+var _ = SynchronizedBeforeSuite(func() []byte {
+    homeDir, _ := os.UserHomeDir()
+
+    // Standard kubeconfig location: ~/.kube/{service}-e2e-config
+    // Per docs/development/business-requirements/TESTING_GUIDELINES.md
+    kubeconfigPath := fmt.Sprintf("%s/.kube/%s-e2e-config", homeDir, serviceName)
+
+    // Create Kind cluster with explicit kubeconfig path
+    err := infrastructure.CreateCluster(clusterName, kubeconfigPath, GinkgoWriter)
+    Expect(err).ToNot(HaveOccurred())
+
+    // Set KUBECONFIG environment variable
+    os.Setenv("KUBECONFIG", kubeconfigPath)
+
+    return []byte(kubeconfigPath)
+}, func(data []byte) {
+    kubeconfigPath = string(data)
+    os.Setenv("KUBECONFIG", kubeconfigPath)
+})
+```
+
+#### Shell Commands
+
+```bash
+# Create Kind cluster with explicit kubeconfig
+kind create cluster \
+  --name {service}-e2e \
+  --config test/infrastructure/kind-{service}-config.yaml \
+  --kubeconfig ~/.kube/{service}-e2e-config
+
+# Set KUBECONFIG for subsequent commands
+export KUBECONFIG=~/.kube/{service}-e2e-config
+
+# Verify cluster access
+kubectl cluster-info
+
+# Cleanup
+kind delete cluster --name {service}-e2e
+rm -f ~/.kube/{service}-e2e-config
+```
+
+#### Why This Matters
+
+1. **Isolation**: Prevents kubeconfig collisions when multiple E2E tests run on same machine
+2. **Clarity**: Kubeconfig filename identifies which service owns it
+3. **Safety**: Reduces risk of accidentally using wrong cluster credentials
+4. **Discoverability**: Easy to list all E2E configs: `ls ~/.kube/*-e2e-config`
+5. **Parallel Execution**: Multiple service E2E tests can run simultaneously
+
+#### Anti-Patterns to Avoid
+
+```go
+// ❌ WRONG: Generic name that can conflict
+kubeconfigPath = "~/.kube/kind-config"
+
+// ❌ WRONG: Using cluster name instead of service name
+kubeconfigPath = fmt.Sprintf("~/.kube/kind-%s", clusterName)
+
+// ❌ WRONG: Hardcoded path without service identifier
+kubeconfigPath = "/tmp/kubeconfig"
+
+// ✅ CORRECT: Service-specific E2E config
+kubeconfigPath = fmt.Sprintf("%s/.kube/%s-e2e-config", homeDir, serviceName)
+```

@@ -116,7 +116,7 @@ All changes have been implemented and verified:
 ```
 E2E Test Run: SUCCESS
 Kubeconfig Location: /Users/jgil/.kube/notification-e2e-config
-Test Result: 1/1 Passed (100.7 seconds)
+Test Result: 12/12 Passed (276.7 seconds)
 Cleanup: Cluster deleted, kubeconfig removed
 ```
 

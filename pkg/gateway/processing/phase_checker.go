@@ -123,4 +123,3 @@ func IsTerminalPhase(phase string) bool {
 		return false
 	}
 }
-
