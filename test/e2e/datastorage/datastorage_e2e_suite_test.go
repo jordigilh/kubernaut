@@ -100,7 +100,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("  • PostgreSQL with pgvector (audit events storage)")
 		logger.Info("  • Redis (DLQ fallback)")
 		logger.Info("  • Data Storage Docker image (build + load)")
-		logger.Info("  • Kubeconfig: ~/.kube/kind-config-datastorage")
+		logger.Info("  • Kubeconfig: ~/.kube/datastorage-e2e-config")
 		logger.Info("")
 		logger.Info("Note: All tests share the same infrastructure via NodePort")
 		logger.Info("      No kubectl port-forward needed - eliminates instability")
@@ -110,8 +110,9 @@ var _ = SynchronizedBeforeSuite(
 		clusterName = "datastorage-e2e"
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
-		// Use unique kubeconfig path to avoid conflicts with other E2E tests
-		kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config-datastorage", homeDir)
+		// Use isolated kubeconfig path per TESTING_GUIDELINES.md section "Kubeconfig Isolation Policy"
+		// Convention: ~/.kube/{serviceName}-e2e-config (NEVER ~/.kube/config)
+		kubeconfigPath = fmt.Sprintf("%s/.kube/datastorage-e2e-config", homeDir)
 
 		// Create Kind cluster with NodePort exposure (ONCE for all tests)
 		err = infrastructure.CreateDataStorageCluster(clusterName, kubeconfigPath, GinkgoWriter)

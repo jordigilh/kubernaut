@@ -63,7 +63,7 @@ def ensure_test_workflows(data_storage_stack):
     DD-WORKFLOW-002 v3.0: workflow_id is UUID (auto-generated),
     we verify by searching for expected workflows.
     """
-    data_storage_url = integration_infrastructure["data_storage_url"]
+    data_storage_url = data_storage_stack
 
     # Verify test workflows exist by searching
     try:
@@ -323,7 +323,7 @@ class TestWorkflowCatalogContainerImageDirectAPI:
 
     def test_direct_api_search_returns_container_image(
         self,
-        integration_infrastructure,
+        data_storage_stack,
         ensure_test_workflows
     ):
         """
@@ -335,7 +335,7 @@ class TestWorkflowCatalogContainerImageDirectAPI:
         This validates the Data Storage API directly, independent of
         the HolmesGPT tool transformation.
         """
-        data_storage_url = integration_infrastructure["data_storage_url"]
+        data_storage_url = data_storage_stack
 
         # ACT: Direct API call to Data Storage
         response = requests.post(

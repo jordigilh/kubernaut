@@ -84,7 +84,7 @@ func main() {
 	)
 
 	// Setup RemediationOrchestrator controller
-	if err = controller.NewReconciler().SetupWithManager(mgr); err != nil {
+	if err = controller.NewReconciler(mgr.GetClient(), mgr.GetScheme()).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
 	}

@@ -15,7 +15,7 @@
 
 **Purpose**: Enhance integration tests to validate database content, not just row counts (TDD CORRECTNESS pattern).
 
-**Problem Identified**:
+**Problem Identified**: 
 - Integration tests for `audit_events_write_api_test.go` only validated row counts (`SELECT COUNT(*)`)
 - Missing CORRECTNESS validation: verify stored data matches input values
 - This gap could allow silent data corruption bugs to pass tests
@@ -39,7 +39,7 @@
 **Testing Methodology Added to Standards**:
 
 > **MANDATORY CORRECTNESS VALIDATION PATTERN**
->
+> 
 > For all integration tests that persist data to database:
 > 1. ✅ **BEHAVIOR**: HTTP response status code validation
 > 2. ✅ **CORRECTNESS**: Query database and verify all stored fields match input

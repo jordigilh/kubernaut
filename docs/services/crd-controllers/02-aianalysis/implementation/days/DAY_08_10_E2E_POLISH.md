@@ -307,16 +307,64 @@ var _ = Describe("Full User Journey E2E", func() {
 
 ## 🎯 Day 9 Objectives: Production Polish
 
-| Objective | Priority | BR Reference |
-|-----------|----------|--------------|
-| Documentation finalization | P0 | — |
-| Code review and cleanup | P0 | — |
-| Performance validation | P1 | BR-AI-024 |
-| Security review | P1 | BR-AI-025 |
+| Objective | Priority | BR Reference | Authority |
+|-----------|----------|--------------|-----------|
+| Test validation (all tiers) | P0 | — | 03-testing-strategy.mdc |
+| Coverage verification (≥87.6%) | P0 | — | testing-strategy.md |
+| Documentation finalization | P0 | — | — |
+| Code review and cleanup | P0 | — | — |
+| Performance validation | P1 | BR-AI-024 | — |
+| Security review | P1 | BR-AI-025 | — |
 
 ---
 
 ## 🔧 Day 9: Production Polish
+
+### 🧪 Test Validation (MANDATORY per 03-testing-strategy.mdc)
+
+**Authority**: [03-testing-strategy.mdc](../../../../../.cursor/rules/03-testing-strategy.mdc) lines 945-948
+
+```bash
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 1: Unit Tests (MANDATORY)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+go test -v ./test/unit/aianalysis/... 2>&1 | tee unit-test-results.log
+echo "Expected: 163+ tests passing"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 2: Coverage Verification (must maintain ≥87.6%)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+go test -coverprofile=coverage.out ./pkg/aianalysis/... -coverpkg=./pkg/aianalysis/...
+COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
+echo "Coverage: $COVERAGE (target: ≥87.6%)"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 3: Integration Tests (requires podman-compose infrastructure)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Start infrastructure (if not already running)
+podman-compose -f podman-compose.test.yml up -d
+
+# Run integration tests
+go test -v ./test/integration/aianalysis/... 2>&1 | tee integration-test-results.log
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 4: Parallel Test Compliance (per 03-testing-strategy.mdc)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Verify no unnecessary Ordered usage
+ORDERED_COUNT=$(grep -r "Ordered" test/unit/aianalysis/ test/integration/aianalysis/ --include="*_test.go" 2>/dev/null | wc -l)
+if [ "$ORDERED_COUNT" -gt 0 ]; then
+    echo "⚠️  Found $ORDERED_COUNT Ordered test blocks - verify justification"
+    grep -r "Ordered" test/unit/aianalysis/ test/integration/aianalysis/ --include="*_test.go"
+else
+    echo "✅ No Ordered in unit/integration tests - parallel compliant"
+fi
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 5: BR Mapping Verification (per 03-testing-strategy.mdc line 143)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BR_COUNT=$(grep -r "BR-AI-" test/unit/aianalysis/ --include="*_test.go" | wc -l)
+echo "BR-AI-* references in tests: $BR_COUNT"
+```
 
 ### Performance Validation
 
@@ -324,11 +372,11 @@ var _ = Describe("Full User Journey E2E", func() {
 # Benchmark reconciliation performance
 go test -bench=. -benchmem ./pkg/aianalysis/...
 
-# Profile CPU usage
+# Profile CPU usage (if performance issues suspected)
 go test -cpuprofile=cpu.prof -bench=. ./pkg/aianalysis/...
 go tool pprof cpu.prof
 
-# Profile memory usage
+# Profile memory usage (if memory issues suspected)
 go test -memprofile=mem.prof -bench=. ./pkg/aianalysis/...
 go tool pprof mem.prof
 ```
@@ -344,30 +392,83 @@ go tool pprof mem.prof
 ### Code Quality Verification
 
 ```bash
-# Full lint check
-golangci-lint run ./pkg/aianalysis/... --enable-all
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Standard lint check (MANDATORY)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+golangci-lint run ./pkg/aianalysis/...
 
-# Security scan
-gosec ./pkg/aianalysis/...
+# Go vet (always available)
+go vet ./pkg/aianalysis/...
 
-# Dependency audit
-go list -m all | nancy sleuth
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Module verification (MANDATORY)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+go mod verify
+go mod tidy
+git diff --exit-code go.mod go.sum || echo "⚠️ go.mod/go.sum changed - commit if intentional"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Security scan (optional - install with: go install github.com/securego/gosec/v2/cmd/gosec@latest)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+which gosec && gosec ./pkg/aianalysis/... || echo "ℹ️  gosec not installed - using go vet"
 ```
 
 ### Documentation Verification
 
 ```bash
 # Check for TODO/FIXME markers
-grep -r "TODO\|FIXME\|XXX" pkg/aianalysis/ docs/services/crd-controllers/02-aianalysis/
+TODO_COUNT=$(grep -r "TODO\|FIXME\|XXX" pkg/aianalysis/ docs/services/crd-controllers/02-aianalysis/ 2>/dev/null | wc -l)
+if [ "$TODO_COUNT" -gt 0 ]; then
+    echo "⚠️  Found $TODO_COUNT TODO/FIXME markers - document in TECHNICAL_DEBT.md if intentional"
+    grep -r "TODO\|FIXME\|XXX" pkg/aianalysis/ docs/services/crd-controllers/02-aianalysis/
+else
+    echo "✅ No TODO/FIXME markers"
+fi
 
-# Check for dead links
+# Check for dead links (basic check)
 find docs/services/crd-controllers/02-aianalysis/ -name "*.md" -exec grep -l "\[.*\](.*)" {} \; | while read f; do
-    grep -oP '\[.*?\]\(\K[^)]+' "$f" | while read link; do
+    grep -oP '\[.*?\]\(\K[^)]+' "$f" 2>/dev/null | while read link; do
         if [[ "$link" != http* ]] && [[ ! -f "$(dirname $f)/$link" ]]; then
             echo "Dead link in $f: $link"
         fi
     done
 done
+```
+
+### 📋 Day 9 EOD Checklist
+
+```markdown
+## Day 9 EOD Checklist - Production Polish
+
+### Test Validation (MANDATORY per 03-testing-strategy.mdc)
+- [ ] Unit tests passing: 163+ tests
+- [ ] Coverage verified: ≥87.6%
+- [ ] Integration tests passing (with podman-compose infrastructure)
+- [ ] Parallel test compliance: No unnecessary `Ordered` usage
+- [ ] BR mapping verified in tests
+
+### Code Quality
+- [ ] Zero lint errors (`golangci-lint`)
+- [ ] Zero `go vet` errors
+- [ ] Module verification passed (`go mod verify`)
+- [ ] No unexpected go.mod/go.sum changes
+
+### Security
+- [ ] RBAC permissions minimized
+- [ ] Secrets not logged
+- [ ] API keys not exposed in metrics
+- [ ] Input validation complete
+- [ ] Error messages don't leak sensitive info
+
+### Performance
+- [ ] Benchmarks executed (no regressions)
+- [ ] Profile analysis complete (if needed)
+
+### Documentation
+- [ ] All spec documents up to date
+- [ ] TODO/FIXME markers documented or removed
+- [ ] No dead links
+- [ ] EOD Day 9 document created
 ```
 
 ---

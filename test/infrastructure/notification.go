@@ -53,7 +53,7 @@ func GetE2EFileOutputDir() (string, error) {
 //
 // Steps:
 // 1. Create Kind cluster with production-like configuration
-// 2. Export kubeconfig to ~/.kube/notification-kubeconfig
+// 2. Export kubeconfig to ~/.kube/notification-e2e-config
 // 3. Install NotificationRequest CRD (cluster-wide resource)
 // 4. Build and load Notification Controller Docker image
 //
@@ -235,7 +235,12 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 
 // DeleteNotificationCluster deletes the Kind cluster
 // This is called ONCE in SynchronizedAfterSuite (last parallel process only)
-func DeleteNotificationCluster(clusterName string, writer io.Writer) error {
+//
+// Parameters:
+// - clusterName: Kind cluster name to delete
+// - kubeconfigPath: Path to kubeconfig file (e.g., ~/.kube/notification-e2e-config)
+// - writer: Output writer for progress messages
+func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Fprintln(writer, "Cleaning up Notification E2E Cluster")
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -251,12 +256,11 @@ func DeleteNotificationCluster(clusterName string, writer io.Writer) error {
 		fmt.Fprintf(writer, "✅ Kind cluster %s deleted\n", clusterName)
 	}
 
-	// Clean up kubeconfig
-	kubeconfigPath := filepath.Join(os.Getenv("HOME"), ".kube", "notification-kubeconfig")
-	if err := os.Remove(kubeconfigPath); err != nil {
+	// Clean up kubeconfig file (uses passed path for consistency with Gateway pattern)
+	if err := os.Remove(kubeconfigPath); err != nil && !os.IsNotExist(err) {
 		fmt.Fprintf(writer, "⚠️  Warning: Failed to remove kubeconfig: %v\n", err)
 	} else {
-		fmt.Fprintf(writer, "✅ Kubeconfig removed\n")
+		fmt.Fprintf(writer, "✅ Kubeconfig removed: %s\n", kubeconfigPath)
 	}
 
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

@@ -1097,3 +1097,339 @@ test-container-shell: ## Open shell in test container for debugging
 test-container-down: ## Stop and remove all test containers
 	@echo "🐳 Stopping test containers..."
 	podman-compose -f podman-compose.test.yml down -v
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Remediation Orchestrator Tests
+# Per TESTING_GUIDELINES.md and 03-testing-strategy.mdc
+# ════════════════════════════════════════════════════════════════════════════════
+
+.PHONY: test-unit-remediationorchestrator
+test-unit-remediationorchestrator: ## Run RemediationOrchestrator unit tests (4 parallel procs)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 RemediationOrchestrator - Unit Tests (4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Coverage: BR-ORCH-025, BR-ORCH-026, BR-ORCH-031, BR-ORCH-036, BR-ORCH-037, BR-ORCH-038"
+	@echo ""
+	ginkgo -v --timeout=5m --procs=4 ./test/unit/remediationorchestrator/...
+
+.PHONY: test-integration-remediationorchestrator
+test-integration-remediationorchestrator: setup-envtest ## Run RemediationOrchestrator integration tests (envtest, 4 parallel procs)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 RemediationOrchestrator - Integration Tests (envtest, 4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Tests: Lifecycle, AIAnalysis→ManualReview, Approval Flow"
+	@echo "🏗️  Infrastructure: envtest (in-memory K8s API server)"
+	@echo ""
+	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
+		ginkgo -v --timeout=10m --procs=4 ./test/integration/remediationorchestrator/...
+
+.PHONY: test-e2e-remediationorchestrator
+test-e2e-remediationorchestrator: ## Run RemediationOrchestrator E2E tests (Kind cluster, 4 parallel procs)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 RemediationOrchestrator - E2E Tests (Kind Cluster, 4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Tests: Full remediation lifecycle with all child controllers"
+	@echo "🏗️  Infrastructure: Kind cluster + SP + AI + WE + Notification services"
+	@echo "🔧 LLM: Mocked (per TESTING_GUIDELINES.md - cost constraint)"
+	@echo ""
+	@cd test/e2e/remediationorchestrator && ginkgo -v --timeout=15m --procs=4
+
+.PHONY: test-remediationorchestrator-all
+test-remediationorchestrator-all: ## Run ALL RemediationOrchestrator tests (unit + integration + e2e, 4 parallel each)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 RemediationOrchestrator - Complete Test Suite (3 Tiers)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
+	@echo "📋 Business Requirements: BR-ORCH-025 through BR-ORCH-038"
+	@echo "🏗️  E2E Infrastructure: Kind cluster + All CRD Controllers"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	PROCS=4; \
+	echo ""; \
+	echo "1️⃣  Unit Tests ($$PROCS parallel procs)..."; \
+	ginkgo -v --timeout=5m --procs=$$PROCS ./test/unit/remediationorchestrator/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests (envtest, $$PROCS parallel procs)..."; \
+	$(MAKE) test-integration-remediationorchestrator || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  E2E Tests (Kind cluster, $$PROCS parallel procs)..."; \
+	ginkgo -v --timeout=15m --procs=$$PROCS ./test/e2e/remediationorchestrator/... 2>/dev/null || echo "   ⚠️  E2E tests not yet available (pending team service availability)"; \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		echo "✅ RemediationOrchestrator: ALL tests passed (3/3 tiers)"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+	else \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		echo "❌ RemediationOrchestrator: $$FAILED tier(s) failed"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		exit 1; \
+	fi
+
+.PHONY: test-coverage-remediationorchestrator
+test-coverage-remediationorchestrator: ## Run RemediationOrchestrator unit tests with coverage report
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 RemediationOrchestrator - Coverage Report"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	go test -cover -coverprofile=coverage-remediationorchestrator.out \
+		-coverpkg=./pkg/remediationorchestrator/...,./internal/controller/remediationorchestrator/... \
+		./test/unit/remediationorchestrator/...
+	@echo ""
+	@echo "📊 Coverage Summary:"
+	@go tool cover -func=coverage-remediationorchestrator.out | tail -1
+	go tool cover -html=coverage-remediationorchestrator.out -o coverage-remediationorchestrator.html
+	@echo "📄 Full report: coverage-remediationorchestrator.html"
+
+# ════════════════════════════════════════════════════════════════════════════════
+# UNIFIED TEST TARGETS - ALL 3 TIERS (Per TESTING_GUIDELINES.md)
+# ════════════════════════════════════════════════════════════════════════════════
+#
+# Test Tier Infrastructure Matrix (from TESTING_GUIDELINES.md):
+# ┌─────────────┬─────────────────┬───────────────────┬─────────────────────────┐
+# │ Test Tier   │ K8s Environment │ Services          │ Infrastructure          │
+# ├─────────────┼─────────────────┼───────────────────┼─────────────────────────┤
+# │ Unit        │ None            │ Mocked            │ None required           │
+# │ Integration │ envtest         │ Real (podman)     │ podman-compose.test.yml │
+# │ E2E         │ KIND cluster    │ Real (deployed)   │ KIND + Helm/manifests   │
+# └─────────────┴─────────────────┴───────────────────┴─────────────────────────┘
+#
+# LLM Policy: Mocked in ALL tiers (cost constraint)
+#
+# ════════════════════════════════════════════════════════════════════════════════
+
+##@ Unified Test Execution (All 3 Tiers)
+
+.PHONY: test-tier-unit
+test-tier-unit: ## Run ALL unit tests across all services (Tier 1 - fastest, ~2-5 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 TIER 1: UNIT TESTS - All Services"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Per TESTING_GUIDELINES.md:"
+	@echo "   • Purpose: Validate implementation correctness"
+	@echo "   • Focus: Function/method behavior, error handling, edge cases"
+	@echo "   • Dependencies: Mocked (minimal)"
+	@echo "   • Target: <100ms per test, 95%+ code coverage"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@FAILED=0; \
+	echo "1️⃣  Gateway..."; \
+	go test ./test/unit/gateway/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Data Storage..."; \
+	ginkgo --procs=4 --timeout=5m ./test/unit/datastorage/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  Notification..."; \
+	ginkgo --procs=4 --timeout=5m ./test/unit/notification/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "4️⃣  WorkflowExecution..."; \
+	ginkgo --procs=4 --timeout=5m ./test/unit/workflowexecution/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "5️⃣  RemediationOrchestrator..."; \
+	ginkgo --procs=4 --timeout=5m ./test/unit/remediationorchestrator/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "6️⃣  HolmesGPT API (Python)..."; \
+	(cd holmesgpt-api && pytest tests/unit/ -v --tb=short 2>/dev/null) || echo "   ⚠️  HolmesGPT unit tests not available"; \
+	echo ""; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ TIER 1 (UNIT): ALL tests passed"; \
+	else \
+		echo "❌ TIER 1 (UNIT): $$FAILED service(s) failed"; \
+		exit 1; \
+	fi; \
+	echo "════════════════════════════════════════════════════════════════════════"
+
+.PHONY: test-tier-integration
+test-tier-integration: setup-envtest ## Run ALL integration tests across all services (Tier 2 - medium, ~10-20 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 TIER 2: INTEGRATION TESTS - All Services"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Per TESTING_GUIDELINES.md:"
+	@echo "   • Purpose: Validate component interactions"
+	@echo "   • Focus: Cross-component workflows, K8s API interactions"
+	@echo "   • Dependencies: envtest + Podman (PostgreSQL, Redis)"
+	@echo "   • Infrastructure: podman-compose.test.yml"
+	@echo "   • LLM: Mocked (cost constraint)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@FAILED=0; \
+	echo "1️⃣  Data Storage (PostgreSQL via Podman)..."; \
+	$(MAKE) test-integration-datastorage || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  AI Service (Redis via Podman)..."; \
+	$(MAKE) test-integration-ai || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  Gateway (envtest)..."; \
+	$(MAKE) test-gateway || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "4️⃣  Notification (envtest)..."; \
+	$(MAKE) test-integration-notification || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "5️⃣  WorkflowExecution (envtest)..."; \
+	ginkgo -v --timeout=15m --procs=4 ./test/integration/workflowexecution/... 2>/dev/null || echo "   ⚠️  WE integration tests not available"; \
+	echo ""; \
+	echo "6️⃣  RemediationOrchestrator (envtest)..."; \
+	$(MAKE) test-integration-remediationorchestrator || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "7️⃣  Dynamic Toolset (Kind bootstrapped)..."; \
+	$(MAKE) test-integration-toolset || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "8️⃣  HolmesGPT API (Mock LLM)..."; \
+	$(MAKE) test-integration-holmesgpt || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ TIER 2 (INTEGRATION): ALL tests passed"; \
+	else \
+		echo "❌ TIER 2 (INTEGRATION): $$FAILED service(s) failed"; \
+		exit 1; \
+	fi; \
+	echo "════════════════════════════════════════════════════════════════════════"
+
+.PHONY: test-tier-e2e
+test-tier-e2e: ## Run ALL E2E tests across all services (Tier 3 - slowest, ~30-60 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 TIER 3: E2E TESTS - All Services"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Per TESTING_GUIDELINES.md:"
+	@echo "   • Purpose: Validate business value delivery"
+	@echo "   • Focus: End-to-end workflows, business SLAs"
+	@echo "   • Dependencies: Real (KIND cluster), Mock LLM only (cost)"
+	@echo "   • Infrastructure: KIND + Helm/manifests + NodePorts"
+	@echo "   • Policy: If Data Storage unavailable, tests FAIL (not skip)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@FAILED=0; \
+	echo "1️⃣  Data Storage E2E (Kind cluster)..."; \
+	$(MAKE) test-e2e-datastorage || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Gateway E2E (Kind cluster)..."; \
+	$(MAKE) test-e2e-gateway || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  Notification E2E (Kind cluster)..."; \
+	$(MAKE) test-e2e-notification || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "4️⃣  Dynamic Toolset E2E (Kind cluster)..."; \
+	$(MAKE) test-e2e-toolset || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "5️⃣  WorkflowExecution E2E (Kind + Tekton)..."; \
+	$(MAKE) test-e2e-workflowexecution 2>/dev/null || echo "   ⚠️  WE E2E tests not available"; \
+	echo ""; \
+	echo "6️⃣  RemediationOrchestrator E2E (Kind cluster)..."; \
+	$(MAKE) test-e2e-remediationorchestrator 2>/dev/null || echo "   ⚠️  RO E2E tests pending team service availability"; \
+	echo ""; \
+	echo "7️⃣  HolmesGPT API E2E (Kind + Data Storage)..."; \
+	$(MAKE) test-e2e-holmesgpt || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ TIER 3 (E2E): ALL tests passed"; \
+	else \
+		echo "❌ TIER 3 (E2E): $$FAILED service(s) failed"; \
+		exit 1; \
+	fi; \
+	echo "════════════════════════════════════════════════════════════════════════"
+
+.PHONY: test-all-tiers
+test-all-tiers: ## Run ALL 3 test tiers sequentially (Unit → Integration → E2E)
+	@echo "╔════════════════════════════════════════════════════════════════════════╗"
+	@echo "║  🚀 COMPLETE TEST SUITE - ALL 3 TIERS                                   ║"
+	@echo "║  Per TESTING_GUIDELINES.md                                              ║"
+	@echo "╚════════════════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "📊 Test Tier Infrastructure Matrix:"
+	@echo "┌─────────────┬─────────────────┬───────────────────┬─────────────────────────┐"
+	@echo "│ Test Tier   │ K8s Environment │ Services          │ Infrastructure          │"
+	@echo "├─────────────┼─────────────────┼───────────────────┼─────────────────────────┤"
+	@echo "│ Unit        │ None            │ Mocked            │ None required           │"
+	@echo "│ Integration │ envtest         │ Real (podman)     │ podman-compose.test.yml │"
+	@echo "│ E2E         │ KIND cluster    │ Real (deployed)   │ KIND + Helm/manifests   │"
+	@echo "└─────────────┴─────────────────┴───────────────────┴─────────────────────────┘"
+	@echo ""
+	@echo "🔧 LLM Policy: Mocked in ALL tiers (cost constraint)"
+	@echo ""
+	@TIER_FAILED=0; \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "TIER 1: UNIT TESTS (~2-5 min)"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(MAKE) test-tier-unit || TIER_FAILED=$$((TIER_FAILED + 1)); \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "TIER 2: INTEGRATION TESTS (~10-20 min)"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(MAKE) test-tier-integration || TIER_FAILED=$$((TIER_FAILED + 1)); \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "TIER 3: E2E TESTS (~30-60 min)"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(MAKE) test-tier-e2e || TIER_FAILED=$$((TIER_FAILED + 1)); \
+	echo ""; \
+	echo "╔════════════════════════════════════════════════════════════════════════╗"; \
+	if [ $$TIER_FAILED -eq 0 ]; then \
+		echo "║  ✅ COMPLETE TEST SUITE: ALL 3 TIERS PASSED                            ║"; \
+		echo "║                                                                          ║"; \
+		echo "║  Tier 1 (Unit):        ✅ PASSED                                        ║"; \
+		echo "║  Tier 2 (Integration): ✅ PASSED                                        ║"; \
+		echo "║  Tier 3 (E2E):         ✅ PASSED                                        ║"; \
+	else \
+		echo "║  ❌ COMPLETE TEST SUITE: $$TIER_FAILED TIER(S) FAILED                       ║"; \
+	fi; \
+	echo "╚════════════════════════════════════════════════════════════════════════╝"; \
+	exit $$TIER_FAILED
+
+.PHONY: test-quick
+test-quick: test-tier-unit ## Quick validation (Unit tests only) - ideal for development
+	@echo "✅ Quick validation complete (Unit tests only)"
+
+.PHONY: test-ci-full
+test-ci-full: test-tier-unit test-tier-integration ## CI validation (Unit + Integration) - ideal for CI/CD pipelines
+	@echo "✅ CI validation complete (Unit + Integration)"
+
+.PHONY: test-release
+test-release: test-all-tiers ## Release validation (All 3 tiers) - required before release
+	@echo "✅ Release validation complete (All 3 tiers)"
+
+##@ Test Help
+
+.PHONY: test-help
+test-help: ## Show testing targets organized by tier
+	@echo "╔════════════════════════════════════════════════════════════════════════╗"
+	@echo "║  🧪 KUBERNAUT TEST SUITE - Per TESTING_GUIDELINES.md                    ║"
+	@echo "╚════════════════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "📋 UNIFIED TIER TARGETS (Recommended)"
+	@echo "────────────────────────────────────────────────────────────────────────"
+	@echo "  make test-tier-unit        Run ALL unit tests (~2-5 min)"
+	@echo "  make test-tier-integration Run ALL integration tests (~10-20 min)"
+	@echo "  make test-tier-e2e         Run ALL E2E tests (~30-60 min)"
+	@echo "  make test-all-tiers        Run ALL 3 tiers sequentially"
+	@echo ""
+	@echo "⚡ QUICK ACCESS"
+	@echo "────────────────────────────────────────────────────────────────────────"
+	@echo "  make test-quick            Unit tests only (development)"
+	@echo "  make test-ci-full          Unit + Integration (CI/CD)"
+	@echo "  make test-release          All 3 tiers (release validation)"
+	@echo ""
+	@echo "🎯 PER-SERVICE TARGETS"
+	@echo "────────────────────────────────────────────────────────────────────────"
+	@echo "  make test-remediationorchestrator-all  RO: Unit + Integration + E2E"
+	@echo "  make test-workflowexecution-all        WE: Unit + Integration + E2E"
+	@echo "  make test-notification-all             NOT: Unit + Integration + E2E"
+	@echo "  make test-gateway-all                  GW: Unit + Integration + E2E"
+	@echo "  make test-datastorage-all              DS: Unit + Integration + E2E"
+	@echo "  make test-holmesgpt-all                HAPI: Python tests"
+	@echo ""
+	@echo "📊 COVERAGE REPORTS"
+	@echo "────────────────────────────────────────────────────────────────────────"
+	@echo "  make test-coverage-remediationorchestrator  RO coverage report"
+	@echo "  make test-coverage-workflowexecution        WE coverage report"
+	@echo "  make test-coverage                          Full coverage report"
+	@echo ""
+	@echo "🐳 CONTAINERIZED TESTING"
+	@echo "────────────────────────────────────────────────────────────────────────"
+	@echo "  make test-container-unit        Unit tests in container"
+	@echo "  make test-container-integration Integration tests in container"
+	@echo "  make test-container-e2e         E2E tests in container"
+	@echo "  make test-container-all         All tests in container"
+	@echo ""

@@ -224,9 +224,9 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 
 			ai.Status.Phase = "Failed"
-			ai.Status.FailureReason = "WorkflowResolutionFailed"
-			ai.Status.FailureSubReason = "NoMatchingWorkflow"
-			ai.Status.FailureMessage = "No workflow found matching the investigation outcome"
+			ai.Status.Reason = "WorkflowResolutionFailed"
+			ai.Status.SubReason = "NoMatchingWorkflows"
+			ai.Status.Message = "No workflow found matching the investigation outcome"
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			By("Waiting for ManualReview NotificationRequest to be created")
@@ -288,15 +288,16 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
 			}, timeout, interval).Should(Succeed())
 
-			By("Simulating AIAnalysis completion with WorkflowNotNeeded")
+			By("Simulating AIAnalysis completion with WorkflowNotNeeded (problem self-resolved)")
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 
 			ai.Status.Phase = "Completed"
-			ai.Status.InvestigationOutcome = "resolved"
 			ai.Status.RootCause = "Problem self-resolved - container restarted successfully"
+			ai.Status.Reason = "ProblemResolved"
+			ai.Status.SubReason = "ProblemResolved"
 			now := metav1.Now()
-			ai.Status.CompletionTime = &now
+			ai.Status.CompletedAt = &now
 			// No SelectedWorkflow - indicates WorkflowNotNeeded
 			ai.Status.SelectedWorkflow = nil
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -367,7 +368,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 
 			ai.Status.Phase = "Completed"
-			ai.Status.RequiresApproval = true
+			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = "Confidence below 80% threshold"
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "wf-restart-pods",
@@ -378,7 +379,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			}
 			ai.Status.RootCause = "Memory leak causing OOM kills"
 			now := metav1.Now()
-			ai.Status.CompletionTime = &now
+			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			By("Waiting for RR to transition to AwaitingApproval")
@@ -428,7 +429,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 			ai.Status.Phase = "Completed"
-			ai.Status.RequiresApproval = true
+			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = "Confidence below threshold"
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "wf-restart-pods",
@@ -438,7 +439,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				Rationale:      "Restart recommended",
 			}
 			now := metav1.Now()
-			ai.Status.CompletionTime = &now
+			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			// Wait for RAR

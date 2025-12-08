@@ -1,6 +1,6 @@
 ## Testing Strategy
 
-**Version**: 5.2
+**Version**: 5.3
 **Last Updated**: 2025-12-08
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Status**: ✅ COMPLIANT - Defense-in-Depth Testing Strategy
@@ -70,17 +70,18 @@ Per [TESTING_GUIDELINES.md](../../../../development/business-requirements/TESTIN
 
 Following Kubernaut's defense-in-depth testing strategy per [03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc):
 
-| Test Type | Target Coverage | Actual Coverage | Focus | Status |
-|-----------|----------------|-----------------|-------|--------|
-| **Unit Tests** | 70%+ | **71.7%** | Controller logic, PipelineRun building, resource locking | ✅ COMPLIANT |
-| **Integration Tests** | >50% | **60.5%** | CRD interactions, Tekton PipelineRun creation, status sync, cross-namespace coordination | ✅ COMPLIANT |
-| **E2E / BR Tests** | 10-15% | ~9 tests | Complete workflow execution, business SLAs | ✅ COMPLIANT |
+| Test Type | Target Coverage | Actual Coverage | Test Count | Focus | Status |
+|-----------|----------------|-----------------|------------|-------|--------|
+| **Unit Tests** | 70%+ | **71.7%** | 173 | Controller logic, PipelineRun building, resource locking | ✅ COMPLIANT |
+| **Integration Tests** | >50% | **60.5%** | 41 | CRD interactions, Tekton PipelineRun creation, status sync, **audit events** | ✅ COMPLIANT |
+| **E2E / BR Tests** | 10-15% | ~9 tests | 9 | Complete workflow execution, business SLAs | ✅ COMPLIANT |
 
 **Rationale for >50% Integration Coverage** (microservices mandate):
 - CRD-based coordination between WorkflowExecution and Tekton
 - Watch-based status propagation (difficult to unit test)
 - Cross-namespace PipelineRun lifecycle (requires real K8s API)
 - Owner reference and finalizer lifecycle management
+- **Audit event emission during reconciliation** (requires running controller)
 
 **WorkflowExecution Focus Areas**:
 1. **PipelineRun creation** - Bundle resolver, parameter passing
@@ -605,13 +606,14 @@ extraPortMappings:
 | BR-WE-002 | Parameter passing | **Unit** | Implementation detail |
 | BR-WE-003 | Status monitoring | **Unit** + **Integration** | Implementation + API interaction |
 | BR-WE-004 | Failure details | **Unit** + **BR E2E** | Unit tests extraction, BR tests actionability |
-| BR-WE-005 | K8s events | **Unit** | Implementation detail |
+| BR-WE-005 | **Audit events** | **Unit** + **Integration** | **Field validation + reconciliation emission** |
 | BR-WE-006 | Phase updates | **Unit** | Implementation detail |
-| BR-WE-007 | Audit trail | **Integration** | Requires real Data Storage |
-| BR-WE-008 | Finalizer cleanup | **Unit** + **Integration** | Logic + K8s API |
+| BR-WE-007 | External PipelineRun deletion | **Unit** + **Integration** | Logic + API interaction |
+| BR-WE-008 | Prometheus metrics | **Unit** + **Integration** + **E2E** | Logic + scrape validation |
 | BR-WE-009 | Parallel prevention | **Unit** + **BR E2E** | Unit tests logic, BR tests cost savings |
 | BR-WE-010 | Cooldown | **Unit** + **BR E2E** | Unit tests logic, BR tests efficiency |
 | BR-WE-011 | Target resource | **Unit** | Validation logic |
+| BR-WE-012 | Exponential backoff | **Unit** + **Integration** | State persistence + backoff calculation |
 
 **Key Insight**: Each BR may have BOTH:
 - **Unit tests**: Test the implementation mechanics (no BR prefix)

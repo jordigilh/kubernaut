@@ -51,21 +51,20 @@ from holmes.core.tools import StructuredToolResultStatus
 # =============================================================================
 
 @pytest.fixture(scope="module")
-def workflow_catalog_tool(integration_infrastructure):
+def workflow_catalog_tool(data_storage_stack):
     """
     Create WorkflowCatalogTool configured for E2E testing
 
-    Uses integration_infrastructure fixture which:
-    - Verifies Data Storage Service is available
+    Uses data_storage_stack fixture which:
+    - Verifies Data Storage Service is available via Go infrastructure
     - Skips tests if infrastructure not running
     """
     toolset = WorkflowCatalogToolset()
     tool = toolset.tools[0]
 
-    data_storage_url = integration_infrastructure["data_storage_url"]
-    tool.data_storage_url = data_storage_url
+    tool.data_storage_url = data_storage_stack
 
-    print(f"🔧 E2E: Workflow Catalog Tool configured: {data_storage_url}")
+    print(f"🔧 E2E: Workflow Catalog Tool configured: {data_storage_stack}")
     return tool
 
 

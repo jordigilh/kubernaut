@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/audit"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
@@ -482,19 +481,13 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 	// ========================================
 	// Audit Events (BR-WE-005)
 	// ========================================
-	Context("Audit Store Configuration", func() {
-		// NOTE: The RecordAuditEvent method is DEFINED but NOT CALLED during reconciliation.
-		// Audit event integration into the reconciliation loop is pending implementation.
-		//
-		// Current status:
-		// - RecordAuditEvent method exists and is tested in unit tests
-		// - AuditStore field is configured in the reconciler
-		// - Audit events are NOT automatically emitted during phase transitions
-		//
-		// Comprehensive audit event field validation is covered in unit tests at:
-		// test/unit/workflowexecution/controller_test.go (5 tests, 94 lines)
-		//
-		// When audit integration is added to reconciliation, these tests should be enabled.
+	Context("Audit Events during Reconciliation", func() {
+		// V2.1 UPDATE: RecordAuditEvent IS NOW CALLED during controller reconciliation!
+		// Audit events are emitted for all phase transitions:
+		// - workflow.started (Running phase)
+		// - workflow.completed (Completed phase)
+		// - workflow.failed (Failed phase)
+		// - workflow.skipped (Skipped phase)
 
 		var wfe *workflowexecutionv1alpha1.WorkflowExecution
 
@@ -510,45 +503,160 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			GinkgoWriter.Println("✅ AuditStore is configured in integration test controller")
 		})
 
-		It("should accept audit events when StoreAudit is called directly", func() {
-			// Clear events from previous tests
-			initialCount := testAuditStore.EventCount()
+		It("should emit workflow.started audit event when entering Running phase", func() {
+			By("Creating a WorkflowExecution")
+			wfe = createUniqueWFE("audit-started", "default/deployment/audit-started-test")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			// This tests that the audit store integration works at the wiring level
-			testEvent := &audit.AuditEvent{
-				EventType:     "test.direct.event",
-				EventCategory: "test",
-				EventAction:   "test.action",
-				EventOutcome:  "success",
-				ResourceType:  "TestResource",
-				ResourceID:    "test-123",
-			}
-			err := testAuditStore.StoreAudit(ctx, testEvent)
+			By("Waiting for Running phase")
+			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Should have one more event than before
-			events := testAuditStore.GetEvents()
-			Expect(len(events)).To(Equal(initialCount + 1))
+			By("Verifying workflow.started audit event was emitted")
+			Eventually(func() int {
+				return len(testAuditStore.GetEventsOfType("workflowexecution.workflow.started"))
+			}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1))
 
-			// Find our test event
-			testEvents := testAuditStore.GetEventsOfType("test.direct.event")
-			Expect(testEvents).To(HaveLen(1))
-			Expect(testEvents[0].ResourceID).To(Equal("test-123"))
+			startedEvents := testAuditStore.GetEventsOfType("workflowexecution.workflow.started")
+			Expect(startedEvents).ToNot(BeEmpty())
 
-			GinkgoWriter.Println("✅ AuditStore accepts and stores events correctly")
+			// Verify event fields
+			event := startedEvents[len(startedEvents)-1] // Get most recent
+			Expect(event.EventCategory).To(Equal("workflow"))
+			Expect(event.EventAction).To(Equal("workflow.started"))
+			Expect(event.EventOutcome).To(Equal("success"))
+			Expect(event.ResourceType).To(Equal("WorkflowExecution"))
+
+			GinkgoWriter.Println("✅ workflow.started audit event emitted during reconciliation")
 		})
 
-		// NOTE: The following tests are PENDING until audit events are integrated into reconciliation:
-		//
-		// - "should emit audit event when workflow starts (Running phase)"
-		// - "should emit audit event when workflow completes"
-		// - "should emit audit event when workflow fails"
-		// - "should emit audit event when workflow is skipped"
-		// - "should include correlation ID in audit events"
-		//
-		// These behaviors are currently tested at the unit test level where RecordAuditEvent
-		// is called directly. Once the controller's reconciliation loop calls RecordAuditEvent,
-		// these integration tests should be enabled.
+		It("should emit workflow.completed audit event when PipelineRun succeeds", func() {
+			By("Creating a WorkflowExecution")
+			wfe = createUniqueWFE("audit-complete", "default/deployment/audit-complete-test")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for Running phase")
+			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Getting PipelineRun and completing it")
+			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = simulatePipelineRunCompletion(pr, true)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Waiting for Completed phase")
+			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying workflow.completed audit event was emitted")
+			Eventually(func() int {
+				return len(testAuditStore.GetEventsOfType("workflowexecution.workflow.completed"))
+			}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1))
+
+			completedEvents := testAuditStore.GetEventsOfType("workflowexecution.workflow.completed")
+			Expect(completedEvents).ToNot(BeEmpty())
+
+			event := completedEvents[len(completedEvents)-1]
+			Expect(event.EventOutcome).To(Equal("success"))
+
+			GinkgoWriter.Println("✅ workflow.completed audit event emitted during reconciliation")
+		})
+
+		It("should emit workflow.failed audit event when PipelineRun fails", func() {
+			By("Creating a WorkflowExecution")
+			wfe = createUniqueWFE("audit-fail", "default/deployment/audit-fail-test")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for Running phase")
+			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Getting PipelineRun and failing it")
+			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = simulatePipelineRunCompletion(pr, false)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Waiting for Failed phase")
+			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying workflow.failed audit event was emitted")
+			Eventually(func() int {
+				return len(testAuditStore.GetEventsOfType("workflowexecution.workflow.failed"))
+			}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1))
+
+			failedEvents := testAuditStore.GetEventsOfType("workflowexecution.workflow.failed")
+			Expect(failedEvents).ToNot(BeEmpty())
+
+			event := failedEvents[len(failedEvents)-1]
+			Expect(event.EventOutcome).To(Equal("failure"))
+
+			GinkgoWriter.Println("✅ workflow.failed audit event emitted during reconciliation")
+		})
+
+		It("should emit workflow.skipped audit event when resource is locked", func() {
+			targetResource := fmt.Sprintf("default/deployment/audit-skip-%d", time.Now().UnixNano())
+
+			By("Creating first WorkflowExecution (blocker)")
+			blocker := createUniqueWFE("audit-blocker", targetResource)
+			Expect(k8sClient.Create(ctx, blocker)).To(Succeed())
+			defer cleanupWFE(blocker)
+
+			By("Waiting for blocker to reach Running")
+			_, err := waitForWFEPhase(blocker.Name, blocker.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Creating second WorkflowExecution (to be skipped)")
+			wfe = createUniqueWFE("audit-skipped", targetResource)
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for Skipped phase")
+			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseSkipped), 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying workflow.skipped audit event was emitted")
+			Eventually(func() int {
+				return len(testAuditStore.GetEventsOfType("workflowexecution.workflow.skipped"))
+			}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1))
+
+			skippedEvents := testAuditStore.GetEventsOfType("workflowexecution.workflow.skipped")
+			Expect(skippedEvents).ToNot(BeEmpty())
+
+			event := skippedEvents[len(skippedEvents)-1]
+			Expect(event.EventOutcome).To(Equal("skipped"))
+
+			GinkgoWriter.Println("✅ workflow.skipped audit event emitted during reconciliation")
+		})
+
+		It("should include correlation ID in audit events when present", func() {
+			By("Creating a WorkflowExecution with correlation ID")
+			wfe = createUniqueWFE("audit-corr", "default/deployment/audit-corr-test")
+			wfe.Labels = map[string]string{
+				"kubernaut.ai/correlation-id": "test-corr-12345",
+			}
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for Running phase")
+			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying audit event has correlation ID")
+			Eventually(func() bool {
+				events := testAuditStore.GetEventsOfType("workflowexecution.workflow.started")
+				for _, e := range events {
+					if e.CorrelationID == "test-corr-12345" {
+						return true
+					}
+				}
+				return false
+			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			GinkgoWriter.Println("✅ Correlation ID included in audit event")
+		})
 	})
 })
 

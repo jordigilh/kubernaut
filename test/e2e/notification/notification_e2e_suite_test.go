@@ -98,7 +98,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("  • NotificationRequest CRD (cluster-wide)")
 		logger.Info("  • Notification Controller Docker image (build + load)")
 		logger.Info("  • Shared Notification Controller (notification-e2e namespace)")
-		logger.Info("  • Kubeconfig: ~/.kube/notification-kubeconfig")
+		logger.Info("  • Kubeconfig: ~/.kube/notification-e2e-config")
 		logger.Info("")
 		logger.Info("Note: All tests share the same controller instance")
 		logger.Info("      Tests use FileService for message validation")
@@ -108,11 +108,11 @@ var _ = SynchronizedBeforeSuite(
 		clusterName = "notification-e2e"
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
-		kubeconfigPath = fmt.Sprintf("%s/.kube/notification-kubeconfig", homeDir)
+		kubeconfigPath = fmt.Sprintf("%s/.kube/notification-e2e-config", homeDir)
 
 		// Delete any existing cluster first to ensure clean state
 		logger.Info("Checking for existing cluster...")
-		err = infrastructure.DeleteNotificationCluster(clusterName, GinkgoWriter)
+		err = infrastructure.DeleteNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
 		if err != nil {
 			logger.Info("Failed to delete existing cluster (may not exist)", "error", err)
 		}
@@ -271,7 +271,7 @@ var _ = SynchronizedAfterSuite(
 
 		// Always clean up Kind cluster (no conditional logic based on test failures)
 		logger.Info("Deleting Kind cluster...")
-		err := infrastructure.DeleteNotificationCluster(clusterName, GinkgoWriter)
+		err := infrastructure.DeleteNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
 		if err != nil {
 			logger.Error(err, "Failed to delete Kind cluster (non-fatal)")
 		} else {

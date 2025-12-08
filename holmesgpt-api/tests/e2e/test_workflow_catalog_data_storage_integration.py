@@ -65,8 +65,8 @@ from src.toolsets.workflow_catalog import (
 )
 from holmes.core.tools import StructuredToolResultStatus
 
-# Note: Uses fixtures from tests/e2e/conftest.py (DD-TEST-001 compliant)
-# DATA_STORAGE_URL and EMBEDDING_SERVICE_URL are provided via integration_infrastructure fixture
+# Note: Uses fixtures from tests/e2e/conftest.py (V1.0 Go infrastructure)
+# DATA_STORAGE_URL is provided via data_storage_stack fixture
 
 
 # Test timeouts
@@ -79,23 +79,17 @@ HTTP_REQUEST_TIMEOUT = 10  # seconds
 # ========================================
 
 @pytest.fixture(scope="module")
-def wait_for_services(integration_infrastructure):
+def wait_for_services(data_storage_stack):
     """
-    Wait for Data Storage Service and Embedding Service to be ready
+    Wait for Data Storage Service to be ready
 
-    This fixture depends on integration_infrastructure from conftest.py,
-    which will skip tests if infrastructure is not available.
+    This fixture depends on data_storage_stack from conftest.py,
+    which uses Go-managed Kind cluster infrastructure.
     """
-    # infrastructure_infrastructure fixture already verified services are up
-    data_storage_url = integration_infrastructure["data_storage_url"]
-    embedding_url = integration_infrastructure.get("embedding_service_url")
-
     print(f"\n✅ Services ready:")
-    print(f"   Data Storage: {data_storage_url}")
-    if embedding_url:
-        print(f"   Embedding: {embedding_url}")
+    print(f"   Data Storage: {data_storage_stack}")
 
-    yield integration_infrastructure
+    yield {"data_storage_url": data_storage_stack}
     print(f"\n🧹 Integration tests complete")
 
 
@@ -104,12 +98,12 @@ def workflow_catalog_tool(wait_for_services):
     """
     Create WorkflowCatalogTool configured for integration testing
 
-    Configures tool to use integration test Data Storage Service URL from DD-TEST-001.
+    Configures tool to use Data Storage Service from Go infrastructure.
     """
     toolset = WorkflowCatalogToolset()
     tool = toolset.tools[0]
 
-    # Override Data Storage URL for integration testing (DD-TEST-001: port 18090)
+    # Override Data Storage URL for E2E testing (Go infrastructure: port 8081)
     data_storage_url = wait_for_services["data_storage_url"]
     tool.data_storage_url = data_storage_url
 

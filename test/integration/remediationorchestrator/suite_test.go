@@ -326,7 +326,7 @@ func updateAIAnalysisStatus(namespace, name string, phase string, workflow *aian
 	ai.Status.SelectedWorkflow = workflow
 	if phase == "Completed" {
 		now := metav1.Now()
-		ai.Status.CompletionTime = &now
+		ai.Status.CompletedAt = &now
 	}
 
 	return k8sClient.Status().Update(ctx, ai)

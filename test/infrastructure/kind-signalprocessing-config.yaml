@@ -7,14 +7,15 @@
 #   NodePort (Metrics): 30182
 #
 # Kubeconfig Convention (per TESTING_GUIDELINES.md):
-#   Path: ~/.kube/signalprocessing-kubeconfig
-#   Pattern: ~/.kube/<service>-kubeconfig
+#   Pattern: ~/.kube/{service}-e2e-config
+#   Path: ~/.kube/signalprocessing-e2e-config
+#   Cluster Name: signalprocessing-e2e
 #
 # Usage:
 #   kind create cluster \
 #     --name signalprocessing-e2e \
 #     --config test/infrastructure/kind-signalprocessing-config.yaml \
-#     --kubeconfig ~/.kube/signalprocessing-kubeconfig
+#     --kubeconfig ~/.kube/signalprocessing-e2e-config
 
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4

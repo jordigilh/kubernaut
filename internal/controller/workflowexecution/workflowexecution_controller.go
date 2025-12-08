@@ -1156,6 +1156,12 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	r.Recorder.Event(wfe, "Warning", "WorkflowFailed",
 		fmt.Sprintf("Workflow %s failed: %s", wfe.Spec.WorkflowRef.WorkflowID, reason))
 
+	// Day 8: Record audit event for workflow failure (BR-WE-005, ADR-032)
+	if err := r.RecordAuditEvent(ctx, wfe, "workflow.failed", "failure"); err != nil {
+		// Audit failures don't block business logic - log and continue
+		logger.V(1).Info("Failed to record workflow.failed audit event", "error", err)
+	}
+
 	return ctrl.Result{}, nil
 }
 

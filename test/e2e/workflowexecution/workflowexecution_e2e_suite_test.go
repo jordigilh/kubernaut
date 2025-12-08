@@ -111,7 +111,9 @@ var _ = SynchronizedBeforeSuite(
 		clusterName = infrastructure.WorkflowExecutionClusterName
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
-		kubeconfigPath = fmt.Sprintf("%s/.kube/workflowexecution-kubeconfig", homeDir)
+		// Standard kubeconfig location: ~/.kube/{service}-e2e-config
+		// Per RO team kubeconfig standardization (REQUEST_WORKFLOWEXECUTION_KUBECONFIG_STANDARDIZATION.md)
+		kubeconfigPath = fmt.Sprintf("%s/.kube/workflowexecution-e2e-config", homeDir)
 
 		// Delete any existing cluster first
 		logger.Info("Checking for existing cluster...")
