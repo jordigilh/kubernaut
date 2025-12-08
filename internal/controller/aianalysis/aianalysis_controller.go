@@ -24,6 +24,7 @@ package aianalysis
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +36,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 )
 
 const (
@@ -75,9 +77,17 @@ type AIAnalysisReconciler struct {
 // Reconcile implements the reconciliation loop for AIAnalysis
 // BR-AI-001: Phase state machine: Pending → Investigating → Analyzing → Completed/Failed
 // Per reconciliation-phases.md v2.1: Recommending phase REMOVED in v1.8
+// BR-AI-017: Track service performance metrics
 func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("aianalysis", req.NamespacedName)
 	log.Info("Reconciling AIAnalysis")
+
+	// BR-AI-017: Track reconciliation timing
+	startTime := time.Now()
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		metrics.RecordReconcileDuration("overall", duration)
+	}()
 
 	// 1. FETCH RESOURCE
 	analysis := &aianalysisv1.AIAnalysis{}
@@ -101,23 +111,67 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// Capture current phase for metrics
+	currentPhase := analysis.Status.Phase
+	if currentPhase == "" {
+		currentPhase = PhasePending
+	}
+
 	// 4. PHASE STATE MACHINE
 	// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
 	// NOTE: Recommending phase REMOVED in v1.8 - workflow data captured in Investigating phase
-	switch analysis.Status.Phase {
-	case "", PhasePending:
-		return r.reconcilePending(ctx, analysis)
+	var result ctrl.Result
+	var err error
+
+	switch currentPhase {
+	case PhasePending:
+		result, err = r.reconcilePending(ctx, analysis)
 	case PhaseInvestigating:
-		return r.reconcileInvestigating(ctx, analysis)
+		result, err = r.reconcileInvestigating(ctx, analysis)
 	case PhaseAnalyzing:
-		return r.reconcileAnalyzing(ctx, analysis)
+		result, err = r.reconcileAnalyzing(ctx, analysis)
 	case PhaseCompleted, PhaseFailed:
 		// Terminal states - no action needed
-		log.Info("AIAnalysis in terminal state", "phase", analysis.Status.Phase)
+		log.Info("AIAnalysis in terminal state", "phase", currentPhase)
 		return ctrl.Result{}, nil
 	default:
-		log.Info("Unknown phase", "phase", analysis.Status.Phase)
+		log.Info("Unknown phase", "phase", currentPhase)
 		return ctrl.Result{}, nil
+	}
+
+	// BR-AI-017: Record metrics after phase processing
+	r.recordPhaseMetrics(currentPhase, analysis, err)
+
+	return result, err
+}
+
+// recordPhaseMetrics records metrics after phase processing
+// BR-AI-017: Track reconciliation outcomes and failures
+func (r *AIAnalysisReconciler) recordPhaseMetrics(phase string, analysis *aianalysisv1.AIAnalysis, err error) {
+	result := "success"
+	if err != nil {
+		result = "error"
+	}
+	metrics.RecordReconciliation(phase, result)
+
+	// Track failures with reason and sub-reason
+	if analysis.Status.Phase == PhaseFailed {
+		reason := analysis.Status.Reason
+		if reason == "" {
+			reason = "Unknown"
+		}
+		subReason := analysis.Status.SubReason
+		if subReason == "" {
+			subReason = "Unknown"
+		}
+		metrics.RecordFailure(reason, subReason)
+	}
+
+	// Track confidence scores for successful analyses
+	if analysis.Status.Phase == PhaseCompleted && analysis.Status.SelectedWorkflow != nil {
+		signalType := analysis.Spec.AnalysisRequest.SignalContext.SignalType
+		confidence := analysis.Status.SelectedWorkflow.Confidence
+		metrics.RecordConfidenceScore(signalType, confidence)
 	}
 }
 
@@ -132,10 +186,16 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // reconcilePending handles AIAnalysis in Pending phase
 // BR-AI-001: Initialize and transition to Investigating
-// Note: The CRD schema has phases: Pending → Investigating → Analyzing → Recommending → Completed
+// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
 func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("phase", "Pending", "name", analysis.Name)
 	log.Info("Processing Pending phase")
+
+	// BR-AI-017: Track phase timing
+	phaseStart := time.Now()
+	defer func() {
+		metrics.RecordReconcileDuration(PhasePending, time.Since(phaseStart).Seconds())
+	}()
 
 	// Transition to Investigating phase (first processing phase per CRD schema)
 	analysis.Status.Phase = PhaseInvestigating
@@ -153,9 +213,16 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 
 // reconcileInvestigating handles AIAnalysis in Investigating phase
 // BR-AI-023: HolmesGPT-API integration
+// BR-AI-017: Track phase timing
 func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("phase", "Investigating", "name", analysis.Name)
 	log.Info("Processing Investigating phase")
+
+	// BR-AI-017: Track phase timing
+	phaseStart := time.Now()
+	defer func() {
+		metrics.RecordReconcileDuration(PhaseInvestigating, time.Since(phaseStart).Seconds())
+	}()
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.InvestigatingHandler != nil {
@@ -188,9 +255,16 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 
 // reconcileAnalyzing handles AIAnalysis in Analyzing phase
 // BR-AI-030: Rego policy evaluation
+// BR-AI-017: Track phase timing
 func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("phase", "Analyzing", "name", analysis.Name)
 	log.Info("Processing Analyzing phase")
+
+	// BR-AI-017: Track phase timing
+	phaseStart := time.Now()
+	defer func() {
+		metrics.RecordReconcileDuration(PhaseAnalyzing, time.Since(phaseStart).Seconds())
+	}()
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.AnalyzingHandler != nil {

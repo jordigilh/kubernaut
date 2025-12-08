@@ -62,14 +62,14 @@ import (
 //   - Extract metadata (labels, annotations, timestamps)
 //
 // 2. Processing pipeline:
-//   - Deduplication: Check if signal was seen before (Redis lookup)
+//   - Deduplication: Check if signal was seen before (K8s status-based per DD-GATEWAY-011)
 //   - Storm detection: Identify alert storms (rate-based, pattern-based)
 //   - Note: Classification and priority removed (2025-12-06) - now owned by Signal Processing
 //
 // 3. CRD creation:
 //   - Build RemediationRequest CRD from normalized signal
 //   - Create CRD in Kubernetes
-//   - Record deduplication metadata in Redis
+//   - Update status.deduplication for tracking (DD-GATEWAY-011)
 //
 // 4. HTTP response:
 //   - 201 Created: New RemediationRequest CRD created
@@ -98,6 +98,9 @@ type Server struct {
 	crdUpdater      *processing.CRDUpdater // DD-GATEWAY-009: CRD updater for state-based deduplication
 	stormDetector   *processing.StormDetector
 	stormAggregator *processing.StormAggregator
+	// DD-GATEWAY-011: Status-based deduplication and storm aggregation (Redis deprecation)
+	statusUpdater *processing.StatusUpdater                        // Updates RR status.deduplication and status.stormAggregation
+	phaseChecker  *processing.PhaseBasedDeduplicationChecker       // Phase-based deduplication logic
 	// Note: classifier, priorityEngine, and pathDecider removed (2025-12-06)
 	// Environment/Priority classification and remediation path now owned by Signal Processing
 	// per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
@@ -297,6 +300,11 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 
 	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
 
+	// DD-GATEWAY-011: Initialize status-based deduplication components (Redis deprecation)
+	// These components update RR status fields instead of Redis, enabling Redis removal
+	statusUpdater := processing.NewStatusUpdater(ctrlClient)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+
 	// 4. Initialize middleware
 	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
 	// authMiddleware := middleware.NewAuthMiddleware(clientset, logger) // REMOVED
@@ -309,6 +317,9 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		crdUpdater:      crdUpdater, // DD-GATEWAY-009: CRD updater for state-based deduplication
 		stormDetector:   stormDetector,
 		stormAggregator: stormAggregator,
+		// DD-GATEWAY-011: Status-based deduplication (Redis deprecation path)
+		statusUpdater: statusUpdater,
+		phaseChecker:  phaseChecker,
 		// Note: classifier, priorityEngine, pathDecider removed - SP owns classification and path
 		crdCreator: crdCreator,
 		redisClient:     redisClient,
@@ -1073,7 +1084,8 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace string) *Processin
 
 // processDuplicateSignal handles the duplicate signal fast path
 // TDD REFACTOR: Extracted from ProcessSignal for clarity
-// Business Outcome: Consistent duplicate handling (BR-005)
+// DD-GATEWAY-011: Now uses status-based deduplication tracking
+// Business Outcome: Consistent duplicate handling (BR-005, BR-GATEWAY-181)
 func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.NormalizedSignal, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
 	logger := middleware.GetLogger(ctx)
 
@@ -1086,7 +1098,22 @@ func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.Norma
 		name = s.deduplicator.GetCRDNameFromFingerprint(signal.Fingerprint)
 	}
 
-	// Update CRD occurrence count in Kubernetes
+	// DD-GATEWAY-011: Update status.deduplication using StatusUpdater (Redis deprecation path)
+	// This updates OccurrenceCount and LastSeenAt in RR status instead of just spec
+	rr := &remediationv1alpha1.RemediationRequest{}
+	rr.Name = name
+	rr.Namespace = namespace
+	if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, rr); err != nil {
+		// Log error but don't fail the request
+		// The duplicate response is still valid even if status update fails
+		logger.Info("Failed to update RR deduplication status (DD-GATEWAY-011)",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"namespace", namespace,
+			"name", name)
+	}
+
+	// DD-GATEWAY-009: Update CRD occurrence count in Kubernetes (legacy, will be deprecated)
 	if err := s.crdUpdater.IncrementOccurrenceCount(ctx, namespace, name); err != nil {
 		// Log error but don't fail the request
 		// The duplicate response is still valid even if CRD update fails
@@ -1391,6 +1418,17 @@ func (s *Server) createAggregatedCRD(
 		logger.Info("Failed to store deduplication metadata",
 			"fingerprint", aggregatedSignal.Fingerprint,
 			"error", err)
+	}
+
+	// DD-GATEWAY-011: Update status.stormAggregation using StatusUpdater (Redis deprecation path)
+	// This tracks storm aggregation in RR status instead of Redis
+	isThresholdReached := resourceCount >= 5 // Default threshold per DD-GATEWAY-008
+	if err := s.statusUpdater.UpdateStormAggregationStatus(ctx, rr, isThresholdReached); err != nil {
+		logger.Info("Failed to update RR storm aggregation status (DD-GATEWAY-011)",
+			"error", err,
+			"crdName", rr.Name,
+			"resourceCount", resourceCount)
+		// Non-fatal: CRD is already created, storm tracking is bonus
 	}
 
 	// Record metrics
