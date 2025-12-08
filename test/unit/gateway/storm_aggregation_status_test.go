@@ -110,7 +110,6 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: Update storm aggregation status (first alert)
-				threshold := int32(5) // Default threshold
 				err := updater.UpdateStormAggregationStatus(ctx, rr, false)
 
 				// CORRECTNESS: Storm aggregation initialized
@@ -253,7 +252,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 				originalTime := createdRR.Status.StormAggregation.StormDetectedAt
 
 				// BEHAVIOR: Update storm aggregation
-				err := updater.UpdateStormAggregationStatus(ctx, createdRR, false, 5)
+				err := updater.UpdateStormAggregationStatus(ctx, createdRR, false)
 				Expect(err).ToNot(HaveOccurred())
 
 				// CORRECTNESS: StormDetectedAt preserved (not updated)
@@ -301,8 +300,7 @@ var _ = Describe("Storm Aggregation Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: 5th alert arrives (threshold reached)
-				threshold := int32(5)
-				isThresholdReached := true // Caller determines this
+				isThresholdReached := true // Caller determines this based on config
 				err := updater.UpdateStormAggregationStatus(ctx, rr, isThresholdReached)
 
 				// CORRECTNESS: IsPartOfStorm set to true

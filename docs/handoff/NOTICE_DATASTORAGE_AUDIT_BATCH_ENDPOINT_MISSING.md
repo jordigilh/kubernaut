@@ -200,12 +200,99 @@ The issue is resolved when:
 
 ### Data Storage Team Response
 
-```
-⏳ AWAITING RESPONSE
+**Date**: December 8, 2025
+**Responder**: Data Storage Team
+**Status**: ✅ **ACKNOWLEDGED - REMEDIATION IN PROGRESS**
 
-Please acknowledge this notice and provide:
-1. Confirmation of root cause analysis
-2. Selected solution approach (A or B)
-3. Estimated timeline for fix
+---
+
+#### 1. Root Cause Confirmation
+
+✅ **CONFIRMED**: The AIAnalysis team's analysis is correct.
+
+The root cause is an **API contract mismatch** between:
+- `pkg/audit/http_client.go:59` - `StoreBatch()` marshals events as **JSON array** `[...]`
+- `pkg/datastorage/server/audit_events_handler.go:100` - Expects **single object** `{...}`
+
+This violates **DD-AUDIT-002** which mandates:
+```go
+type DataStorageClient interface {
+    StoreBatch(ctx context.Context, events []*AuditEvent) error  // BATCH (array)
+}
 ```
+
+---
+
+#### 2. Selected Solution: Option A (Dedicated Batch Endpoint)
+
+**APPROVED**: Add dedicated batch endpoint `POST /api/v1/audit/events/batch`
+
+**Rationale**:
+- ✅ Aligns with DD-AUDIT-002 specification
+- ✅ Maintains backward compatibility (single event endpoint unchanged)
+- ✅ Better performance (atomic batch INSERT in transaction)
+- ✅ Clear API separation for batch vs single writes
+
+---
+
+#### 3. Estimated Timeline
+
+| Phase | Deliverable | Timeline |
+|-------|-------------|----------|
+| Phase 1 | Batch endpoint implementation | Day 1 (4h) |
+| Phase 2 | Defense-in-depth tests | Day 1-2 (6h) |
+| Phase 3 | DLQ consumer methods | Day 2 (4h) |
+| Phase 4 | Async retry worker | Day 3 (8h) |
+
+**Total**: 4 days / 32 hours
+
+---
+
+#### 4. Comprehensive Gap Analysis
+
+During investigation, we discovered **8 total gaps** (not just the batch endpoint):
+
+| Gap | Severity | Description |
+|-----|----------|-------------|
+| GAP-1 | 🔴 CRITICAL | Batch endpoint missing (this issue) |
+| GAP-2 | 🔴 CRITICAL | Async retry worker missing (DD-009) |
+| GAP-3 | 🔴 CRITICAL | No unit tests for HTTPDataStorageClient |
+| GAP-4 | 🔴 CRITICAL | No integration tests for batch path |
+| GAP-5 | 🟡 HIGH | Log sanitization missing (DD-005) |
+| GAP-6 | 🟡 HIGH | Path normalization missing (DD-005) |
+| GAP-7 | 🟡 HIGH | Missing service audit integration tests |
+| GAP-8 | 🟡 HIGH | DLQ consumer not implemented |
+
+---
+
+#### 5. Documentation Created
+
+Full gap analysis and remediation plan available at:
+- **Gap Analysis**: `docs/services/stateless/data-storage/AUDIT_COMPLIANCE_GAP_ANALYSIS.md`
+- **Remediation Plan**: `docs/services/stateless/data-storage/implementation/AUDIT_GAP_REMEDIATION_PLAN.md`
+
+---
+
+#### 6. Action Items Updated
+
+| # | Action | Priority | Status | Owner |
+|---|--------|----------|--------|-------|
+| 1 | Review DD-AUDIT-002 and ADR-038 | P0 | ✅ Complete | DS Team |
+| 2 | Implement batch endpoint | P0 | 🔄 In Progress | DS Team |
+| 3 | Update `pkg/audit/http_client.go` endpoint | P1 | ⏳ Pending | DS Team |
+| 4 | Create unit tests for http_client.go | P0 | ⏳ Pending | DS Team |
+| 5 | Create integration tests for batch path | P0 | ⏳ Pending | DS Team |
+| 6 | Implement async retry worker (DD-009) | P1 | ⏳ Pending | DS Team |
+| 7 | Update OpenAPI spec | P2 | ⏳ Pending | DS Team |
+
+---
+
+#### 7. Immediate Next Steps
+
+1. **Day 1 Morning**: Implement `handleCreateAuditEventsBatch()` handler
+2. **Day 1 Afternoon**: Register route, create integration tests
+3. **Day 2**: Complete defense-in-depth testing, DLQ consumer
+4. **Day 3-4**: Async retry worker, remaining gaps
+
+**Contact**: Data Storage Team available for questions.
 

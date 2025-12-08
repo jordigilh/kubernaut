@@ -24,6 +24,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -35,6 +36,9 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/client"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 )
 
 var (
@@ -56,10 +60,16 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var holmesGPTURL string
+	var holmesGPTTimeout time.Duration
+	var regoPolicyPath string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
+	flag.StringVar(&holmesGPTURL, "holmesgpt-api-url", getEnvOrDefault("HOLMESGPT_API_URL", "http://holmesgpt-api:8080"), "HolmesGPT-API base URL.")
+	flag.DurationVar(&holmesGPTTimeout, "holmesgpt-api-timeout", 60*time.Second, "HolmesGPT-API request timeout.")
+	flag.StringVar(&regoPolicyPath, "rego-policy-path", getEnvOrDefault("REGO_POLICY_PATH", "/etc/kubernaut/policies/approval.rego"), "Path to Rego approval policy file.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -88,11 +98,38 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ========================================
+	// BR-AI-007: Wire HolmesGPT-API client for Investigating phase
+	// ========================================
+	setupLog.Info("Creating HolmesGPT-API client", "url", holmesGPTURL, "timeout", holmesGPTTimeout)
+	holmesGPTClient := client.NewHolmesGPTClient(client.Config{
+		BaseURL: holmesGPTURL,
+		Timeout: holmesGPTTimeout,
+	})
+
+	// ========================================
+	// BR-AI-012: Wire Rego evaluator for Analyzing phase
+	// DD-AIANALYSIS-001: Rego policy loading
+	// ========================================
+	setupLog.Info("Creating Rego evaluator", "policyPath", regoPolicyPath)
+	regoEvaluator := rego.NewEvaluator(rego.Config{
+		PolicyPath: regoPolicyPath,
+	})
+
+	// ========================================
+	// Create phase handlers (BR-AI-007, BR-AI-012)
+	// ========================================
+	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
+	investigatingHandler := handlers.NewInvestigatingHandler(holmesGPTClient, controllerLog)
+	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog)
+
 	if err = (&aianalysis.AIAnalysisReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("aianalysis-controller"),
-		Log:      ctrl.Log.WithName("controllers").WithName("AIAnalysis"),
+		Client:               mgr.GetClient(),
+		Scheme:               mgr.GetScheme(),
+		Recorder:             mgr.GetEventRecorderFor("aianalysis-controller"),
+		Log:                  controllerLog,
+		InvestigatingHandler: investigatingHandler, // BR-AI-007: HolmesGPT integration
+		AnalyzingHandler:     analyzingHandler,     // BR-AI-012: Rego policy evaluation
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AIAnalysis")
 		os.Exit(1)
@@ -112,5 +149,13 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// getEnvOrDefault returns the value of environment variable or default if not set
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
