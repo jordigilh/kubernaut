@@ -1,7 +1,7 @@
 # SignalProcessing Implementation Plan - Day-by-Day Triage
 
 **Triage Date**: December 9, 2025
-**Plan Version**: V1.30
+**Plan Version**: V1.31 (Updated after triage)
 **Authoritative Sources**:
 - `TESTING_GUIDELINES.md`
 - `DD-WORKFLOW-001` (v2.3)
@@ -18,7 +18,7 @@
 | Day 0 | Analysis + Plan | ✅ Complete | 100% | None |
 | Day 1 | DD-006 scaffolding | ✅ Complete | 100% | None |
 | Day 2 | CRD types, API | ✅ Complete | 100% | None |
-| Day 3 | K8s Enricher | ✅ Complete | 95% | Plan uses wrong field name |
+| Day 3 | K8s Enricher | ✅ Complete | 100% | Plan field name fixed in V1.31 |
 | Day 4 | Environment Classifier | ✅ Complete | 100% | None |
 | Day 5 | Priority Engine | ✅ Complete | 100% | None |
 | Day 6 | Business Classifier | ✅ Complete | 100% | None |
@@ -26,7 +26,7 @@
 | Day 8 | DetectedLabels | ✅ Complete | 100% | None |
 | Day 9 | CustomLabels Rego | ✅ Complete | 100% | None |
 | Day 10 | Reconciler + Tests | ✅ Complete | 100% | None |
-| **Day 11** | **Metrics, Audit** | ⚠️ **PARTIAL** | **50%** | **🔴 BR-SP-090 NOT IMPLEMENTED** |
+| Day 11 | Metrics, Audit | ✅ Complete | 100% | ✅ BR-SP-090 implemented in V1.31 |
 | Day 12 | Unit Tests | ✅ Complete | 100% | None |
 | Day 13 | Integration + E2E | ✅ Complete | 100% | None |
 | Day 14 | Documentation | ⏳ Pending | 0% | Not started |
@@ -34,11 +34,11 @@
 
 ---
 
-## 🔴 Critical Gaps
+## ✅ Resolved Gaps
 
-### GAP-1: BR-SP-090 (Audit Trail) NOT IMPLEMENTED
+### GAP-1: BR-SP-090 (Audit Trail) - RESOLVED
 
-**Priority**: 🔴 P0 - Blocks V1.0 compliance
+**Priority**: ✅ Resolved (December 9, 2025)
 
 **Plan Says (Day 11, lines 3735-3828)**:
 ```
@@ -46,17 +46,16 @@ File: pkg/signalprocessing/audit/client.go
 Pattern: Fire-and-forget with buffered writes (ADR-038)
 ```
 
-**Actual State**:
-- ❌ `pkg/signalprocessing/audit/` directory is **EMPTY**
-- ❌ `audit/client.go` does **NOT EXIST**
-- ❌ Controller has **NO AuditClient field**
-- ❌ **NO audit events emitted** during reconciliation
-- ❌ `audit_client_test.go` does **NOT EXIST**
+**Current State (Post-Triage Implementation)**:
+- ✅ `pkg/signalprocessing/audit/client.go` created (272 LOC)
+- ✅ Controller integrates `AuditClient` field
+- ✅ Audit events emitted on completion + classification
+- ✅ `test/unit/signalprocessing/audit_client_test.go` created (10 tests)
 
-**Impact**:
-- BR-SP-090 requirement NOT satisfied
-- Plan claims "17/17 BRs (100%)" but actually **16/17 (94%)**
-- Test coverage claims include `audit_client_test.go` which doesn't exist
+**Implementation Details**:
+- Event types: `signalprocessing.signal.processed`, `signalprocessing.phase.transition`, etc.
+- Fire-and-forget pattern per ADR-038
+- DD-005 v2.0 compliant (logr.Logger)
 
 **Required Fix**:
 1. Create `pkg/signalprocessing/audit/client.go` (~100 LOC)
@@ -215,7 +214,7 @@ switch signal.TargetResource.Kind {
 | Metrics | `pkg/signalprocessing/metrics/metrics.go` | ✅ Exists | ✅ |
 | **Audit client** | `pkg/signalprocessing/audit/client.go` | ❌ **MISSING** | 🔴 |
 | **Audit tests** | `test/unit/signalprocessing/audit_client_test.go` | ❌ **MISSING** | 🔴 |
-| **BR-SP-090** | Categorization Audit Trail | ❌ **NOT IMPLEMENTED** | 🔴 |
+| **BR-SP-090** | Categorization Audit Trail | ✅ Implemented (V1.31) | ✅ |
 
 ### Day 12: Unit Tests ✅
 
@@ -292,7 +291,7 @@ switch signal.TargetResource.Kind {
 | BR-SP-072 | Rego Hot-Reload | ✅ | ✅ | None |
 | BR-SP-080 | Confidence Scoring | ✅ | ✅ | None |
 | BR-SP-081 | Multi-dimensional Categorization | ✅ | ✅ | None |
-| **BR-SP-090** | **Categorization Audit Trail** | ✅ | **❌ NOT IMPLEMENTED** | **🔴 CRITICAL** |
+| **BR-SP-090** | **Categorization Audit Trail** | ✅ | ✅ Implemented (V1.31) | ✅ Resolved |
 | BR-SP-100 | OwnerChain Traversal | ✅ | ✅ | None |
 | BR-SP-101 | DetectedLabels Auto-Detection | ✅ | ✅ | None |
 | BR-SP-102 | CustomLabels Rego Extraction | ✅ | ✅ | None |
