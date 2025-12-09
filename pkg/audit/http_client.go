@@ -65,7 +65,7 @@ func (c *HTTPDataStorageClient) StoreBatch(ctx context.Context, events []*AuditE
 
 	jsonData, err := json.Marshal(payloads)
 	if err != nil {
-		return fmt.Errorf("failed to marshal audit events batch: %w", err)
+		return NewMarshalError(err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))

@@ -1142,14 +1142,19 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace string) *Processin
 // DD-GATEWAY-011: Replaced by inline logic in ProcessSignal using PhaseBasedDeduplicationChecker
 // BR-GATEWAY-185: Redis deprecation complete for deduplication path
 
-// parseCRDReference parses a CRD reference string into namespace and name
+// parseCRDReference is DEPRECATED - no longer needed after DD-GATEWAY-011
+// DD-GATEWAY-011: PhaseChecker returns the actual RR, no need to parse references
+// Kept for backward compatibility with any external code
 //
 // DD-GATEWAY-009: Helper for parsing RemediationRequestRef
 // Format: "namespace/name" (e.g., "production/rr-abc123")
 //
 // Returns:
 // - namespace: The namespace part (empty if invalid format)
+//
 // - name: The name part (empty if invalid format)
+//
+//nolint:unused // Deprecated but kept for compatibility
 func (s *Server) parseCRDReference(ref string) (namespace, name string) {
 	if ref == "" {
 		return "", ""

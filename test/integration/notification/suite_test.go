@@ -48,7 +48,7 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
-	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	// +kubebuilder:scaffold:imports
 )
 

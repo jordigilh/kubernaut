@@ -126,10 +126,6 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 		})
 
 		It("should write workflow.failed audit event via batch endpoint", func() {
-			if !dsAvailable {
-				Skip("Data Storage not available")
-			}
-
 			By("Creating a workflow.failed audit event")
 			event := createTestAuditEvent("workflow.failed", "failure")
 			errorCode := "PIPELINE_FAILED"
@@ -145,10 +141,6 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 		})
 
 		It("should write workflow.skipped audit event via batch endpoint", func() {
-			if !dsAvailable {
-				Skip("Data Storage not available")
-			}
-
 			By("Creating a workflow.skipped audit event")
 			event := createTestAuditEvent("workflow.skipped", "skipped")
 
@@ -160,10 +152,6 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 		})
 
 		It("should write multiple audit events in a single batch", func() {
-			if !dsAvailable {
-				Skip("Data Storage not available")
-			}
-
 			By("Creating multiple audit events")
 			events := []*audit.AuditEvent{
 				createTestAuditEvent("workflow.started", "success"),
@@ -184,10 +172,6 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 	Context("DD-AUDIT-002: BufferedAuditStore Integration", func() {
 
 		It("should initialize BufferedAuditStore with real Data Storage client", func() {
-			if !dsAvailable {
-				Skip("Data Storage not available")
-			}
-
 			By("Creating BufferedAuditStore with real DS client")
 			auditStore, err := audit.NewBufferedStore(
 				dsClient,

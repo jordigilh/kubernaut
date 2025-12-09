@@ -381,11 +381,11 @@ def test_audit_events(mock_data_storage, mock_llm):
 It("should register all business metrics", func() {
     // Record metrics
     metrics.RecordReconciliation("Pending", "success")
-    
+
     // Verify via registry inspection (NOT HTTP endpoint)
     families, err := ctrlmetrics.Registry.Gather()
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Check metric exists
     _, exists := families["aianalysis_reconciler_reconciliations_total"]
     Expect(exists).To(BeTrue())

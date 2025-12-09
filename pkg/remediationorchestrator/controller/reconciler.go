@@ -379,6 +379,8 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 // transitionToCompleted transitions the RR to Completed phase.
 func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+	oldPhase := rr.Status.OverallPhase
+	startTime := rr.CreationTimestamp.Time
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
@@ -398,7 +400,11 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 	}
 
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
-	metrics.PhaseTransitionsTotal.WithLabelValues(rr.Status.OverallPhase, string(phase.Completed), rr.Namespace).Inc()
+	metrics.PhaseTransitionsTotal.WithLabelValues(oldPhase, string(phase.Completed), rr.Namespace).Inc()
+
+	// Emit audit event (DD-AUDIT-003)
+	durationMs := time.Since(startTime).Milliseconds()
+	r.emitCompletionAudit(ctx, rr, outcome, durationMs)
 
 	logger.Info("Remediation completed successfully", "outcome", outcome)
 	return ctrl.Result{}, nil
@@ -407,6 +413,8 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 // transitionToFailed transitions the RR to Failed phase.
 func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase, failureReason string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+	oldPhase := rr.Status.OverallPhase
+	startTime := rr.CreationTimestamp.Time
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
@@ -425,10 +433,98 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	}
 
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
-	metrics.PhaseTransitionsTotal.WithLabelValues(rr.Status.OverallPhase, string(phase.Failed), rr.Namespace).Inc()
+	metrics.PhaseTransitionsTotal.WithLabelValues(oldPhase, string(phase.Failed), rr.Namespace).Inc()
+
+	// Emit audit event (DD-AUDIT-003)
+	durationMs := time.Since(startTime).Milliseconds()
+	r.emitFailureAudit(ctx, rr, failurePhase, failureReason, durationMs)
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
 	return ctrl.Result{}, nil
+}
+
+// ========================================
+// AUDIT EVENT EMISSION (DD-AUDIT-003)
+// ========================================
+
+// emitPhaseTransitionAudit emits an audit event for phase transitions.
+// Non-blocking - failures are logged but don't affect business logic.
+func (r *Reconciler) emitPhaseTransitionAudit(ctx context.Context, rr *remediationv1.RemediationRequest, fromPhase, toPhase string) {
+	if r.auditStore == nil {
+		return // Audit disabled
+	}
+
+	logger := log.FromContext(ctx)
+	correlationID := string(rr.UID)
+
+	event, err := r.auditHelpers.BuildPhaseTransitionEvent(
+		correlationID,
+		rr.Namespace,
+		rr.Name,
+		fromPhase,
+		toPhase,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build phase transition audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store phase transition audit event")
+	}
+}
+
+// emitCompletionAudit emits an audit event for remediation completion.
+func (r *Reconciler) emitCompletionAudit(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string, durationMs int64) {
+	if r.auditStore == nil {
+		return
+	}
+
+	logger := log.FromContext(ctx)
+	correlationID := string(rr.UID)
+
+	event, err := r.auditHelpers.BuildCompletionEvent(
+		correlationID,
+		rr.Namespace,
+		rr.Name,
+		outcome,
+		durationMs,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build completion audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store completion audit event")
+	}
+}
+
+// emitFailureAudit emits an audit event for remediation failure.
+func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase, failureReason string, durationMs int64) {
+	if r.auditStore == nil {
+		return
+	}
+
+	logger := log.FromContext(ctx)
+	correlationID := string(rr.UID)
+
+	event, err := r.auditHelpers.BuildFailureEvent(
+		correlationID,
+		rr.Namespace,
+		rr.Name,
+		failurePhase,
+		failureReason,
+		durationMs,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build failure audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store failure audit event")
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

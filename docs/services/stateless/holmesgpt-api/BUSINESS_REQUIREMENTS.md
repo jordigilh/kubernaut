@@ -57,10 +57,11 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - BR-HAPI-199 (ConfigMap Hot-Reload): ✅ Complete
 - BR-HAPI-200 (Investigation Inconclusive): ✅ Complete
 
-**Test Coverage**:
-- Unit: 481 test specs (100% passing, 95% confidence)
-- Integration: 5 test scenarios (SDK, Context API, Real LLM, RFC 7807, Graceful Shutdown)
-- E2E: Not yet implemented (planned for v2.0)
+**Test Coverage** (Updated Dec 9, 2025):
+- Unit: 568 tests (100% passing)
+- Integration: 84 tests (100% passing)
+- E2E: 53 tests (100% passing, runs against mock LLM)
+- **Total: 705 tests**
 
 **Deferred BRs**: 139 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
 

@@ -216,8 +216,28 @@ var defaultSanitizer = NewSanitizer()
 
 // DefaultRules returns the comprehensive set of sanitization rules.
 // These cover the most common sensitive data patterns.
+//
+// IMPORTANT: Pattern order matters! Container patterns (generatorURL, annotations)
+// must come FIRST to prevent sub-patterns from corrupting larger structures.
 func DefaultRules() []*Rule {
 	return []*Rule{
+		// ========================================
+		// PRIORITY: Container patterns (process first to prevent corruption)
+		// These patterns match larger structures that may contain sub-patterns
+		// ========================================
+		{
+			Name:        "generator-url",
+			Pattern:     regexp.MustCompile(`(?i)"generatorURL?"\s*:\s*"([^"]+)"`),
+			Replacement: `"generatorURL":"` + RedactedPlaceholder + `"`,
+			Description: "Redact Prometheus/Alertmanager generator URLs",
+		},
+		{
+			Name:        "annotations-json",
+			Pattern:     regexp.MustCompile(`(?i)"annotations"\s*:\s*\{[^}]*\}`),
+			Replacement: `"annotations":` + RedactedPlaceholder,
+			Description: "Redact webhook annotations",
+		},
+
 		// ========================================
 		// Password Patterns
 		// ========================================
@@ -407,3 +427,4 @@ func DefaultRules() []*Rule {
 		},
 	}
 }
+

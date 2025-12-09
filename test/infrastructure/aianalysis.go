@@ -135,10 +135,10 @@ func CreateAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Fprintln(writer, "✅ AIAnalysis E2E cluster ready!")
-	fmt.Fprintln(writer, fmt.Sprintf("  • AIAnalysis API: http://localhost:%d", AIAnalysisHostPort))
-	fmt.Fprintln(writer, fmt.Sprintf("  • AIAnalysis Metrics: http://localhost:%d/metrics", 9184))
-	fmt.Fprintln(writer, fmt.Sprintf("  • Data Storage: http://localhost:%d", DataStorageHostPort))
-	fmt.Fprintln(writer, fmt.Sprintf("  • HolmesGPT-API: http://localhost:%d", HolmesGPTAPIHostPort))
+	fmt.Fprintf(writer, "  • AIAnalysis API: http://localhost:%d\n", AIAnalysisHostPort)
+	fmt.Fprintf(writer, "  • AIAnalysis Metrics: http://localhost:%d/metrics\n", 9184)
+	fmt.Fprintf(writer, "  • Data Storage: http://localhost:%d\n", DataStorageHostPort)
+	fmt.Fprintf(writer, "  • HolmesGPT-API: http://localhost:%d\n", HolmesGPTAPIHostPort)
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
@@ -174,13 +174,35 @@ func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.W
 		return fmt.Errorf("kind-aianalysis-config.yaml not found")
 	}
 
-	// Check if cluster already exists
+	// Check if cluster already exists (with cleanup if partial state)
 	checkCmd := exec.Command("kind", "get", "clusters")
 	output, _ := checkCmd.Output()
 	if containsCluster(string(output), clusterName) {
 		fmt.Fprintln(writer, "  Cluster already exists, reusing...")
 		return exportKubeconfig(clusterName, kubeconfigPath, writer)
 	}
+
+	// Clean up any leftover Podman containers from previous failed runs
+	// This fixes issues on macOS where Kind/Podman can leave orphaned containers
+	fmt.Fprintln(writer, "  Cleaning up any leftover containers...")
+	cleanupContainers := []string{
+		clusterName + "-control-plane",
+		clusterName + "-worker",
+	}
+	for _, containerName := range cleanupContainers {
+		cleanupCmd := exec.Command("podman", "rm", "-f", containerName)
+		_ = cleanupCmd.Run() // Ignore errors - container may not exist
+	}
+
+	// Ensure kubeconfig directory exists
+	kubeconfigDir := filepath.Dir(kubeconfigPath)
+	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
+	}
+
+	// Remove any leftover kubeconfig lock file
+	lockFile := kubeconfigPath + ".lock"
+	_ = os.Remove(lockFile) // Ignore errors - file may not exist
 
 	// Create cluster
 	cmd := exec.Command("kind", "create", "cluster",

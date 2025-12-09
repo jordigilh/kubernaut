@@ -35,13 +35,12 @@ The **HolmesGPT-API service is now V1.0 feature complete**. All business require
 
 | Tier | Tests | Status |
 |------|-------|--------|
-| Unit Tests | 377 | ✅ 100% passing |
-| Integration Tests | 71 | ✅ 100% passing |
-| E2E Tests | 40 | ✅ Passing |
-| Smoke Tests | 4 | ✅ Passing |
-| **Total** | **492** | ✅ **100%** |
+| Unit Tests | 568 | ✅ 100% passing |
+| Integration Tests | 84 | ✅ 100% passing |
+| E2E Tests | 53 | ✅ Passing |
+| **Total** | **705** | ✅ **100%** |
 
-> **Note**: Per BUSINESS_REQUIREMENTS.md (Dec 2025). E2E tests run against mock LLM.
+> **Note**: Test counts updated Dec 9, 2025. E2E tests run against mock LLM.
 
 ### CI/CD Infrastructure
 

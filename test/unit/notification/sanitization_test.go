@@ -20,7 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
 // BR-NOT-054: Data Sanitization - BEHAVIOR & CORRECTNESS Testing
@@ -50,7 +50,7 @@ var _ = Describe("BR-NOT-054: Data Sanitization", func() {
 
 				if shouldContainRedacted {
 					// BEHAVIOR VALIDATION: Secret was detected and redacted
-					Expect(result).To(ContainSubstring("***REDACTED***"),
+					Expect(result).To(ContainSubstring("[REDACTED]"),
 						"%s - should contain redaction marker", description)
 					Expect(result).ToNot(Equal(input),
 						"%s - input should be modified", description)
@@ -113,7 +113,7 @@ var _ = Describe("BR-NOT-054: Data Sanitization", func() {
 
 				if expectedRedacted {
 					// CORRECTNESS VALIDATION: Redaction marker present
-					Expect(result).To(ContainSubstring("***REDACTED***"),
+					Expect(result).To(ContainSubstring("[REDACTED]"),
 						"%s - should contain redaction marker", scenario)
 
 					// CORRECTNESS VALIDATION: Secrets completely removed
@@ -225,27 +225,27 @@ data:
 
 			Entry("secret at start of string",
 				"password=secret123 followed by text",
-				"password: ***REDACTED*** followed by text",
+				"password: [REDACTED] followed by text",
 				"Secret at beginning of string"),
 
 			Entry("secret at end of string",
 				"text followed by password=secret123",
-				"text followed by password: ***REDACTED***",
+				"text followed by password: [REDACTED]",
 				"Secret at end of string"),
 
 			Entry("multiple occurrences of same secret",
 				"password=secret123 and again password=secret123",
-				"password: ***REDACTED*** and again password: ***REDACTED***",
+				"password: [REDACTED] and again password: [REDACTED]",
 				"Multiple occurrences of same secret pattern"),
 
 			Entry("secrets with special characters",
 				`password="p@$$w0rd!"`,
-				`password: ***REDACTED***`,
+				`password: [REDACTED]`,
 				"Secrets containing special characters"),
 
 			Entry("very long secret value",
 				"apiKey="+string(make([]byte, 1000)),
-				"apiKey: ***REDACTED***",
+				"apiKey: [REDACTED]",
 				"Very long secret values (1000+ chars)"),
 		)
 	})
@@ -271,7 +271,7 @@ data:
 				result := sanitizer.Sanitize(secretInput)
 
 				// BEHAVIOR VALIDATION: Secret completely removed
-				Expect(result).To(ContainSubstring("***REDACTED***"),
+				Expect(result).To(ContainSubstring("[REDACTED]"),
 					"Secret should be redacted: %s", secretInput)
 
 				// SECURITY VALIDATION: Original secret not in output
@@ -298,7 +298,7 @@ data:
 			result := sanitizer.Sanitize(nestedJSON)
 
 			// BEHAVIOR VALIDATION: All secrets redacted, structure preserved
-			Expect(result).To(ContainSubstring("***REDACTED***"))
+			Expect(result).To(ContainSubstring("[REDACTED]"))
 			Expect(result).ToNot(ContainSubstring("secretpass"))
 			Expect(result).ToNot(ContainSubstring("sk-proj-apikey123"))
 			Expect(result).To(ContainSubstring("\"database\""))
