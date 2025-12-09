@@ -33,17 +33,18 @@ import (
 // ServiceName is the canonical service identifier for audit events.
 const ServiceName = "remediation-orchestrator"
 
-// Event categories for RO audit events
+// Event categories for RO audit events (per DD-AUDIT-003)
 const (
-	CategoryRemediation = "remediation"
-	CategoryApproval    = "approval"
+	CategoryLifecycle   = "lifecycle"
 	CategoryPhase       = "phase"
+	CategoryApproval    = "approval"
+	CategoryRemediation = "remediation"
 )
 
-// Event actions for RO audit events
+// Event actions for RO audit events (per DD-AUDIT-003)
 const (
-	ActionPhaseTransition   = "phase_transition"
-	ActionCreated           = "created"
+	ActionStarted           = "started"
+	ActionTransitioned      = "transitioned"
 	ActionCompleted         = "completed"
 	ActionFailed            = "failed"
 	ActionApprovalRequested = "approval_requested"
@@ -65,7 +66,56 @@ func NewHelpers(serviceName string) *Helpers {
 	}
 }
 
+// LifecycleStartedData is the event_data for lifecycle started events.
+// Per DD-AUDIT-003: orchestrator.lifecycle.started (P1)
+type LifecycleStartedData struct {
+	RRName    string `json:"rr_name"`
+	Namespace string `json:"namespace"`
+}
+
+// BuildLifecycleStartedEvent builds an audit event for remediation lifecycle started.
+// Per DD-AUDIT-003: orchestrator.lifecycle.started (P1)
+func (h *Helpers) BuildLifecycleStartedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+) (*audit.AuditEvent, error) {
+	event := audit.NewAuditEvent()
+
+	// Event classification (per DD-AUDIT-003)
+	event.EventType = "orchestrator.lifecycle.started"
+	event.EventCategory = CategoryLifecycle
+	event.EventAction = ActionStarted
+	event.EventOutcome = "success"
+
+	// Actor (service)
+	event.ActorType = "service"
+	event.ActorID = h.serviceName
+
+	// Resource (RemediationRequest)
+	event.ResourceType = "RemediationRequest"
+	event.ResourceID = rrName
+	event.CorrelationID = correlationID
+
+	// Namespace
+	event.Namespace = &namespace
+
+	// Event data
+	data := LifecycleStartedData{
+		RRName:    rrName,
+		Namespace: namespace,
+	}
+	eventData, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	event.EventData = eventData
+
+	return event, nil
+}
+
 // PhaseTransitionData is the event_data for phase transition events.
+// Per DD-AUDIT-003: orchestrator.phase.transitioned (P1)
 type PhaseTransitionData struct {
 	FromPhase string `json:"from_phase"`
 	ToPhase   string `json:"to_phase"`
@@ -74,6 +124,7 @@ type PhaseTransitionData struct {
 }
 
 // BuildPhaseTransitionEvent builds an audit event for phase transitions.
+// Per DD-AUDIT-003: orchestrator.phase.transitioned (P1)
 func (h *Helpers) BuildPhaseTransitionEvent(
 	correlationID string,
 	namespace string,
@@ -83,10 +134,10 @@ func (h *Helpers) BuildPhaseTransitionEvent(
 ) (*audit.AuditEvent, error) {
 	event := audit.NewAuditEvent()
 
-	// Event classification
-	event.EventType = "ro.phase.transition"
+	// Event classification (per DD-AUDIT-003)
+	event.EventType = "orchestrator.phase.transitioned"
 	event.EventCategory = CategoryPhase
-	event.EventAction = ActionPhaseTransition
+	event.EventAction = ActionTransitioned
 	event.EventOutcome = "success"
 
 	// Actor (service)

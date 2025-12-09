@@ -268,6 +268,13 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	if err := r.Status().Update(ctx, sp); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// BR-SP-090: Record audit event on completion
+	if r.AuditClient != nil {
+		r.AuditClient.RecordSignalProcessed(ctx, sp)
+		r.AuditClient.RecordClassificationDecision(ctx, sp)
+	}
+
 	return ctrl.Result{}, nil
 }
 

@@ -141,6 +141,16 @@ var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Label("integrat
 
 		// DD-005: Metrics naming convention
 		It("should follow DD-005 naming convention - DD-005", func() {
+			// Trigger all metrics first (parallel tests may not have run the first test)
+			metrics.RecordReconciliation("Pending", "success")
+			metrics.RecordReconcileDuration("Pending", 1.0)
+			metrics.RecordRegoEvaluation("approved", false)
+			metrics.RecordApprovalDecision("auto_approved", "staging")
+			metrics.RecordConfidenceScore("OOMKilled", 0.85)
+			metrics.RecordFailure("TestReason", "TestSubReason")
+			metrics.RecordValidationAttempt("test-workflow", false)
+			metrics.RecordDetectedLabelsFailure("test-label")
+
 			families, err := gatherMetrics()
 			Expect(err).ToNot(HaveOccurred())
 

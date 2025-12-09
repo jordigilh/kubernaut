@@ -255,15 +255,16 @@ var _ = Describe("HTTPDataStorageClient Unit Tests (DD-AUDIT-002)", func() {
 			Expect(receivedEvents).To(HaveLen(1))
 
 			receivedEvent := receivedEvents[0]
-			// Required fields per DD-AUDIT-002
+			// Required fields per DD-AUDIT-002 (with backward-compatible field names)
 			Expect(receivedEvent).To(HaveKey("version"))
 			Expect(receivedEvent).To(HaveKey("event_type"))
 			Expect(receivedEvent).To(HaveKey("event_timestamp"))
 			Expect(receivedEvent).To(HaveKey("correlation_id"))
 			Expect(receivedEvent).To(HaveKey("event_data"))
 			Expect(receivedEvent).To(HaveKey("event_category"))
-			Expect(receivedEvent).To(HaveKey("event_action"))
-			Expect(receivedEvent).To(HaveKey("event_outcome"))
+			// Client uses legacy field names for backward compatibility
+			Expect(receivedEvent).To(HaveKey("operation")) // event_action (legacy)
+			Expect(receivedEvent).To(HaveKey("outcome"))   // event_outcome (legacy)
 		})
 
 		// BEHAVIOR: Large batch (100 events) is sent as single request

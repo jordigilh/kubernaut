@@ -264,7 +264,12 @@ func (s *BufferedAuditStore) backgroundWriter() {
 
 // writeBatchWithRetry writes a batch with exponential backoff retry logic.
 //
-// Retry strategy:
+// Retry strategy (GAP-10/GAP-11: Error differentiation):
+// - 4xx errors (client errors): Do NOT retry - indicates invalid data
+// - 5xx errors (server errors): Retry with exponential backoff
+// - Network errors: Retry with exponential backoff
+//
+// Retry timing:
 // - Attempt 1: Immediate
 // - Attempt 2: 1 second delay
 // - Attempt 3: 4 seconds delay
@@ -285,6 +290,21 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*AuditEvent) {
 				"attempt", attempt,
 				"batch_size", len(batch),
 			)
+
+			// GAP-10/GAP-11: Check if error is retryable
+			// 4xx errors are NOT retryable (invalid data)
+			// 5xx and network errors ARE retryable
+			if !IsRetryable(err) {
+				// Non-retryable error (4xx) - don't retry, log as invalid
+				atomic.AddInt64(&s.failedBatchCount, 1)
+				s.metrics.RecordBatchFailed()
+
+				s.logger.Error(nil, "Dropping audit batch due to non-retryable error (invalid data)",
+					"batch_size", len(batch),
+					"is_4xx_error", Is4xxError(err),
+				)
+				return
+			}
 
 			if attempt < s.config.MaxRetries {
 				// Exponential backoff: 1s, 4s, 9s
