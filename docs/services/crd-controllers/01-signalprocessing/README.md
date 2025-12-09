@@ -1,7 +1,7 @@
 # Signal Processing Service
 
-**Version**: v1.4
-**Status**: ✅ VALIDATED - Ready for Implementation
+**Version**: v1.5
+**Status**: ✅ IMPLEMENTED - V1.0 Ready (94% - Day 14 docs complete)
 **Health/Ready Port**: 8081 (`/health`, `/ready` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
 **CRD**: SignalProcessing
@@ -16,6 +16,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v1.5 | 2025-12-09 | V1.0 Implementation complete (17/17 BRs), Day 14 docs (BUILD, OPERATIONS, DEPLOYMENT) | [IMPLEMENTATION_PLAN_V1.31](IMPLEMENTATION_PLAN_V1.31.md), [V1.0_TRIAGE_REPORT](V1.0_TRIAGE_REPORT.md) |
 | v1.4 | 2025-11-30 | Cross-team validation complete, API group updated to `.ai`, implementation plan v1.16 | [IMPLEMENTATION_PLAN_V1.16](IMPLEMENTATION_PLAN_V1.16.md), [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md) |
 | v1.3 | 2025-11-30 | DD-WORKFLOW-001 v1.8: OwnerChain, DetectedLabels, CustomLabels, updated gap analysis | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 | v1.2 | 2025-11-28 | Port fix: 8080 → 8081, API group standardization, metrics naming, graceful shutdown, parallel testing | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md), [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
@@ -44,7 +45,11 @@
 | **[Integration Points](./integration-points.md)** | Upstream/downstream services, external dependencies | ~200 | ✅ Complete |
 | **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path, reusability analysis | ~290 | ✅ Complete |
 | **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~220 | ✅ Complete |
-| **[Implementation Plan v1.16](./IMPLEMENTATION_PLAN_V1.16.md)** | Day-by-day implementation guide (authoritative) | ~5,200 | ✅ Validated |
+| **[Implementation Plan v1.31](./IMPLEMENTATION_PLAN_V1.31.md)** | Day-by-day implementation guide (authoritative) | ~6,800 | ✅ Validated |
+| **[BUILD.md](./BUILD.md)** | Build instructions, development environment | ~300 | ✅ Complete |
+| **[OPERATIONS.md](./OPERATIONS.md)** | Operational procedures, monitoring, troubleshooting | ~400 | ✅ Complete |
+| **[DEPLOYMENT.md](./DEPLOYMENT.md)** | Deployment instructions, RBAC, configuration | ~500 | ✅ Complete |
+| **[V1.0 Triage Report](./V1.0_TRIAGE_REPORT.md)** | Final V1.0 readiness audit | ~230 | ✅ Complete |
 
 ### Cross-Team Validation Records
 
