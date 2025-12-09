@@ -20,7 +20,7 @@ limitations under the License.
 //
 // Migration Status (December 2025):
 // - pkg/notification/sanitization/sanitizer.go → MIGRATED ✅ (uses this package)
-// - pkg/gateway/middleware/log_sanitization.go → Pending migration
+// - pkg/gateway/middleware/log_sanitization.go → DELETED ✅ (migrated Dec 9, 2025)
 //
 // All services MUST use this package for log sanitization to ensure:
 // - Consistent redaction patterns across the codebase

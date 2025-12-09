@@ -2639,7 +2639,7 @@ go run ./cmd/aianalysis/main.go \
 curl -s localhost:9184/metrics | grep aianalysis_
 
 # Expected AIAnalysis metrics (per DD-005 naming: {service}_{component}_{metric}_{unit}):
-# 
+#
 # Core Reconciler Metrics (4-phase flow: Pending → Investigating → Analyzing → Completed)
 # aianalysis_reconciler_reconciliations_total{phase="Pending",result="success"} 0
 # aianalysis_reconciler_reconciliations_total{phase="Investigating",result="success"} 0

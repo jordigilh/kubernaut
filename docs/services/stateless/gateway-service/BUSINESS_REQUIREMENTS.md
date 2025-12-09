@@ -215,15 +215,15 @@ This document provides a comprehensive list of all business requirements for the
 **Description**: Gateway must log all incoming HTTP requests with sanitized data
 **Priority**: P1 (High)
 **Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/middleware/log_sanitization.go`
-**Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
+**Implementation**: `pkg/shared/sanitization/sanitizer.go` (shared library)
+**Tests**: `test/unit/shared/sanitization/sanitizer_test.go`
 
 ### **BR-GATEWAY-025: HTTP Response Logging**
 **Description**: Gateway must log all HTTP responses with status codes and duration
 **Priority**: P1 (High)
 **Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/middleware/log_sanitization.go`
-**Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
+**Implementation**: `pkg/shared/sanitization/sanitizer.go` (shared library)
+**Tests**: `test/unit/shared/sanitization/sanitizer_test.go`
 
 ### **BR-GATEWAY-027: Signal Source Service Identification**
 **Description**: Gateway adapters must provide monitoring system name (not adapter name) for LLM tool selection
