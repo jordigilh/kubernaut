@@ -458,8 +458,8 @@ From `docs/services/crd-controllers/06-notification/README.md` (lines 56-80):
   - `retry/` - Exponential backoff & circuit breakers
   - `metrics/` - Prometheus metrics
 - **Tests**:
-  - `test/unit/notification/` - 140 unit tests
-  - `test/integration/notification/` - 97 integration tests
+  - `test/unit/notification/` - 336 unit tests
+  - `test/integration/notification/` - 105 integration tests
   - `test/e2e/notification/` - 12 E2E tests (Kind-based)
 
 **See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.

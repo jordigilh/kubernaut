@@ -436,7 +436,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowReference{
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: workflowID, // Same workflow
 					},
 				},
@@ -455,7 +455,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowReference{
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: workflowID, // Same workflow - should block
 					},
 				},
@@ -482,7 +482,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowReference{
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "restart-pods-workflow", // First workflow
 					},
 				},
@@ -502,7 +502,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowReference{
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "scale-up-workflow", // Different workflow - should allow
 					},
 				},

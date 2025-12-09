@@ -668,6 +668,27 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              timeoutConfig:
+                description: |-
+                  ========================================
+                  TIMEOUT CONFIGURATION (REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
+                  Replaces deprecated annotation-based timeout (security + validation)
+                  Passed through from RR.Spec.TimeoutConfig.AIAnalysisTimeout by RO
+                  ========================================
+                  Optional timeout configuration for this analysis
+                  If nil, AIAnalysis controller uses defaults (Investigating: 60s, Analyzing: 5s)
+                properties:
+                  analyzingTimeout:
+                    description: |-
+                      Timeout for Analyzing phase (Rego policy evaluation)
+                      Default: 5s if not specified
+                    type: string
+                  investigatingTimeout:
+                    description: |-
+                      Timeout for Investigating phase (HolmesGPT-API call)
+                      Default: 60s if not specified
+                    type: string
+                type: object
             required:
             - analysisRequest
             - remediationId

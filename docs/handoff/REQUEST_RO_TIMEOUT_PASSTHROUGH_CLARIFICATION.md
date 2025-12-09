@@ -4,7 +4,7 @@
 **To**: RemediationOrchestrator Team
 **Date**: 2025-12-09
 **Priority**: 🟡 Medium
-**Status**: ✅ RO Responded - Option A Approved (Conditional)
+**Status**: ✅ **AIAnalysis spec change COMPLETE** - RO can proceed with passthrough
 
 ---
 
@@ -159,9 +159,11 @@ TIMELINE:
 
 | # | Owner | Action | Status |
 |---|---|---|---|
-| 1 | AIAnalysis Team | Add `TimeoutConfig` field to AIAnalysis spec | ⏳ Pending |
-| 2 | RO Team | Add passthrough in `creator/aianalysis.go` | 🔒 Blocked on #1 |
+| 1 | AIAnalysis Team | Add `TimeoutConfig` field to AIAnalysis spec | ✅ **COMPLETE** (Dec 9, 2025) |
+| 2 | RO Team | Add passthrough in `creator/aianalysis.go` | ✅ **UNBLOCKED** - Ready for RO |
 | 3 | Both Teams | Update BR-ORCH-028, DD-TIMEOUT-001 docs | ⏳ After #2 |
+
+> **📢 RO TEAM**: Action Item #1 is complete. AIAnalysis CRD now has `spec.TimeoutConfig.InvestigatingTimeout` field. You can proceed with passthrough implementation.
 
 ---
 
@@ -179,4 +181,5 @@ TIMELINE:
 |------|--------|--------|
 | 2025-12-09 | AIAnalysis Team | Initial request |
 | 2025-12-09 | RO Team | Response: Option A approved (conditional on AIAnalysis spec change) |
+| 2025-12-09 | AIAnalysis Team | ✅ **SPEC CHANGE COMPLETE** - Added `spec.TimeoutConfig` to AIAnalysis CRD |
 

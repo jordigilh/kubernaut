@@ -225,15 +225,16 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) 
 		atomic.AddInt64(&s.droppedCount, 1)
 		s.metrics.RecordDropped()
 
-		s.logger.Info("Audit buffer full, dropping event (graceful degradation)",
+		s.logger.Info("Audit buffer full, event dropped",
 			"event_type", event.EventType,
 			"correlation_id", event.CorrelationID,
 			"buffered_count", atomic.LoadInt64(&s.bufferedCount),
 			"dropped_count", atomic.LoadInt64(&s.droppedCount),
 		)
 
-		// ✅ Don't fail business logic - graceful degradation
-		return nil
+		// GAP-9: ADR-032 requires callers to know about dropped events
+		// so they can implement DLQ fallback
+		return fmt.Errorf("audit buffer full: event dropped (correlation_id=%s)", event.CorrelationID)
 	}
 }
 

@@ -4,7 +4,7 @@
 **To**: AIAnalysis Team
 **Date**: December 9, 2025
 **Priority**: 🔴 **HIGH** - Affects V1.0 integration
-**Status**: 📋 **ACTION REQUIRED**
+**Status**: ✅ **TRIAGED - Ready for Day 11 Implementation**
 
 ---
 
@@ -355,10 +355,122 @@ NO BLOCKERS - This can proceed immediately.
 
 ---
 
+### HAPI Team Response to Clarification Questions
+
+**Date**: December 9, 2025
+**Responder**: HAPI Team
+
+**Authoritative Sources**:
+- `holmesgpt-api/src/models/incident_models.py` (lines 173-182)
+- `api/aianalysis/v1alpha1/aianalysis_types.go` (lines 44-47)
+
+#### Q1: Is `metadata.name` correct for `incident_id` or should we use a UUID?
+
+**Answer**: ✅ **`metadata.name` is correct**
+
+Per `incident_models.py` line 173:
+```python
+incident_id: str = Field(..., description="Unique incident identifier")
+```
+
+**Rationale**:
+- `incident_id` is simply a **unique identifier** for the incident
+- The AIAnalysis CR's `metadata.name` is already unique within the namespace
+- Using `metadata.name` provides natural correlation in logs/audit
+- **DO NOT generate a UUID** - this would break traceability
+
+**Mapping**: `incident_id = aa.ObjectMeta.Name`
+
+---
+
+#### Q2: Is `metadata.labels["remediation-id"]` or `spec.RemediationID` the source?
+
+**Answer**: ✅ **Use `spec.RemediationID`**
+
+Per `aianalysis_types.go` lines 44-47:
+```go
+// Remediation ID for audit correlation (DD-WORKFLOW-002 v2.2)
+// +kubebuilder:validation:Required
+// +kubebuilder:validation:MinLength=1
+RemediationID string `json:"remediationId"`
+```
+
+Per `incident_models.py` lines 174-181:
+```python
+remediation_id: str = Field(
+    ...,
+    min_length=1,
+    description=(
+        "Remediation request ID for audit correlation (e.g., 'req-2025-11-27-abc123'). "
+        "MANDATORY per DD-WORKFLOW-002 v2.2..."
+    )
+)
+```
+
+**Mapping**: `remediation_id = aa.Spec.RemediationID`
+
+**Why NOT labels?**:
+- `spec.RemediationID` is the **authoritative** source (per CRD definition)
+- Labels are for K8s selectors, not data transfer
+- Spec fields have validation (`MinLength=1`)
+
+---
+
+#### Summary: Field Mapping (AUTHORITATIVE)
+
+| HAPI Field | AIAnalysis Source | Example |
+|------------|-------------------|---------|
+| `incident_id` | `aa.ObjectMeta.Name` | `"aianalysis-abc123"` |
+| `remediation_id` | `aa.Spec.RemediationID` | `"req-2025-11-29-xyz789"` |
+
+**Updated Code Pattern**:
+```go
+func buildIncidentRequest(aa *v1alpha1.AIAnalysis) *client.IncidentRequest {
+    return &client.IncidentRequest{
+        IncidentID:    aa.Name,                    // Q1: Use CR name
+        RemediationID: aa.Spec.RemediationID,      // Q2: Use spec field
+        SignalType:    aa.Spec.AnalysisRequest.SignalContext.SignalType,
+        Severity:      aa.Spec.AnalysisRequest.SignalContext.Severity,
+        // ... rest of mapping
+    }
+}
+```
+
+---
+
+---
+
+### AIAnalysis Team Acknowledgment of Q1/Q2 Answers
+
+**Date**: December 9, 2025
+**Status**: ✅ **CONFIRMED - All questions answered, ready for implementation**
+
+**Acknowledgment**:
+```
+✅ Thank you for the clear answers with authoritative source references.
+
+CONFIRMED FIELD MAPPINGS FOR DAY 11:
+
+| HAPI Field      | AIAnalysis Source           | Status     |
+|-----------------|----------------------------|------------|
+| incident_id     | aa.Name                    | ✅ Confirmed |
+| remediation_id  | aa.Spec.RemediationID      | ✅ Confirmed |
+
+NO MORE BLOCKERS - Day 11 implementation can proceed immediately with:
+1. Updated IncidentRequest struct (14 required fields)
+2. RecoveryRequest struct + InvestigateRecovery() method
+3. Field mapping per this document
+```
+
+---
+
 ## 📝 Document History
 
 | Date | Author | Change |
 |------|--------|--------|
 | 2025-12-09 | HAPI Team | Initial contract mismatch analysis |
+| 2025-12-09 | AIAnalysis Team | Acknowledged, asked clarification questions |
+| 2025-12-09 | HAPI Team | Answered Q1 (use metadata.name) and Q2 (use spec.RemediationID) |
+| 2025-12-09 | AIAnalysis Team | **TRIAGE COMPLETE** - All questions answered, ready for Day 11 |
 
 

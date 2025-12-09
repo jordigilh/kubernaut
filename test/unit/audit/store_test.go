@@ -324,18 +324,22 @@ var _ = Describe("BufferedAuditStore", func() {
 			Expect(duration).To(BeNumerically("<", 10*time.Millisecond)) // Should be instant
 		})
 
-		It("should drop event when buffer is full (graceful degradation)", func() {
+		// GAP-9: ADR-032 requires callers to know about dropped events
+		// so they can implement DLQ fallback
+		It("should return error when buffer is full (ADR-032 compliance)", func() {
 			// Fill buffer
 			for i := 0; i < 100; i++ {
 				event := createTestEvent()
 				_ = store.StoreAudit(ctx, event) // Intentionally ignore errors in test setup
 			}
 
-			// Next event should be dropped (but not error)
+			// GAP-9: Next event should return error so caller can implement fallback
 			event := createTestEvent()
 			err := store.StoreAudit(ctx, event)
 
-			Expect(err).ToNot(HaveOccurred()) // Graceful degradation - no error
+			// ADR-032: Caller MUST know event was dropped to implement DLQ fallback
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("buffer full"))
 		})
 	})
 
@@ -678,6 +682,33 @@ var _ = Describe("BufferedAuditStore", func() {
 			err := store.Close()
 
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		// GAP-12: ADR-032 requires Close() to report if events were lost
+		It("should return error on close if events were dropped (ADR-032)", func() {
+			// Configure store to fail all writes
+			mockClient.SetShouldFail(true)
+
+			// Store events (will fail after retries and be dropped)
+			for i := 0; i < 20; i++ {
+				event := createTestEvent()
+				store.StoreAudit(ctx, event)
+			}
+
+			// Wait for retries to complete and batches to fail
+			Eventually(func() int {
+				return mockClient.FailureCount()
+			}, "20s").Should(BeNumerically(">=", 3)) // At least one batch retried
+
+			// GAP-12: Close should report failure when events were lost
+			err := store.Close()
+
+			// ADR-032: Caller MUST know events were lost
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Or(
+				ContainSubstring("failed batches"),
+				ContainSubstring("dropped"),
+			))
 		})
 	})
 

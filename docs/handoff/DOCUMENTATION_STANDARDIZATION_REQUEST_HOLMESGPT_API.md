@@ -86,8 +86,8 @@ Here's how Notification Service v1.3.0 structured their Implementation Structure
   - `retry/` - Exponential backoff & circuit breakers
   - `metrics/` - Prometheus metrics
 - **Tests**:
-  - `test/unit/notification/` - 140 unit tests
-  - `test/integration/notification/` - 97 integration tests
+  - `test/unit/notification/` - 336 unit tests
+  - `test/integration/notification/` - 105 integration tests
   - `test/e2e/notification/` - 12 E2E tests (Kind-based)
 
 **See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.

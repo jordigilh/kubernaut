@@ -121,8 +121,8 @@ API Contract Reference:
 | Implement recovery endpoint logic | P0 | Day 11 | ✅ **UNBLOCKED** | HAPI confirmed: Use `/api/v1/recovery/analyze` |
 | Populate all status fields | P1 | Day 11 | 🔄 In Progress | AA internal |
 | Implement Conditions | P1 | Day 11 | 🔄 In Progress | AA internal |
-| Migrate timeout to spec field | P1 | Day 11 | ✅ **UNBLOCKED** | RO approved: Option A (pass through) |
-| Update RO passthrough | P2 | Day 12 | 🔒 Blocked | RO waits for AA spec change |
+| Migrate timeout to spec field | P1 | Day 11 | ✅ **COMPLETE** | Added `spec.TimeoutConfig` to CRD |
+| Update RO passthrough | P2 | Day 12 | ✅ **UNBLOCKED** | RO can proceed (AA spec change done) |
 
 ---
 
@@ -145,4 +145,5 @@ API Contract Reference:
 | 2025-12-09 | HAPI Team | Created `NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md` - detailed contract gap analysis |
 | 2025-12-09 | RO Team | Responded to Timeout Passthrough (Option A approved, conditional on AA spec change) |
 | 2025-12-09 | AIAnalysis Team | **TRIAGE COMPLETE** - All responses received, Day 11 plan ready |
+| 2025-12-09 | HAPI Team | Answered AA clarification questions: `incident_id=metadata.name`, `remediation_id=spec.RemediationID` |
 

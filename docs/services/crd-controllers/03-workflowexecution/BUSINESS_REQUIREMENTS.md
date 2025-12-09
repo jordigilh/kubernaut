@@ -543,6 +543,8 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.6 | 2025-12-09 | **DD-WE-001 Compliance Fix**: Fixed `CheckCooldown()` to allow different workflows on same target within cooldown (per DD-WE-001 line 140). **BR-WE-004 Documentation Fix**: Updated to explain finalizer approach - cross-namespace owner references not supported by Kubernetes. |
+| 3.5 | 2025-12-09 | **BR-WE-005 Audit Types**: Added clarification that `workflowexecution.*` prefix aligns with ADR-034 pattern. |
 | 3.4 | 2025-12-09 | **BR-WE-005 Tests Added**: Added integration tests with real DS (`audit_datastorage_test.go`) and E2E audit persistence verification (`02_observability_test.go`). Tests will **FAIL** until DS batch endpoint is fixed. Once fixed, BR-WE-005 coverage → 100%. |
 | 3.3 | 2025-12-08 | **BR-WE-005 Audit Triage**: Corrected BR Coverage Matrix. Production code now initializes AuditStore (DD-AUDIT-003 compliant). Integration tests flagged as using mock instead of real DS (per TESTING_GUIDELINES.md). E2E audit persistence BLOCKED by DS batch endpoint. See `NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md`. |
 | 3.2 | 2025-12-06 | **v1.1 Planning**: Added BR-WE-013 (Audit-Tracked Block Clearing) for v1.1. Deferred from v1.0 - annotations lack audit trail for identity tracking. |

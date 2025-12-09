@@ -208,7 +208,7 @@ All critical guidelines are being followed.
    ```go
    // Current:
    It("should have correct metric namespace", ...)
-   
+
    // Improved:
    It("should use 'gateway_' prefix for Prometheus scraping (BR-GATEWAY-024)", ...)
    ```

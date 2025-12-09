@@ -71,6 +71,30 @@ type AIAnalysisSpec struct {
 	// 3. Consider re-trying earlier approaches after later failures
 	// Ordered chronologically: index 0 = first attempt, last index = most recent
 	PreviousExecutions []PreviousExecution `json:"previousExecutions,omitempty"`
+
+	// ========================================
+	// TIMEOUT CONFIGURATION (REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
+	// Replaces deprecated annotation-based timeout (security + validation)
+	// Passed through from RR.Spec.TimeoutConfig.AIAnalysisTimeout by RO
+	// ========================================
+	// Optional timeout configuration for this analysis
+	// If nil, AIAnalysis controller uses defaults (Investigating: 60s, Analyzing: 5s)
+	// +optional
+	TimeoutConfig *AIAnalysisTimeoutConfig `json:"timeoutConfig,omitempty"`
+}
+
+// AIAnalysisTimeoutConfig defines timeout settings for AIAnalysis phases
+// Per REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md - Option A approved
+type AIAnalysisTimeoutConfig struct {
+	// Timeout for Investigating phase (HolmesGPT-API call)
+	// Default: 60s if not specified
+	// +optional
+	InvestigatingTimeout metav1.Duration `json:"investigatingTimeout,omitempty"`
+
+	// Timeout for Analyzing phase (Rego policy evaluation)
+	// Default: 5s if not specified
+	// +optional
+	AnalyzingTimeout metav1.Duration `json:"analyzingTimeout,omitempty"`
 }
 
 // AnalysisRequest contains the structured analysis request

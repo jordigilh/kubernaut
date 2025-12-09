@@ -137,7 +137,7 @@ Evidence from signalprocessing_controller.go:
 
 Total typical reconciliation time: <3 seconds
 
-Unlike AIAnalysis (LLM calls can hang indefinitely) or WorkflowExecution 
+Unlike AIAnalysis (LLM calls can hang indefinitely) or WorkflowExecution
 (Tekton pipelines can take minutes), SP operations are bounded by design.
 ```
 
@@ -155,7 +155,7 @@ For V1.0: Option C is architecturally sound.
 
 **Additional Notes**:
 ```
-SP aligns with RO team's assessment. Timeout passthrough adds complexity 
+SP aligns with RO team's assessment. Timeout passthrough adds complexity
 without benefit for bounded operations. We recommend:
 
 1. Document this decision as "Not Required" for SP

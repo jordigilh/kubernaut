@@ -1312,18 +1312,10 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
 
-	// Store deduplication metadata in Redis (BR-003, BR-005, BR-077)
-	// This enables duplicate detection across Gateway restarts and provides
-	// persistent state for deduplication even when CRDs are deleted
-	crdRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
-	if err := s.deduplicator.Store(ctx, signal, crdRef); err != nil {
-		// Graceful degradation: log error but don't fail the request
-		// The CRD is already created, so the alert is being processed
-		logger.Info("Failed to store deduplication metadata in Redis",
-			"fingerprint", signal.Fingerprint,
-			"crd_ref", crdRef,
-			"error", err)
-	}
+	// DD-GATEWAY-011: Redis deduplication storage DEPRECATED
+	// Deduplication now uses K8s status-based lookup (phaseChecker.ShouldDeduplicate)
+	// and status updates (statusUpdater.UpdateDeduplicationStatus)
+	// Redis is no longer used for deduplication state
 
 	// Record processing duration
 	duration := time.Since(start)
@@ -1425,14 +1417,10 @@ func (s *Server) createAggregatedCRD(
 		return "", fmt.Errorf("failed to create aggregated CRD: %w", err)
 	}
 
-	// Store deduplication metadata in Redis for storm aggregation (BR-GATEWAY-016)
-	if err := s.deduplicator.Store(ctx, &aggregatedSignal, rr.Name); err != nil {
-		logger.Info("Failed to store deduplication metadata",
-			"fingerprint", aggregatedSignal.Fingerprint,
-			"error", err)
-	}
+	// DD-GATEWAY-011: Storm aggregation now uses K8s status-based tracking
+	// Redis storage deprecated - status.stormAggregation replaces Redis state
 
-	// DD-GATEWAY-011: Update status.stormAggregation using StatusUpdater (Redis deprecation path)
+	// DD-GATEWAY-011: Update status.stormAggregation using StatusUpdater
 	// This tracks storm aggregation in RR status instead of Redis
 	isThresholdReached := resourceCount >= 5 // Default threshold per DD-GATEWAY-008
 	if err := s.statusUpdater.UpdateStormAggregationStatus(ctx, rr, isThresholdReached); err != nil {

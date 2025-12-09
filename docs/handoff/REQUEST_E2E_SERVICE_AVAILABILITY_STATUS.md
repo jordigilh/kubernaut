@@ -142,7 +142,7 @@ To achieve this, we need **all services deployable and functional** in a Kind cl
 ## ❓ Questions for Teams
 
 1. **Gateway Team**: Is the Gateway deployable to Kind with CRD creation support? **✅ ANSWERED: YES** - See Gateway response
-2. **HAPI Team**: Can AIAnalysis run without real LLM in Kind (mock mode)? ⏳ Awaiting response
+2. **HAPI Team**: Can AIAnalysis run without real LLM in Kind (mock mode)? **✅ ANSWERED: YES** - Mock LLM via `testutil.MockHolmesGPTClient`
 3. **WE Team**: Can WorkflowExecution run without Tekton in Kind? **✅ ANSWERED: NO, but Tekton v1.7.0 auto-installed**
 4. **Notification Team**: Can Notification run without external channels (console only)? ⏳ Awaiting response
 5. **DataStorage Team**: Is PostgreSQL/Redis deployable in Kind for audit trail? **✅ ANSWERED: YES** - See DataStorage response
