@@ -162,4 +162,5 @@ metrics.ManualReviewNotificationsTotal.WithLabelValues(
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-12-07 | Initial metrics implementation (DD-005 compliant) |
+| 1.1 | 2025-12-08 | Fixed: Removed unused `result` label from ReconcileTotal, fixed PhaseTransitionsTotal label order |
 

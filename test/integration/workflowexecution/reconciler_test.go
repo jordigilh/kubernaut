@@ -659,5 +659,3 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		})
 	})
 })
-
-

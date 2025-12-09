@@ -27,7 +27,7 @@ This initiative coordinates all services to achieve **TESTING_GUIDELINES.md comp
 
 | Service | Integration Test Violation | E2E Test Violation | Audit Integration | Status |
 |---------|---------------------------|-------------------|-------------------|--------|
-| **Notification** | 🔴 Uses httptest mocks | ✅ Uses Kind cluster | ⚠️ Workaround | 50% |
+| **Notification** | ✅ Real DS + Slack mock (ext) | ✅ Uses Kind cluster | ⚠️ Workaround | 80% |
 | **Remediation Orchestrator** | 🔴 Uses httptest mocks | 🔴 Empty (suite only) | 🔴 Not integrated | ⏳ Pending |
 | **AIAnalysis** | ✅ ENVTEST + audit client | ✅ Tests defined | ✅ Integrated | ✅ Complete |
 | **Gateway** | 🟡 Unknown | 🟡 Unknown | 🔴 Not integrated | ⏳ Assessment |

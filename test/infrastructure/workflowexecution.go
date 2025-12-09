@@ -541,4 +541,3 @@ func findKindConfig(filename string) (string, error) {
 
 	return "", fmt.Errorf("Kind config file %s not found in any expected location (tried from %s)", filename, projectRoot)
 }
-

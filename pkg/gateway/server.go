@@ -1049,6 +1049,7 @@ const (
 // NewDuplicateResponse creates a ProcessingResponse for duplicate signals
 // TDD REFACTOR: Extracted factory function for duplicate response pattern
 // Business Outcome: Consistent duplicate signal handling (BR-005)
+// DEPRECATED: Use NewDuplicateResponseFromRR for DD-GATEWAY-011 status-based deduplication
 func NewDuplicateResponse(fingerprint string, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
 	return &ProcessingResponse{
 		Status:      StatusDuplicate,
@@ -1056,6 +1057,40 @@ func NewDuplicateResponse(fingerprint string, metadata *processing.Deduplication
 		Fingerprint: fingerprint,
 		Duplicate:   true,
 		Metadata:    metadata,
+	}
+}
+
+// NewDuplicateResponseFromRR creates a ProcessingResponse for duplicate signals using K8s RR data
+// DD-GATEWAY-011: Status-based deduplication (Redis deprecation)
+// BR-GATEWAY-185: All dedup state from K8s status, not Redis
+func NewDuplicateResponseFromRR(fingerprint string, rr *remediationv1alpha1.RemediationRequest) *ProcessingResponse {
+	// Build metadata from RR status (DD-GATEWAY-011: status-based tracking)
+	var occurrenceCount int
+	var firstOccurrence, lastOccurrence time.Time
+
+	if rr.Status.Deduplication != nil {
+		occurrenceCount = int(rr.Status.Deduplication.OccurrenceCount)
+		if rr.Status.Deduplication.FirstSeenAt != nil {
+			firstOccurrence = rr.Status.Deduplication.FirstSeenAt.Time
+		}
+		if rr.Status.Deduplication.LastSeenAt != nil {
+			lastOccurrence = rr.Status.Deduplication.LastSeenAt.Time
+		}
+	}
+
+	return &ProcessingResponse{
+		Status:                  StatusDuplicate,
+		Message:                 "Duplicate signal (K8s status-based deduplication)",
+		Fingerprint:             fingerprint,
+		Duplicate:               true,
+		RemediationRequestName:  rr.Name,
+		RemediationRequestRef:   fmt.Sprintf("%s/%s", rr.Namespace, rr.Name),
+		Metadata: &processing.DeduplicationMetadata{
+			Count:                   occurrenceCount,
+			FirstOccurrence:         firstOccurrence,
+			LastOccurrence:          lastOccurrence,
+			RemediationRequestRef:   fmt.Sprintf("%s/%s", rr.Namespace, rr.Name),
+		},
 	}
 }
 

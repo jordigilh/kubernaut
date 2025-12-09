@@ -364,6 +364,99 @@ def test_audit_events(mock_data_storage, mock_llm):
 
 **If Data Storage is unavailable, E2E tests should FAIL, not skip.**
 
+---
+
+## 🚫 **Skip() is FORBIDDEN in Tests**
+
+### Policy: Tests MUST Fail, Not Skip
+
+**MANDATORY**: `Skip()` calls are **FORBIDDEN** in all test tiers. Tests must explicitly **FAIL** when required dependencies are unavailable.
+
+#### Rationale
+
+| Issue | Impact |
+|-------|--------|
+| **False confidence** | Skipped tests show "green" but don't validate anything |
+| **Hidden dependencies** | Missing infrastructure goes undetected in CI |
+| **Compliance gaps** | Audit tests skipped = audit not validated |
+| **Silent failures** | Production issues not caught by test suite |
+
+#### FORBIDDEN Patterns
+
+```go
+// ❌ FORBIDDEN: Skipping when service unavailable
+BeforeEach(func() {
+    resp, err := http.Get(dataStorageURL + "/health")
+    if err != nil {
+        Skip("Data Storage not available")  // ← FORBIDDEN
+    }
+})
+
+// ❌ FORBIDDEN: Environment variable opt-out
+if os.Getenv("SKIP_EXPENSIVE_TESTS") == "true" {
+    Skip("Skipping expensive tests")  // ← FORBIDDEN
+}
+
+// ❌ FORBIDDEN: Skipping in integration/E2E tests
+It("should persist audit events", func() {
+    if !isDataStorageRunning() {
+        Skip("DS not running")  // ← FORBIDDEN
+    }
+})
+```
+
+#### REQUIRED Patterns
+
+```go
+// ✅ REQUIRED: Fail with clear error message
+BeforeEach(func() {
+    resp, err := http.Get(dataStorageURL + "/health")
+    if err != nil || resp.StatusCode != http.StatusOK {
+        Fail(fmt.Sprintf(
+            "REQUIRED: Data Storage not available at %s\n"+
+            "Start with: podman-compose -f podman-compose.test.yml up -d",
+            dataStorageURL))
+    }
+})
+
+// ✅ REQUIRED: Assert dependency availability
+It("should persist audit events", func() {
+    Expect(isDataStorageRunning()).To(BeTrue(),
+        "Data Storage REQUIRED - start infrastructure first")
+    // ... test logic
+})
+```
+
+#### Exception: Only ONE Acceptable Skip
+
+The **ONLY** acceptable use of `Skip()` is in test files explicitly marked as **experimental** or **future work**:
+
+```go
+// ✅ ACCEPTABLE: Clearly marked experimental feature not yet implemented
+var _ = Describe("Future Feature X", Label("experimental", "v2.0"), func() {
+    BeforeEach(func() {
+        Skip("Feature X not implemented - see ROADMAP.md")
+    })
+})
+```
+
+#### Enforcement
+
+CI pipelines MUST:
+1. **Fail builds** with any `Skip()` calls in non-experimental tests
+2. **Report skipped tests** as errors, not warnings
+3. **Block merges** with skipped compliance-critical tests
+
+```bash
+# CI check for forbidden Skip() usage
+grep -r "Skip(" test/ --include="*_test.go" | \
+  grep -v "experimental" | \
+  grep -v "v2.0" && \
+  echo "ERROR: Forbidden Skip() found" && exit 1
+```
+
+---
+
 ### 5. **Measure What Matters**
 - **Business tests**: Business KPIs and stakeholder success criteria
 - **Unit tests**: Technical correctness and edge case handling

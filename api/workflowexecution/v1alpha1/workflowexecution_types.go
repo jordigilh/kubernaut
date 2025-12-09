@@ -443,4 +443,3 @@ type WorkflowExecutionList struct {
 func init() {
 	SchemeBuilder.Register(&WorkflowExecution{}, &WorkflowExecutionList{})
 }
-

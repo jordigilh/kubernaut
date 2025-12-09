@@ -230,9 +230,9 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			// Verify expected business metrics are present
 			expectedMetrics := []string{
-				"workflowexecution_total",                  // Execution count by outcome
-				"workflowexecution_duration_seconds",       // Execution duration histogram
-				"workflowexecution_pipelinerun_creation",   // PipelineRun creation counter
+				"workflowexecution_total",                // Execution count by outcome
+				"workflowexecution_duration_seconds",     // Execution duration histogram
+				"workflowexecution_pipelinerun_creation", // PipelineRun creation counter
 			}
 
 			for _, metric := range expectedMetrics {
@@ -455,4 +455,3 @@ func isDataStorageDeployed() bool {
 
 	return err == nil && deployment.Status.ReadyReplicas > 0
 }
-

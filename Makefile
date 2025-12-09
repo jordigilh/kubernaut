@@ -1087,26 +1087,12 @@ build-aianalysis: ## Build AIAnalysis controller binary
 	go build -o bin/aianalysis-controller ./cmd/aianalysis
 
 .PHONY: docker-build-aianalysis
-docker-build-aianalysis: ## Build AIAnalysis controller container image (local arch)
-	@echo "🔨 Building AIAnalysis image for local arch: $(LOCAL_PLATFORM)"
+docker-build-aianalysis: ## Build AIAnalysis controller container image (host arch)
+	@echo "🔨 Building AIAnalysis image for host arch: $(LOCAL_PLATFORM)"
 	podman build --platform $(LOCAL_PLATFORM) \
 		-f docker/aianalysis.Dockerfile \
 		-t localhost/aianalysis-controller:latest .
 	@echo "✅ Image built: localhost/aianalysis-controller:latest ($(LOCAL_PLATFORM))"
-
-.PHONY: docker-build-aianalysis-multi
-docker-build-aianalysis-multi: ## Build AIAnalysis controller multi-arch image (amd64 + arm64)
-	@echo "🔨 Building multi-arch AIAnalysis image (amd64 + arm64)"
-	podman build --platform linux/amd64,linux/arm64 \
-		-f docker/aianalysis.Dockerfile \
-		-t $(REGISTRY)/kubernaut-aianalysis:$(VERSION) .
-	@echo "✅ Multi-arch image built: $(REGISTRY)/kubernaut-aianalysis:$(VERSION)"
-
-.PHONY: docker-push-aianalysis
-docker-push-aianalysis: docker-build-aianalysis-multi ## Push AIAnalysis controller multi-arch image
-	@echo "📤 Pushing multi-arch AIAnalysis image..."
-	podman manifest push $(REGISTRY)/kubernaut-aianalysis:$(VERSION) docker://$(REGISTRY)/kubernaut-aianalysis:$(VERSION)
-	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-aianalysis:$(VERSION)"
 
 .PHONY: test-all-services
 test-all-services: ## Run ALL tests for ALL services (sequential - use CI for parallel)

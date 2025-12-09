@@ -59,16 +59,27 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 	)
 
 	BeforeEach(func() {
-		// Skip if SKIP_DATASTORAGE_TESTS is set (CI without DS)
+		// Per TESTING_GUIDELINES.md: Integration tests MUST use real services (podman-compose)
+		// Per DD-AUDIT-003: WorkflowExecution is P0 - MUST generate audit traces
+		//
+		// The ONLY acceptable skip is when explicitly opted out via environment variable
+		// This should ONLY be used for quick local iteration, NOT for CI or compliance testing
 		if os.Getenv("SKIP_DATASTORAGE_TESTS") == "true" {
-			Skip("SKIP_DATASTORAGE_TESTS=true - skipping Data Storage integration tests")
+			Skip("SKIP_DATASTORAGE_TESTS=true - WARNING: This skips compliance-critical audit tests")
 		}
 
-		// Check if Data Storage is available
+		// Check if Data Storage is available - FAIL if not running
+		// This enforces the architectural dependency: WE requires DS for audit compliance
 		httpClient = &http.Client{Timeout: 5 * time.Second}
 		resp, err := httpClient.Get(dataStorageURL + "/health")
 		if err != nil || resp.StatusCode != http.StatusOK {
-			Skip(fmt.Sprintf("Data Storage not available at %s - start with: podman-compose -f podman-compose.test.yml up -d", dataStorageURL))
+			Fail(fmt.Sprintf(
+				"Data Storage REQUIRED but not available at %s\n"+
+					"  Per DD-AUDIT-003: WorkflowExecution is P0 - MUST generate audit traces\n"+
+					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n\n"+
+					"  Start with: podman-compose -f podman-compose.test.yml up -d\n"+
+					"  Or set SKIP_DATASTORAGE_TESTS=true (NOT recommended for CI)",
+				dataStorageURL))
 		}
 		resp.Body.Close()
 		dsAvailable = true
@@ -246,4 +257,3 @@ func createTestAuditEvent(eventAction, outcome string) *audit.AuditEvent {
 
 	return event
 }
-

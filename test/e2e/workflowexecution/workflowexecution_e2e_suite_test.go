@@ -293,4 +293,3 @@ func getWFE(name, namespace string) (*workflowexecutionv1alpha1.WorkflowExecutio
 func deleteWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	return k8sClient.Delete(context.Background(), wfe)
 }
-
