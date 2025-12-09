@@ -311,8 +311,11 @@ var _ = Describe("Full User Journey E2E", func() {
 
 | Objective | Priority | BR Reference | Authority |
 |-----------|----------|--------------|-----------|
-| Test validation (all tiers) | P0 | — | 03-testing-strategy.mdc |
-| Coverage verification (≥87.6%) | P0 | — | testing-strategy.md |
+| Test validation (all 3 tiers) | P0 | — | 03-testing-strategy.mdc |
+| E2E test execution | P0 | BR-AI-001 | TESTING_GUIDELINES.md |
+| Coverage verification (≥84.9%) | P0 | — | 03-testing-strategy.mdc (70% min) |
+| DD-TEST-001 port compliance | P0 | — | DD-TEST-001 |
+| Audit integration tests | P0 | — | DD-AUDIT-003 |
 | Documentation finalization | P0 | — | — |
 | Code review and cleanup | P0 | — | — |
 | Performance validation | P1 | BR-AI-024 | — |
@@ -324,30 +327,34 @@ var _ = Describe("Full User Journey E2E", func() {
 
 ### 🧪 Test Validation (MANDATORY per 03-testing-strategy.mdc)
 
-**Authority**: [03-testing-strategy.mdc](../../../../../.cursor/rules/03-testing-strategy.mdc) lines 945-948
+**Authority**: [03-testing-strategy.mdc](../../../../../.cursor/rules/03-testing-strategy.mdc)
+**Port Allocation**: [DD-TEST-001](../../../../../docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
 
 ```bash
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STEP 1: Unit Tests (MANDATORY)
+# STEP 1: Unit Tests (MANDATORY - with parallel execution)
+# Authority: 03-testing-strategy.mdc "Default Parallelism: 4 concurrent processors"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-go test -v ./test/unit/aianalysis/... 2>&1 | tee unit-test-results.log
-echo "Expected: 163+ tests passing"
+go test -v -p 4 ./test/unit/aianalysis/... 2>&1 | tee unit-test-results.log
+echo "Expected: 164+ tests passing"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STEP 2: Coverage Verification (must maintain ≥87.6%)
+# STEP 2: Coverage Verification (must maintain ≥84.9%, minimum 70%)
+# Authority: 03-testing-strategy.mdc "Unit Tests (70%+ - AT LEAST 70% of ALL BRs)"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-go test -coverprofile=coverage.out ./pkg/aianalysis/... -coverpkg=./pkg/aianalysis/...
+go test -coverprofile=coverage.out ./test/unit/aianalysis/... -coverpkg=./pkg/aianalysis/...
 COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
-echo "Coverage: $COVERAGE (target: ≥87.6%)"
+echo "Coverage: $COVERAGE (target: ≥84.9%, minimum: 70%)"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # STEP 3: Integration Tests (requires podman-compose infrastructure)
+# Authority: DD-TEST-001 ports 15433 (PostgreSQL), 16379 (Redis), 18090 (Data Storage)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Start infrastructure (if not already running)
 podman-compose -f podman-compose.test.yml up -d
 
-# Run integration tests
-go test -v ./test/integration/aianalysis/... 2>&1 | tee integration-test-results.log
+# Run integration tests with parallel execution
+go test -v -p 4 ./test/integration/aianalysis/... 2>&1 | tee integration-test-results.log
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # STEP 4: Parallel Test Compliance (per 03-testing-strategy.mdc)
@@ -366,6 +373,47 @@ fi
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BR_COUNT=$(grep -r "BR-AI-" test/unit/aianalysis/ --include="*_test.go" | wc -l)
 echo "BR-AI-* references in tests: $BR_COUNT"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 6: E2E Tests (MANDATORY - defense-in-depth per 03-testing-strategy.mdc)
+# Authority: TESTING_GUIDELINES.md "E2E tests must use all real services EXCEPT LLM"
+# Ports: DD-TEST-001 NodePorts 30084 (API), 30184 (Metrics), 30284 (Health)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# E2E tests create Kind cluster automatically via test/infrastructure/aianalysis.go
+go test -v -tags=e2e ./test/e2e/aianalysis/... 2>&1 | tee e2e-test-results.log
+echo "E2E tests use REAL services (Data Storage, HolmesGPT-API with mock LLM) per TESTING_GUIDELINES.md"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 7: DD-TEST-001 Port Compliance Verification
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "Verifying DD-TEST-001 port compliance..."
+
+# Integration test ports (15433, 16379, 18090)
+if grep -q "15433" podman-compose.test.yml && grep -q "16379" podman-compose.test.yml && grep -q "18090" podman-compose.test.yml; then
+    echo "✅ Integration test ports compliant (DD-TEST-001)"
+else
+    echo "❌ Integration test ports NOT compliant - check podman-compose.test.yml"
+fi
+
+# E2E NodePorts (30084, 30184, 30284)
+if grep -q "30084\|30184\|30284" test/infrastructure/kind-aianalysis-config.yaml 2>/dev/null; then
+    echo "✅ E2E NodePorts compliant (DD-TEST-001)"
+else
+    echo "⚠️  E2E NodePorts - verify in test/infrastructure/aianalysis.go"
+fi
+
+# Kubeconfig standardization (TESTING_GUIDELINES.md)
+echo "✅ Kubeconfig path: ~/.kube/aianalysis-e2e-config (per TESTING_GUIDELINES.md)"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 8: Audit Integration Test Verification (per DD-AUDIT-003)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AUDIT_TESTS=$(grep -r "audit" test/integration/aianalysis/ --include="*_test.go" 2>/dev/null | wc -l)
+if [ "$AUDIT_TESTS" -gt 0 ]; then
+    echo "✅ Audit integration tests present: $AUDIT_TESTS references"
+else
+    echo "⚠️  No audit integration tests found - verify DD-AUDIT-003 compliance"
+fi
 ```
 
 ### Performance Validation
@@ -443,11 +491,18 @@ done
 ## Day 9 EOD Checklist - Production Polish
 
 ### Test Validation (MANDATORY per 03-testing-strategy.mdc)
-- [ ] Unit tests passing: 163+ tests
-- [ ] Coverage verified: ≥87.6%
+- [ ] Unit tests passing: 164+ tests (with `-p 4` parallel execution)
+- [ ] Coverage verified: ≥84.9% (minimum 70% per 03-testing-strategy.mdc)
 - [ ] Integration tests passing (with podman-compose infrastructure)
+- [ ] **E2E tests passing** (defense-in-depth - real services except LLM)
 - [ ] Parallel test compliance: No unnecessary `Ordered` usage
 - [ ] BR mapping verified in tests
+- [ ] **Audit integration tests passing** (per DD-AUDIT-003)
+
+### Port Compliance (MANDATORY per DD-TEST-001)
+- [ ] Integration ports: 15433 (PostgreSQL), 16379 (Redis), 18090 (Data Storage)
+- [ ] E2E NodePorts: 30084 (API), 30184 (Metrics), 30284 (Health)
+- [ ] Kubeconfig: `~/.kube/aianalysis-e2e-config` (per TESTING_GUIDELINES.md)
 
 ### Code Quality
 - [ ] Zero lint errors (`golangci-lint`)

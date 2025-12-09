@@ -358,7 +358,8 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 	}
 
 	// Record metric
-	metrics.PhaseTransitionsTotal.WithLabelValues(rr.Namespace, oldPhase, string(newPhase)).Inc()
+	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
+	metrics.PhaseTransitionsTotal.WithLabelValues(oldPhase, string(newPhase), rr.Namespace).Inc()
 
 	logger.Info("Phase transition successful", "from", oldPhase, "to", newPhase)
 	return ctrl.Result{Requeue: true}, nil

@@ -17,6 +17,7 @@ limitations under the License.
 package workflowexecution
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,7 +27,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -251,6 +254,107 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		})
 	})
 
+	// ========================================
+	// BR-WE-005: Audit Persistence E2E (BLOCKED)
+	// ========================================
+	// This test validates audit events reach the Data Storage PostgreSQL database
+	//
+	// EXPECTED TO FAIL: Until Data Storage batch endpoint is fixed
+	// See: NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md
+	//
+	// Prerequisites:
+	// 1. Data Storage service deployed in Kind cluster
+	// 2. PostgreSQL database accessible
+	// 3. Controller configured with --datastorage-url
+	Context("BR-WE-005: Audit Persistence in PostgreSQL (E2E)", Label("datastorage", "audit"), func() {
+		const dataStorageServiceURL = "http://datastorage-service.kubernaut-system:8080"
+
+		It("should persist audit events to Data Storage for completed workflow", func() {
+			// Skip if Data Storage is not deployed in the cluster
+			// This test requires DS infrastructure which may not be available in all E2E runs
+			if !isDataStorageDeployed() {
+				Skip("Data Storage not deployed in cluster - see TESTING_TIER_COMPLIANCE_INITIATIVE.md")
+			}
+
+			By("Creating a WorkflowExecution to generate audit events")
+			testName := fmt.Sprintf("e2e-audit-%d", time.Now().UnixNano())
+			targetResource := fmt.Sprintf("default/deployment/audit-test-%d", time.Now().UnixNano())
+			wfe := createTestWFE(testName, targetResource)
+
+			defer func() {
+				_ = deleteWFE(wfe)
+			}()
+
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for workflow to complete")
+			Eventually(func() bool {
+				updated, _ := getWFE(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					phase := updated.Status.Phase
+					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+						phase == workflowexecutionv1alpha1.PhaseFailed
+				}
+				return false
+			}, 120*time.Second).Should(BeTrue())
+
+			By("Querying Data Storage for audit events")
+			// Query DS audit events API for events with this WFE's correlation ID
+			// This verifies the full flow: Controller -> pkg/audit -> DS -> PostgreSQL
+			//
+			// EXPECTED TO FAIL: DS batch endpoint returns error
+			// Error: "json: cannot unmarshal array into Go value"
+			auditQueryURL := fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s",
+				dataStorageServiceURL, wfe.Name)
+
+			var auditEvents []map[string]interface{}
+			Eventually(func() int {
+				resp, err := http.Get(auditQueryURL)
+				if err != nil {
+					GinkgoWriter.Printf("⚠️ Audit query failed: %v\n", err)
+					return 0
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode != http.StatusOK {
+					GinkgoWriter.Printf("⚠️ Audit query returned %d\n", resp.StatusCode)
+					return 0
+				}
+
+				// Parse response - expecting array of audit events
+				body, _ := io.ReadAll(resp.Body)
+				if err := json.Unmarshal(body, &auditEvents); err != nil {
+					GinkgoWriter.Printf("⚠️ Failed to parse audit response: %v\n", err)
+					return 0
+				}
+
+				return len(auditEvents)
+			}, 60*time.Second).Should(BeNumerically(">=", 2),
+				"BLOCKED: Expected at least 2 audit events (started + completed/failed). "+
+					"If this fails, verify Data Storage batch endpoint is implemented. "+
+					"See NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md")
+
+			By("Verifying audit event content")
+			// Verify we have the expected event types
+			eventTypes := make(map[string]bool)
+			for _, event := range auditEvents {
+				if eventType, ok := event["event_type"].(string); ok {
+					eventTypes[eventType] = true
+					GinkgoWriter.Printf("✅ Found audit event: %s\n", eventType)
+				}
+			}
+
+			Expect(eventTypes).To(HaveKey("workflowexecution.workflow.started"),
+				"Expected workflow.started audit event")
+			Expect(eventTypes).To(Or(
+				HaveKey("workflowexecution.workflow.completed"),
+				HaveKey("workflowexecution.workflow.failed"),
+			), "Expected workflow.completed or workflow.failed audit event")
+
+			GinkgoWriter.Println("✅ BR-WE-005: Audit events persisted to Data Storage PostgreSQL")
+		})
+	})
+
 	Context("BR-WE-003: Monitor Execution Status (Status Sync)", func() {
 		It("should sync WFE status with PipelineRun status accurately", func() {
 			// Business Outcome: WFE status accurately reflects execution state
@@ -330,5 +434,25 @@ func getPipelineRunForWFE(wfeName, wfeNamespace string) (*tektonv1.PipelineRun, 
 		}
 	}
 	return nil, fmt.Errorf("PipelineRun not found for WFE %s", wfeName)
+}
+
+// isDataStorageDeployed checks if Data Storage service is deployed in the cluster
+// This is used to skip audit persistence tests when DS infrastructure is not available
+func isDataStorageDeployed() bool {
+	deployment := &appsv1.Deployment{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      "datastorage",
+		Namespace: "kubernaut-system",
+	}, deployment)
+
+	if err != nil {
+		// Also check default namespace
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "datastorage",
+			Namespace: "default",
+		}, deployment)
+	}
+
+	return err == nil && deployment.Status.ReadyReplicas > 0
 }
 

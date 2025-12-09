@@ -27,11 +27,11 @@ This initiative coordinates all services to achieve **TESTING_GUIDELINES.md comp
 
 | Service | Integration Test Violation | E2E Test Violation | Audit Integration | Status |
 |---------|---------------------------|-------------------|-------------------|--------|
-| **Notification** | 🟡 Real infra tests created | 🔴 Uses envtest | ⚠️ Workaround + Tests | 40% |
+| **Notification** | 🔴 Uses httptest mocks | ✅ Uses Kind cluster | ⚠️ Workaround | 50% |
 | **Remediation Orchestrator** | 🔴 Uses httptest mocks | 🔴 Empty (suite only) | 🔴 Not integrated | ⏳ Pending |
-| **AIAnalysis** | 🔴 Uses httptest mocks | 🟡 Unknown | 🔴 Not integrated | ⏳ Pending |
+| **AIAnalysis** | ✅ ENVTEST + audit client | ✅ Tests defined | ✅ Integrated | ✅ Complete |
 | **Gateway** | 🟡 Unknown | 🟡 Unknown | 🔴 Not integrated | ⏳ Assessment |
-| **SignalProcessing** | 🟡 Unknown | 🟡 Unknown | 🔴 Not integrated | ⏳ Assessment |
+| **SignalProcessing** | ✅ ENVTEST (65 tests) | ✅ Kind (11 tests) | ⏳ Pending DS | 90% |
 | **WorkflowExecution** | 🟡 Unknown | 🟡 Unknown | 🔴 Not integrated | ⏳ Assessment |
 | **Data Storage** | 🟡 Unknown | 🟡 Unknown | N/A (is the audit store) | ⏳ Assessment |
 
@@ -117,28 +117,31 @@ Location: `test/infrastructure/podman-compose.test.yml`
 ```yaml
 # Shared test infrastructure for integration tests
 # All services should use this file for consistent testing
+#
+# ⚠️  AUTHORITATIVE PORT ALLOCATION: DD-TEST-001-port-allocation-strategy.md
+# Integration tests use ports 15433-18139 to avoid conflicts with production
 
 version: "3.8"
 
 services:
   postgres:
-    image: postgres:15
+    image: quay.io/jordigilh/pgvector:pg16
     environment:
-      POSTGRES_DB: kubernaut_test
-      POSTGRES_USER: test_user
-      POSTGRES_PASSWORD: test_pass
+      POSTGRES_DB: action_history
+      POSTGRES_USER: slm_user
+      POSTGRES_PASSWORD: slm_password
     ports:
-      - "5432:5432"
+      - "15433:5432"  # DD-TEST-001: Integration test PostgreSQL port
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U test_user -d kubernaut_test"]
+      test: ["CMD-SHELL", "pg_isready -U slm_user -d action_history"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
-    image: redis:7
+    image: quay.io/jordigilh/redis:7-alpine
     ports:
-      - "6379:6379"
+      - "16379:6379"  # DD-TEST-001: Integration test Redis port
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -155,12 +158,12 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8082:8082"
+      - "18090:8080"  # DD-TEST-001: Integration test Data Storage port
     environment:
-      DATABASE_URL: postgres://test_user:test_pass@postgres:5432/kubernaut_test
+      DATABASE_URL: postgres://slm_user:slm_password@postgres:5432/action_history
       REDIS_URL: redis://redis:6379
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -232,7 +235,7 @@ echo "Use: export KUBECONFIG=$KUBECONFIG_PATH"
 
 | Service | Integration | E2E | Audit | Overall | Last Updated |
 |---------|-------------|-----|-------|---------|--------------|
-| **Notification** | ⏳ | ⏳ | ⚠️ | 30% | Dec 8 |
+| **Notification** | ⏳ | ✅ | ⚠️ | 50% | Dec 9 |
 | **RO** | ⏳ | ⏳ | 🚫 | 0% | Dec 8 |
 | **AIAnalysis** | ⏳ | ⏳ | 🚫 | 0% | Dec 8 |
 | **Gateway** | ⏳ | ⏳ | 🚫 | 0% | - |

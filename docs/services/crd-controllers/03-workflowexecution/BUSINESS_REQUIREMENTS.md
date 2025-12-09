@@ -455,7 +455,7 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 ### BR Coverage Matrix
 
-**Last Updated**: 2025-12-08 (Phase 1 Audit Triage - Corrected)
+**Last Updated**: 2025-12-09 (Phase 2 - Added real DS tests, will FAIL until DS fix)
 
 | BR ID | Unit | Integration | E2E | Total | Notes |
 |-------|------|-------------|-----|-------|-------|
@@ -463,7 +463,7 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 | BR-WE-002 | ✅ | ✅ | ✅ | 100% | |
 | BR-WE-003 | ✅ | ✅ | ✅ | 100% | |
 | BR-WE-004 | ✅ | ✅ | ✅ | 100% | |
-| BR-WE-005 | ✅ | ⚠️ | ⏳ | 60% | **BLOCKED**: Integration uses mock (not real DS per TESTING_GUIDELINES). E2E pending DS batch endpoint. Production code: ✅ AuditStore initialized in main.go |
+| BR-WE-005 | ✅ | 🔴 | 🔴 | 60% → 100% | **TESTS EXIST**: Integration (`audit_datastorage_test.go`) and E2E (`02_observability_test.go`) tests added. Will **FAIL** until DS batch endpoint fixed. Tests PASS → 100% coverage. |
 | BR-WE-006 | ✅ | ✅ | ⬜ | 80% | |
 | BR-WE-007 | ✅ | ✅ | ✅ | 100% | |
 | BR-WE-008 | ✅ | ✅ | ✅ | 100% | |
@@ -475,13 +475,14 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 **Legend**:
 - ✅ = Fully compliant with authoritative documentation
+- 🔴 = Test exists but FAILS (waiting for DS batch endpoint fix)
 - ⚠️ = Partial compliance (uses mock instead of real service per TESTING_GUIDELINES)
 - ⏳ = Pending external dependency (Data Storage batch endpoint)
 - ⬜ = Not implemented
 
-**Summary**: 11/12 BRs have full Unit + Integration coverage. **BR-WE-005 has a known gap** - integration tests use in-memory mock instead of real Data Storage Service (per `TESTING_GUIDELINES.md` line 428: "Integration: Real (podman-compose)"). This gap is **BLOCKED** by Data Storage batch endpoint (see `NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md`).
+**Summary**: 11/12 BRs have full Unit + Integration coverage. **BR-WE-005 tests now exist** for both Integration (using real DS via podman-compose) and E2E (verifying PostgreSQL persistence). These tests **WILL FAIL** until the Data Storage team implements the batch endpoint (see `NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md`). Once DS is fixed, BR-WE-005 coverage will be 100%.
 
-**Overall**: ~94% (BR-WE-005 audit testing blocked by DS dependency)
+**Overall**: ~94% current (100% once DS batch endpoint is fixed)
 
 ---
 
@@ -506,8 +507,8 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 ---
 
-**Document Version**: 3.3
-**Last Updated**: December 8, 2025
+**Document Version**: 3.4
+**Last Updated**: December 9, 2025
 **Maintained By**: Kubernaut Architecture Team
 **Status**: Ready for Implementation (v1.0), Planned (v1.1)
 
@@ -517,6 +518,7 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.4 | 2025-12-09 | **BR-WE-005 Tests Added**: Added integration tests with real DS (`audit_datastorage_test.go`) and E2E audit persistence verification (`02_observability_test.go`). Tests will **FAIL** until DS batch endpoint is fixed. Once fixed, BR-WE-005 coverage → 100%. |
 | 3.3 | 2025-12-08 | **BR-WE-005 Audit Triage**: Corrected BR Coverage Matrix. Production code now initializes AuditStore (DD-AUDIT-003 compliant). Integration tests flagged as using mock instead of real DS (per TESTING_GUIDELINES.md). E2E audit persistence BLOCKED by DS batch endpoint. See `NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md`. |
 | 3.2 | 2025-12-06 | **v1.1 Planning**: Added BR-WE-013 (Audit-Tracked Block Clearing) for v1.1. Deferred from v1.0 - annotations lack audit trail for identity tracking. |
 | 3.1 | 2025-12-06 | **Exponential Backoff**: Added BR-WE-012 for exponential backoff cooldown. New `ConsecutiveFailures` and `NextAllowedExecution` status fields. New `ExhaustedRetries` skip reason. New metrics. See DD-WE-004. |

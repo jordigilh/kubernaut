@@ -32,6 +32,7 @@ const (
 var (
 	// ReconcileTotal counts total reconciliation attempts
 	// Reference: Standard controller metric
+	// Labels: namespace (K8s namespace), phase (RR phase at reconcile time)
 	ReconcileTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
@@ -39,7 +40,7 @@ var (
 			Name:      "reconcile_total",
 			Help:      "Total number of reconciliation attempts",
 		},
-		[]string{"namespace", "phase", "result"},
+		[]string{"namespace", "phase"},
 	)
 
 	// ManualReviewNotificationsTotal counts manual review notifications created
