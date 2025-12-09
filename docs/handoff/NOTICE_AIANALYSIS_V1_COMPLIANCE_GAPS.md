@@ -62,26 +62,53 @@ These are tracked for visibility only:
 
 ### HAPI Team Response (Recovery Endpoint)
 
-**Date**: _____________
-**Responder**: _____________
+**Date**: December 9, 2025
+**Responder**: HAPI Team
 
-**Decision**: [ ] Option A (Use `/recovery/analyze`) / [ ] Option B (Use `/incident/analyze` with recovery fields)
+**Decision**: [✅] Option A (Use `/recovery/analyze`) / [ ] Option B (Use `/incident/analyze` with recovery fields)
 
 **Notes**:
 ```
-[HAPI team to fill in]
+✅ OPTION A IS CORRECT
+
+Authoritative Reference: holmesgpt-api/api/openapi.json
+
+Rationale:
+1. The endpoints are INTENTIONALLY separate with different schemas
+2. RecoveryRequest has fields IncidentRequest lacks:
+   - is_recovery_attempt (bool)
+   - recovery_attempt_number (int)
+   - previous_execution (struct with failure context, original RCA, selected workflow)
+3. HAPI uses these fields to construct DIFFERENT prompts:
+   - incident.py → Initial RCA prompt
+   - recovery.py → Recovery strategy prompt with failure context
+4. Using /incident/analyze for recovery LOSES critical context the LLM needs
+
+Implementation Guidance for AIAnalysis:
+- Create InvestigateRecovery() method → POST /api/v1/recovery/analyze
+- Create RecoveryRequest struct with fields from OpenAPI spec
+- Call InvestigateRecovery() when spec.IsRecoveryAttempt=true
+- Call Investigate() when spec.IsRecoveryAttempt=false (existing behavior)
+
+API Contract Reference:
+- RecoveryRequest schema: holmesgpt-api/api/openapi.json lines 1130-1343
+- RecoveryResponse schema: holmesgpt-api/api/openapi.json (RecoveryResponse)
 ```
 
 ---
 
 ### Other Teams - API Group Impact
 
-| Team | Uses `aianalysis.kubernaut.io`? | Response Date |
-|------|--------------------------------|---------------|
-| RO | [ ] Yes / [ ] No | _____________ |
-| WE | [ ] Yes / [ ] No | _____________ |
-| Notification | [ ] Yes / [ ] No | _____________ |
-| Gateway | [ ] Yes / [ ] No | _____________ |
+| Team | Uses `aianalysis.kubernaut.io`? | Response Date | Notes |
+|------|--------------------------------|---------------|-------|
+| HAPI | [✅] No | Dec 9, 2025 | HAPI is stateless, doesn't consume CRDs |
+| RO | [✅] Yes | _____________ | Found in `test/e2e/remediationorchestrator/suite_test.go` |
+| WE | [ ] Yes / [ ] No | _____________ | |
+| Notification | [ ] Yes / [ ] No | _____________ | |
+| Gateway | [ ] Yes / [ ] No | _____________ | |
+| **SignalProcessing** | [✅] **No** | Dec 9, 2025 | No direct AIAnalysis CRD dependency (downstream via RO) |
+
+> **📋 HAPI Note**: HAPI does not consume any CRDs (per DD-HOLMESGPT-012 Minimal Internal Service Architecture). The API group migration has NO impact on HAPI.
 
 ---
 
@@ -101,7 +128,8 @@ These are tracked for visibility only:
 
 - `DD-CRD-001-api-group-domain-selection.md` - API Group standard
 - `REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md` - RO timeout question
-- `holmesgpt-api/api/openapi.json` - HAPI OpenAPI spec
+- `holmesgpt-api/api/openapi.json` - HAPI OpenAPI spec (AUTHORITATIVE)
+- **[NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md](./NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md)** - 🔴 **NEW** - Detailed contract gap analysis from HAPI team
 
 ---
 
@@ -110,4 +138,6 @@ These are tracked for visibility only:
 | Date | Author | Change |
 |------|--------|--------|
 | 2025-12-09 | AIAnalysis Team | Initial gap identification |
+| 2025-12-09 | HAPI Team | Responded to Recovery Endpoint question (Option A), confirmed no API Group impact |
+| 2025-12-09 | SignalProcessing Team | Confirmed no AIAnalysis CRD dependency (downstream via RO only) |
 
