@@ -32,7 +32,7 @@ This initiative coordinates all services to achieve **TESTING_GUIDELINES.md comp
 | **AIAnalysis** | ✅ ENVTEST + audit client | ✅ Tests defined | ✅ Integrated | ✅ Complete |
 | **Gateway** | 🟡 Unknown | 🟡 Unknown | 🔴 Not integrated | ⏳ Assessment |
 | **SignalProcessing** | ✅ ENVTEST (65 tests) | ✅ Kind (11 tests) | ⏳ Pending DS | 90% |
-| **WorkflowExecution** | 🟡 Unknown | 🟡 Unknown | 🔴 Not integrated | ⏳ Assessment |
+| **WorkflowExecution** | ✅ ENVTEST (47 tests) + 🔴 Real DS (6 tests) | ✅ Kind (10+ tests) | ✅ AuditStore in main.go | 90% (blocked by DS) |
 | **Data Storage** | 🟡 Unknown | 🟡 Unknown | N/A (is the audit store) | ⏳ Assessment |
 
 ### **Root Cause**
