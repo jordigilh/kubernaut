@@ -23,6 +23,7 @@ type MockDataStorageClient struct {
 	attemptCount  int32
 	shouldFail    bool
 	failUntilCall int32
+	customError   error // GAP-10: Support typed errors (HTTPError, NetworkError, etc.)
 }
 
 func NewMockDataStorageClient() *MockDataStorageClient {
@@ -36,6 +37,12 @@ func (m *MockDataStorageClient) StoreBatch(ctx context.Context, events []*audit.
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// GAP-10: Check if custom error is set (for typed error testing)
+	if m.customError != nil {
+		atomic.AddInt32(&m.failureCount, 1)
+		return m.customError
+	}
 
 	// Check if we should fail
 	if m.shouldFail {
@@ -100,6 +107,13 @@ func (m *MockDataStorageClient) SetFailUntilCall(failUntilCall int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.failUntilCall = int32(failUntilCall)
+}
+
+// SetCustomError sets a custom error to return (GAP-10: typed error testing)
+func (m *MockDataStorageClient) SetCustomError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.customError = err
 }
 
 func (m *MockDataStorageClient) Reset() {
@@ -357,6 +371,52 @@ var _ = Describe("BufferedAuditStore", func() {
 
 			Expect(mockClient.BatchCount()).To(Equal(0)) // Batch dropped
 			Expect(mockClient.FailureCount()).To(BeNumerically(">=", 3))
+		})
+
+		// GAP-10: 4xx errors should NOT be retried (non-retryable)
+		// BEHAVIOR: Client errors indicate invalid data, retry won't help
+		// CORRECTNESS: Only 1 attempt should be made for 4xx errors
+		It("should NOT retry on 4xx client error (GAP-10)", func() {
+			// Set a 400 Bad Request error (non-retryable)
+			mockClient.SetCustomError(audit.NewHTTPError(400, "Bad Request"))
+
+			// Store 10 events to trigger batch write
+			for i := 0; i < 10; i++ {
+				event := createTestEvent()
+				_ = store.StoreAudit(ctx, event)
+			}
+
+			// Wait for batch to be processed
+			Eventually(func() int {
+				return mockClient.AttemptCount()
+			}, "5s").Should(BeNumerically(">=", 1))
+
+			// GAP-10: Should NOT retry 4xx errors - only 1 attempt
+			Expect(mockClient.AttemptCount()).To(Equal(1), "4xx errors should NOT be retried")
+			Expect(mockClient.BatchCount()).To(Equal(0), "Batch should be dropped (not written)")
+		})
+
+		// GAP-10: 5xx errors SHOULD be retried (server errors)
+		// BEHAVIOR: Server errors may be transient, retry may succeed
+		// CORRECTNESS: Multiple attempts should be made for 5xx errors
+		It("should retry on 5xx server error (GAP-10)", func() {
+			// Set a 503 Service Unavailable error (retryable)
+			mockClient.SetCustomError(audit.NewHTTPError(503, "Service Unavailable"))
+
+			// Store 10 events to trigger batch write
+			for i := 0; i < 10; i++ {
+				event := createTestEvent()
+				_ = store.StoreAudit(ctx, event)
+			}
+
+			// Wait for max retries
+			Eventually(func() int {
+				return mockClient.AttemptCount()
+			}, "15s").Should(BeNumerically(">=", 3))
+
+			// GAP-10: Should retry 5xx errors up to MaxRetries
+			Expect(mockClient.AttemptCount()).To(BeNumerically(">=", 3), "5xx errors SHOULD be retried")
+			Expect(mockClient.BatchCount()).To(Equal(0), "Batch should be dropped after max retries")
 		})
 	})
 

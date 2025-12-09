@@ -168,7 +168,8 @@ func (h *Helpers) BuildPhaseTransitionEvent(
 	return event, nil
 }
 
-// CompletionData is the event_data for remediation completion events.
+// CompletionData is the event_data for remediation lifecycle completion events.
+// Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1)
 type CompletionData struct {
 	Outcome       string `json:"outcome"`
 	DurationMs    int64  `json:"duration_ms"`
@@ -178,7 +179,8 @@ type CompletionData struct {
 	FailureReason string `json:"failure_reason,omitempty"`
 }
 
-// BuildCompletionEvent builds an audit event for remediation completion.
+// BuildCompletionEvent builds an audit event for remediation lifecycle completion.
+// Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1)
 func (h *Helpers) BuildCompletionEvent(
 	correlationID string,
 	namespace string,
@@ -188,9 +190,9 @@ func (h *Helpers) BuildCompletionEvent(
 ) (*audit.AuditEvent, error) {
 	event := audit.NewAuditEvent()
 
-	// Event classification
-	event.EventType = "ro.remediation.completed"
-	event.EventCategory = CategoryRemediation
+	// Event classification (per DD-AUDIT-003)
+	event.EventType = "orchestrator.lifecycle.completed"
+	event.EventCategory = CategoryLifecycle
 	event.EventAction = ActionCompleted
 	event.EventOutcome = "success"
 
@@ -226,7 +228,8 @@ func (h *Helpers) BuildCompletionEvent(
 	return event, nil
 }
 
-// BuildFailureEvent builds an audit event for remediation failure.
+// BuildFailureEvent builds an audit event for remediation lifecycle failure.
+// Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1) with failure outcome
 func (h *Helpers) BuildFailureEvent(
 	correlationID string,
 	namespace string,
@@ -237,10 +240,11 @@ func (h *Helpers) BuildFailureEvent(
 ) (*audit.AuditEvent, error) {
 	event := audit.NewAuditEvent()
 
-	// Event classification
-	event.EventType = "ro.remediation.failed"
-	event.EventCategory = CategoryRemediation
-	event.EventAction = ActionFailed
+	// Event classification (per DD-AUDIT-003)
+	// Note: Failures are also lifecycle.completed events with failure outcome
+	event.EventType = "orchestrator.lifecycle.completed"
+	event.EventCategory = CategoryLifecycle
+	event.EventAction = ActionCompleted
 	event.EventOutcome = "failure"
 
 	// Actor (service)
@@ -294,6 +298,7 @@ type ApprovalData struct {
 }
 
 // BuildApprovalRequestedEvent builds an audit event for approval requested.
+// Related to ADR-040 (RemediationApprovalRequest)
 func (h *Helpers) BuildApprovalRequestedEvent(
 	correlationID string,
 	namespace string,
@@ -305,8 +310,8 @@ func (h *Helpers) BuildApprovalRequestedEvent(
 ) (*audit.AuditEvent, error) {
 	event := audit.NewAuditEvent()
 
-	// Event classification
-	event.EventType = "ro.approval.requested"
+	// Event classification (orchestrator namespace for consistency)
+	event.EventType = "orchestrator.approval.requested"
 	event.EventCategory = CategoryApproval
 	event.EventAction = ActionApprovalRequested
 	event.EventOutcome = "success"
@@ -342,6 +347,7 @@ func (h *Helpers) BuildApprovalRequestedEvent(
 }
 
 // BuildApprovalDecisionEvent builds an audit event for approval decision.
+// Related to ADR-040 (RemediationApprovalRequest)
 func (h *Helpers) BuildApprovalDecisionEvent(
 	correlationID string,
 	namespace string,
@@ -370,8 +376,8 @@ func (h *Helpers) BuildApprovalDecisionEvent(
 		outcome = "unknown"
 	}
 
-	// Event classification
-	event.EventType = "ro.approval." + action
+	// Event classification (orchestrator namespace for consistency)
+	event.EventType = "orchestrator.approval." + action
 	event.EventCategory = CategoryApproval
 	event.EventAction = action
 	event.EventOutcome = outcome
@@ -421,6 +427,7 @@ type ManualReviewData struct {
 }
 
 // BuildManualReviewEvent builds an audit event for manual review required.
+// Related to BR-ORCH-036 (Manual Review Notifications)
 func (h *Helpers) BuildManualReviewEvent(
 	correlationID string,
 	namespace string,
@@ -431,8 +438,8 @@ func (h *Helpers) BuildManualReviewEvent(
 ) (*audit.AuditEvent, error) {
 	event := audit.NewAuditEvent()
 
-	// Event classification
-	event.EventType = "ro.remediation.manual_review"
+	// Event classification (orchestrator namespace for consistency)
+	event.EventType = "orchestrator.remediation.manual_review"
 	event.EventCategory = CategoryRemediation
 	event.EventAction = ActionManualReview
 	event.EventOutcome = "pending"

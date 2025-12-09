@@ -141,9 +141,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 // handlePendingPhase handles the initial Pending phase.
 // Creates SignalProcessing CRD and transitions to Processing.
+// Per DD-AUDIT-003: Emits orchestrator.lifecycle.started (P1)
 func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 	logger.Info("Handling Pending phase - creating SignalProcessing")
+
+	// Emit lifecycle started audit event (DD-AUDIT-003 P1)
+	r.emitLifecycleStartedAudit(ctx, rr)
 
 	// Transition to Processing phase
 	return r.transitionPhase(ctx, rr, phase.Processing)
@@ -447,7 +451,34 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 // AUDIT EVENT EMISSION (DD-AUDIT-003)
 // ========================================
 
+// emitLifecycleStartedAudit emits an audit event for remediation lifecycle started.
+// Per DD-AUDIT-003: orchestrator.lifecycle.started (P1)
+// Non-blocking - failures are logged but don't affect business logic.
+func (r *Reconciler) emitLifecycleStartedAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	if r.auditStore == nil {
+		return // Audit disabled
+	}
+
+	logger := log.FromContext(ctx)
+	correlationID := string(rr.UID)
+
+	event, err := r.auditHelpers.BuildLifecycleStartedEvent(
+		correlationID,
+		rr.Namespace,
+		rr.Name,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build lifecycle started audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store lifecycle started audit event")
+	}
+}
+
 // emitPhaseTransitionAudit emits an audit event for phase transitions.
+// Per DD-AUDIT-003: orchestrator.phase.transitioned (P1)
 // Non-blocking - failures are logged but don't affect business logic.
 func (r *Reconciler) emitPhaseTransitionAudit(ctx context.Context, rr *remediationv1.RemediationRequest, fromPhase, toPhase string) {
 	if r.auditStore == nil {

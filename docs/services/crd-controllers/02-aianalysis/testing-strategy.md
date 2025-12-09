@@ -1,7 +1,7 @@
 ## Testing Strategy
 
-**Version**: v2.2
-**Last Updated**: 2025-12-06
+**Version**: v2.3
+**Last Updated**: 2025-12-09
 
 ---
 
@@ -9,6 +9,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **v2.3** | 2025-12-09 | **TESTING_GUIDELINES Compliance Fixes**: Fixed integration coverage target (20% → >50%); Removed BR- prefixes from unit test examples; Updated E2E path to `test/e2e/aianalysis/`; Added integration test file table; Updated HolmesGPT focus to MockHolmesGPTClient per HAPI team |
 | **v2.2** | 2025-12-06 | **Day 6 Implementation Alignment**: Updated unit test coverage (70% → 87.6% achieved); Added edge case test patterns for ERROR_HANDLING_PHILOSOPHY.md; Updated test file list; Added confidence level classification tests |
 | v2.1 | 2025-12-04 | **TESTING_GUIDELINES Alignment**: Added Quality Gates, Success Metrics; Removed V1.1 deferred code (BR-AI-040, BR-AI-050); Fixed BR range references |
 | v2.0 | 2025-11-30 | Added TESTING_GUIDELINES.md reference; Updated port allocation per DD-TEST-001 |
@@ -93,7 +94,9 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
+// ✅ CORRECT: Unit tests use function/component names, NOT BR- prefixes
+// BR- prefixes belong in E2E/Business Requirement tests only (per TESTING_GUIDELINES.md)
+var _ = Describe("AIAnalysis Controller", func() {
     var (
         fakeK8sClient       client.Client
         scheme              *runtime.Scheme
@@ -126,7 +129,8 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
         }
     })
 
-    Context("BR-AI-020: HolmesGPT Investigation Phase", func() {
+    // Unit test: validates implementation correctness
+    Context("HolmesGPT Investigation Phase", func() {
         It("should investigate alert and generate recommendations with confidence scores", func() {
             // Setup test AIAnalysis CRD
             aia := &aianalysisv1.AIAnalysis{
@@ -198,7 +202,8 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
         })
     })
 
-    Context("BR-AI-030: Rego Policy Evaluation for Auto-Approval", func() {
+    // Unit test: validates Rego policy logic (no BR- prefix)
+    Context("Rego Policy Evaluation for Auto-Approval", func() {
         DescribeTable("auto-approval policy decisions",
             func(environment string, action string, confidence float64, expectedDecision string) {
                 // Create AIAnalysis with investigation complete
@@ -248,21 +253,33 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
 ### Integration Tests (Cross-Component Validation)
 
 **Test Directory**: [test/integration/aianalysis/](../../../test/integration/aianalysis/)
-**Coverage Target**: 20%
+**Coverage Target**: >50% (microservices mandate per 03-testing-strategy.mdc)
 **Confidence**: 80-85%
 **Execution**: `make test-integration-aianalysis`
+**Current Status**: 34/43 tests passing (audit tests blocked by Data Storage batch endpoint)
 
 **Focus Areas**:
-- Real HolmesGPT API calls
-- Rego ConfigMap loading from Kubernetes
-- AIApprovalRequest CRD watch patterns
+- MockHolmesGPTClient for deterministic responses (per HAPI team guidance Dec 9, 2025)
+- CRD lifecycle with running controller (envtest)
+- Rego policy evaluation with mock evaluator
+- Metrics registration via registry inspection (DD-TEST-001)
+- Audit event generation (blocked by Data Storage batch endpoint)
+
+**Test Files**:
+| File | Tests | Focus |
+|------|-------|-------|
+| `reconciliation_test.go` | 4 | 4-phase flow, approval scenarios |
+| `holmesgpt_integration_test.go` | 12 | MockHolmesGPTClient scenarios |
+| `rego_integration_test.go` | 2 | Policy evaluation |
+| `metrics_integration_test.go` | 7 | Registry inspection |
+| `audit_integration_test.go` | 9 | Audit events (blocked) |
 
 ---
 
 ### E2E Tests (Complete Workflow Validation)
 
-**Test Directory**: [test/e2e/scenarios/](../../../test/e2e/scenarios/)
-**Coverage Target**: 10%
+**Test Directory**: [test/e2e/aianalysis/](../../../../test/e2e/aianalysis/)
+**Coverage Target**: 10-15%
 **Confidence**: 90-95%
 **Execution**: `make test-e2e-aianalysis`
 

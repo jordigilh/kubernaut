@@ -96,12 +96,13 @@ Test Coverage = (Unit Test Quality × 0.40) +
 - <70: <60% coverage or poor test quality
 
 **Integration Test Quality** (0-100):
-- **Coverage Target**: 15-20% of overall coverage
+- **Coverage Target**: >50% (microservices mandate per 03-testing-strategy.mdc)
 - **Quality Factors**:
-  - KIND cluster tests for CRD operations
-  - HolmesGPT-API integration with MockLLMServer
-  - Data Storage audit event tests
+  - envtest for CRD operations with running controller
+  - MockHolmesGPTClient for deterministic AI responses
+  - Data Storage audit event tests (via podman-compose)
   - Rego policy integration tests
+  - Metrics via registry inspection (DD-TEST-001)
 
 **Scoring**:
 - 100: All integration points tested, no flaky tests

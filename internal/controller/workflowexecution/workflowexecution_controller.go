@@ -191,6 +191,16 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	logger.Info("Reconciling Pending phase")
 
 	// ========================================
+	// Step 0: Validate spec (prevent malformed PipelineRuns)
+	// ========================================
+	if err := r.ValidateSpec(wfe); err != nil {
+		logger.Error(err, "Spec validation failed")
+		// Mark as Failed with ConfigurationError reason
+		// This is a pre-execution failure (wasExecutionFailure: false)
+		return ctrl.Result{}, r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", err.Error())
+	}
+
+	// ========================================
 	// Step 1: Check resource lock (DD-WE-001)
 	// ========================================
 	blocked, skipDetails, err := r.CheckResourceLock(ctx, wfe)
@@ -1163,6 +1173,85 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// ========================================
+// MarkFailedWithReason - Handle pre-execution failures
+// Used for validation errors, configuration errors before PipelineRun creation
+// ========================================
+func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, reason, message string) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Marking WorkflowExecution as Failed (pre-execution)",
+		"reason", reason,
+		"message", message,
+	)
+
+	// Set phase
+	wfe.Status.Phase = workflowexecutionv1alpha1.PhaseFailed
+
+	// Set completion time (no start time for pre-execution failures)
+	now := metav1.Now()
+	wfe.Status.CompletionTime = &now
+
+	// Create failure details for pre-execution failure
+	wfe.Status.FailureDetails = &workflowexecutionv1alpha1.FailureDetails{
+		Reason:              reason,
+		Message:             message,
+		FailedAt:            now,
+		WasExecutionFailure: false, // Pre-execution failure
+	}
+
+	// Generate natural language summary
+	wfe.Status.FailureDetails.NaturalLanguageSummary = r.GenerateNaturalLanguageSummary(wfe, wfe.Status.FailureDetails)
+
+	// Day 6 Extension (BR-WE-012): Pre-execution failure - apply exponential backoff
+	wfe.Status.ConsecutiveFailures++
+	if r.BaseCooldownPeriod > 0 {
+		exponent := int(wfe.Status.ConsecutiveFailures) - 1
+		if r.MaxBackoffExponent > 0 && exponent > r.MaxBackoffExponent {
+			exponent = r.MaxBackoffExponent
+		}
+		if exponent < 0 {
+			exponent = 0
+		}
+
+		backoff := r.BaseCooldownPeriod * time.Duration(1<<exponent)
+		if r.MaxCooldownPeriod > 0 && backoff > r.MaxCooldownPeriod {
+			backoff = r.MaxCooldownPeriod
+		}
+
+		nextAllowed := metav1.NewTime(time.Now().Add(backoff))
+		wfe.Status.NextAllowedExecution = &nextAllowed
+
+		logger.Info("Calculated exponential backoff for pre-execution failure",
+			"consecutiveFailures", wfe.Status.ConsecutiveFailures,
+			"backoff", backoff,
+			"nextAllowedExecution", nextAllowed.Time,
+		)
+	}
+
+	// Update status
+	if err := r.Status().Update(ctx, wfe); err != nil {
+		logger.Error(err, "Failed to update status to Failed")
+		return err
+	}
+
+	// Day 7: Record metrics (BR-WE-008) - 0 duration for pre-execution failures
+	RecordWorkflowFailure(0)
+
+	// Day 6 Extension: Update consecutive failures gauge (BR-WE-012)
+	SetConsecutiveFailures(wfe.Spec.TargetResource, wfe.Status.ConsecutiveFailures)
+
+	// Emit event
+	r.Recorder.Event(wfe, "Warning", "WorkflowFailed",
+		fmt.Sprintf("Pre-execution failure: %s - %s", reason, message))
+
+	// Day 8: Record audit event for workflow failure (BR-WE-005)
+	if err := r.RecordAuditEvent(ctx, wfe, "workflow.failed", "failure"); err != nil {
+		logger.V(1).Info("Failed to record workflow.failed audit event", "error", err)
+	}
+
+	return nil
 }
 
 // ========================================

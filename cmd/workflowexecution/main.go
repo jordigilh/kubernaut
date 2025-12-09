@@ -73,6 +73,22 @@ func main() {
 		"ServiceAccount name for PipelineRuns")
 
 	// ========================================
+	// DD-WE-004: Exponential Backoff Configuration (BR-WE-012)
+	// ========================================
+	var baseCooldownSeconds int
+	var maxCooldownMinutes int
+	var maxBackoffExponent int
+	var maxConsecutiveFailures int
+	flag.IntVar(&baseCooldownSeconds, "base-cooldown-seconds", 60,
+		"Base cooldown in seconds for exponential backoff (DD-WE-004)")
+	flag.IntVar(&maxCooldownMinutes, "max-cooldown-minutes", 10,
+		"Maximum cooldown in minutes (caps exponential backoff, DD-WE-004)")
+	flag.IntVar(&maxBackoffExponent, "max-backoff-exponent", 4,
+		"Maximum exponent for backoff calculation (2^n multiplier, DD-WE-004)")
+	flag.IntVar(&maxConsecutiveFailures, "max-consecutive-failures", 5,
+		"Max consecutive pre-execution failures before ExhaustedRetries (DD-WE-004)")
+
+	// ========================================
 	// DD-AUDIT-003 P0 MUST: Audit Store Configuration
 	// WorkflowExecution (Remediation Execution Controller) MUST generate audit traces
 	// ========================================
@@ -122,6 +138,11 @@ func main() {
 		"metricsAddr", metricsAddr,
 		"probeAddr", probeAddr,
 		"dataStorageURL", dataStorageURL,
+		// DD-WE-004: Exponential Backoff Configuration
+		"baseCooldownSeconds", baseCooldownSeconds,
+		"maxCooldownMinutes", maxCooldownMinutes,
+		"maxBackoffExponent", maxBackoffExponent,
+		"maxConsecutiveFailures", maxConsecutiveFailures,
 	)
 
 	// ========================================
@@ -171,6 +192,11 @@ func main() {
 		CooldownPeriod:     time.Duration(cooldownPeriodMinutes) * time.Minute,
 		ServiceAccountName: serviceAccountName,
 		AuditStore:         auditStore, // DD-AUDIT-003: Audit store for BR-WE-005
+		// DD-WE-004: Exponential Backoff Configuration (BR-WE-012)
+		BaseCooldownPeriod:     time.Duration(baseCooldownSeconds) * time.Second,
+		MaxCooldownPeriod:      time.Duration(maxCooldownMinutes) * time.Minute,
+		MaxBackoffExponent:     maxBackoffExponent,
+		MaxConsecutiveFailures: maxConsecutiveFailures,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
 		os.Exit(1)

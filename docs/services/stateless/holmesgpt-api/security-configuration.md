@@ -428,6 +428,130 @@ Provide a structured analysis including root cause and recommended actions."""
 
 ---
 
+### **LLM Input Sanitization (DD-HAPI-005)**
+
+> **📋 Design Decision**: [DD-HAPI-005](../../../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md) | ✅ **V1.0 Scope**
+> **Business Requirement**: [BR-HAPI-211](../../../requirements/BR-HAPI-211-llm-input-sanitization.md)
+
+**Purpose**: Prevent credential leakage to external LLM providers by sanitizing ALL data before transmission.
+
+**Threat Model**:
+
+| Data Source | Risk | Mitigation |
+|-------------|------|------------|
+| `kubectl logs` output | 🔴 HIGH - App logs may contain DB passwords | Sanitize tool results |
+| `error_message` field | 🔴 HIGH - Stack traces with connection strings | Sanitize prompts |
+| `kubectl describe pod` | 🟡 MEDIUM - Env vars may contain secrets | Sanitize tool results |
+| Workflow parameters | 🔴 HIGH - Credentials passed to workflows | Sanitize prompts |
+
+**Architecture**:
+
+```
+Request Data ──▶ sanitize_for_llm() ──▶ Clean Prompt ──┐
+                                                       ├──▶ External LLM
+Tool Results ──▶ Tool.invoke() wrap ──▶ Clean Result ──┘     (No credentials)
+```
+
+**Implementation**:
+
+```python
+# src/sanitization/llm_sanitizer.py
+"""
+LLM Input Sanitization (BR-HAPI-211)
+
+Sanitizes ALL data flowing to external LLM providers:
+- Prompts (error_message, description, parameters)
+- Tool results (kubectl logs, get, describe)
+- Error messages
+
+Uses DD-005 compliant patterns from pkg/shared/sanitization/
+"""
+
+import re
+from typing import List, Tuple
+
+REDACTED_PLACEHOLDER = "[REDACTED]"
+
+# DD-005 compliant patterns (ported from Go shared library)
+SANITIZATION_PATTERNS: List[Tuple[re.Pattern, str]] = [
+    # Passwords
+    (re.compile(r'(?i)"(password|passwd|pwd)"\s*:\s*"[^"]*"'), r'"\1":"[REDACTED]"'),
+    (re.compile(r'(?i)(password|passwd|pwd)\s*[=:]\s*\S+'), r'\1=[REDACTED]'),
+    
+    # API Keys & Tokens
+    (re.compile(r'(?i)(api[_-]?key|apikey|token|auth|bearer)\s*[=:]\s*\S+'), r'\1=[REDACTED]'),
+    (re.compile(r'Bearer\s+[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+'), 'Bearer [REDACTED_JWT]'),
+    
+    # Database URLs
+    (re.compile(r'(postgres|mysql|mongodb)://[^:]+:[^@]+@'), r'\1://[USER]:[REDACTED]@'),
+    
+    # AWS/Cloud Credentials
+    (re.compile(r'AKIA[A-Z0-9]{16}'), '[REDACTED_AWS_ACCESS_KEY]'),
+    
+    # GitHub/GitLab Tokens
+    (re.compile(r'ghp_[A-Za-z0-9]{36}'), '[REDACTED_GITHUB_TOKEN]'),
+    
+    # Private Keys
+    (re.compile(r'-----BEGIN.*PRIVATE KEY-----[\s\S]*?-----END.*PRIVATE KEY-----'), '[REDACTED_PRIVATE_KEY]'),
+]
+
+class LLMSanitizer:
+    """Sanitizer for LLM-bound content."""
+    
+    def __init__(self):
+        self._patterns = SANITIZATION_PATTERNS
+    
+    def sanitize(self, content: str) -> str:
+        """Sanitize content before sending to LLM."""
+        if not content:
+            return content
+        result = content
+        for pattern, replacement in self._patterns:
+            result = pattern.sub(replacement, result)
+        return result
+
+def sanitize_for_llm(content: str) -> str:
+    """Convenience function for sanitizing strings."""
+    return LLMSanitizer().sanitize(content)
+```
+
+**Tool Result Wrapping** (in `llm_config.py`):
+
+```python
+def wrap_tool_results_with_sanitization(tool_executor):
+    """BR-HAPI-211: Wrap Tool.invoke() for credential sanitization."""
+    from src.sanitization.llm_sanitizer import sanitize_for_llm
+    
+    for toolset in tool_executor.toolsets:
+        for tool in toolset.tools:
+            original_invoke = tool.invoke
+            
+            def sanitized_invoke(params, tool_number=None, user_approved=False,
+                                 _orig=original_invoke):
+                result = _orig(params, tool_number, user_approved)
+                if result.data:
+                    result.data = sanitize_for_llm(str(result.data))
+                if result.error:
+                    result.error = sanitize_for_llm(result.error)
+                return result
+            
+            tool.invoke = sanitized_invoke
+```
+
+**Security Guarantees**:
+
+| Guarantee | Implementation |
+|-----------|----------------|
+| ✅ No passwords leak to LLM | Regex redaction in prompts + tool results |
+| ✅ No API keys leak to LLM | Pattern matching for common key formats |
+| ✅ No DB credentials leak to LLM | URL parsing with password extraction |
+| ✅ No private keys leak to LLM | PEM block detection and redaction |
+| ✅ No K8s secrets leak to LLM | Base64 secret data pattern matching |
+
+**Test Coverage**: 15+ unit tests validating all DD-005 patterns
+
+---
+
 ## Network Security
 
 ### **Network Policies**

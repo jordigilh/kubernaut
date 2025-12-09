@@ -49,7 +49,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware" // BR-109: Request ID middleware
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors" // BR-HTTP-015: Shared CORS library
+	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
 )
 
 // Server is the main Gateway HTTP server
@@ -1492,7 +1493,8 @@ func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, message 
 	requestID := middleware.GetRequestID(r.Context())
 
 	// BR-GATEWAY-078: Sanitize error message to prevent sensitive data exposure
-	sanitizedMessage := middleware.SanitizeForLog(message)
+	// DD-005: Use shared sanitization library directly
+	sanitizedMessage := sanitization.SanitizeForLog(message)
 
 	// Determine error type and title based on status code
 	errorType, title := getErrorTypeAndTitle(statusCode)
