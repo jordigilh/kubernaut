@@ -3144,7 +3144,7 @@ Signal → Adapter → Environment Classifier → Priority Engine → Remediatio
 **Key Deliverables**:
 - `pkg/gateway/middleware/ratelimit.go` - Redis-based rate limiting
 - `pkg/gateway/middleware/security_headers.go` - CORS, CSP, HSTS headers
-- `pkg/gateway/middleware/log_sanitization.go` - Sensitive data redaction
+- `pkg/shared/sanitization/sanitizer.go` - Sensitive data redaction (shared library)
 - `pkg/gateway/middleware/timestamp.go` - Replay attack prevention
 - `pkg/gateway/middleware/http_metrics.go` - Prometheus metrics
 - `pkg/gateway/middleware/ip_extractor.go` - Source IP extraction

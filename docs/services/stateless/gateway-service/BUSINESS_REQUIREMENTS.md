@@ -359,9 +359,9 @@ This document provides a comprehensive list of all business requirements for the
 ### **BR-GATEWAY-042: Log Sanitization**
 **Description**: Gateway must sanitize sensitive data (tokens, passwords) from logs
 **Priority**: P0 (Critical)
-**Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/middleware/log_sanitization.go`
-**Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
+**Test Coverage**: ✅ Unit (shared library)
+**Implementation**: `pkg/shared/sanitization/sanitizer.go` (DD-005 compliant)
+**Tests**: `test/unit/shared/sanitization/sanitizer_test.go`
 
 ### **BR-GATEWAY-043: Input Validation**
 **Description**: Gateway must validate all input payloads against schema
@@ -499,8 +499,8 @@ This document provides a comprehensive list of all business requirements for the
 **Description**: Gateway must use structured logging (JSON format) with zap logger
 **Priority**: P0 (Critical)
 **Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/server.go`
-**Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
+**Implementation**: `pkg/gateway/server.go`, `pkg/shared/sanitization/sanitizer.go`
+**Tests**: `test/unit/shared/sanitization/sanitizer_test.go`
 
 ### **BR-GATEWAY-076: Log Levels**
 **Description**: Gateway must support configurable log levels (debug, info, warn, error)

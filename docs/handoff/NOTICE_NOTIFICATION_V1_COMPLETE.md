@@ -277,6 +277,7 @@ nr := &notificationv1.NotificationRequest{
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | v1.0 | 2025-12-07 | Notification Team | Initial V1.0 completion announcement |
+| v1.1 | 2025-12-09 | Notification Team | Sanitization migrated to shared library, status update pattern refactored to `retry.RetryOnConflict`, flaky concurrent test fixed, `DEVELOPMENT_GUIDELINES.md` created |
 
 ---
 

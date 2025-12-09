@@ -1,7 +1,7 @@
 # AI Analysis Service - Reconciliation Phases
 
-**Version**: v2.1
-**Last Updated**: 2025-12-06
+**Version**: v2.2
+**Last Updated**: 2025-12-09
 **Status**: ✅ V1.0 Scope Defined
 
 ---
@@ -10,6 +10,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| **v2.2** | 2025-12-09 | **V1.0 COMPLIANCE AUDIT**: (1) Timeout should be `spec.TimeoutConfig` not annotation (pending RO clarification); (2) Recovery attempts must use `/api/v1/recovery/analyze` endpoint (pending HAPI confirmation); (3) Recovery fields must be passed to HAPI | [NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md](../../../handoff/NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md), [REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md](../../../handoff/REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md) |
 | v2.1 | 2025-12-06 | **BR-HAPI-197**: Added `SubReason` field for granular failure tracking; Removed `Recommending` from Phase enum; Added failure taxonomy | BR-HAPI-197, DD-HAPI-002 v1.2 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Removed "Approving" phase (V1.0); Removed BR-AI-051-053 (dependency validation); Simplified to 4-phase flow; Added DetectedLabels/CustomLabels handling | DD-RECOVERY-002, BR_MAPPING v1.2 |
 | v1.1 | 2025-10-20 | Added approval context population | ADR-018 |
@@ -440,29 +441,50 @@ RemediationOrchestrator creates WorkflowExecution (if approved)
 | Phase | Default | Configurable |
 |-------|---------|--------------|
 | Pending | Immediate | No |
-| Investigating | 60s | Yes (annotation) |
-| Analyzing | 5s | No |
+| Investigating | 60s | Yes (spec field) |
+| Analyzing | 5s | Yes (spec field) |
 | Completed | N/A | No |
 
-### Timeout Annotation
+### ⚠️ Timeout Configuration (v2.2 Update)
 
-```yaml
-metadata:
-  annotations:
-    aianalysis.kubernaut.ai/investigating-timeout: "120s"  # Extended for complex investigations
-```
+> **DEPRECATION NOTICE**: The annotation-based timeout approach is **deprecated**.
+> Per V1.0 compliance audit, timeout should be a **spec field** to:
+> 1. Ensure immutability after creation (security)
+> 2. Align with other CRDs (RO uses `spec.TimeoutConfig`)
+> 3. Enable kubebuilder validation
+>
+> **Pending**: [REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md](../../../handoff/REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
 
-### Timeout Implementation
+### Target Timeout Configuration (Spec Field)
 
 ```go
-func getPhaseTimeout(aiAnalysis *AIAnalysis) time.Duration {
-    if timeout, ok := aiAnalysis.Annotations["aianalysis.kubernaut.ai/investigating-timeout"]; ok {
-        if d, err := time.ParseDuration(timeout); err == nil {
-            return d
-        }
-    }
-    return DefaultInvestigatingTimeout // 60s
+// AIAnalysisSpec (target implementation)
+type AIAnalysisSpec struct {
+    // ... existing fields ...
+    
+    // Optional timeout configuration for this analysis
+    // +optional
+    TimeoutConfig *AIAnalysisTimeoutConfig `json:"timeoutConfig,omitempty"`
 }
+
+type AIAnalysisTimeoutConfig struct {
+    // Timeout for Investigating phase (default: 60s)
+    // +optional
+    InvestigatingTimeout metav1.Duration `json:"investigatingTimeout,omitempty"`
+    
+    // Timeout for Analyzing phase (default: 5s)
+    // +optional
+    AnalyzingTimeout metav1.Duration `json:"analyzingTimeout,omitempty"`
+}
+```
+
+### Legacy Timeout Annotation (Deprecated)
+
+```yaml
+# DEPRECATED - Do not use in new code
+metadata:
+  annotations:
+    aianalysis.kubernaut.ai/investigating-timeout: "120s"
 ```
 
 ---

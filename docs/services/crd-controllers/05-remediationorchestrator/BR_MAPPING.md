@@ -61,6 +61,14 @@ This document maps RemediationOrchestrator business requirements (BR-ORCH-XXX) t
 | **BR-ORCH-037** | WorkflowNotNeeded Handling | P0 | ✅ Complete | [BR-ORCH-037](../../../requirements/BR-ORCH-037-workflow-not-needed.md) | `aianalysis_handler_test.go` |
 | **BR-ORCH-038** | Preserve Gateway Deduplication | P1 | ✅ Complete | [BR-ORCH-038](../../../requirements/BR-ORCH-038-preserve-gateway-deduplication.md) | `workflowexecution_handler_test.go` |
 
+### Category 7: Testing & Compliance (V1.0 - Dec 2025)
+
+| BR ID | Title | Priority | Status | BR File | Test File |
+|-------|-------|----------|--------|---------|-----------|
+| **BR-ORCH-039** | Testing Tier Compliance | P0 | ✅ Complete | [RO_GAP_PLAN](implementation/RO_GAP_REMEDIATION_IMPLEMENTATION_PLAN_V1.0.md) | `lifecycle_test.go`, `lifecycle_e2e_test.go` |
+| **BR-ORCH-040** | Prometheus Metrics Correctness | P0 | ✅ Complete | [DD-005](../../../architecture/decisions/DD-005-metrics-naming-convention.md) | `prometheus.go` |
+| **BR-ORCH-041** | Audit Trail Integration | P0 | ✅ Complete | [DD-AUDIT-003](../../../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md) | `helpers_test.go`, `audit_integration_test.go` |
+
 ---
 
 ## ⚠️ Deprecated/Superseded Business Requirements
@@ -158,13 +166,14 @@ test/e2e/remediationorchestrator/
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2025-12-09 | Added BR-ORCH-039/040/041 (Testing Compliance, Metrics, Audit). All V1.0 gaps remediated. |
 | 1.1 | 2025-12-08 | Added BR-ORCH-036/037/038 (Manual Review, WorkflowNotNeeded, Gateway Dedup). Updated status to ✅ Complete for V1.0 BRs. Marked BR-ORCH-029/030/034 as V1.1. |
 | 1.0 | 2025-12-02 | Initial BR_MAPPING.md with all active BRs (BR-ORCH-001, BR-ORCH-025-034) |
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: December 8, 2025
+**Document Version**: 1.2
+**Last Updated**: December 9, 2025
 **Maintained By**: Kubernaut Architecture Team
 
 

@@ -188,8 +188,8 @@ For consistency and future-proofing, added `sanitization` package availability d
 | Service | Sanitization Package | Status |
 |---------|---------------------|--------|
 | **Shared** | `pkg/shared/sanitization/` | ✅ **AUTHORITATIVE - All services use this** |
-| Gateway | `pkg/gateway/middleware/log_sanitization.go` | ✅ Uses shared package |
-| Notification | `pkg/notification/sanitization/sanitizer.go` | ✅ Uses shared package |
+| Gateway | ~~`pkg/gateway/middleware/log_sanitization.go`~~ | ✅ **DELETED** - uses shared directly |
+| Notification | ~~`pkg/notification/sanitization/sanitizer.go`~~ | ✅ **DELETED** - uses shared directly |
 | Data Storage | `pkg/datastorage/middleware/log_sanitization.go` | ✅ Uses shared package |
 
 ### GAP-6: Path Normalization (Now Included)
@@ -238,8 +238,8 @@ Path normalization is now available in the shared sanitization package via `sani
 
 5. **Shared Package Available**:
    - `pkg/shared/sanitization/` created and available for all services
-   - Gateway refactored to use shared package ✅
-   - Notification refactored to use shared package ✅
+   - Gateway: ✅ Service-specific file DELETED, uses shared package directly (Dec 9, 2025)
+   - Notification: ✅ Service-specific file DELETED, uses shared package directly (Dec 9, 2025)
    - Data Storage middleware created: `pkg/datastorage/middleware/log_sanitization.go` ✅
 
 6. **Ready-to-Use Implementation**:

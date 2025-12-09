@@ -539,7 +539,7 @@ logger.Info("Processing webhook",
 
 **Implementation**:
 ```go
-// pkg/{service}/middleware/log_sanitization.go
+// pkg/shared/sanitization/sanitizer.go (SHARED LIBRARY - use this)
 func SanitizeForLog(data string) string {
     // Redact passwords
     data = regexp.MustCompile(`"password"\s*:\s*"[^"]*"`).ReplaceAllString(data, `"password":"[REDACTED]"`)
@@ -890,7 +890,7 @@ func getSourceIP(r *http.Request) string {
 
 ### **Log Sanitization Middleware**
 
-**Pattern**: Create `pkg/{service}/middleware/log_sanitization.go`
+**Pattern**: Use shared library `pkg/shared/sanitization/sanitizer.go`
 
 ```go
 package middleware
@@ -1056,10 +1056,10 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 2. Implement RequestIDMiddleware with zap logger
 3. Add GetLogger() and GetRequestID() helpers
 
-**Step 3: Add Log Sanitization** (1 hour)
+**Step 3: Add Log Sanitization** (15 minutes)
 
-1. Create `pkg/{service}/middleware/log_sanitization.go`
-2. Implement SanitizeForLog() function
+1. Import `pkg/shared/sanitization` in your service
+2. Use `sanitization.SanitizeForLog()` for sensitive data
 3. Apply sanitization to all log entries with sensitive data
 
 **Step 4: Update HTTP Server** (2 hours)
@@ -1084,7 +1084,7 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 - [ ] Create `pkg/{service}/metrics/metrics.go` package
 - [ ] Define service-specific metrics with standard naming
 - [ ] Create `pkg/{service}/middleware/request_id.go`
-- [ ] Create `pkg/{service}/middleware/log_sanitization.go`
+- [ ] Import `pkg/shared/sanitization` (shared library)
 - [ ] Register RequestIDMiddleware in HTTP server
 - [ ] Update all handlers to use middleware.GetLogger(ctx)
 - [ ] Add performance logging middleware
@@ -1105,7 +1105,7 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 **Evidence**:
 - ✅ `pkg/gateway/metrics/metrics.go` - 40+ metrics defined
 - ✅ `pkg/gateway/middleware/request_id.go` - Request ID middleware
-- ✅ `pkg/gateway/middleware/log_sanitization.go` - Log sanitization
+- ✅ `pkg/shared/sanitization/sanitizer.go` - Log sanitization (shared library)
 - ✅ All handlers use request-scoped logging
 - ✅ Integration tests passing (115 specs)
 
@@ -1147,7 +1147,7 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 1. **Reference Implementation**: `pkg/gateway/` (Gateway service)
 2. **Metrics Package**: `pkg/gateway/metrics/metrics.go`
 3. **Request ID Middleware**: `pkg/gateway/middleware/request_id.go`
-4. **Log Sanitization**: `pkg/gateway/middleware/log_sanitization.go`
+4. **Log Sanitization**: `pkg/shared/sanitization/sanitizer.go` (shared library)
 5. **Design Decision**: `DD-005-OBSERVABILITY-STANDARDS.md` (this document)
 
 ---

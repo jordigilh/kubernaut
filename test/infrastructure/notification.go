@@ -490,4 +490,3 @@ func waitForNotificationControllerReady(ctx context.Context, namespace, kubeconf
 
 	return fmt.Errorf("timeout waiting for controller pod to become ready after %v", timeout)
 }
-

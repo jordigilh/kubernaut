@@ -40,11 +40,30 @@ type Client struct {
 
 // AuditMessage represents a message in the DLQ.
 type AuditMessage struct {
-	Type       string          `json:"type"`        // e.g., "notification_audit"
+	Type       string          `json:"type"`        // e.g., "notification_audit", "audit_event"
 	Payload    json.RawMessage `json:"payload"`     // Serialized audit record
 	Timestamp  time.Time       `json:"timestamp"`   // When message was added to DLQ
 	RetryCount int             `json:"retry_count"` // Number of retry attempts
 	LastError  string          `json:"last_error"`  // Error that caused DLQ write
+}
+
+// CorrelationID extracts correlation_id from the payload for logging/debugging.
+func (m *AuditMessage) CorrelationID() string {
+	var payload struct {
+		CorrelationID string `json:"correlation_id"`
+	}
+	if err := json.Unmarshal(m.Payload, &payload); err != nil {
+		return ""
+	}
+	return payload.CorrelationID
+}
+
+// DLQMessage represents a message read from the DLQ stream.
+// GAP-8: Used by consumer methods (ReadMessages, AckMessage, MoveToDeadLetter)
+type DLQMessage struct {
+	ID           string       // Redis Stream message ID (e.g., "1234567890123-0")
+	AuditMessage AuditMessage // Parsed audit message
+	RawValues    map[string]interface{}
 }
 
 // NewClient creates a new DLQ client.
@@ -178,4 +197,247 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 		return fmt.Errorf("redis ping failed: %w", err)
 	}
 	return nil
+}
+
+// ============================================================================
+// GAP-8: DLQ Consumer Methods (DD-009)
+// Authority: DD-009 (Audit Write Error Recovery - Dead Letter Queue Pattern)
+// Business Requirement: BR-AUDIT-001 (Complete audit trail with no data loss)
+// ============================================================================
+
+// ReadMessages reads messages from the DLQ using Redis consumer groups.
+//
+// This method uses XREADGROUP for at-least-once delivery semantics.
+// Messages are claimed by this consumer and must be acknowledged with AckMessage.
+//
+// Parameters:
+// - auditType: Type of audit messages to read ("events" or "notifications")
+// - consumerGroup: Consumer group name (e.g., "audit-retry-workers")
+// - consumerName: Consumer instance name (e.g., "worker-1")
+// - timeout: How long to block waiting for messages
+//
+// Returns up to 10 messages per call.
+func (c *Client) ReadMessages(ctx context.Context, auditType, consumerGroup, consumerName string, timeout time.Duration) ([]*DLQMessage, error) {
+	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+
+	// Create consumer group if it doesn't exist
+	// MKSTREAM creates the stream if it doesn't exist
+	err := c.redisClient.XGroupCreateMkStream(ctx, streamKey, consumerGroup, "0").Err()
+	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
+		// Ignore "already exists" error, but fail on other errors
+		if !isConsumerGroupExistsError(err) {
+			return nil, fmt.Errorf("failed to create consumer group: %w", err)
+		}
+	}
+
+	// Read messages using XREADGROUP
+	// ">" means read only new messages not yet delivered to any consumer
+	streams, err := c.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    consumerGroup,
+		Consumer: consumerName,
+		Streams:  []string{streamKey, ">"},
+		Count:    10,
+		Block:    timeout,
+	}).Result()
+
+	if err != nil {
+		if err == redis.Nil {
+			// No messages available (timeout)
+			return []*DLQMessage{}, nil
+		}
+		return nil, fmt.Errorf("failed to read from DLQ: %w", err)
+	}
+
+	// Parse messages
+	var messages []*DLQMessage
+	for _, stream := range streams {
+		for _, msg := range stream.Messages {
+			dlqMsg, err := c.parseStreamMessage(msg)
+			if err != nil {
+				c.logger.Error(err, "Failed to parse DLQ message", "id", msg.ID)
+				continue
+			}
+			messages = append(messages, dlqMsg)
+		}
+	}
+
+	if len(messages) > 0 {
+		c.logger.Info("Read messages from DLQ",
+			"count", len(messages),
+			"audit_type", auditType,
+			"consumer_group", consumerGroup,
+		)
+	}
+
+	return messages, nil
+}
+
+// AckMessage acknowledges a successfully processed message.
+//
+// After acknowledgment, the message is removed from the pending entries list
+// and won't be re-delivered to this consumer group.
+func (c *Client) AckMessage(ctx context.Context, auditType, consumerGroup, messageID string) error {
+	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+
+	acknowledged, err := c.redisClient.XAck(ctx, streamKey, consumerGroup, messageID).Result()
+	if err != nil {
+		return fmt.Errorf("failed to acknowledge message: %w", err)
+	}
+
+	if acknowledged == 0 {
+		c.logger.Info("Message already acknowledged or not found",
+			"message_id", messageID,
+			"audit_type", auditType,
+		)
+	}
+
+	return nil
+}
+
+// MoveToDeadLetter moves a permanently failed message to the dead letter stream.
+//
+// This is called after a message has exceeded max retries (e.g., 6 retries per DD-009).
+// The message is moved to "audit:dead-letter:{auditType}" for manual investigation
+// and removed from the main DLQ stream.
+func (c *Client) MoveToDeadLetter(ctx context.Context, auditType string, msg *DLQMessage) error {
+	sourceStreamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+	deadLetterKey := fmt.Sprintf("audit:dead-letter:%s", auditType)
+
+	// Re-serialize the message with updated metadata
+	messageJSON, err := json.Marshal(msg.AuditMessage)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message for dead letter: %w", err)
+	}
+
+	// Add to dead letter stream
+	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
+		Stream: deadLetterKey,
+		MaxLen: 10000, // Cap dead letter queue
+		ID:     "*",
+		Values: map[string]interface{}{
+			"message":           string(messageJSON),
+			"original_id":       msg.ID,
+			"moved_at":          time.Now().Format(time.RFC3339),
+			"final_retry_count": msg.AuditMessage.RetryCount,
+		},
+	}).Result()
+	if err != nil {
+		return fmt.Errorf("failed to write to dead letter: %w", err)
+	}
+
+	// Remove from original DLQ stream
+	_, err = c.redisClient.XDel(ctx, sourceStreamKey, msg.ID).Result()
+	if err != nil {
+		c.logger.Error(err, "Failed to remove message from DLQ after dead letter move",
+			"message_id", msg.ID,
+		)
+		// Don't return error - message is safely in dead letter
+	}
+
+	c.logger.Info("Message moved to dead letter",
+		"message_id", msg.ID,
+		"audit_type", auditType,
+		"retry_count", msg.AuditMessage.RetryCount,
+	)
+
+	return nil
+}
+
+// IncrementRetryCount updates the retry count for a message that failed to process.
+//
+// This re-adds the message to the DLQ with an incremented retry count,
+// so it can be picked up by the next retry cycle.
+func (c *Client) IncrementRetryCount(ctx context.Context, auditType string, msg *DLQMessage, retryError error) error {
+	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+
+	// Update the message
+	msg.AuditMessage.RetryCount++
+	msg.AuditMessage.LastError = retryError.Error()
+	msg.AuditMessage.Timestamp = time.Now() // Update timestamp for backoff calculation
+
+	// Re-serialize
+	messageJSON, err := json.Marshal(msg.AuditMessage)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated message: %w", err)
+	}
+
+	// Add updated message to stream (new ID)
+	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
+		Stream: streamKey,
+		MaxLen: 10000,
+		ID:     "*",
+		Values: map[string]interface{}{
+			"message": string(messageJSON),
+		},
+	}).Result()
+	if err != nil {
+		return fmt.Errorf("failed to re-add message with incremented retry count: %w", err)
+	}
+
+	// Remove old message
+	_, err = c.redisClient.XDel(ctx, streamKey, msg.ID).Result()
+	if err != nil {
+		c.logger.Error(err, "Failed to remove old message after retry increment",
+			"message_id", msg.ID,
+		)
+	}
+
+	c.logger.Info("Incremented retry count for message",
+		"message_id", msg.ID,
+		"new_retry_count", msg.AuditMessage.RetryCount,
+		"audit_type", auditType,
+	)
+
+	return nil
+}
+
+// GetPendingMessages returns the count of unacknowledged messages for a consumer group.
+func (c *Client) GetPendingMessages(ctx context.Context, auditType, consumerGroup string) (int64, error) {
+	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+
+	pending, err := c.redisClient.XPending(ctx, streamKey, consumerGroup).Result()
+	if err != nil {
+		if err == redis.Nil || isNoSuchKeyError(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to get pending count: %w", err)
+	}
+
+	return pending.Count, nil
+}
+
+// parseStreamMessage parses a Redis stream message into a DLQMessage.
+func (c *Client) parseStreamMessage(msg redis.XMessage) (*DLQMessage, error) {
+	messageStr, ok := msg.Values["message"].(string)
+	if !ok {
+		return nil, fmt.Errorf("message field not found or not a string")
+	}
+
+	var auditMsg AuditMessage
+	if err := json.Unmarshal([]byte(messageStr), &auditMsg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal audit message: %w", err)
+	}
+
+	return &DLQMessage{
+		ID:           msg.ID,
+		AuditMessage: auditMsg,
+		RawValues:    msg.Values,
+	}, nil
+}
+
+// isConsumerGroupExistsError checks if the error indicates the consumer group already exists.
+func isConsumerGroupExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return err.Error() == "BUSYGROUP Consumer Group name already exists"
+}
+
+// isNoSuchKeyError checks if the error indicates the stream doesn't exist.
+func isNoSuchKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Redis returns this error when XPending is called on a non-existent stream
+	return err.Error() == "NOGROUP No such key 'audit:dlq:events' or consumer group 'test-consumer-group' in XINFO GROUPS reply"
 }

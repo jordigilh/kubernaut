@@ -1,14 +1,22 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.18
+**Version**: v1.19
 **Last Updated**: 2025-12-09
-**Timeline**: 10 days (2 calendar weeks)
-**Status**: 📋 Day 9 Complete - Day 10 Ready
+**Timeline**: 10 days (2 calendar weeks) + Day 11-12 Compliance Fixes
+**Status**: 📋 Day 10 Complete - Compliance Fixes Required
 **Quality Level**: Matches SignalProcessing V1.19 and Template V3.0 standards
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.19** (2025-12-09): **V1.0 Compliance Audit - Critical Gaps Identified**
+  - 🔴 **API Group Mismatch**: Code uses `aianalysis.kubernaut.io`, should be `aianalysis.kubernaut.ai` per DD-CRD-001
+  - 🔴 **Status Fields Not Populated**: `TokensUsed`, `InvestigationID`, `Conditions`, `RecoveryStatus`, `TotalAnalysisTime`, `DegradedMode`
+  - 🔴 **Recovery Not Passed to HAPI**: `buildRequest()` doesn't include `IsRecoveryAttempt`, `PreviousExecutions`
+  - 🔴 **Wrong HAPI Endpoint**: Should use `/api/v1/recovery/analyze` for recovery attempts (pending HAPI confirmation)
+  - 🟡 **Timeout Annotation**: Should migrate to `spec.TimeoutConfig` (pending RO clarification)
+  - 📄 **Handoff Docs Created**: `NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md`, `REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md`
+  - 📏 **Reference**: Full audit against crd-schema.md, reconciliation-phases.md, DD-CRD-001, HAPI OpenAPI
 - **v1.18** (2025-12-09): **Day 10 Triage - Documentation Alignment**
   - ✅ **Metrics Names**: Updated to DD-005 compliant naming (`aianalysis_reconciler_*`)
   - ✅ **Phase Names**: Corrected to 4-phase flow (Pending, Investigating, Analyzing, Completed)
