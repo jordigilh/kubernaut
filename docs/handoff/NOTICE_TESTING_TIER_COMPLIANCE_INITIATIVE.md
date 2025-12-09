@@ -74,7 +74,7 @@ Each team must:
 | Service | Integration | E2E | Audit | Status |
 |---------|-------------|-----|-------|--------|
 | **Gateway** | ⏳ Assessment | ⏳ Assessment | 🚫 Blocked | ⏳ Pending |
-| **SignalProcessing** | ⏳ Assessment | ⏳ Assessment | 🚫 Blocked | ⏳ Pending |
+| **SignalProcessing** | ✅ ENVTEST (65 tests) | ✅ Kind (11 tests) | ✅ BR-SP-090 | ✅ **COMPLETE** |
 | **AIAnalysis** | 🔴 Uses mocks | 🟡 Unknown | 🚫 Blocked | ⏳ Pending |
 | **WorkflowExecution** | ⏳ Assessment | ⏳ Assessment | 🚫 Blocked | ⏳ Pending |
 | **Notification** | 🔴 Uses mocks | 🔴 Uses envtest | ⚠️ Workaround | In Progress |
