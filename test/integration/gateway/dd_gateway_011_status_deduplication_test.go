@@ -290,82 +290,107 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// STORM AGGREGATION STATUS TRACKING (BR-GATEWAY-182)
+	// HIGH-FREQUENCY ALERT DETECTION (BR-GATEWAY-182)
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-	Context("when alert storm is detected (BR-GATEWAY-182)", func() {
-		// BR-GATEWAY-182: Storm Aggregation Tracking in Status
-		//
-		// BUSINESS SCENARIO:
-		// During a major incident, 50+ alerts fire within seconds. The RO needs to:
-		// 1. Know this is a storm (not individual incidents)
-		// 2. See how many alerts were aggregated
-		// 3. Batch remediation instead of individual responses
-		//
-		// This test validates storm tracking is visible in RR status.
+	Context("when same alert fires repeatedly (storm pattern) (BR-GATEWAY-182)", func() {
+		var stormPayload []byte
 
-		It("should track storm aggregation in RR status for batched remediation", func() {
-			// Create storm by sending multiple similar alerts rapidly
-			// Storm threshold is typically 10 alerts in integration tests
-			stormNamespace := sharedNamespace
+		BeforeEach(func() {
+			// Use SAME payload for all alerts = SAME fingerprint
+			// This triggers deduplication with high occurrence count (storm indicator)
+			uniqueID := uuid.New().String()
+			stormPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+				AlertName: "PersistentPodCrashLoop",
+				Namespace: sharedNamespace,
+				Severity:  "critical",
+				Resource: ResourceIdentifier{
+					Kind: "Pod",
+					Name: "database-primary-" + uniqueID[:8], // Same pod, same fingerprint
+				},
+				Labels: map[string]string{
+					"app":        "database",
+					"storm_test": uniqueID,
+				},
+			})
+		})
 
-			By("1. Simulating alert storm: Multiple pods crashing simultaneously")
-			// Send alerts for different pods but same alert type (triggers storm detection)
-			var lastResponse gateway.ProcessingResponse
-			for i := 0; i < 12; i++ {
-				uniqueID := uuid.New().String()
-				stormPayload := createPrometheusAlertPayload(PrometheusAlertOptions{
-					AlertName: "MassivePodFailure",
-					Namespace: stormNamespace,
-					Severity:  "critical",
-					Resource: ResourceIdentifier{
-						Kind: "Pod",
-						Name: fmt.Sprintf("worker-node-%d-%s", i, uniqueID[:8]),
-					},
-					Labels: map[string]string{
-						"app":        "worker-pool",
-						"storm_test": "true",
-						"pod_index":  fmt.Sprintf("%d", i),
-					},
-				})
+		It("should track high occurrence count indicating storm behavior", func() {
+			// BR-GATEWAY-182: Storm Detection via Occurrence Count
+			//
+			// BUSINESS SCENARIO:
+			// A database pod is crash-looping, generating the SAME alert every 30 seconds.
+			// After 10 occurrences, this is clearly a storm pattern. The RO needs to:
+			// 1. See the high occurrence count to prioritize
+			// 2. Know this is a persistent issue (not transient)
+			// 3. Consider escalation or different remediation strategy
 
+			By("1. First alert creates incident (RemediationRequest)")
+			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", stormPayload)
+			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
+
+			var response1 gateway.ProcessingResponse
+			err := json.Unmarshal(resp1.Body, &response1)
+			Expect(err).ToNot(HaveOccurred())
+			crdName := response1.RemediationRequestName
+
+			By("2. Set incident to Pending (remediation in progress)")
+			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			Expect(crd).ToNot(BeNil())
+			crd.Status.OverallPhase = "Pending"
+			err = testClient.Client.Status().Update(ctx, crd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Eventually(func() string {
+				c := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				if c == nil {
+					return ""
+				}
+				return c.Status.OverallPhase
+			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
+
+			By("3. Same alert fires 9 more times (storm pattern)")
+			for i := 2; i <= 10; i++ {
 				resp := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", stormPayload)
-				// Accept both 201 (new CRD) and 202 (aggregated into storm)
-				Expect(resp.StatusCode).To(SatisfyAny(
-					Equal(http.StatusCreated),
-					Equal(http.StatusAccepted),
-				), fmt.Sprintf("Alert %d should be processed", i))
-
-				err := json.Unmarshal(resp.Body, &lastResponse)
-				Expect(err).ToNot(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusAccepted),
+					fmt.Sprintf("Alert %d should be deduplicated (same fingerprint)", i))
 			}
 
-			By("2. BUSINESS OUTCOME: RO can identify this as a storm incident")
-			// If storm was detected and aggregated, check storm status
-			if lastResponse.RemediationRequestName != "" {
-				Eventually(func() bool {
-					crd := getCRDByName(ctx, testClient, stormNamespace, lastResponse.RemediationRequestName)
-					if crd == nil {
-						return false
-					}
+			By("4. BUSINESS OUTCOME: RO sees high occurrence count (storm indicator)")
+			Eventually(func() int32 {
+				c := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				if c == nil || c.Status.Deduplication == nil {
+					return 0
+				}
+				count := c.Status.Deduplication.OccurrenceCount
+				GinkgoWriter.Printf("Occurrence count: %d (storm threshold typically 5-10)\n", count)
+				return count
+			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 5),
+				"High occurrence count indicates storm pattern (BR-GATEWAY-182)")
 
-					// Business requirement: RO needs to see storm aggregation data
-					stormStatus := crd.Status.StormAggregation
-					if stormStatus == nil {
-						GinkgoWriter.Printf("No storm aggregation status yet (may not have triggered storm threshold)\n")
-						// Storm status may not exist if threshold wasn't reached
-						// This is acceptable - the test validates the mechanism exists
-						return true // Don't fail if storm wasn't triggered
-					}
+			By("5. BUSINESS CONTEXT: RO can make informed prioritization decision")
+			finalCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			Expect(finalCRD).ToNot(BeNil())
+			Expect(finalCRD.Status.Deduplication).ToNot(BeNil())
 
-					GinkgoWriter.Printf("Storm detected: %d alerts aggregated, isPartOfStorm=%v\n",
-						stormStatus.AggregatedCount, stormStatus.IsPartOfStorm)
+			occurrenceCount := finalCRD.Status.Deduplication.OccurrenceCount
+			GinkgoWriter.Printf("\n📊 STORM ANALYSIS for RO:\n")
+			GinkgoWriter.Printf("   Alert: %s\n", finalCRD.Spec.SignalName)
+			GinkgoWriter.Printf("   Occurrences: %d\n", occurrenceCount)
+			GinkgoWriter.Printf("   First seen: %v\n", finalCRD.Status.Deduplication.FirstSeenAt)
+			GinkgoWriter.Printf("   Last seen: %v\n", finalCRD.Status.Deduplication.LastSeenAt)
 
-					// Business success: RO can see storm data for batched remediation
-					return stormStatus.AggregatedCount >= 1
-				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-					"RO should be able to identify storm incidents (BR-GATEWAY-182)")
+			if occurrenceCount >= 10 {
+				GinkgoWriter.Printf("   🔴 RECOMMENDATION: High-priority storm - consider escalation\n")
+			} else if occurrenceCount >= 5 {
+				GinkgoWriter.Printf("   🟡 RECOMMENDATION: Moderate storm - monitor closely\n")
 			}
+
+			// Verify business-meaningful assertions
+			Expect(occurrenceCount).To(BeNumerically(">=", 5),
+				"Storm pattern: 5+ occurrences indicates persistent issue")
+			Expect(finalCRD.Status.Deduplication.LastSeenAt).ToNot(BeNil(),
+				"LastSeenAt required for SLA tracking")
 		})
 	})
 })

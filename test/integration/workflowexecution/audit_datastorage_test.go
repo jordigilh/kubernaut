@@ -115,7 +115,8 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 
 			By("Creating a workflow.completed audit event")
 			event := createTestAuditEvent("workflow.completed", "success")
-			event.DurationMs = 5000 // 5 seconds
+			durationMs := 5000 // 5 seconds
+			event.DurationMs = &durationMs
 
 			By("Sending batch to Data Storage")
 			err := dsClient.StoreBatch(ctx, []*audit.AuditEvent{event})
@@ -131,8 +132,10 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 
 			By("Creating a workflow.failed audit event")
 			event := createTestAuditEvent("workflow.failed", "failure")
-			event.ErrorCode = "PIPELINE_FAILED"
-			event.ErrorMessage = "Task step-1 failed with exit code 1"
+			errorCode := "PIPELINE_FAILED"
+			errorMessage := "Task step-1 failed with exit code 1"
+			event.ErrorCode = &errorCode
+			event.ErrorMessage = &errorMessage
 
 			By("Sending batch to Data Storage")
 			err := dsClient.StoreBatch(ctx, []*audit.AuditEvent{event})
@@ -228,7 +231,8 @@ func createTestAuditEvent(eventAction, outcome string) *audit.AuditEvent {
 	event.ResourceType = "WorkflowExecution"
 	event.ResourceID = fmt.Sprintf("test-wfe-%d", time.Now().UnixNano())
 	event.CorrelationID = fmt.Sprintf("test-corr-%d", time.Now().UnixNano())
-	event.Namespace = "default"
+	ns := "default"
+	event.Namespace = &ns
 
 	// Add event data
 	eventData := map[string]interface{}{

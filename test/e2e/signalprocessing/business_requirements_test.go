@@ -570,7 +570,10 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
 				return false
 			}
-			return updated.Status.KubernetesContext.DetectedLabels.PDBProtected
+			if updated.Status.KubernetesContext == nil || updated.Status.KubernetesContext.DetectedLabels == nil {
+				return false
+			}
+			return updated.Status.KubernetesContext.DetectedLabels.HasPDB
 		}, timeout, interval).Should(BeTrue())
 	})
 
@@ -667,7 +670,10 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
 				return false
 			}
-			return updated.Status.KubernetesContext.DetectedLabels.HPAEnabled
+			if updated.Status.KubernetesContext == nil || updated.Status.KubernetesContext.DetectedLabels == nil {
+				return false
+			}
+			return updated.Status.KubernetesContext.DetectedLabels.HasHPA
 		}, timeout, interval).Should(BeTrue())
 	})
 })

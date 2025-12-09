@@ -88,11 +88,11 @@ func (c *HTTPDataStorageClient) StoreBatch(ctx context.Context, events []*AuditE
 	return nil
 }
 
-// eventToPayload converts an AuditEvent to the format Data Storage expects
+// eventToPayload converts an AuditEvent to the payload format Data Storage expects
 func (c *HTTPDataStorageClient) eventToPayload(event *AuditEvent) map[string]interface{} {
 	payload := map[string]interface{}{
 		"version":         event.EventVersion,
-		"service":         "aianalysis", // Per DD-AUDIT-003
+		"service":         event.ActorID, // Use ActorID as service identifier
 		"event_type":      event.EventType,
 		"event_timestamp": event.EventTimestamp.Format("2006-01-02T15:04:05.000Z07:00"),
 		"correlation_id":  event.CorrelationID,
@@ -108,7 +108,7 @@ func (c *HTTPDataStorageClient) eventToPayload(event *AuditEvent) map[string]int
 		"is_sensitive":    event.IsSensitive,
 	}
 
-	// Add optional fields if present
+	// Add optional fields if present (pointer fields)
 	if event.Namespace != nil && *event.Namespace != "" {
 		payload["namespace"] = *event.Namespace
 	}
@@ -124,7 +124,7 @@ func (c *HTTPDataStorageClient) eventToPayload(event *AuditEvent) map[string]int
 	if event.Severity != nil && *event.Severity != "" {
 		payload["severity"] = *event.Severity
 	}
-	if event.DurationMs != nil {
+	if event.DurationMs != nil && *event.DurationMs != 0 {
 		payload["duration_ms"] = *event.DurationMs
 	}
 	if event.TraceID != nil && *event.TraceID != "" {
