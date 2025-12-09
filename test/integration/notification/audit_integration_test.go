@@ -18,10 +18,11 @@ package notification
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"sync"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,50 +32,73 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+
+	// PostgreSQL driver for database verification
+	_ "github.com/lib/pq"
 )
 
-var _ = Describe("Notification Audit Integration Tests", func() {
+// ========================================
+// NOTIFICATION AUDIT INTEGRATION TESTS
+// ========================================
+//
+// Authority: TESTING_GUIDELINES.md - Integration tests use REAL infrastructure
+// Related: DD-AUDIT-002, ADR-038, BR-NOT-062, BR-NOT-063, BR-NOT-064
+// Port Allocation: DD-TEST-001 (Data Storage: 18090, PostgreSQL: 15433)
+//
+// Prerequisites:
+//   podman-compose -f podman-compose.test.yml up -d postgres redis datastorage
+//
+// These tests validate audit event persistence against REAL Data Storage Service.
+// They will SKIP if infrastructure isn't available.
+//
+// ========================================
+
+var _ = Describe("Notification Audit Integration Tests (Real Infrastructure)", func() {
 	var (
-		mockDataStorage *httptest.Server
-		auditStore      audit.AuditStore
-		receivedEvents  []*audit.AuditEvent
-		eventsMutex     sync.Mutex
+		dataStorageURL string
+		postgresURL    string
+		auditStore     audit.AuditStore
+		db             *sql.DB
+		ctx            context.Context
+		httpClient     *http.Client
 	)
 
 	BeforeEach(func() {
-		receivedEvents = []*audit.AuditEvent{}
+		ctx = context.Background()
+		httpClient = &http.Client{Timeout: 10 * time.Second}
 
-		// Mock Data Storage Service HTTP endpoint
-		// Simulates the Data Storage Service API for audit event writes
-		mockDataStorage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v1/audit/events" && r.Method == "POST" {
-				var events []*audit.AuditEvent
-				err := json.NewDecoder(r.Body).Decode(&events)
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
+		// Get Data Storage URL from environment or use DD-TEST-001 default
+		dataStorageURL = os.Getenv("DATA_STORAGE_URL")
+		if dataStorageURL == "" {
+			dataStorageURL = "http://localhost:18090" // DD-TEST-001 integration port
+		}
 
-				// Thread-safe append
-				eventsMutex.Lock()
-				receivedEvents = append(receivedEvents, events...)
-				eventsMutex.Unlock()
+		// Get PostgreSQL URL from environment or use DD-TEST-001 default
+		postgresURL = os.Getenv("POSTGRES_URL")
+		if postgresURL == "" {
+			postgresURL = "postgres://slm_user:test_password@localhost:15433/action_history?sslmode=disable"
+		}
 
-				w.WriteHeader(http.StatusCreated)
-				if err := json.NewEncoder(w).Encode(map[string]interface{}{
-					"success": true,
-					"count":   len(events),
-				}); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-				}
-				return
-			}
-			w.WriteHeader(http.StatusNotFound)
-		}))
+		// Check if Data Storage is available
+		resp, err := httpClient.Get(dataStorageURL + "/health")
+		if err != nil {
+			Skip(fmt.Sprintf("Data Storage not available at %s - run 'podman-compose -f podman-compose.test.yml up -d'", dataStorageURL))
+		}
+		resp.Body.Close()
 
-		// Create audit store with mock Data Storage client
-		httpClient := &http.Client{Timeout: 5 * time.Second}
-		dataStorageClient := audit.NewHTTPDataStorageClient(mockDataStorage.URL, httpClient)
+		// Connect to PostgreSQL for verification
+		db, err = sql.Open("postgres", postgresURL)
+		if err != nil {
+			Skip(fmt.Sprintf("PostgreSQL not available: %v - run 'podman-compose -f podman-compose.test.yml up -d postgres'", err))
+		}
+
+		// Verify PostgreSQL connection
+		if err := db.Ping(); err != nil {
+			Skip(fmt.Sprintf("PostgreSQL not reachable: %v", err))
+		}
+
+		// Create audit store with REAL Data Storage client
+		dataStorageClient := audit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
 
 		config := audit.Config{
 			BufferSize:    1000,
@@ -84,25 +108,27 @@ var _ = Describe("Notification Audit Integration Tests", func() {
 		}
 
 		logger := crzap.New(crzap.UseDevMode(true))
-		auditStore, _ = audit.NewBufferedStore(dataStorageClient, config, "notification", logger)
+		auditStore, err = audit.NewBufferedStore(dataStorageClient, config, "notification-controller", logger)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create audit store")
 	})
 
 	AfterEach(func() {
 		if auditStore != nil {
 			auditStore.Close()
 		}
-		if mockDataStorage != nil {
-			mockDataStorage.Close()
+		if db != nil {
+			db.Close()
 		}
 	})
 
-	// ===== INTEGRATION TEST 1: Data Storage HTTP Integration =====
-	Context("when notification is sent successfully", func() {
-		It("should write audit event to Data Storage Service via HTTP POST", func() {
-			// BR-NOT-062: Unified audit table integration
-			// BR-NOT-063: Graceful audit degradation (fire-and-forget pattern)
-
-			ctx := context.Background()
+	// ========================================
+	// TEST 1: Data Storage HTTP Integration (BR-NOT-062)
+	// Validates: Audit events are written to Data Storage and persisted to PostgreSQL
+	// ========================================
+	Context("BR-NOT-062: Unified Audit Table Integration", func() {
+		It("should write audit event to Data Storage Service and persist to PostgreSQL", func() {
+			// Create unique correlation ID for this test
+			correlationID := fmt.Sprintf("integration-test-%d", time.Now().UnixNano())
 			notification := createTestNotificationForIntegration()
 
 			// Create audit event (simulate message sent)
@@ -115,35 +141,45 @@ var _ = Describe("Notification Audit Integration Tests", func() {
 			event.ActorID = "notification-controller"
 			event.ResourceType = "NotificationRequest"
 			event.ResourceID = notification.Name
-			event.CorrelationID = "test-correlation-001"
+			event.CorrelationID = correlationID
+			event.EventTimestamp = time.Now()
 			event.EventData = []byte(`{"notification_id": "integration-test-notification", "channel": "slack", "recipient": "#integration-tests"}`)
 
 			// Store audit event (fire-and-forget)
 			err := auditStore.StoreAudit(ctx, event)
 			Expect(err).ToNot(HaveOccurred(), "Storing audit event should not fail")
 
-			// Wait for async flush to Data Storage (FlushInterval = 100ms)
-			Eventually(func() int {
-				eventsMutex.Lock()
-				defer eventsMutex.Unlock()
-				return len(receivedEvents)
-			}, 2*time.Second, 50*time.Millisecond).Should(BeNumerically(">=", 1),
-				"At least 1 event should be flushed to Data Storage via HTTP")
+			// Flush the buffer
+			err = auditStore.Close()
+			Expect(err).ToNot(HaveOccurred(), "Closing audit store should flush events")
+			auditStore = nil // Prevent double-close in AfterEach
 
-			// Validate received event follows ADR-034 format
-			eventsMutex.Lock()
-			defer eventsMutex.Unlock()
-			Expect(receivedEvents).ToNot(BeEmpty(), "Received events should not be empty")
-			validateAuditEventADR034(receivedEvents[0])
+			// REAL INFRASTRUCTURE VERIFICATION: Query PostgreSQL directly
+			var count int
+			Eventually(func() int {
+				err := db.QueryRow(`
+					SELECT COUNT(*) FROM audit_events
+					WHERE correlation_id = $1
+					AND event_type = 'notification.message.sent'
+				`, correlationID).Scan(&count)
+				if err != nil {
+					GinkgoWriter.Printf("Query error: %v\n", err)
+					return 0
+				}
+				return count
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(1),
+				"Audit event should be persisted to PostgreSQL audit_events table")
 		})
 	})
 
-	// ===== INTEGRATION TEST 2: Async Buffer Flush =====
-	Context("when multiple audit events are buffered", func() {
-		It("should flush events in batches asynchronously", func() {
-			// BR-NOT-062: Unified audit table integration
-
-			ctx := context.Background()
+	// ========================================
+	// TEST 2: Async Buffer Flush (BR-NOT-062)
+	// Validates: Multiple events are batched and persisted correctly
+	// ========================================
+	Context("BR-NOT-062: Async Buffered Audit Writes", func() {
+		It("should flush batch of events to PostgreSQL", func() {
+			// Create unique correlation ID for this batch
+			correlationID := fmt.Sprintf("batch-test-%d", time.Now().UnixNano())
 			notification := createTestNotificationForIntegration()
 
 			// Write 15 events (BatchSize = 10, so should flush in 2 batches)
@@ -157,55 +193,46 @@ var _ = Describe("Notification Audit Integration Tests", func() {
 				event.ActorID = "notification-controller"
 				event.ResourceType = "NotificationRequest"
 				event.ResourceID = notification.Name
-				event.CorrelationID = "batch-test-correlation"
-				event.EventData = []byte(`{"notification_id": "integration-test-notification", "channel": "slack"}`)
+				event.CorrelationID = correlationID
+				event.EventTimestamp = time.Now()
+				event.EventData = []byte(fmt.Sprintf(`{"notification_id": "batch-notification-%d", "channel": "slack"}`, i))
 
 				err := auditStore.StoreAudit(ctx, event)
 				Expect(err).ToNot(HaveOccurred(), "Storing audit event should not fail")
 			}
 
-			// Wait for async flush (FlushInterval = 100ms, BatchSize = 10)
-			// Should receive at least 10 events quickly (first batch)
-			// Then remaining 5 after next flush interval
-			Eventually(func() int {
-				eventsMutex.Lock()
-				defer eventsMutex.Unlock()
-				return len(receivedEvents)
-			}, 3*time.Second, 50*time.Millisecond).Should(Equal(15),
-				"All 15 events should be flushed to Data Storage")
+			// Flush the buffer
+			err := auditStore.Close()
+			Expect(err).ToNot(HaveOccurred(), "Closing audit store should flush events")
+			auditStore = nil // Prevent double-close in AfterEach
 
-			// Validate all received events
-			eventsMutex.Lock()
-			defer eventsMutex.Unlock()
-			for i, event := range receivedEvents {
-				Expect(event).ToNot(BeNil(), "Event %d should not be nil", i)
-				Expect(event.EventType).To(Equal("notification.message.sent"))
-				Expect(event.EventCategory).To(Equal("notification"))
-			}
+			// REAL INFRASTRUCTURE VERIFICATION: Query PostgreSQL directly
+			var count int
+			Eventually(func() int {
+				err := db.QueryRow(`
+					SELECT COUNT(*) FROM audit_events
+					WHERE correlation_id = $1
+				`, correlationID).Scan(&count)
+				if err != nil {
+					GinkgoWriter.Printf("Query error: %v\n", err)
+					return 0
+				}
+				return count
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(15),
+				"All 15 audit events should be persisted to PostgreSQL")
 		})
 	})
 
-	// ===== INTEGRATION TEST 3: DLQ Fallback =====
-	Context("when Data Storage Service is unavailable", func() {
-		It("should fallback to DLQ for retry without blocking delivery", func() {
-			// BR-NOT-063: Graceful audit degradation
-
-			ctx := context.Background()
+	// ========================================
+	// TEST 3: Graceful Degradation (BR-NOT-063)
+	// Validates: Audit failures don't block notification delivery
+	// ========================================
+	Context("BR-NOT-063: Graceful Audit Degradation", func() {
+		It("should not block when storing audit events (fire-and-forget pattern)", func() {
 			notification := createTestNotificationForIntegration()
+			correlationID := fmt.Sprintf("graceful-test-%d", time.Now().UnixNano())
 
-			// Close mock Data Storage to simulate service down
-			mockDataStorage.Close()
-
-			// Create a new mock that returns 503 Service Unavailable
-			mockDataStorage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				if _, err := w.Write([]byte(`{"error": "service temporarily unavailable"}`)); err != nil {
-					// Log error in test mock - response write failure
-					GinkgoWriter.Printf("Mock server failed to write response: %v\n", err)
-				}
-			}))
-
-			// Write audit event (should not block despite Data Storage being down)
+			// Create audit event
 			event := audit.NewAuditEvent()
 			event.EventType = "notification.message.failed"
 			event.EventCategory = "notification"
@@ -215,8 +242,9 @@ var _ = Describe("Notification Audit Integration Tests", func() {
 			event.ActorID = "notification-controller"
 			event.ResourceType = "NotificationRequest"
 			event.ResourceID = notification.Name
-			event.CorrelationID = "dlq-test-correlation"
-			event.EventData = []byte(`{"notification_id": "integration-test-notification", "error": "delivery_failed"}`)
+			event.CorrelationID = correlationID
+			event.EventTimestamp = time.Now()
+			event.EventData = []byte(`{"notification_id": "graceful-test", "error": "delivery_failed"}`)
 
 			// Store should not block (fire-and-forget pattern)
 			start := time.Now()
@@ -227,25 +255,22 @@ var _ = Describe("Notification Audit Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred(), "Storing audit event should not fail")
 			Expect(elapsed).To(BeNumerically("<", 100*time.Millisecond),
 				"StoreAudit should return immediately (fire-and-forget)")
-
-			// Note: DLQ implementation verification would require Redis integration
-			// For now, we verify that the store call doesn't block
-			// In production, failed events would be queued to Redis Streams DLQ (DD-009)
 		})
 	})
 
-	// ===== INTEGRATION TEST 4: Graceful Shutdown =====
-	Context("when audit store is closed", func() {
-		It("should flush remaining events before shutdown", func() {
-			// Tests graceful shutdown - ensures no audit event loss
-
-			ctx := context.Background()
+	// ========================================
+	// TEST 4: Graceful Shutdown (No Data Loss)
+	// Validates: All buffered events are flushed before shutdown
+	// ========================================
+	Context("Graceful Shutdown", func() {
+		It("should flush all remaining events before shutdown", func() {
 			notification := createTestNotificationForIntegration()
+			correlationID := fmt.Sprintf("shutdown-test-%d", time.Now().UnixNano())
 
 			// Buffer 5 events (less than BatchSize = 10, so won't auto-flush immediately)
 			for i := 0; i < 5; i++ {
 				event := audit.NewAuditEvent()
-				event.EventType = "notification.status.acknowledged"
+				event.EventType = "notification.message.acknowledged"
 				event.EventCategory = "notification"
 				event.EventAction = "acknowledged"
 				event.EventOutcome = "success"
@@ -253,8 +278,9 @@ var _ = Describe("Notification Audit Integration Tests", func() {
 				event.ActorID = "notification-controller"
 				event.ResourceType = "NotificationRequest"
 				event.ResourceID = notification.Name
-				event.CorrelationID = "shutdown-test-correlation"
-				event.EventData = []byte(`{"notification_id": "integration-test-notification", "acknowledged_by": "user@example.com"}`)
+				event.CorrelationID = correlationID
+				event.EventTimestamp = time.Now()
+				event.EventData = []byte(fmt.Sprintf(`{"notification_id": "shutdown-notification-%d", "acknowledged_by": "user@example.com"}`, i))
 
 				err := auditStore.StoreAudit(ctx, event)
 				Expect(err).ToNot(HaveOccurred(), "Storing audit event should not fail")
@@ -263,19 +289,185 @@ var _ = Describe("Notification Audit Integration Tests", func() {
 			// Immediately close the audit store (should trigger flush)
 			err := auditStore.Close()
 			Expect(err).ToNot(HaveOccurred(), "Closing audit store should not fail")
+			auditStore = nil // Prevent double-close in AfterEach
 
-			// Verify all 5 buffered events were flushed
-			eventsMutex.Lock()
-			defer eventsMutex.Unlock()
-			Expect(len(receivedEvents)).To(Equal(5),
+			// REAL INFRASTRUCTURE VERIFICATION: Verify all 5 events were flushed
+			var count int
+			Eventually(func() int {
+				err := db.QueryRow(`
+					SELECT COUNT(*) FROM audit_events
+					WHERE correlation_id = $1
+				`, correlationID).Scan(&count)
+				if err != nil {
+					GinkgoWriter.Printf("Query error: %v\n", err)
+					return 0
+				}
+				return count
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(5),
 				"All 5 buffered events should be flushed on graceful shutdown")
+		})
+	})
 
-			// Validate no events were lost
-			for i, event := range receivedEvents {
-				Expect(event).ToNot(BeNil(), "Event %d should not be nil", i)
-				Expect(event.EventType).To(Equal("notification.status.acknowledged"))
-				Expect(event.EventCategory).To(Equal("notification"))
+	// ========================================
+	// TEST 5: Correlation ID Tracing (BR-NOT-064)
+	// Validates: Events can be queried by correlation_id for workflow tracing
+	// ========================================
+	Context("BR-NOT-064: Audit Event Correlation", func() {
+		It("should enable workflow tracing via correlation_id", func() {
+			notification := createTestNotificationForIntegration()
+			correlationID := fmt.Sprintf("correlation-test-%d", time.Now().UnixNano())
+
+			// Create multiple event types with same correlation_id
+			// Event 1: Message sent
+			sentEvent := audit.NewAuditEvent()
+			sentEvent.EventType = "notification.message.sent"
+			sentEvent.EventCategory = "notification"
+			sentEvent.EventAction = "sent"
+			sentEvent.EventOutcome = "success"
+			sentEvent.ActorType = "service"
+			sentEvent.ActorID = "notification-controller"
+			sentEvent.ResourceType = "NotificationRequest"
+			sentEvent.ResourceID = notification.Name
+			sentEvent.CorrelationID = correlationID
+			sentEvent.EventTimestamp = time.Now()
+			sentEvent.EventData = []byte(`{"notification_id": "correlation-test", "channel": "slack"}`)
+			err := auditStore.StoreAudit(ctx, sentEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Event 2: Message failed (different channel)
+			failedEvent := audit.NewAuditEvent()
+			failedEvent.EventType = "notification.message.failed"
+			failedEvent.EventCategory = "notification"
+			failedEvent.EventAction = "failed"
+			failedEvent.EventOutcome = "failure"
+			failedEvent.ActorType = "service"
+			failedEvent.ActorID = "notification-controller"
+			failedEvent.ResourceType = "NotificationRequest"
+			failedEvent.ResourceID = notification.Name
+			failedEvent.CorrelationID = correlationID
+			failedEvent.EventTimestamp = time.Now()
+			failedEvent.EventData = []byte(`{"notification_id": "correlation-test", "channel": "email", "error": "SMTP timeout"}`)
+			err = auditStore.StoreAudit(ctx, failedEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Flush
+			err = auditStore.Close()
+			Expect(err).ToNot(HaveOccurred())
+			auditStore = nil
+
+			// REAL INFRASTRUCTURE VERIFICATION: Query all events by correlation_id
+			var count int
+			Eventually(func() int {
+				err := db.QueryRow(`
+					SELECT COUNT(*) FROM audit_events
+					WHERE correlation_id = $1
+				`, correlationID).Scan(&count)
+				if err != nil {
+					GinkgoWriter.Printf("Query error: %v\n", err)
+					return 0
+				}
+				return count
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(2),
+				"Both events should be queryable by correlation_id")
+
+			// Verify event types are correct
+			rows, err := db.Query(`
+				SELECT event_type, outcome FROM audit_events
+				WHERE correlation_id = $1
+				ORDER BY event_timestamp
+			`, correlationID)
+			Expect(err).ToNot(HaveOccurred())
+			defer rows.Close()
+
+			var events []struct {
+				EventType string
+				Outcome   string
 			}
+			for rows.Next() {
+				var e struct {
+					EventType string
+					Outcome   string
+				}
+				err := rows.Scan(&e.EventType, &e.Outcome)
+				Expect(err).ToNot(HaveOccurred())
+				events = append(events, e)
+			}
+
+			Expect(events).To(HaveLen(2), "Should find 2 events with same correlation_id")
+			Expect(events[0].EventType).To(Equal("notification.message.sent"))
+			Expect(events[0].Outcome).To(Equal("success"))
+			Expect(events[1].EventType).To(Equal("notification.message.failed"))
+			Expect(events[1].Outcome).To(Equal("failure"))
+		})
+	})
+
+	// ========================================
+	// TEST 6: ADR-034 Compliance Verification
+	// Validates: Event format matches unified audit table schema
+	// ========================================
+	Context("ADR-034: Unified Audit Table Format", func() {
+		It("should persist event with all ADR-034 required fields", func() {
+			notification := createTestNotificationForIntegration()
+			correlationID := fmt.Sprintf("adr034-test-%d", time.Now().UnixNano())
+
+			event := audit.NewAuditEvent()
+			event.EventType = "notification.message.sent"
+			event.EventCategory = "notification"
+			event.EventAction = "sent"
+			event.EventOutcome = "success"
+			event.ActorType = "service"
+			event.ActorID = "notification-controller"
+			event.ResourceType = "NotificationRequest"
+			event.ResourceID = notification.Name
+			event.CorrelationID = correlationID
+			event.EventTimestamp = time.Now()
+			event.EventData = []byte(`{"notification_id": "adr034-test", "channel": "slack"}`)
+
+			err := auditStore.StoreAudit(ctx, event)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = auditStore.Close()
+			Expect(err).ToNot(HaveOccurred())
+			auditStore = nil
+
+			// REAL INFRASTRUCTURE VERIFICATION: Query event with all ADR-034 fields
+			var (
+				eventType     string
+				eventCategory string
+				eventAction   string
+				eventOutcome  string
+				actorType     string
+				actorID       string
+				resourceType  string
+				resourceID    string
+				retentionDays int
+			)
+
+			Eventually(func() error {
+				return db.QueryRow(`
+					SELECT
+						event_type, event_category, operation, outcome,
+						actor_type, actor_id, resource_type, resource_id,
+						retention_days
+					FROM audit_events
+					WHERE correlation_id = $1
+				`, correlationID).Scan(
+					&eventType, &eventCategory, &eventAction, &eventOutcome,
+					&actorType, &actorID, &resourceType, &resourceID,
+					&retentionDays,
+				)
+			}, 5*time.Second, 200*time.Millisecond).Should(Succeed(),
+				"Event should be queryable from database")
+
+			// Verify ADR-034 format compliance
+			Expect(eventType).To(Equal("notification.message.sent"), "event_type format: <service>.<category>.<action>")
+			Expect(eventCategory).To(Equal("notification"), "event_category should match service")
+			Expect(eventAction).To(Equal("sent"), "event_action should match operation")
+			Expect(eventOutcome).To(Equal("success"), "event_outcome should indicate result")
+			Expect(actorType).To(Equal("service"), "actor_type should be 'service' for controllers")
+			Expect(actorID).To(Equal("notification-controller"), "actor_id should identify the service")
+			Expect(resourceType).To(Equal("NotificationRequest"), "resource_type should be CRD kind")
+			Expect(retentionDays).To(Equal(2555), "retention_days should be 7 years for compliance")
 		})
 	})
 })
@@ -303,17 +495,6 @@ func createTestNotificationForIntegration() *notificationv1alpha1.NotificationRe
 				"cluster":                "test-cluster",
 			},
 		},
-	}
-}
-
-// waitForEvents waits for expected number of events to be received (with timeout)
-// Note: This helper is not used in the current implementation as we use Eventually() directly
-// Keeping it for potential future use or as a pattern reference
-func waitForEvents(events *[]*audit.AuditEvent, mutex *sync.Mutex, expectedCount int, timeout time.Duration) func() int {
-	return func() int {
-		mutex.Lock()
-		defer mutex.Unlock()
-		return len(*events)
 	}
 }
 

@@ -24,7 +24,7 @@ kubernaut_remediationorchestrator_<metric_name>_{total|seconds|...}
 
 | Metric | Type | Labels | Description | BR Reference |
 |--------|------|--------|-------------|--------------|
-| `kubernaut_remediationorchestrator_reconcile_total` | Counter | namespace, phase, result | Total reconciliation attempts | Standard |
+| `kubernaut_remediationorchestrator_reconcile_total` | Counter | namespace, phase | Total reconciliation attempts | Standard |
 | `kubernaut_remediationorchestrator_reconcile_duration_seconds` | Histogram | namespace, phase | Reconciliation duration | Standard |
 | `kubernaut_remediationorchestrator_phase_transitions_total` | Counter | from_phase, to_phase, namespace | Phase transitions | Standard |
 

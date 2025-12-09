@@ -854,17 +854,34 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	// Record ingestion metric (environment label removed - SP owns classification)
 	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity).Inc()
 
-	// 1. Deduplication check
-	isDuplicate, metadata, err := s.deduplicator.Check(ctx, signal)
+	// 1. Deduplication check (DD-GATEWAY-011: K8s status-based, NOT Redis)
+	// BR-GATEWAY-185: Redis deprecation - use PhaseBasedDeduplicationChecker
+	shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
 	if err != nil {
 		logger.Error(err, "Deduplication check failed",
 			"fingerprint", signal.Fingerprint)
 		return nil, fmt.Errorf("deduplication check failed: %w", err)
 	}
 
-	if isDuplicate {
-		// TDD REFACTOR: Extracted duplicate handling
-		return s.processDuplicateSignal(ctx, signal, metadata), nil
+	if shouldDeduplicate && existingRR != nil {
+		// DD-GATEWAY-011: Update status.deduplication for duplicate tracking
+		if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, existingRR); err != nil {
+			logger.Info("Failed to update deduplication status (DD-GATEWAY-011)",
+				"error", err,
+				"fingerprint", signal.Fingerprint,
+				"rr", existingRR.Name)
+		}
+
+		// Record deduplication metric
+		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+
+		logger.V(1).Info("Duplicate signal detected (K8s status-based)",
+			"fingerprint", signal.Fingerprint,
+			"existingRR", existingRR.Name,
+			"phase", existingRR.Status.OverallPhase)
+
+		// Return duplicate response with data from existing RR
+		return NewDuplicateResponseFromRR(signal.Fingerprint, existingRR), nil
 	}
 
 	// 2. Storm detection

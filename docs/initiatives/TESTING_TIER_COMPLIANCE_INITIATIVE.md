@@ -240,14 +240,28 @@ echo "Use: export KUBECONFIG=$KUBECONFIG_PATH"
 | **AIAnalysis** | ⏳ | ⏳ | 🚫 | 0% | Dec 8 |
 | **Gateway** | ⏳ | ⏳ | 🚫 | 0% | - |
 | **SignalProcessing** | ⏳ | ⏳ | 🚫 | 0% | - |
-| **WorkflowExecution** | ⏳ | ⏳ | 🚫 | 0% | - |
+| **WorkflowExecution** | ✅ (47 tests) + 🔴 (6 DS) | ✅ (10+ tests) | ✅ (main.go) | 90% | Dec 9 |
 | **Data Storage** | ⏳ | ⏳ | N/A | 0% | - |
 
 **Legend**:
 - ✅ Compliant
+- 🔴 Tests exist but FAIL (waiting for DS batch endpoint)
 - ⏳ Pending
 - 🚫 Blocked
 - ⚠️ Workaround in place
+
+### **WorkflowExecution Details** (Updated Dec 9, 2025)
+
+- **Integration Tests**: 47 tests via EnvTest + 6 tests with real DS (`audit_datastorage_test.go`)
+  - The 6 real DS tests **WILL FAIL** until DS batch endpoint is fixed
+  - Tests use `podman-compose.test.yml` per `TESTING_GUIDELINES.md`
+- **E2E Tests**: 10+ tests with Kind cluster + Tekton
+  - E2E audit persistence test added (`02_observability_test.go`)
+  - **WILL FAIL** until DS is deployed in Kind with working batch endpoint
+- **Audit Integration**: ✅ `AuditStore` initialized in `cmd/workflowexecution/main.go`
+  - Production code is DD-AUDIT-003 compliant
+  - Graceful degradation if DS unavailable
+- **Blocking**: DS batch endpoint (`NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md`)
 
 ---
 
@@ -304,8 +318,17 @@ The initiative is complete when:
 ---
 
 **Document Status**: ✅ **APPROVED**
-**Last Updated**: December 8, 2025
+**Last Updated**: December 9, 2025
 **Maintained By**: Architecture Team / AI Assistant
 **Next Action**: Await stakeholder approval to begin Phase 1
+
+---
+
+## 📝 **Changelog**
+
+| Date | Changes |
+|------|---------|
+| Dec 9, 2025 | **WorkflowExecution Updated**: Added WE compliance status. 47 integration tests + 6 real DS tests + 10+ E2E tests. AuditStore initialized in main.go. Real DS tests WILL FAIL until DS batch endpoint fixed. |
+| Dec 8, 2025 | Initial document creation. Cross-service audit revealed systemic violations. |
 
 

@@ -159,64 +159,29 @@ There is a **naming collision** between two different gap numbering systems:
 
 ---
 
-## 📋 Suggested Implementation (If V1.1 Scope)
+## ✅ Implementation Completed (V1.0)
 
-### File: `pkg/datastorage/middleware/log_sanitization.go`
+### GAP-5 Resolution: Use Shared Sanitization Package
 
+**Approach**: Import existing `pkg/shared/sanitization/` package (already used by Gateway and Notification)
+
+**No new code needed** - shared package already implements DD-005 compliant sanitization:
+- `pkg/shared/sanitization/sanitizer.go` - Core sanitization logic
+- `pkg/shared/sanitization/headers.go` - HTTP header sanitization
+
+**Usage in Data Storage**:
 ```go
-package middleware
+import "github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 
-import (
-    "regexp"
-)
-
-var sensitivePatterns = []*regexp.Regexp{
-    regexp.MustCompile(`(?i)"(password|passwd|pwd)"\s*:\s*"[^"]*"`),
-    regexp.MustCompile(`(?i)"(token|api_key|secret)"\s*:\s*"[^"]*"`),
-    regexp.MustCompile(`(?i)"(authorization|auth|bearer)"\s*:\s*"[^"]*"`),
-}
-
-// SanitizeForLog redacts sensitive fields from log data
-// DD-005: Mandatory log sanitization for security/compliance
-func SanitizeForLog(data string) string {
-    for _, pattern := range sensitivePatterns {
-        data = pattern.ReplaceAllStringFunc(data, func(match string) string {
-            parts := regexp.MustCompile(`"([^"]+)"\s*:\s*"`).FindStringSubmatch(match)
-            if len(parts) > 1 {
-                return `"` + parts[1] + `":"[REDACTED]"`
-            }
-            return "[REDACTED]"
-        })
-    }
-    return data
-}
+// When logging potentially sensitive data:
+logger.Info("Processing request", "payload", sanitization.SanitizeForLog(data))
 ```
 
-### File: `pkg/datastorage/middleware/path_normalization.go`
+**Status**: ✅ Shared package exists, Data Storage needs to import and use it where applicable.
 
-```go
-package middleware
+### GAP-6: Path Normalization (V1.1 Scope)
 
-import (
-    "regexp"
-    "strings"
-)
-
-var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-var numericPattern = regexp.MustCompile(`^\d+$`)
-
-// NormalizePath replaces dynamic path segments with placeholders
-// DD-005: Prevents high-cardinality metrics from Prometheus
-func NormalizePath(path string) string {
-    segments := strings.Split(path, "/")
-    for i, segment := range segments {
-        if uuidPattern.MatchString(segment) || numericPattern.MatchString(segment) {
-            segments[i] = ":id"
-        }
-    }
-    return strings.Join(segments, "/")
-}
-```
+Path normalization remains V1.1 scope as it's a defensive measure for future metrics expansion.
 
 ---
 
@@ -243,24 +208,24 @@ func NormalizePath(path string) string {
    - File `middleware/log_sanitization.go` does NOT exist
    - This is a FALSE POSITIVE in documentation
 
-2. **V1.0 vs V1.1 Scope**:
-   - GAP-5 (log sanitization): **V1.1 scope** - P2 priority, not blocking V1.0
-   - GAP-6 (path normalization): **V1.1 scope** - P2 priority, not blocking V1.0
-   - Rationale: Data Storage service does NOT log sensitive user data in current
-     implementation. Audit events use structured fields, not raw JSON strings.
-     Path normalization is defensive measure for future metrics.
+2. **V1.0 vs V1.1 Scope**: CORRECTION - Should be V1.0
+   - Gateway already has: `pkg/gateway/middleware/log_sanitization.go`
+   - Notification already has: `pkg/notification/sanitization/sanitizer.go`
+   - Shared package exists: `pkg/shared/sanitization/`
+   - Data Storage is the OUTLIER missing this implementation
+   - GAP-5 (log sanitization): **UPGRADED to V1.0** - consistency with other services
+   - GAP-6 (path normalization): **V1.1 scope** - defensive measure, less critical
 
 3. **Timeline for Documentation Correction**: IMMEDIATE
-   - Will update IMPLEMENTATION_PLAN_V5.7.md line 1269 from "✅" to "⏳ V1.1"
+   - Will update IMPLEMENTATION_PLAN_V5.7.md line 1269 from "✅" to "❌ Missing"
 
 4. **Timeline for Implementation**:
-   - GAP-5: V1.1 Sprint 1 (estimated 2h effort)
-   - GAP-6: V1.1 Sprint 1 (estimated 2h effort)
+   - GAP-5: V1.0 - TODAY (2h effort, can reuse shared/gateway patterns)
+   - GAP-6: V1.1 Sprint 1 (2h effort)
 
-5. **Gap Numbering**: ACKNOWLEDGED
-   - GAP-5/GAP-6 in AUDIT_COMPLIANCE_GAP_ANALYSIS.md refer to DD-005 violations
-   - Implementation plan gaps use different numbering (section numbers)
-   - Recommendation: Use "DD005-GAP-1", "DD005-GAP-2" format in gap analysis for clarity
+5. **Implementation Approach**:
+   - Option A: Import from `pkg/shared/sanitization/` (if exists and is compatible)
+   - Option B: Copy pattern from `pkg/gateway/middleware/log_sanitization.go`
 ```
 
 ---

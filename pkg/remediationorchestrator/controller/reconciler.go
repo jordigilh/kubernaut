@@ -386,7 +386,8 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 		return ctrl.Result{}, fmt.Errorf("failed to transition to Completed: %w", err)
 	}
 
-	metrics.PhaseTransitionsTotal.WithLabelValues(rr.Namespace, rr.Status.OverallPhase, string(phase.Completed)).Inc()
+	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
+	metrics.PhaseTransitionsTotal.WithLabelValues(rr.Status.OverallPhase, string(phase.Completed), rr.Namespace).Inc()
 
 	logger.Info("Remediation completed successfully", "outcome", outcome)
 	return ctrl.Result{}, nil
@@ -412,7 +413,8 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		return ctrl.Result{}, fmt.Errorf("failed to transition to Failed: %w", err)
 	}
 
-	metrics.PhaseTransitionsTotal.WithLabelValues(rr.Namespace, rr.Status.OverallPhase, string(phase.Failed)).Inc()
+	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
+	metrics.PhaseTransitionsTotal.WithLabelValues(rr.Status.OverallPhase, string(phase.Failed), rr.Namespace).Inc()
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
 	return ctrl.Result{}, nil

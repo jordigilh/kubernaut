@@ -1007,6 +1007,107 @@ test-coverage-workflowexecution: ## Run WorkflowExecution unit tests with covera
 build-workflowexecution: ## Build WorkflowExecution controller binary
 	go build -o bin/workflowexecution-controller ./cmd/workflowexecution
 
+# ════════════════════════════════════════════════════════════════════════════════
+# AIAnalysis Controller Targets (per 03-testing-strategy.mdc, DD-TEST-001)
+# ════════════════════════════════════════════════════════════════════════════════
+
+.PHONY: test-unit-aianalysis
+test-unit-aianalysis: ## Run AIAnalysis unit tests (4 parallel procs)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 AIAnalysis Controller - Unit Tests (4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	ginkgo -v --timeout=5m --procs=4 ./test/unit/aianalysis/...
+
+.PHONY: test-integration-aianalysis
+test-integration-aianalysis: ## Run AIAnalysis integration tests (4 parallel procs, EnvTest + podman-compose)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 AIAnalysis Controller - Integration Tests (4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Infrastructure: envtest + podman-compose (Data Storage, HolmesGPT-API)"
+	@echo "📋 Ports: 15433 (PostgreSQL), 16379 (Redis), 18090 (Data Storage) per DD-TEST-001"
+	@echo ""
+	ginkgo -v --timeout=15m --procs=4 ./test/integration/aianalysis/...
+
+.PHONY: test-e2e-aianalysis
+test-e2e-aianalysis: ## Run AIAnalysis E2E tests (4 parallel procs, Kind cluster)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 AIAnalysis Controller - E2E Tests (Kind cluster, 4 parallel procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Infrastructure: Kind cluster with real services (LLM mocked)"
+	@echo "📋 NodePorts: 30084 (API), 30184 (Metrics), 30284 (Health) per DD-TEST-001"
+	@echo "📋 Kubeconfig: ~/.kube/aianalysis-e2e-config per TESTING_GUIDELINES.md"
+	@echo ""
+	ginkgo -v --timeout=20m --procs=4 ./test/e2e/aianalysis/...
+
+.PHONY: test-aianalysis-all
+test-aianalysis-all: ## Run ALL AIAnalysis tests (unit + integration + e2e, 4 parallel each)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 AIAnalysis Controller - Complete Test Suite (3 Tiers)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
+	@echo "🏗️  E2E Infrastructure: Kind cluster + Data Storage + HolmesGPT-API"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	PROCS=4; \
+	echo ""; \
+	echo "1️⃣  Unit Tests ($$PROCS parallel procs)..."; \
+	ginkgo -v --timeout=5m --procs=$$PROCS ./test/unit/aianalysis/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests ($$PROCS parallel procs)..."; \
+	ginkgo -v --timeout=15m --procs=$$PROCS ./test/integration/aianalysis/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  E2E Tests (Kind cluster, $$PROCS parallel procs)..."; \
+	ginkgo -v --timeout=20m --procs=$$PROCS ./test/e2e/aianalysis/... || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		echo "✅ AIAnalysis: ALL tests passed (3/3 tiers)"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+	else \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		echo "❌ AIAnalysis: $$FAILED tier(s) failed"; \
+		echo "════════════════════════════════════════════════════════════════════════"; \
+		exit 1; \
+	fi
+
+.PHONY: test-coverage-aianalysis
+test-coverage-aianalysis: ## Run AIAnalysis unit tests with coverage report
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 AIAnalysis Controller - Coverage Report"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	go test -cover -coverprofile=coverage-aianalysis.out -coverpkg=./pkg/aianalysis/... ./test/unit/aianalysis/...
+	@echo ""
+	@echo "📊 Coverage Summary:"
+	@go tool cover -func=coverage-aianalysis.out | tail -1
+	go tool cover -html=coverage-aianalysis.out -o coverage-aianalysis.html
+	@echo "📄 Full report: coverage-aianalysis.html"
+
+.PHONY: build-aianalysis
+build-aianalysis: ## Build AIAnalysis controller binary
+	go build -o bin/aianalysis-controller ./cmd/aianalysis
+
+.PHONY: docker-build-aianalysis
+docker-build-aianalysis: ## Build AIAnalysis controller container image (local arch)
+	@echo "🔨 Building AIAnalysis image for local arch: $(LOCAL_PLATFORM)"
+	podman build --platform $(LOCAL_PLATFORM) \
+		-f docker/aianalysis.Dockerfile \
+		-t localhost/aianalysis-controller:latest .
+	@echo "✅ Image built: localhost/aianalysis-controller:latest ($(LOCAL_PLATFORM))"
+
+.PHONY: docker-build-aianalysis-multi
+docker-build-aianalysis-multi: ## Build AIAnalysis controller multi-arch image (amd64 + arm64)
+	@echo "🔨 Building multi-arch AIAnalysis image (amd64 + arm64)"
+	podman build --platform linux/amd64,linux/arm64 \
+		-f docker/aianalysis.Dockerfile \
+		-t $(REGISTRY)/kubernaut-aianalysis:$(VERSION) .
+	@echo "✅ Multi-arch image built: $(REGISTRY)/kubernaut-aianalysis:$(VERSION)"
+
+.PHONY: docker-push-aianalysis
+docker-push-aianalysis: docker-build-aianalysis-multi ## Push AIAnalysis controller multi-arch image
+	@echo "📤 Pushing multi-arch AIAnalysis image..."
+	podman manifest push $(REGISTRY)/kubernaut-aianalysis:$(VERSION) docker://$(REGISTRY)/kubernaut-aianalysis:$(VERSION)
+	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-aianalysis:$(VERSION)"
+
 .PHONY: test-all-services
 test-all-services: ## Run ALL tests for ALL services (sequential - use CI for parallel)
 	@echo "════════════════════════════════════════════════════════════════════════"

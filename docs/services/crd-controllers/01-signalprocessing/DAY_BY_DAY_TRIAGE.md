@@ -114,7 +114,7 @@ switch signal.TargetResource.Kind {
 **File**: `pkg/signalprocessing/audit/client.go`
 ```
 
-**Actual Timeline**: 
+**Actual Timeline**:
 - Day 8 was DetectedLabels, not Audit
 - Day 11 should be Audit per the timeline table (line 1125)
 

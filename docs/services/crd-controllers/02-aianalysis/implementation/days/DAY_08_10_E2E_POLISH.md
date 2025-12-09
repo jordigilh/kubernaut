@@ -332,19 +332,18 @@ var _ = Describe("Full User Journey E2E", func() {
 
 ```bash
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STEP 1: Unit Tests (MANDATORY - with parallel execution)
+# STEP 1: Unit Tests (MANDATORY - 4 parallel procs via Makefile)
 # Authority: 03-testing-strategy.mdc "Default Parallelism: 4 concurrent processors"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-go test -v -p 4 ./test/unit/aianalysis/... 2>&1 | tee unit-test-results.log
+make test-unit-aianalysis
 echo "Expected: 164+ tests passing"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # STEP 2: Coverage Verification (must maintain ≥84.9%, minimum 70%)
 # Authority: 03-testing-strategy.mdc "Unit Tests (70%+ - AT LEAST 70% of ALL BRs)"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-go test -coverprofile=coverage.out ./test/unit/aianalysis/... -coverpkg=./pkg/aianalysis/...
-COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
-echo "Coverage: $COVERAGE (target: ≥84.9%, minimum: 70%)"
+make test-coverage-aianalysis
+echo "Target: ≥84.9%, minimum: 70%"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # STEP 3: Integration Tests (requires podman-compose infrastructure)
@@ -353,8 +352,8 @@ echo "Coverage: $COVERAGE (target: ≥84.9%, minimum: 70%)"
 # Start infrastructure (if not already running)
 podman-compose -f podman-compose.test.yml up -d
 
-# Run integration tests with parallel execution
-go test -v -p 4 ./test/integration/aianalysis/... 2>&1 | tee integration-test-results.log
+# Run integration tests (4 parallel procs via Makefile)
+make test-integration-aianalysis
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # STEP 4: Parallel Test Compliance (per 03-testing-strategy.mdc)
@@ -380,7 +379,7 @@ echo "BR-AI-* references in tests: $BR_COUNT"
 # Ports: DD-TEST-001 NodePorts 30084 (API), 30184 (Metrics), 30284 (Health)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # E2E tests create Kind cluster automatically via test/infrastructure/aianalysis.go
-go test -v -tags=e2e ./test/e2e/aianalysis/... 2>&1 | tee e2e-test-results.log
+make test-e2e-aianalysis
 echo "E2E tests use REAL services (Data Storage, HolmesGPT-API with mock LLM) per TESTING_GUIDELINES.md"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -414,6 +413,21 @@ if [ "$AUDIT_TESTS" -gt 0 ]; then
 else
     echo "⚠️  No audit integration tests found - verify DD-AUDIT-003 compliance"
 fi
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 9: Build Verification
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+make build-aianalysis
+echo "✅ Binary: bin/aianalysis-controller"
+
+# Container image (optional - for deployment verification)
+make docker-build-aianalysis
+echo "✅ Image: localhost/aianalysis-controller:latest"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ALTERNATIVE: Run ALL test tiers in one command
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# make test-aianalysis-all
 ```
 
 ### Performance Validation

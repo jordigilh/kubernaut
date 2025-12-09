@@ -15,7 +15,7 @@
 
 **Purpose**: Enhance integration tests to validate database content, not just row counts (TDD CORRECTNESS pattern).
 
-**Problem Identified**: 
+**Problem Identified**:
 - Integration tests for `audit_events_write_api_test.go` only validated row counts (`SELECT COUNT(*)`)
 - Missing CORRECTNESS validation: verify stored data matches input values
 - This gap could allow silent data corruption bugs to pass tests
@@ -39,7 +39,7 @@
 **Testing Methodology Added to Standards**:
 
 > **MANDATORY CORRECTNESS VALIDATION PATTERN**
-> 
+>
 > For all integration tests that persist data to database:
 > 1. ✅ **BEHAVIOR**: HTTP response status code validation
 > 2. ✅ **CORRECTNESS**: Query database and verify all stored fields match input
@@ -1266,7 +1266,7 @@ Sensitive data MUST be redacted before logging:
 | Standard fields (request_id, endpoint) | ✅ | `server/server.go`, `server/handlers.go` |
 | Error logging with context | ✅ | `logger.Error(err, "message", "key", value)` |
 | Verbosity levels (V=0, V=1) | ✅ | `logger.V(1).Info()` for debug |
-| Log sanitization | ✅ | `middleware/log_sanitization.go` |
+| Log sanitization | ⏳ V1.1 | Not implemented - see GAP-5 in AUDIT_COMPLIANCE_GAP_ANALYSIS.md |
 
 ---
 
