@@ -58,6 +58,27 @@ type DataStorageClient interface {
 	StoreBatch(ctx context.Context, events []*AuditEvent) error
 }
 
+// DLQClient is the interface for writing audit events to the Dead Letter Queue.
+//
+// Authority: DD-009 (Audit Write Error Recovery - Dead Letter Queue Pattern)
+// Related: ADR-032 ("No Audit Loss" mandate)
+//
+// This interface is used as a fallback when the primary Data Storage write fails
+// after max retries. Events written to DLQ are later processed by the async retry worker.
+//
+// Implementation: pkg/datastorage/dlq.Client
+type DLQClient interface {
+	// EnqueueAuditEvent adds an audit event to the DLQ for async retry.
+	//
+	// Parameters:
+	// - ctx: Context for cancellation
+	// - event: The audit event that failed to write
+	// - originalError: The error that caused the primary write to fail
+	//
+	// Returns an error if the DLQ write fails.
+	EnqueueAuditEvent(ctx context.Context, event *AuditEvent, originalError error) error
+}
+
 // BufferedAuditStore implements AuditStore with asynchronous buffered writes.
 //
 // This implementation:
@@ -66,23 +87,27 @@ type DataStorageClient interface {
 // - Retries failed writes with exponential backoff
 // - Flushes partial batches periodically
 // - Drops events if buffer is full (graceful degradation)
+// - Falls back to DLQ if primary write fails (GAP-10, DD-009)
 //
 // Authority: DD-AUDIT-002 (Audit Shared Library Design)
+// Related: DD-009 (Dead Letter Queue Pattern), ADR-032 ("No Audit Loss")
 type BufferedAuditStore struct {
-	buffer  chan *AuditEvent
-	client  DataStorageClient
-	logger  logr.Logger
-	config  Config
-	metrics MetricsLabels
-	done    chan struct{}
-	wg      sync.WaitGroup
-	closed  int32 // Atomic flag to prevent double-close
+	buffer    chan *AuditEvent
+	client    DataStorageClient
+	dlqClient DLQClient // GAP-10: Optional DLQ fallback for failed writes (DD-009)
+	logger    logr.Logger
+	config    Config
+	metrics   MetricsLabels
+	done      chan struct{}
+	wg        sync.WaitGroup
+	closed    int32 // Atomic flag to prevent double-close
 
 	// Metrics (atomic counters for thread-safe access)
 	bufferedCount    int64
 	droppedCount     int64
 	writtenCount     int64
 	failedBatchCount int64
+	dlqEnqueueCount  int64 // GAP-10: Track events sent to DLQ
 }
 
 // NewBufferedStore creates a new buffered audit store.

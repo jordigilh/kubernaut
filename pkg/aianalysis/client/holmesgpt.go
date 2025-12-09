@@ -185,7 +185,9 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Error intentionally ignored - logging not needed for close
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, &APIError{

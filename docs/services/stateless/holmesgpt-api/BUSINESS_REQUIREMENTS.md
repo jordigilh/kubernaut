@@ -45,17 +45,19 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### 📊 Summary
 
-**Total Business Requirements**: 49 essential BRs (139 deferred BRs for v2.0)
-**Categories**: 7
+**Total Business Requirements**: 51 essential BRs (139 deferred BRs for v2.0)
+**Categories**: 8
 **Priority Breakdown**:
-- P0 (Critical): 45 BRs (core business logic + graceful shutdown + recovery context)
-- P1 (High): 4 BRs (RFC 7807 + hot-reload + enhancements)
+- P0 (Critical): 46 BRs (core business logic + graceful shutdown + recovery context + LLM sanitization)
+- P1 (High): 5 BRs (RFC 7807 + hot-reload + enhancements)
 
 **Implementation Status**:
 - ✅ Implemented: 50 BRs (100%)
+- 📋 V1.0 Planned: 1 BR (BR-HAPI-211 LLM Input Sanitization)
 - BR-HAPI-192 (Recovery Context Consumption): ✅ Complete
 - BR-HAPI-199 (ConfigMap Hot-Reload): ✅ Complete
 - BR-HAPI-200 (Investigation Inconclusive): ✅ Complete
+- BR-HAPI-211 (LLM Input Sanitization): 📋 **V1.0 PLANNED**
 
 **Test Coverage** (Updated Dec 9, 2025):
 - Unit: 568 tests (100% passing)
@@ -588,6 +590,57 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
+### BR-HAPI-211: LLM Input Sanitization (V1.0)
+**Status**: 📋 **V1.0 PLANNED**
+**Priority**: P0 (CRITICAL)
+**Implementation Time**: ~7 hours
+**Design Reference**: [DD-HAPI-005: LLM Input Sanitization](../../../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md)
+
+**Description**: The HolmesGPT API Service MUST sanitize ALL data sent to external LLM providers to prevent credential leakage.
+
+**Business Justification**:
+- External LLM providers (OpenAI, Anthropic) receive prompts and tool results
+- This data may contain credentials from logs, error messages, or workflow parameters
+- Without sanitization, credentials leak to external services
+
+**Sanitization Scope**:
+
+| Data Flow | Risk Level | Mitigation |
+|-----------|------------|------------|
+| Initial prompts (`error_message`, `description`) | 🔴 HIGH | `sanitize_for_llm()` before prompt construction |
+| Tool results (`kubectl logs`, `kubectl get`) | 🔴 HIGH | Wrap `Tool.invoke()` to sanitize results |
+| Error messages from tool execution | 🟡 MEDIUM | Sanitize `StructuredToolResult.error` field |
+
+**Sanitization Patterns** (DD-005 Compliant):
+- Passwords (JSON, URL, plain text)
+- API keys (`api_key=`, `OPENAI_API_KEY=`)
+- Tokens (`Bearer`, JWT, GitHub PATs)
+- Database URLs with credentials
+- AWS access keys
+- Private keys (PEM format)
+- Kubernetes Secret data (base64)
+
+**Acceptance Criteria**:
+- [x] Design decision documented (DD-HAPI-005)
+- [x] Business requirement specified (BR-HAPI-211)
+- [ ] `src/sanitization/llm_sanitizer.py` implemented
+- [ ] Tool.invoke() wrapper implemented in `llm_config.py`
+- [ ] Prompt sanitization in `incident.py` and `recovery.py`
+- [ ] 15+ unit tests validating all patterns
+- [ ] Integration tests for end-to-end sanitization
+
+**Security Guarantees**:
+| Guarantee | Verification |
+|-----------|--------------|
+| No passwords leak to LLM | Unit tests + pattern coverage |
+| No API keys leak to LLM | Unit tests + pattern coverage |
+| No DB credentials leak to LLM | Unit tests + URL parsing |
+| No K8s secrets leak to LLM | Unit tests + base64 detection |
+
+**Full Specification**: [BR-HAPI-211](../../../requirements/BR-HAPI-211-llm-input-sanitization.md)
+
+---
+
 ## 📋 Deferred BRs (139 BRs for v2.0)
 
 The following 140 BRs are deferred to v2.0 and only needed if the service becomes externally exposed:
@@ -664,15 +717,17 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 - [api-specification.md](./api-specification.md) - API specification with examples
 - [overview.md](./overview.md) - Service architecture and design decisions
 - [DD-HOLMESGPT-012](../../../architecture/decisions/DD-HOLMESGPT-012-Minimal-Internal-Service-Architecture.md) - Minimal service architecture decision
-- [DD-HAPI-004](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md) - ConfigMap hot-reload (V1.0) ⏳
+- [DD-HAPI-004](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md) - ConfigMap hot-reload (V1.0)
+- [DD-HAPI-005](../../../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md) - LLM Input Sanitization (V1.0) 📋
 - [DD-004](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md) - RFC 7807 error responses
 - [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) - Graceful shutdown pattern
 - [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md) - Hot-reload business requirements
+- [BR-HAPI-211](../../../requirements/BR-HAPI-211-llm-input-sanitization.md) - LLM Input Sanitization 📋
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: December 7, 2025
+**Document Version**: 1.3
+**Last Updated**: December 9, 2025
 **Maintained By**: Kubernaut Architecture Team
-**Status**: ✅ V1.0 Complete (49 BRs implemented)
+**Status**: 📋 V1.0 In Progress (50 BRs implemented, 1 planned)
 

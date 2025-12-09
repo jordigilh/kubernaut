@@ -252,21 +252,21 @@ Acknowledged By: Gateway Service Team
 Actions Completed:
 1. ✅ Updated import: added pkg/shared/sanitization to server.go
 2. ✅ Replaced: middleware.SanitizeForLog → sanitization.SanitizeForLog in server.go
-3. ✅ Removed: deprecated SanitizeForLog wrapper from pkg/gateway/middleware/log_sanitization.go
-4. ✅ Tests pass: 43/43 middleware specs PASSED
+3. ✅ DELETED: pkg/gateway/middleware/log_sanitization.go (entire file)
+4. ✅ DELETED: test/unit/gateway/middleware/log_sanitization_test.go (tests)
+5. ✅ Tests pass: 37/37 middleware specs PASSED (was 43, removed 6)
+
+Files Deleted:
+- pkg/gateway/middleware/log_sanitization.go
+- test/unit/gateway/middleware/log_sanitization_test.go
 
 Files Changed:
 - pkg/gateway/server.go (import + call site)
-- pkg/gateway/middleware/log_sanitization.go (removed deprecated wrapper)
 
 Verification:
-- Build: ✅ PASSED (go build ./pkg/gateway/...)
-- Middleware Tests: ✅ PASSED (43/43 specs)
-- Lint: ✅ No errors
-
-Notes:
-- NewSanitizingLogger middleware kept (already uses shared library internally)
-- Only the thin SanitizeForLog wrapper was removed (dead code)
+- Build: ✅ PASSED (go build ./pkg/gateway/... ./cmd/gateway/...)
+- Middleware Tests: ✅ PASSED (37/37 specs)
+- No production code used NewSanitizingLogger (only tests/docs)
 ```
 
 ### Notification Team Response

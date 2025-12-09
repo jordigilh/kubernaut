@@ -1629,10 +1629,16 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 		return fmt.Errorf("targetResource is required")
 	}
 
-	// Validate targetResource format: {namespace}/{kind}/{name}
+	// Validate targetResource format per DD-WE-001:
+	// - Namespaced resources: {namespace}/{kind}/{name} (3 parts)
+	// - Cluster-scoped resources: {kind}/{name} (2 parts)
+	// Examples:
+	//   - "payment/deployment/payment-api" (namespaced)
+	//   - "node/worker-node-1" (cluster-scoped)
+	//   - "kube-system/configmap/coredns" (namespaced)
 	parts := strings.Split(wfe.Spec.TargetResource, "/")
-	if len(parts) != 3 {
-		return fmt.Errorf("targetResource must be in format {namespace}/{kind}/{name}, got %d parts", len(parts))
+	if len(parts) < 2 || len(parts) > 3 {
+		return fmt.Errorf("targetResource must be in format {namespace}/{kind}/{name} (namespaced) or {kind}/{name} (cluster-scoped), got %d parts", len(parts))
 	}
 
 	// Validate each part is non-empty
