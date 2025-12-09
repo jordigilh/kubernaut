@@ -7,7 +7,7 @@
 | **Date** | 2025-12-09 |
 | **Priority** | 🟡 Medium |
 | **Type** | Technical Assistance Request |
-| **Status** | ⏳ Awaiting HAPI Response |
+| **Status** | ✅ HAPI Response Provided (Dec 9, 2025) |
 
 ---
 
@@ -149,11 +149,11 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 
 ## ⏱️ Timeline
 
-| Task | Owner | ETA |
-|------|-------|-----|
-| HAPI team responds with recommendation | HAPI | Dec 10, 2025 |
-| AIAnalysis implements conversion | AIAnalysis | Dec 11, 2025 |
-| Verify integration tests pass | AIAnalysis | Dec 11, 2025 |
+| Task | Owner | ETA | Status |
+|------|-------|-----|--------|
+| HAPI team responds with recommendation | HAPI | Dec 10, 2025 | ✅ Done (Dec 9) |
+| AIAnalysis implements conversion | AIAnalysis | Dec 11, 2025 | ✅ Done (Dec 9) |
+| Verify integration tests pass | AIAnalysis | Dec 11, 2025 | ⏳ Pending verification |
 
 ---
 
@@ -171,22 +171,115 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | v1.0 | 2025-12-09 | AIAnalysis Team | Initial request |
+| v1.1 | 2025-12-09 | HAPI Team | Provided responses to Q1-Q3 |
+| v1.2 | 2025-12-09 | AIAnalysis Team | Implemented conversion to MockHolmesGPTClient |
+| v1.1 | 2025-12-09 | HAPI Team | Response provided: Use MockHolmesGPTClient |
 
 ---
 
 ## HAPI Team Response
 
-**Date**: _Pending_
-**Responder**: _Pending_
+**Date**: December 9, 2025
+**Responder**: HAPI Team
 
 ### Q1 Response (Mock Pattern)
 
+✅ **Recommended: Option B - Use existing `testutil.MockHolmesGPTClient`**
+
+Per `TESTING_GUIDELINES.md` (lines 340-342):
+
+| Test Type | Infrastructure | LLM |
+|-----------|----------------|-----|
+| **Unit Tests** | Mock ✅ | Mock ✅ |
+| **Integration Tests** | Mock ✅ | Mock ✅ |
+| **E2E Tests** | **REAL** ❌ | Mock ✅ |
+
+The existing mock client at `pkg/testutil/mock_holmesgpt_client.go` is **comprehensive** with 20+ helper methods covering all ADR-045 contract scenarios. **Do not use `httptest.Server` or real HAPI** for integration tests.
+
+**Conversion example**:
+```go
+// ✅ CORRECT: Use MockHolmesGPTClient for integration tests
+import "github.com/jordigilh/kubernaut/pkg/testutil"
+
+var _ = Describe("HolmesGPT Integration", func() {
+    var mockClient *testutil.MockHolmesGPTClient
+
+    BeforeEach(func() {
+        mockClient = testutil.NewMockHolmesGPTClient()
+    })
+
+    It("should handle successful investigation", func() {
+        mockClient.WithFullResponse(
+            "Analysis result",
+            0.85,
+            true, // targetInOwnerChain
+            []string{},
+            &client.RootCauseAnalysis{Summary: "OOMKilled", Severity: "high"},
+            &client.SelectedWorkflow{WorkflowID: "restart-pod", Confidence: 0.85},
+            nil,
+        )
+        // ... test assertions
+    })
+})
+```
 
 ### Q2 Response (Test Fixtures)
 
+✅ **Canonical fixtures are provided via mock helper methods**:
+
+| Scenario | Helper Method | Example |
+|----------|---------------|---------|
+| **Successful workflow** | `WithFullResponse()` | High confidence, workflow selected |
+| **Human review required** | `WithHumanReviewReasonEnum(reason, warnings)` | All 7 enum values supported |
+| **Investigation inconclusive** | `WithHumanReviewReasonEnum("investigation_inconclusive", ...)` | BR-HAPI-200 Outcome B |
+| **Problem resolved** | `WithProblemResolved(confidence, warnings, analysis)` | BR-HAPI-200 Outcome A |
+| **LLM self-correction** | `WithHumanReviewAndHistory(reason, warnings, attempts)` | DD-HAPI-002 v1.4 |
+| **API errors** | `WithAPIError(statusCode, message)` | 4xx/5xx responses |
+
+**Human review reason enum values** (all 7):
+```go
+// Supported values for human_review_reason
+mockClient.WithHumanReviewReasonEnum("workflow_not_found", warnings)
+mockClient.WithHumanReviewReasonEnum("image_mismatch", warnings)
+mockClient.WithHumanReviewReasonEnum("parameter_validation_failed", warnings)
+mockClient.WithHumanReviewReasonEnum("no_matching_workflows", warnings)
+mockClient.WithHumanReviewReasonEnum("low_confidence", warnings)
+mockClient.WithHumanReviewReasonEnum("llm_parsing_error", warnings)
+mockClient.WithHumanReviewReasonEnum("investigation_inconclusive", warnings)
+```
 
 ### Q3 Response (Contract Testing)
 
+✅ **Contract is established via ADR-045 + OpenAPI spec**
+
+| Resource | Location | Purpose |
+|----------|----------|---------|
+| **ADR-045** | `docs/architecture/decisions/ADR-045-aianalysis-holmesgpt-api-contract.md` | Authoritative contract definition |
+| **OpenAPI Spec** | `holmesgpt-api/api/openapi.json` | 19 schemas, auto-generated from Pydantic |
+| **Go Client Types** | `pkg/aianalysis/client/` | Client interface + types |
+
+**Contract validation approach**:
+1. HAPI exports OpenAPI spec via `make export-openapi`
+2. CI validates spec hasn't broken (`make test-openapi`)
+3. AIAnalysis uses `client.IncidentRequest` / `client.IncidentResponse` types
+4. Mock client implements same interface guaranteeing type compatibility
+
+**No formal consumer contract tests** (like Pact) are implemented. The mock client + ADR-045 + OpenAPI spec provide sufficient contract validation for V1.0.
+
+---
+
+## ✅ Summary for AIAnalysis Team
+
+| Question | Answer |
+|----------|--------|
+| Q1: Mock pattern | **Option B** - Use `testutil.MockHolmesGPTClient` |
+| Q2: Test fixtures | **Helper methods** provide all scenarios |
+| Q3: Contract testing | **ADR-045 + OpenAPI** - no Pact needed for V1.0 |
+
+**Next Steps**:
+1. Update `test/integration/aianalysis/holmesgpt_integration_test.go` to use `testutil.MockHolmesGPTClient`
+2. Remove dependency on real HAPI server (`localhost:8088`)
+3. Use helper methods for scenario fixtures
 
 ---
 

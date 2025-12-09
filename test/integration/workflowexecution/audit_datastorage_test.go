@@ -52,9 +52,8 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 	const dataStorageURL = "http://localhost:18090"
 
 	var (
-		dsAvailable bool
-		httpClient  *http.Client
-		dsClient    audit.DataStorageClient
+		httpClient *http.Client
+		dsClient   audit.DataStorageClient
 	)
 
 	BeforeEach(func() {
@@ -77,7 +76,6 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 				dataStorageURL))
 		}
 		resp.Body.Close()
-		dsAvailable = true
 
 		// Create real DS client
 		dsClient = audit.NewHTTPDataStorageClient(dataStorageURL, httpClient)

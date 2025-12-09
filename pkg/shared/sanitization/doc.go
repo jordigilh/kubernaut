@@ -16,9 +16,11 @@ limitations under the License.
 
 // Package sanitization provides DD-005 compliant log sanitization utilities.
 //
-// This package consolidates sanitization logic previously duplicated in:
-// - pkg/gateway/middleware/log_sanitization.go
-// - pkg/notification/sanitization/sanitizer.go
+// This package consolidates sanitization logic.
+//
+// Migration Status (December 2025):
+// - pkg/notification/sanitization/sanitizer.go → MIGRATED ✅ (uses this package)
+// - pkg/gateway/middleware/log_sanitization.go → Pending migration
 //
 // All services MUST use this package for log sanitization to ensure:
 // - Consistent redaction patterns across the codebase

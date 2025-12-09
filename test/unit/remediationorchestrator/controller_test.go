@@ -47,8 +47,9 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 		_ = notificationv1.AddToScheme(scheme)
 
 		// Create fake client and reconciler
+		// Audit store is nil for unit tests (DD-AUDIT-003 compliant - audit is optional)
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		reconciler = controller.NewReconciler(fakeClient, scheme)
+		reconciler = controller.NewReconciler(fakeClient, scheme, nil)
 	})
 
 	Describe("Reconciler", func() {

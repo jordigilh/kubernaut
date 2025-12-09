@@ -243,7 +243,7 @@ The Notification Controller is a Kubernetes CRD controller that delivers notific
 | **Console Delivery** | Logs to console output | `pkg/notification/delivery/console.go` |
 | **Slack Delivery** | Sends to Slack webhook | `pkg/notification/delivery/slack.go` |
 | **File Delivery** | E2E test validation (HostPath volumes) | `pkg/notification/delivery/file.go` |
-| **Sanitizer** | Redacts 22 secret patterns from content | `pkg/notification/sanitization/sanitizer.go` |
+| **Sanitizer** | Redacts 22+ secret patterns from content (DD-005) | `pkg/shared/sanitization/` |
 | **Retry Policy** | Exponential backoff + circuit breaker | `pkg/notification/retry/policy.go` |
 | **Metrics** | 10 Prometheus metrics | `pkg/notification/metrics/metrics.go` |
 | **Audit Helpers** | ADR-034 audit event creation | `internal/controller/notification/audit.go` |

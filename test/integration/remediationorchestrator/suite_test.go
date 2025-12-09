@@ -166,9 +166,11 @@ var _ = BeforeSuite(func() {
 
 	By("Setting up the RemediationOrchestrator controller")
 	// Create RO reconciler with manager client and scheme
+	// Audit store is nil for tests (DD-AUDIT-003 compliant - audit is optional for testing)
 	reconciler := controller.NewReconciler(
 		k8sManager.GetClient(),
 		k8sManager.GetScheme(),
+		nil, // No audit store for integration tests
 	)
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

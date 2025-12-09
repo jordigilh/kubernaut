@@ -15,18 +15,19 @@ limitations under the License.
 */
 
 // Package signalprocessing implements the SignalProcessing CRD controller.
-// Per IMPLEMENTATION_PLAN_V1.30.md - E2E GREEN Phase
+// Per IMPLEMENTATION_PLAN_V1.31.md - E2E GREEN Phase + BR-SP-090 Audit
 //
 // Reconciliation Flow:
 //  1. Pending → Enriching: K8s context enrichment + owner chain + detected labels
 //  2. Enriching → Classifying: Environment + Priority classification
 //  3. Classifying → Categorizing: Business classification
-//  4. Categorizing → Completed: Final status update
+//  4. Categorizing → Completed: Final status update + audit event
 //
 // Business Requirements:
 //   - BR-SP-001: K8s Context Enrichment
 //   - BR-SP-051-053: Environment Classification
 //   - BR-SP-070-072: Priority Assignment
+//   - BR-SP-090: Categorization Audit Trail
 //   - BR-SP-100: Owner Chain Traversal
 //   - BR-SP-101: Detected Labels
 package signalprocessing
