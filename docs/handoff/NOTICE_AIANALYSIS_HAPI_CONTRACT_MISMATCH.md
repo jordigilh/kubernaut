@@ -471,6 +471,69 @@ NO MORE BLOCKERS - Day 11 implementation can proceed immediately with:
 | 2025-12-09 | HAPI Team | Initial contract mismatch analysis |
 | 2025-12-09 | AIAnalysis Team | Acknowledged, asked clarification questions |
 | 2025-12-09 | HAPI Team | Answered Q1 (use metadata.name) and Q2 (use spec.RemediationID) |
+| 2025-12-09 | HAPI Team | Added ownership clarification note |
+
+---
+
+## ⚠️ Ownership Clarification Note
+
+> **📋 HAPI Team Observation (December 9, 2025)**
+>
+> The clarification questions Q1 and Q2 were about **AIAnalysis's own CRD spec**, not HAPI's contract:
+>
+> | Question | Actual Source | Owner |
+> |----------|---------------|-------|
+> | Q1: Where does `incident_id` come from? | `metadata.name` (standard K8s) | **AIAnalysis** |
+> | Q2: Where does `remediation_id` come from? | `spec.RemediationID` (AIAnalysis CRD) | **AIAnalysis** |
+>
+> **The AIAnalysis team designed `spec.RemediationID`** in `api/aianalysis/v1alpha1/aianalysis_types.go` (lines 44-47). They should not need HAPI to tell them this field exists.
+>
+> ### Boundary Clarification
+>
+> | Question Type | Who Should Answer |
+> |---------------|-------------------|
+> | "What fields does HAPI require?" | ✅ HAPI Team |
+> | "What is the HAPI response format?" | ✅ HAPI Team |
+> | "What fields does our AIAnalysis CRD have?" | ✅ **AIAnalysis Team** (authoritative: `aianalysis_types.go`) |
+> | "How do we map our CRD fields to HAPI?" | ✅ **AIAnalysis Team** (their implementation detail) |
+>
+> ### Recommendation
+>
+> Going forward, AIAnalysis team should:
+> 1. **Own their CRD spec** - Consult `api/aianalysis/v1alpha1/aianalysis_types.go`
+> 2. **Only escalate to HAPI for HAPI contract questions** - OpenAPI spec is authoritative
+> 3. **Document internal mappings** - Add field mapping docs to AIAnalysis service docs
 | 2025-12-09 | AIAnalysis Team | **TRIAGE COMPLETE** - All questions answered, ready for Day 11 |
+| 2025-12-09 | AIAnalysis Team | Acknowledged HAPI ownership clarification (see response below) |
+
+---
+
+## ✅ AIAnalysis Team Response to Ownership Clarification
+
+**Date**: December 9, 2025
+**Status**: ✅ **ACKNOWLEDGED - Valid feedback accepted**
+
+```
+✅ ACKNOWLEDGED - The HAPI team's observation is correct and valid.
+
+ADMITTED:
+- Q1 (incident_id source) and Q2 (remediation_id source) were about AIAnalysis's own CRD spec
+- We should have consulted api/aianalysis/v1alpha1/aianalysis_types.go directly
+- These questions were an unnecessary escalation to HAPI
+
+CORRECTIVE ACTIONS:
+1. ✅ Will consult aianalysis_types.go as authoritative source for CRD field questions
+2. ✅ Will only escalate to HAPI for HAPI contract questions (OpenAPI spec)
+3. ✅ Will add field mapping documentation to AIAnalysis service docs
+4. ✅ Will maintain clear ownership boundaries going forward
+
+APOLOGY:
+We apologize for the unnecessary questions. Going forward, we will:
+- Own our CRD spec decisions
+- Only ask HAPI about HAPI contract (what they require/return)
+- Not ask HAPI about how to map our own fields
+
+Thank you for the clarification on team boundaries.
+```
 
 

@@ -265,12 +265,23 @@ func (s *BufferedAuditStore) Close() error {
 	select {
 	case <-done:
 		// Background worker finished
+		dropped := atomic.LoadInt64(&s.droppedCount)
+		failedBatches := atomic.LoadInt64(&s.failedBatchCount)
+
 		s.logger.Info("Audit store closed",
 			"buffered_count", atomic.LoadInt64(&s.bufferedCount),
 			"written_count", atomic.LoadInt64(&s.writtenCount),
-			"dropped_count", atomic.LoadInt64(&s.droppedCount),
-			"failed_batch_count", atomic.LoadInt64(&s.failedBatchCount),
+			"dropped_count", dropped,
+			"failed_batch_count", failedBatches,
 		)
+
+		// GAP-12: ADR-032 requires callers to know if events were lost
+		if dropped > 0 {
+			return fmt.Errorf("audit store closed with %d dropped events", dropped)
+		}
+		if failedBatches > 0 {
+			return fmt.Errorf("audit store closed with %d failed batches", failedBatches)
+		}
 		return nil
 
 	case <-time.After(30 * time.Second):
