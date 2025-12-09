@@ -137,4 +137,3 @@ func IsIDLikeSegment(segment string) bool {
 		numericPattern.MatchString(segment) ||
 		(hexPattern.MatchString(segment) && len(segment) >= 8)
 }
-

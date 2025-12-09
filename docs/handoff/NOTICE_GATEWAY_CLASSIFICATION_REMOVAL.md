@@ -265,9 +265,11 @@ The Gateway notice contains **discrepancies with authoritative SP documentation*
 | BR-SP-051 | Namespace labels (`kubernaut.ai/environment`) | ✅ **Day 4 COMPLETE** | Rego-based, case-insensitive |
 | BR-SP-052 | ConfigMap fallback | ✅ **Day 4 COMPLETE** | Pattern matching supported |
 | BR-SP-053 | Default `"unknown"` | ✅ **Day 4 COMPLETE** | 0.0 confidence |
-| BR-SP-070 | Priority via Rego | ⏳ **Day 5 PENDING** | Implementation starting |
-| BR-SP-071 | Priority fallback matrix | ⏳ **Day 5 PENDING** | Per plan specification |
-| BR-SP-072 | Rego hot-reload | ⏳ **Day 5 PENDING** | Per DD-INFRA-001 |
+| BR-SP-070 | Priority via Rego | ✅ **Day 5 COMPLETE** | Rego policy evaluation |
+| BR-SP-071 | Priority fallback matrix | ✅ **Day 5 COMPLETE** | Severity-based fallback |
+| BR-SP-072 | Rego hot-reload | ✅ **Day 5 COMPLETE** | fsnotify + FileWatcher |
+
+> **Update (Dec 9, 2025)**: SignalProcessing V1.0 is 100% complete. All 17 BRs implemented, 270 tests passing.
 
 ---
 

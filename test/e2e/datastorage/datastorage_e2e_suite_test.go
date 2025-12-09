@@ -166,7 +166,7 @@ var _ = SynchronizedBeforeSuite(
 
 		// Set shared URLs (NodePort - no port-forwarding needed)
 		// These are exposed via Kind extraPortMappings in kind-datastorage-config.yaml
-		dataStorageURL = "http://localhost:8081"                                                                // NodePort 30081 mapped to localhost:8081
+		dataStorageURL = "http://localhost:8081"                                                          // NodePort 30081 mapped to localhost:8081
 		postgresURL = "postgresql://slm_user:test_password@localhost:5432/action_history?sslmode=disable" // NodePort 30432 mapped to localhost:5432
 
 		processID := GinkgoParallelProcess()

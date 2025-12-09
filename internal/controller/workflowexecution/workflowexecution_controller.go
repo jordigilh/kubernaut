@@ -706,30 +706,42 @@ func (r *WorkflowExecutionReconciler) CheckCooldown(ctx context.Context, wfe *wo
 
 	// ========================================
 	// Regular cooldown check (for successful completions)
+	// DD-WE-001: Only block SAME workflow on same target within cooldown
+	// Different workflows on same target ARE allowed (line 140 of DD-WE-001)
 	// ========================================
 	if r.CooldownPeriod > 0 && recentWFE.Status.CompletionTime != nil {
-		cooldownThreshold := now.Add(-r.CooldownPeriod)
-		if recentWFE.Status.CompletionTime.After(cooldownThreshold) {
-			remainingCooldown := recentWFE.Status.CompletionTime.Add(r.CooldownPeriod).Sub(now)
-			logger.Info("Cooldown active",
-				"blockedBy", recentWFE.Name,
-				"targetResource", wfe.Spec.TargetResource,
-				"remainingCooldown", remainingCooldown,
-			)
+		// DD-WE-001 line 120: Check if SAME workflow was recently executed
+		if recentWFE.Spec.WorkflowRef.WorkflowID == wfe.Spec.WorkflowRef.WorkflowID {
+			cooldownThreshold := now.Add(-r.CooldownPeriod)
+			if recentWFE.Status.CompletionTime.After(cooldownThreshold) {
+				remainingCooldown := recentWFE.Status.CompletionTime.Add(r.CooldownPeriod).Sub(now)
+				logger.Info("Cooldown active for same workflow",
+					"blockedBy", recentWFE.Name,
+					"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
+					"targetResource", wfe.Spec.TargetResource,
+					"remainingCooldown", remainingCooldown,
+				)
 
-			return true, &workflowexecutionv1alpha1.SkipDetails{
-				Reason:    workflowexecutionv1alpha1.SkipReasonRecentlyRemediated,
-				Message:   fmt.Sprintf("Cooldown active: workflow '%s' completed recently for resource '%s'. Remaining: %v", recentWFE.Name, wfe.Spec.TargetResource, remainingCooldown.Round(time.Second)),
-				SkippedAt: metav1.Now(),
-				RecentRemediation: &workflowexecutionv1alpha1.RecentRemediationRef{
-					Name:              recentWFE.Name,
-					WorkflowID:        recentWFE.Spec.WorkflowRef.WorkflowID,
-					CompletedAt:       *recentWFE.Status.CompletionTime,
-					Outcome:           string(recentWFE.Status.Phase),
-					TargetResource:    recentWFE.Spec.TargetResource,
-					CooldownRemaining: remainingCooldown.Round(time.Second).String(),
-				},
-			}, nil
+				return true, &workflowexecutionv1alpha1.SkipDetails{
+					Reason:    workflowexecutionv1alpha1.SkipReasonRecentlyRemediated,
+					Message:   fmt.Sprintf("Cooldown active: same workflow '%s' completed recently for resource '%s'. Remaining: %v", recentWFE.Spec.WorkflowRef.WorkflowID, wfe.Spec.TargetResource, remainingCooldown.Round(time.Second)),
+					SkippedAt: metav1.Now(),
+					RecentRemediation: &workflowexecutionv1alpha1.RecentRemediationRef{
+						Name:              recentWFE.Name,
+						WorkflowID:        recentWFE.Spec.WorkflowRef.WorkflowID,
+						CompletedAt:       *recentWFE.Status.CompletionTime,
+						Outcome:           string(recentWFE.Status.Phase),
+						TargetResource:    recentWFE.Spec.TargetResource,
+						CooldownRemaining: remainingCooldown.Round(time.Second).String(),
+					},
+				}, nil
+			}
+		} else {
+			logger.Info("Different workflow allowed on same target",
+				"newWorkflow", wfe.Spec.WorkflowRef.WorkflowID,
+				"recentWorkflow", recentWFE.Spec.WorkflowRef.WorkflowID,
+				"targetResource", wfe.Spec.TargetResource,
+			)
 		}
 	}
 

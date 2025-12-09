@@ -192,54 +192,54 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 		Expect(k8sClient).ToNot(BeNil())
 
-	// Set up E2E file output directory for FileService validation
-	// Use platform-appropriate HostPath directory (created by infrastructure.CreateNotificationCluster)
-	e2eFileOutputDir, err = infrastructure.GetE2EFileOutputDir()
-	Expect(err).ToNot(HaveOccurred())
-	// Directory already created in SynchronizedBeforeSuite before Kind cluster creation
-	// No need to create here - just verify it exists
-	_, err = os.Stat(e2eFileOutputDir)
-	Expect(err).ToNot(HaveOccurred(), "HostPath directory should exist")
+		// Set up E2E file output directory for FileService validation
+		// Use platform-appropriate HostPath directory (created by infrastructure.CreateNotificationCluster)
+		e2eFileOutputDir, err = infrastructure.GetE2EFileOutputDir()
+		Expect(err).ToNot(HaveOccurred())
+		// Directory already created in SynchronizedBeforeSuite before Kind cluster creation
+		// No need to create here - just verify it exists
+		_, err = os.Stat(e2eFileOutputDir)
+		Expect(err).ToNot(HaveOccurred(), "HostPath directory should exist")
 
-	// Wait for Notification Controller metrics NodePort to be responsive
-	// NodePort 30186 (in cluster) → localhost:9186 (on host via Kind extraPortMappings)
-	// Per DD-TEST-001 port allocation strategy
-	logger.Info("⏳ Waiting for Notification Controller metrics NodePort to be responsive...")
+		// Wait for Notification Controller metrics NodePort to be responsive
+		// NodePort 30186 (in cluster) → localhost:9186 (on host via Kind extraPortMappings)
+		// Per DD-TEST-001 port allocation strategy
+		logger.Info("⏳ Waiting for Notification Controller metrics NodePort to be responsive...")
 
-	// Give Kind a moment to set up port forwarding after deployment
-	logger.Info("Waiting 5 seconds for Kind port mapping to stabilize...")
-	time.Sleep(5 * time.Second)
+		// Give Kind a moment to set up port forwarding after deployment
+		logger.Info("Waiting 5 seconds for Kind port mapping to stabilize...")
+		time.Sleep(5 * time.Second)
 
-	metricsURL := "http://localhost:9186/metrics"  // Per DD-TEST-001
-	httpClient := &http.Client{Timeout: 10 * time.Second}
+		metricsURL := "http://localhost:9186/metrics" // Per DD-TEST-001
+		httpClient := &http.Client{Timeout: 10 * time.Second}
 
-	attemptCount := 0
-	Eventually(func() error {
-		attemptCount++
-		resp, err := httpClient.Get(metricsURL)
-		if err != nil {
-			if attemptCount%10 == 0 {  // Log every 10th attempt
-				logger.Info("Still waiting for metrics endpoint...",
-					"attempt", attemptCount,
-					"error", err.Error())
+		attemptCount := 0
+		Eventually(func() error {
+			attemptCount++
+			resp, err := httpClient.Get(metricsURL)
+			if err != nil {
+				if attemptCount%10 == 0 { // Log every 10th attempt
+					logger.Info("Still waiting for metrics endpoint...",
+						"attempt", attemptCount,
+						"error", err.Error())
+				}
+				return err
 			}
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("metrics endpoint returned status %d", resp.StatusCode)
-		}
-		return nil
-	}, 90*time.Second, 2*time.Second).Should(Succeed(), "Notification Controller metrics NodePort did not become responsive")
-	logger.Info("✅ Notification Controller metrics accessible via NodePort",
-		"process", GinkgoParallelProcess(),
-		"url", metricsURL,
-		"attempts", attemptCount)
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("metrics endpoint returned status %d", resp.StatusCode)
+			}
+			return nil
+		}, 90*time.Second, 2*time.Second).Should(Succeed(), "Notification Controller metrics NodePort did not become responsive")
+		logger.Info("✅ Notification Controller metrics accessible via NodePort",
+			"process", GinkgoParallelProcess(),
+			"url", metricsURL,
+			"attempts", attemptCount)
 
-	logger.Info("✅ Process ready",
-		"process", GinkgoParallelProcess(),
-		"fileOutputDir", e2eFileOutputDir)
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("✅ Process ready",
+			"process", GinkgoParallelProcess(),
+			"fileOutputDir", e2eFileOutputDir)
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )
 

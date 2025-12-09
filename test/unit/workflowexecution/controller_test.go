@@ -422,9 +422,12 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(details).To(BeNil())
 		})
 
-		It("should block when recent completed WFE exists within cooldown", func() {
+		It("should block when SAME workflow completed recently within cooldown (DD-WE-001)", func() {
+			// DD-WE-001 line 119-127: Block SAME workflow on same target within cooldown
 			// Completed 2 minutes ago, cooldown is 5 minutes
 			completionTime := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+			workflowID := "restart-pods-workflow"
+
 			recentWFE := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "recent-wfe",
@@ -433,6 +436,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowReference{
+						WorkflowID: workflowID, // Same workflow
+					},
 				},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 					Phase:          workflowexecutionv1alpha1.PhaseCompleted,
@@ -449,6 +455,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowReference{
+						WorkflowID: workflowID, // Same workflow - should block
+					},
 				},
 			}
 
@@ -457,6 +466,52 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(blocked).To(BeTrue())
 			Expect(details).ToNot(BeNil())
 			Expect(details.Reason).To(Equal(workflowexecutionv1alpha1.SkipReasonRecentlyRemediated))
+			Expect(details.RecentRemediation.WorkflowID).To(Equal(workflowID))
+		})
+
+		It("should ALLOW different workflow on same target within cooldown (DD-WE-001 line 140)", func() {
+			// DD-WE-001 line 140: "Completed <5m | Any | Yes | No | **Allow** (different workflow)"
+			// Recent workflow completed 2 minutes ago, but this is a DIFFERENT workflow
+			completionTime := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+
+			recentWFE := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "recent-wfe",
+					Namespace: "default",
+					UID:       "recent-uid",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: targetResource,
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowReference{
+						WorkflowID: "restart-pods-workflow", // First workflow
+					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase:          workflowexecutionv1alpha1.PhaseCompleted,
+					CompletionTime: &completionTime,
+				},
+			}
+			reconciler := createReconciler(5*time.Minute, recentWFE)
+
+			// New WFE with DIFFERENT workflow ID - should NOT be blocked
+			newWFE := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "new-wfe",
+					Namespace: "default",
+					UID:       "new-uid",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: targetResource,
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowReference{
+						WorkflowID: "scale-up-workflow", // Different workflow - should allow
+					},
+				},
+			}
+
+			blocked, details, err := reconciler.CheckCooldown(ctx, newWFE)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).To(BeFalse(), "Different workflow on same target should NOT be blocked")
+			Expect(details).To(BeNil())
 		})
 
 		It("should not block when completed WFE is outside cooldown period", func() {

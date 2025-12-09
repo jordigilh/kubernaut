@@ -191,7 +191,7 @@ package server
 import (
     "context"
     "time"
-    
+
     "github.com/go-logr/logr"
     "github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
     "github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -205,12 +205,12 @@ type DLQRetryWorker struct {
     logger        logr.Logger
     consumerGroup string
     consumerName  string
-    
+
     // Configuration
     pollInterval      time.Duration // Default: 30 seconds
     maxBatchSize      int64         // Default: 10 messages per iteration
     maxRetriesPerMsg  int           // Default: 6 (matching backoff intervals)
-    
+
     // Lifecycle
     stopCh       chan struct{}
     doneCh       chan struct{}
@@ -275,10 +275,10 @@ func (w *DLQRetryWorker) Stop() {
 
 func (w *DLQRetryWorker) retryLoop() {
     defer close(w.doneCh)
-    
+
     ticker := time.NewTicker(w.pollInterval)
     defer ticker.Stop()
-    
+
     for {
         select {
         case <-ticker.C:
@@ -293,14 +293,14 @@ func (w *DLQRetryWorker) retryLoop() {
 
 func (w *DLQRetryWorker) processRetryBatch() {
     ctx := context.Background()
-    
+
     // Read batch from DLQ (non-blocking, immediate return)
     streams, err := w.dlqClient.ReadMessages(ctx, w.consumerGroup, w.consumerName, 0, w.maxBatchSize)
     if err != nil {
         w.logger.Error(err, "Failed to read from DLQ")
         return
     }
-    
+
     for _, stream := range streams {
         for _, msg := range stream.Messages {
             w.processMessage(ctx, msg.ID, msg.Values)
@@ -313,21 +313,21 @@ func (w *DLQRetryWorker) processMessage(ctx context.Context, msgID string, value
     auditDataJSON := values["audit_data"].(string)
     retryCountStr := values["retry_count"].(string)
     createdAtStr := values["created_at"].(string)
-    
+
     retryCount := parseRetryCount(retryCountStr)
     createdAt := parseCreatedAt(createdAtStr)
-    
+
     // Check backoff interval
     if !w.isReadyForRetry(retryCount, createdAt) {
         return // Skip, not ready yet
     }
-    
+
     // Attempt write to PostgreSQL (direct, not via HTTP)
     if err := w.writeToPostgres(ctx, auditType, auditDataJSON); err != nil {
         w.handleRetryFailure(ctx, msgID, auditType, retryCount, err)
         return
     }
-    
+
     // Success - acknowledge message
     if err := w.dlqClient.AckMessage(ctx, w.consumerGroup, msgID, auditType); err != nil {
         w.logger.Error(err, "Failed to ack DLQ message after successful write",
@@ -348,11 +348,11 @@ func (w *DLQRetryWorker) isReadyForRetry(retryCount int, createdAt time.Time) bo
         4 * time.Hour,
         24 * time.Hour,
     }
-    
+
     if retryCount >= len(backoffIntervals) {
         return true // Max retries exceeded, process immediately for dead letter
     }
-    
+
     nextRetry := createdAt.Add(backoffIntervals[retryCount])
     return time.Now().After(nextRetry)
 }
@@ -365,7 +365,7 @@ func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType, auditDa
 func (w *DLQRetryWorker) handleRetryFailure(ctx context.Context, msgID, auditType string, retryCount int, writeErr error) {
     w.logger.Error(writeErr, "DLQ retry failed",
         "message_id", msgID, "audit_type", auditType, "retry_count", retryCount)
-    
+
     if retryCount >= w.maxRetriesPerMsg {
         // Move to dead letter stream (permanent failure)
         auditMsg := &dlq.AuditMessage{AuditType: auditType}
@@ -782,8 +782,37 @@ spec:
 
 ### **Async Retry Worker Deployment**
 
+#### **V1.0: Integrated with Data Storage Server (No Additional Deployment)**
+
+The DLQ retry worker runs as a goroutine inside the Data Storage server. No additional Kubernetes resources required.
+
+**Integration in Data Storage server startup**:
+```go
+// pkg/datastorage/server/server.go
+func (s *Server) Start() error {
+    // ... existing startup code ...
+
+    // Start DLQ retry worker (DD-009 V1.0)
+    dlqConfig := DefaultDLQRetryWorkerConfig()
+    dlqConfig.ConsumerName = s.podName // Use pod name for consumer group distribution
+    s.dlqRetryWorker = NewDLQRetryWorker(s.dlqClient, s.auditRepo, dlqConfig, s.logger)
+    s.dlqRetryWorker.Start()
+
+    return nil
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+    // DD-007 graceful shutdown
+    s.dlqRetryWorker.Stop()
+    // ... existing shutdown code ...
+    return nil
+}
+```
+
+#### **V1.1+: Standalone Async Retry Worker Deployment (DEFERRED)**
+
 ```yaml
-# deploy/audit-retry-worker.yaml
+# deploy/audit-retry-worker.yaml (V1.1+ - DEFERRED)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -795,7 +824,7 @@ spec:
     spec:
       containers:
       - name: retry-worker
-        image: kubernaut/audit-retry-worker:v1.0
+        image: kubernaut/audit-retry-worker:v1.1
         env:
         - name: REDIS_ADDR
           value: "redis-dlq:6379"
@@ -884,10 +913,12 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 - [x] Deployment manifests provided
 - [x] Integration example code provided
 - [x] User approval received (Decision 2c)
-- [ ] Implementation: Create `pkg/datastorage/dlq/` package (Phase 1-3)
-- [ ] Implementation: Create `cmd/audit-retry-worker/` (Phase 1-3)
-- [ ] Testing: DLQ client unit tests (Phase 1-3)
-- [ ] Testing: End-to-end retry scenarios (Phase 1-3)
+- [x] Implementation: Create `pkg/datastorage/dlq/` package (V1.0)
+- [x] Implementation: DLQ client unit tests - 17 tests passing (V1.0)
+- [ ] Implementation: Create DLQ retry worker goroutine (V1.0 - IN PROGRESS)
+- [ ] Testing: DLQ retry worker unit tests (V1.0)
+- [ ] Testing: Integration test for retry flow (V1.0)
+- [ ] DEFERRED: Create `cmd/audit-retry-worker/` (V1.1+)
 
 ---
 

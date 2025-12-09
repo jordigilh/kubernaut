@@ -3,8 +3,8 @@
 **From**: Audit Triage Team
 **To**: Data Storage Team
 **Date**: December 9, 2025
-**Priority**: 🟡 P1 (HIGH) - Documentation Inconsistency + Missing Implementation
-**Status**: 🟡 ACTION REQUIRED
+**Priority**: 🟢 P2 (MEDIUM) - Documentation Inconsistency (Code Compliant)
+**Status**: ✅ RESOLVED
 
 ---
 
@@ -192,9 +192,40 @@ For consistency and future-proofing, added `sanitization` package availability d
 | Notification | ~~`pkg/notification/sanitization/sanitizer.go`~~ | ✅ **DELETED** - uses shared directly |
 | Data Storage | `pkg/datastorage/middleware/log_sanitization.go` | ✅ Uses shared package |
 
-### GAP-6: Path Normalization (Now Included)
+### GAP-6: Path Normalization - Triage Result
 
-Path normalization is now available in the shared sanitization package via `sanitization.NormalizePath(path)`.
+**Status**: ⚪ **NOT APPLICABLE FOR V1.0** (Data Storage has no HTTP request metrics)
+
+**Triage Analysis** (December 9, 2025):
+
+| Check | Finding | Impact |
+|-------|---------|--------|
+| HTTP request metrics? | ❌ None found | No high-cardinality risk |
+| Custom business metrics? | ✅ Yes (`AuditTracesTotal`, `ValidationFailures`, etc.) | Uses controlled labels |
+| Middleware instrumentation? | ❌ No Chi HTTP instrumentation | No path labels |
+| `/metrics` endpoint? | ✅ Yes (`promhttp.Handler()`) | Standard Go runtime + business metrics |
+
+**Evidence**:
+```bash
+$ grep -r "http_requests_total\|httpRequests\.WithLabelValues" pkg/datastorage/
+# ❌ NO MATCHES - No HTTP request metrics
+
+$ grep -r "middleware" pkg/datastorage/server/server.go
+# Uses: RequestID, RealIP, loggingMiddleware, panicRecoveryMiddleware
+# ❌ No Chi instrumentation middleware (chiprometheus)
+```
+
+**Custom Metrics Found** (all use controlled labels, NOT paths):
+- `datastorage_audit_traces_total{service,status}` - service names, not paths
+- `datastorage_validation_failures_total{field,reason}` - field names, not paths
+- `datastorage_write_duration_seconds{table}` - table names, not paths
+
+**Conclusion**: GAP-6 is **V1.1 scope** as a defensive measure, but there's **no current vulnerability**:
+- Data Storage metrics don't use HTTP paths as labels
+- No risk of Prometheus OOM from high-cardinality
+
+**Shared Package Available**: If HTTP request metrics are added in V1.1+:
+- `pkg/shared/sanitization/path_normalization.go` provides `NormalizePath(path)`
 
 ---
 
@@ -250,8 +281,17 @@ Path normalization is now available in the shared sanitization package via `sani
 
 ---
 
-**Document Version**: 1.0
+## 📜 Changelog
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | Dec 9, 2025 | Audit Triage Team | Initial notice identifying DD-005 discrepancy |
+| 1.1 | Dec 9, 2025 | Data Storage Team | Added GAP-5/GAP-6 triage results; GAP-5 resolved (structured logging compliant); GAP-6 triaged as NOT APPLICABLE (no HTTP request metrics); Status changed to RESOLVED |
+
+---
+
+**Document Version**: 1.1
 **Created**: December 9, 2025
 **Last Updated**: December 9, 2025
-**Maintained By**: Audit Triage Team
+**Maintained By**: Audit Triage Team + Data Storage Team
 

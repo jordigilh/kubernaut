@@ -427,4 +427,3 @@ func DefaultRules() []*Rule {
 		},
 	}
 }
-

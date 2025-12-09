@@ -101,4 +101,3 @@ func IsHeaderSensitive(headerName string) bool {
 func AddSensitiveHeader(headerName string) {
 	SensitiveHeaderNames = append(SensitiveHeaderNames, strings.ToLower(headerName))
 }
-

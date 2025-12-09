@@ -126,28 +126,43 @@ Kubernaut is **NOT** a workflow execution engine. We:
 
 ---
 
-#### BR-WE-004: Owner Reference for Cascade Deletion
+#### BR-WE-004: Cascade Deletion of PipelineRun
 
-**Description**: WorkflowExecution Controller MUST set owner reference on created PipelineRun to enable cascade deletion when WorkflowExecution is deleted.
+**Description**: WorkflowExecution Controller MUST ensure PipelineRun is deleted when WorkflowExecution is deleted, preventing orphaned resources.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Kubernetes garbage collection should automatically delete PipelineRun when WorkflowExecution is deleted, preventing orphaned resources.
+**Rationale**: Kubernetes garbage collection should automatically clean up PipelineRun when WorkflowExecution is deleted, preventing orphaned resources.
 
 **Implementation**:
-- Set `ownerReferences` with controller: true
-- Reference WorkflowExecution as owner
-- Kubernetes GC handles deletion
+
+> **Note**: Due to Kubernetes technical limitations, **cross-namespace owner references are not supported**. WorkflowExecutions live in user namespaces (e.g., `default`), while PipelineRuns are created in `kubernaut-workflows` namespace per DD-WE-002. Therefore, we use **finalizers** instead of owner references.
+
+- Add finalizer `workflowexecution.kubernaut.ai/workflowexecution-cleanup` on WFE creation
+- On WFE deletion, `ReconcileDelete()` runs:
+  1. Find PipelineRun by deterministic name (DD-WE-003)
+  2. Delete PipelineRun explicitly
+  3. Remove finalizer
+  4. WFE deletion completes
+- **Same outcome achieved**: No orphaned PipelineRuns
+
+**Why NOT Owner References**:
+- Kubernetes explicitly disallows cross-namespace owner references
+- From Kubernetes documentation: "A namespaced owner must exist in the same namespace as the dependent"
+- DD-WE-002 requires dedicated execution namespace for RBAC isolation
 
 **Acceptance Criteria**:
-- ✅ Owner reference set on PipelineRun
+- ✅ Finalizer set on WorkflowExecution creation
 - ✅ PipelineRun deleted when WorkflowExecution deleted
 - ✅ No orphaned PipelineRuns
+- ✅ Finalizer removed after cleanup completes
 
 **Test Coverage**:
-- Unit: Owner reference construction
+- Unit: Finalizer addition, deletion handling
 - Integration: Cascade deletion verification
 - E2E: Cleanup after test
+
+**Related DDs**: DD-WE-002 (Dedicated Execution Namespace)
 
 ---
 
@@ -517,7 +532,7 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 ---
 
-**Document Version**: 3.4
+**Document Version**: 3.6
 **Last Updated**: December 9, 2025
 **Maintained By**: Kubernaut Architecture Team
 **Status**: Ready for Implementation (v1.0), Planned (v1.1)

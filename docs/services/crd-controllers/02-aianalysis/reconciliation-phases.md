@@ -461,7 +461,7 @@ RemediationOrchestrator creates WorkflowExecution (if approved)
 // AIAnalysisSpec (target implementation)
 type AIAnalysisSpec struct {
     // ... existing fields ...
-    
+
     // Optional timeout configuration for this analysis
     // +optional
     TimeoutConfig *AIAnalysisTimeoutConfig `json:"timeoutConfig,omitempty"`
@@ -471,7 +471,7 @@ type AIAnalysisTimeoutConfig struct {
     // Timeout for Investigating phase (default: 60s)
     // +optional
     InvestigatingTimeout metav1.Duration `json:"investigatingTimeout,omitempty"`
-    
+
     // Timeout for Analyzing phase (default: 5s)
     // +optional
     AnalyzingTimeout metav1.Duration `json:"analyzingTimeout,omitempty"`
