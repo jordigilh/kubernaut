@@ -126,7 +126,7 @@ func getKubernetesClient() client.Client {
 	// Load kubeconfig from standard Kind location
 	homeDir, err := os.UserHomeDir()
 	Expect(err).ToNot(HaveOccurred(), "Failed to get home directory")
-	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-e2e-config", homeDir)
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred(), "Failed to load kubeconfig")
@@ -156,7 +156,7 @@ func getKubernetesClientSafe() client.Client {
 		lastK8sClientError = fmt.Errorf("failed to get home directory: %w", err)
 		return nil
 	}
-	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-e2e-config", homeDir)
 
 	// Check if kubeconfig file exists
 	if _, err := os.Stat(kubeconfigPath); err != nil {

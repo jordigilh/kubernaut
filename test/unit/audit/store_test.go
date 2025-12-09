@@ -288,7 +288,7 @@ var _ = Describe("BufferedAuditStore", func() {
 			config := audit.Config{
 				BufferSize:    100,
 				BatchSize:     10,
-				FlushInterval: 100 * time.Millisecond,
+				FlushInterval: 10 * time.Second, // Long interval to prevent buffer drain during tests
 				MaxRetries:    3,
 			}
 			var err error

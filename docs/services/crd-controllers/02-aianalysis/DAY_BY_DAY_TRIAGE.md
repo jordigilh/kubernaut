@@ -302,18 +302,55 @@ api/aianalysis/v1alpha1/groupversion_info.go:
 
 ---
 
-### **Day 11-12: Compliance Fixes (REQUIRED)**
+### **Day 11: TDD-Compliant Implementation (REVISED)**
 
-#### Planned Work (from NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md)
+#### **TDD Sequence - MANDATORY per TESTING_GUIDELINES.md**
 
-| Task | Priority | Status | Blocker |
-|------|----------|--------|---------|
-| Fix API Group to `.kubernaut.ai` | P0 | ⏳ Ready | RO E2E tests need coordination |
-| Implement recovery endpoint logic | P0 | ⏳ Ready | HAPI confirmed: Use `/recovery/analyze` |
-| Populate all status fields | P1 | ⏳ Pending | |
-| Implement Conditions | P1 | ⏳ Pending | |
-| Migrate timeout to spec field | P1 | ⏳ Ready | RO approved: Option A |
-| Update RO passthrough | P2 | 🔒 Blocked | Depends on AA spec change |
+| # | Task | TDD Phase | Est. | BR Mapping | Status |
+|---|------|-----------|------|------------|--------|
+| 1 | Fix API Group to `.kubernaut.ai` | N/A | 1h | Infrastructure | ⏳ Ready |
+| 2 | Write unit tests for `RecoveryRequest` struct | 🔴 RED | 1h | BR-AI-080 | ⏳ |
+| 3 | Write unit tests for `InvestigateRecovery()` | 🔴 RED | 1h | BR-AI-082 | ⏳ |
+| 4 | Implement `RecoveryRequest` struct | 🟢 GREEN | 1h | BR-AI-081 | ⏳ |
+| 5 | Implement `InvestigateRecovery()` method | 🟢 GREEN | 1.5h | BR-AI-082 | ⏳ |
+| 6 | Write unit tests for `buildRecoveryRequest()` | 🔴 RED | 0.5h | BR-AI-083 | ⏳ |
+| 7 | Update handler to route recovery requests | 🟢 GREEN | 1h | BR-AI-081/083 | ⏳ |
+| 8 | Write integration tests (real HAPI) | 🔴 RED | 1h | BR-AI-080-083 | ⏳ |
+| 9 | Update `MockHolmesGPTClient` with recovery | Support | 0.5h | Test infra | ⏳ |
+
+**Total**: ~9h
+
+#### **Integration Test Strategy (per user guidance)**
+- **Real HAPI Service**: Use podman-compose with real HAPI (LLM mocked due to costs)
+- **Reference**: `podman-compose.test.yml` - HAPI service configuration
+- **Blocked**: May need HAPI team assistance for recovery endpoint availability
+
+---
+
+### **Day 12: Polish & Documentation (REVISED)**
+
+| # | Task | Est. | Status |
+|---|------|------|--------|
+| 1 | Populate all status fields | 2h | ⏳ Pending |
+| 2 | Implement K8s Conditions | 2h | ⏳ Pending |
+| 3 | ~~Add TimeoutConfig to spec~~ | ~~1h~~ | ✅ **COMPLETE** (Dec 9) |
+| 4 | Update plan documentation | 1h | ⏳ |
+| 5 | Run all 3 test tiers | 1h | ⏳ |
+
+---
+
+### **Previous Plan (SUPERSEDED)**
+
+~~| Task | Priority | Status | Blocker |~~
+~~|------|----------|--------|---------|~~
+~~| Fix API Group to `.kubernaut.ai` | P0 | ⏳ Ready | RO E2E tests need coordination |~~
+~~| Implement recovery endpoint logic | P0 | ⏳ Ready | HAPI confirmed: Use `/recovery/analyze` |~~
+~~| Populate all status fields | P1 | ⏳ Pending | |~~
+~~| Implement Conditions | P1 | ⏳ Pending | |~~
+~~| Migrate timeout to spec field | P1 | ⏳ Ready | RO approved: Option A |~~
+~~| Update RO passthrough | P2 | 🔒 Blocked | Depends on AA spec change |~~
+
+**Superseded Reason**: Reordered to follow TDD RED-GREEN-REFACTOR per TESTING_GUIDELINES.md
 
 ---
 
@@ -391,6 +428,9 @@ api/aianalysis/v1alpha1/groupversion_info.go:
 | Date | Author | Change |
 |------|--------|--------|
 | 2025-12-09 | AI Assistant | Initial comprehensive triage against authoritative documentation |
+| 2025-12-09 | AI Assistant | **Day 11 Revised**: Reordered to TDD RED-GREEN-REFACTOR per TESTING_GUIDELINES.md |
+| 2025-12-09 | AI Assistant | **Day 12 Updated**: Removed TimeoutConfig (already complete), added test validation |
+| 2025-12-09 | AI Assistant | **Integration Tests**: Confirmed real HAPI available in podman-compose.test.yml |
 
 ---
 
