@@ -179,13 +179,13 @@ def wrap_tool_results_with_sanitization(tool_executor):
     for toolset in tool_executor.toolsets:
         for tool in toolset.tools:
             original_invoke = tool.invoke
-            
+
             def sanitized_invoke(params, ...):
                 result = original_invoke(params, ...)
                 result.data = sanitize_for_llm(result.data)
                 result.error = sanitize_for_llm(result.error) if result.error else None
                 return result
-            
+
             tool.invoke = sanitized_invoke
 ```
 

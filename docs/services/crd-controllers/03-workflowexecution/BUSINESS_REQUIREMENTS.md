@@ -5,8 +5,8 @@
 **CRD**: WorkflowExecution
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Controller**: WorkflowExecutionReconciler
-**Version**: 3.0 (Standardized BR-WE-* + API Group)
-**Last Updated**: December 7, 2025
+**Version**: 3.5 (ValidateSpec cluster-scope fix, Audit event types clarification)
+**Last Updated**: December 9, 2025
 **Status**: Ready for Implementation
 
 ---
@@ -166,6 +166,16 @@ Kubernaut is **NOT** a workflow execution engine. We:
 - Write audit records to Data Storage (per ADR-034)
 - Include correlation_id from RemediationRequest
 - Include workflow_id and execution details
+
+**Implemented Event Types** (per ADR-034 pattern `<service>.<category>.<action>`):
+| Event Type | Trigger | EventOutcome |
+|------------|---------|--------------|
+| `workflowexecution.workflow.started` | Phase → Running | `success` |
+| `workflowexecution.workflow.completed` | Phase → Completed | `success` |
+| `workflowexecution.workflow.failed` | Phase → Failed | `failure` |
+| `workflowexecution.workflow.skipped` | Phase → Skipped | `skipped` |
+
+**Note**: DD-AUDIT-003 originally specified `execution.*` prefix. Our implementation uses `workflowexecution.*` prefix to follow ADR-034's `<service>.<category>.<action>` pattern, which is the authoritative standard for event type naming.
 
 **Acceptance Criteria**:
 - ✅ Events emitted for all phase transitions

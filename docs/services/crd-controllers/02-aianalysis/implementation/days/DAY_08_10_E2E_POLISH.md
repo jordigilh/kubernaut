@@ -596,18 +596,50 @@ done
 ### Final Test Execution
 
 ```bash
-# Full test suite
-make test
+# Full test suite (all 3 tiers with 4 parallel procs per TESTING_GUIDELINES.md)
+make test-aianalysis-all
 
-# Or individually:
-go test -v ./test/unit/aianalysis/...
-go test -v -tags=integration ./test/integration/aianalysis/...
-go test -v -tags=e2e ./test/e2e/aianalysis/...
+# Or individually (preferred - uses proper Makefile targets):
+make test-unit-aianalysis          # Unit tests (4 parallel procs)
+make test-integration-aianalysis   # Integration tests (envtest + mocks)
+make test-e2e-aianalysis           # E2E tests (Kind cluster required)
 
 # Coverage report
-go test -coverprofile=coverage.out ./pkg/aianalysis/...
-go tool cover -html=coverage.out -o coverage.html
-echo "Coverage: $(go tool cover -func=coverage.out | grep total | awk '{print $3}')"
+make test-coverage-aianalysis
+# Output: coverage-aianalysis.html with detailed breakdown
+```
+
+### Day 10 Enhanced Compliance Checklist
+
+```markdown
+## Day 10 Compliance Verification (per authoritative docs)
+
+### Test Execution (03-testing-strategy.mdc)
+- [ ] Unit tests passing with `--procs=4` (163 tests, 87.6% coverage)
+- [ ] Integration tests passing (34/43, 9 audit tests blocked by Data Storage API)
+- [ ] E2E tests passing (Kind cluster with full dependency chain)
+- [ ] Coverage >= 70% (target: 87.6% achieved)
+
+### BR Mapping Verification (03-testing-strategy.mdc line 431)
+- [ ] All unit tests reference BR-XXX-XXX in descriptions
+- [ ] All integration tests reference BR-XXX-XXX
+- [ ] All E2E tests reference BR-XXX-XXX
+
+### Standards Compliance
+- [ ] DD-005: Metrics naming verified (`aianalysis_reconciler_*`)
+- [ ] DD-TEST-001: Port allocation verified (8084/30084, 9184/30184, 8184/30284)
+- [ ] DD-AUDIT-003: Audit traces implemented (blocked by Data Storage batch endpoint)
+
+### Parallel Test Compliance (03-testing-strategy.mdc lines 298-302)
+- [ ] No `Ordered` containers without documented justification
+- [ ] Tests avoid shared state between specs
+- [ ] Suite-level setup in BeforeSuite, not BeforeEach with external deps
+
+### Build Quality
+- [ ] `golangci-lint`: 0 issues
+- [ ] `go vet`: passed
+- [ ] `go mod verify`: all modules verified
+- [ ] No TODO/FIXME markers (or documented blockers)
 ```
 
 ### Final Confidence Assessment

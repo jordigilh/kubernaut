@@ -1,16 +1,37 @@
-# 🎉 NOTICE: HolmesGPT-API V1.0 COMPLETE
+# 🎉 NOTICE: HolmesGPT-API V1.0 STATUS
 
-**Date**: December 7, 2025
+**Date**: December 9, 2025
 **From**: HolmesGPT-API Team
 **To**: All Kubernaut Service Teams
 **Priority**: 📢 **ANNOUNCEMENT**
-**Status**: ✅ **V1.0 FEATURE COMPLETE**
+**Status**: 📋 **V1.0 IN PROGRESS** (1 security BR remaining)
 
 ---
 
 ## Summary
 
-The **HolmesGPT-API service is now V1.0 feature complete**. All business requirements, cross-service contracts, and CI/CD infrastructure are implemented and tested.
+The **HolmesGPT-API service is nearly V1.0 complete**. All business requirements, cross-service contracts, and CI/CD infrastructure are implemented and tested. **One critical security feature remains**: LLM Input Sanitization (BR-HAPI-211).
+
+---
+
+## ⚠️ V1.0 Remaining Work
+
+### BR-HAPI-211: LLM Input Sanitization (P0 CRITICAL)
+
+**Status**: 📋 **PLANNED** (~7 hours implementation)
+**Design Decision**: [DD-HAPI-005](../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md)
+
+**Problem**: HAPI sends data to external LLM providers that may contain credentials:
+- `kubectl logs` output with database passwords
+- Error messages with connection strings
+- Workflow parameters with API keys
+
+**Solution**: Implement DD-005 compliant sanitization layer:
+- Sanitize ALL prompts before LLM submission
+- Wrap `Tool.invoke()` to sanitize tool results
+- Use patterns from `pkg/shared/sanitization/` (Go)
+
+**Timeline**: Blocks V1.0 GA release
 
 ---
 
@@ -29,7 +50,8 @@ The **HolmesGPT-API service is now V1.0 feature complete**. All business require
 | Human Review Reason | BR-HAPI-197 | ✅ Complete |
 | RFC 7807 Errors | BR-HAPI-200 | ✅ Complete |
 | Graceful Shutdown | BR-HAPI-201 | ✅ Complete |
-| **Total** | **50 BRs** | ✅ **100%** |
+| **LLM Input Sanitization** | **BR-HAPI-211** | 📋 **Planned** |
+| **Total** | **51 BRs** | 📋 **98%** (50/51) |
 
 ### Test Coverage
 
@@ -193,15 +215,27 @@ Please acknowledge receipt of this notice by updating this section:
 
 ---
 
-## 📋 Follow-up Items (Cosmetic)
+## 📋 Follow-up Items
 
 | Item | Priority | Owner | Status |
 |------|----------|-------|--------|
 | ~~Sync test counts~~ | Low | HAPI Team | ✅ **RESOLVED** (Dec 9, 2025) - Counts synced: 568 unit + 84 integration + 53 E2E = 705 total |
+| **BR-HAPI-211: LLM Input Sanitization** | **P0** | **HAPI Team** | 📋 **V1.0 PLANNED** - Blocks GA release. Design: [DD-HAPI-005](../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md) |
 
 ---
 
-**Document Version**: 1.2
+## 📚 Authoritative Documentation (Updated Dec 9)
+
+| Document | Updates |
+|----------|---------|
+| [BUSINESS_REQUIREMENTS.md](../services/stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md) | Added BR-HAPI-211, updated counts (51 BRs) |
+| [security-configuration.md](../services/stateless/holmesgpt-api/security-configuration.md) | Added LLM Input Sanitization section, updated threat model |
+| [DD-HAPI-005](../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md) | **NEW** - Design decision for LLM input sanitization |
+| [BR-HAPI-211](../requirements/BR-HAPI-211-llm-input-sanitization.md) | **NEW** - Business requirement for LLM input sanitization |
+
+---
+
+**Document Version**: 1.3
 **Created**: December 7, 2025
 **Updated**: December 9, 2025
 **Author**: HolmesGPT-API Team

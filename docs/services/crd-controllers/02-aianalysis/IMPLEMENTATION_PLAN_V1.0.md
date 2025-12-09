@@ -1,14 +1,22 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.17
-**Last Updated**: 2025-12-07
+**Version**: v1.18
+**Last Updated**: 2025-12-09
 **Timeline**: 10 days (2 calendar weeks)
-**Status**: 📋 DRAFT - Ready for Review
+**Status**: 📋 Day 9 Complete - Day 10 Ready
 **Quality Level**: Matches SignalProcessing V1.19 and Template V3.0 standards
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.18** (2025-12-09): **Day 10 Triage - Documentation Alignment**
+  - ✅ **Metrics Names**: Updated to DD-005 compliant naming (`aianalysis_reconciler_*`)
+  - ✅ **Phase Names**: Corrected to 4-phase flow (Pending, Investigating, Analyzing, Completed)
+  - ✅ **Test Commands**: Updated to use Makefile targets (`make test-*-aianalysis`)
+  - ✅ **Key Files Table**: Updated to reflect actual implementation paths
+  - ✅ **Running Locally**: Updated with Makefile-first approach and correct ports (DD-TEST-001)
+  - ✅ **Day 10 Checklist**: Added comprehensive compliance verification checklist
+  - 📏 **Reference**: Day 10 triage against 03-testing-strategy.mdc, TESTING_GUIDELINES.md
 - **v1.17** (2025-12-07): **Day 8 E2E Tests Implementation**
   - ✅ **KIND Infrastructure**: `test/infrastructure/aianalysis.go` with full dependency chain
   - ✅ **Dependency Chain**: PostgreSQL → Data Storage → HolmesGPT-API → AIAnalysis
@@ -2617,38 +2625,46 @@ var _ = Describe("Edge Cases", func() {
 
 ---
 
-## 📊 **Metrics Validation Commands Template** ⭐ V3.0
+## 📊 **Metrics Validation Commands Template** ⭐ V3.1
+
+> **Updated**: Dec 9, 2025 - Aligned with DD-005 naming conventions and 4-phase flow
 
 ```bash
 # Start AIAnalysis controller locally (for validation)
 go run ./cmd/aianalysis/main.go \
-    --metrics-bind-address=:9090 \
-    --health-probe-bind-address=:8081
+    --metrics-bind-address=:9184 \
+    --health-probe-bind-address=:8184
 
-# Verify metrics endpoint
-curl -s localhost:9090/metrics | grep aianalysis_
+# Verify metrics endpoint (per DD-TEST-001 port allocation)
+curl -s localhost:9184/metrics | grep aianalysis_
 
-# Expected AIAnalysis metrics:
-# aianalysis_reconciliations_total{phase="validating",status="success"} 0
-# aianalysis_reconciliations_total{phase="investigating",status="success"} 0
-# aianalysis_reconciliations_total{phase="analyzing",status="success"} 0
-# aianalysis_reconciliations_total{phase="recommending",status="success"} 0
-# aianalysis_holmesgpt_api_duration_seconds_bucket{endpoint="/incident/analyze",le="1"} 0
-# aianalysis_rego_policy_evaluation_duration_seconds_bucket{policy="approval",le="0.1"} 0
-# aianalysis_errors_total{error_type="holmesgpt_timeout"} 0
-# aianalysis_errors_total{error_type="rego_policy_failure"} 0
-# aianalysis_approval_decisions_total{decision="auto_approve"} 0
-# aianalysis_approval_decisions_total{decision="manual_review"} 0
+# Expected AIAnalysis metrics (per DD-005 naming: {service}_{component}_{metric}_{unit}):
+# 
+# Core Reconciler Metrics (4-phase flow: Pending → Investigating → Analyzing → Completed)
+# aianalysis_reconciler_reconciliations_total{phase="Pending",result="success"} 0
+# aianalysis_reconciler_reconciliations_total{phase="Investigating",result="success"} 0
+# aianalysis_reconciler_reconciliations_total{phase="Analyzing",result="success"} 0
+# aianalysis_reconciler_reconciliations_total{phase="Completed",result="success"} 0
+# aianalysis_reconciler_duration_seconds{phase="Investigating",quantile="0.99"} 0
+#
+# Business Metrics (8 metrics per v1.13)
+# aianalysis_failures_total{reason="WorkflowResolutionFailed",sub_reason="LowConfidence"} 0
+# aianalysis_rego_evaluations_total{decision="approved",escalated="false"} 0
+# aianalysis_approval_decisions_total{decision="auto_approved",environment="staging"} 0
+# aianalysis_approval_decisions_total{decision="manual_review",environment="production"} 0
+# aianalysis_confidence_score_distribution_bucket{signal_type="CrashLoopBackOff",le="0.9"} 0
+# aianalysis_audit_validation_attempts_total{workflow_id="restart-pod-v1",is_valid="true"} 0
+# aianalysis_quality_detected_labels_failures_total{failed_label="environment"} 0
 
-# Verify health endpoints
-curl -s localhost:8081/healthz  # Should return 200
-curl -s localhost:8081/readyz   # Should return 200
+# Verify health endpoints (per DD-TEST-001)
+curl -s localhost:8184/healthz  # Should return 200
+curl -s localhost:8184/readyz   # Should return 200
 
 # Create test AIAnalysis resource
 kubectl apply -f config/samples/aianalysis_v1alpha1_aianalysis.yaml
 
 # Verify metrics increment
-watch -n 1 'curl -s localhost:9090/metrics | grep aianalysis_reconciliations_total'
+watch -n 1 'curl -s localhost:9184/metrics | grep aianalysis_reconciler_reconciliations_total'
 ```
 
 ---
@@ -2703,30 +2719,48 @@ watch -n 1 'curl -s localhost:9090/metrics | grep aianalysis_reconciliations_tot
 
 ---
 
-## 🤝 **Team Handoff Notes Template** ⭐ V3.0
+## 🤝 **Team Handoff Notes Template** ⭐ V3.1
+
+> **Updated**: Dec 9, 2025 - Corrected file paths to match actual implementation
 
 ### **Key Files to Review**
 | File | Purpose | Priority |
 |------|---------|----------|
-| `cmd/aianalysis/main.go` | Entry point, signal handling | High |
-| `internal/controller/aianalysis/reconciler.go` | Main reconciliation logic | High |
-| `pkg/aianalysis/phases/` | Phase handlers (validating, investigating, etc.) | High |
+| `cmd/aianalysis/main.go` | Entry point, handler wiring, audit client setup | High |
+| `internal/controller/aianalysis/aianalysis_controller.go` | Main reconciliation logic, phase dispatch | High |
+| `pkg/aianalysis/handlers/investigating.go` | HolmesGPT-API integration, response processing | High |
+| `pkg/aianalysis/handlers/analyzing.go` | Rego policy evaluation, approval decisions | High |
 | `pkg/aianalysis/rego/` | Rego policy engine | High |
+| `pkg/aianalysis/client/holmesgpt.go` | HolmesGPT-API client, request/response types | High |
+| `pkg/aianalysis/metrics/metrics.go` | Prometheus metrics (8 business metrics) | Medium |
 | `api/aianalysis/v1alpha1/aianalysis_types.go` | CRD type definitions | Medium |
-| `docs/.../ERROR_HANDLING_PHILOSOPHY.md` | Error handling guide | Medium |
+| `test/unit/aianalysis/` | 163 unit tests (87.6% coverage) | Medium |
+| `test/integration/aianalysis/` | Integration tests (envtest) | Medium |
+| `test/e2e/aianalysis/` | E2E tests (Kind cluster) | Medium |
 
 ### **Running Locally**
 ```bash
-# Terminal 1: Start KIND cluster with CRDs
+# Option A: Run all tests (recommended)
+make test-aianalysis-all  # Unit + Integration + E2E
+
+# Option B: Individual tiers
+make test-unit-aianalysis          # 163 tests, 87.6% coverage
+make test-integration-aianalysis   # envtest + mock deps
+make test-e2e-aianalysis           # Kind cluster (auto-created)
+
+# Option C: Manual E2E testing
+# Terminal 1: Start podman-compose services (HolmesGPT-API, Data Storage, etc.)
+podman-compose -f podman-compose.test.yml up -d
+
+# Terminal 2: Start KIND cluster with CRDs
 make kind-create
 make install
 
-# Terminal 2: Start HolmesGPT-API with MockLLMServer
-cd holmesgpt-api && python tests/mock_llm_server.py &
-uvicorn main:app --host 0.0.0.0 --port 8080
-
-# Terminal 3: Start AIAnalysis controller
-make run-aianalysis
+# Terminal 3: Start AIAnalysis controller (ports per DD-TEST-001)
+go run ./cmd/aianalysis/main.go \
+    --metrics-bind-address=:9184 \
+    --health-probe-bind-address=:8184 \
+    --holmesgpt-api-url=http://localhost:18080
 
 # Terminal 4: Create test AIAnalysis
 kubectl apply -f config/samples/aianalysis_v1alpha1_aianalysis.yaml

@@ -3665,11 +3665,30 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(err.Error()).To(ContainSubstring("targetResource"))
 			})
 
-			It("should return error for invalid TargetResource format (missing parts)", func() {
-				// Given: WFE with malformed target resource
+			It("should accept cluster-scoped TargetResource format (2 parts)", func() {
+				// Given: WFE with cluster-scoped target resource per DD-WE-001
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "production/my-app", // Missing kind
+						TargetResource: "node/worker-node-1", // Cluster-scoped: kind/name
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "node-disk-cleanup",
+							ContainerImage: "ghcr.io/org/workflow:v1.0",
+						},
+					},
+				}
+
+				// When: ValidateSpec is called
+				err := reconciler.ValidateSpec(wfe)
+
+				// Then: Should accept (DD-WE-001 allows 2-part format for cluster-scoped)
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should return error for invalid TargetResource format (only 1 part)", func() {
+				// Given: WFE with only namespace (missing kind and name)
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						TargetResource: "production", // Only 1 part - invalid
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
 							ContainerImage: "ghcr.io/org/workflow:v1.0",
@@ -3759,7 +3778,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						}
 					}
 				},
-				// Valid TargetResource formats (namespace/kind/name)
+				// Valid TargetResource formats (namespace/kind/name for namespaced, kind/name for cluster-scoped)
 				Entry("valid - standard deployment", "default/deployment/nginx", "workflow-1", "ghcr.io/org/wf:v1", true, ""),
 				Entry("valid - statefulset", "prod/statefulset/postgres", "workflow-2", "ghcr.io/org/wf:v1", true, ""),
 				Entry("valid - daemonset", "kube-system/daemonset/fluentd", "workflow-3", "ghcr.io/org/wf:v1", true, ""),
@@ -3767,10 +3786,15 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Entry("valid - namespace with dash", "ns-1/deployment/app", "workflow-5", "ghcr.io/org/wf:v1", true, ""),
 				Entry("valid - name with numbers", "default/deployment/app123", "workflow-6", "ghcr.io/org/wf:v1", true, ""),
 
+				// Valid cluster-scoped resources (DD-WE-001: {kind}/{name} format)
+				Entry("valid - cluster-scoped node", "node/worker-node-1", "workflow-7", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - cluster-scoped persistentvolume", "persistentvolume/pv-data-01", "workflow-8", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - cluster-scoped clusterrole", "clusterrole/admin", "workflow-9", "ghcr.io/org/wf:v1", true, ""),
+				Entry("valid - cluster-scoped namespace", "namespace/production", "workflow-10", "ghcr.io/org/wf:v1", true, ""),
+
 				// Invalid TargetResource - missing parts (must have valid containerImage first)
 				Entry("invalid - empty targetResource", "", "workflow-1", "ghcr.io/org/wf:v1", false, "targetResource"),
-				Entry("invalid - only namespace", "default", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
-				Entry("invalid - missing name", "default/deployment", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
+				Entry("invalid - only one part", "default", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
 				Entry("invalid - too many parts", "default/deployment/app/extra", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
 
 				// Invalid WorkflowRef - containerImage validation

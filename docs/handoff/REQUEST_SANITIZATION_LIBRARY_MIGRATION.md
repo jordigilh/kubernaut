@@ -25,7 +25,7 @@ A shared sanitization library now exists at `pkg/shared/sanitization/` that cons
 
 | Service | Current Implementation | Lines of Code | Status |
 |---------|------------------------|---------------|--------|
-| **Gateway** | `pkg/gateway/middleware/log_sanitization.go` | ~203 | 🟡 Migrate to shared |
+| **Gateway** | ~~`pkg/gateway/middleware/log_sanitization.go`~~ | N/A | ✅ **DELETED** (Dec 9) |
 | **Notification** | ~~`pkg/notification/sanitization/sanitizer.go`~~ | N/A | ✅ **MIGRATED** (Dec 9) |
 | **Shared Library** | `pkg/shared/sanitization/` | ~410 | ✅ **AUTHORITATIVE** |
 | **Data Storage** | N/A (structured logging) | N/A | ✅ Compliant via design |
@@ -105,32 +105,20 @@ sanitizer := sanitization.NewSanitizerWithRules(allRules)
 
 ### Gateway Service
 
-**Current**: `pkg/gateway/middleware/log_sanitization.go`
+**Status**: ✅ **MIGRATION COMPLETE** (December 9, 2025)
 
-**Step 1**: Update imports
+**Summary**:
+- `pkg/gateway/middleware/log_sanitization.go` → **DELETED**
+- `server.go` now imports `pkg/shared/sanitization` directly
+- No production code used the middleware (only tests)
+
+**Usage Pattern**:
 ```go
-// BEFORE
-import "github.com/jordigilh/kubernaut/pkg/gateway/middleware"
-
-// AFTER
 import "github.com/jordigilh/kubernaut/pkg/shared/sanitization"
+
+// Sanitize sensitive data before logging
+sanitizedMessage := sanitization.SanitizeForLog(message)
 ```
-
-**Step 2**: Replace function calls
-```go
-// BEFORE
-middleware.SanitizeForLog(data)
-middleware.NewSanitizingLogger(writer)
-
-// AFTER
-sanitization.SanitizeForLog(data)
-sanitization.NewLoggingMiddleware(logger)
-```
-
-**Step 3**: Deprecate service-specific file
-- Add deprecation notice to `pkg/gateway/middleware/log_sanitization.go`
-- Keep for backwards compatibility during transition
-- Remove after migration is verified
 
 ### Notification Service
 
@@ -221,7 +209,7 @@ After migration, ensure:
 ### Test Files to Update
 
 **Gateway**:
-- `test/unit/gateway/middleware/log_sanitization_test.go` → Use shared library
+- ~~`test/unit/gateway/middleware/log_sanitization_test.go`~~ → **DELETED** (no longer needed)
 
 **Notification**:
 - `test/unit/notification/sanitization_test.go` → Use shared library

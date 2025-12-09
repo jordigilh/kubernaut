@@ -1,7 +1,7 @@
 # HolmesGPT API Service - Security Configuration
 
-**Version**: v1.0
-**Last Updated**: October 6, 2025
+**Version**: v1.1
+**Last Updated**: December 9, 2025
 **Service Type**: Stateless HTTP Service (Python REST API)
 **Port**: 8080 (REST API + Health), 9090 (Metrics)
 
@@ -31,16 +31,20 @@ HolmesGPT API Service implements defense-in-depth security for AI-powered invest
 3. **LLM API Security**: API keys stored in Kubernetes secrets
 4. **Network Security**: Network policies, TLS encryption
 5. **Audit Trail**: Comprehensive logging of all investigation requests
+6. **LLM Input Sanitization**: DD-005 compliant credential redaction before LLM transmission (V1.0)
 
 ### **Threat Model**
 
-| Threat | Mitigation |
-|--------|------------|
-| **Unauthorized Investigations** | TokenReviewer authentication + RBAC |
-| **LLM API Key Exposure** | Kubernetes secrets, no hardcoded credentials |
-| **Prompt Injection** | Input sanitization, prompt templates |
-| **Data Exfiltration** | Read-only K8s access, audit logging |
-| **Man-in-the-Middle** | mTLS for all service-to-service communication |
+| Threat | Mitigation | Status |
+|--------|------------|--------|
+| **Unauthorized Investigations** | TokenReviewer authentication + RBAC | ✅ Implemented |
+| **LLM API Key Exposure** | Kubernetes secrets, no hardcoded credentials | ✅ Implemented |
+| **Prompt Injection** | Input sanitization, prompt templates | ✅ Implemented |
+| **Data Exfiltration** | Read-only K8s access, audit logging | ✅ Implemented |
+| **Man-in-the-Middle** | mTLS for all service-to-service communication | ✅ Implemented |
+| **Credential Leakage to LLM** | DD-HAPI-005 LLM input sanitization (BR-HAPI-211) | 📋 V1.0 Planned |
+
+> **⚠️ Security Note**: The "Credential Leakage to LLM" threat is a P0 priority for V1.0. See [DD-HAPI-005](../../../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md) for the design decision and [BR-HAPI-211](../../../requirements/BR-HAPI-211-llm-input-sanitization.md) for the business requirement.
 
 ---
 
@@ -477,30 +481,30 @@ SANITIZATION_PATTERNS: List[Tuple[re.Pattern, str]] = [
     # Passwords
     (re.compile(r'(?i)"(password|passwd|pwd)"\s*:\s*"[^"]*"'), r'"\1":"[REDACTED]"'),
     (re.compile(r'(?i)(password|passwd|pwd)\s*[=:]\s*\S+'), r'\1=[REDACTED]'),
-    
+
     # API Keys & Tokens
     (re.compile(r'(?i)(api[_-]?key|apikey|token|auth|bearer)\s*[=:]\s*\S+'), r'\1=[REDACTED]'),
     (re.compile(r'Bearer\s+[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+'), 'Bearer [REDACTED_JWT]'),
-    
+
     # Database URLs
     (re.compile(r'(postgres|mysql|mongodb)://[^:]+:[^@]+@'), r'\1://[USER]:[REDACTED]@'),
-    
+
     # AWS/Cloud Credentials
     (re.compile(r'AKIA[A-Z0-9]{16}'), '[REDACTED_AWS_ACCESS_KEY]'),
-    
+
     # GitHub/GitLab Tokens
     (re.compile(r'ghp_[A-Za-z0-9]{36}'), '[REDACTED_GITHUB_TOKEN]'),
-    
+
     # Private Keys
     (re.compile(r'-----BEGIN.*PRIVATE KEY-----[\s\S]*?-----END.*PRIVATE KEY-----'), '[REDACTED_PRIVATE_KEY]'),
 ]
 
 class LLMSanitizer:
     """Sanitizer for LLM-bound content."""
-    
+
     def __init__(self):
         self._patterns = SANITIZATION_PATTERNS
-    
+
     def sanitize(self, content: str) -> str:
         """Sanitize content before sending to LLM."""
         if not content:
@@ -521,11 +525,11 @@ def sanitize_for_llm(content: str) -> str:
 def wrap_tool_results_with_sanitization(tool_executor):
     """BR-HAPI-211: Wrap Tool.invoke() for credential sanitization."""
     from src.sanitization.llm_sanitizer import sanitize_for_llm
-    
+
     for toolset in tool_executor.toolsets:
         for tool in toolset.tools:
             original_invoke = tool.invoke
-            
+
             def sanitized_invoke(params, tool_number=None, user_approved=False,
                                  _orig=original_invoke):
                 result = _orig(params, tool_number, user_approved)
@@ -534,7 +538,7 @@ def wrap_tool_results_with_sanitization(tool_executor):
                 if result.error:
                     result.error = sanitize_for_llm(result.error)
                 return result
-            
+
             tool.invoke = sanitized_invoke
 ```
 

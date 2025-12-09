@@ -318,7 +318,9 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		// BR-NOT-053: CRITICAL - Update status IMMEDIATELY after each channel delivery
 		// This makes the attempt visible to concurrent reconciles BEFORE they try to deliver
 		// to the same channel, preventing duplicate deliveries
-		if err := r.Status().Update(ctx, notification); err != nil {
+		//
+		// Per DEVELOPMENT_GUIDELINES.md: Use retry.RetryOnConflict for all status updates
+		if err := r.updateStatusWithRetry(ctx, notification, 3); err != nil {
 			log.Info("Failed to update status after channel delivery (non-fatal, will retry at end)", "channel", channel, "error", err)
 			// Continue - worst case is we'll update at the end of the loop
 		}
@@ -655,40 +657,31 @@ func (r *NotificationRequestReconciler) handleNotFound(ctx context.Context, name
 	return ctrl.Result{}, nil
 }
 
-// updateStatusWithRetry updates the notification status with retry logic for conflicts
+// updateStatusWithRetry updates the notification status using the standard K8s retry pattern.
+//
 // Category D: Status Update Conflicts
 // When: Multiple reconcile attempts updating status simultaneously
-// Action: Retry with optimistic locking
+// Action: Retry with optimistic locking using k8s.io/client-go/util/retry
 // Recovery: Automatic (retry status update)
-func (r *NotificationRequestReconciler) updateStatusWithRetry(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, maxRetries int) error {
-	log := log.FromContext(ctx)
+//
+// Per DEVELOPMENT_GUIDELINES.md: ALL status updates MUST use retry.RetryOnConflict
+// See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
+func (r *NotificationRequestReconciler) updateStatusWithRetry(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, _ int) error {
+	// Capture the status we want to apply
+	desiredStatus := notification.Status
 
-	for i := 0; i < maxRetries; i++ {
-		err := r.Status().Update(ctx, notification)
-		if err == nil {
-			return nil
-		}
-
-		if !errors.IsConflict(err) {
-			// Not a conflict error, return immediately
+	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		// 1. Refetch to get latest resourceVersion
+		if err := r.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
 			return err
 		}
 
-		// Conflict error - refetch and retry
-		log.Info("Status update conflict, retrying", "attempt", i+1, "maxRetries", maxRetries)
+		// 2. Apply our status changes to the fresh object
+		notification.Status = desiredStatus
 
-		// Refetch the latest version
-		latest := &notificationv1alpha1.NotificationRequest{}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(notification), latest); err != nil {
-			return fmt.Errorf("failed to refetch notification after conflict: %w", err)
-		}
-
-		// Copy our status changes to the latest version
-		latest.Status = notification.Status
-		*notification = *latest
-	}
-
-	return fmt.Errorf("failed to update status after %d retries", maxRetries)
+		// 3. Update status subresource
+		return r.Status().Update(ctx, notification)
+	})
 }
 
 // ========================================

@@ -160,6 +160,44 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 	return store, nil
 }
 
+// NewBufferedStoreWithDLQ creates a buffered audit store with DLQ fallback.
+//
+// This constructor is used when you want to enable Dead Letter Queue fallback
+// for audit events that fail to write to the Data Storage Service after max retries.
+//
+// Authority: DD-009 (Audit Write Error Recovery - Dead Letter Queue Pattern)
+// Related: ADR-032 ("No Audit Loss" mandate)
+//
+// Parameters:
+// - client: Data Storage Service client for writing events
+// - dlqClient: DLQ client for fallback writes (nil to disable DLQ)
+// - config: Configuration for buffer size, batch size, flush interval, etc.
+// - serviceName: Name of the service using this store (for metrics labels)
+// - logger: Structured logger for audit store operations
+//
+// When DLQ is enabled:
+// - Events that fail after max retries are written to DLQ instead of being dropped
+// - DLQ events are later processed by the async retry worker (cmd/audit-retry-worker)
+// - ADR-032 "No Audit Loss" mandate is satisfied
+func NewBufferedStoreWithDLQ(client DataStorageClient, dlqClient DLQClient, config Config, serviceName string, logger logr.Logger) (AuditStore, error) {
+	store, err := NewBufferedStore(client, config, serviceName, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	// Inject DLQ client
+	bufferedStore := store.(*BufferedAuditStore)
+	bufferedStore.dlqClient = dlqClient
+
+	if dlqClient != nil {
+		logger.Info("Audit store DLQ fallback enabled (DD-009)",
+			"service", serviceName,
+		)
+	}
+
+	return store, nil
+}
+
 // StoreAudit adds an event to the buffer (non-blocking).
 //
 // This method validates the event and adds it to the buffer.
@@ -338,14 +376,20 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*AuditEvent) {
 				continue
 			}
 
-			// Final failure: log and drop
+			// Final failure after max retries
 			atomic.AddInt64(&s.failedBatchCount, 1)
 			s.metrics.RecordBatchFailed()
 
-			s.logger.Error(nil, "Dropping audit batch after max retries",
-				"batch_size", len(batch),
-				"max_retries", s.config.MaxRetries,
-			)
+			// GAP-10: DLQ fallback (DD-009, ADR-032 "No Audit Loss")
+			// Write failed events to DLQ for async retry
+			if s.dlqClient != nil {
+				s.enqueueBatchToDLQ(ctx, batch, err)
+			} else {
+				s.logger.Error(nil, "AUDIT DATA LOSS: Dropping batch, no DLQ configured (violates ADR-032)",
+					"batch_size", len(batch),
+					"max_retries", s.config.MaxRetries,
+				)
+			}
 			return
 		}
 
@@ -359,4 +403,35 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*AuditEvent) {
 		)
 		return
 	}
+}
+
+// enqueueBatchToDLQ writes all events in the batch to the DLQ for async retry.
+//
+// GAP-10: DLQ Fallback (DD-009, ADR-032 "No Audit Loss")
+//
+// This method is called when the primary write to Data Storage fails after max retries.
+// Events are written to DLQ individually to maximize recovery (partial success is better
+// than total loss if some DLQ writes fail).
+func (s *BufferedAuditStore) enqueueBatchToDLQ(ctx context.Context, batch []*AuditEvent, originalError error) {
+	dlqSuccessCount := 0
+	dlqFailCount := 0
+
+	for _, event := range batch {
+		if err := s.dlqClient.EnqueueAuditEvent(ctx, event, originalError); err != nil {
+			s.logger.Error(err, "DLQ fallback failed for event",
+				"event_type", event.EventType,
+				"correlation_id", event.CorrelationID,
+			)
+			dlqFailCount++
+		} else {
+			atomic.AddInt64(&s.dlqEnqueueCount, 1)
+			dlqSuccessCount++
+		}
+	}
+
+	s.logger.Info("Batch enqueued to DLQ (DD-009 fallback)",
+		"batch_size", len(batch),
+		"dlq_success", dlqSuccessCount,
+		"dlq_failed", dlqFailCount,
+	)
 }
