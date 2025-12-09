@@ -36,7 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
-	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	//+kubebuilder:scaffold:imports
 )
 

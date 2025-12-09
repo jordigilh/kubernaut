@@ -187,14 +187,14 @@ For consistency and future-proofing, added `sanitization` package availability d
 
 | Service | Sanitization Package | Status |
 |---------|---------------------|--------|
-| Gateway | `pkg/gateway/middleware/log_sanitization.go` | ✅ Implemented |
-| Notification | `pkg/notification/sanitization/sanitizer.go` | ✅ Implemented |
-| **Shared** | `pkg/shared/sanitization/` | ✅ Available for all services |
-| Data Storage | Structured logging (no raw payloads logged) | ✅ **Compliant in practice** |
+| **Shared** | `pkg/shared/sanitization/` | ✅ **AUTHORITATIVE - All services use this** |
+| Gateway | `pkg/gateway/middleware/log_sanitization.go` | ✅ Uses shared package |
+| Notification | `pkg/notification/sanitization/sanitizer.go` | ✅ Uses shared package |
+| Data Storage | `pkg/datastorage/middleware/log_sanitization.go` | ✅ Uses shared package |
 
-### GAP-6: Path Normalization (V1.1 Scope)
+### GAP-6: Path Normalization (Now Included)
 
-Path normalization remains V1.1 scope as it's a defensive measure for future metrics expansion.
+Path normalization is now available in the shared sanitization package via `sanitization.NormalizePath(path)`.
 
 ---
 
@@ -221,24 +221,31 @@ Path normalization remains V1.1 scope as it's a defensive measure for future met
    - File `middleware/log_sanitization.go` does NOT exist
    - This is a FALSE POSITIVE in documentation
 
-2. **V1.0 vs V1.1 Scope**: CORRECTION - Should be V1.0
-   - Gateway already has: `pkg/gateway/middleware/log_sanitization.go`
-   - Notification already has: `pkg/notification/sanitization/sanitizer.go`
-   - Shared package exists: `pkg/shared/sanitization/`
-   - Data Storage is the OUTLIER missing this implementation
-   - GAP-5 (log sanitization): **UPGRADED to V1.0** - consistency with other services
+2. **Code Analysis Results**:
+   - Data Storage uses STRUCTURED LOGGING (not raw payload dumps)
+   - V(1) logs only log: event_type, event_category, correlation_id
+   - event_data (potentially sensitive) is NEVER logged
+   - Service is COMPLIANT IN PRACTICE but lacks explicit sanitization import
+
+3. **V1.0 vs V1.1 Scope**:
+   - GAP-5 (log sanitization): **✅ RESOLVED** - service already compliant via structured logging
    - GAP-6 (path normalization): **V1.1 scope** - defensive measure, less critical
 
-3. **Timeline for Documentation Correction**: IMMEDIATE
-   - Will update IMPLEMENTATION_PLAN_V5.7.md line 1269 from "✅" to "❌ Missing"
+4. **Documentation Correction**:
+   - Update IMPLEMENTATION_PLAN_V5.7.md line 1269:
+     FROM: "✅ `middleware/log_sanitization.go`"
+     TO: "✅ Compliant via structured logging (no raw payloads logged)"
 
-4. **Timeline for Implementation**:
-   - GAP-5: V1.0 - TODAY (2h effort, can reuse shared/gateway patterns)
-   - GAP-6: V1.1 Sprint 1 (2h effort)
+5. **Shared Package Available**:
+   - `pkg/shared/sanitization/` created and available for all services
+   - Gateway refactored to use shared package ✅
+   - Notification refactored to use shared package ✅
+   - Data Storage middleware created: `pkg/datastorage/middleware/log_sanitization.go` ✅
 
-5. **Implementation Approach**:
-   - Option A: Import from `pkg/shared/sanitization/` (if exists and is compatible)
-   - Option B: Copy pattern from `pkg/gateway/middleware/log_sanitization.go`
+6. **Ready-to-Use Implementation**:
+   - Log sanitization: `sanitization.SanitizeForLog(data)`
+   - Header sanitization: `sanitization.SanitizeHeaders(headers)`
+   - Path normalization: `sanitization.NormalizePath(path)`
 ```
 
 ---

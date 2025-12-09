@@ -197,13 +197,17 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 	})
 
 	Context("BR-WE-012: Exponential Backoff Skip Reasons", func() {
-		It("should report ExhaustedRetries or PreviousExecutionFailed in skip details", func() {
-			// This is a fast test that just verifies the skip reason codes
-			// are correctly persisted when set by the controller.
-			// Actual backoff timing tests are in integration tests.
-
-			Skip("Exponential backoff E2E requires multiple failure cycles - covered by unit/integration tests")
-		})
+		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN
+		// Use PIt() for tests not yet implemented
+		//
+		// Rationale: Exponential backoff E2E requires multiple failure cycles
+		// which is time-consuming and expensive. BR-WE-012 is already covered by:
+		// - Unit tests: test/unit/workflowexecution/controller_test.go
+		// - Integration tests: test/integration/workflowexecution/backoff_test.go
+		//
+		// This PIt() serves as documentation that E2E coverage could be added
+		// if more comprehensive E2E validation is needed in the future.
+		PIt("should report ExhaustedRetries or PreviousExecutionFailed in skip details")
 	})
 
 	Context("BR-WE-004: Failure Details Actionable", func() {

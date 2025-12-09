@@ -270,11 +270,17 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		const dataStorageServiceURL = "http://datastorage-service.kubernaut-system:8080"
 
 		It("should persist audit events to Data Storage for completed workflow", func() {
-			// Skip if Data Storage is not deployed in the cluster
-			// This test requires DS infrastructure which may not be available in all E2E runs
-			if !isDataStorageDeployed() {
-				Skip("Data Storage not deployed in cluster - see TESTING_TIER_COMPLIANCE_INITIATIVE.md")
-			}
+			// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - NO EXCEPTIONS
+			// Per TESTING_GUIDELINES.md: E2E tests MUST use real infrastructure
+			// Per DD-AUDIT-003: WorkflowExecution is P0 - MUST generate audit traces
+			//
+			// If Data Storage is not deployed, test FAILS (not skip)
+			Expect(isDataStorageDeployed()).To(BeTrue(),
+				"Data Storage REQUIRED but not deployed in cluster\n"+
+					"  Per DD-AUDIT-003: WorkflowExecution is P0 - MUST generate audit traces\n"+
+					"  Per TESTING_GUIDELINES.md: E2E tests MUST use real infrastructure\n"+
+					"  Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN - tests must FAIL\n\n"+
+					"  Deploy Data Storage to Kind cluster before running E2E tests")
 
 			By("Creating a WorkflowExecution to generate audit events")
 			testName := fmt.Sprintf("e2e-audit-%d", time.Now().UnixNano())

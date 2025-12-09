@@ -43,14 +43,12 @@ import (
 // ========================================
 
 // RetryableError interface allows checking if an error should trigger retry
-// This is the primary interface used by BufferedAuditStore to determine retry behavior
 type RetryableError interface {
 	error
 	IsRetryable() bool
 }
 
 // HTTPError represents an HTTP error from the Data Storage Service
-// It includes the status code to enable differentiation between 4xx and 5xx errors
 type HTTPError struct {
 	StatusCode int
 	Message    string
@@ -63,25 +61,21 @@ func (e *HTTPError) Error() string {
 
 // IsRetryable returns true for 5xx errors (server errors)
 // 4xx errors (client errors) are NOT retryable - they indicate invalid data
-// GAP-11: Error differentiation for retry logic
 func (e *HTTPError) IsRetryable() bool {
 	return e.StatusCode >= 500 && e.StatusCode < 600
 }
 
 // Is4xxError returns true for client errors (400-499)
-// Used to identify validation failures that should go to DLQ without retry
 func (e *HTTPError) Is4xxError() bool {
 	return e.StatusCode >= 400 && e.StatusCode < 500
 }
 
 // Is5xxError returns true for server errors (500-599)
-// Used to identify server failures that should trigger retry
 func (e *HTTPError) Is5xxError() bool {
 	return e.StatusCode >= 500 && e.StatusCode < 600
 }
 
 // NetworkError represents a network-level error (connection failure, timeout)
-// Network errors are always retryable
 type NetworkError struct {
 	Underlying error
 }
@@ -145,13 +139,11 @@ func NewMarshalError(err error) *MarshalError {
 }
 
 // IsRetryable checks if an error should trigger retry
-// This is the main entry point for retry logic to use
 func IsRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	// Check if error implements RetryableError interface
 	var retryable RetryableError
 	if errors.As(err, &retryable) {
 		return retryable.IsRetryable()
@@ -178,4 +170,3 @@ func Is5xxError(err error) bool {
 	}
 	return false
 }
-

@@ -364,13 +364,64 @@ def test_audit_events(mock_data_storage, mock_llm):
 
 **If Data Storage is unavailable, E2E tests should FAIL, not skip.**
 
+### 5. **Metrics Testing Strategy by Tier**
+
+**Per DD-TEST-001**: CRD Controllers use envtest (no HTTP server). Metrics testing strategy differs by tier.
+
+| Test Tier | Metrics Testing Approach | Infrastructure |
+|-----------|--------------------------|----------------|
+| **Unit** | Registry inspection (metric exists, naming, types) | Fresh Prometheus registry |
+| **Integration** | Registry inspection (metric values after operations) | controller-runtime registry |
+| **E2E** | HTTP endpoint (`/metrics` accessible) | Deployed controller with Service |
+
+#### CRD Controllers (AIAnalysis, Notification, RO, etc.)
+
+```go
+// ✅ CORRECT: Integration test - verify via registry inspection (NO HTTP server)
+It("should register all business metrics", func() {
+    // Record metrics
+    metrics.RecordReconciliation("Pending", "success")
+    
+    // Verify via registry inspection (NOT HTTP endpoint)
+    families, err := ctrlmetrics.Registry.Gather()
+    Expect(err).ToNot(HaveOccurred())
+    
+    // Check metric exists
+    _, exists := families["aianalysis_reconciler_reconciliations_total"]
+    Expect(exists).To(BeTrue())
+})
+
+// ❌ WRONG: Starting HTTP server in integration test for CRD controller
+BeforeAll(func() {
+    // This violates DD-TEST-001: No integration ports for CRD controllers
+    metricsServer = &http.Server{Addr: ":19184"}  // ❌
+})
+```
+
+#### Stateless Services (Data Storage, Gateway, HolmesGPT-API)
+
+```go
+// ✅ CORRECT: Integration test - HTTP endpoint available via podman-compose
+It("should expose metrics endpoint", func() {
+    // Service runs in container with port mapping (per DD-TEST-001)
+    resp, err := http.Get("http://localhost:18090/metrics")  // Data Storage port
+    Expect(err).ToNot(HaveOccurred())
+    Expect(resp.StatusCode).To(Equal(200))
+})
+```
+
+**Rationale**:
+- **CRD Controllers**: Use envtest (no HTTP server) → verify metrics via registry
+- **Stateless Services**: Run via podman-compose → verify metrics via HTTP endpoint
+- **E2E (Both)**: Deploy to Kind cluster → verify metrics via NodePort
+
 ---
 
-## 🚫 **Skip() is FORBIDDEN in Tests**
+## 🚫 **Skip() is ABSOLUTELY FORBIDDEN in Tests**
 
-### Policy: Tests MUST Fail, Not Skip
+### Policy: Tests MUST Fail, NEVER Skip
 
-**MANDATORY**: `Skip()` calls are **FORBIDDEN** in all test tiers. Tests must explicitly **FAIL** when required dependencies are unavailable.
+**MANDATORY**: `Skip()` calls are **ABSOLUTELY FORBIDDEN** in ALL test tiers, with **NO EXCEPTIONS**.
 
 #### Rationale
 
@@ -380,8 +431,11 @@ def test_audit_events(mock_data_storage, mock_llm):
 | **Hidden dependencies** | Missing infrastructure goes undetected in CI |
 | **Compliance gaps** | Audit tests skipped = audit not validated |
 | **Silent failures** | Production issues not caught by test suite |
+| **Architectural violations** | Services running without required dependencies |
 
-#### FORBIDDEN Patterns
+**Key Insight**: If a service can run without a dependency, that dependency is optional. If it's required (like Data Storage for audit compliance per DD-AUDIT-003), then tests MUST fail when it's unavailable.
+
+#### FORBIDDEN Patterns (NO EXCEPTIONS)
 
 ```go
 // ❌ FORBIDDEN: Skipping when service unavailable
@@ -393,8 +447,8 @@ BeforeEach(func() {
 })
 
 // ❌ FORBIDDEN: Environment variable opt-out
-if os.Getenv("SKIP_EXPENSIVE_TESTS") == "true" {
-    Skip("Skipping expensive tests")  // ← FORBIDDEN
+if os.Getenv("SKIP_DATASTORAGE_TESTS") == "true" {
+    Skip("Skipping Data Storage tests")  // ← FORBIDDEN
 }
 
 // ❌ FORBIDDEN: Skipping in integration/E2E tests
@@ -403,6 +457,18 @@ It("should persist audit events", func() {
         Skip("DS not running")  // ← FORBIDDEN
     }
 })
+
+// ❌ FORBIDDEN: Even "experimental" or "future work" skips
+var _ = Describe("Future Feature X", func() {
+    BeforeEach(func() {
+        Skip("Feature X not implemented")  // ← FORBIDDEN - use Pending() or don't write the test
+    })
+})
+
+// ❌ FORBIDDEN: Conditional skips based on availability
+if !dsAvailable {
+    Skip("Data Storage not available")  // ← FORBIDDEN
+}
 ```
 
 #### REQUIRED Patterns
@@ -414,7 +480,9 @@ BeforeEach(func() {
     if err != nil || resp.StatusCode != http.StatusOK {
         Fail(fmt.Sprintf(
             "REQUIRED: Data Storage not available at %s\n"+
-            "Start with: podman-compose -f podman-compose.test.yml up -d",
+            "  Per DD-AUDIT-003: This service MUST have audit capability\n"+
+            "  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n\n"+
+            "  Start with: podman-compose -f podman-compose.test.yml up -d",
             dataStorageURL))
     }
 })
@@ -425,34 +493,59 @@ It("should persist audit events", func() {
         "Data Storage REQUIRED - start infrastructure first")
     // ... test logic
 })
-```
 
-#### Exception: Only ONE Acceptable Skip
-
-The **ONLY** acceptable use of `Skip()` is in test files explicitly marked as **experimental** or **future work**:
-
-```go
-// ✅ ACCEPTABLE: Clearly marked experimental feature not yet implemented
-var _ = Describe("Future Feature X", Label("experimental", "v2.0"), func() {
-    BeforeEach(func() {
-        Skip("Feature X not implemented - see ROADMAP.md")
-    })
+// ✅ REQUIRED: For unimplemented features, use Pending() or PDescribe()
+PDescribe("Future Feature X", func() {
+    // Pending tests are clearly marked as not-yet-implemented
+    // They show up as "Pending" (yellow) not "Passed" (green)
 })
 ```
+
+#### Why No Exceptions?
+
+1. **Architectural Enforcement**: If WorkflowExecution can run without Data Storage, audit is effectively optional - which violates DD-AUDIT-003
+2. **CI Integrity**: Skipped tests in CI mean features are not validated
+3. **Developer Discipline**: Forces proper infrastructure setup before running tests
+4. **Compliance**: Audit trails are compliance-critical - can't be skipped
+
+#### Alternatives to Skip()
+
+| Instead of Skip() | Use This |
+|-------------------|----------|
+| Feature not implemented | `PDescribe()` / `PIt()` (Pending) |
+| Dependency unavailable | `Fail()` with clear error message |
+| Expensive test | Run in separate CI job, don't skip |
+| Flaky test | Fix it or mark with `FlakeAttempts()` |
+| Platform-specific | Use build tags (`// +build linux`) |
 
 #### Enforcement
 
 CI pipelines MUST:
-1. **Fail builds** with any `Skip()` calls in non-experimental tests
-2. **Report skipped tests** as errors, not warnings
-3. **Block merges** with skipped compliance-critical tests
+1. **Fail builds** with ANY `Skip()` calls in test files
+2. **Report skipped tests** as build failures
+3. **Block merges** with any `Skip()` usage
 
 ```bash
-# CI check for forbidden Skip() usage
-grep -r "Skip(" test/ --include="*_test.go" | \
-  grep -v "experimental" | \
-  grep -v "v2.0" && \
-  echo "ERROR: Forbidden Skip() found" && exit 1
+# CI check for forbidden Skip() usage - NO EXCEPTIONS
+if grep -r "Skip(" test/ --include="*_test.go" | grep -v "^Binary"; then
+    echo "❌ ERROR: Skip() is ABSOLUTELY FORBIDDEN in tests"
+    echo "   Use Fail() for missing dependencies"
+    echo "   Use PDescribe()/PIt() for unimplemented features"
+    exit 1
+fi
+```
+
+#### Linter Rule
+
+Add to `.golangci.yml`:
+```yaml
+linters-settings:
+  forbidigo:
+    forbid:
+      - pattern: 'ginkgo\.Skip\('
+        msg: "Skip() is forbidden - use Fail() for missing deps, PDescribe() for unimplemented"
+      - pattern: '\.Skip\('
+        msg: "Skip() is forbidden - use Fail() for missing deps, PDescribe() for unimplemented"
 ```
 
 ---

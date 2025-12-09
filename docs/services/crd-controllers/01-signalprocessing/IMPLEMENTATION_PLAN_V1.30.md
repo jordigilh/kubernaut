@@ -228,7 +228,7 @@
   - ✅ Added DD-017 to key decisions and references sections
   - ✅ Cross-referenced DD-017 in ADR-041
 - **v1.2** (2025-11-27): Signal-driven K8s enrichment strategy
-  - ✅ K8s Enricher now uses signal-driven enrichment based on `signal.Resource.Kind`
+  - ✅ K8s Enricher now uses signal-driven enrichment based on `signal.TargetResource.Kind`
   - ✅ Standard depth (hardcoded, no configuration): Pod→Ns+Pod+Node+Owner, Deploy→Ns+Deploy, Node→Node only
   - ✅ Updated architecture diagram with signal-driven enrichment description
   - ✅ Updated K8s Enricher implementation with `enrichPodSignal()`, `enrichDeploymentSignal()`, `enrichNodeSignal()`
@@ -1742,7 +1742,7 @@ import (
     "fmt"
     "time"
 
-    "go.uber.org/zap"
+    "github.com/go-logr/logr"
     corev1 "k8s.io/api/core/v1"
     appsv1 "k8s.io/api/apps/v1"
     "k8s.io/apimachinery/pkg/types"
@@ -1798,7 +1798,7 @@ func (e *K8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1alph
     result := &signalprocessingv1alpha1.KubernetesContext{}
 
     // Signal-driven enrichment based on resource kind
-    switch signal.Resource.Kind {
+    switch signal.TargetResource.Kind {
     case "Pod":
         return e.enrichPodSignal(ctx, signal, result)
     case "Deployment":
@@ -2808,7 +2808,7 @@ func (e *K8sEnricher) EnrichSignal(ctx context.Context, signal *Signal) (*Kubern
 package reconciler
 
 import (
-    "go.uber.org/zap"
+    "github.com/go-logr/logr"
     ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -3744,7 +3744,7 @@ package audit
 import (
     "context"
 
-    "go.uber.org/zap"
+    "github.com/go-logr/logr"
 
     "github.com/jordigilh/kubernaut/pkg/audit" // Shared audit library (ADR-038)
     signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"

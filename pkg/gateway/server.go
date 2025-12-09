@@ -1050,6 +1050,9 @@ const (
 // TDD REFACTOR: Extracted factory function for duplicate response pattern
 // Business Outcome: Consistent duplicate signal handling (BR-005)
 // DEPRECATED: Use NewDuplicateResponseFromRR for DD-GATEWAY-011 status-based deduplication
+// NewDuplicateResponse is DEPRECATED - use NewDuplicateResponseFromRR instead
+// DD-GATEWAY-011: Redis metadata replaced with K8s status-based tracking
+// Kept for backward compatibility with any external code that might use it
 func NewDuplicateResponse(fingerprint string, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
 	return &ProcessingResponse{
 		Status:      StatusDuplicate,
@@ -1066,30 +1069,30 @@ func NewDuplicateResponse(fingerprint string, metadata *processing.Deduplication
 func NewDuplicateResponseFromRR(fingerprint string, rr *remediationv1alpha1.RemediationRequest) *ProcessingResponse {
 	// Build metadata from RR status (DD-GATEWAY-011: status-based tracking)
 	var occurrenceCount int
-	var firstOccurrence, lastOccurrence time.Time
+	var firstOccurrence, lastOccurrence string
 
 	if rr.Status.Deduplication != nil {
 		occurrenceCount = int(rr.Status.Deduplication.OccurrenceCount)
 		if rr.Status.Deduplication.FirstSeenAt != nil {
-			firstOccurrence = rr.Status.Deduplication.FirstSeenAt.Time
+			firstOccurrence = rr.Status.Deduplication.FirstSeenAt.Time.Format(time.RFC3339)
 		}
 		if rr.Status.Deduplication.LastSeenAt != nil {
-			lastOccurrence = rr.Status.Deduplication.LastSeenAt.Time
+			lastOccurrence = rr.Status.Deduplication.LastSeenAt.Time.Format(time.RFC3339)
 		}
 	}
 
 	return &ProcessingResponse{
-		Status:                  StatusDuplicate,
-		Message:                 "Duplicate signal (K8s status-based deduplication)",
-		Fingerprint:             fingerprint,
-		Duplicate:               true,
-		RemediationRequestName:  rr.Name,
-		RemediationRequestRef:   fmt.Sprintf("%s/%s", rr.Namespace, rr.Name),
+		Status:                      StatusDuplicate,
+		Message:                     "Duplicate signal (K8s status-based deduplication)",
+		Fingerprint:                 fingerprint,
+		Duplicate:                   true,
+		RemediationRequestName:      rr.Name,
+		RemediationRequestNamespace: rr.Namespace,
 		Metadata: &processing.DeduplicationMetadata{
-			Count:                   occurrenceCount,
-			FirstOccurrence:         firstOccurrence,
-			LastOccurrence:          lastOccurrence,
-			RemediationRequestRef:   fmt.Sprintf("%s/%s", rr.Namespace, rr.Name),
+			Count:                 occurrenceCount,
+			FirstOccurrence:       firstOccurrence,
+			LastOccurrence:        lastOccurrence,
+			RemediationRequestRef: fmt.Sprintf("%s/%s", rr.Namespace, rr.Name),
 		},
 	}
 }
@@ -1135,58 +1138,9 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace string) *Processin
 }
 
 // processDuplicateSignal handles the duplicate signal fast path
-// TDD REFACTOR: Extracted from ProcessSignal for clarity
-// DD-GATEWAY-011: Now uses status-based deduplication tracking
-// Business Outcome: Consistent duplicate handling (BR-005, BR-GATEWAY-181)
-func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.NormalizedSignal, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
-	logger := middleware.GetLogger(ctx)
-
-	// DD-GATEWAY-009: Update CRD occurrence count for duplicate alerts
-	// Parse CRD namespace/name from RemediationRequestRef (format: "namespace/name")
-	namespace, name := s.parseCRDReference(metadata.RemediationRequestRef)
-	if namespace == "" || name == "" {
-		// Fallback: generate CRD name from fingerprint (same as deduplication service)
-		namespace = signal.Namespace
-		name = s.deduplicator.GetCRDNameFromFingerprint(signal.Fingerprint)
-	}
-
-	// DD-GATEWAY-011: Update status.deduplication using StatusUpdater (Redis deprecation path)
-	// This updates OccurrenceCount and LastSeenAt in RR status instead of just spec
-	rr := &remediationv1alpha1.RemediationRequest{}
-	rr.Name = name
-	rr.Namespace = namespace
-	if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, rr); err != nil {
-		// Log error but don't fail the request
-		// The duplicate response is still valid even if status update fails
-		logger.Info("Failed to update RR deduplication status (DD-GATEWAY-011)",
-			"error", err,
-			"fingerprint", signal.Fingerprint,
-			"namespace", namespace,
-			"name", name)
-	}
-
-	// DD-GATEWAY-009: Update CRD occurrence count in Kubernetes (legacy, will be deprecated)
-	if err := s.crdUpdater.IncrementOccurrenceCount(ctx, namespace, name); err != nil {
-		// Log error but don't fail the request
-		// The duplicate response is still valid even if CRD update fails
-		logger.Info("Failed to increment CRD occurrence count (duplicate alert still processed)",
-			"error", err,
-			"fingerprint", signal.Fingerprint,
-			"namespace", namespace,
-			"name", name)
-	}
-
-	// Fast path: duplicate signal, no CRD creation needed (environment label removed - SP owns classification)
-	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
-
-	logger.V(1).Info("Duplicate signal detected",
-		"fingerprint", signal.Fingerprint,
-		"count", metadata.Count,
-		"firstOccurrence", metadata.FirstOccurrence,
-	)
-
-	return NewDuplicateResponse(signal.Fingerprint, metadata)
-}
+// processDuplicateSignal is DEPRECATED and removed
+// DD-GATEWAY-011: Replaced by inline logic in ProcessSignal using PhaseBasedDeduplicationChecker
+// BR-GATEWAY-185: Redis deprecation complete for deduplication path
 
 // parseCRDReference parses a CRD reference string into namespace and name
 //

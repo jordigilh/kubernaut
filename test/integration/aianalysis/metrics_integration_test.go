@@ -17,15 +17,11 @@ limitations under the License.
 package aianalysis
 
 import (
-	"io"
-	"net/http"
 	"strings"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	dto "github.com/prometheus/client_model/go"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
@@ -37,82 +33,75 @@ import (
 // v1.13: Business-value metrics only (8 metrics)
 // ========================================
 //
+// Integration Test Strategy (per DD-TEST-001):
+// - CRD controllers use envtest (no HTTP server)
+// - Metrics verified via REGISTRY INSPECTION (not HTTP endpoint)
+// - HTTP endpoint testing deferred to E2E tier (Kind cluster)
+//
 // These tests verify that metrics are:
-// 1. Properly registered with Prometheus
-// 2. Correctly incremented during reconciliation
-// 3. Exposed via the /metrics endpoint
+// 1. Properly registered with controller-runtime registry
+// 2. Correctly incremented when Record*() functions are called
+// 3. Follow DD-005 naming convention
+//
+// Note: HTTP /metrics endpoint accessibility is tested in E2E tier
+// See: test/e2e/aianalysis/02_metrics_test.go
 // ========================================
 
-var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Ordered, func() {
-	var (
-		metricsServer *http.Server
-		metricsURL    string
-	)
+var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Label("integration", "metrics"), func() {
 
-	BeforeAll(func() {
-		// Start a local metrics server using controller-runtime's registry
-		// This is the same registry our metrics are registered in
-		metricsPort := "19090" // Use high port to avoid conflicts
-		metricsURL = "http://localhost:" + metricsPort + "/metrics"
-
-		mux := http.NewServeMux()
-		// Use controller-runtime's registry where our metrics are registered
-		mux.Handle("/metrics", promhttp.HandlerFor(ctrlmetrics.Registry, promhttp.HandlerOpts{}))
-
-		metricsServer = &http.Server{
-			Addr:    ":" + metricsPort,
-			Handler: mux,
+	// Helper to gather all metrics from controller-runtime registry
+	gatherMetrics := func() (map[string]*dto.MetricFamily, error) {
+		families, err := ctrlmetrics.Registry.Gather()
+		if err != nil {
+			return nil, err
 		}
-
-		go func() {
-			_ = metricsServer.ListenAndServe()
-		}()
-
-		// Wait for server to start
-		Eventually(func() error {
-			_, err := http.Get(metricsURL)
-			return err
-		}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
-	})
-
-	AfterAll(func() {
-		if metricsServer != nil {
-			_ = metricsServer.Close()
+		result := make(map[string]*dto.MetricFamily)
+		for _, family := range families {
+			result[family.GetName()] = family
 		}
-	})
-
-	// Helper to get current metric value from /metrics endpoint
-	getMetricValue := func(metricName string) string {
-		resp, err := http.Get(metricsURL)
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		Expect(err).ToNot(HaveOccurred())
-
-		lines := strings.Split(string(body), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, metricName) && !strings.HasPrefix(line, "#") {
-				return line
-			}
-		}
-		return ""
+		return result, nil
 	}
 
-	// Helper to check metric exists in /metrics output
-	metricExists := func(metricName string) bool {
-		resp, err := http.Get(metricsURL)
+	// Helper to check if a metric exists in the registry
+	metricExists := func(name string) bool {
+		families, err := gatherMetrics()
 		if err != nil {
 			return false
 		}
-		defer resp.Body.Close()
+		_, exists := families[name]
+		return exists
+	}
 
-		body, err := io.ReadAll(resp.Body)
+	// Helper to get metric with specific labels
+	getMetricWithLabels := func(name string, labels map[string]string) *dto.Metric {
+		families, err := gatherMetrics()
 		if err != nil {
-			return false
+			return nil
 		}
-
-		return strings.Contains(string(body), metricName)
+		family, exists := families[name]
+		if !exists {
+			return nil
+		}
+		for _, m := range family.GetMetric() {
+			labelMatch := true
+			for wantKey, wantValue := range labels {
+				found := false
+				for _, l := range m.GetLabel() {
+					if l.GetName() == wantKey && l.GetValue() == wantValue {
+						found = true
+						break
+					}
+				}
+				if !found {
+					labelMatch = false
+					break
+				}
+			}
+			if labelMatch {
+				return m
+			}
+		}
+		return nil
 	}
 
 	// ========================================
@@ -120,8 +109,8 @@ var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Ordered, func()
 	// ========================================
 	Context("Business Metrics Registration (v1.13)", func() {
 		// BR-AI-OBSERVABILITY-001: All business metrics must be registered
-		It("should register all 8 business-value metrics", func() {
-			// Trigger metrics by recording values
+		It("should register all 8 business-value metrics - BR-AI-OBSERVABILITY-001", func() {
+			// Trigger metrics by recording values (ensures counters are initialized)
 			metrics.RecordReconciliation("Pending", "success")
 			metrics.RecordReconcileDuration("Pending", 1.5)
 			metrics.RecordRegoEvaluation("approved", false)
@@ -131,11 +120,9 @@ var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Ordered, func()
 			metrics.RecordValidationAttempt("restart-pod-v1", false)
 			metrics.RecordDetectedLabelsFailure("environment")
 
-			// Verify all metrics appear in /metrics output
-			Eventually(func() bool {
-				return metricExists("aianalysis_reconciler_reconciliations_total")
-			}, 5*time.Second).Should(BeTrue(), "reconciliations_total should be registered")
-
+			// Verify all 8 metrics are registered via registry inspection
+			Expect(metricExists("aianalysis_reconciler_reconciliations_total")).To(BeTrue(),
+				"reconciliations_total should be registered")
 			Expect(metricExists("aianalysis_reconciler_duration_seconds")).To(BeTrue(),
 				"duration_seconds should be registered")
 			Expect(metricExists("aianalysis_rego_evaluations_total")).To(BeTrue(),
@@ -152,9 +139,33 @@ var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Ordered, func()
 				"quality_detected_labels_failures_total should be registered")
 		})
 
-		// NOTE: Removed "should NOT register removed low-value metrics" test
-		// Reason: Tests implementation detail (absence of metrics), not business value
-		// Per TESTING_GUIDELINES.md: Focus on business outcomes, not implementation
+		// DD-005: Metrics naming convention
+		It("should follow DD-005 naming convention - DD-005", func() {
+			families, err := gatherMetrics()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Check our metrics follow {service}_{component}_{metric}_{unit} pattern
+			expectedPrefixes := []string{
+				"aianalysis_reconciler_",
+				"aianalysis_rego_",
+				"aianalysis_approval_",
+				"aianalysis_failures_",
+				"aianalysis_confidence_",
+				"aianalysis_audit_",
+				"aianalysis_quality_",
+			}
+
+			for _, prefix := range expectedPrefixes {
+				found := false
+				for name := range families {
+					if strings.HasPrefix(name, prefix) {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "Expected metric with prefix %s", prefix)
+			}
+		})
 	})
 
 	// ========================================
@@ -162,101 +173,137 @@ var _ = Describe("BR-AI-OBSERVABILITY-001: Metrics Integration", Ordered, func()
 	// ========================================
 	Context("Metrics Increment Behavior", func() {
 		// BR-AI-OBSERVABILITY-002: Metrics must increment correctly
-		It("should increment reconciliation counter on each call", func() {
-			// Record baseline
+		It("should increment reconciliation counter on each call - BR-AI-OBSERVABILITY-002", func() {
+			// Record a reconciliation
 			metrics.RecordReconciliation("Investigating", "success")
 
-			// Get metric value
-			metricLine := getMetricValue("aianalysis_reconciler_reconciliations_total")
-			Expect(metricLine).To(ContainSubstring("Investigating"))
-			Expect(metricLine).To(ContainSubstring("success"))
+			// Verify the metric exists with correct labels
+			m := getMetricWithLabels("aianalysis_reconciler_reconciliations_total", map[string]string{
+				"phase":  "Investigating",
+				"result": "success",
+			})
+			Expect(m).ToNot(BeNil(), "Metric with labels phase=Investigating, result=success should exist")
+			Expect(m.GetCounter().GetValue()).To(BeNumerically(">", 0),
+				"Counter should have been incremented")
 		})
 
 		// BR-HAPI-197: Failure metrics must track reason and sub_reason
-		It("should track failures with reason and sub_reason labels", func() {
+		It("should track failures with reason and sub_reason labels - BR-HAPI-197", func() {
 			metrics.RecordFailure("WorkflowResolutionFailed", "WorkflowNotFound")
 			metrics.RecordFailure("WorkflowResolutionFailed", "LLMParsingError")
 			metrics.RecordFailure("APIError", "TransientError")
 
-			// Verify metrics have correct labels (check full metrics output)
-			Eventually(func() bool {
-				return metricExists(`reason="WorkflowResolutionFailed"`)
-			}, 2*time.Second).Should(BeTrue(), "WorkflowResolutionFailed should be tracked")
+			// Verify metrics with specific labels exist
+			m1 := getMetricWithLabels("aianalysis_failures_total", map[string]string{
+				"reason":     "WorkflowResolutionFailed",
+				"sub_reason": "WorkflowNotFound",
+			})
+			Expect(m1).ToNot(BeNil(), "WorkflowNotFound failure should be tracked")
 
-			Expect(metricExists(`sub_reason="WorkflowNotFound"`)).To(BeTrue(),
-				"WorkflowNotFound sub_reason should be tracked")
-			Expect(metricExists(`sub_reason="LLMParsingError"`)).To(BeTrue(),
-				"LLMParsingError sub_reason should be tracked")
+			m2 := getMetricWithLabels("aianalysis_failures_total", map[string]string{
+				"reason":     "WorkflowResolutionFailed",
+				"sub_reason": "LLMParsingError",
+			})
+			Expect(m2).ToNot(BeNil(), "LLMParsingError failure should be tracked")
+
+			m3 := getMetricWithLabels("aianalysis_failures_total", map[string]string{
+				"reason":     "APIError",
+				"sub_reason": "TransientError",
+			})
+			Expect(m3).ToNot(BeNil(), "TransientError failure should be tracked")
 		})
 
 		// DD-HAPI-002 v1.4: Validation attempts audit
-		It("should track validation attempts from HAPI", func() {
+		It("should track validation attempts from HAPI - DD-HAPI-002", func() {
 			metrics.RecordValidationAttempt("scale-deployment-v1", true)
 			metrics.RecordValidationAttempt("scale-deployment-v1", false)
 
 			// Verify both valid and invalid attempts are tracked
-			Eventually(func() bool {
-				return metricExists("aianalysis_audit_validation_attempts_total")
-			}, 2*time.Second).Should(BeTrue())
+			valid := getMetricWithLabels("aianalysis_audit_validation_attempts_total", map[string]string{
+				"workflow_id": "scale-deployment-v1",
+				"is_valid":    "true",
+			})
+			Expect(valid).ToNot(BeNil(), "Valid attempt should be tracked")
+
+			invalid := getMetricWithLabels("aianalysis_audit_validation_attempts_total", map[string]string{
+				"workflow_id": "scale-deployment-v1",
+				"is_valid":    "false",
+			})
+			Expect(invalid).ToNot(BeNil(), "Invalid attempt should be tracked")
+		})
+
+		// BR-AI-022: Confidence score tracking
+		It("should record confidence scores as histogram observations - BR-AI-022", func() {
+			metrics.RecordConfidenceScore("CrashLoopBackOff", 0.75)
+			metrics.RecordConfidenceScore("CrashLoopBackOff", 0.85)
+			metrics.RecordConfidenceScore("OOMKilled", 0.95)
+
+			// Verify histogram has observations
+			families, err := gatherMetrics()
+			Expect(err).ToNot(HaveOccurred())
+
+			family, exists := families["aianalysis_confidence_score_distribution"]
+			Expect(exists).To(BeTrue(), "Histogram should exist")
+
+			// Check that observations were recorded (sum > 0)
+			totalSum := 0.0
+			for _, m := range family.GetMetric() {
+				totalSum += m.GetHistogram().GetSampleSum()
+			}
+			Expect(totalSum).To(BeNumerically(">", 0), "Histogram should have observations")
 		})
 	})
 
 	// ========================================
-	// PROMETHEUS ENDPOINT FORMAT
+	// METRICS TYPE VERIFICATION
 	// ========================================
-	Context("Prometheus Endpoint Format", func() {
-		// BR-AI-OBSERVABILITY-003: Metrics must be in Prometheus format
-		It("should expose metrics in Prometheus text format", func() {
-			resp, err := http.Get(metricsURL)
-			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
-
-			Expect(resp.StatusCode).To(Equal(200))
-			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/plain"))
-
-			body, err := io.ReadAll(resp.Body)
+	Context("Metrics Type Verification", func() {
+		It("should have correct metric types - DD-005", func() {
+			families, err := gatherMetrics()
 			Expect(err).ToNot(HaveOccurred())
 
-			metricsText := string(body)
+			// Counters
+			counters := []string{
+				"aianalysis_reconciler_reconciliations_total",
+				"aianalysis_rego_evaluations_total",
+				"aianalysis_approval_decisions_total",
+				"aianalysis_failures_total",
+				"aianalysis_audit_validation_attempts_total",
+				"aianalysis_quality_detected_labels_failures_total",
+			}
+			for _, name := range counters {
+				family, exists := families[name]
+				if exists {
+					Expect(family.GetType().String()).To(Equal("COUNTER"),
+						"%s should be a COUNTER", name)
+				}
+			}
 
-			// Verify Prometheus format markers
-			Expect(metricsText).To(ContainSubstring("# HELP"))
-			Expect(metricsText).To(ContainSubstring("# TYPE"))
-
-			// Verify our metrics have help text
-			Expect(metricsText).To(ContainSubstring("# HELP aianalysis_reconciler_reconciliations_total"))
-			Expect(metricsText).To(ContainSubstring("# TYPE aianalysis_reconciler_reconciliations_total counter"))
+			// Histograms
+			histograms := []string{
+				"aianalysis_reconciler_duration_seconds",
+				"aianalysis_confidence_score_distribution",
+			}
+			for _, name := range histograms {
+				family, exists := families[name]
+				if exists {
+					Expect(family.GetType().String()).To(Equal("HISTOGRAM"),
+						"%s should be a HISTOGRAM", name)
+				}
+			}
 		})
 	})
 
 	// ========================================
-	// NOTE: CRD Lifecycle Metrics Test → E2E (Day 8)
+	// NOTE: HTTP Endpoint Tests → E2E (Day 8)
 	// ========================================
-	// The test "should record reconciliation metrics when CRD is created"
-	// has been moved to E2E tests (test/e2e/aianalysis/) because it requires:
-	// - Full controller manager deployment
-	// - Metrics endpoint exposed via Service
-	// - Real reconciliation flow
+	// HTTP /metrics endpoint accessibility tests are in E2E tier:
+	// - test/e2e/aianalysis/02_metrics_test.go
 	//
-	// This validates: "Can operators scrape AIAnalysis metrics in production?"
-	// See: IMPLEMENTATION_PLAN_V1.0.md Day 8 (E2E Tests)
+	// Rationale (per DD-TEST-001):
+	// - Integration tests use envtest (no HTTP server for CRD controllers)
+	// - E2E tests deploy full controller with Service (HTTP endpoint available)
+	//
+	// E2E validates: "Can operators scrape AIAnalysis metrics in production?"
 	// ========================================
 })
-
-// ========================================
-// HELPER: Reset metrics for isolated tests
-// ========================================
-func resetMetrics() {
-	// Note: In production Prometheus, metrics cannot be reset.
-	// For testing, we create new metrics each time or use unique labels.
-	// This is a limitation of Prometheus client_golang.
-
-	// For counter vectors, we can use Delete to remove specific label combinations
-	// but this is generally not recommended in production.
-
-	// Best practice: Use unique labels (timestamps, UUIDs) for test isolation
-}
-
-// Ensure controller-runtime metrics registry is available
-var _ prometheus.Gatherer = ctrlmetrics.Registry
-

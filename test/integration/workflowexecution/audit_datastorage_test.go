@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -59,26 +58,22 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 	)
 
 	BeforeEach(func() {
+		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - NO EXCEPTIONS
 		// Per TESTING_GUIDELINES.md: Integration tests MUST use real services (podman-compose)
 		// Per DD-AUDIT-003: WorkflowExecution is P0 - MUST generate audit traces
 		//
-		// The ONLY acceptable skip is when explicitly opted out via environment variable
-		// This should ONLY be used for quick local iteration, NOT for CI or compliance testing
-		if os.Getenv("SKIP_DATASTORAGE_TESTS") == "true" {
-			Skip("SKIP_DATASTORAGE_TESTS=true - WARNING: This skips compliance-critical audit tests")
-		}
-
-		// Check if Data Storage is available - FAIL if not running
+		// If Data Storage is not running, tests FAIL (not skip)
 		// This enforces the architectural dependency: WE requires DS for audit compliance
+
 		httpClient = &http.Client{Timeout: 5 * time.Second}
 		resp, err := httpClient.Get(dataStorageURL + "/health")
 		if err != nil || resp.StatusCode != http.StatusOK {
 			Fail(fmt.Sprintf(
 				"Data Storage REQUIRED but not available at %s\n"+
 					"  Per DD-AUDIT-003: WorkflowExecution is P0 - MUST generate audit traces\n"+
-					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n\n"+
-					"  Start with: podman-compose -f podman-compose.test.yml up -d\n"+
-					"  Or set SKIP_DATASTORAGE_TESTS=true (NOT recommended for CI)",
+					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
+					"  Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN - tests must FAIL\n\n"+
+					"  Start infrastructure: podman-compose -f podman-compose.test.yml up -d",
 				dataStorageURL))
 		}
 		resp.Body.Close()
@@ -93,12 +88,10 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 	// DD-AUDIT-002: Shared Library Integration
 	// ========================================
 	Context("BR-WE-005: Audit Events Persistence (Real Data Storage)", func() {
+		// Note: BeforeEach already fails if DS is not available
+		// No need for redundant availability checks in individual tests
 
 		It("should write audit events to Data Storage via batch endpoint", func() {
-			if !dsAvailable {
-				Skip("Data Storage not available")
-			}
-
 			By("Creating a test audit event")
 			event := createTestAuditEvent("workflow.started", "success")
 
@@ -120,10 +113,6 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 		})
 
 		It("should write workflow.completed audit event via batch endpoint", func() {
-			if !dsAvailable {
-				Skip("Data Storage not available")
-			}
-
 			By("Creating a workflow.completed audit event")
 			event := createTestAuditEvent("workflow.completed", "success")
 			durationMs := 5000 // 5 seconds

@@ -42,7 +42,9 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -58,10 +60,14 @@ type Reconciler struct {
 	notificationCreator *creator.NotificationCreator
 	aiAnalysisCreator   *creator.AIAnalysisCreator
 	weCreator           *creator.WorkflowExecutionCreator
+	// Audit integration (DD-AUDIT-003, BR-STORAGE-001)
+	auditStore   audit.AuditStore
+	auditHelpers *roaudit.Helpers
 }
 
 // NewReconciler creates a new Reconciler with all dependencies.
-func NewReconciler(c client.Client, s *runtime.Scheme) *Reconciler {
+// The auditStore parameter is optional - if nil, audit events will not be emitted.
+func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditStore) *Reconciler {
 	nc := creator.NewNotificationCreator(c, s)
 	return &Reconciler{
 		client:              c,
@@ -71,6 +77,8 @@ func NewReconciler(c client.Client, s *runtime.Scheme) *Reconciler {
 		notificationCreator: nc,
 		aiAnalysisCreator:   creator.NewAIAnalysisCreator(c, s),
 		weCreator:           creator.NewWorkflowExecutionCreator(c, s),
+		auditStore:          auditStore,
+		auditHelpers:        roaudit.NewHelpers(roaudit.ServiceName),
 	}
 }
 
@@ -360,6 +368,9 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 	// Record metric
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
 	metrics.PhaseTransitionsTotal.WithLabelValues(oldPhase, string(newPhase), rr.Namespace).Inc()
+
+	// Emit audit event (DD-AUDIT-003)
+	r.emitPhaseTransitionAudit(ctx, rr, oldPhase, string(newPhase))
 
 	logger.Info("Phase transition successful", "from", oldPhase, "to", newPhase)
 	return ctrl.Result{Requeue: true}, nil

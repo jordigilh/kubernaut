@@ -42,7 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	"github.com/jordigilh/kubernaut/pkg/notification/retry"
 	"github.com/jordigilh/kubernaut/pkg/notification/routing"
-	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
 // NotificationRequestReconciler reconciles a NotificationRequest object
