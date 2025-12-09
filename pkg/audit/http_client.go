@@ -152,24 +152,26 @@ func (c *HTTPDataStorageClient) storeSingleEvent(ctx context.Context, event *Aud
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal audit event: %w", err)
+		return NewMarshalError(err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
+		return NewNetworkError(err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		// GAP-11: Network errors are retryable
+		return NewNetworkError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Data Storage Service returned status %d", resp.StatusCode)
+		// GAP-11: Return typed HTTP error for retry logic differentiation
+		return NewHTTPError(resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 
 	return nil

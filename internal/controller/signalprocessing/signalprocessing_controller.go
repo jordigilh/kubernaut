@@ -53,13 +53,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 )
 
 // SignalProcessingReconciler reconciles a SignalProcessing object.
-// Per IMPLEMENTATION_PLAN_V1.30.md - E2E GREEN Phase Implementation
+// Per IMPLEMENTATION_PLAN_V1.31.md - E2E GREEN Phase + BR-SP-090 Audit
 type SignalProcessingReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme      *runtime.Scheme
+	AuditClient *audit.AuditClient // BR-SP-090: Categorization Audit Trail
 }
 
 // +kubebuilder:rbac:groups=signalprocessing.kubernaut.ai,resources=signalprocessings,verbs=get;list;watch;create;update;patch;delete
