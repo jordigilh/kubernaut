@@ -360,7 +360,7 @@ var _ = Describe("BR-GATEWAY-106: Failure Metrics Recording", func() {
 
 			It("should classify conflict errors correctly", func() {
 				err := apierrors.NewConflict(
-					schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+					schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationrequests"},
 					"test-rr",
 					errors.New("already exists"),
 				)
@@ -370,7 +370,7 @@ var _ = Describe("BR-GATEWAY-106: Failure Metrics Recording", func() {
 
 			It("should classify forbidden errors correctly", func() {
 				err := apierrors.NewForbidden(
-					schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+					schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationrequests"},
 					"test-rr",
 					errors.New("insufficient permissions"),
 				)

@@ -321,7 +321,7 @@ func containsReady(s string) bool {
 
 func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 	// Find CRD file
-	crdPath := findCRDFile("aianalysis.kubernaut.io_aianalyses.yaml")
+	crdPath := findCRDFile("aianalysis.kubernaut.ai_aianalyses.yaml")
 	if crdPath == "" {
 		return fmt.Errorf("AIAnalysis CRD not found")
 	}
@@ -338,7 +338,7 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 	fmt.Fprintln(writer, "  Waiting for CRD to be established...")
 	for i := 0; i < 30; i++ {
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-			"get", "crd", "aianalyses.aianalysis.kubernaut.io")
+			"get", "crd", "aianalyses.aianalysis.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			return nil
 		}
@@ -731,7 +731,7 @@ kind: ClusterRole
 metadata:
   name: aianalysis-controller
 rules:
-- apiGroups: ["aianalysis.kubernaut.io"]
+- apiGroups: ["aianalysis.kubernaut.ai"]
   resources: ["aianalyses", "aianalyses/status"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: [""]

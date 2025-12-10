@@ -183,7 +183,7 @@ func (h *ServiceAccountHelper) CreateClusterRoleForTests(ctx context.Context, na
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{"remediation.kubernaut.io"},
+				APIGroups: []string{"remediation.kubernaut.ai"},
 				Resources: []string{"remediationrequests"},
 				Verbs:     []string{"create", "get", "list", "watch", "update", "patch", "delete"},
 			},

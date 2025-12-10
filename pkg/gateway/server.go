@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -30,18 +29,15 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	goredis "github.com/redis/go-redis/v9"
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
-	// "k8s.io/client-go/kubernetes" // DD-GATEWAY-004: No longer needed (authentication removed)
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis" // DD-CACHE-001: Shared Redis Library
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
@@ -95,27 +91,20 @@ type Server struct {
 
 	// Core processing components
 	adapterRegistry *adapters.AdapterRegistry
-	deduplicator    *processing.DeduplicationService
 	crdUpdater      *processing.CRDUpdater // DD-GATEWAY-009: CRD updater for state-based deduplication
-	stormDetector   *processing.StormDetector
-	stormAggregator *processing.StormAggregator
-	// DD-GATEWAY-011: Status-based deduplication and storm aggregation (Redis deprecation)
+	// DD-GATEWAY-011 + DD-GATEWAY-012: Status-based deduplication and storm aggregation
+	// Redis DEPRECATED - all state now in K8s RR status
 	statusUpdater *processing.StatusUpdater                  // Updates RR status.deduplication and status.stormAggregation
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
-	// Note: classifier, priorityEngine, and pathDecider removed (2025-12-06)
-	// Environment/Priority classification and remediation path now owned by Signal Processing
-	// per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
-	crdCreator *processing.CRDCreator
+	crdCreator    *processing.CRDCreator
 
 	// Infrastructure clients
-	redisClient *rediscache.Client // DD-CACHE-001: Shared Redis Library
-	k8sClient   *k8s.Client
-	ctrlClient  client.Client
+	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
+	k8sClient  *k8s.Client
+	ctrlClient client.Client
 
-	// Middleware
-	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
-	// authMiddleware *middleware.AuthMiddleware // REMOVED
-	// rateLimiter    *middleware.RateLimiter    // REMOVED
+	// Configuration (for storm threshold)
+	stormThreshold int32 // BR-GATEWAY-182: Threshold for storm detection
 
 	// Metrics
 	metricsInstance *metrics.Metrics
@@ -173,24 +162,13 @@ func NewServer(cfg *config.ServerConfig, logger logr.Logger) (*Server, error) {
 // If metricsInstance is nil, creates a new metrics instance with the default registry.
 // NewServerWithK8sClient creates a Gateway server with an existing K8s client (for testing)
 // This ensures the Gateway uses the same K8s client as the test, avoiding cache synchronization issues
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
-	// 1. Initialize Redis client (DD-CACHE-001: Shared Redis Library)
-	redisClient := rediscache.NewClient(&goredis.Options{
-		Addr:         cfg.Infrastructure.Redis.Addr,
-		DB:           cfg.Infrastructure.Redis.DB,
-		Password:     cfg.Infrastructure.Redis.Password,
-		DialTimeout:  cfg.Infrastructure.Redis.DialTimeout,
-		ReadTimeout:  cfg.Infrastructure.Redis.ReadTimeout,
-		WriteTimeout: cfg.Infrastructure.Redis.WriteTimeout,
-		PoolSize:     cfg.Infrastructure.Redis.PoolSize,
-		MinIdleConns: cfg.Infrastructure.Redis.MinIdleConns,
-	}, logger)
-
-	// 2. Use provided Kubernetes client (shared with test)
+	// Use provided Kubernetes client (shared with test)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// 3. Initialize processing pipeline components
-	return createServerWithClients(cfg, logger, metricsInstance, redisClient, ctrlClient, k8sClient)
+	// Initialize processing pipeline components (no Redis)
+	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
 }
 
 func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics) (*Server, error) {

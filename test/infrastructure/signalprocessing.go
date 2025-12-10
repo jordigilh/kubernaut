@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -183,11 +184,21 @@ func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, write
 }
 
 func findSignalProcessingKindConfig() string {
+	// Try to find config using various relative paths and also from GOPATH
 	paths := []string{
 		"test/infrastructure/kind-signalprocessing-config.yaml",
 		"../infrastructure/kind-signalprocessing-config.yaml",
 		"../../test/infrastructure/kind-signalprocessing-config.yaml",
+		"../../../test/infrastructure/kind-signalprocessing-config.yaml",
 	}
+
+	// Also try from runtime.Caller to get the file's directory
+	_, thisFile, _, ok := runtime.Caller(0)
+	if ok {
+		thisDir := filepath.Dir(thisFile)
+		paths = append(paths, filepath.Join(thisDir, "kind-signalprocessing-config.yaml"))
+	}
+
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {
 			absPath, _ := filepath.Abs(p)
@@ -374,37 +385,66 @@ func buildSignalProcessingImage(writer io.Writer) error {
 		return fmt.Errorf("project root not found")
 	}
 
-	// Build controller image
-	cmd := exec.Command("docker", "build",
-		"-t", "signalprocessing-controller:e2e",
-		"-f", filepath.Join(projectRoot, "Dockerfile.signalprocessing"),
+	// Use the Dockerfile in docker/ directory
+	dockerfilePath := filepath.Join(projectRoot, "docker", "signalprocessing.Dockerfile")
+
+	// Check if Dockerfile exists
+	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+		return fmt.Errorf("SignalProcessing Dockerfile not found at %s", dockerfilePath)
+	}
+
+	// Build controller image using podman (preferred) or docker
+	containerCmd := "podman"
+	if _, err := exec.LookPath("podman"); err != nil {
+		containerCmd = "docker"
+	}
+
+	cmd := exec.Command(containerCmd, "build",
+		"-t", "localhost/signalprocessing-controller:e2e",
+		"-f", dockerfilePath,
 		projectRoot,
 	)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	cmd.Dir = projectRoot
 
-	// If Dockerfile.signalprocessing doesn't exist, try standard controller Dockerfile
-	if _, err := os.Stat(filepath.Join(projectRoot, "Dockerfile.signalprocessing")); os.IsNotExist(err) {
-		// Use make target instead
-		cmd = exec.Command("make", "docker-build-signalprocessing",
-			"IMG=signalprocessing-controller:e2e")
-		cmd.Dir = projectRoot
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-	}
-
 	return cmd.Run()
 }
 
 func loadSignalProcessingImage(clusterName string, writer io.Writer) error {
-	cmd := exec.Command("kind", "load", "docker-image",
-		"signalprocessing-controller:e2e",
+	// When using podman with Kind, we need to save the image to a tar file
+	// and load it using kind load image-archive
+	tmpFile := filepath.Join(os.TempDir(), "signalprocessing-controller-e2e.tar")
+
+	// Save image to tar file
+	fmt.Fprintln(writer, "  Saving image to tar file...")
+	saveCmd := exec.Command("podman", "save",
+		"-o", tmpFile,
+		"localhost/signalprocessing-controller:e2e",
+	)
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save image: %w", err)
+	}
+
+	// Load image into Kind using image-archive
+	fmt.Fprintln(writer, "  Loading image into Kind...")
+	loadCmd := exec.Command("kind", "load", "image-archive",
+		tmpFile,
 		"--name", clusterName,
 	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	return cmd.Run()
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+	if err := loadCmd.Run(); err != nil {
+		// Cleanup tmp file
+		os.Remove(tmpFile)
+		return fmt.Errorf("failed to load image: %w", err)
+	}
+
+	// Cleanup tmp file
+	os.Remove(tmpFile)
+	return nil
 }
 
 func findSignalProcessingProjectRoot() string {
@@ -493,7 +533,7 @@ spec:
       serviceAccountName: signalprocessing-controller
       containers:
       - name: controller
-        image: signalprocessing-controller:e2e
+        image: localhost/signalprocessing-controller:e2e
         imagePullPolicy: Never
         ports:
         - containerPort: 9090

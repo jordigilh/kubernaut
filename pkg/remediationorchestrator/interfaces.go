@@ -36,3 +36,4 @@ type PhaseManager interface {
 	TransitionTo(rr *remediationv1.RemediationRequest, target phase.Phase) error
 }
 
+

@@ -26,21 +26,37 @@ import (
 // MockHolmesGPTClient is a mock implementation of HolmesGPTClientInterface for unit tests.
 // It allows tests to control HolmesGPT-API behavior without requiring a real service.
 // BR-AI-006: Mock for API call testing
+// BR-AI-082: Updated with InvestigateRecovery support
 type MockHolmesGPTClient struct {
 	// InvestigateFunc allows tests to customize the Investigate behavior
 	InvestigateFunc func(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
 
+	// InvestigateRecoveryFunc allows tests to customize the InvestigateRecovery behavior
+	InvestigateRecoveryFunc func(ctx context.Context, req *client.RecoveryRequest) (*client.IncidentResponse, error)
+
 	// CallCount tracks how many times Investigate was called
 	CallCount int
+
+	// RecoveryCallCount tracks how many times InvestigateRecovery was called
+	RecoveryCallCount int
 
 	// LastRequest stores the last request passed to Investigate
 	LastRequest *client.IncidentRequest
 
-	// Response is the default response to return (if InvestigateFunc is nil)
+	// LastRecoveryRequest stores the last request passed to InvestigateRecovery
+	LastRecoveryRequest *client.RecoveryRequest
+
+	// Response is the default response to return (if InvestigateFunc/InvestigateRecoveryFunc is nil)
 	Response *client.IncidentResponse
+
+	// RecoveryResponse is the default recovery response (uses Response if nil)
+	RecoveryResponse *client.IncidentResponse
 
 	// Err is the default error to return (if InvestigateFunc is nil)
 	Err error
+
+	// RecoveryErr is the default error for recovery calls (uses Err if nil)
+	RecoveryErr error
 }
 
 // NewMockHolmesGPTClient creates a new mock HolmesGPT client with default success behavior.
@@ -67,6 +83,31 @@ func (m *MockHolmesGPTClient) Investigate(ctx context.Context, req *client.Incid
 	}
 
 	return m.Response, m.Err
+}
+
+// InvestigateRecovery implements HolmesGPTClientInterface for recovery attempts.
+// BR-AI-082: Recovery endpoint implementation
+func (m *MockHolmesGPTClient) InvestigateRecovery(ctx context.Context, req *client.RecoveryRequest) (*client.IncidentResponse, error) {
+	m.RecoveryCallCount++
+	m.LastRecoveryRequest = req
+
+	if m.InvestigateRecoveryFunc != nil {
+		return m.InvestigateRecoveryFunc(ctx, req)
+	}
+
+	// Use RecoveryResponse if set, otherwise fall back to Response
+	resp := m.RecoveryResponse
+	if resp == nil {
+		resp = m.Response
+	}
+
+	// Use RecoveryErr if set, otherwise fall back to Err
+	err := m.RecoveryErr
+	if err == nil {
+		err = m.Err
+	}
+
+	return resp, err
 }
 
 // WithResponse configures the mock to return a specific response.
@@ -139,7 +180,57 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 // Reset resets the mock's state (call count and last request).
 func (m *MockHolmesGPTClient) Reset() {
 	m.CallCount = 0
+	m.RecoveryCallCount = 0
 	m.LastRequest = nil
+	m.LastRecoveryRequest = nil
+}
+
+// ========================================
+// BR-AI-082: Recovery Test Helpers
+// ========================================
+
+// WithRecoveryResponse configures the mock to return a specific response for recovery calls.
+func (m *MockHolmesGPTClient) WithRecoveryResponse(resp *client.IncidentResponse) *MockHolmesGPTClient {
+	m.RecoveryResponse = resp
+	m.RecoveryErr = nil
+	return m
+}
+
+// WithRecoveryError configures the mock to return an error for recovery calls.
+func (m *MockHolmesGPTClient) WithRecoveryError(err error) *MockHolmesGPTClient {
+	m.RecoveryResponse = nil
+	m.RecoveryErr = err
+	return m
+}
+
+// WithRecoverySuccessResponse configures the mock to return a successful recovery response.
+// This simulates a successful re-analysis after workflow failure.
+func (m *MockHolmesGPTClient) WithRecoverySuccessResponse(
+	analysis string,
+	confidence float64,
+	selectedWorkflow *client.SelectedWorkflow,
+) *MockHolmesGPTClient {
+	m.RecoveryResponse = &client.IncidentResponse{
+		IncidentID:       "mock-recovery-001",
+		Analysis:         analysis,
+		Confidence:       confidence,
+		Timestamp:        "2025-12-09T10:00:00Z",
+		SelectedWorkflow: selectedWorkflow,
+		RootCauseAnalysis: &client.RootCauseAnalysis{
+			Summary:  "Recovery analysis complete",
+			Severity: "medium",
+		},
+	}
+	m.RecoveryErr = nil
+	return m
+}
+
+// AssertRecoveryCalled returns an error if InvestigateRecovery was not called the expected number of times.
+func (m *MockHolmesGPTClient) AssertRecoveryCalled(expectedCount int) error {
+	if m.RecoveryCallCount != expectedCount {
+		return fmt.Errorf("expected InvestigateRecovery to be called %d times, but was called %d times", expectedCount, m.RecoveryCallCount)
+	}
+	return nil
 }
 
 // AssertCalled returns an error if Investigate was not called the expected number of times.

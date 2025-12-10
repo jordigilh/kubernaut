@@ -213,7 +213,7 @@ metadata:
   name: gateway-role
 rules:
   # RemediationRequest CRD access
-  - apiGroups: ["remediation.kubernaut.io"]
+  - apiGroups: ["remediation.kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["create", "get", "list", "watch", "update", "patch"]
 

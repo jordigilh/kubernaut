@@ -374,3 +374,4 @@ func RequiresManualReview(ai *aianalysisv1.AIAnalysis) bool {
 	return IsWorkflowResolutionFailed(ai)
 }
 
+

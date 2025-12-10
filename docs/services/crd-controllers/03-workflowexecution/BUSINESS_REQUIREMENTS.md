@@ -5,8 +5,8 @@
 **CRD**: WorkflowExecution
 **CRD API Group**: `workflowexecution.kubernaut.ai/v1alpha1`
 **Controller**: WorkflowExecutionReconciler
-**Version**: 3.5 (ValidateSpec cluster-scope fix, Audit event types clarification)
-**Last Updated**: December 9, 2025
+**Version**: 3.7 (DS Batch Endpoint Complete - Full Audit Integration)
+**Last Updated**: December 10, 2025
 **Status**: Ready for Implementation
 
 ---
@@ -480,7 +480,7 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 ### BR Coverage Matrix
 
-**Last Updated**: 2025-12-09 (Phase 2 - Added real DS tests, will FAIL until DS fix)
+**Last Updated**: 2025-12-10 (DS Batch Endpoint Complete - All audit tests PASS)
 
 | BR ID | Unit | Integration | E2E | Total | Notes |
 |-------|------|-------------|-----|-------|-------|
@@ -488,7 +488,7 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 | BR-WE-002 | ✅ | ✅ | ✅ | 100% | |
 | BR-WE-003 | ✅ | ✅ | ✅ | 100% | |
 | BR-WE-004 | ✅ | ✅ | ✅ | 100% | |
-| BR-WE-005 | ✅ | 🔴 | 🔴 | 60% → 100% | **TESTS EXIST**: Integration (`audit_datastorage_test.go`) and E2E (`02_observability_test.go`) tests added. Will **FAIL** until DS batch endpoint fixed. Tests PASS → 100% coverage. |
+| BR-WE-005 | ✅ | ✅ | ✅ | 100% | DS batch endpoint complete (2025-12-10). Full audit integration verified. |
 | BR-WE-006 | ✅ | ✅ | ⬜ | 80% | |
 | BR-WE-007 | ✅ | ✅ | ✅ | 100% | |
 | BR-WE-008 | ✅ | ✅ | ✅ | 100% | |
@@ -543,6 +543,7 @@ Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 3.7 | 2025-12-10 | **DS Batch Endpoint Complete**: BR-WE-005 audit coverage now 100%. Integration and E2E tests unblocked. See `NOTICE_DATASTORAGE_BATCH_AUDIT_ENDPOINT_COMPLETE.md`. |
 | 3.6 | 2025-12-09 | **DD-WE-001 Compliance Fix**: Fixed `CheckCooldown()` to allow different workflows on same target within cooldown (per DD-WE-001 line 140). **BR-WE-004 Documentation Fix**: Updated to explain finalizer approach - cross-namespace owner references not supported by Kubernetes. |
 | 3.5 | 2025-12-09 | **BR-WE-005 Audit Types**: Added clarification that `workflowexecution.*` prefix aligns with ADR-034 pattern. |
 | 3.4 | 2025-12-09 | **BR-WE-005 Tests Added**: Added integration tests with real DS (`audit_datastorage_test.go`) and E2E audit persistence verification (`02_observability_test.go`). Tests will **FAIL** until DS batch endpoint is fixed. Once fixed, BR-WE-005 coverage → 100%. |

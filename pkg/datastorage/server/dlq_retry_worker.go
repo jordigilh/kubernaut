@@ -51,12 +51,12 @@ import (
 // backoffIntervals defines the exponential backoff schedule per DD-009.
 // After 6 retries, messages are moved to dead letter for manual investigation.
 var backoffIntervals = []time.Duration{
-	1 * time.Minute,   // Retry 0: Quick recovery for transient issues
-	5 * time.Minute,   // Retry 1: Network partition recovery
-	15 * time.Minute,  // Retry 2: Pod restart recovery
-	1 * time.Hour,     // Retry 3: Rolling upgrade recovery
-	4 * time.Hour,     // Retry 4: Extended outage
-	24 * time.Hour,    // Retry 5: Manual intervention required
+	1 * time.Minute,  // Retry 0: Quick recovery for transient issues
+	5 * time.Minute,  // Retry 1: Network partition recovery
+	15 * time.Minute, // Retry 2: Pod restart recovery
+	1 * time.Hour,    // Retry 3: Rolling upgrade recovery
+	4 * time.Hour,    // Retry 4: Extended outage
+	24 * time.Hour,   // Retry 5: Manual intervention required
 }
 
 // DLQRetryWorkerConfig holds configuration for the DLQ retry worker.
@@ -344,4 +344,3 @@ func ParseRetryCount(retryCountStr string) int {
 	}
 	return count
 }
-

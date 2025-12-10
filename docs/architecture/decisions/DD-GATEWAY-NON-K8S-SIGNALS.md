@@ -240,3 +240,4 @@ func (c *CRDCreator) validateResourceInfo(signal *types.NormalizedSignal) error 
 **Created**: December 2, 2025
 **Author**: Gateway Team (AI-assisted)
 
+

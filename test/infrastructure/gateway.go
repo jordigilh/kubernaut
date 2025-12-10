@@ -298,7 +298,7 @@ func installCRD(kubeconfigPath string, writer io.Writer) error {
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
-	crdPath := filepath.Join(workspaceRoot, "config", "crd", "bases", "remediation.kubernaut.io_remediationrequests.yaml")
+	crdPath := filepath.Join(workspaceRoot, "config", "crd", "bases", "remediation.kubernaut.ai_remediationrequests.yaml")
 	applyCmd := exec.Command("kubectl", "apply", "-f", crdPath)
 	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 	applyCmd.Stdout = writer

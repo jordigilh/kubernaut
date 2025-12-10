@@ -582,3 +582,4 @@ spec:
 - [Security Configuration](security-configuration.md) - Detailed security setup
 - [DD-006: Controller Scaffolding](../../../architecture/decisions/DD-006-controller-scaffolding-strategy.md)
 
+

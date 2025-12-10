@@ -55,11 +55,45 @@ func NewHolmesGPTClient(cfg Config) *HolmesGPTClient {
 }
 
 // IncidentRequest represents request to /api/v1/incident/analyze
+// BR-AI-080: Updated with all required HAPI fields per NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md
 type IncidentRequest struct {
-	Context        string                 `json:"context"`
-	DetectedLabels map[string]interface{} `json:"detected_labels,omitempty"`
-	CustomLabels   map[string][]string    `json:"custom_labels,omitempty"`
-	OwnerChain     []OwnerChainEntry      `json:"owner_chain,omitempty"`
+	// REQUIRED fields per HAPI OpenAPI spec
+	IncidentID        string `json:"incident_id"`
+	RemediationID     string `json:"remediation_id"`      // MANDATORY per DD-WORKFLOW-002
+	SignalType        string `json:"signal_type"`
+	Severity          string `json:"severity"`
+	SignalSource      string `json:"signal_source"`
+	ResourceNamespace string `json:"resource_namespace"`
+	ResourceKind      string `json:"resource_kind"`
+	ResourceName      string `json:"resource_name"`
+	ErrorMessage      string `json:"error_message"`
+	Environment       string `json:"environment"`
+	Priority          string `json:"priority"`
+	RiskTolerance     string `json:"risk_tolerance"`
+	BusinessCategory  string `json:"business_category"`
+	ClusterName       string `json:"cluster_name"`
+
+	// OPTIONAL fields
+	Description       *string            `json:"description,omitempty"`
+	IsDuplicate       *bool              `json:"is_duplicate,omitempty"`
+	OccurrenceCount   *int               `json:"occurrence_count,omitempty"`
+	IsStorm           *bool              `json:"is_storm,omitempty"`
+	StormSignalCount  *int               `json:"storm_signal_count,omitempty"`
+	FiringTime        *string            `json:"firing_time,omitempty"`
+	SignalLabels      map[string]string  `json:"signal_labels,omitempty"`
+	EnrichmentResults *EnrichmentResults `json:"enrichment_results,omitempty"`
+
+	// Legacy field - kept for backward compatibility during migration
+	// TODO: Remove after handler migration complete
+	Context string `json:"context,omitempty"`
+}
+
+// EnrichmentResults contains enriched context from SignalProcessing
+type EnrichmentResults struct {
+	DetectedLabels    map[string]interface{} `json:"detectedLabels,omitempty"`
+	CustomLabels      map[string][]string    `json:"customLabels,omitempty"`
+	KubernetesContext map[string]interface{} `json:"kubernetesContext,omitempty"`
+	OwnerChain        []OwnerChainEntry      `json:"ownerChain,omitempty"`
 }
 
 // OwnerChainEntry represents a resource in the owner chain
@@ -67,6 +101,83 @@ type OwnerChainEntry struct {
 	Namespace string `json:"namespace"`
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
+}
+
+// ========================================
+// BR-AI-082: RecoveryRequest for /api/v1/recovery/analyze
+// DD-RECOVERY-002: Direct recovery flow implementation
+// ========================================
+
+// RecoveryRequest represents request to /api/v1/recovery/analyze
+// Used when IsRecoveryAttempt=true to provide context about failed workflow
+type RecoveryRequest struct {
+	// REQUIRED fields
+	IncidentID    string `json:"incident_id"`
+	RemediationID string `json:"remediation_id"` // MANDATORY per DD-WORKFLOW-002
+
+	// Recovery-specific fields
+	IsRecoveryAttempt     bool               `json:"is_recovery_attempt"`
+	RecoveryAttemptNumber int                `json:"recovery_attempt_number,omitempty"`
+	PreviousExecution     *PreviousExecution `json:"previous_execution,omitempty"`
+
+	// OPTIONAL signal context fields (may have changed since initial)
+	SignalType        *string `json:"signal_type,omitempty"`
+	Severity          *string `json:"severity,omitempty"`
+	ResourceNamespace *string `json:"resource_namespace,omitempty"`
+	ResourceKind      *string `json:"resource_kind,omitempty"`
+	ResourceName      *string `json:"resource_name,omitempty"`
+	ErrorMessage      *string `json:"error_message,omitempty"`
+	ClusterName       *string `json:"cluster_name,omitempty"`
+	SignalSource      *string `json:"signal_source,omitempty"`
+
+	// Fields with defaults
+	Environment      string `json:"environment"`       // Default: "unknown"
+	Priority         string `json:"priority"`          // Default: "P2"
+	RiskTolerance    string `json:"risk_tolerance"`    // Default: "medium"
+	BusinessCategory string `json:"business_category"` // Default: "standard"
+
+	// Optional enrichment
+	EnrichmentResults map[string]interface{} `json:"enrichment_results,omitempty"`
+}
+
+// PreviousExecution contains context from a failed workflow execution
+// DD-RECOVERY-003: Structured failure context for LLM
+type PreviousExecution struct {
+	WorkflowExecutionRef   string                  `json:"workflow_execution_ref"`
+	OriginalRCA            OriginalRCA             `json:"original_rca"`
+	SelectedWorkflow       SelectedWorkflowSummary `json:"selected_workflow"`
+	Failure                ExecutionFailure        `json:"failure"`
+	NaturalLanguageSummary *string                 `json:"natural_language_summary,omitempty"` // BR-HAPI-192
+}
+
+// OriginalRCA summarizes the original root cause analysis
+type OriginalRCA struct {
+	Summary             string   `json:"summary"`
+	SignalType          string   `json:"signal_type"`
+	Severity            string   `json:"severity"`
+	ContributingFactors []string `json:"contributing_factors,omitempty"`
+}
+
+// SelectedWorkflowSummary describes the workflow that was executed
+type SelectedWorkflowSummary struct {
+	WorkflowID     string            `json:"workflow_id"`
+	Version        string            `json:"version"`
+	ContainerImage string            `json:"container_image"`
+	Parameters     map[string]string `json:"parameters,omitempty"`
+	Confidence     float64           `json:"confidence,omitempty"`
+	Rationale      string            `json:"rationale,omitempty"`
+}
+
+// ExecutionFailure contains structured failure information
+// Uses Kubernetes reason codes as API contract (DD-RECOVERY-003)
+type ExecutionFailure struct {
+	FailedStepIndex int     `json:"failed_step_index"`
+	FailedStepName  string  `json:"failed_step_name"`
+	Reason          string  `json:"reason"` // Kubernetes reason code (e.g., OOMKilled, DeadlineExceeded)
+	Message         string  `json:"message"`
+	ExitCode        *int32  `json:"exit_code,omitempty"`
+	FailedAt        string  `json:"failed_at"`       // ISO timestamp
+	ExecutionTime   string  `json:"execution_time"`  // Duration (e.g., "2m34s")
 }
 
 // IncidentResponse represents response from HolmesGPT-API /api/v1/incident/analyze
@@ -199,6 +310,47 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 	var result IncidentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// InvestigateRecovery calls the HolmesGPT-API recovery analyze endpoint
+// BR-AI-082: Recovery request implementation
+// DD-RECOVERY-002: Direct recovery flow - uses /api/v1/recovery/analyze
+func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *RecoveryRequest) (*IncidentResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal recovery request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/v1/recovery/analyze", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create recovery request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("recovery request failed: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close() // Error intentionally ignored - logging not needed for close
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("recovery API returned status %d", resp.StatusCode),
+		}
+	}
+
+	// Recovery endpoint returns same response format as incident endpoint
+	var result IncidentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode recovery response: %w", err)
 	}
 
 	return &result, nil

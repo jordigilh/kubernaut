@@ -29,6 +29,7 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ============================================================================
@@ -56,13 +57,15 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 
 		It("should create RemediationRequest and transition to Processing phase", func() {
 			By("Creating a RemediationRequest")
+			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
 					Namespace: namespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "fp12345678901234567890123456789012345678901234567890123456789012",
+					// Valid 64-char hex fingerprint (SHA256 format per CRD validation)
+					SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 					SignalName:        "TestHighMemoryAlert",
 					Severity:          "critical",
 					SignalType:        "prometheus",
@@ -72,8 +75,13 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 						Name:      "test-app",
 						Namespace: namespace,
 					},
-					FiringTime:   metav1.Now(),
-					ReceivedTime: metav1.Now(),
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())

@@ -207,7 +207,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			Eventually(func() bool {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 				// Check if retry annotation is set
-				_, hasRetry := analysis.Annotations["aianalysis.kubernaut.io/retry-count"]
+				_, hasRetry := analysis.Annotations["aianalysis.kubernaut.ai/retry-count"]
 				// Either completed or has retry annotation
 				return analysis.Status.Phase == "Completed" || hasRetry
 			}, timeout, interval).Should(BeTrue())

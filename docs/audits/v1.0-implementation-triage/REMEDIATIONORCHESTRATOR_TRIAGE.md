@@ -19,7 +19,7 @@
 | **E2E Tests** | 5 | ⚠️ Expanding to 15 |
 | **Total Tests** | **140** | Expanding to **205** |
 | **BRs Defined** | 17 (Active) | ✅ Well documented |
-| **API Group** | `remediation.kubernaut.io` | 🔴 **ACTION: Migrate to `.ai`** |
+| **API Group** | `remediation.kubernaut.ai` | ✅ **Migrated per DD-CRD-001** |
 
 ### Planned State (Post Test Expansion)
 
@@ -33,17 +33,16 @@
 
 ---
 
-## 🔴 Critical Gaps (2)
+## 🔴 Critical Gaps (1)
 
-### Gap 1: API Group Mismatch
+### ~~Gap 1: API Group Mismatch~~ ✅ RESOLVED
 
 | Item | Authoritative (DD-CRD-001) | Actual Code | Action |
 |------|----------------------------|-------------|--------|
-| API Group | `remediation.kubernaut.ai` | `remediation.kubernaut.io` | 🔴 **MIGRATE** |
+| API Group | `remediation.kubernaut.ai` | `remediation.kubernaut.ai` | ✅ **COMPLETE** |
 
 **File**: `api/remediation/v1alpha1/groupversion_info.go`
-**Impact**: Breaking change. CRDs registered with wrong domain.
-**Status**: Migration approved - affects 4 CRDs total (remediation, remediationorchestrator, kubernetesexecution, aianalysis)
+**Status**: ✅ Migrated December 10, 2025. RO-owned CRDs now use `.ai` domain.
 
 ---
 
@@ -117,7 +116,7 @@
 
 | # | Task | Priority | Est. Time | Status |
 |---|------|----------|-----------|--------|
-| 1 | Fix API Group to `.kubernaut.ai` (4 CRDs) | P0 | 2h | 🔴 Pending |
+| 1 | Fix API Group to `.kubernaut.ai` (RO CRDs) | P0 | 2h | ✅ Complete |
 | 2 | Implement Unit Tests (+26) | P1 | 4h | 🔴 Pending |
 | 3 | Implement Integration Tests (+29) | P1 | 6h | 🔴 Pending |
 | 4 | Implement E2E Tests (+10) | P1 | 4h | 🔴 Pending |

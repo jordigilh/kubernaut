@@ -141,38 +141,3 @@ func (c *HTTPDataStorageClient) eventToPayload(event *AuditEvent) map[string]int
 	return payload
 }
 
-// storeSingleEvent writes a single audit event to Data Storage Service
-//
-// WORKAROUND: This method is used until Data Storage implements batch endpoint
-// See: docs/handoff/NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md
-func (c *HTTPDataStorageClient) storeSingleEvent(ctx context.Context, event *AuditEvent) error {
-	endpoint := fmt.Sprintf("%s/api/v1/audit/events", c.baseURL)
-
-	payload := c.eventToPayload(event)
-
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return NewMarshalError(err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return NewNetworkError(err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		// GAP-11: Network errors are retryable
-		return NewNetworkError(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// GAP-11: Return typed HTTP error for retry logic differentiation
-		return NewHTTPError(resp.StatusCode, http.StatusText(resp.StatusCode))
-	}
-
-	return nil
-}

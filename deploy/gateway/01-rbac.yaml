@@ -21,7 +21,7 @@ metadata:
 rules:
   # RemediationRequest CRD access
   - apiGroups:
-      - remediation.kubernaut.io
+      - remediation.kubernaut.ai
     resources:
       - remediationrequests
     verbs:

@@ -23,7 +23,8 @@ type MockDataStorageClient struct {
 	attemptCount  int32
 	shouldFail    bool
 	failUntilCall int32
-	customError   error // GAP-10: Support typed errors (HTTPError, NetworkError, etc.)
+	customError   error         // GAP-10: Support typed errors (HTTPError, NetworkError, etc.)
+	writeDelay    time.Duration // GAP-9: Delay writes to test buffer full scenarios
 }
 
 func NewMockDataStorageClient() *MockDataStorageClient {
@@ -34,6 +35,15 @@ func NewMockDataStorageClient() *MockDataStorageClient {
 
 func (m *MockDataStorageClient) StoreBatch(ctx context.Context, events []*audit.AuditEvent) error {
 	atomic.AddInt32(&m.attemptCount, 1)
+
+	m.mu.Lock()
+	delay := m.writeDelay
+	m.mu.Unlock()
+
+	// GAP-9: Apply delay to simulate slow writes (for buffer full testing)
+	if delay > 0 {
+		time.Sleep(delay)
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -101,6 +111,13 @@ func (m *MockDataStorageClient) SetShouldFail(shouldFail bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.shouldFail = shouldFail
+}
+
+// SetWriteDelay sets a delay for each StoreBatch call (for buffer full testing)
+func (m *MockDataStorageClient) SetWriteDelay(delay time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.writeDelay = delay
 }
 
 func (m *MockDataStorageClient) SetFailUntilCall(failUntilCall int) {
@@ -327,19 +344,35 @@ var _ = Describe("BufferedAuditStore", func() {
 		// GAP-9: ADR-032 requires callers to know about dropped events
 		// so they can implement DLQ fallback
 		It("should return error when buffer is full (ADR-032 compliance)", func() {
-			// Fill buffer
-			for i := 0; i < 100; i++ {
+			// Slow down the background writer so buffer fills up
+			mockClient.SetWriteDelay(1 * time.Second)
+			defer mockClient.SetWriteDelay(0)
+
+			// Create store with small buffer
+			smallBufferConfig := audit.Config{
+				BufferSize:    5,                // Very small buffer
+				BatchSize:     5,                // Small batch
+				FlushInterval: 10 * time.Second, // Long flush interval
+				MaxRetries:    1,
+			}
+			smallStore, err := audit.NewBufferedStore(mockClient, smallBufferConfig, "test-service", logger)
+			Expect(err).ToNot(HaveOccurred())
+			defer smallStore.Close()
+
+			// Rapidly fill the small buffer (background worker is slow)
+			var bufferFullErr error
+			for i := 0; i < 20; i++ { // Try more events than buffer can hold
 				event := createTestEvent()
-				_ = store.StoreAudit(ctx, event) // Intentionally ignore errors in test setup
+				if err := smallStore.StoreAudit(ctx, event); err != nil {
+					bufferFullErr = err
+					break
+				}
 			}
 
-			// GAP-9: Next event should return error so caller can implement fallback
-			event := createTestEvent()
-			err := store.StoreAudit(ctx, event)
-
+			// GAP-9: Should have received buffer full error
 			// ADR-032: Caller MUST know event was dropped to implement DLQ fallback
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("buffer full"))
+			Expect(bufferFullErr).To(HaveOccurred())
+			Expect(bufferFullErr.Error()).To(ContainSubstring("buffer full"))
 		})
 	})
 

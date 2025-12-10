@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
-  name: aianalyses.aianalysis.kubernaut.io
+  name: aianalyses.aianalysis.kubernaut.ai
 spec:
-  group: aianalysis.kubernaut.io
+  group: aianalysis.kubernaut.ai
   names:
     kind: AIAnalysis
     listKind: AIAnalysisList

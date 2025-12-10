@@ -98,11 +98,12 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "e2e-p0-test-fingerprint-abc123def456abc123def456abc123def456abc1",
-						Name:        "HighCPU",
-						Severity:    "critical",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
+						Fingerprint:  "a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
+						Name:         "HighCPU",
+						Severity:     "critical",
+						Type:         "prometheus",
+						TargetType:   "kubernetes",
+						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
 							Name:      "api-server-xyz",

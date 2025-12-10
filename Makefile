@@ -132,8 +132,20 @@ test-e2e-holmesgpt: ## Run HolmesGPT API E2E tests (requires Data Storage infras
 test-e2e-holmesgpt-full: test-e2e-datastorage test-e2e-holmesgpt ## Run full HolmesGPT E2E (sets up infra + runs tests)
 	@echo "✅ HolmesGPT API E2E tests complete"
 
+.PHONY: clean-podman-ports
+clean-podman-ports: ## Clean stale Podman port bindings (fixes "proxy already running" errors)
+	@echo "🧹 Cleaning stale Podman port bindings..."
+	@# Kill any processes holding test ports (15433, 16379, 5432, 6379)
+	@lsof -ti:15433 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:16379 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:5432 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:6379 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@# Remove any stale datastorage containers
+	@podman rm -f datastorage-postgres datastorage-redis ai-redis 2>/dev/null || true
+	@echo "✅ Port cleanup complete"
+
 .PHONY: test-integration-datastorage
-test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~4 min)
+test-integration-datastorage: clean-podman-ports ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~4 min)
 	@if [ -z "$$POSTGRES_HOST" ]; then \
 		echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."; \
 		podman run -d --name datastorage-postgres -p 5432:5432 \

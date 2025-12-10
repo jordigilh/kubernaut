@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: remediationrequests.remediation.kubernaut.io
+  name: remediationrequests.remediation.kubernaut.ai
 spec:
-  group: remediation.kubernaut.io
+  group: remediation.kubernaut.ai
   names:
     kind: RemediationRequest
     listKind: RemediationRequestList

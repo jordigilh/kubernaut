@@ -21,7 +21,7 @@ This document defines the **authoritative CRD schemas** for the Kubernaut projec
 
 ### Metadata
 
-**API Group**: `remediation.kubernaut.io/v1`
+**API Group**: `remediation.kubernaut.ai/v1alpha1`
 **Kind**: `RemediationRequest`
 **Schema Owner**: Remediation Orchestrator (RO) - per [ADR-049](decisions/ADR-049-remediationrequest-crd-ownership.md)
 **Instances Created By**: Gateway Service

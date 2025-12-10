@@ -291,3 +291,4 @@ Before creating a new document, verify:
 | v1.0 | 2025-12-06 | Initial authoritative structure definition |
 
 
+

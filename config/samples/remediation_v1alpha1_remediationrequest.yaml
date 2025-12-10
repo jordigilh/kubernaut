@@ -1,4 +1,4 @@
-apiVersion: remediation.kubernaut.io/v1alpha1
+apiVersion: remediation.kubernaut.ai/v1alpha1
 kind: RemediationRequest
 metadata:
   labels:

@@ -8,7 +8,7 @@ metadata:
 spec:
   # Parent reference for audit trail
   remediationRequestRef:
-    apiVersion: remediation.kubernaut.io/v1alpha1
+    apiVersion: remediation.kubernaut.ai/v1alpha1
     kind: RemediationRequest
     name: sample-remediation-request
     namespace: default

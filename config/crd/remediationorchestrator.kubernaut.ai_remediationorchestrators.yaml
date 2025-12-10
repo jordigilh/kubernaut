@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: remediationorchestrators.remediationorchestrator.kubernaut.io
+  name: remediationorchestrators.remediationorchestrator.kubernaut.ai
 spec:
-  group: remediationorchestrator.kubernaut.io
+  group: remediationorchestrator.kubernaut.ai
   names:
     kind: RemediationOrchestrator
     listKind: RemediationOrchestratorList

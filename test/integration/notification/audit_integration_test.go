@@ -370,34 +370,27 @@ var _ = Describe("Notification Audit Integration Tests (Real Infrastructure)", f
 			}, 5*time.Second, 200*time.Millisecond).Should(Equal(2),
 				"Both events should be queryable by correlation_id")
 
-			// Verify event types are correct
+			// Verify event types are correct (order-independent check)
 			rows, err := db.Query(`
-				SELECT event_type, outcome FROM audit_events
+				SELECT event_type, event_outcome FROM audit_events
 				WHERE correlation_id = $1
-				ORDER BY event_timestamp
 			`, correlationID)
 			Expect(err).ToNot(HaveOccurred())
 			defer rows.Close()
 
-			var events []struct {
-				EventType string
-				Outcome   string
-			}
+			eventTypes := make(map[string]string) // event_type -> outcome
 			for rows.Next() {
-				var e struct {
-					EventType string
-					Outcome   string
-				}
-				err := rows.Scan(&e.EventType, &e.Outcome)
+				var eventType, outcome string
+				err := rows.Scan(&eventType, &outcome)
 				Expect(err).ToNot(HaveOccurred())
-				events = append(events, e)
+				eventTypes[eventType] = outcome
 			}
 
-			Expect(events).To(HaveLen(2), "Should find 2 events with same correlation_id")
-			Expect(events[0].EventType).To(Equal("notification.message.sent"))
-			Expect(events[0].Outcome).To(Equal("success"))
-			Expect(events[1].EventType).To(Equal("notification.message.failed"))
-			Expect(events[1].Outcome).To(Equal("failure"))
+			Expect(eventTypes).To(HaveLen(2), "Should find 2 events with same correlation_id")
+			Expect(eventTypes).To(HaveKey("notification.message.sent"))
+			Expect(eventTypes["notification.message.sent"]).To(Equal("success"))
+			Expect(eventTypes).To(HaveKey("notification.message.failed"))
+			Expect(eventTypes["notification.message.failed"]).To(Equal("failure"))
 		})
 	})
 
@@ -446,7 +439,7 @@ var _ = Describe("Notification Audit Integration Tests (Real Infrastructure)", f
 			Eventually(func() error {
 				return db.QueryRow(`
 					SELECT
-						event_type, event_category, operation, outcome,
+						event_type, event_category, event_action, event_outcome,
 						actor_type, actor_id, resource_type, resource_id,
 						retention_days
 					FROM audit_events

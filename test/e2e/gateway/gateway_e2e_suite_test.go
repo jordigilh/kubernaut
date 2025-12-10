@@ -19,8 +19,10 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -100,6 +102,30 @@ var _ = BeforeSuite(func() {
 	// Set Gateway URL and namespace (localhost:8080 is exposed via Kind extraPortMappings or NodePort)
 	gatewayURL = "http://localhost:8080"
 	gatewayNamespace = "kubernaut-system" // Standard namespace for Gateway deployment
+
+	// Deploy Gateway and Redis in kubernaut-system namespace (ONCE for all tests)
+	logger.Info("Deploying Gateway services in kubernaut-system namespace...")
+	err = infrastructure.DeployTestServices(ctx, gatewayNamespace, kubeconfigPath, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Wait for Gateway HTTP endpoint to be ready (pods can be Running but HTTP not yet accepting)
+	logger.Info("Waiting for Gateway HTTP endpoint to be ready...")
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	var gatewayReady bool
+	for i := 0; i < 30; i++ { // 30 attempts, 2 seconds each = 60 seconds max
+		resp, err := httpClient.Get(gatewayURL + "/health")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			gatewayReady = true
+			logger.Info("✅ Gateway HTTP endpoint ready", "attempts", i+1)
+			break
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(2 * time.Second)
+	}
+	Expect(gatewayReady).To(BeTrue(), "Gateway HTTP endpoint should be ready within 60 seconds")
 
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	logger.Info("Cluster Setup Complete - Tests can now deploy services per-namespace")

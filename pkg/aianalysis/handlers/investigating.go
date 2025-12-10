@@ -52,8 +52,10 @@ const (
 )
 
 // HolmesGPTClientInterface defines the interface for HolmesGPT-API calls
+// BR-AI-082: Updated to include InvestigateRecovery for recovery flow
 type HolmesGPTClientInterface interface {
 	Investigate(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
+	InvestigateRecovery(ctx context.Context, req *client.RecoveryRequest) (*client.IncidentResponse, error)
 }
 
 // InvestigatingHandler handles the Investigating phase
@@ -73,15 +75,31 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger)
 
 // Handle processes the Investigating phase
 // BR-AI-007: Call HolmesGPT-API and update status
+// BR-AI-083: Route to recovery endpoint when IsRecoveryAttempt=true
 func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	h.log.Info("Processing Investigating phase", "name", analysis.Name)
+	h.log.Info("Processing Investigating phase",
+		"name", analysis.Name,
+		"isRecoveryAttempt", analysis.Spec.IsRecoveryAttempt,
+	)
 
-	// Build request from spec
-	req := h.buildRequest(analysis)
-
-	// Call HolmesGPT-API and track duration (per crd-schema.md: InvestigationTime)
+	// Track duration (per crd-schema.md: InvestigationTime)
 	startTime := time.Now()
-	resp, err := h.hgClient.Investigate(ctx, req)
+
+	var resp *client.IncidentResponse
+	var err error
+
+	// BR-AI-083: Route based on IsRecoveryAttempt
+	if analysis.Spec.IsRecoveryAttempt {
+		h.log.Info("Using recovery endpoint",
+			"attemptNumber", analysis.Spec.RecoveryAttemptNumber,
+		)
+		recoveryReq := h.buildRecoveryRequest(analysis)
+		resp, err = h.hgClient.InvestigateRecovery(ctx, recoveryReq)
+	} else {
+		req := h.buildRequest(analysis)
+		resp, err = h.hgClient.Investigate(ctx, req)
+	}
+
 	investigationTime := time.Since(startTime).Milliseconds()
 
 	if err != nil {
@@ -96,11 +114,13 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 }
 
 // buildRequest constructs the HolmesGPT-API request from AIAnalysis spec
+// BR-AI-080: Updated with all required HAPI fields per NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md
 // Per crd-schema.md: Include enrichment data (owner chain, detected labels) for AI context
 func (h *InvestigatingHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *client.IncidentRequest {
 	spec := analysis.Spec.AnalysisRequest.SignalContext
+	enrichment := spec.EnrichmentResults
 
-	// Build context string
+	// Build context string for legacy compatibility
 	contextStr := fmt.Sprintf("Incident in %s environment, target: %s/%s/%s, signal: %s",
 		spec.Environment,
 		spec.TargetResource.Namespace,
@@ -109,36 +129,139 @@ func (h *InvestigatingHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *
 		spec.SignalType,
 	)
 
+	// BR-AI-080: Build request with all required HAPI fields
 	req := &client.IncidentRequest{
+		// REQUIRED fields per HAPI OpenAPI spec
+		IncidentID:        analysis.Name,              // Q1: Use CR name
+		RemediationID:     analysis.Spec.RemediationID, // Q2: Use spec field (MANDATORY per DD-WORKFLOW-002)
+		SignalType:        spec.SignalType,
+		Severity:          spec.Severity,
+		SignalSource:      "kubernaut",
+		ResourceNamespace: spec.TargetResource.Namespace,
+		ResourceKind:      spec.TargetResource.Kind,
+		ResourceName:      spec.TargetResource.Name,
+		ErrorMessage:      "", // Populated from enrichment if available
+		Environment:       spec.Environment,
+		Priority:          spec.BusinessPriority,
+		RiskTolerance:     getOrDefault(enrichment.CustomLabels, "risk_tolerance", "medium"),
+		BusinessCategory:  getOrDefault(enrichment.CustomLabels, "business_category", "standard"),
+		ClusterName:       getOrDefault(enrichment.CustomLabels, "cluster_name", "default"),
+
+		// Legacy field for backward compatibility
 		Context: contextStr,
 	}
 
-	// Add enrichment data if available
-	enrichment := spec.EnrichmentResults
+	// Add enrichment results if available
+	if enrichment.DetectedLabels != nil || len(enrichment.CustomLabels) > 0 || len(enrichment.OwnerChain) > 0 {
+		req.EnrichmentResults = &client.EnrichmentResults{}
 
-	// Add owner chain for RCA context (DD-WORKFLOW-001 v1.7)
-	if len(enrichment.OwnerChain) > 0 {
-		req.OwnerChain = make([]client.OwnerChainEntry, 0, len(enrichment.OwnerChain))
-		for _, entry := range enrichment.OwnerChain {
-			req.OwnerChain = append(req.OwnerChain, client.OwnerChainEntry{
-				Namespace: entry.Namespace,
-				Kind:      entry.Kind,
-				Name:      entry.Name,
-			})
+		// Add detected labels for workflow filtering (DD-WORKFLOW-001)
+		if enrichment.DetectedLabels != nil {
+			req.EnrichmentResults.DetectedLabels = h.convertDetectedLabelsToMap(enrichment.DetectedLabels)
+		}
+
+		// Add custom labels if present
+		if len(enrichment.CustomLabels) > 0 {
+			req.EnrichmentResults.CustomLabels = enrichment.CustomLabels
+		}
+
+		// Add owner chain for RCA context (DD-WORKFLOW-001 v1.7)
+		if len(enrichment.OwnerChain) > 0 {
+			req.EnrichmentResults.OwnerChain = make([]client.OwnerChainEntry, 0, len(enrichment.OwnerChain))
+			for _, entry := range enrichment.OwnerChain {
+				req.EnrichmentResults.OwnerChain = append(req.EnrichmentResults.OwnerChain, client.OwnerChainEntry{
+					Namespace: entry.Namespace,
+					Kind:      entry.Kind,
+					Name:      entry.Name,
+				})
+			}
 		}
 	}
 
-	// Add detected labels for workflow filtering (DD-WORKFLOW-001)
-	if enrichment.DetectedLabels != nil {
-		req.DetectedLabels = h.convertDetectedLabelsToMap(enrichment.DetectedLabels)
+	return req
+}
+
+// buildRecoveryRequest constructs the recovery request for failed workflow attempts
+// BR-AI-082: RecoveryRequest with previous execution context
+// DD-RECOVERY-002: Direct recovery flow implementation
+func (h *InvestigatingHandler) buildRecoveryRequest(analysis *aianalysisv1.AIAnalysis) *client.RecoveryRequest {
+	spec := analysis.Spec.AnalysisRequest.SignalContext
+	enrichment := spec.EnrichmentResults
+
+	req := &client.RecoveryRequest{
+		// REQUIRED fields
+		IncidentID:    analysis.Name,
+		RemediationID: analysis.Spec.RemediationID,
+
+		// Recovery-specific fields
+		IsRecoveryAttempt:     true,
+		RecoveryAttemptNumber: analysis.Spec.RecoveryAttemptNumber,
+
+		// Default values
+		Environment:      spec.Environment,
+		Priority:         spec.BusinessPriority,
+		RiskTolerance:    getOrDefault(enrichment.CustomLabels, "risk_tolerance", "medium"),
+		BusinessCategory: getOrDefault(enrichment.CustomLabels, "business_category", "standard"),
 	}
 
-	// Add custom labels if present
-	if len(enrichment.CustomLabels) > 0 {
-		req.CustomLabels = enrichment.CustomLabels
+	// Optional signal context (may have changed since initial)
+	req.SignalType = strPtr(spec.SignalType)
+	req.Severity = strPtr(spec.Severity)
+	req.ResourceNamespace = strPtr(spec.TargetResource.Namespace)
+	req.ResourceKind = strPtr(spec.TargetResource.Kind)
+	req.ResourceName = strPtr(spec.TargetResource.Name)
+
+	// Map previous execution context (use most recent)
+	if len(analysis.Spec.PreviousExecutions) > 0 {
+		prevExec := analysis.Spec.PreviousExecutions[len(analysis.Spec.PreviousExecutions)-1]
+		req.PreviousExecution = h.buildPreviousExecution(prevExec)
 	}
 
 	return req
+}
+
+// buildPreviousExecution maps CRD PreviousExecution to client.PreviousExecution
+func (h *InvestigatingHandler) buildPreviousExecution(prev aianalysisv1.PreviousExecution) *client.PreviousExecution {
+	result := &client.PreviousExecution{
+		WorkflowExecutionRef: prev.WorkflowExecutionRef,
+		OriginalRCA: client.OriginalRCA{
+			Summary:             prev.OriginalRCA.Summary,
+			SignalType:          prev.OriginalRCA.SignalType,
+			Severity:            prev.OriginalRCA.Severity,
+			ContributingFactors: prev.OriginalRCA.ContributingFactors,
+		},
+		SelectedWorkflow: client.SelectedWorkflowSummary{
+			WorkflowID:     prev.SelectedWorkflow.WorkflowID,
+			Version:        prev.SelectedWorkflow.Version,
+			ContainerImage: prev.SelectedWorkflow.ContainerImage,
+			Parameters:     prev.SelectedWorkflow.Parameters,
+			Rationale:      prev.SelectedWorkflow.Rationale,
+		},
+		Failure: client.ExecutionFailure{
+			FailedStepIndex: prev.Failure.FailedStepIndex,
+			FailedStepName:  prev.Failure.FailedStepName,
+			Reason:          prev.Failure.Reason,
+			Message:         prev.Failure.Message,
+			ExitCode:        prev.Failure.ExitCode,
+			FailedAt:        prev.Failure.FailedAt.Format("2006-01-02T15:04:05Z07:00"),
+			ExecutionTime:   prev.Failure.ExecutionTime,
+		},
+	}
+
+	return result
+}
+
+// getOrDefault gets a value from custom labels or returns default
+func getOrDefault(labels map[string][]string, key, defaultVal string) string {
+	if values, ok := labels[key]; ok && len(values) > 0 {
+		return values[0]
+	}
+	return defaultVal
+}
+
+// strPtr returns a pointer to the string
+func strPtr(s string) *string {
+	return &s
 }
 
 // convertDetectedLabelsToMap converts DetectedLabels struct to map for API request

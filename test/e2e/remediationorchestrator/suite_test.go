@@ -263,10 +263,10 @@ func deleteKindCluster(name string) {
 
 func installCRDs() {
 	crdPaths := []string{
-		"config/crd/bases/remediation.kubernaut.io_remediationrequests.yaml",
-		"config/crd/bases/remediation.kubernaut.io_remediationapprovalrequests.yaml",
+		"config/crd/bases/remediation.kubernaut.ai_remediationrequests.yaml",
+		"config/crd/bases/remediation.kubernaut.ai_remediationapprovalrequests.yaml",
 		"config/crd/bases/signalprocessing.kubernaut.io_signalprocessings.yaml",
-		"config/crd/bases/aianalysis.kubernaut.io_aianalyses.yaml",
+		"config/crd/bases/aianalysis.kubernaut.ai_aianalyses.yaml",
 		"config/crd/bases/workflowexecution.kubernaut.io_workflowexecutions.yaml",
 		"config/crd/bases/notification.kubernaut.io_notificationrequests.yaml",
 	}
@@ -336,4 +336,5 @@ func deleteTestNamespace(name string) {
 		GinkgoWriter.Printf("⚠️  Failed to delete namespace %s: %v\n", name, err)
 	}
 }
+
 

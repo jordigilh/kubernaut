@@ -379,7 +379,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 						callCount.Add(1)
 						return apierrors.NewForbidden(
-							schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+							schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationrequests"},
 							"test-rr",
 							errors.New("insufficient permissions"),
 						)
@@ -459,7 +459,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 						callCount.Add(1)
 						return apierrors.NewAlreadyExists(
-							schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+							schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationrequests"},
 							"test-rr",
 						)
 					},
