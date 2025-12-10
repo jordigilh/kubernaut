@@ -115,10 +115,12 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			By("Waiting for priority assignment")
-			// TDD RED: Controller stub won't set this - test will FAIL
 			Eventually(func() string {
 				var updated signalprocessingv1alpha1.SignalProcessing
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				if updated.Status.PriorityAssignment == nil {
 					return ""
 				}
 				return updated.Status.PriorityAssignment.Priority
@@ -161,6 +163,9 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			Eventually(func() string {
 				var updated signalprocessingv1alpha1.SignalProcessing
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				if updated.Status.PriorityAssignment == nil {
 					return ""
 				}
 				return updated.Status.PriorityAssignment.Priority
@@ -227,6 +232,9 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
 					return ""
 				}
+				if updated.Status.PriorityAssignment == nil {
+					return ""
+				}
 				return updated.Status.PriorityAssignment.Priority
 			}, timeout, interval).Should(Equal("P2"))
 		})
@@ -259,6 +267,9 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			Eventually(func() string {
 				var updated signalprocessingv1alpha1.SignalProcessing
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+					return ""
+				}
+				if updated.Status.PriorityAssignment == nil {
 					return ""
 				}
 				return updated.Status.PriorityAssignment.Priority
@@ -327,6 +338,9 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
 				return ""
 			}
+			if updated.Status.EnvironmentClassification == nil {
+				return ""
+			}
 			return updated.Status.EnvironmentClassification.Environment
 		}, timeout, interval).Should(Equal("production"))
 
@@ -375,6 +389,9 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 		Eventually(func() string {
 			var updated signalprocessingv1alpha1.SignalProcessing
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return ""
+			}
+			if updated.Status.EnvironmentClassification == nil {
 				return ""
 			}
 			return updated.Status.EnvironmentClassification.Environment
@@ -476,6 +493,9 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 		Eventually(func() int {
 			var updated signalprocessingv1alpha1.SignalProcessing
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return 0
+			}
+			if updated.Status.KubernetesContext == nil {
 				return 0
 			}
 			return len(updated.Status.KubernetesContext.OwnerChain)
@@ -743,6 +763,9 @@ var _ = Describe("BR-SP-102: CustomLabels Enable Business-Specific Routing", fun
 		Eventually(func() int {
 			var updated signalprocessingv1alpha1.SignalProcessing
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return 0
+			}
+			if updated.Status.KubernetesContext == nil {
 				return 0
 			}
 			return len(updated.Status.KubernetesContext.CustomLabels)

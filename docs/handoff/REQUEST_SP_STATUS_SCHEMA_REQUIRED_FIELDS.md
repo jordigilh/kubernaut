@@ -136,8 +136,26 @@ sp.Status.EnvironmentClassification = &signalprocessingv1alpha1.EnvironmentClass
 
 | # | Owner | Task | Status |
 |---|-------|------|--------|
-| 1 | **RO Team** | Update 4 tests to include `AssignedAt`/`ClassifiedAt` | ⏳ Pending |
+| 1 | **RO Team** | Update `updateSPStatus` helper to include `AssignedAt`/`ClassifiedAt` | ✅ Complete (2025-12-10) |
 | 2 | **SP Team** | No action needed - schema is correct | ✅ Complete |
+
+### RO Fix Applied
+
+Updated `test/integration/remediationorchestrator/suite_test.go`:
+```go
+sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+    Environment:  "production",
+    Confidence:   0.95,
+    Source:       "test",
+    ClassifiedAt: now, // REQUIRED per SP CRD schema
+}
+sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+    Priority:   "P1",
+    Confidence: 0.90,
+    Source:     "test",
+    AssignedAt: now, // REQUIRED per SP CRD schema
+}
+```
 
 ---
 

@@ -11,6 +11,10 @@ nodes:
   - containerPort: 30185  # WorkflowExecution metrics NodePort
     hostPort: 9185        # Port on host machine (localhost:9185)
     protocol: TCP
+  # Data Storage for BR-WE-005 audit events (per DD-TEST-001)
+  - containerPort: 30081  # Data Storage HTTP NodePort
+    hostPort: 8081        # Port on host machine (localhost:8081)
+    protocol: TCP
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration

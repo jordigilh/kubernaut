@@ -1078,8 +1078,14 @@ class TestRealRecoveryAnalysis:
 
 @pytest.mark.integration
 @pytest.mark.real_llm
+@pytest.mark.skip(reason="DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0")
 class TestRealPostExecAnalysis:
-    """Tests for real post-execution analysis using configured LLM provider"""
+    """Tests for real post-execution analysis using configured LLM provider
+
+    NOTE: Skipped in V1.0 per DD-017 (Effectiveness Monitor V1.1 Deferral).
+    The /postexec/analyze endpoint is not exposed until V1.1 when the
+    Effectiveness Monitor service (the consumer) is available.
+    """
 
     def test_postexec_analysis_with_real_llm(self, real_llm_client, llm_config):
         """

@@ -778,6 +778,16 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
         "signal_type": request_data.get("signal_type")
     })
 
+    # BR-HAPI-212: Check mock mode BEFORE any LLM-related initialization
+    from src.mock_responses import is_mock_mode_enabled, generate_mock_incident_response
+    if is_mock_mode_enabled():
+        logger.info({
+            "event": "mock_mode_active",
+            "incident_id": incident_id,
+            "message": "Returning deterministic mock response (MOCK_LLM_MODE=true)"
+        })
+        return generate_mock_incident_response(request_data)
+
     # Use HolmesGPT SDK for AI-powered analysis
     try:
         # Create base investigation prompt

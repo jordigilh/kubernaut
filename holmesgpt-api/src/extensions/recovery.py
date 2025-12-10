@@ -1403,6 +1403,16 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
         "is_recovery_attempt": is_recovery
     })
 
+    # BR-HAPI-212: Check mock mode BEFORE any LLM-related initialization
+    from src.mock_responses import is_mock_mode_enabled, generate_mock_recovery_response
+    if is_mock_mode_enabled():
+        logger.info({
+            "event": "mock_mode_active",
+            "incident_id": incident_id,
+            "message": "Returning deterministic mock response (MOCK_LLM_MODE=true)"
+        })
+        return generate_mock_recovery_response(request_data)
+
     # BR-AUDIT-001: Extract remediation_id for audit trail correlation (DD-WORKFLOW-002 v2.2)
     remediation_id = request_data.get("remediation_id")
     if not remediation_id:

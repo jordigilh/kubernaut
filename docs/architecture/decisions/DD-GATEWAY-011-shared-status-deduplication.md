@@ -70,19 +70,19 @@ This design decision establishes a **shared status ownership pattern** for the `
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  GATEWAY SERVICE                                                    │
+│  GATEWAY SERVICE (Simplified - v1.3)                                │
 │                                                                     │
 │  1. Signal arrives via webhook                                      │
-│  2. Check informer cache: RR with fingerprint exists?               │
-│     ├── Yes + in-progress → Update RR.Status.Deduplication         │
-│     ├── Yes + blocked → Return 429 (signal blocked)                │
-│     ├── Yes + terminal → Check consecutive failures                │
-│     │   ├── ≥3 failures → Create RR with phase=Blocked             │
-│     │   └── <3 failures → Create new RR                            │
-│     └── No → Create new RR                                         │
+│  2. Check informer cache: Active RR with fingerprint exists?        │
+│     ├── Yes (active/non-terminal) → Update RR.Status.Deduplication │
+│     └── No (none or all terminal) → Create new RR                  │
 │                                                                     │
-│  OWNS: status.deduplication.*                                       │
-│  READS: status.overallPhase (to determine if in-progress/terminal) │
+│  OWNS: status.deduplication.*, status.stormAggregation.*            │
+│  READS: status.overallPhase (to determine if active/terminal)       │
+│                                                                     │
+│  NOTE: Gateway does NOT count consecutive failures (moved to RO)    │
+│  NOTE: Gateway does NOT create RR with phase=Blocked               │
+│  See: BR-ORCH-042 for consecutive failure blocking                 │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
                               │
@@ -94,13 +94,33 @@ This design decision establishes a **shared status ownership pattern** for the `
 │  1. Watches RR for new/updated resources                           │
 │  2. Creates child CRDs (SP, AI, WE, NR)                            │
 │  3. Updates RR.Status (phase, refs, timestamps)                    │
-│  4. Sets phase=Blocked if consecutive failures detected            │
+│  4. On consecutive failures (≥3): Holds RR in Blocked phase        │
+│     with BlockedUntil cooldown (default: 1 hour)                   │
+│  5. After cooldown: Transitions Blocked → Failed (terminal)        │
 │                                                                     │
-│  OWNS: status.overallPhase, status.*Ref, status.timestamps, etc.   │
+│  OWNS: status.overallPhase, status.*Ref, status.timestamps,        │
+│        status.blockedUntil, status.blockReason                     │
 │  READS: status.deduplication (for logging/metrics)                 │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+### Phase Classification (v1.3 Update)
+
+| Phase | Terminal? | Gateway Behavior |
+|-------|-----------|------------------|
+| Pending | No | Update deduplication |
+| Processing | No | Update deduplication |
+| Analyzing | No | Update deduplication |
+| Approving | No | Update deduplication |
+| Executing | No | Update deduplication |
+| Recovering | No | Update deduplication |
+| **Blocked** | **No** | Update deduplication (prevents new RR creation) |
+| Completed | Yes | Create new RR |
+| Failed | Yes | Create new RR |
+| Timeout | Yes | Create new RR |
+
+**Key Change (v1.3)**: `Blocked` is now a **non-terminal** phase owned by RO. This allows RO to hold blocked signals for a cooldown period, preventing Gateway from creating new RRs.
 
 ---
 
@@ -310,8 +330,15 @@ func (r *Reconciler) UpdatePhase(ctx context.Context, rr *RemediationRequest, ph
 | [ADR-001](ADR-001-gateway-ro-deduplication-communication.md) | Full decision record with all options |
 | [BR-GATEWAY-181-185](../../requirements/BR-GATEWAY-181-185-shared-status-deduplication.md) | Gateway business requirements |
 | [BR-ORCH-038](../../requirements/BR-ORCH-038-preserve-gateway-deduplication.md) | RO business requirement |
+| [BR-ORCH-042](../../requirements/BR-ORCH-042-consecutive-failure-blocking.md) | **NEW (v1.3)**: Consecutive failure blocking with cooldown |
 | [DD-GATEWAY-009](DD-GATEWAY-009-state-based-deduplication.md) | Previous deduplication design |
 | [Implementation Plan](../../services/stateless/gateway-service/implementation/plans/DD_GATEWAY_011_IMPLEMENTATION_PLAN_V1.0.md) | 8-day implementation plan |
+
+### Superseded Requirements
+
+| BR | Status | Reason |
+|----|--------|--------|
+| **BR-GATEWAY-184** | ⛔ **SUPERSEDED** | Consecutive failure blocking moved from Gateway to RO (BR-ORCH-042). Gateway should NOT count failures or create Blocked RRs. |
 
 ---
 
@@ -319,6 +346,7 @@ func (r *Reconciler) UpdatePhase(ctx context.Context, rr *RemediationRequest, ph
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | 2025-12-10 | **ARCHITECTURAL CHANGE**: Moved consecutive failure blocking from Gateway to RO (BR-ORCH-042). Gateway simplified: only checks for active RR, no failure counting. `Blocked` is now a non-terminal phase owned by RO. BR-GATEWAY-184 superseded. |
 | 1.2 | 2025-12-07 | Added link to implementation plan |
 | 1.1 | 2025-12-07 | Added storm aggregation to Gateway-owned status section |
 | 1.0 | 2025-12-07 | Initial design (replaces rejected SignalIngestion approach) |

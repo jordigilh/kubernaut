@@ -372,6 +372,10 @@ func (h *InvestigatingHandler) processResponse(ctx context.Context, analysis *ai
 	analysis.Status.TargetInOwnerChain = &targetInOwnerChain
 	analysis.Status.Warnings = resp.Warnings
 
+	// Store investigation ID for correlation (per crd-schema.md)
+	// IncidentID from HAPI serves as the investigation correlation ID
+	analysis.Status.InvestigationID = resp.IncidentID
+
 	// Store root cause analysis (if present)
 	if resp.RootCauseAnalysis != nil {
 		analysis.Status.RootCause = resp.RootCauseAnalysis.Summary
@@ -412,6 +416,9 @@ func (h *InvestigatingHandler) processResponse(ctx context.Context, analysis *ai
 
 	// Reset retry count on success
 	h.setRetryCount(analysis, 0)
+
+	// Set InvestigationComplete condition
+	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API investigation completed successfully")
 
 	// Transition to Analyzing phase
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
@@ -477,6 +484,7 @@ func (h *InvestigatingHandler) handleWorkflowResolutionFailure(ctx context.Conte
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
 	analysis.Status.Reason = "WorkflowResolutionFailed"
+	analysis.Status.InvestigationID = resp.IncidentID // Per crd-schema.md
 
 	// Use HumanReviewReason enum if available (preferred), else fallback to warning parsing
 	if resp.HumanReviewReason != nil && *resp.HumanReviewReason != "" {
@@ -542,6 +550,7 @@ func (h *InvestigatingHandler) handleProblemResolved(ctx context.Context, analys
 	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
 	analysis.Status.Reason = "WorkflowNotNeeded"
 	analysis.Status.SubReason = "ProblemResolved"
+	analysis.Status.InvestigationID = resp.IncidentID // Per crd-schema.md
 
 	// Use analysis text if available, else construct from warnings
 	// Note: HAPI JSON uses "investigation_summary" but Go client maps to "Analysis"

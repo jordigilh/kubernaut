@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -93,12 +94,44 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 	}
 	fmt.Fprintf(output, "✅ Tekton Pipelines installed\n")
 
-	// Deploy Data Storage Service for audit events (BR-WE-005)
-	fmt.Fprintf(output, "\n🗄️  Deploying Data Storage Service (BR-WE-005 audit events)...\n")
-	if err := DeployDataStorageTestServices(context.Background(), WorkflowExecutionNamespace, kubeconfigPath, output); err != nil {
+	// Deploy Data Storage infrastructure for audit events (BR-WE-005)
+	// Following AIAnalysis E2E pattern: build → load → deploy (runs once, shared by 4 parallel procs)
+	fmt.Fprintf(output, "\n🗄️  Deploying Data Storage infrastructure (BR-WE-005 audit events)...\n")
+
+	// 1. Deploy PostgreSQL
+	fmt.Fprintf(output, "  🐘 Deploying PostgreSQL...\n")
+	if err := deployPostgreSQL(kubeconfigPath, output); err != nil {
+		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
+	}
+
+	// 2. Deploy Redis
+	fmt.Fprintf(output, "  🔴 Deploying Redis...\n")
+	if err := deployRedis(kubeconfigPath, output); err != nil {
+		return fmt.Errorf("failed to deploy Redis: %w", err)
+	}
+
+	// 3. Wait for PostgreSQL and Redis to be ready (DS requires them)
+	fmt.Fprintf(output, "  ⏳ Waiting for PostgreSQL to be ready...\n")
+	if err := waitForDeploymentReady(kubeconfigPath, "postgres", output); err != nil {
+		return fmt.Errorf("PostgreSQL did not become ready: %w", err)
+	}
+	fmt.Fprintf(output, "  ⏳ Waiting for Redis to be ready...\n")
+	if err := waitForDeploymentReady(kubeconfigPath, "redis", output); err != nil {
+		return fmt.Errorf("Redis did not become ready: %w", err)
+	}
+
+	// 4. Build and deploy Data Storage with proper ADR-030 config
+	fmt.Fprintf(output, "  💾 Building and deploying Data Storage...\n")
+	if err := deployDataStorageWithConfig(clusterName, kubeconfigPath, output); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage: %w", err)
 	}
-	fmt.Fprintf(output, "✅ Data Storage Service deployed\n")
+
+	// 5. Wait for DS to be ready
+	fmt.Fprintf(output, "  ⏳ Waiting for Data Storage to be ready...\n")
+	if err := waitForDataStorageReady(kubeconfigPath, output); err != nil {
+		return fmt.Errorf("Data Storage did not become ready: %w", err)
+	}
+	fmt.Fprintf(output, "✅ Data Storage infrastructure deployed\n")
 
 	// Create execution namespace
 	fmt.Fprintf(output, "\n📁 Creating execution namespace %s...\n", ExecutionNamespace)
@@ -500,6 +533,230 @@ func WaitForPipelineRunCompletion(kubeconfigPath, prName, namespace string, time
 			fmt.Fprintf(output, "  PipelineRun status: %s\n", status)
 		}
 	}
+}
+
+// deployDataStorageWithConfig deploys Data Storage with proper ADR-030 configuration
+// This includes ConfigMap, Secrets, and CONFIG_PATH as required by DS
+func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.Writer) error {
+	projectRoot := getProjectRoot()
+
+	// Build Data Storage image
+	fmt.Fprintln(output, "    Building Data Storage image...")
+	buildCmd := exec.Command("podman", "build", "-t", "kubernaut-datastorage:latest",
+		"-f", "docker/data-storage.Dockerfile", ".")
+	buildCmd.Dir = projectRoot
+	buildCmd.Stdout = output
+	buildCmd.Stderr = output
+	if err := buildCmd.Run(); err != nil {
+		// Try docker as fallback
+		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-datastorage:latest",
+			"-f", "docker/data-storage.Dockerfile", ".")
+		buildCmd.Dir = projectRoot
+		buildCmd.Stdout = output
+		buildCmd.Stderr = output
+		if err := buildCmd.Run(); err != nil {
+			return fmt.Errorf("failed to build Data Storage: %w", err)
+		}
+	}
+
+	// Load into Kind
+	fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
+	if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", output); err != nil {
+		return fmt.Errorf("failed to load image: %w", err)
+	}
+
+	// Deploy ConfigMap with ADR-030 configuration
+	configMapManifest := `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datastorage-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      metricsPort: 9090
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
+      gracefulShutdownTimeout: 30s
+    database:
+      host: postgres
+      port: 5432
+      name: action_history
+      ssl_mode: disable
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: 5m
+      # ADR-030 Section 6: Secrets from file
+      secretsFile: /etc/datastorage/secrets/db-credentials.yaml
+      usernameKey: username
+      passwordKey: password
+    redis:
+      addr: redis:6379
+      db: 0
+      dlq_stream_name: audit_dlq
+      dlq_max_len: 10000
+      dlq_consumer_group: audit_processors
+      # ADR-030 Section 6: Secrets from file
+      secretsFile: /etc/datastorage/secrets/redis-credentials.yaml
+      passwordKey: password
+    logging:
+      level: info
+      format: json
+`
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(configMapManifest)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create ConfigMap: %w", err)
+	}
+
+	// Deploy Secret with credentials in YAML format (ADR-030 Section 6)
+	secretManifest := `
+apiVersion: v1
+kind: Secret
+metadata:
+  name: datastorage-secrets
+  namespace: kubernaut-system
+stringData:
+  db-credentials.yaml: |
+    username: slm_user
+    password: test_password
+  redis-credentials.yaml: |
+    password: ""
+`
+	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(secretManifest)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Secret: %w", err)
+	}
+
+	// Deploy Data Storage with proper volumes and CONFIG_PATH
+	// Note: Image name is localhost/kubernaut-datastorage:latest when loaded via kind load
+	deploymentManifest := `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datastorage
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datastorage
+  template:
+    metadata:
+      labels:
+        app: datastorage
+    spec:
+      containers:
+      - name: datastorage
+        image: localhost/kubernaut-datastorage:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: CONFIG_PATH
+          value: /etc/datastorage/config.yaml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/datastorage
+          readOnly: true
+        - name: secrets
+          mountPath: /etc/datastorage/secrets
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: datastorage-config
+      - name: secrets
+        secret:
+          secretName: datastorage-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datastorage
+  namespace: kubernaut-system
+spec:
+  type: ClusterIP
+  selector:
+    app: datastorage
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datastorage-service
+  namespace: kubernaut-system
+spec:
+  type: ClusterIP
+  selector:
+    app: datastorage
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+`
+	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(deploymentManifest)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	return cmd.Run()
+}
+
+// waitForDeploymentReady waits for a deployment to be ready in kubernaut-system namespace
+func waitForDeploymentReady(kubeconfigPath, deploymentName string, output io.Writer) error {
+	waitCmd := exec.Command("kubectl", "wait",
+		"-n", WorkflowExecutionNamespace,
+		"--for=condition=available",
+		"deployment/"+deploymentName,
+		"--timeout=120s",
+		"--kubeconfig", kubeconfigPath,
+	)
+	waitCmd.Stdout = output
+	waitCmd.Stderr = output
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("deployment %s did not become available: %w", deploymentName, err)
+	}
+	return nil
+}
+
+// waitForDataStorageReady waits for Data Storage deployment to be ready
+// Uses kubectl wait with 120s timeout (DS may take time to connect to PostgreSQL)
+func waitForDataStorageReady(kubeconfigPath string, output io.Writer) error {
+	if err := waitForDeploymentReady(kubeconfigPath, "datastorage", output); err != nil {
+		return err
+	}
+	// Brief wait for DS to initialize connections to PostgreSQL/Redis
+	time.Sleep(5 * time.Second)
+	return nil
 }
 
 // findProjectRoot finds the project root by looking for go.mod

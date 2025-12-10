@@ -148,13 +148,20 @@ g.client.List(ctx, rrList,
 
 ## BR-GATEWAY-184: Consecutive Failure Blocking
 
-### Description
+> ⛔ **SUPERSEDED (2025-12-10)**: This requirement has been moved to RO as **BR-ORCH-042**.
+> Gateway should NOT count consecutive failures or create Blocked RRs.
+> See: [BR-ORCH-042](BR-ORCH-042-consecutive-failure-blocking.md), [DD-GATEWAY-011 v1.3](../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md)
 
-Gateway MUST detect consecutive remediation failures for the same signal fingerprint and create new `RemediationRequest` with `OverallPhase=Blocked` when ≥3 consecutive failures are detected.
+### Description (SUPERSEDED)
+
+~~Gateway MUST detect consecutive remediation failures for the same signal fingerprint and create new `RemediationRequest` with `OverallPhase=Blocked` when ≥3 consecutive failures are detected.~~
+
+**New Design**: RO owns blocking logic. Gateway only checks if an active (non-terminal) RR exists.
 
 ### Priority
 
-**P0 (CRITICAL)** - Prevents infinite failure loops
+~~**P0 (CRITICAL)** - Prevents infinite failure loops~~
+**N/A** - Superseded by BR-ORCH-042
 
 ### Rationale
 

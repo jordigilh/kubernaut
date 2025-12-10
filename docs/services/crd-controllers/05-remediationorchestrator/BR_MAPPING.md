@@ -69,6 +69,14 @@ This document maps RemediationOrchestrator business requirements (BR-ORCH-XXX) t
 | **BR-ORCH-040** | Prometheus Metrics Correctness | P0 | ✅ Complete | [DD-005](../../../architecture/decisions/DD-005-metrics-naming-convention.md) | `prometheus.go` |
 | **BR-ORCH-041** | Audit Trail Integration | P0 | ✅ Complete | [DD-AUDIT-003](../../../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md) | `helpers_test.go`, `audit_integration_test.go` |
 
+### Category 8: Failure Handling (V1.0 - Dec 2025)
+
+| BR ID | Title | Priority | Status | BR File | Test File |
+|-------|-------|----------|--------|---------|-----------|
+| **BR-ORCH-042** | Consecutive Failure Blocking with Cooldown | P0 | 📋 Planned | [BR-ORCH-042](../../../requirements/BR-ORCH-042-consecutive-failure-blocking.md) | `consecutive_failure_test.go` (planned) |
+
+> **Note**: BR-ORCH-042 supersedes BR-GATEWAY-184. Consecutive failure blocking is now owned by RO, not Gateway. See [DD-GATEWAY-011 v1.3](../../../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md).
+
 ---
 
 ## ⚠️ Deprecated/Superseded Business Requirements

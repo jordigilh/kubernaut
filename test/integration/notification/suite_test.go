@@ -47,6 +47,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	// +kubebuilder:scaffold:imports
@@ -66,6 +67,9 @@ var (
 	slackWebhookURL string
 	slackRequests   []SlackWebhookRequest
 	slackRequestsMu sync.Mutex // Thread-safe access for parallel test execution (4 procs)
+
+	// Audit store for testing controller audit emission (Defense-in-Depth Layer 4)
+	testAuditStore *TestAuditStore
 )
 
 // SlackWebhookRequest captures mock Slack webhook calls
@@ -626,4 +630,94 @@ func createSlackWebhookSecret() {
 	Expect(err).ToNot(HaveOccurred(), "Failed to create Slack webhook secret")
 
 	GinkgoWriter.Printf("✅ Slack webhook secret created with URL: %s\n", slackWebhookURL)
+}
+
+// ========================================
+// TEST AUDIT STORE (Defense-in-Depth Layer 4)
+// ========================================
+//
+// TestAuditStore captures audit events emitted by the controller during reconciliation.
+// This enables testing that the controller calls audit methods at the right lifecycle points:
+// - notification.message.sent on successful delivery
+// - notification.message.failed on failed delivery
+//
+// See: BR-NOT-062, BR-NOT-063, BR-NOT-064
+
+// TestAuditStore implements audit.AuditStore for testing
+type TestAuditStore struct {
+	events []*audit.AuditEvent
+	mu     sync.Mutex
+	closed bool
+}
+
+// NewTestAuditStore creates a new test audit store
+func NewTestAuditStore() *TestAuditStore {
+	return &TestAuditStore{
+		events: []*audit.AuditEvent{},
+	}
+}
+
+// StoreAudit stores an audit event (implements audit.AuditStore)
+func (s *TestAuditStore) StoreAudit(ctx context.Context, event *audit.AuditEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, event)
+	return nil
+}
+
+// Close closes the audit store (implements audit.AuditStore)
+func (s *TestAuditStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	return nil
+}
+
+// GetEvents returns all captured audit events (for test assertions)
+func (s *TestAuditStore) GetEvents() []*audit.AuditEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make([]*audit.AuditEvent, len(s.events))
+	copy(result, s.events)
+	return result
+}
+
+// GetEventsByType returns events filtered by event type (for test assertions)
+func (s *TestAuditStore) GetEventsByType(eventType string) []*audit.AuditEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var result []*audit.AuditEvent
+	for _, e := range s.events {
+		if e.EventType == eventType {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+// GetEventsByResourceID returns events filtered by resource ID (for test assertions)
+func (s *TestAuditStore) GetEventsByResourceID(resourceID string) []*audit.AuditEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var result []*audit.AuditEvent
+	for _, e := range s.events {
+		if e.ResourceID == resourceID {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+// Clear removes all captured events (for test isolation)
+func (s *TestAuditStore) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = []*audit.AuditEvent{}
+}
+
+// EventCount returns the number of captured events
+func (s *TestAuditStore) EventCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.events)
 }

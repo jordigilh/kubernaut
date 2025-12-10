@@ -110,10 +110,13 @@ class TestEndToEndFlow:
         assert "strategies" in data
         assert "analysis_confidence" in data
 
+    @pytest.mark.skip(reason="DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0")
     def test_postexec_endpoint_end_to_end(self, client, sample_postexec_request):
         """
         Business Requirement: Complete post-exec flow
         Expected: Request flows through all layers successfully
+
+        NOTE: Skipped in V1.0 per DD-017 (Effectiveness Monitor V1.1 Deferral).
         """
         response = client.post("/api/v1/postexec/analyze", json=sample_postexec_request)
 

@@ -1041,6 +1041,115 @@ import remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 
 ---
 
+## 🚨 UPDATE: DD-GATEWAY-011 v1.3 - Consecutive Failure Blocking Moved to RO (2025-12-10)
+
+### Summary
+
+**BR-GATEWAY-184 is SUPERSEDED by BR-ORCH-042**.
+
+Consecutive failure blocking logic has been moved from Gateway to Remediation Orchestrator for cleaner separation of concerns.
+
+### What Changed
+
+| Aspect | Previous (v1.2) | New (v1.3) |
+|--------|-----------------|------------|
+| **Failure counting** | Gateway counted consecutive failures | **RO counts failures** |
+| **Blocked RR creation** | Gateway created RR with `phase=Blocked` | **RO holds RR in Blocked phase** |
+| **`Blocked` phase** | Unclear if terminal | **Non-terminal** (prevents new RR creation) |
+| **Cooldown** | Not specified | **1 hour** (configurable) |
+
+### Gateway Team: Required Changes
+
+**REMOVE** from Gateway:
+```go
+// ❌ REMOVE - No longer Gateway's responsibility
+func (g *Gateway) ShouldBlock(ctx context.Context, fingerprint string) bool {
+    // Don't count consecutive failures
+    // Don't create RR with phase=Blocked
+}
+```
+
+**SIMPLIFIED Gateway Logic**:
+```go
+// ✅ Gateway only checks if active RR exists
+func (g *Gateway) HandleSignal(ctx context.Context, signal Signal) error {
+    fingerprint := signal.Fingerprint()
+
+    // Check for ANY active (non-terminal) RR with this fingerprint
+    activeRR := g.findActiveRR(ctx, fingerprint)
+
+    if activeRR != nil {
+        // Active RR exists - update deduplication, don't create new
+        // NOTE: Blocked is now non-terminal, so blocked RRs are "active"
+        return g.updateDeduplication(ctx, activeRR, signal)
+    }
+
+    // No active RR - create new one
+    return g.createRemediationRequest(ctx, signal)
+}
+
+// Updated: Blocked is NOT terminal
+func isTerminalPhase(phase string) bool {
+    return phase == "Completed" || phase == "Failed" || phase == "Timeout"
+    // NOTE: "Blocked" is NOT in this list - it's non-terminal
+}
+```
+
+### Phase Classification Update
+
+| Phase | Terminal? | Gateway Behavior |
+|-------|-----------|------------------|
+| Pending | No | Update deduplication |
+| Processing | No | Update deduplication |
+| Analyzing | No | Update deduplication |
+| Approving | No | Update deduplication |
+| Executing | No | Update deduplication |
+| Recovering | No | Update deduplication |
+| **Blocked** | **No (CHANGED)** | Update deduplication |
+| Completed | Yes | Create new RR |
+| Failed | Yes | Create new RR |
+| Timeout | Yes | Create new RR |
+
+### RO Responsibility (BR-ORCH-042)
+
+RO now handles:
+1. **Counting consecutive failures** for a fingerprint
+2. **Transitioning to Blocked** when ≥3 consecutive failures
+3. **Setting `BlockedUntil`** = now + 1 hour
+4. **Auto-expiring** Blocked → Failed after cooldown
+
+### New RR Status Fields (RO-Owned)
+
+```go
+// Added to RemediationRequestStatus
+BlockedUntil *metav1.Time `json:"blockedUntil,omitempty"`  // When cooldown expires
+BlockReason  *string      `json:"blockReason,omitempty"`   // Why blocked
+```
+
+### References
+
+| Document | Purpose |
+|----------|---------|
+| [DD-GATEWAY-011 v1.3](../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md) | Updated design decision |
+| [BR-ORCH-042](../requirements/BR-ORCH-042-consecutive-failure-blocking.md) | New RO business requirement |
+| [BR-GATEWAY-184](../requirements/BR-GATEWAY-181-185-shared-status-deduplication.md) | **SUPERSEDED** |
+| [BR-ORCH-042 Implementation Plan](../services/crd-controllers/05-remediationorchestrator/implementation/BR-ORCH-042_IMPLEMENTATION_PLAN.md) | RO implementation plan |
+
+### Gateway Team Action Required
+
+| # | Task | Priority |
+|---|------|----------|
+| 1 | Remove `ShouldBlock()` function | P0 |
+| 2 | Remove consecutive failure counting | P0 |
+| 3 | Update `isTerminalPhase()` - exclude `Blocked` | P0 |
+| 4 | Update unit tests | P1 |
+
+### Questions?
+
+Contact RO Team.
+
+---
+
 ## 📝 Document History
 
 | Version | Date | Author | Changes |
@@ -1056,4 +1165,5 @@ import remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 | v1.8 | 2025-12-07 | RO Team | **UNBLOCKED GATEWAY**: Added `DeduplicationStatus` and `StormAggregationStatus` to RR API types |
 | v1.9 | 2025-12-07 | RO Team | **ACK FOR GATEWAY**: Added authoritative implementation, usage instructions, and RO commitments |
 | v1.10 | 2025-12-07 | Gateway Team | **ADR-049 ACK**: Gateway acknowledges RO owns RR schema. No code changes needed - already imports from `api/remediation/v1alpha1/` |
+| v1.11 | 2025-12-10 | RO Team | **DD-GATEWAY-011 v1.3**: Consecutive failure blocking moved from Gateway to RO (BR-ORCH-042). Gateway simplified: no failure counting, `Blocked` is non-terminal. BR-GATEWAY-184 superseded. |
 

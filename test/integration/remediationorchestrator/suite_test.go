@@ -354,13 +354,19 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 		now := metav1.Now()
 		sp.Status.CompletionTime = &now
 		// Set environment classification for downstream use
+		// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment: "production",
-			Confidence:  0.95,
+			Environment:  "production",
+			Confidence:   0.95,
+			Source:       "test",
+			ClassifiedAt: now, // REQUIRED per SP CRD schema
 		}
+		// Per SP Team Response (2025-12-10): AssignedAt is REQUIRED when struct is set
 		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
 			Priority:   "P1",
 			Confidence: 0.90,
+			Source:     "test",
+			AssignedAt: now, // REQUIRED per SP CRD schema
 		}
 	}
 

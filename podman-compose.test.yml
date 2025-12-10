@@ -94,11 +94,9 @@ services:
       dockerfile: holmesgpt-api/Dockerfile
     environment:
       - CONFIG_PATH=/etc/holmesgpt/config.yaml
-      # Mock LLM for integration tests (cost constraint)
-      - LLM_PROVIDER=openai
-      - LLM_MODEL=openai/gpt-4o-mini
-      - OPENAI_API_KEY=sk-mock-test-key-for-integration
-      - MOCK_LLM_ENABLED=true
+      # Mock LLM mode for integration tests (BR-HAPI-212)
+      # Returns deterministic responses without calling real LLM
+      - MOCK_LLM_MODE=true
       # Data Storage connection
       - DATASTORAGE_URL=http://datastorage:8080
       # Logging
