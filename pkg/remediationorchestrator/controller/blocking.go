@@ -22,6 +22,7 @@ limitations under the License.
 //
 // Business Requirements:
 // - BR-ORCH-042: Consecutive Failure Blocking with Automatic Cooldown
+// - BR-GATEWAY-185 v1.1: Field selector on spec.signalFingerprint (not labels)
 //
 // Design Decision:
 // - DD-GATEWAY-011 v1.3: Blocking logic moved from Gateway to RO
@@ -55,13 +56,10 @@ const (
 	// Reference: BR-ORCH-042.3
 	DefaultCooldownDuration = 1 * time.Hour
 
-	// FingerprintLabelKey is the Kubernetes label key used for fingerprint lookups.
-	// Note: Label values are truncated to 63 chars (K8s limit).
-	// Reference: DD-GATEWAY-011, pkg/gateway/processing/crd_creator.go
-	FingerprintLabelKey = "kubernaut.ai/signal-fingerprint"
-
-	// MaxFingerprintLabelLength is the Kubernetes label value max length.
-	MaxFingerprintLabelLength = 63
+	// FingerprintFieldIndex is the field index key for spec.signalFingerprint.
+	// Used for O(1) lookups. Set up in SetupWithManager().
+	// Reference: BR-GATEWAY-185 v1.1
+	FingerprintFieldIndex = "spec.signalFingerprint"
 )
 
 // Block reason constants
@@ -71,11 +69,12 @@ const (
 )
 
 // countConsecutiveFailures counts consecutive Failed RRs for a fingerprint.
-// It lists all RRs with the same fingerprint label, sorts by creation time
+// It lists all RRs with the same fingerprint using field selector on
+// spec.signalFingerprint (immutable, full 64-char), sorts by creation time
 // (newest first), and counts consecutive Failed phases until it hits a
 // Completed or non-terminal phase.
 //
-// Reference: BR-ORCH-042.1, AC-042-1-1, AC-042-1-2, AC-042-1-3
+// Reference: BR-ORCH-042.1, BR-GATEWAY-185 v1.1
 //
 // Returns 0 if:
 // - No RRs exist for fingerprint
@@ -84,16 +83,12 @@ const (
 func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint string) int {
 	logger := log.FromContext(ctx).WithValues("fingerprint", fingerprint)
 
-	// Truncate fingerprint for label matching (K8s label limit: 63 chars)
-	labelFingerprint := fingerprint
-	if len(labelFingerprint) > MaxFingerprintLabelLength {
-		labelFingerprint = labelFingerprint[:MaxFingerprintLabelLength]
-	}
-
-	// List all RRs with matching fingerprint label
+	// List all RRs with matching fingerprint using field selector
+	// BR-GATEWAY-185 v1.1: Use spec.signalFingerprint (immutable, 64 chars)
+	// NOT labels (mutable, truncated to 63 chars)
 	rrList := &remediationv1.RemediationRequestList{}
 	if err := r.client.List(ctx, rrList,
-		client.MatchingLabels{FingerprintLabelKey: labelFingerprint},
+		client.MatchingFields{FingerprintFieldIndex: fingerprint},
 	); err != nil {
 		logger.Error(err, "Failed to list RRs for consecutive failure count - assuming 0")
 		return 0 // Conservative: don't block on error
@@ -113,6 +108,7 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 		switch rr.Status.OverallPhase {
 		case string(phase.Failed):
 			// Failed RR - increment counter
+			// Note: BR-ORCH-042 specifically says "Failed RRs" - TimedOut not counted
 			consecutiveFailures++
 
 		case string(phase.Completed):
@@ -196,7 +192,7 @@ func (r *Reconciler) transitionToBlocked(ctx context.Context, rr *remediationv1.
 
 	// Emit phase transition metric
 	metrics.PhaseTransitionsTotal.WithLabelValues(
-		string(phase.Failed), // from_phase
+		string(phase.Failed),  // from_phase
 		string(phase.Blocked), // to_phase
 		rr.Namespace,
 	).Inc()
@@ -293,4 +289,3 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 	)
 	return ctrl.Result{}, nil
 }
-
