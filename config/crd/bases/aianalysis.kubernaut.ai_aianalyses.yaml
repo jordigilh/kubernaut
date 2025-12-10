@@ -912,7 +912,13 @@ spec:
                 maxLength: 253
                 type: string
               investigationTime:
-                description: Investigation duration in seconds
+                description: |-
+                  NOTE: TokensUsed REMOVED (Dec 2025)
+                  Reason: LLM token tracking is HAPI's responsibility (they call the LLM)
+                  Observability: HAPI exposes holmesgpt_llm_token_usage_total Prometheus metric
+                  Correlation: Use InvestigationID to link AIAnalysis CRD to HAPI metrics
+                  Design Decision: DD-COST-001 - Cost observability is provider's responsibility
+                  Investigation duration in seconds
                 format: int64
                 minimum: 0
                 type: integer
@@ -1068,10 +1074,6 @@ spec:
                   If false, DetectedLabels may be from different scope than affected resource
                   Used for: Rego policy input, audit trail, operator notifications, metrics
                 type: boolean
-              tokensUsed:
-                description: LLM tokens consumed
-                minimum: 0
-                type: integer
               totalAnalysisTime:
                 description: TotalAnalysisTime is the total duration of the analysis
                   in seconds

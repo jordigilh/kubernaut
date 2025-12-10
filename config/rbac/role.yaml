@@ -110,6 +110,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - remediation.kubernaut.ai
+  resources:
+  - remediationrequests
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - signalprocessing.kubernaut.ai
   resources:
   - signalprocessings
