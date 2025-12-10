@@ -28,6 +28,11 @@ Design Decision: DD-HOLMESGPT-013 - Observability Strategy
 - Prometheus metrics for production observability
 - Structured logging for debugging
 - Health checks for availability monitoring
+
+Design Decision: DD-005 - Observability Standards
+- Metric naming: {service}_{component}_{metric_name}_{unit}
+- Service prefix: holmesgpt_api_ (NOT holmesgpt_)
+- See: docs/architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md
 """
 
 import logging
@@ -44,15 +49,21 @@ logger = logging.getLogger(__name__)
 # PROMETHEUS METRICS DEFINITIONS
 # ========================================
 
+# ========================================
+# DD-005 COMPLIANT METRIC NAMING
+# Format: {service}_{component}_{metric_name}_{unit}
+# Service prefix: holmesgpt_api_ (per DD-005-OBSERVABILITY-STANDARDS.md)
+# ========================================
+
 # Investigation Requests
 investigations_total = Counter(
-    'holmesgpt_investigations_total',
+    'holmesgpt_api_investigations_total',
     'Total number of investigation requests',
     ['method', 'endpoint', 'status']
 )
 
 investigations_duration_seconds = Histogram(
-    'holmesgpt_investigations_duration_seconds',
+    'holmesgpt_api_investigations_duration_seconds',
     'Time spent processing investigation requests',
     ['method', 'endpoint'],
     buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
@@ -60,46 +71,46 @@ investigations_duration_seconds = Histogram(
 
 # LLM API Calls
 llm_calls_total = Counter(
-    'holmesgpt_llm_calls_total',
+    'holmesgpt_api_llm_calls_total',
     'Total number of LLM API calls',
     ['provider', 'model', 'status']
 )
 
 llm_call_duration_seconds = Histogram(
-    'holmesgpt_llm_call_duration_seconds',
+    'holmesgpt_api_llm_call_duration_seconds',
     'Time spent on LLM API calls',
     ['provider', 'model'],
     buckets=(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
 )
 
 llm_token_usage = Counter(
-    'holmesgpt_llm_token_usage_total',
+    'holmesgpt_api_llm_token_usage_total',
     'Total tokens consumed by LLM calls',
     ['provider', 'model', 'type']  # type: prompt, completion
 )
 
 # Authentication Failures
 auth_failures_total = Counter(
-    'holmesgpt_auth_failures_total',
+    'holmesgpt_api_auth_failures_total',
     'Total number of authentication failures',
     ['reason', 'endpoint']
 )
 
 auth_success_total = Counter(
-    'holmesgpt_auth_success_total',
+    'holmesgpt_api_auth_success_total',
     'Total number of successful authentications',
     ['username', 'role']
 )
 
 # Context API Integration
 context_api_calls_total = Counter(
-    'holmesgpt_context_api_calls_total',
+    'holmesgpt_api_context_calls_total',
     'Total number of Context API calls',
     ['endpoint', 'status']
 )
 
 context_api_duration_seconds = Histogram(
-    'holmesgpt_context_api_duration_seconds',
+    'holmesgpt_api_context_duration_seconds',
     'Time spent on Context API calls',
     ['endpoint'],
     buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0)
@@ -110,39 +121,39 @@ context_api_duration_seconds = Histogram(
 # ========================================
 
 config_reload_total = Counter(
-    'holmesgpt_config_reload_total',
+    'holmesgpt_api_config_reload_total',
     'Total successful configuration reloads',
     []
 )
 
 config_reload_errors_total = Counter(
-    'holmesgpt_config_reload_errors_total',
+    'holmesgpt_api_config_reload_errors_total',
     'Total failed configuration reload attempts',
     []
 )
 
 config_last_reload_timestamp = Gauge(
-    'holmesgpt_config_last_reload_timestamp',
+    'holmesgpt_api_config_last_reload_timestamp',
     'Unix timestamp of last successful configuration reload',
     []
 )
 
 # Active Requests Gauge
 active_requests = Gauge(
-    'holmesgpt_active_requests',
+    'holmesgpt_api_active_requests',
     'Number of requests currently being processed',
     ['method', 'endpoint']
 )
 
 # HTTP Requests (General)
 http_requests_total = Counter(
-    'holmesgpt_http_requests_total',
+    'holmesgpt_api_http_requests_total',
     'Total HTTP requests',
     ['method', 'endpoint', 'status']
 )
 
 http_request_duration_seconds = Histogram(
-    'holmesgpt_http_request_duration_seconds',
+    'holmesgpt_api_http_request_duration_seconds',
     'HTTP request duration',
     ['method', 'endpoint'],
     buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0)
@@ -152,7 +163,7 @@ http_request_duration_seconds = Histogram(
 # BR-HAPI-200: RFC 7807 error response metrics
 # REFACTOR phase: Track error responses by status code and error type
 rfc7807_errors_total = Counter(
-    'holmesgpt_rfc7807_errors_total',
+    'holmesgpt_api_rfc7807_errors_total',
     'Total RFC 7807 error responses by status code and error type',
     ['status_code', 'error_type']
 )

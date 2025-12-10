@@ -33,6 +33,8 @@ import (
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
+	"github.com/jordigilh/kubernaut/pkg/audit" // DD-AUDIT-003: Audit integration
+
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -106,6 +108,10 @@ type Server struct {
 
 	// Configuration (for storm threshold)
 	stormThreshold int32 // BR-GATEWAY-182: Threshold for storm detection
+
+	// DD-AUDIT-003: Audit store for async buffered audit event emission
+	// Gateway is P0 service - MUST emit audit events per DD-AUDIT-003
+	auditStore audit.AuditStore // nil if Data Storage URL not configured (graceful degradation)
 
 	// Metrics
 	metricsInstance *metrics.Metrics
@@ -207,6 +213,7 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 // createServerWithClients is the common server creation logic
 // DD-005: Uses logr.Logger for unified logging interface
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
+// DD-AUDIT-003: Audit store initialization for P0 service compliance
 func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
 	// Initialize processing pipeline components
 	adapterRegistry := adapters.NewAdapterRegistry(logger)
@@ -235,6 +242,28 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	statusUpdater := processing.NewStatusUpdater(ctrlClient)
 	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
 
+	// DD-AUDIT-003: Initialize audit store for P0 service compliance
+	// Gateway MUST emit audit events per DD-AUDIT-003: Service Audit Trace Requirements
+	var auditStore audit.AuditStore
+	if cfg.Infrastructure.DataStorageURL != "" {
+		httpClient := &http.Client{Timeout: 5 * time.Second}
+		dsClient := audit.NewHTTPDataStorageClient(cfg.Infrastructure.DataStorageURL, httpClient)
+		auditConfig := audit.RecommendedConfig("gateway") // 2x buffer for high-volume service
+
+		var err error
+		auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "gateway", logger)
+		if err != nil {
+			// Non-fatal: audit is important but not critical for signal processing
+			logger.Error(err, "DD-AUDIT-003: Failed to initialize audit store, audit events will be dropped")
+		} else {
+			logger.Info("DD-AUDIT-003: Audit store initialized for P0 compliance",
+				"data_storage_url", cfg.Infrastructure.DataStorageURL,
+				"buffer_size", auditConfig.BufferSize)
+		}
+	} else {
+		logger.Info("DD-AUDIT-003: Data Storage URL not configured, audit events will be dropped (WARNING)")
+	}
+
 	// Create server (Redis-free)
 	server := &Server{
 		adapterRegistry: adapterRegistry,
@@ -245,6 +274,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
 		stormThreshold:  stormThreshold,
+		auditStore:      auditStore,
 		metricsInstance: metricsInstance,
 		logger:          logger,
 	}
@@ -661,6 +691,14 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 
 	// DD-GATEWAY-012: Redis close REMOVED - Gateway is now Redis-free
+	// DD-AUDIT-003: Close audit store to flush remaining events
+	if s.auditStore != nil {
+		if err := s.auditStore.Close(); err != nil {
+			s.logger.Error(err, "DD-AUDIT-003: Failed to close audit store (potential audit data loss)")
+			// Non-fatal: don't fail shutdown for audit store errors
+		}
+	}
+
 	s.logger.Info("Gateway server stopped")
 	return nil
 }
@@ -772,6 +810,13 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			"phase", existingRR.Status.OverallPhase,
 			"occurrenceCount", occurrenceCount,
 			"isStorm", isThresholdReached)
+
+		// DD-AUDIT-003: Emit audit events (BR-GATEWAY-191, BR-GATEWAY-192)
+		// Fire-and-forget: audit failures don't affect business logic
+		s.emitSignalDeduplicatedAudit(ctx, signal, existingRR.Name, existingRR.Namespace, occurrenceCount)
+		if isThresholdReached {
+			s.emitStormDetectedAudit(ctx, signal, existingRR.Name, existingRR.Namespace, occurrenceCount)
+		}
 
 		// Return duplicate response with data from existing RR
 		return NewDuplicateResponseFromRR(signal.Fingerprint, existingRR), nil
@@ -1040,6 +1085,136 @@ func (s *Server) parseCRDReference(ref string) (namespace, name string) {
 // Storm detection now uses status.stormAggregation via StatusUpdater (async pattern)
 // Per DD-GATEWAY-008 supersession: Create RR immediately, track storm in status
 
+// =============================================================================
+// DD-AUDIT-003: Audit Event Emission (P0 Compliance)
+// =============================================================================
+
+// emitSignalReceivedAudit emits 'gateway.signal.received' audit event (BR-GATEWAY-190)
+// This is called when a NEW signal is received and RR is created
+func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.NormalizedSignal, rrName, rrNamespace string) {
+	if s.auditStore == nil {
+		return // Graceful degradation: no audit store configured
+	}
+
+	ns := signal.Namespace
+	event := audit.NewAuditEvent()
+	event.EventType = "gateway.signal.received"
+	event.EventCategory = "gateway"
+	event.EventAction = "received"
+	event.EventOutcome = "success"
+	event.ActorType = "external"
+	event.ActorID = signal.SourceType // e.g., "prometheus", "kubernetes"
+	event.ResourceType = "Signal"
+	event.ResourceID = signal.Fingerprint
+	event.CorrelationID = rrName // Use RR name as correlation
+	event.Namespace = &ns
+
+	// Event data with Gateway-specific fields
+	eventData := map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"signal_type":          signal.SourceType,
+			"alert_name":           signal.AlertName,
+			"namespace":            signal.Namespace,
+			"fingerprint":          signal.Fingerprint,
+			"severity":             signal.Severity,
+			"resource_kind":        signal.Resource.Kind,
+			"resource_name":        signal.Resource.Name,
+			"remediation_request":  fmt.Sprintf("%s/%s", rrNamespace, rrName),
+			"deduplication_status": "new",
+		},
+	}
+	eventDataBytes, _ := json.Marshal(eventData)
+	event.EventData = eventDataBytes
+
+	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
+	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
+		s.logger.Info("DD-AUDIT-003: Failed to emit signal.received audit event",
+			"error", err, "fingerprint", signal.Fingerprint)
+	}
+}
+
+// emitSignalDeduplicatedAudit emits 'gateway.signal.deduplicated' audit event (BR-GATEWAY-191)
+// This is called when a DUPLICATE signal is detected
+func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.NormalizedSignal, rrName, rrNamespace string, occurrenceCount int32) {
+	if s.auditStore == nil {
+		return // Graceful degradation: no audit store configured
+	}
+
+	ns := signal.Namespace
+	event := audit.NewAuditEvent()
+	event.EventType = "gateway.signal.deduplicated"
+	event.EventCategory = "gateway"
+	event.EventAction = "deduplicated"
+	event.EventOutcome = "success"
+	event.ActorType = "external"
+	event.ActorID = signal.SourceType
+	event.ResourceType = "Signal"
+	event.ResourceID = signal.Fingerprint
+	event.CorrelationID = rrName
+	event.Namespace = &ns
+
+	eventData := map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"signal_type":          signal.SourceType,
+			"alert_name":           signal.AlertName,
+			"namespace":            signal.Namespace,
+			"fingerprint":          signal.Fingerprint,
+			"remediation_request":  fmt.Sprintf("%s/%s", rrNamespace, rrName),
+			"deduplication_status": "duplicate",
+			"occurrence_count":     occurrenceCount,
+		},
+	}
+	eventDataBytes, _ := json.Marshal(eventData)
+	event.EventData = eventDataBytes
+
+	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
+		s.logger.Info("DD-AUDIT-003: Failed to emit signal.deduplicated audit event",
+			"error", err, "fingerprint", signal.Fingerprint)
+	}
+}
+
+// emitStormDetectedAudit emits 'gateway.storm.detected' audit event (BR-GATEWAY-192)
+// This is called when storm threshold is reached (occurrence count >= threshold)
+func (s *Server) emitStormDetectedAudit(ctx context.Context, signal *types.NormalizedSignal, rrName, rrNamespace string, occurrenceCount int32) {
+	if s.auditStore == nil {
+		return // Graceful degradation: no audit store configured
+	}
+
+	ns := signal.Namespace
+	stormID := fmt.Sprintf("storm-%s-%s", signal.Fingerprint[:8], rrName[:8])
+	event := audit.NewAuditEvent()
+	event.EventType = "gateway.storm.detected"
+	event.EventCategory = "gateway"
+	event.EventAction = "detected"
+	event.EventOutcome = "success"
+	event.ActorType = "service"
+	event.ActorID = "gateway"
+	event.ResourceType = "Storm"
+	event.ResourceID = stormID
+	event.CorrelationID = rrName
+	event.Namespace = &ns
+
+	eventData := map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"storm_detected":      true,
+			"storm_id":            stormID,
+			"alert_name":          signal.AlertName,
+			"namespace":           signal.Namespace,
+			"fingerprint":         signal.Fingerprint,
+			"remediation_request": fmt.Sprintf("%s/%s", rrNamespace, rrName),
+			"occurrence_count":    occurrenceCount,
+			"storm_threshold":     s.stormThreshold,
+		},
+	}
+	eventDataBytes, _ := json.Marshal(eventData)
+	event.EventData = eventDataBytes
+
+	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
+		s.logger.Info("DD-AUDIT-003: Failed to emit storm.detected audit event",
+			"error", err, "fingerprint", signal.Fingerprint, "storm_id", stormID)
+	}
+}
+
 // createRemediationRequestCRD handles the CRD creation pipeline
 // TDD REFACTOR: Extracted from ProcessSignal for clarity
 // Business Outcome: Consistent CRD creation (BR-004)
@@ -1063,6 +1238,10 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 	// Deduplication now uses K8s status-based lookup (phaseChecker.ShouldDeduplicate)
 	// and status updates (statusUpdater.UpdateDeduplicationStatus)
 	// Redis is no longer used for deduplication state
+
+	// DD-AUDIT-003: Emit signal.received audit event (BR-GATEWAY-190)
+	// Fire-and-forget: audit failures don't affect business logic
+	s.emitSignalReceivedAudit(ctx, signal, rr.Name, rr.Namespace)
 
 	// Record processing duration
 	duration := time.Since(start)

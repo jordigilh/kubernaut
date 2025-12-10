@@ -3,9 +3,9 @@
 **Service**: Gateway Service
 **Category**: V1.0 Core Requirements
 **Priority**: P0 (CRITICAL)
-**Version**: 1.0
-**Date**: 2025-12-07
-**Status**: 🚧 Planned
+**Version**: 1.1
+**Date**: 2025-12-10
+**Status**: 🚧 In Progress
 **Related ADR**: [ADR-001: Gateway ↔ RO Deduplication Communication](../architecture/decisions/ADR-001-gateway-ro-deduplication-communication.md)
 **Related DD**: [DD-GATEWAY-011: Shared Status Deduplication](../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md)
 
@@ -207,49 +207,86 @@ func (g *Gateway) ShouldBlock(ctx context.Context, fingerprint string) bool {
 
 ## BR-GATEWAY-185: Field Selector for RR Lookup
 
+> **⚠️ UPDATED (v1.1, 2025-12-10)**: Changed from label-based to `spec.signalFingerprint` field selector.
+
 ### Description
 
-Gateway MUST use Kubernetes field selectors for efficient lookup of `RemediationRequest` by fingerprint label.
+Gateway MUST use Kubernetes field selectors on **`spec.signalFingerprint`** (not labels) for efficient lookup of `RemediationRequest` by fingerprint.
 
 ### Priority
 
-**P1 (HIGH)** - Performance optimization
+**P1 (HIGH)** - Performance optimization + Data integrity
 
 ### Rationale
 
-Listing all RRs and filtering client-side is inefficient at scale. Field selectors enable server-side filtering.
+| Aspect | Label-Based (v1.0 - ❌ Deprecated) | Field Selector (v1.1 - ✅ Required) |
+|--------|-----------------------------------|-------------------------------------|
+| **Field** | `metadata.labels.kubernaut.ai/signal-fingerprint` | `spec.signalFingerprint` |
+| **Length** | 63 chars (K8s label limit) | **64 chars (full SHA256)** |
+| **Mutability** | ⚠️ Mutable (can be changed) | ✅ **Immutable** (kubebuilder validation) |
+| **Source** | Copy of fingerprint | ✅ **Authoritative source of truth** |
+| **Collision Risk** | Possible if fingerprints differ in 64th char | ✅ **None** |
+
+**Why the change?**
+1. **Data integrity**: `spec.signalFingerprint` is immutable; labels are mutable
+2. **Full precision**: Spec field supports full 64-char SHA256; labels truncate to 63
+3. **Authoritative**: Spec is the source of truth; labels are copies that can drift
+4. **Same pattern as WE**: WorkflowExecution uses `spec.targetResource` field selector
 
 ### Implementation
 
 ```go
-// Set up field index for fingerprint lookup
-mgr.GetFieldIndexer().IndexField(ctx,
-    &RemediationRequest{},
-    "metadata.labels.kubernaut.ai/fingerprint",
-    func(obj client.Object) []string {
-        rr := obj.(*RemediationRequest)
-        if fp, ok := rr.Labels["kubernaut.ai/fingerprint"]; ok {
-            return []string{fp}
-        }
-        return nil
-    },
-)
+// SetupWithManager - create field index on spec.signalFingerprint
+func SetupWithManager(mgr ctrl.Manager) error {
+    // BR-GATEWAY-185 v1.1: Index on spec.signalFingerprint (not labels)
+    if err := mgr.GetFieldIndexer().IndexField(
+        context.Background(),
+        &remediationv1.RemediationRequest{},
+        "spec.signalFingerprint",  // Immutable, full 64-char fingerprint
+        func(obj client.Object) []string {
+            rr := obj.(*remediationv1.RemediationRequest)
+            return []string{rr.Spec.SignalFingerprint}
+        },
+    ); err != nil {
+        return fmt.Errorf("failed to create field index on spec.signalFingerprint: %w", err)
+    }
+    // ...
+}
 
-// Use field selector for efficient lookup
-rrList := &RemediationRequestList{}
-g.client.List(ctx, rrList,
-    client.MatchingLabels{"kubernaut.ai/fingerprint": fingerprint},
-)
+// Use field selector for efficient O(1) lookup
+func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remediationv1.RemediationRequest {
+    rrList := &remediationv1.RemediationRequestList{}
+    
+    // BR-GATEWAY-185 v1.1: Use field selector on immutable spec field
+    g.client.List(ctx, rrList,
+        client.MatchingFields{"spec.signalFingerprint": fingerprint}, // Full 64-char fingerprint
+    )
+
+    for _, rr := range rrList.Items {
+        if !phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
+            return &rr
+        }
+    }
+    return nil
+}
 ```
 
 ### Acceptance Criteria
 
 | ID | Criterion | Test Coverage |
 |----|-----------|---------------|
-| AC-185-1 | Gateway sets up field index for fingerprint label | Unit |
-| AC-185-2 | Gateway uses field selector for RR lookup | Unit |
-| AC-185-3 | Lookup returns only RRs with matching fingerprint | Unit |
-| AC-185-4 | Lookup performance <5ms for 1000 RRs | Integration |
+| AC-185-1 | Gateway/RO sets up field index on `spec.signalFingerprint` | Unit |
+| AC-185-2 | Gateway/RO uses `client.MatchingFields` (not `MatchingLabels`) | Unit |
+| AC-185-3 | Lookup uses full 64-char fingerprint (no truncation) | Unit |
+| AC-185-4 | Lookup returns only RRs with matching fingerprint | Unit |
+| AC-185-5 | Lookup performance <5ms for 1000 RRs | Integration |
+
+### Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-12-07 | Initial - label-based lookup |
+| 1.1 | 2025-12-10 | Changed to `spec.signalFingerprint` field selector (immutable, full 64-char) |
 
 ---
 

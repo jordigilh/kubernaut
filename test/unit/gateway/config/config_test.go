@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	config "github.com/jordigilh/kubernaut/pkg/gateway/config"
 )
 
@@ -32,10 +31,10 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			Expect(cfg.Server.IdleTimeout).To(Equal(120 * time.Second))
 
 			// Middleware: Rate limiting removed (ADR-048) - delegated to proxy
+			// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
 
-			// Validate infrastructure settings
-			Expect(cfg.Infrastructure.Redis.Addr).To(Equal("redis-gateway:6379"))
-			Expect(cfg.Infrastructure.Redis.DB).To(Equal(0))
+			// DD-AUDIT-003: Validate Data Storage URL
+			Expect(cfg.Infrastructure.DataStorageURL).To(Equal("http://data-storage-service:8080"))
 
 			// Validate processing settings
 			Expect(cfg.Processing.Deduplication.TTL).To(Equal(5 * time.Minute))
@@ -73,10 +72,8 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		AfterEach(func() {
 			// Clean up environment variables
 			os.Unsetenv("GATEWAY_LISTEN_ADDR")
-			os.Unsetenv("GATEWAY_REDIS_ADDR")
-			os.Unsetenv("GATEWAY_REDIS_DB")
-			os.Unsetenv("GATEWAY_REDIS_PASSWORD")
-			// GATEWAY_RATE_LIMIT_RPM removed (ADR-048)
+			// DD-GATEWAY-012: Redis env vars REMOVED
+			os.Unsetenv("GATEWAY_DATA_STORAGE_URL")
 			os.Unsetenv("GATEWAY_DEDUP_TTL")
 		})
 
@@ -88,31 +85,16 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			Expect(cfg.Server.ListenAddr).To(Equal(":9090"))
 		})
 
-		It("should override Redis address from environment variable", func() {
-			os.Setenv("GATEWAY_REDIS_ADDR", "redis-prod:6379")
+		// DD-GATEWAY-012: Redis env var tests REMOVED
+		// Gateway is now Redis-free per DD-GATEWAY-012
+
+		It("should override Data Storage URL from environment variable (DD-AUDIT-003)", func() {
+			os.Setenv("GATEWAY_DATA_STORAGE_URL", "http://datastorage:8080")
 
 			cfg.LoadFromEnv()
 
-			Expect(cfg.Infrastructure.Redis.Addr).To(Equal("redis-prod:6379"))
+			Expect(cfg.Infrastructure.DataStorageURL).To(Equal("http://datastorage:8080"))
 		})
-
-		It("should override Redis password from environment variable", func() {
-			os.Setenv("GATEWAY_REDIS_PASSWORD", "secret-password")
-
-			cfg.LoadFromEnv()
-
-			Expect(cfg.Infrastructure.Redis.Password).To(Equal("secret-password"))
-		})
-
-		It("should override Redis DB from environment variable", func() {
-			os.Setenv("GATEWAY_REDIS_DB", "2")
-
-			cfg.LoadFromEnv()
-
-			Expect(cfg.Infrastructure.Redis.DB).To(Equal(2))
-		})
-
-		// Rate limit env override test removed (ADR-048) - delegated to proxy
 
 		It("should override deduplication TTL from environment variable", func() {
 			os.Setenv("GATEWAY_DEDUP_TTL", "10m")
@@ -120,15 +102,6 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			cfg.LoadFromEnv()
 
 			Expect(cfg.Processing.Deduplication.TTL).To(Equal(10 * time.Minute))
-		})
-
-		It("should ignore invalid numeric values", func() {
-			originalDB := cfg.Infrastructure.Redis.DB
-			os.Setenv("GATEWAY_REDIS_DB", "invalid")
-
-			cfg.LoadFromEnv()
-
-			Expect(cfg.Infrastructure.Redis.DB).To(Equal(originalDB))
 		})
 
 		It("should ignore invalid duration values", func() {
@@ -162,22 +135,11 @@ var _ = Describe("Gateway Configuration Loading", func() {
 			Expect(err.Error()).To(ContainSubstring("listen_addr required"))
 		})
 
-		It("should reject empty Redis address", func() {
-			cfg := &config.ServerConfig{
-				Server: config.ServerSettings{
-					ListenAddr: ":8080",
-				},
-				Infrastructure: config.InfrastructureSettings{
-					Redis: &rediscache.Options{
-						Addr: "",
-					},
-				},
-			}
+		// DD-GATEWAY-012: Redis validation tests REMOVED
+		// Gateway is now Redis-free per DD-GATEWAY-012
 
-			err := cfg.Validate()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("redis address required"))
-		})
+		// DD-AUDIT-003: Data Storage URL is OPTIONAL (graceful degradation)
+		// No validation test needed - audit events are dropped if not configured
 
 		// Rate limit validation tests removed (ADR-048) - delegated to proxy
 
@@ -186,11 +148,7 @@ var _ = Describe("Gateway Configuration Loading", func() {
 				Server: config.ServerSettings{
 					ListenAddr: ":8080",
 				},
-				Infrastructure: config.InfrastructureSettings{
-					Redis: &rediscache.Options{
-						Addr: "redis:6379",
-					},
-				},
+				// DD-GATEWAY-012: Redis REMOVED from InfrastructureSettings
 				// Middleware: Rate limiting removed (ADR-048)
 				Processing: config.ProcessingSettings{
 					Storm: config.StormSettings{

@@ -58,6 +58,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 )
@@ -90,6 +91,10 @@ var _ = BeforeSuite(func() {
 
 	By("Registering SignalProcessing CRD scheme")
 	err := signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	By("Registering Remediation CRD scheme for BR-SP-003 tests")
+	err = remediationv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Register additional K8s types needed for integration tests

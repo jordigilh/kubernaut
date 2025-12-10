@@ -18,6 +18,7 @@ limitations under the License.
 LLM Configuration Utilities
 
 Business Requirement: BR-HAPI-001 - Multi-provider LLM support
+Business Requirement: BR-HAPI-211 - LLM Input Sanitization
 Provides shared utilities for configuring LLM providers across different endpoints.
 
 Supported Providers:
@@ -25,6 +26,9 @@ Supported Providers:
 - OpenAI (remote, official API)
 - Claude/Anthropic (remote, official API)
 - Vertex AI (remote, Google Cloud)
+
+Security Features:
+- BR-HAPI-211: Tool result sanitization (credentials redacted before LLM sees them)
 """
 
 import os
@@ -37,7 +41,121 @@ from typing import Dict, Any, Optional, List
 from holmes.config import Config
 from holmes.core.toolset_manager import ToolsetManager
 
+# BR-HAPI-211: Import sanitization module for credential protection
+from src.sanitization import sanitize_for_llm
+
 logger = logging.getLogger(__name__)
+
+
+def _wrap_tool_results_with_sanitization(tool_executor) -> None:
+    """
+    Wrap ALL Tool.invoke() methods with credential sanitization.
+
+    Business Requirement: BR-HAPI-211 - LLM Input Sanitization
+    Design Decision: DD-HAPI-005 - Comprehensive LLM Input Sanitization Layer
+
+    This function monkey-patches every tool in every toolset to sanitize
+    the StructuredToolResult.data and StructuredToolResult.error fields
+    before they're returned to the LLM.
+
+    CRITICAL: This is the primary defense against credential leakage.
+    Tool results (especially kubectl logs, kubectl get) may contain:
+    - Database passwords in application logs
+    - API keys in environment variables
+    - Tokens in error messages
+    - Secrets in ConfigMaps/events
+
+    NOTE: Some HolmesGPT SDK tools (e.g., YAMLTool) don't have an invoke() method.
+    We skip those gracefully and log a debug message.
+
+    Args:
+        tool_executor: HolmesGPT SDK tool executor with .toolsets list
+    """
+    sanitized_tools_count = 0
+    skipped_tools_count = 0
+
+    for toolset in tool_executor.toolsets:
+        toolset_name = getattr(toolset, 'name', 'unknown')
+
+        for tool in toolset.tools:
+            tool_name = getattr(tool, 'name', 'unknown')
+
+            # Check if tool has invoke method (some SDK tools like YAMLTool don't)
+            if not hasattr(tool, 'invoke') or not callable(getattr(tool, 'invoke', None)):
+                logger.debug({
+                    "event": "tool_sanitization_skipped",
+                    "br": "BR-HAPI-211",
+                    "toolset": toolset_name,
+                    "tool": tool_name,
+                    "reason": "no_invoke_method",
+                    "tool_type": type(tool).__name__,
+                })
+                skipped_tools_count += 1
+                continue
+
+            original_invoke = tool.invoke
+
+            def make_sanitized_invoke(orig_invoke, t_name, ts_name):
+                """Factory to capture original_invoke and tool names in closure."""
+                def sanitized_invoke(params, tool_number=None, user_approved=False):
+                    # Call original tool
+                    result = orig_invoke(params, tool_number, user_approved)
+
+                    # BR-HAPI-211: Sanitize data field (handles str, dict, list, None)
+                    if result is not None and hasattr(result, 'data') and result.data is not None:
+                        original_data = result.data
+                        result.data = sanitize_for_llm(result.data)
+
+                        # Log if sanitization modified content (for audit/debugging)
+                        if result.data != original_data:
+                            logger.debug({
+                                "event": "tool_result_sanitized",
+                                "br": "BR-HAPI-211",
+                                "toolset": ts_name,
+                                "tool": t_name,
+                                "data_type": type(original_data).__name__,
+                            })
+
+                    # BR-HAPI-211: Sanitize error message if present
+                    if result is not None and hasattr(result, 'error') and result.error:
+                        original_error = result.error
+                        result.error = sanitize_for_llm(result.error)
+
+                        if result.error != original_error:
+                            logger.debug({
+                                "event": "tool_error_sanitized",
+                                "br": "BR-HAPI-211",
+                                "toolset": ts_name,
+                                "tool": t_name,
+                            })
+
+                    return result
+                return sanitized_invoke
+
+            # Apply the sanitized wrapper
+            # NOTE: Pydantic models may be frozen, so we use object.__setattr__
+            try:
+                object.__setattr__(tool, 'invoke', make_sanitized_invoke(original_invoke, tool_name, toolset_name))
+                sanitized_tools_count += 1
+            except (TypeError, ValueError, AttributeError) as e:
+                # Some tool implementations may not allow attribute setting
+                logger.debug({
+                    "event": "tool_sanitization_skipped",
+                    "br": "BR-HAPI-211",
+                    "toolset": toolset_name,
+                    "tool": tool_name,
+                    "reason": "cannot_set_invoke",
+                    "error": str(e),
+                })
+                skipped_tools_count += 1
+
+    logger.info({
+        "event": "tool_sanitization_wrapped",
+        "br": "BR-HAPI-211",
+        "tools_wrapped": sanitized_tools_count,
+        "tools_skipped": skipped_tools_count,
+        "toolsets_count": len(tool_executor.toolsets),
+    })
 
 
 def format_model_name_for_litellm(
@@ -324,6 +442,10 @@ def register_workflow_catalog_toolset(
                 logger.debug(f"BR-HAPI-250 DEBUG: Tool executor AFTER injection:")
                 logger.debug(f"  - Total toolsets: {len(tool_executor.toolsets)}")
                 logger.debug(f"  - Last 5 toolsets: {[ts.name if hasattr(ts, 'name') else 'unknown' for ts in tool_executor.toolsets[-5:]]}")
+
+        # BR-HAPI-211: Wrap ALL tool invocations with credential sanitization
+        # This prevents credentials from leaking to external LLM providers
+        _wrap_tool_results_with_sanitization(tool_executor)
 
         return tool_executor
 

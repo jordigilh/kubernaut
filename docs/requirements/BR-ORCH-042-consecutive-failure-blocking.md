@@ -4,10 +4,10 @@
 **Title**: Consecutive Failure Blocking with Automatic Cooldown
 **Category**: ORCH (Remediation Orchestrator)
 **Priority**: 🔴 P0 (V1.0)
-**Version**: 1.0
+**Version**: 1.1
 **Date**: December 10, 2025
-**Status**: 📋 PLANNED
-**Related**: DD-GATEWAY-011, BR-GATEWAY-184 (superseded)
+**Status**: 🚧 IN PROGRESS
+**Related**: DD-GATEWAY-011, BR-GATEWAY-184 (superseded), BR-GATEWAY-185 (field selectors)
 
 ---
 
@@ -46,8 +46,51 @@ RO owns blocking logic because:
 
 **MUST**: RO SHALL detect when a RemediationRequest completes as `Failed` and check if this is the 3rd or more consecutive failure for the same signal fingerprint.
 
+**Fingerprint Lookup Strategy**:
+
+> **IMPORTANT**: RO SHALL use **field selectors on `spec.signalFingerprint`** (not labels) for RR lookup.
+>
+> | Aspect | Label-Based (❌ Avoid) | Field Selector (✅ Required) |
+> |--------|------------------------|------------------------------|
+> | **Field** | `metadata.labels.kubernaut.ai/signal-fingerprint` | `spec.signalFingerprint` |
+> | **Length** | 63 chars (K8s label limit) | **64 chars (full SHA256)** |
+> | **Mutability** | Mutable (can be changed) | **Immutable** (kubebuilder validation) |
+> | **Source** | Copy of fingerprint | **Authoritative source** |
+>
+> **Rationale**: `spec.signalFingerprint` is immutable (enforced by kubebuilder), supports the full 64-char SHA256, and is the authoritative source of truth. Labels are mutable and truncated.
+
 **Implementation**:
 ```go
+// SetupWithManager - create field index for O(1) fingerprint lookup
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+    // BR-ORCH-042: Index on spec.signalFingerprint for consecutive failure counting
+    if err := mgr.GetFieldIndexer().IndexField(
+        context.Background(),
+        &remediationv1.RemediationRequest{},
+        "spec.signalFingerprint",
+        func(obj client.Object) []string {
+            rr := obj.(*remediationv1.RemediationRequest)
+            return []string{rr.Spec.SignalFingerprint}
+        },
+    ); err != nil {
+        return fmt.Errorf("failed to create field index on spec.signalFingerprint: %w", err)
+    }
+    // ...
+}
+
+// countConsecutiveFailures - use field selector (not labels)
+func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint string) int {
+    rrList := &remediationv1.RemediationRequestList{}
+    
+    // Use field selector on immutable spec field (not mutable labels)
+    r.client.List(ctx, rrList,
+        client.MatchingFields{"spec.signalFingerprint": fingerprint}, // Full 64-char fingerprint
+    )
+    
+    // Sort by creation time, count consecutive Failed phases
+    // ...
+}
+
 func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.RemediationRequest, ...) {
     // After marking as Failed, check consecutive failure count
     consecutiveFailures := r.countConsecutiveFailures(ctx, rr.Spec.SignalFingerprint)
@@ -68,6 +111,8 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 | AC-042-1-1 | RO counts consecutive Failed RRs for same fingerprint | Unit |
 | AC-042-1-2 | Count resets on any Completed RR | Unit |
 | AC-042-1-3 | Count uses chronological order (most recent first) | Unit |
+| AC-042-1-4 | RO uses field selector on `spec.signalFingerprint` (not labels) | Unit |
+| AC-042-1-5 | Field index created in SetupWithManager | Unit |
 
 ---
 
@@ -235,8 +280,11 @@ func (g *Gateway) HandleSignal(ctx context.Context, signal Signal) error {
 
 func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remediationv1.RemediationRequest {
     rrList := &remediationv1.RemediationRequestList{}
+    
+    // Use field selector on immutable spec.signalFingerprint (not mutable labels)
+    // See BR-GATEWAY-185 v1.1 for rationale
     g.client.List(ctx, rrList,
-        client.MatchingLabels{"kubernaut.ai/fingerprint": fingerprint},
+        client.MatchingFields{"spec.signalFingerprint": fingerprint}, // Full 64-char fingerprint
     )
 
     for _, rr := range rrList.Items {
@@ -249,6 +297,8 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 ```
 
 **Note**: Gateway NO LONGER counts consecutive failures or creates Blocked RRs.
+
+**Note**: Gateway SHOULD use field selectors on `spec.signalFingerprint` (not labels) per BR-GATEWAY-185 v1.1.
 
 ---
 
@@ -273,4 +323,5 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-12-10 | Initial version - moved from Gateway (BR-GATEWAY-184) to RO |
+| 1.1 | 2025-12-10 | Updated to use field selector on `spec.signalFingerprint` (not labels) per BR-GATEWAY-185 v1.1. Added AC-042-1-4, AC-042-1-5. |
 

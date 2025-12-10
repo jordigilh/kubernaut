@@ -1478,20 +1478,23 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Di
     try:
         # Create investigation prompt
         # DD-RECOVERY-003: Use recovery-specific prompt for recovery attempts
+        # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
+        from src.sanitization import sanitize_for_llm
+
         is_recovery = request_data.get("is_recovery_attempt", False)
         if is_recovery and request_data.get("previous_execution"):
-            investigation_prompt = _create_recovery_investigation_prompt(request_data)
+            investigation_prompt = sanitize_for_llm(_create_recovery_investigation_prompt(request_data))
             logger.info({
                 "event": "using_recovery_prompt",
                 "incident_id": incident_id,
                 "recovery_attempt_number": request_data.get("recovery_attempt_number", 1)
             })
         else:
-            investigation_prompt = _create_investigation_prompt(request_data)
+            investigation_prompt = sanitize_for_llm(_create_investigation_prompt(request_data))
 
-        # Log the prompt being sent to LLM
+        # Log the prompt being sent to LLM (sanitized version)
         print("\n" + "="*80)
-        print("🔍 PROMPT TO LLM PROVIDER (via HolmesGPT SDK)")
+        print("🔍 PROMPT TO LLM PROVIDER (via HolmesGPT SDK) [SANITIZED per BR-HAPI-211]")
         print("="*80)
         print(investigation_prompt)
         print("="*80 + "\n")

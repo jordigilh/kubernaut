@@ -19,11 +19,9 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,8 +64,12 @@ type MiddlewareSettings struct {
 // InfrastructureSettings contains external dependency configuration.
 // Single Responsibility: Infrastructure connections
 type InfrastructureSettings struct {
-	// Redis uses the shared Redis configuration from pkg/cache/redis (DD-CACHE-001)
-	Redis *rediscache.Options `yaml:"redis"`
+	// DD-GATEWAY-012: Redis REMOVED - Gateway is now 100% Kubernetes-native
+	// Deduplication and storm tracking now use RR status (DD-GATEWAY-011)
+
+	// DD-AUDIT-003: Data Storage URL for audit event emission (P0 requirement)
+	// Example: "http://data-storage-service:8080"
+	DataStorageURL string `yaml:"data_storage_url"`
 }
 
 // ProcessingSettings contains business logic configuration.
@@ -259,19 +261,10 @@ func (c *ServerConfig) LoadFromEnv() {
 		c.Server.ListenAddr = addr
 	}
 
-	// Redis settings
-	if redisAddr := os.Getenv("GATEWAY_REDIS_ADDR"); redisAddr != "" {
-		c.Infrastructure.Redis.Addr = redisAddr
-	}
-
-	if redisPassword := os.Getenv("GATEWAY_REDIS_PASSWORD"); redisPassword != "" {
-		c.Infrastructure.Redis.Password = redisPassword
-	}
-
-	if redisDBStr := os.Getenv("GATEWAY_REDIS_DB"); redisDBStr != "" {
-		if redisDB, err := strconv.Atoi(redisDBStr); err == nil {
-			c.Infrastructure.Redis.DB = redisDB
-		}
+	// DD-GATEWAY-012: Redis settings REMOVED
+	// DD-AUDIT-003: Data Storage URL for audit integration
+	if dsURL := os.Getenv("GATEWAY_DATA_STORAGE_URL"); dsURL != "" {
+		c.Infrastructure.DataStorageURL = dsURL
 	}
 
 	// Middleware settings
@@ -293,13 +286,9 @@ func (c *ServerConfig) Validate() error {
 		return fmt.Errorf("server.listen_addr required")
 	}
 
-	// Infrastructure validation
-	if c.Infrastructure.Redis == nil {
-		return fmt.Errorf("infrastructure.redis required")
-	}
-	if c.Infrastructure.Redis.Addr == "" {
-		return fmt.Errorf("infrastructure.redis address required")
-	}
+	// DD-GATEWAY-012: Redis validation REMOVED (no longer required)
+	// DD-AUDIT-003: Data Storage URL is OPTIONAL (graceful degradation if not configured)
+	// Audit events will be dropped with warning if DataStorageURL is not set
 
 	// Middleware validation
 	// Rate limiting removed (ADR-048) - delegated to proxy

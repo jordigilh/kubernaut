@@ -791,7 +791,9 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
     # Use HolmesGPT SDK for AI-powered analysis
     try:
         # Create base investigation prompt
-        base_prompt = _create_incident_investigation_prompt(request_data)
+        # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
+        from src.sanitization import sanitize_for_llm
+        base_prompt = sanitize_for_llm(_create_incident_investigation_prompt(request_data))
 
         # Create minimal DAL
         dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))

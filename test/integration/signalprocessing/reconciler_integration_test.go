@@ -52,6 +52,7 @@ package signalprocessing_test
 
 import (
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -61,7 +62,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("SignalProcessing Reconciler Integration", func() {
@@ -1252,6 +1255,267 @@ labels["team"] := ["platform"  // Missing closing bracket
 				Expect(final.Status.Error).ToNot(BeEmpty())
 			}
 			// If creation failed due to validation, that's also acceptable
+		})
+	})
+
+	// ========================================
+	// BR-SP-003: RECOVERY CONTEXT INTEGRATION TESTS
+	// Business Value: AI analysis can consider previous failure context for better decisions
+	// Stakeholder: AI Analysis service needs recovery history for recommendations
+	// ========================================
+
+	Context("BR-SP-003 - Recovery Context Integration", func() {
+		// First attempt (no recovery context)
+		It("RC-001: should return nil recovery context for first attempt (RecoveryAttempts=0)", func() {
+			By("Creating namespace")
+			ns := createTestNamespace("recovery-first")
+			defer deleteTestNamespace(ns)
+
+			By("Creating RemediationRequest with 0 recovery attempts (first attempt)")
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rr-first",
+					Namespace: ns,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: "rc001def456abc123def456abc123def456abc123def456abc123def456ab001",
+					SignalName:        "RecoveryFirstSignal",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "test-pod",
+						Namespace: ns,
+					},
+					FiringTime:   metav1.Now(),
+					ReceivedTime: metav1.Now(),
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, rr) }()
+
+			// Update RR status to have 0 recovery attempts
+			rr.Status.RecoveryAttempts = 0
+			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR referencing the RemediationRequest")
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-sp-rc001",
+					Namespace: ns,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "rc001def456abc123def456abc123def456abc123def456abc123def456ab001",
+						Name:        "RecoveryFirst",
+						Severity:    "critical",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: ns,
+						},
+						ReceivedTime: metav1.Now(),
+					},
+					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
+						Name:      rr.Name,
+						Namespace: rr.Namespace,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+			defer func() { _ = deleteAndWait(sp, timeout) }()
+
+			By("Waiting for completion")
+			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying no recovery context (first attempt)")
+			var final signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
+
+			// First attempt = no recovery context
+			Expect(final.Status.RecoveryContext).To(BeNil())
+		})
+
+		// Retry attempt with recovery context
+		It("RC-002: should populate recovery context for retry attempt (RecoveryAttempts>0)", func() {
+			By("Creating namespace")
+			ns := createTestNamespace("recovery-retry")
+			defer deleteTestNamespace(ns)
+
+			By("Creating RemediationRequest with recovery attempts (retry)")
+			startTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
+			failureReason := "PreviousExecutionTimedOut"
+
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rr-retry",
+					Namespace: ns,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: "rc002def456abc123def456abc123def456abc123def456abc123def456ab002",
+					SignalName:        "RecoveryRetrySignal",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "test-pod",
+						Namespace: ns,
+					},
+					FiringTime:   metav1.Now(),
+					ReceivedTime: metav1.Now(),
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, rr) }()
+
+			// Update RR status to have recovery data
+			rr.Status.RecoveryAttempts = 3
+			rr.Status.StartTime = &startTime
+			rr.Status.FailureReason = &failureReason
+			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR referencing the RemediationRequest")
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-sp-rc002",
+					Namespace: ns,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "rc002def456abc123def456abc123def456abc123def456abc123def456ab002",
+						Name:        "RecoveryRetry",
+						Severity:    "critical",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: ns,
+						},
+						ReceivedTime: metav1.Now(),
+					},
+					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
+						Name:      rr.Name,
+						Namespace: rr.Namespace,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+			defer func() { _ = deleteAndWait(sp, timeout) }()
+
+			By("Waiting for completion")
+			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying recovery context is populated")
+			var final signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
+
+			Expect(final.Status.RecoveryContext).ToNot(BeNil())
+			Expect(final.Status.RecoveryContext.AttemptCount).To(Equal(int32(3)))
+			Expect(final.Status.RecoveryContext.PreviousRemediationID).To(Equal(rr.Name))
+			Expect(final.Status.RecoveryContext.LastFailureReason).To(Equal("PreviousExecutionTimedOut"))
+			Expect(final.Status.RecoveryContext.TimeSinceFirstFailure).ToNot(BeNil())
+			// Should be approximately 5 minutes (with some tolerance for test execution time)
+			Expect(final.Status.RecoveryContext.TimeSinceFirstFailure.Duration).To(BeNumerically("~", 5*time.Minute, 30*time.Second))
+		})
+
+		// Missing RemediationRequest (graceful degradation)
+		It("RC-003: should return nil recovery context when RemediationRequest not found", func() {
+			By("Creating namespace")
+			ns := createTestNamespace("recovery-missing")
+			defer deleteTestNamespace(ns)
+
+			By("Creating SignalProcessing CR with non-existent RR reference")
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-sp-rc003",
+					Namespace: ns,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "rc003def456abc123def456abc123def456abc123def456abc123def456ab003",
+						Name:        "RecoveryMissing",
+						Severity:    "warning",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: ns,
+						},
+						ReceivedTime: metav1.Now(),
+					},
+					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
+						Name:      "non-existent-rr",
+						Namespace: ns,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+			defer func() { _ = deleteAndWait(sp, timeout) }()
+
+			By("Waiting for completion (should succeed despite missing RR)")
+			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying no recovery context (graceful degradation)")
+			var final signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
+
+			// Missing RR = nil recovery context (graceful degradation)
+			Expect(final.Status.RecoveryContext).To(BeNil())
+			// Should complete successfully (not fail)
+			Expect(final.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
+		})
+
+		// No RemediationRequest reference (happy path)
+		It("RC-004: should return nil recovery context when no RR reference provided", func() {
+			By("Creating namespace")
+			ns := createTestNamespace("recovery-noref")
+			defer deleteTestNamespace(ns)
+
+			By("Creating SignalProcessing CR without RR reference")
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-sp-rc004",
+					Namespace: ns,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "rc004def456abc123def456abc123def456abc123def456abc123def456ab004",
+						Name:        "NoRRRef",
+						Severity:    "info",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: ns,
+						},
+						ReceivedTime: metav1.Now(),
+					},
+					// No RemediationRequestRef
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+			defer func() { _ = deleteAndWait(sp, timeout) }()
+
+			By("Waiting for completion")
+			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying no recovery context (no RR reference)")
+			var final signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
+
+			// No RR reference = nil recovery context
+			Expect(final.Status.RecoveryContext).To(BeNil())
 		})
 	})
 })

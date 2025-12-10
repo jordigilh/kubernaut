@@ -52,6 +52,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 )
@@ -77,6 +78,7 @@ type SignalProcessingReconciler struct {
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=remediation.kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
 
 // Reconcile implements the reconciliation loop for SignalProcessing.
 func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -214,8 +216,16 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		k8sCtx.CustomLabels = customLabels
 	}
 
+	// 6. Build recovery context (BR-SP-003)
+	recoveryCtx, err := r.buildRecoveryContext(ctx, sp, logger)
+	if err != nil {
+		logger.Error(err, "Failed to build recovery context")
+		// Non-fatal - continue without recovery context
+	}
+
 	// Update status
 	sp.Status.KubernetesContext = k8sCtx
+	sp.Status.RecoveryContext = recoveryCtx
 	sp.Status.Phase = signalprocessingv1alpha1.PhaseClassifying
 	if err := r.Status().Update(ctx, sp); err != nil {
 		return ctrl.Result{}, err
@@ -486,6 +496,67 @@ func (r *SignalProcessingReconciler) hasNetworkPolicy(ctx context.Context, names
 		return false
 	}
 	return len(npList.Items) > 0
+}
+
+// buildRecoveryContext extracts recovery context from the RemediationRequest.
+// BR-SP-003: Recovery Context Integration
+// DD-001: Recovery Context Enrichment
+func (r *SignalProcessingReconciler) buildRecoveryContext(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (*signalprocessingv1alpha1.RecoveryContext, error) {
+	// Get RemediationRequest reference
+	rrRef := sp.Spec.RemediationRequestRef
+	if rrRef.Name == "" {
+		return nil, nil // No RemediationRequest, no recovery context
+	}
+
+	// Determine namespace - use ref namespace or default to SP namespace
+	rrNamespace := rrRef.Namespace
+	if rrNamespace == "" {
+		rrNamespace = sp.Namespace
+	}
+
+	// Fetch RemediationRequest
+	rr := &remediationv1alpha1.RemediationRequest{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      rrRef.Name,
+		Namespace: rrNamespace,
+	}, rr); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(1).Info("RemediationRequest not found, skipping recovery context",
+				"name", rrRef.Name, "namespace", rrNamespace)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to fetch RemediationRequest: %w", err)
+	}
+
+	// Only build recovery context if this is a retry (RecoveryAttempts > 0)
+	if rr.Status.RecoveryAttempts == 0 {
+		logger.V(1).Info("First attempt, no recovery context needed")
+		return nil, nil
+	}
+
+	recoveryCtx := &signalprocessingv1alpha1.RecoveryContext{
+		AttemptCount:          int32(rr.Status.RecoveryAttempts),
+		PreviousRemediationID: rr.Name,
+	}
+
+	// Set failure reason if available
+	if rr.Status.FailureReason != nil && *rr.Status.FailureReason != "" {
+		recoveryCtx.LastFailureReason = *rr.Status.FailureReason
+	}
+
+	// Calculate time since first failure (using RR StartTime)
+	if rr.Status.StartTime != nil {
+		duration := time.Since(rr.Status.StartTime.Time)
+		recoveryCtx.TimeSinceFirstFailure = &metav1.Duration{Duration: duration}
+	}
+
+	logger.V(1).Info("Built recovery context",
+		"attemptCount", recoveryCtx.AttemptCount,
+		"previousId", recoveryCtx.PreviousRemediationID,
+		"lastFailureReason", recoveryCtx.LastFailureReason,
+	)
+
+	return recoveryCtx, nil
 }
 
 // classifyEnvironment determines the environment classification.

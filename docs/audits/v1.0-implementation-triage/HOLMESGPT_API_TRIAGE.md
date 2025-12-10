@@ -75,19 +75,39 @@ Per `NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md`:
 
 ## 🔴 Critical Gaps (Updated Dec 10, 2025)
 
-### 1. BR-HAPI-211: LLM Input Sanitization (P0 CRITICAL)
-**Status**: 📋 **NOT IMPLEMENTED** - Blocks V1.0 GA
-**Issue**: No `src/sanitization/` directory exists. DD-HAPI-005 design decision documented but implementation not started.
-**Risk**: Credentials may leak to external LLM providers (OpenAI, Anthropic)
-**Action**: HAPI team must implement before V1.0 GA
+### ~~1. BR-HAPI-211: LLM Input Sanitization (P0 CRITICAL)~~ ✅ RESOLVED
+**Status**: ✅ **IMPLEMENTED** (Dec 10, 2025)
+**Resolution**: Full implementation with 28 sanitization patterns and 46 unit tests
+**Files Created**:
+- `src/sanitization/__init__.py` - Module init
+- `src/sanitization/llm_sanitizer.py` - Core sanitizer (28 regex patterns)
+- `tests/unit/test_llm_sanitizer.py` - 46 unit tests (100% passing)
+**Integration Points**:
+- `src/extensions/llm_config.py` - `_wrap_tool_results_with_sanitization()` wraps all tools
+- `src/extensions/incident.py` - Prompt sanitization before LLM
+- `src/extensions/recovery.py` - Prompt sanitization before LLM
 
-### 2. DD-005 Metrics Naming Non-Compliance (P2)
-**Status**: 🔴 **Non-compliant**
-**Issue**: Metrics use `holmesgpt_` prefix, DD-005 requires `holmesgpt_api_` prefix
-**Examples**:
-- Current: `holmesgpt_investigations_total`
-- Required: `holmesgpt_api_investigations_total`
-**Action**: Rename all metrics in `src/middleware/metrics.py`
+### ~~2. DD-005 Metrics Naming Non-Compliance (P2)~~ ✅ RESOLVED
+**Status**: ✅ **COMPLIANT** (Dec 10, 2025)
+**Resolution**: All 16 metrics renamed from `holmesgpt_*` to `holmesgpt_api_*`
+**File**: `src/middleware/metrics.py`
+**Renamed Metrics**:
+- `holmesgpt_api_investigations_total`
+- `holmesgpt_api_investigations_duration_seconds`
+- `holmesgpt_api_llm_calls_total`
+- `holmesgpt_api_llm_call_duration_seconds`
+- `holmesgpt_api_llm_token_usage_total`
+- `holmesgpt_api_auth_failures_total`
+- `holmesgpt_api_auth_success_total`
+- `holmesgpt_api_context_calls_total`
+- `holmesgpt_api_context_duration_seconds`
+- `holmesgpt_api_config_reload_total`
+- `holmesgpt_api_config_reload_errors_total`
+- `holmesgpt_api_config_last_reload_timestamp`
+- `holmesgpt_api_active_requests`
+- `holmesgpt_api_http_requests_total`
+- `holmesgpt_api_http_request_duration_seconds`
+- `holmesgpt_api_rfc7807_errors_total`
 
 ### 3. PostExec Endpoint Deferred (P1)
 **Status**: ⚠️ **Documentation Gap**
@@ -105,10 +125,10 @@ Per `NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md`:
 
 | # | Task | Priority | Est. Time | Status |
 |---|------|----------|-----------|--------|
-| 1 | **Implement BR-HAPI-211 LLM sanitization** | **P0** | **7h** | 🔴 Blocks GA |
-| 2 | Fix DD-005 metrics naming (`holmesgpt_` → `holmesgpt_api_`) | P2 | 2h | 🔴 Non-compliant |
-| 3 | Update docs: postexec deferred to V1.1 (DD-017) | P1 | 30m | ⚠️ Doc gap |
-| 4 | Add BR-HAPI-212 to business requirements | Low | 15m | ⚠️ Doc gap |
+| ~~1~~ | ~~Implement BR-HAPI-211 LLM sanitization~~ | ~~P0~~ | ~~7h~~ | ✅ **Complete** (Dec 10) |
+| ~~2~~ | ~~Fix DD-005 metrics naming~~ | ~~P2~~ | ~~2h~~ | ✅ **Complete** (Dec 10) |
+| ~~3~~ | ~~Update docs: postexec deferred to V1.1 (DD-017)~~ | ~~P1~~ | ~~30m~~ | ✅ **Complete** (Dec 10) |
+| ~~4~~ | ~~Add BR-HAPI-212 to business requirements~~ | ~~Low~~ | ~~15m~~ | ✅ **Complete** (Dec 10) |
 | 5 | Cross-check OpenAPI vs implementation | P2 | 2h | ⏳ Pending |
 
 ---
@@ -134,6 +154,6 @@ Per `NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md`:
 
 ---
 
-**Triage Confidence**: 88% (reduced due to BR-HAPI-211 gap)
+**Triage Confidence**: 95% (increased after BR-HAPI-211 implementation)
 
 
