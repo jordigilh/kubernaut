@@ -4,7 +4,7 @@
 **To**: SignalProcessing Team
 **Date**: December 10, 2025
 **Priority**: 🟡 MEDIUM
-**Status**: ⏳ **AWAITING SP TEAM RESPONSE**
+**Status**: ✅ **RESOLVED**
 
 ---
 
@@ -83,16 +83,65 @@ When a test or external system updates SP status to simulate completion, must it
 
 ---
 
-## 📞 Response Requested
+## ✅ SP Team Response (December 10, 2025)
 
-Please respond with:
-1. Your preferred option (A/B/C) or alternative
-2. Timeline for implementation (if needed)
-3. Any clarifying questions
+### Decision: **Option C** - Schema is Correct
+
+The SP CRD schema is **correctly designed**. The issue is in RO test implementation.
+
+### Schema Analysis
+
+| Level | Field | Required? | Evidence |
+|-------|-------|-----------|----------|
+| **Status** | `environmentClassification` | ❌ Optional | Pointer with `omitempty` (line 174) |
+| **Status** | `priorityAssignment` | ❌ Optional | Pointer with `omitempty` (line 175) |
+| **EnvironmentClassification** | `classifiedAt` | ✅ Required | No `omitempty` (line 429) |
+| **PriorityAssignment** | `assignedAt` | ✅ Required | No `omitempty` (line 445) |
+
+### Answers to Questions
+
+**Q1: Should these fields be required?**
+> **YES** - When you set `PriorityAssignment` or `EnvironmentClassification`, you MUST set all their fields including timestamps. If you don't need these fields, leave the parent struct as `nil` (valid).
+
+**Q2: Recommended approach?**
+> **Option C** - RO tests must include timestamps when setting these structs.
+
+### Fix for RO Integration Tests
+
+```go
+// WRONG: Missing timestamps
+sp.Status.PriorityAssignment = &signalprocessingv1alpha1.PriorityAssignment{
+    Priority:   "P1",
+    Confidence: 0.9,
+    Source:     "test",
+}
+
+// CORRECT: Include all required fields
+sp.Status.PriorityAssignment = &signalprocessingv1alpha1.PriorityAssignment{
+    Priority:   "P1",
+    Confidence: 0.9,
+    Source:     "test",
+    AssignedAt: metav1.Now(),  // REQUIRED when struct is set
+}
+
+sp.Status.EnvironmentClassification = &signalprocessingv1alpha1.EnvironmentClassification{
+    Environment:  "production",
+    Confidence:   0.95,
+    Source:       "test",
+    ClassifiedAt: metav1.Now(),  // REQUIRED when struct is set
+}
+```
+
+### Action Items
+
+| # | Owner | Task | Status |
+|---|-------|------|--------|
+| 1 | **RO Team** | Update 4 tests to include `AssignedAt`/`ClassifiedAt` | ⏳ Pending |
+| 2 | **SP Team** | No action needed - schema is correct | ✅ Complete |
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: December 10, 2025
-**Maintained By**: Remediation Orchestrator Team
-
+**Updated**: December 10, 2025 (SP response added)
+**Maintained By**: Remediation Orchestrator Team + SignalProcessing Team

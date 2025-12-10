@@ -114,7 +114,7 @@ return NewDuplicateResponseFromRR(signal.Fingerprint, existingRR), nil
 
 ### Alternative 4: Hybrid (Sync Dedup, Async Storm) - **SELECTED**
 
-**Approach**: 
+**Approach**:
 - **Synchronous**: Deduplication status (needed for accurate HTTP response)
 - **Asynchronous**: Storm aggregation status (non-critical for response)
 

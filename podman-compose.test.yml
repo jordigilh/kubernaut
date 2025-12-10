@@ -95,7 +95,9 @@ services:
     environment:
       - CONFIG_PATH=/etc/holmesgpt/config.yaml
       # Mock LLM for integration tests (cost constraint)
-      - LLM_PROVIDER=mock
+      - LLM_PROVIDER=openai
+      - LLM_MODEL=openai/gpt-4o-mini
+      - OPENAI_API_KEY=sk-mock-test-key-for-integration
       - MOCK_LLM_ENABLED=true
       # Data Storage connection
       - DATASTORAGE_URL=http://datastorage:8080

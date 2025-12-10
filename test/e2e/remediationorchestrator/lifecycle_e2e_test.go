@@ -30,6 +30,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // E2E Tests for Remediation Orchestrator Controller
@@ -62,19 +63,30 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	Describe("Full Remediation Lifecycle (BR-ORCH-025)", func() {
 		It("should create RemediationRequest and progress through phases", func() {
 			By("Creating a RemediationRequest in Pending phase")
+			now := metav1.Now()
+			fingerprint := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-lifecycle-e2e",
 					Namespace: testNS,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalContext: remediationv1.SignalContext{
-						Fingerprint:  "fp-e2e-001",
-						SourceType:   "prometheus",
-						AlertName:    "HighCPUUsage",
-						Severity:     "warning",
-						ReceivedAt:   metav1.Now(),
-						RawPayload:   `{"alertname": "HighCPUUsage", "instance": "node-1"}`,
+					SignalFingerprint: fingerprint,
+					SignalName:        "HighCPUUsage",
+					Severity:          "warning",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app",
+						Namespace: testNS,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
 					},
 				},
 			}
@@ -85,9 +97,9 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
 			}, timeout, interval).Should(Succeed())
-			Expect(createdRR.Spec.SignalContext.Fingerprint).To(Equal("fp-e2e-001"))
+			Expect(createdRR.Spec.SignalFingerprint).To(Equal(fingerprint))
 
-			By("Simulating SignalProcessing completion")
+			By("Simulating SignalProcessing creation and completion")
 			sp := &signalprocessingv1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "sp-" + rr.Name,
@@ -102,20 +114,45 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 				},
 				Spec: signalprocessingv1.SignalProcessingSpec{
-					SignalContext: signalprocessingv1.SignalContext{
-						Fingerprint: "fp-e2e-001",
+					RemediationRequestRef: signalprocessingv1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					Signal: signalprocessingv1.SignalData{
+						Fingerprint: fingerprint,
+						Name:        "HighCPUUsage",
+						Severity:    "warning",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1.ResourceIdentifier{
+							Kind:      "Deployment",
+							Name:      "test-app",
+							Namespace: testNS,
+						},
 					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// Update SP status to Completed
-			sp.Status.Phase = "Completed"
-			sp.Status.Environment = "production"
-			sp.Status.Priority = "high"
+			sp.Status.Phase = signalprocessingv1.PhaseCompleted
+			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+				Environment:  "production",
+				Confidence:   0.95,
+				Source:       "namespace-labels",
+				ClassifiedAt: metav1.Now(),
+			}
+			sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+				Priority:   "P1",
+				Confidence: 0.90,
+				Source:     "rego-policy",
+				AssignedAt: metav1.Now(),
+			}
 			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
-			By("Simulating AIAnalysis completion with workflow recommendation")
+			By("Simulating AIAnalysis creation and completion with workflow recommendation")
 			ai := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "ai-" + rr.Name,
@@ -130,10 +167,28 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					RemediationID: string(createdRR.UID),
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContext{
-							Fingerprint: "fp-e2e-001",
+						SignalContext: aianalysisv1.SignalContextInput{
+							Fingerprint:      fingerprint,
+							Severity:         "warning",
+							SignalType:       "prometheus",
+							Environment:      "production",
+							BusinessPriority: "P1",
+							TargetResource: aianalysisv1.TargetResource{
+								Kind:      "Deployment",
+								Name:      "test-app",
+								Namespace: testNS,
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
+						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
 					},
 				},
 			}
@@ -141,16 +196,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 
 			// Update AI status to Completed with workflow
 			ai.Status.Phase = "Completed"
-			ai.Status.InvestigationOutcome = "Resolved"
-			ai.Status.ApprovalRequired = false
-			ai.Status.ConfidenceScore = 0.92
-			ai.Status.SelectedWorkflow = &aianalysisv1.WorkflowReference{
-				ID:   "wf-scale-deployment",
-				Name: "Scale Deployment",
+			ai.Status.Message = "Analysis complete"
+			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowID:     "wf-scale-deployment",
+				Version:        "v1.0.0",
+				ContainerImage: "ghcr.io/kubernaut/workflows/scale-deployment:v1.0.0",
+				Confidence:     0.92,
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-			By("Simulating WorkflowExecution completion")
+			By("Simulating WorkflowExecution creation and completion")
 			we := &workflowexecutionv1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "we-" + rr.Name,
@@ -165,14 +220,25 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					WorkflowID: "wf-scale-deployment",
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					WorkflowRef: workflowexecutionv1.WorkflowRef{
+						WorkflowID:     "wf-scale-deployment",
+						Version:        "v1.0.0",
+						ContainerImage: "ghcr.io/kubernaut/workflows/scale-deployment:v1.0.0",
+					},
+					TargetResource: testNS + "/Deployment/test-app",
+					Confidence:     0.92,
 				},
 			}
 			Expect(k8sClient.Create(ctx, we)).To(Succeed())
 
 			// Update WE status to Completed
-			we.Status.Phase = "Completed"
-			we.Status.ExitCode = 0
+			we.Status.Phase = workflowexecutionv1.PhaseCompleted
 			Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
 			By("Verifying all child CRDs exist with correct owner references")
@@ -200,18 +266,30 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	Describe("Approval Workflow (BR-ORCH-026)", func() {
 		It("should create RemediationApprovalRequest when approval is required", func() {
 			By("Creating a RemediationRequest")
+			now := metav1.Now()
+			fingerprint := "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-approval-e2e",
 					Namespace: testNS,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalContext: remediationv1.SignalContext{
-						Fingerprint: "fp-approval-001",
-						SourceType:  "prometheus",
-						AlertName:   "CriticalError",
-						Severity:    "critical",
-						ReceivedAt:  metav1.Now(),
+					SignalFingerprint: fingerprint,
+					SignalName:        "CriticalError",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "test-pod",
+						Namespace: testNS,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
 					},
 				},
 			}
@@ -223,42 +301,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				return k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
 			}, timeout, interval).Should(Succeed())
 
-			By("Simulating AIAnalysis requiring approval")
-			ai := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "ai-" + rr.Name,
-					Namespace: testNS,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: remediationv1.GroupVersion.String(),
-							Kind:       "RemediationRequest",
-							Name:       rr.Name,
-							UID:        createdRR.UID,
-						},
-					},
-				},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContext{
-							Fingerprint: "fp-approval-001",
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, ai)).To(Succeed())
-
-			// Update AI status - approval required
-			ai.Status.Phase = "Completed"
-			ai.Status.InvestigationOutcome = "ApprovalRequired"
-			ai.Status.ApprovalRequired = true
-			ai.Status.ConfidenceScore = 0.65 // Low confidence triggers approval
-			ai.Status.SelectedWorkflow = &aianalysisv1.WorkflowReference{
-				ID:   "wf-delete-pod",
-				Name: "Delete Pod",
-			}
-			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
-
-			By("Creating RemediationApprovalRequest (simulating RO behavior)")
+			By("Creating RAR (simulating RO behavior when approval required)")
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rar-" + rr.Name,
@@ -272,8 +315,8 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						},
 					},
 					Labels: map[string]string{
-						"kubernaut.io/remediation-request": rr.Name,
-						"kubernaut.io/environment":         "production",
+						"kubernaut.ai/remediation-request": rr.Name,
+						"kubernaut.ai/environment":         "production",
 					},
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
@@ -283,12 +326,19 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						Kind:       "RemediationRequest",
 						APIVersion: remediationv1.GroupVersion.String(),
 					},
-					AIAnalysisContext: remediationv1.AIAnalysisContext{
-						ConfidenceScore:       0.65,
-						RecommendedWorkflowID: "wf-delete-pod",
-						InvestigationSummary:  "Pod restart recommended due to OOM",
+					AIAnalysisRef: remediationv1.ObjectRef{
+						Name:      "ai-" + rr.Name,
+						Namespace: testNS,
 					},
-					RequiredBy: metav1.NewTime(time.Now().Add(24 * time.Hour)),
+					Confidence:      0.65,
+					ConfidenceLevel: "medium",
+					RecommendedWorkflow: remediationv1.WorkflowSummary{
+						WorkflowID:   "wf-delete-pod",
+						WorkflowName: "Delete Pod",
+						Version:      "v1.0.0",
+					},
+					InvestigationSummary: "Pod restart recommended due to OOM",
+					RequiredBy:           metav1.NewTime(time.Now().Add(24 * time.Hour)),
 				},
 			}
 			Expect(k8sClient.Create(ctx, rar)).To(Succeed())
@@ -298,7 +348,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKeyFromObject(rar), fetchedRAR)
 			}, timeout, interval).Should(Succeed())
-			Expect(fetchedRAR.Spec.AIAnalysisContext.ConfidenceScore).To(Equal(float64(0.65)))
+			Expect(fetchedRAR.Spec.Confidence).To(Equal(float64(0.65)))
 			Expect(fetchedRAR.Spec.RequiredBy.Time).To(BeTemporally(">", time.Now()))
 
 			By("Simulating operator approval")
@@ -320,18 +370,30 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 
 		It("should handle approval rejection", func() {
 			By("Creating a RemediationRequest")
+			now := metav1.Now()
+			fingerprint := "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-rejection-e2e",
 					Namespace: testNS,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalContext: remediationv1.SignalContext{
-						Fingerprint: "fp-rejection-001",
-						SourceType:  "prometheus",
-						AlertName:   "DangerousOperation",
-						Severity:    "critical",
-						ReceivedAt:  metav1.Now(),
+					SignalFingerprint: fingerprint,
+					SignalName:        "DangerousOperation",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "risky-pod",
+						Namespace: testNS,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
 					},
 				},
 			}
@@ -363,12 +425,19 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						Kind:       "RemediationRequest",
 						APIVersion: remediationv1.GroupVersion.String(),
 					},
-					AIAnalysisContext: remediationv1.AIAnalysisContext{
-						ConfidenceScore:       0.45,
-						RecommendedWorkflowID: "wf-dangerous-op",
-						InvestigationSummary:  "Risky operation",
+					AIAnalysisRef: remediationv1.ObjectRef{
+						Name:      "ai-" + rr.Name,
+						Namespace: testNS,
 					},
-					RequiredBy: metav1.NewTime(time.Now().Add(1 * time.Hour)),
+					Confidence:      0.45,
+					ConfidenceLevel: "low",
+					RecommendedWorkflow: remediationv1.WorkflowSummary{
+						WorkflowID:   "wf-dangerous-op",
+						WorkflowName: "Dangerous Operation",
+						Version:      "v1.0.0",
+					},
+					InvestigationSummary: "Risky operation",
+					RequiredBy:           metav1.NewTime(time.Now().Add(1 * time.Hour)),
 				},
 			}
 			Expect(k8sClient.Create(ctx, rar)).To(Succeed())
@@ -402,18 +471,30 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	Describe("WorkflowNotNeeded Handling (BR-ORCH-037)", func() {
 		It("should complete remediation when no workflow is needed", func() {
 			By("Creating a RemediationRequest")
+			now := metav1.Now()
+			fingerprint := "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5"
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-no-workflow-e2e",
 					Namespace: testNS,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalContext: remediationv1.SignalContext{
-						Fingerprint: "fp-no-workflow-001",
-						SourceType:  "prometheus",
-						AlertName:   "TransientError",
-						Severity:    "info",
-						ReceivedAt:  metav1.Now(),
+					SignalFingerprint: fingerprint,
+					SignalName:        "TransientError",
+					Severity:          "info",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "transient-pod",
+						Namespace: testNS,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
 					},
 				},
 			}
@@ -439,30 +520,48 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					RemediationID: string(createdRR.UID),
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContext{
-							Fingerprint: "fp-no-workflow-001",
+						SignalContext: aianalysisv1.SignalContextInput{
+							Fingerprint:      fingerprint,
+							Severity:         "info",
+							SignalType:       "prometheus",
+							Environment:      "staging",
+							BusinessPriority: "P3",
+							TargetResource: aianalysisv1.TargetResource{
+								Kind:      "Pod",
+								Name:      "transient-pod",
+								Namespace: testNS,
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
+						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, ai)).To(Succeed())
 
-			// Update AI status - problem self-resolved
+			// Update AI status - problem self-resolved (WorkflowNotNeeded)
 			ai.Status.Phase = "Completed"
-			ai.Status.InvestigationOutcome = "WorkflowNotNeeded"
-			ai.Status.ApprovalRequired = false
-			ai.Status.ConfidenceScore = 0.95
-			ai.Status.ResolutionReason = "Problem self-resolved: transient error no longer present"
+			ai.Status.Reason = "WorkflowNotNeeded"
+			ai.Status.SubReason = "ProblemResolved"
+			ai.Status.Message = "Problem self-resolved: transient error no longer present"
+			// No SelectedWorkflow for WorkflowNotNeeded
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-			By("Verifying AIAnalysis shows WorkflowNotNeeded")
+			By("Verifying AIAnalysis shows WorkflowNotNeeded reason")
 			fetchedAI := &aianalysisv1.AIAnalysis{}
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), fetchedAI); err != nil {
 					return ""
 				}
-				return fetchedAI.Status.InvestigationOutcome
+				return fetchedAI.Status.Reason
 			}, timeout, interval).Should(Equal("WorkflowNotNeeded"))
 		})
 	})
@@ -473,18 +572,30 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	Describe("Cascade Deletion", func() {
 		It("should delete child CRDs when parent RR is deleted", func() {
 			By("Creating a RemediationRequest with child CRDs")
+			now := metav1.Now()
+			fingerprint := "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-cascade-e2e",
 					Namespace: testNS,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalContext: remediationv1.SignalContext{
-						Fingerprint: "fp-cascade-001",
-						SourceType:  "prometheus",
-						AlertName:   "CascadeTest",
-						Severity:    "warning",
-						ReceivedAt:  metav1.Now(),
+					SignalFingerprint: fingerprint,
+					SignalName:        "CascadeTest",
+					Severity:          "warning",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "cascade-app",
+						Namespace: testNS,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
 					},
 				},
 			}
@@ -512,8 +623,23 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					},
 				},
 				Spec: signalprocessingv1.SignalProcessingSpec{
-					SignalContext: signalprocessingv1.SignalContext{
-						Fingerprint: "fp-cascade-001",
+					RemediationRequestRef: signalprocessingv1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					Signal: signalprocessingv1.SignalData{
+						Fingerprint: fingerprint,
+						Name:        "CascadeTest",
+						Severity:    "warning",
+						Type:        "prometheus",
+						TargetType:  "kubernetes",
+						TargetResource: signalprocessingv1.ResourceIdentifier{
+							Kind:      "Deployment",
+							Name:      "cascade-app",
+							Namespace: testNS,
+						},
 					},
 				},
 			}
@@ -541,5 +667,3 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 func boolPtr(b bool) *bool {
 	return &b
 }
-
-

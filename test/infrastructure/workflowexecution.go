@@ -30,8 +30,9 @@ import (
 //
 // Sets up a complete environment for testing WorkflowExecution controller:
 // - Kind cluster with Tekton Pipelines installed
+// - Data Storage Service (PostgreSQL + DS) for audit events (BR-WE-005)
 // - WorkflowExecution CRD deployed
-// - WorkflowExecution controller running
+// - WorkflowExecution controller running (with --datastorage-url configured)
 // - Simple test pipeline bundle available
 
 const (

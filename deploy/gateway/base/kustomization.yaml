@@ -12,7 +12,8 @@ resources:
   - 02-configmap.yaml
   - 03-deployment.yaml
   - 04-service.yaml
-  - 05-redis.yaml
+  # DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free (K8s-native)
+  # - 05-redis.yaml  # DEPRECATED: Redis no longer needed
   - 06-servicemonitor.yaml
 
 # Common labels applied to all resources
