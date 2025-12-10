@@ -121,6 +121,8 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 	}
 
 	// 4. Build and deploy Data Storage with proper ADR-030 config
+	// NOTE: Database migrations are applied by DS team's shared library
+	// See: REQUEST_SHARED_E2E_MIGRATION_LIBRARY.md
 	fmt.Fprintf(output, "  💾 Building and deploying Data Storage...\n")
 	if err := deployDataStorageWithConfig(clusterName, kubeconfigPath, output); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage: %w", err)

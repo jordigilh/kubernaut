@@ -1166,4 +1166,5 @@ Contact RO Team.
 | v1.9 | 2025-12-07 | RO Team | **ACK FOR GATEWAY**: Added authoritative implementation, usage instructions, and RO commitments |
 | v1.10 | 2025-12-07 | Gateway Team | **ADR-049 ACK**: Gateway acknowledges RO owns RR schema. No code changes needed - already imports from `api/remediation/v1alpha1/` |
 | v1.11 | 2025-12-10 | RO Team | **DD-GATEWAY-011 v1.3**: Consecutive failure blocking moved from Gateway to RO (BR-ORCH-042). Gateway simplified: no failure counting, `Blocked` is non-terminal. BR-GATEWAY-184 superseded. |
+| v1.12 | 2025-12-10 | Gateway Team | **DD-GATEWAY-011 v1.3 ACK**: All required changes implemented as part of DD-GATEWAY-012 (Redis removal). `IsTerminalPhase()` updated: `Completed, Failed, Timeout` are terminal; `Blocked` is non-terminal. Gateway never had `ShouldBlock()` or failure counting. Tests pass. |
 

@@ -805,7 +805,7 @@ test-e2e-datastorage: ## Run Data Storage E2E tests (Kind cluster, ~5-8 min)
 	@echo "⏱️  Duration: ~5-8 minutes (serial), ~3-5 minutes (parallel)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo ""
-	@cd test/e2e/datastorage && ginkgo -v --label-filter="e2e"
+	@cd test/e2e/datastorage && ginkgo -v --procs=4 --label-filter="e2e"
 
 .PHONY: test-e2e-gateway
 test-e2e-gateway: ## Run Gateway Service E2E tests (Kind cluster, ~10-15 min)

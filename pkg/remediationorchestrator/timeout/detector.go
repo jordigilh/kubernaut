@@ -49,6 +49,9 @@ var terminalPhases = map[string]bool{
 	"Failed":    true,
 	"Timeout":   true,
 	"Skipped":   true,
+	// Blocked is NON-terminal but has its own cooldown mechanism (BR-ORCH-042)
+	// Skip standard timeout checks; cooldown expiry is checked separately
+	"Blocked": true,
 }
 
 // CheckTimeout checks if global or phase timeout has been exceeded.

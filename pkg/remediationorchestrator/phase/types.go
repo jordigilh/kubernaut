@@ -51,6 +51,12 @@ const (
 	// Skipped - WorkflowExecution was skipped due to resource lock (terminal state)
 	// Reference: BR-ORCH-032
 	Skipped Phase = "Skipped"
+
+	// Blocked - Remediation blocked due to consecutive failures (NON-terminal state)
+	// New signals for same fingerprint will update deduplication but not create new RRs.
+	// RO will transition to Failed after BlockedUntil cooldown expires.
+	// Reference: BR-ORCH-042, DD-GATEWAY-011 v1.3
+	Blocked Phase = "Blocked"
 )
 
 // IsTerminal returns true if the phase is a terminal state.
@@ -68,12 +74,14 @@ func IsTerminal(p Phase) bool {
 var ValidTransitions = map[Phase][]Phase{
 	Pending:          {Processing},
 	Processing:       {Analyzing, Failed, TimedOut},
-	Analyzing:        {AwaitingApproval, Executing, Failed, TimedOut},
+	Analyzing:        {AwaitingApproval, Executing, Completed, Failed, TimedOut}, // Completed for WorkflowNotNeeded (BR-ORCH-037)
 	AwaitingApproval: {Executing, Failed, TimedOut},
 	Executing:        {Completed, Failed, TimedOut, Skipped},
+	// Blocked is NON-terminal: allows transition to Failed after cooldown (BR-ORCH-042)
+	Blocked: {Failed},
 	// Terminal states - no transitions allowed
 	Completed: {},
-	Failed:    {},
+	Failed:    {Blocked}, // Failed can transition to Blocked when consecutive failure threshold reached (BR-ORCH-042)
 	TimedOut:  {},
 	Skipped:   {},
 }
@@ -95,7 +103,7 @@ func CanTransition(current, target Phase) bool {
 // Validate checks if a phase value is valid.
 func Validate(p Phase) error {
 	switch p {
-	case Pending, Processing, Analyzing, AwaitingApproval, Executing, Completed, Failed, TimedOut, Skipped:
+	case Pending, Processing, Analyzing, AwaitingApproval, Executing, Completed, Failed, TimedOut, Skipped, Blocked:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)

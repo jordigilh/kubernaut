@@ -432,6 +432,15 @@ func (in *RemediationRequestStatus) DeepCopyInto(out *RemediationRequestStatus) 
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.BlockedUntil != nil {
+		in, out := &in.BlockedUntil, &out.BlockedUntil
+		*out = (*in).DeepCopy()
+	}
+	if in.BlockReason != nil {
+		in, out := &in.BlockReason, &out.BlockReason
+		*out = new(string)
+		**out = **in
+	}
 	if in.FailurePhase != nil {
 		in, out := &in.FailurePhase, &out.FailurePhase
 		*out = new(string)

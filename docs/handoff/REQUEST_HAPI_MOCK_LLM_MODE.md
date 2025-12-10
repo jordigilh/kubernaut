@@ -76,5 +76,9 @@ Which approach does HAPI team recommend?
 
 ---
 
-**Status**: Awaiting HAPI team response
+**Status**: ✅ **RESOLVED** - See RESPONSE_HAPI_MOCK_LLM_MODE.md
+
+**Resolution**: HAPI team implemented Option B (BR-HAPI-212).
+AIAnalysis team integrated mock mode into incident.py and recovery.py.
+Use `MOCK_LLM_MODE=true` in podman-compose.test.yml.
 

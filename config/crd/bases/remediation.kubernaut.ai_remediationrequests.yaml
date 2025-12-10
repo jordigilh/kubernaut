@@ -296,9 +296,33 @@ spec:
                   Approval notification tracking (BR-ORCH-001)
                   Prevents duplicate notifications when AIAnalysis requires approval
                 type: boolean
+              blockReason:
+                description: |-
+                  BlockReason provides context for why this remediation was blocked.
+                  Only set when OverallPhase = "Blocked".
+                  Example: "3 consecutive failures for fingerprint abc123; cooldown 1h expires at 2025-12-10T15:00:00Z"
+                  Reference: BR-ORCH-042
+                type: string
+              blockedUntil:
+                description: |-
+                  BlockedUntil indicates when the blocked state expires and new attempts are allowed.
+                  Set when OverallPhase = "Blocked" due to consecutive failures (≥3).
+                  After this time passes, RO will transition the RR to "Failed" and allow
+                  new RRs for the same fingerprint.
+                  Reference: BR-ORCH-042, DD-GATEWAY-011 v1.3
+                format: date-time
+                type: string
               completedAt:
                 format: date-time
                 type: string
+              consecutiveFailureCount:
+                description: |-
+                  ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.
+                  Updated by RO when RR transitions to Failed phase.
+                  Reset to 0 when RR completes successfully.
+                  Reference: BR-ORCH-042
+                format: int32
+                type: integer
               currentProcessingRef:
                 description: CurrentProcessingRef references the current SignalProcessing
                   CRD (may differ during recovery)
@@ -470,8 +494,9 @@ spec:
               overallPhase:
                 description: |-
                   Phase tracking for orchestration
-                  Valid values: "pending", "processing", "analyzing", "executing", "recovering",
-                                "completed", "failed", "timeout", "Skipped"
+                  Valid values: "Pending", "Processing", "Analyzing", "AwaitingApproval", "Executing",
+                                "Blocked" (non-terminal), "Completed", "Failed", "TimedOut", "Skipped"
+                  Reference: BR-ORCH-042 (Blocked phase for consecutive failure cooldown)
                 type: string
               processingStartTime:
                 description: |-

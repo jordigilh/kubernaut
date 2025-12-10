@@ -208,8 +208,9 @@ type RemediationRequestStatus struct {
 	// ╚════════════════════════════════════════════════════════════════╝
 
 	// Phase tracking for orchestration
-	// Valid values: "pending", "processing", "analyzing", "executing", "recovering",
-	//               "completed", "failed", "timeout", "Skipped"
+	// Valid values: "Pending", "Processing", "Analyzing", "AwaitingApproval", "Executing",
+	//               "Blocked" (non-terminal), "Completed", "Failed", "TimedOut", "Skipped"
+	// Reference: BR-ORCH-042 (Blocked phase for consecutive failure cooldown)
 	OverallPhase string `json:"overallPhase,omitempty"`
 
 	// Human-readable message describing current status
@@ -281,6 +282,33 @@ type RemediationRequestStatus struct {
 	// because they targeted the same resource as this RR
 	// Only populated on parent RRs that have duplicates
 	DuplicateRefs []string `json:"duplicateRefs,omitempty"`
+
+	// ========================================
+	// CONSECUTIVE FAILURE BLOCKING (BR-ORCH-042)
+	// DD-GATEWAY-011 v1.3: Blocking moved from Gateway to RO
+	// ========================================
+
+	// BlockedUntil indicates when the blocked state expires and new attempts are allowed.
+	// Set when OverallPhase = "Blocked" due to consecutive failures (≥3).
+	// After this time passes, RO will transition the RR to "Failed" and allow
+	// new RRs for the same fingerprint.
+	// Reference: BR-ORCH-042, DD-GATEWAY-011 v1.3
+	// +optional
+	BlockedUntil *metav1.Time `json:"blockedUntil,omitempty"`
+
+	// BlockReason provides context for why this remediation was blocked.
+	// Only set when OverallPhase = "Blocked".
+	// Example: "3 consecutive failures for fingerprint abc123; cooldown 1h expires at 2025-12-10T15:00:00Z"
+	// Reference: BR-ORCH-042
+	// +optional
+	BlockReason *string `json:"blockReason,omitempty"`
+
+	// ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.
+	// Updated by RO when RR transitions to Failed phase.
+	// Reset to 0 when RR completes successfully.
+	// Reference: BR-ORCH-042
+	// +optional
+	ConsecutiveFailureCount int32 `json:"consecutiveFailureCount,omitempty"`
 
 	// ========================================
 	// FAILURE/TIMEOUT TRACKING
