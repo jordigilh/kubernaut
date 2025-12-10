@@ -1,11 +1,12 @@
 # DD-GATEWAY-011: Shared Status Ownership for Deduplication & Storm Aggregation
 
-**Version**: 1.2
+**Version**: 1.3
 **Created**: 2025-12-07
 **Status**: ✅ **APPROVED**
 **Confidence**: 95%
 **Related ADR**: [ADR-001: Gateway ↔ RO Deduplication Communication](ADR-001-gateway-ro-deduplication-communication.md)
 **Related Proposal**: [PROPOSAL: Gateway Redis Deprecation](../../handoff/PROPOSAL_GATEWAY_REDIS_DEPRECATION.md)
+**Related BR**: [BR-ORCH-042: Consecutive Failure Blocking](../../requirements/BR-ORCH-042-consecutive-failure-blocking.md)
 
 ---
 

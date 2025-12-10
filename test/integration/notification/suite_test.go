@@ -161,13 +161,22 @@ var _ = BeforeSuite(func() {
 	// Create sanitizer
 	sanitizer := sanitization.NewSanitizer()
 
-	// Create controller with all dependencies
+	// Create audit helpers for controller audit emission (BR-NOT-062)
+	auditHelpers := notification.NewAuditHelpers("notification-controller")
+
+	// Create mock audit store for testing audit emission
+	// This captures audit events emitted by the controller during reconciliation
+	testAuditStore = NewTestAuditStore()
+
+	// Create controller with all dependencies including audit (Defense-in-Depth Layer 4)
 	err = (&notification.NotificationRequestReconciler{
 		Client:         k8sManager.GetClient(),
 		Scheme:         k8sManager.GetScheme(),
 		ConsoleService: consoleService,
 		SlackService:   slackService,
 		Sanitizer:      sanitizer,
+		AuditStore:     testAuditStore,
+		AuditHelpers:   auditHelpers,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

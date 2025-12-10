@@ -29,7 +29,7 @@ holmesgpt-api:
 Despite `MOCK_LLM_ENABLED=true`, HAPI still attempts real LLM calls:
 
 ```
-litellm.exceptions.AuthenticationError: AuthenticationError: OpenAIException - 
+litellm.exceptions.AuthenticationError: AuthenticationError: OpenAIException -
 Incorrect API key provided: sk-mock-********************tion
 ```
 

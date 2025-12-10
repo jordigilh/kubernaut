@@ -93,6 +93,13 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 	}
 	fmt.Fprintf(output, "✅ Tekton Pipelines installed\n")
 
+	// Deploy Data Storage Service for audit events (BR-WE-005)
+	fmt.Fprintf(output, "\n🗄️  Deploying Data Storage Service (BR-WE-005 audit events)...\n")
+	if err := DeployDataStorageTestServices(context.Background(), WorkflowExecutionNamespace, kubeconfigPath, output); err != nil {
+		return fmt.Errorf("failed to deploy Data Storage: %w", err)
+	}
+	fmt.Fprintf(output, "✅ Data Storage Service deployed\n")
+
 	// Create execution namespace
 	fmt.Fprintf(output, "\n📁 Creating execution namespace %s...\n", ExecutionNamespace)
 	nsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
