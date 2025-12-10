@@ -75,13 +75,29 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			)
 
 			resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "Pod CrashLoopBackOff in staging namespace. Container test-app restarted 5 times.",
-				DetectedLabels: map[string]interface{}{
-					"gitOpsManaged": true,
-					"pdbProtected":  false,
-				},
-				OwnerChain: []aianalysisclient.OwnerChainEntry{
-					{Namespace: "staging", Kind: "Deployment", Name: "test-app"},
+				IncidentID:        "test-crashloop-001",
+				RemediationID:     "req-test-001",
+				SignalType:        "CrashLoopBackOff",
+				Severity:          "critical",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: "staging",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-app",
+				ErrorMessage:      "Container restarted 5 times",
+				Environment:       "staging",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "test-cluster",
+				Context:           "Pod CrashLoopBackOff in staging namespace. Container test-app restarted 5 times.",
+				EnrichmentResults: &aianalysisclient.EnrichmentResults{
+					DetectedLabels: map[string]interface{}{
+						"gitOpsManaged": true,
+						"pdbProtected":  false,
+					},
+					OwnerChain: []aianalysisclient.OwnerChainEntry{
+						{Namespace: "staging", Kind: "Deployment", Name: "test-app"},
+					},
 				},
 			})
 
@@ -104,9 +120,25 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			)
 
 			resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "Memory pressure detected on pod web-app-abc123",
-				OwnerChain: []aianalysisclient.OwnerChainEntry{
-					{Namespace: "default", Kind: "Deployment", Name: "web-app"},
+				IncidentID:        "test-memory-001",
+				RemediationID:     "req-test-002",
+				SignalType:        "MemoryPressure",
+				Severity:          "warning",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "web-app-abc123",
+				ErrorMessage:      "Memory pressure detected",
+				Environment:       "production",
+				Priority:          "P2",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "test-cluster",
+				Context:           "Memory pressure detected on pod web-app-abc123",
+				EnrichmentResults: &aianalysisclient.EnrichmentResults{
+					OwnerChain: []aianalysisclient.OwnerChainEntry{
+						{Namespace: "default", Kind: "Deployment", Name: "web-app"},
+					},
 				},
 			})
 
@@ -133,9 +165,25 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			)
 
 			resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "OOM Killed - container exceeded memory limit. Pod memory-hog in namespace default.",
-				DetectedLabels: map[string]interface{}{
-					"gitOpsManaged": true,
+				IncidentID:        "test-oom-001",
+				RemediationID:     "req-test-003",
+				SignalType:        "OOMKilled",
+				Severity:          "critical",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "memory-hog",
+				ErrorMessage:      "Container exceeded memory limit",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "test-cluster",
+				Context:           "OOM Killed - container exceeded memory limit. Pod memory-hog in namespace default.",
+				EnrichmentResults: &aianalysisclient.EnrichmentResults{
+					DetectedLabels: map[string]interface{}{
+						"gitOpsManaged": true,
+					},
 				},
 			})
 
@@ -160,9 +208,25 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			)
 
 			resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "Pod in CrashLoopBackOff state. Environment: production. Business priority: P0.",
-				DetectedLabels: map[string]interface{}{
-					"environment": "production",
+				IncidentID:        "test-prod-001",
+				RemediationID:     "req-test-004",
+				SignalType:        "CrashLoopBackOff",
+				Severity:          "critical",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: "production",
+				ResourceKind:      "Pod",
+				ResourceName:      "prod-app",
+				ErrorMessage:      "Pod in CrashLoopBackOff state",
+				Environment:       "production",
+				Priority:          "P0",
+				RiskTolerance:     "low",
+				BusinessCategory:  "critical",
+				ClusterName:       "prod-cluster",
+				Context:           "Pod in CrashLoopBackOff state. Environment: production. Business priority: P0.",
+				EnrichmentResults: &aianalysisclient.EnrichmentResults{
+					DetectedLabels: map[string]interface{}{
+						"environment": "production",
+					},
 				},
 			})
 
@@ -181,7 +245,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			})
 
 			resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "Unknown error pattern in production - requires investigation",
+				IncidentID:    "test-hr-001",
+				RemediationID: "req-hr-001",
+				Context:       "Unknown error pattern in production - requires investigation",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -206,7 +272,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 				mockClient.WithHumanReviewReasonEnum(reason, []string{"Test warning"})
 
 				resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-					Context: "Test for " + reason,
+					IncidentID:    "test-hr-loop-" + reason,
+					RemediationID: "req-hr-loop",
+					Context:       "Test for " + reason,
 				})
 
 				Expect(err).NotTo(HaveOccurred(), "Failed for reason: %s", reason)
@@ -226,7 +294,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			)
 
 			resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "Pod was in CrashLoopBackOff but has now recovered",
+				IncidentID:    "test-resolved-001",
+				RemediationID: "req-resolved-001",
+				Context:       "Pod was in CrashLoopBackOff but has now recovered",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -246,7 +316,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			})
 
 			resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "Intermittent network failures with unclear pattern",
+				IncidentID:    "test-inconclusive-001",
+				RemediationID: "req-inconclusive-001",
+				Context:       "Intermittent network failures with unclear pattern",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -280,9 +352,13 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			)
 
 			resp, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "Database connection timeout in staging",
-				OwnerChain: []aianalysisclient.OwnerChainEntry{
-					{Namespace: "staging", Kind: "Deployment", Name: "db-client"},
+				IncidentID:    "test-validation-001",
+				RemediationID: "req-validation-001",
+				Context:       "Database connection timeout in staging",
+				EnrichmentResults: &aianalysisclient.EnrichmentResults{
+					OwnerChain: []aianalysisclient.OwnerChainEntry{
+						{Namespace: "staging", Kind: "Deployment", Name: "db-client"},
+					},
 				},
 			})
 
@@ -305,7 +381,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			mockClient.WithError(context.DeadlineExceeded)
 
 			_, err := mockClient.Investigate(shortCtx, &aianalysisclient.IncidentRequest{
-				Context: "Test timeout handling",
+				IncidentID:    "test-timeout-001",
+				RemediationID: "req-timeout-001",
+				Context:       "Test timeout handling",
 			})
 
 			Expect(err).To(HaveOccurred())
@@ -316,7 +394,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			mockClient.WithAPIError(500, "Internal server error")
 
 			_, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
-				Context: "Test error handling",
+				IncidentID:    "test-error-001",
+				RemediationID: "req-error-001",
+				Context:       "Test error handling",
 			})
 
 			Expect(err).To(HaveOccurred())
@@ -326,7 +406,11 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 		It("should handle validation errors (400) - BR-AI-009", func() {
 			mockClient.WithAPIError(400, "Invalid request: missing required field 'context'")
 
-			_, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{})
+			// Empty request with mock - mock still returns configured error
+			_, err := mockClient.Investigate(testCtx, &aianalysisclient.IncidentRequest{
+				IncidentID:    "",  // Empty - would fail validation on real HAPI
+				RemediationID: "",  // Empty - would fail validation on real HAPI
+			})
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("400"))

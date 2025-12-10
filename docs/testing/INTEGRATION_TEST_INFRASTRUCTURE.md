@@ -467,7 +467,87 @@ podman logs datastorage-postgres
 
 ---
 
-**Last Updated**: October 12, 2025
+## 🔧 Troubleshooting
+
+### Podman "proxy already running" Error
+
+**Symptom**:
+```
+❌ Failed to start PostgreSQL: Error: "proxy already running"
+```
+
+Or:
+```
+⚠️  Ports 15433 or 16379 may be in use:
+gvproxy 30754 jgil   16u  IPv6  TCP *:16379 (LISTEN)
+```
+
+**Root Cause**: On macOS, Podman uses `gvproxy` to forward ports from containers to the host. When a test is interrupted (Ctrl+C, crash, timeout), containers may be removed but `gvproxy` keeps the port bindings, causing conflicts on the next run.
+
+**Solutions**:
+
+#### Option 1: Use Stale Container Cleanup Target (Recommended)
+
+The Makefile includes a safe cleanup target that only removes stale containers (not running ones):
+
+```bash
+make clean-stale-datastorage-containers
+```
+
+This is automatically called by `test-integration-datastorage`. It's safe for parallel test runs because it only removes containers that exist but aren't running.
+
+#### Option 2: Restart Podman Machine (Heavy-handed)
+
+If cleanup doesn't work, restart the Podman VM:
+
+```bash
+podman machine stop && podman machine start
+```
+
+This takes ~30 seconds but guarantees a clean state. **Warning**: This will stop ALL running containers.
+
+#### Option 3: Kill Specific Port (Last Resort)
+
+Only use if you're certain no other tests are using the port:
+
+```bash
+# Find and kill process holding port
+lsof -ti:5432 | xargs kill -9
+```
+
+**Warning**: This may break parallel test runs from other services!
+
+### Container Already Exists
+
+**Symptom**:
+```
+⚠️  PostgreSQL container already exists or failed to start
+```
+
+**Solution**: The Makefile handles this automatically by attempting to start the existing container. If issues persist, run:
+
+```bash
+podman rm -f datastorage-postgres
+make test-integration-datastorage
+```
+
+### Port Already in Use by Another Service
+
+**Symptom**: Port conflict when running multiple services' integration tests in parallel.
+
+**Solution**: Each service should use unique ports. Standard port assignments:
+
+| Service | PostgreSQL | Redis | Notes |
+|---------|------------|-------|-------|
+| Data Storage | 5432 | - | Default ports |
+| AI Service | - | 6379 | Default ports |
+| Suite Tests | 15433 | 16379 | Offset ports for isolation |
+
+If you need to run the same service tests in parallel, use different port offsets via environment variables.
+
+---
+
+**Last Updated**: December 10, 2025
 **Maintained By**: Kubernaut Team
 **Decision Document**: ADR-016
 

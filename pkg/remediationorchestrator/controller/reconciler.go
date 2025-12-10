@@ -58,6 +58,7 @@ type Reconciler struct {
 	statusAggregator    *aggregator.StatusAggregator
 	aiAnalysisHandler   *handler.AIAnalysisHandler
 	notificationCreator *creator.NotificationCreator
+	spCreator           *creator.SignalProcessingCreator
 	aiAnalysisCreator   *creator.AIAnalysisCreator
 	weCreator           *creator.WorkflowExecutionCreator
 	// Audit integration (DD-AUDIT-003, BR-STORAGE-001)
@@ -75,6 +76,7 @@ func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditSto
 		statusAggregator:    aggregator.NewStatusAggregator(c),
 		aiAnalysisHandler:   handler.NewAIAnalysisHandler(c, s, nc),
 		notificationCreator: nc,
+		spCreator:           creator.NewSignalProcessingCreator(c, s),
 		aiAnalysisCreator:   creator.NewAIAnalysisCreator(c, s),
 		weCreator:           creator.NewWorkflowExecutionCreator(c, s),
 		auditStore:          auditStore,
@@ -107,6 +109,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		).Observe(time.Since(startTime).Seconds())
 		metrics.ReconcileTotal.WithLabelValues(rr.Namespace, rr.Status.OverallPhase).Inc()
 	}()
+
+	// Initialize phase if empty (new RemediationRequest from Gateway)
+	// Per DD-GATEWAY-011: RO owns status.overallPhase, Gateway creates instances without status
+	if rr.Status.OverallPhase == "" {
+		logger.Info("Initializing new RemediationRequest", "name", rr.Name)
+		rr.Status.OverallPhase = string(phase.Pending)
+		rr.Status.StartTime = &metav1.Time{Time: startTime}
+		if err := r.client.Status().Update(ctx, rr); err != nil {
+			logger.Error(err, "Failed to initialize RemediationRequest status")
+			return ctrl.Result{}, err
+		}
+		// Requeue immediately to process the Pending phase
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	// Skip terminal phases
 	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
@@ -142,12 +158,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 // handlePendingPhase handles the initial Pending phase.
 // Creates SignalProcessing CRD and transitions to Processing.
 // Per DD-AUDIT-003: Emits orchestrator.lifecycle.started (P1)
+// Per BR-ORCH-025: Pass-through data to SignalProcessing CRD.
+// Per BR-ORCH-031: Sets owner reference for cascade deletion.
 func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 	logger.Info("Handling Pending phase - creating SignalProcessing")
 
 	// Emit lifecycle started audit event (DD-AUDIT-003 P1)
 	r.emitLifecycleStartedAudit(ctx, rr)
+
+	// Create SignalProcessing CRD (BR-ORCH-025, BR-ORCH-031)
+	spName, err := r.spCreator.Create(ctx, rr)
+	if err != nil {
+		logger.Error(err, "Failed to create SignalProcessing CRD")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+	logger.Info("Created SignalProcessing CRD", "spName", spName)
 
 	// Transition to Processing phase
 	return r.transitionPhase(ctx, rr, phase.Processing)

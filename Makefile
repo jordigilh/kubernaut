@@ -64,7 +64,7 @@ test-unit-notification: ## Run Notification Service unit tests (4 parallel procs
 	cd test/unit/notification && ginkgo -v --timeout=5m --procs=$$PROCS
 
 .PHONY: test-integration-notification
-test-integration-notification: ## Run Notification Service integration tests (4 parallel procs)
+test-integration-notification: clean-notification-test-ports ## Run Notification Service integration tests (4 parallel procs)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Notification Service - Integration Tests"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -132,20 +132,46 @@ test-e2e-holmesgpt: ## Run HolmesGPT API E2E tests (requires Data Storage infras
 test-e2e-holmesgpt-full: test-e2e-datastorage test-e2e-holmesgpt ## Run full HolmesGPT E2E (sets up infra + runs tests)
 	@echo "✅ HolmesGPT API E2E tests complete"
 
-.PHONY: clean-podman-ports
-clean-podman-ports: ## Clean stale Podman port bindings (fixes "proxy already running" errors)
-	@echo "🧹 Cleaning stale Podman port bindings..."
-	@# Kill any processes holding test ports (15433, 16379, 5432, 6379)
-	@lsof -ti:15433 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:16379 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:5432 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:6379 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@# Remove any stale datastorage containers
-	@podman rm -f datastorage-postgres datastorage-redis ai-redis 2>/dev/null || true
+.PHONY: clean-stale-datastorage-containers
+clean-stale-datastorage-containers: ## Clean stale datastorage containers only (safe for parallel test runs)
+	@echo "🧹 Cleaning stale datastorage containers..."
+	@# Only remove containers that exist but are not running (stale state)
+	@for container in datastorage-postgres datastorage-redis; do \
+		if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^$$container$$"; then \
+			if ! podman ps --format '{{.Names}}' 2>/dev/null | grep -q "^$$container$$"; then \
+				echo "  🗑️  Removing stale container: $$container"; \
+				podman rm -f $$container 2>/dev/null || true; \
+			else \
+				echo "  ⚠️  Container $$container is running (skipping)"; \
+			fi; \
+		fi; \
+	done
+	@echo "✅ Stale container cleanup complete"
+
+.PHONY: clean-notification-test-ports
+clean-notification-test-ports: ## Clean stale gvproxy port bindings for Notification tests (macOS only)
+	@echo "🧹 Cleaning stale Notification test port bindings..."
+	@# Fixes "proxy already running" errors on macOS Podman machine
+	@# Only targets ports used by Notification integration tests (per DD-TEST-001):
+	@#   - 15433: PostgreSQL (podman-compose.test.yml)
+	@#   - 16379: Redis (podman-compose.test.yml)
+	@#   - 18090: Data Storage (podman-compose.test.yml)
+	@for port in 15433 16379 18090; do \
+		PID=$$(lsof -ti:$$port 2>/dev/null); \
+		if [ -n "$$PID" ]; then \
+			PROC=$$(ps -p $$PID -o comm= 2>/dev/null | xargs basename 2>/dev/null); \
+			if [ "$$PROC" = "gvproxy" ]; then \
+				echo "  🗑️  Killing stale gvproxy on port $$port (PID $$PID)"; \
+				kill -9 $$PID 2>/dev/null || true; \
+			else \
+				echo "  ℹ️  Port $$port in use by $$PROC (not stale gvproxy)"; \
+			fi; \
+		fi; \
+	done
 	@echo "✅ Port cleanup complete"
 
 .PHONY: test-integration-datastorage
-test-integration-datastorage: clean-podman-ports ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~4 min)
+test-integration-datastorage: clean-stale-datastorage-containers ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~4 min)
 	@if [ -z "$$POSTGRES_HOST" ]; then \
 		echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."; \
 		podman run -d --name datastorage-postgres -p 5432:5432 \
@@ -950,6 +976,19 @@ test-holmesgpt-all: ## Run ALL HolmesGPT API tests (Python)
 # WorkflowExecution Controller Tests
 # Per TESTING_GUIDELINES.md and 03-testing-strategy.mdc
 # ════════════════════════════════════════════════════════════════════════════════
+
+.PHONY: clean-podman-ports-workflowexecution
+clean-podman-ports-workflowexecution: ## Clean stale Podman ports for WE tests only (18090 DS, 15433 PG, 16379 Redis)
+	@echo "🧹 Cleaning stale Podman ports for WorkflowExecution tests..."
+	@# WE uses: 18090 (DS HTTP), 19090 (DS Metrics), 15433 (PostgreSQL), 16379 (Redis)
+	@# Only clean WE-specific ports - do NOT clean ports used by other services
+	@lsof -ti:18090 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:19090 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:15433 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:16379 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@# Remove WE-specific stale containers only
+	@podman rm -f kubernaut_datastorage_1 kubernaut_postgres_1 kubernaut_redis_1 2>/dev/null || true
+	@echo "✅ WE port cleanup complete"
 
 .PHONY: test-unit-workflowexecution
 test-unit-workflowexecution: ## Run WorkflowExecution unit tests (4 parallel procs)

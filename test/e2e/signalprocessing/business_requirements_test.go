@@ -141,11 +141,12 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "e2e-p1-test-fingerprint-abc123def456abc123def456abc123def456abc1",
-						Name:        "MemoryPressure",
-						Severity:    "warning",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
+						Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
+						Name:         "MemoryPressure",
+						Severity:     "warning",
+						Type:         "prometheus",
+						TargetType:   "kubernetes",
+						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
 							Name:      "worker-abc",
@@ -205,11 +206,12 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "e2e-p2-test-fingerprint-abc123def456abc123def456abc123def456abc1",
-						Name:        "StagingCritical",
-						Severity:    "critical",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
+						Fingerprint:  "c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3",
+						Name:         "StagingCritical",
+						Severity:     "critical",
+						Type:         "prometheus",
+						TargetType:   "kubernetes",
+						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
 							Name:      "staging-pod",
@@ -238,11 +240,12 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "e2e-p3-test-fingerprint-abc123def456abc123def456abc123def456abc1",
-						Name:        "DevInfo",
-						Severity:    "info",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
+						Fingerprint:  "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4",
+						Name:         "DevInfo",
+						Severity:     "info",
+						Type:         "prometheus",
+						TargetType:   "kubernetes",
+						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
 							Name:      "dev-pod",
@@ -302,11 +305,12 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint: "e2e-env-prod-fingerprint-abc123def456abc123def456abc123def456abc",
-					Name:        "TestAlert",
-					Severity:    "warning",
-					Type:        "prometheus",
-					TargetType:  "kubernetes",
+					Fingerprint:  "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5",
+					Name:         "TestAlert",
+					Severity:     "warning",
+					Type:         "prometheus",
+					TargetType:   "kubernetes",
+					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 						Kind:      "Pod",
 						Name:      "test-pod",
@@ -351,11 +355,12 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint: "e2e-env-unknown-fingerprint-abc123def456abc123def456abc123def456",
-					Name:        "UnclassifiedAlert",
-					Severity:    "warning",
-					Type:        "prometheus",
-					TargetType:  "kubernetes",
+					Fingerprint:  "f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6",
+					Name:         "UnclassifiedAlert",
+					Severity:     "warning",
+					Type:         "prometheus",
+					TargetType:   "kubernetes",
+					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 						Kind:      "Pod",
 						Name:      "unclassified-pod",
@@ -451,11 +456,12 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint: "e2e-owner-chain-fingerprint-abc123def456abc123def456abc123def4",
-					Name:        "PodAlert",
-					Severity:    "critical",
-					Type:        "prometheus",
-					TargetType:  "kubernetes",
+					Fingerprint:  "a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7",
+					Name:         "PodAlert",
+					Severity:     "critical",
+					Type:         "prometheus",
+					TargetType:   "kubernetes",
+					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 						Kind:      "Pod",
 						Name:      podName,
@@ -550,11 +556,12 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint: "e2e-pdb-detect-fingerprint-abc123def456abc123def456abc123def45",
-					Name:        "PDBAlert",
-					Severity:    "critical",
-					Type:        "prometheus",
-					TargetType:  "kubernetes",
+					Fingerprint:  "b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8",
+					Name:         "PDBAlert",
+					Severity:     "critical",
+					Type:         "prometheus",
+					TargetType:   "kubernetes",
+					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 						Kind:      "Pod",
 						Name:      "protected-pod",
@@ -650,11 +657,12 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint: "e2e-hpa-detect-fingerprint-abc123def456abc123def456abc123def45",
-					Name:        "HPAAlert",
-					Severity:    "warning",
-					Type:        "prometheus",
-					TargetType:  "kubernetes",
+					Fingerprint:  "c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9",
+					Name:         "HPAAlert",
+					Severity:     "warning",
+					Type:         "prometheus",
+					TargetType:   "kubernetes",
+					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 						Kind:      "Pod",
 						Name:      podName,
@@ -715,11 +723,12 @@ var _ = Describe("BR-SP-102: CustomLabels Enable Business-Specific Routing", fun
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint: "e2e-custom-labels-fingerprint-abc123def456abc123def456abc123de",
-					Name:        "PaymentsAlert",
-					Severity:    "critical",
-					Type:        "prometheus",
-					TargetType:  "kubernetes",
+					Fingerprint:  "d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0",
+					Name:         "PaymentsAlert",
+					Severity:     "critical",
+					Type:         "prometheus",
+					TargetType:   "kubernetes",
+					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 						Kind:      "Pod",
 						Name:      "payments-api",

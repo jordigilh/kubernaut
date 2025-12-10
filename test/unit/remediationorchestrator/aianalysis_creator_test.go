@@ -220,6 +220,91 @@ var _ = Describe("AIAnalysisCreator", func() {
 			})
 		})
 
+		// BR-ORCH-025: Edge cases for data pass-through
+		Context("BR-ORCH-025: Edge cases for enrichment data pass-through", func() {
+			It("should handle SignalProcessing with nil KubernetesContext gracefully", func() {
+				// Arrange - SP completed but without KubernetesContext (edge case)
+				completedSP := testutil.NewSignalProcessing("sp-test-remediation", "default", testutil.SignalProcessingOpts{
+					Phase:             signalprocessingv1.PhaseCompleted,
+					KubernetesContext: nil, // Explicitly nil
+				})
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert - should succeed, AIAnalysis created without enrichment
+				Expect(err).ToNot(HaveOccurred())
+				Expect(name).To(Equal("ai-test-remediation"))
+
+				// Verify AIAnalysis was created
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+				// EnrichmentResults.KubernetesContext should be nil when SP has no context
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext).To(BeNil())
+			})
+
+			It("should handle SignalProcessing with empty OwnerChain gracefully", func() {
+				// Arrange - SP with KubernetesContext but we test empty OwnerChain in EnrichmentResults
+				completedSP := testutil.NewSignalProcessing("sp-test-remediation", "default", testutil.SignalProcessingOpts{
+					Phase: signalprocessingv1.PhaseCompleted,
+					KubernetesContext: &signalprocessingv1.KubernetesContext{
+						NamespaceLabels: map[string]string{"env": "test"},
+					},
+				})
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert - should succeed with empty owner chain
+				Expect(err).ToNot(HaveOccurred())
+
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify AIAnalysis was created successfully even if OwnerChain is empty
+				Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+				// OwnerChain in EnrichmentResults should be empty (zero length) when SP doesn't have owner traversal
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.OwnerChain).To(BeEmpty())
+			})
+
+			It("should handle SignalProcessing with partial/incomplete enrichment data", func() {
+				// Arrange - SP with only some enrichment fields populated (simulates partial failure)
+				completedSP := testutil.NewSignalProcessing("sp-test-remediation", "default", testutil.SignalProcessingOpts{
+					Phase: signalprocessingv1.PhaseCompleted,
+					KubernetesContext: &signalprocessingv1.KubernetesContext{
+						NamespaceLabels: nil, // nil labels (empty enrichment)
+					},
+				})
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme)
+				rr := testutil.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert - should succeed, partial data is better than no data
+				Expect(err).ToNot(HaveOccurred())
+
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				// AIAnalysis should be created even with incomplete enrichment
+				Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+			})
+		})
+
 		// BR-ORCH-025: Error handling ensures failures are propagated correctly
 		Context("BR-ORCH-025: Error handling for infrastructure failures", func() {
 			DescribeTable("should return appropriate error when client operations fail",

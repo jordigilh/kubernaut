@@ -1,6 +1,6 @@
 # ⚠️ NOTICE: Podman Stale Port Binding Fix - AUTHORITATIVE
 
-**From**: Data Storage Team
+**From**: Data Storage Team (updated by WorkflowExecution Team)
 **To**: ALL Teams Using Podman Integration Tests
 **Date**: December 10, 2025
 **Priority**: 🟢 LOW (preventive fix)
@@ -39,45 +39,70 @@ This is a known issue with Podman machine on macOS where the proxy state gets ou
 
 ---
 
-## ✅ Solution: Pre-Flight Port Cleanup
+## ✅ Solution: Service-Specific Port Cleanup
 
-### Makefile Target (AUTHORITATIVE)
+### ⚠️ CRITICAL: Use Service-Specific Targets
 
-Add this target to your service's Makefile **before** any Podman-based integration test targets:
+**DO NOT** create a global `clean-podman-ports` target that kills all ports. Services share the `podman-compose.test.yml` infrastructure, and killing all ports will break other services.
+
+**Pattern**: `clean-podman-ports-<servicename>`
+
+Each service MUST have its **own** cleanup target with **service-specific ports only**.
+
+---
+
+### Service Port Mapping (Reference)
+
+| Service | Ports Used | Container Names |
+|---------|------------|-----------------|
+| **WorkflowExecution** | 18090, 19090, 15433, 16379 | `kubernaut_datastorage_1`, `kubernaut_postgres_1`, `kubernaut_redis_1` |
+| **Data Storage** | 5432, 15433 | `datastorage-postgres` |
+| **AI Service** | 6379, 16379 | `ai-redis` |
+| **Gateway** | 16379 | `kubernaut_redis_1` |
+| **HolmesGPT API** | 8081, 15433, 16379 | `kubernaut_holmesgpt-api_1`, `kubernaut_postgres_1`, `kubernaut_redis_1` |
+
+---
+
+### Makefile Target Examples
+
+#### WorkflowExecution Service ✅ IMPLEMENTED
 
 ```makefile
-.PHONY: clean-podman-ports
-clean-podman-ports: ## Clean stale Podman port bindings (fixes "proxy already running" errors)
-	@echo "🧹 Cleaning stale Podman port bindings..."
-	@# Kill any processes holding test ports (customize ports for your service)
+.PHONY: clean-podman-ports-workflowexecution
+clean-podman-ports-workflowexecution: ## Clean stale Podman ports for WE tests only
+	@echo "🧹 Cleaning stale Podman ports for WorkflowExecution tests..."
+	@# WE uses: 18090 (DS HTTP), 19090 (DS Metrics), 15433 (PostgreSQL), 16379 (Redis)
+	@lsof -ti:18090 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:19090 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -ti:15433 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -ti:16379 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:5432 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:6379 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@# Remove any stale containers (customize names for your service)
-	@podman rm -f datastorage-postgres datastorage-redis ai-redis 2>/dev/null || true
-	@echo "✅ Port cleanup complete"
+	@podman rm -f kubernaut_datastorage_1 kubernaut_postgres_1 kubernaut_redis_1 2>/dev/null || true
+	@echo "✅ WE port cleanup complete"
 ```
 
-### Make Integration Test Depend on Cleanup
+#### Data Storage Service
 
 ```makefile
-.PHONY: test-integration-myservice
-test-integration-myservice: clean-podman-ports ## Run MyService integration tests
-	# ... your existing target ...
+.PHONY: clean-podman-ports-datastorage
+clean-podman-ports-datastorage: ## Clean stale Podman ports for DS tests only
+	@echo "🧹 Cleaning stale Podman ports for Data Storage tests..."
+	@lsof -ti:5432 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:15433 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@podman rm -f datastorage-postgres 2>/dev/null || true
+	@echo "✅ DS port cleanup complete"
 ```
 
 ---
 
-## 📦 Services That Need This Fix
+## 📦 Services Implementation Status
 
-| Service | Test Target | Ports Used | Status |
-|---------|-------------|------------|--------|
-| **Data Storage** | `test-integration-datastorage` | 5432, 15433 | ✅ Fixed |
-| **AI Service** | `test-integration-ai` | 6379, 16379 | ⚠️ Needs fix |
-| **Gateway** | `test-integration-gateway` | Various | ⚠️ Needs fix |
-| **HolmesGPT API** | `test-integration-holmesgpt` | 5432, 6379 | ⚠️ Needs fix |
-| **WorkflowExecution** | `test-integration-workflowexecution` | Various | ⚠️ Needs fix |
+| Service | Cleanup Target | Status |
+|---------|----------------|--------|
+| **WorkflowExecution** | `clean-podman-ports-workflowexecution` | ✅ Implemented |
+| **Data Storage** | `clean-podman-ports-datastorage` | ⚠️ Needs implementation |
+| **AI Service** | `clean-podman-ports-ai` | ⚠️ Needs implementation |
+| **Gateway** | `clean-podman-ports-gateway` | ⚠️ Needs implementation |
+| **HolmesGPT API** | `clean-podman-ports-holmesgpt` | ⚠️ Needs implementation |
 
 ---
 
@@ -85,27 +110,28 @@ test-integration-myservice: clean-podman-ports ## Run MyService integration test
 
 If tests fail with "proxy already running" and you need immediate recovery:
 
-### Option 1: Kill Specific Port (Fast)
+### Option 1: Use Service-Specific Cleanup Target (Recommended)
 
 ```bash
-# Find and kill process holding port
-lsof -ti:15433 | xargs kill -9
-lsof -ti:16379 | xargs kill -9
+make clean-podman-ports-workflowexecution  # For WE tests
+make clean-podman-ports-datastorage        # For DS tests
 ```
 
-### Option 2: Restart Podman Machine (Comprehensive)
+### Option 2: Kill Specific Port (Fast)
+
+```bash
+# Find and kill process holding specific port
+lsof -ti:18090 | xargs kill -9  # Data Storage HTTP
+lsof -ti:15433 | xargs kill -9  # PostgreSQL
+```
+
+### Option 3: Restart Podman Machine (Nuclear Option)
 
 ```bash
 podman machine stop && podman machine start
 ```
 
-This takes ~30 seconds but guarantees a clean state.
-
-### Option 3: Use Cleanup Target
-
-```bash
-make clean-podman-ports
-```
+This takes ~30 seconds but guarantees a clean state. Use only when service-specific cleanup doesn't work.
 
 ---
 
@@ -115,8 +141,8 @@ After implementing the fix, verify with:
 
 ```bash
 # Run integration tests twice in a row
-make test-integration-datastorage
-make test-integration-datastorage
+make test-integration-workflowexecution
+make test-integration-workflowexecution
 
 # Both should pass without "proxy already running" errors
 ```
@@ -145,20 +171,24 @@ When a container is removed without graceful shutdown, `gvproxy` may not release
 
 | Document | Purpose |
 |----------|---------|
-| [ADR-016](../architecture/decisions/ADR-016-integration-test-infrastructure.md) | Podman-based test infrastructure design |
+| [ADR-016](../architecture/decisions/ADR-016-SERVICE-SPECIFIC-INTEGRATION-TEST-INFRASTRUCTURE.md) | Podman-based test infrastructure design |
 | [03-testing-strategy.mdc](../../.cursor/rules/03-testing-strategy.mdc) | Testing strategy and infrastructure patterns |
 
 ---
 
 ## ✅ Acceptance Criteria
 
-- [ ] All services add `clean-podman-ports` target to Makefile
-- [ ] All `test-integration-*` targets depend on `clean-podman-ports`
+- [x] WorkflowExecution: `clean-podman-ports-workflowexecution` implemented
+- [ ] Data Storage: `clean-podman-ports-datastorage` implemented
+- [ ] AI Service: `clean-podman-ports-ai` implemented
+- [ ] Gateway: `clean-podman-ports-gateway` implemented
+- [ ] HolmesGPT API: `clean-podman-ports-holmesgpt` implemented
 - [ ] No more "proxy already running" failures in CI/CD
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: December 10, 2025
-**Maintained By**: Data Storage Team
+**Updated**: December 10, 2025 (Added service-specific guidance, WE implementation)
+**Maintained By**: Data Storage Team + WorkflowExecution Team
 

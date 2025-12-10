@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -172,19 +173,9 @@ func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metric
 }
 
 func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
-	// 1. Initialize Redis client (DD-CACHE-001: Shared Redis Library)
-	redisClient := rediscache.NewClient(&goredis.Options{
-		Addr:         cfg.Infrastructure.Redis.Addr,
-		DB:           cfg.Infrastructure.Redis.DB,
-		Password:     cfg.Infrastructure.Redis.Password,
-		DialTimeout:  cfg.Infrastructure.Redis.DialTimeout,
-		ReadTimeout:  cfg.Infrastructure.Redis.ReadTimeout,
-		WriteTimeout: cfg.Infrastructure.Redis.WriteTimeout,
-		PoolSize:     cfg.Infrastructure.Redis.PoolSize,
-		MinIdleConns: cfg.Infrastructure.Redis.MinIdleConns,
-	}, logger)
+	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 
-	// 2. Initialize Kubernetes clients
+	// Initialize Kubernetes clients
 	// Get kubeconfig with standard Kubernetes precedence:
 	// 1. --kubeconfig flag
 	// 2. KUBECONFIG environment variable (used in tests: ~/.kube/kind-config)
@@ -210,18 +201,13 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	return createServerWithClients(cfg, logger, metricsInstance, redisClient, ctrlClient, k8sClient)
+	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
 }
 
 // createServerWithClients is the common server creation logic
 // DD-005: Uses logr.Logger for unified logging interface
-func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, redisClient *rediscache.Client, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
-	// DD-GATEWAY-004: kubernetes clientset removed (no longer needed for authentication)
-	// clientset, err := kubernetes.NewForConfig(kubeConfig) // REMOVED
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to create Kubernetes clientset: %w", err)
-	// } // REMOVED
-
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
+func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
 	// Initialize processing pipeline components
 	adapterRegistry := adapters.NewAdapterRegistry(logger)
 
@@ -230,86 +216,37 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		metricsInstance = metrics.NewMetrics()
 	}
 
-	// DD-GATEWAY-009: Initialize deduplicator with K8s client for state-based deduplication
-	var deduplicator *processing.DeduplicationService
-	if cfg.Processing.Deduplication.TTL > 0 {
-		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, k8sClient, cfg.Processing.Deduplication.TTL, logger, metricsInstance)
-		logger.Info("Using custom deduplication TTL", "ttl", cfg.Processing.Deduplication.TTL)
-	} else {
-		deduplicator = processing.NewDeduplicationService(redisClient, k8sClient, logger, metricsInstance)
-	}
-
 	// DD-GATEWAY-009: Initialize CRD updater for duplicate alert handling
 	crdUpdater := processing.NewCRDUpdater(k8sClient, logger)
 
-	stormDetector := processing.NewStormDetector(redisClient.GetClient(), cfg.Processing.Storm.RateThreshold, cfg.Processing.Storm.PatternThreshold, metricsInstance)
-	if cfg.Processing.Storm.RateThreshold > 0 || cfg.Processing.Storm.PatternThreshold > 0 {
-		logger.Info("Using custom storm detection thresholds",
-			"rate_threshold", cfg.Processing.Storm.RateThreshold,
-			"pattern_threshold", cfg.Processing.Storm.PatternThreshold,
-		)
+	// DD-GATEWAY-012: Storm detection via Redis REMOVED
+	// Storm status now tracked via status.stormAggregation (occurrence count >= threshold)
+	stormThreshold := int32(cfg.Processing.Storm.BufferThreshold)
+	if stormThreshold <= 0 {
+		stormThreshold = 5 // Default storm threshold
 	}
-
-	// DD-GATEWAY-008: Use NewStormAggregatorWithConfig for full feature support
-	// This enables buffered first-alert aggregation, sliding windows, and multi-tenant isolation
-	stormAggregator := processing.NewStormAggregatorWithConfig(
-		redisClient.GetClient(),
-		logger,                                 // Logger for operational visibility (DD-005: logr.Logger)
-		cfg.Processing.Storm.BufferThreshold,   // BR-GATEWAY-016: Buffer N alerts before creating window
-		cfg.Processing.Storm.InactivityTimeout, // BR-GATEWAY-008: Sliding window timeout
-		cfg.Processing.Storm.MaxWindowDuration, // BR-GATEWAY-008: Maximum window duration
-		1000,                                   // defaultMaxSize: Default namespace buffer size
-		5000,                                   // globalMaxSize: Global buffer limit
-		nil,                                    // perNamespaceLimits: Per-namespace overrides (future)
-		0.95,                                   // samplingThreshold: Utilization to trigger sampling
-		0.5,                                    // samplingRate: Sample rate when threshold reached
-	)
-	if cfg.Processing.Storm.BufferThreshold > 0 || cfg.Processing.Storm.InactivityTimeout > 0 {
-		logger.Info("Using custom storm buffering configuration",
-			"buffer_threshold", cfg.Processing.Storm.BufferThreshold,
-			"inactivity_timeout", cfg.Processing.Storm.InactivityTimeout,
-			"max_window_duration", cfg.Processing.Storm.MaxWindowDuration,
-			"aggregation_window", cfg.Processing.Storm.AggregationWindow)
-	}
-
-	// Note: Environment classifier, Priority engine, and RemediationPathDecider removed (2025-12-06)
-	// Environment/Priority classification now owned by Signal Processing per DD-CATEGORIZATION-001
-	// Remediation path (risk_tolerance) derived by SP via Rego per DD-WORKFLOW-001
-	// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
+	logger.Info("DD-GATEWAY-012: Redis-free storm detection enabled",
+		"storm_threshold", stormThreshold)
 
 	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
 
-	// DD-GATEWAY-011: Initialize status-based deduplication components (Redis deprecation)
-	// These components update RR status fields instead of Redis, enabling Redis removal
+	// DD-GATEWAY-011 + DD-GATEWAY-012: Status-based deduplication and storm aggregation
+	// All state in K8s RR status - Redis fully deprecated
 	statusUpdater := processing.NewStatusUpdater(ctrlClient)
 	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
 
-	// 4. Initialize middleware
-	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
-	// authMiddleware := middleware.NewAuthMiddleware(clientset, logger) // REMOVED
-	// rateLimiter := middleware.NewRateLimiter(cfg.Middleware.RateLimit.RequestsPerMinute, cfg.Middleware.RateLimit.Burst, logger) // REMOVED
-
-	// 5. Create server
+	// Create server (Redis-free)
 	server := &Server{
 		adapterRegistry: adapterRegistry,
-		deduplicator:    deduplicator,
-		crdUpdater:      crdUpdater, // DD-GATEWAY-009: CRD updater for state-based deduplication
-		stormDetector:   stormDetector,
-		stormAggregator: stormAggregator,
-		// DD-GATEWAY-011: Status-based deduplication (Redis deprecation path)
-		statusUpdater: statusUpdater,
-		phaseChecker:  phaseChecker,
-		// Note: classifier, priorityEngine, pathDecider removed - SP owns classification and path
-		crdCreator:  crdCreator,
-		redisClient: redisClient,
-		k8sClient:   k8sClient,
-		ctrlClient:  ctrlClient,
-		// DD-GATEWAY-004: Authentication middleware removed
-		// authMiddleware:  authMiddleware, // REMOVED
-		// rateLimiter:     rateLimiter,    // REMOVED
+		crdUpdater:      crdUpdater,
+		statusUpdater:   statusUpdater,
+		phaseChecker:    phaseChecker,
+		crdCreator:      crdCreator,
+		k8sClient:       k8sClient,
+		ctrlClient:      ctrlClient,
+		stormThreshold:  stormThreshold,
 		metricsInstance: metricsInstance,
 		logger:          logger,
-		// aggregationGroup is zero-initialized (ready to use)
 	}
 
 	// 6. Setup HTTP server with routes
@@ -661,65 +598,9 @@ func (s *Server) sendSuccessResponse(
 //	    }
 //	}()
 func (s *Server) Start(ctx context.Context) error {
-	// Start Redis health check goroutine (BR-106: Redis availability monitoring)
-	go s.monitorRedisHealth(ctx)
-
+	// DD-GATEWAY-012: Redis health monitor REMOVED - Gateway is Redis-free
 	s.logger.Info("Starting Gateway server", "addr", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
-}
-
-// monitorRedisHealth periodically checks Redis availability and updates metrics
-//
-// BUSINESS OUTCOME: Enable operators to track Redis SLO (BR-106)
-// This goroutine runs every 5 seconds and:
-// 1. Pings Redis to check availability
-// 2. Updates gateway_redis_available gauge (1=available, 0=unavailable)
-// 3. Tracks outage duration and count
-//
-// The health check runs independently of request processing to provide
-// continuous visibility into Redis health even during low traffic periods.
-func (s *Server) monitorRedisHealth(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	wasAvailable := true // Assume available at start
-	outageStart := time.Time{}
-
-	for {
-		select {
-		case <-ctx.Done():
-			s.logger.Info("Redis health monitor stopped")
-			return
-		case <-ticker.C:
-			// Check Redis availability
-			err := s.redisClient.EnsureConnection(ctx)
-			isAvailable := (err == nil)
-
-			// Update availability gauge
-			if isAvailable {
-				s.metricsInstance.RedisAvailable.Set(1)
-
-				// If recovering from outage, record outage duration
-				if !wasAvailable && !outageStart.IsZero() {
-					outageDuration := time.Since(outageStart).Seconds()
-					s.metricsInstance.RedisOutageDuration.Add(outageDuration)
-					s.logger.Info("Redis recovered from outage",
-						"outage_duration", time.Since(outageStart))
-				}
-			} else {
-				s.metricsInstance.RedisAvailable.Set(0)
-
-				// If this is start of new outage, record it
-				if wasAvailable {
-					outageStart = time.Now()
-					s.metricsInstance.RedisOutageCount.Inc()
-					s.logger.Info("Redis outage detected", "error", err)
-				}
-			}
-
-			wasAvailable = isAvailable
-		}
-	}
 }
 
 // Stop gracefully stops the HTTP server
@@ -728,8 +609,9 @@ func (s *Server) monitorRedisHealth(ctx context.Context) {
 // 1. Set shutdown flag (readiness probe returns 503)
 // 2. Wait 5 seconds for Kubernetes endpoint removal propagation
 // 3. Shutdown HTTP server (waits for in-flight requests)
-// 4. Close Redis connections
-// 5. Return error if shutdown fails
+// 4. Return error if shutdown fails
+//
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
 //
 // Shutdown timeout is controlled by the provided context:
 //
@@ -778,14 +660,7 @@ func (s *Server) Stop(ctx context.Context) error {
 		return err
 	}
 
-	// STEP 4: Close Redis connections
-	if s.redisClient != nil {
-		if err := s.redisClient.Close(); err != nil {
-			s.logger.Error(err, "Failed to close Redis client")
-			return err
-		}
-	}
-
+	// DD-GATEWAY-012: Redis close REMOVED - Gateway is now Redis-free
 	s.logger.Info("Gateway server stopped")
 	return nil
 }
@@ -843,7 +718,17 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	}
 
 	if shouldDeduplicate && existingRR != nil {
-		// DD-GATEWAY-011: Update status.deduplication for duplicate tracking
+		// ========================================
+		// DD-GATEWAY-013: Hybrid Async Status Update Pattern
+		// 📋 Design Decision: DD-GATEWAY-013 | ✅ Approved | Confidence: 85%
+		// See: docs/architecture/decisions/DD-GATEWAY-013-async-status-updates.md
+		// ========================================
+		// - SYNC: Deduplication status (needed for accurate HTTP response)
+		// - ASYNC: Storm aggregation status (non-critical, fire-and-forget)
+		// ========================================
+
+		// SYNC: Update status.deduplication (DD-GATEWAY-011)
+		// Must be synchronous - HTTP response includes occurrence count
 		if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, existingRR); err != nil {
 			logger.Info("Failed to update deduplication status (DD-GATEWAY-011)",
 				"error", err,
@@ -851,42 +736,48 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 				"rr", existingRR.Name)
 		}
 
-		// Record deduplication metric
+		// Calculate storm threshold (needed for both async update and metrics)
+		occurrenceCount := int32(1)
+		if existingRR.Status.Deduplication != nil {
+			occurrenceCount = existingRR.Status.Deduplication.OccurrenceCount
+		}
+		isThresholdReached := occurrenceCount >= s.stormThreshold
+
+		// ASYNC: Update status.stormAggregation (DD-GATEWAY-013)
+		// Fire-and-forget - storm status is informational, not critical for response
+		// Captures variables for goroutine closure
+		rrCopy := existingRR.DeepCopy() // Safe copy for async use
+		go func() {
+			asyncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := s.statusUpdater.UpdateStormAggregationStatus(asyncCtx, rrCopy, isThresholdReached); err != nil {
+				s.logger.Info("Failed to update storm aggregation status (async, DD-GATEWAY-013)",
+					"error", err,
+					"fingerprint", signal.Fingerprint,
+					"rr", rrCopy.Name,
+					"occurrenceCount", occurrenceCount,
+					"threshold", s.stormThreshold)
+			}
+		}()
+
+		// Record metrics
 		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+		if isThresholdReached {
+			s.metricsInstance.AlertStormsDetectedTotal.WithLabelValues("rate", signal.AlertName).Inc()
+		}
 
 		logger.V(1).Info("Duplicate signal detected (K8s status-based)",
 			"fingerprint", signal.Fingerprint,
 			"existingRR", existingRR.Name,
-			"phase", existingRR.Status.OverallPhase)
+			"phase", existingRR.Status.OverallPhase,
+			"occurrenceCount", occurrenceCount,
+			"isStorm", isThresholdReached)
 
 		// Return duplicate response with data from existing RR
 		return NewDuplicateResponseFromRR(signal.Fingerprint, existingRR), nil
 	}
 
-	// 2. Storm detection
-	isStorm, stormMetadata, err := s.stormDetector.Check(ctx, signal)
-	if err != nil {
-		// Non-critical error: log warning but continue processing
-		logger.Info("Storm detection failed",
-			"fingerprint", signal.Fingerprint,
-			"error", err)
-	} else if isStorm && stormMetadata != nil {
-		// TDD REFACTOR: Extracted storm aggregation logic
-		shouldContinue, response := s.processStormAggregation(ctx, signal, stormMetadata)
-		if !shouldContinue {
-			// Storm was aggregated, return response immediately
-			return response, nil
-		}
-
-		// Aggregation failed, enrich signal for individual CRD creation
-		signal.IsStorm = true
-		signal.StormType = stormMetadata.StormType
-		signal.StormWindow = stormMetadata.Window
-		signal.AlertCount = stormMetadata.AlertCount
-	}
-
-	// 3. CRD creation pipeline
-	// TDD REFACTOR: Extracted CRD creation logic
+	// 2. CRD creation pipeline (DD-GATEWAY-012: No storm buffering - create RR immediately)
 	return s.createRemediationRequestCRD(ctx, signal, start)
 }
 
@@ -961,21 +852,23 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+	// Only check Kubernetes API connectivity
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// Check Redis connectivity
-	if err := s.redisClient.EnsureConnection(ctx); err != nil {
-		s.logger.Info("Readiness check failed: Redis not reachable", "error", err)
+	// Check Kubernetes API connectivity by listing namespaces
+	namespaceList := &corev1.NamespaceList{}
+	if err := s.ctrlClient.List(ctx, namespaceList, client.Limit(1)); err != nil {
+		s.logger.Info("Readiness check failed: Kubernetes API not reachable", "error", err)
 
-		// Use RFC 7807 Problem Details format for structured error response
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 
 		errorResponse := gwerrors.RFC7807Error{
 			Type:     gwerrors.ErrorTypeServiceUnavailable,
 			Title:    gwerrors.TitleServiceUnavailable,
-			Detail:   "Redis is not reachable",
+			Detail:   "Kubernetes API is not reachable",
 			Status:   http.StatusServiceUnavailable,
 			Instance: r.URL.Path,
 		}
@@ -985,10 +878,6 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
-	// Check Kubernetes API connectivity
-	// Note: This is a placeholder - actual implementation would use k8sClient
-	// to perform a simple API call (e.g. list namespaces with limit=1)
 
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ready"}); err != nil {
@@ -1147,129 +1036,9 @@ func (s *Server) parseCRDReference(ref string) (namespace, name string) {
 	return parts[0], parts[1]
 }
 
-// processStormAggregation handles storm detection and aggregation logic
-// TDD REFACTOR: Extracted from ProcessSignal for clarity
-// DD-GATEWAY-008: Enhanced with buffered first-alert aggregation
-// Business Outcome: Consistent storm aggregation (BR-GATEWAY-016, BR-GATEWAY-008)
-// Returns: (shouldContinue bool, response *ProcessingResponse)
-//   - shouldContinue=false means storm was aggregated/buffered, return response immediately
-//   - shouldContinue=true means fall through to individual CRD creation
-func (s *Server) processStormAggregation(ctx context.Context, signal *types.NormalizedSignal, stormMetadata *processing.StormMetadata) (bool, *ProcessingResponse) {
-	logger := middleware.GetLogger(ctx)
-
-	s.metricsInstance.AlertStormsDetectedTotal.WithLabelValues(stormMetadata.StormType, signal.AlertName).Inc()
-
-	logger.Info("Alert storm detected",
-		"fingerprint", signal.Fingerprint,
-		"stormType", stormMetadata.StormType,
-		"stormWindow", stormMetadata.Window,
-		"alertCount", stormMetadata.AlertCount)
-
-	// DD-GATEWAY-008: Check if aggregation window exists
-	shouldAggregate, windowID, err := s.stormAggregator.ShouldAggregate(ctx, signal)
-	if err != nil {
-		logger.Info("Storm aggregation check failed, falling back to individual CRD creation",
-			"fingerprint", signal.Fingerprint,
-			"error", err)
-		return true, nil // Continue to individual CRD creation
-	}
-
-	if shouldAggregate {
-		// DD-GATEWAY-008: Add to existing aggregation window (sliding window behavior)
-		if err := s.stormAggregator.AddResource(ctx, windowID, signal); err != nil {
-			logger.Info("Failed to add resource to storm aggregation, falling back to individual CRD creation",
-				"fingerprint", signal.Fingerprint,
-				"windowID", windowID,
-				"error", err)
-			return true, nil // Continue to individual CRD creation
-		}
-
-		// Successfully added to aggregation window
-		resourceCount, _ := s.stormAggregator.GetResourceCount(ctx, windowID)
-
-		logger.Info("Alert added to storm aggregation window",
-			"fingerprint", signal.Fingerprint,
-			"windowID", windowID,
-			"resourceCount", resourceCount)
-
-		return false, NewStormAggregationResponse(signal.Fingerprint, windowID, stormMetadata.StormType, resourceCount, false)
-	}
-
-	// DD-GATEWAY-008: No window exists, call StartAggregation
-	// StartAggregation will:
-	// - Buffer first N alerts (default: 5)
-	// - Return empty windowID if buffering (threshold not reached)
-	// - Return windowID if threshold reached (window created)
-	windowID, err = s.stormAggregator.StartAggregation(ctx, signal, stormMetadata)
-	if err != nil {
-		logger.Info("Failed to start storm aggregation, falling back to individual CRD creation",
-			"fingerprint", signal.Fingerprint,
-			"error", err)
-
-		// DD-GATEWAY-008: Record buffer overflow/blocking metrics (BR-GATEWAY-011)
-		// Check if error is due to capacity issues
-		if strings.Contains(err.Error(), "over capacity") {
-			s.metricsInstance.NamespaceBufferBlocking.WithLabelValues(signal.Namespace).Inc()
-			s.metricsInstance.StormBufferOverflow.WithLabelValues(signal.Namespace).Inc()
-		}
-
-		return true, nil // Continue to individual CRD creation
-	}
-
-	// DD-GATEWAY-008: Check if window was created or alert was buffered
-	if windowID == "" {
-		// Alert buffered, threshold not reached yet
-		logger.Info("Alert buffered for storm aggregation",
-			"fingerprint", signal.Fingerprint,
-			"alertName", signal.AlertName,
-			"namespace", signal.Namespace)
-
-		// DD-GATEWAY-008: Record namespace buffer utilization (BR-GATEWAY-011)
-		if utilization, err := s.stormAggregator.GetNamespaceUtilization(ctx, signal.Namespace); err == nil {
-			s.metricsInstance.NamespaceBufferUtilization.WithLabelValues(signal.Namespace).Set(utilization)
-		}
-
-		// Return HTTP 202 Accepted (buffered, waiting for more alerts)
-		return false, &ProcessingResponse{
-			Status:      StatusAccepted,
-			Message:     "Alert buffered for storm aggregation (threshold not reached)",
-			Fingerprint: signal.Fingerprint,
-		}
-	}
-
-	// DD-GATEWAY-008: Threshold reached - create CRD IMMEDIATELY with ALL buffered alerts
-	// Per DD-GATEWAY-008 lines 99-146: "When threshold reached, create aggregated CRD with ALL buffered alerts"
-	logger.Info("Storm aggregation threshold reached - creating CRD immediately",
-		"fingerprint", signal.Fingerprint,
-		"windowID", windowID,
-		"alertName", signal.AlertName,
-		"namespace", signal.Namespace)
-
-	// Create aggregated CRD synchronously
-	crdName, err := s.createAggregatedCRD(ctx, windowID, signal, stormMetadata)
-	if err != nil {
-		logger.Info("Failed to create aggregated CRD, falling back to individual CRD creation",
-			"windowID", windowID,
-			"error", err)
-		return true, nil // Fall back to individual CRD creation
-	}
-
-	// Monitor window expiration for cleanup (window continues accepting alerts)
-	go s.monitorWindowExpiration(context.Background(), windowID)
-
-	logger.Info("Storm aggregated CRD created",
-		"fingerprint", signal.Fingerprint,
-		"windowID", windowID,
-		"crdName", crdName)
-
-	// Return HTTP 201 Created with CRD name
-	return false, &ProcessingResponse{
-		Status:                 StatusCreated,
-		Message:                "Storm aggregated CRD created",
-		Fingerprint:            signal.Fingerprint,
-		RemediationRequestName: crdName,
-	}
-}
+// DD-GATEWAY-012: processStormAggregation REMOVED - Redis-based storm buffering deprecated
+// Storm detection now uses status.stormAggregation via StatusUpdater (async pattern)
+// Per DD-GATEWAY-008 supersession: Create RR immediately, track storm in status
 
 // createRemediationRequestCRD handles the CRD creation pipeline
 // TDD REFACTOR: Extracted from ProcessSignal for clarity
@@ -1305,143 +1074,12 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace), nil
 }
 
-// createAggregatedCRDAfterWindow creates a single aggregated RemediationRequest CRD
-// after the storm aggregation window expires
-//
-// Business Requirement: BR-GATEWAY-016 - Storm aggregation
-//
-// This method is called in a goroutine when a storm aggregation window is started.
-// It waits for the window duration (1 minute), then:
-// 1. Retrieves all aggregated resources from Redis
-// 2. Retrieves the original signal metadata
-// 3. Creates a single RemediationRequest CRD with all resources
-// 4. Stores deduplication metadata
-//
-// Benefits:
-// - Reduces CRD count by 10-50x during storms
-// - AI service receives single aggregated analysis request
-// - Coordinated remediation instead of 50 parallel workflows
-//
-// Example:
-// - Storm: 50 pod crashes in 1 minute
-// - Without aggregation: 50 CRDs created
-// - With aggregation: 1 CRD created with 50 resources listed
-// createAggregatedCRD creates aggregated CRD immediately when threshold reached (DD-GATEWAY-008)
-//
-// DD-GATEWAY-008 Design Decision: Create CRD synchronously when buffer threshold reached
-// Source: docs/architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md lines 99-146
-//
-// Returns:
-// - string: CRD name
-// - error: CRD creation errors
-func (s *Server) createAggregatedCRD(
-	ctx context.Context,
-	windowID string,
-	firstSignal *types.NormalizedSignal,
-	stormMetadata *processing.StormMetadata,
-) (string, error) {
-	logger := middleware.GetLogger(ctx)
+// DD-GATEWAY-012: createAggregatedCRD REMOVED - Redis-based storm aggregation deprecated
+// Storm tracking now uses status.stormAggregation via StatusUpdater (async pattern)
+// RRs are created immediately on first alert, storm status updated on subsequent alerts
 
-	// Retrieve all aggregated resources (includes buffered alerts moved to window)
-	resources, err := s.stormAggregator.GetAggregatedResources(ctx, windowID)
-	if err != nil {
-		logger.Error(err, "Failed to retrieve aggregated resources",
-			"windowID", windowID)
-		return "", fmt.Errorf("failed to retrieve aggregated resources: %w", err)
-	}
-
-	// Retrieve signal metadata
-	signal, storedStormMetadata, err := s.stormAggregator.GetSignalMetadata(ctx, windowID)
-	if err != nil {
-		logger.Info("Failed to retrieve signal metadata, using first signal",
-			"windowID", windowID,
-			"error", err)
-		// Fall back to using the first signal passed as parameter
-		signal = firstSignal
-	} else {
-		// Use stored storm metadata if available
-		if storedStormMetadata != nil {
-			stormMetadata = storedStormMetadata
-		}
-	}
-
-	// Update alert count with actual aggregated count
-	resourceCount := len(resources)
-
-	logger.Info("Creating aggregated RemediationRequest CRD (DD-GATEWAY-008)",
-		"windowID", windowID,
-		"alertName", signal.AlertName,
-		"resourceCount", resourceCount,
-		"stormType", stormMetadata.StormType)
-
-	// Create aggregated signal with all resources
-	aggregatedSignal := *signal
-	aggregatedSignal.IsStorm = true
-	aggregatedSignal.StormType = stormMetadata.StormType
-	aggregatedSignal.StormWindow = stormMetadata.Window
-	aggregatedSignal.AlertCount = resourceCount
-	aggregatedSignal.AffectedResources = resources
-
-	// Create single aggregated RemediationRequest CRD
-	// Note: Environment/Priority classification moved to SP per DD-CATEGORIZATION-001
-	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal)
-	if err != nil {
-		logger.Error(err, "Failed to create aggregated RemediationRequest CRD",
-			"windowID", windowID,
-			"resourceCount", resourceCount)
-
-		// Record metric for failed aggregation
-		s.metricsInstance.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
-		return "", fmt.Errorf("failed to create aggregated CRD: %w", err)
-	}
-
-	// DD-GATEWAY-011: Storm aggregation now uses K8s status-based tracking
-	// Redis storage deprecated - status.stormAggregation replaces Redis state
-
-	// DD-GATEWAY-011: Update status.stormAggregation using StatusUpdater
-	// This tracks storm aggregation in RR status instead of Redis
-	isThresholdReached := resourceCount >= 5 // Default threshold per DD-GATEWAY-008
-	if err := s.statusUpdater.UpdateStormAggregationStatus(ctx, rr, isThresholdReached); err != nil {
-		logger.Info("Failed to update RR storm aggregation status (DD-GATEWAY-011)",
-			"error", err,
-			"crdName", rr.Name,
-			"resourceCount", resourceCount)
-		// Non-fatal: CRD is already created, storm tracking is bonus
-	}
-
-	// Record metrics
-	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(aggregatedSignal.SourceType, "storm_aggregated").Inc()
-
-	logger.Info("Aggregated RemediationRequest CRD created successfully (DD-GATEWAY-008)",
-		"crdName", rr.Name,
-		"windowID", windowID,
-		"resourceCount", resourceCount)
-
-	return rr.Name, nil
-}
-
-// monitorWindowExpiration monitors window expiration for cleanup (DD-GATEWAY-008)
-//
-// DD-GATEWAY-008: Window continues accepting alerts after CRD creation (sliding window)
-// This goroutine monitors the window and cleans up Redis keys after expiration.
-// Respects context cancellation for graceful shutdown.
-func (s *Server) monitorWindowExpiration(ctx context.Context, windowID string) {
-	// Wait for window to expire, respecting context cancellation
-	windowDuration := s.stormAggregator.GetWindowDuration()
-
-	select {
-	case <-time.After(windowDuration):
-		s.logger.Info("Storm aggregation window expired, cleaning up",
-			"windowID", windowID)
-	// Cleanup: Window resources are already in CRD, just remove Redis keys
-	// Note: Resources have 2x TTL for retrieval, will auto-expire
-
-	case <-ctx.Done():
-		s.logger.Info("Window expiration monitor cancelled (shutdown)",
-			"windowID", windowID)
-		return
-	}
-}
+// DD-GATEWAY-012: monitorWindowExpiration REMOVED - No Redis windows to monitor
+// Storm detection threshold now based on status.deduplication.occurrenceCount
 
 // TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication
 
