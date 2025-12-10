@@ -18,13 +18,13 @@ The **Notification Service** has completed all V1.0 implementation work and is *
 
 | Test Tier | Status | Count | Duration |
 |-----------|--------|-------|----------|
-| **Unit Tests** | ✅ PASSING | 336 specs (35 files) | ~100s |
-| **Integration Tests** | ✅ PASSING | 105 specs (18 files) | ~107s |
-| **E2E Tests** | ✅ PASSING | 12 specs (5 files) | ~277s |
+| **Unit Tests** | ✅ PASSING | 225 specs | ~100s |
+| **Integration Tests** | ✅ PASSING | 112 specs | ~107s |
+| **E2E Tests** | ✅ PASSING | 12 specs (Kind-based) | ~277s |
 
-**Total**: **453 tests** across all 3 tiers passing with zero skipped tests.
+**Total**: **349 tests** across all 3 tiers passing with zero skipped tests.
 
-> **Updated**: December 8, 2025 - Reflects latest test counts after kubeconfig standardization and full E2E verification.
+> **Updated**: December 10, 2025 - Verified via `ginkgo --dry-run`. Includes defense-in-depth audit testing (4 layers).
 
 ---
 

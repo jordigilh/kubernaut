@@ -71,11 +71,17 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 		scheme = runtime.NewScheme()
 		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
 
-		// Create fake K8s client with status subresource support
+		// Create fake K8s client with status subresource support and field index
 		// DD-GATEWAY-011: Required for Status().Update() calls
+		// BR-GATEWAY-185 v1.1: Required for spec.signalFingerprint field index
 		k8sClient = fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithStatusSubresource(&remediationv1alpha1.RemediationRequest{}).
+			WithIndex(&remediationv1alpha1.RemediationRequest{}, "spec.signalFingerprint",
+				func(obj client.Object) []string {
+					rr := obj.(*remediationv1alpha1.RemediationRequest)
+					return []string{rr.Spec.SignalFingerprint}
+				}).
 			Build()
 
 		// Create status updater (NEW component for DD-GATEWAY-011)

@@ -3,7 +3,8 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | **v2.6** | 2025-12-09 | **V1.0 COMPLIANCE AUDIT**: Identified gaps: API Group code mismatch (code uses `.io`, should be `.ai` per DD-CRD-001); Status fields not populated (TokensUsed, InvestigationID, Conditions); Recovery fields not passed to HAPI; Timeout should be spec field not annotation | [NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md](../../../handoff/NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md), [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md) |
+> | **v2.7** | 2025-12-10 | **SCHEMA UPDATE**: Removed `TokensUsed` from status - LLM token tracking is HAPI's responsibility; HAPI exposes `holmesgpt_llm_token_usage_total` Prometheus metric; AIAnalysis correlates via `InvestigationID` | DD-COST-001 |
+> | v2.6 | 2025-12-09 | **V1.0 COMPLIANCE AUDIT**: Identified gaps: API Group code mismatch (code uses `.io`, should be `.ai` per DD-CRD-001); Status fields not populated (InvestigationID, Conditions); Recovery fields not passed to HAPI; Timeout should be spec field not annotation | [NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md](../../../handoff/NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md), [DD-CRD-001](../../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md) |
 > | v2.5 | 2025-12-05 | **SCHEMA UPDATE**: Added `AlternativeWorkflows []AlternativeWorkflow` to status for audit/operator context (NOT for automatic execution); Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
 > | v2.4 | 2025-12-03 | **SCHEMA UPDATE**: Removed `podSecurityLevel` from DetectedLabels (9→8 fields) per DD-WORKFLOW-001 v2.2; PSP deprecated in K8s 1.21, PSS is namespace-level | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [NOTICE](../../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md) |
 > | v2.3 | 2025-12-02 | **SCHEMA UPDATE**: Added `FailedDetections []string` to DetectedLabels per DD-WORKFLOW-001 v2.1; Detection failure handling with enum validation | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
@@ -408,7 +409,8 @@ type AIAnalysisStatus struct {
 
     // Investigation details
     InvestigationID   string `json:"investigationId,omitempty"`
-    TokensUsed        int    `json:"tokensUsed,omitempty"`
+    // NOTE: TokensUsed REMOVED (v2.7) - HAPI owns LLM cost observability
+    // Use InvestigationID to correlate with HAPI's holmesgpt_llm_token_usage_total metric
     InvestigationTime int64  `json:"investigationTime,omitempty"`
 
     // ========================================

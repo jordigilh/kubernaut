@@ -246,6 +246,7 @@ Confidence: {scenario.confidence * 100:.0f}%
             "workflow_id": scenario.workflow_id,
             "title": scenario.workflow_title,
             "version": "1.0.0",
+            "containerImage": f"kubernaut/mock-workflow-{scenario.workflow_id.replace('mock-', '')}:v1.0.0",
             "confidence": scenario.confidence,
             "rationale": f"Mock selection based on {signal_type} signal type (BR-HAPI-212)",
             "parameters": parameters

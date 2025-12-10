@@ -77,7 +77,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 - ✅ **Remediation Execution v1.0 Complete**: 231 tests (178U+47I+6E2E), 12 BRs implemented, DD-WE-001 cooldown logic fixed, full audit integration
 - 🔄 **Parallel Phase Development**: Phase 3 (Signal Processing + Remediation Execution) and Phase 4 (AI Analysis) running simultaneously to validate API contracts and prevent integration rework
 - ⏸️ **Effectiveness Monitor Deferred to V1.1**: Per DD-017, deferred to V1.1 due to year-end timeline constraints (requires 8+ weeks of remediation data for meaningful assessments)
-- ✅ **Notification Service Production-Ready**: 453 tests (336U+105I+12E2E), Kind-based E2E, DD-TEST-001 compliant, shared sanitization library, `retry.RetryOnConflict` pattern
+- ✅ **Notification Service Production-Ready**: 349 tests (225U+112I+12E2E), Kind-based E2E, DD-TEST-001 compliant, shared sanitization library, `retry.RetryOnConflict` pattern
 - ⏸️ **Dynamic Toolset Deferred to V2.0**: Per DD-016, deferred to V2.0 (V1.x uses static config, redundant with HolmesGPT-API's built-in Prometheus discovery)
 - ✅ **HolmesGPT API v3.10**: 601 tests (474U+77I+45E2E+5smoke), ConfigMap hot-reload (BR-HAPI-199), `INVESTIGATION_INCONCLUSIVE`, LLM self-correction loop, `needs_human_review`, `validation_attempts_history`, E2E audit tests (real DB only)
 - ✅ **Gateway Service v1.0**: 240 tests (120U+114I+6E2E), 20 BRs, production-ready
@@ -256,7 +256,7 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 | **Gateway v1.0** | 120 | 114 | 6 (+12 deferred to v1.1) | **240** | **100%** |
 | **Data Storage** | 551 | 163 | 13 | **727** | **98%** |
 | **Dynamic Toolset** | - | - | - | **Deferred to V2.0** | **DD-016** |
-| **Notification Service** | 336 | 105 | 12 | **453** | **100%** |
+| **Notification Service** | 225 | 112 | 12 | **349** | **100%** |
 | **HolmesGPT API v3.10** | 474 | 77 | 45 | **601** | **98%** |
 | **Remediation Execution v1.0** | 178 | 47 | 6 | **231** | **95%** |
 

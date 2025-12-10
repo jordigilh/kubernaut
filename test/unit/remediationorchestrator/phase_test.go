@@ -61,6 +61,9 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 				phase.AwaitingApproval, false, "AwaitingApproval indicates human approval required"),
 			Entry("Executing is NOT terminal (WorkflowExecution active)",
 				phase.Executing, false, "Executing indicates WorkflowExecution CRD in progress"),
+			// BR-ORCH-042.2: Blocked is non-terminal to prevent Gateway from creating new RRs
+			Entry("Blocked is NOT terminal (BR-ORCH-042.2 - AC-042-2-1)",
+				phase.Blocked, false, "Blocked holds RR during cooldown, Gateway sees as active"),
 
 			// Edge cases
 			Entry("Unknown phase is NOT terminal (defensive)",
@@ -126,6 +129,12 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 				// Skipped transition (BR-ORCH-032)
 				Entry("Executing → Skipped (resource lock deduplication)",
 					phase.Executing, phase.Skipped, "Another workflow already executing on same target"),
+
+				// BR-ORCH-042: Blocked transitions for consecutive failure handling
+				Entry("Failed → Blocked (consecutive failures threshold met - BR-ORCH-042)",
+					phase.Failed, phase.Blocked, "Block signal after 3+ consecutive failures"),
+				Entry("Blocked → Failed (cooldown expired - BR-ORCH-042.3)",
+					phase.Blocked, phase.Failed, "Return to terminal Failed after cooldown"),
 			)
 		})
 
@@ -183,6 +192,7 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 			Entry("Analyzing is valid", phase.Analyzing, false, "Valid active phase"),
 			Entry("AwaitingApproval is valid", phase.AwaitingApproval, false, "Valid active phase"),
 			Entry("Executing is valid", phase.Executing, false, "Valid active phase"),
+			Entry("Blocked is valid (BR-ORCH-042.2)", phase.Blocked, false, "Valid non-terminal blocking phase"),
 			Entry("Completed is valid", phase.Completed, false, "Valid terminal phase"),
 			Entry("Failed is valid", phase.Failed, false, "Valid terminal phase"),
 			Entry("TimedOut is valid", phase.TimedOut, false, "Valid terminal phase"),

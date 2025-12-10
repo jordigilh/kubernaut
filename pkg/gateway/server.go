@@ -120,6 +120,10 @@ type Server struct {
 	// Logger (DD-005: Unified logr.Logger interface)
 	logger logr.Logger
 
+	// BR-GATEWAY-185 v1.1: Cache for field-indexed queries on spec.signalFingerprint
+	k8sCache     cache.Cache        // Kubernetes cache with field index (nil for test clients)
+	cacheCancel  context.CancelFunc // Cancel function to stop cache on shutdown
+
 	// Graceful shutdown flag
 	// When true, readiness probe returns 503 (not ready)
 	// This ensures Kubernetes removes pod from Service endpoints BEFORE
@@ -199,16 +203,72 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	_ = remediationv1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
 
-	// controller-runtime client (for CRD creation)
-	ctrlClient, err := client.New(kubeConfig, client.Options{Scheme: scheme})
+	// ========================================
+	// BR-GATEWAY-185 v1.1: Create cached client with field index
+	// Use spec.signalFingerprint (immutable, 64-char SHA256) instead of truncated labels
+	// ========================================
+
+	// Create cache for efficient queries
+	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme})
 	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes cache: %w", err)
+	}
+
+	// Add field index for spec.signalFingerprint (BR-GATEWAY-185 v1.1)
+	// This enables O(1) lookup by fingerprint without label truncation
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := k8sCache.IndexField(ctx, &remediationv1alpha1.RemediationRequest{},
+		"spec.signalFingerprint",
+		func(obj client.Object) []string {
+			rr := obj.(*remediationv1alpha1.RemediationRequest)
+			return []string{rr.Spec.SignalFingerprint}
+		}); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create fingerprint field index: %w", err)
+	}
+
+	// Start cache in background
+	go func() {
+		if err := k8sCache.Start(ctx); err != nil {
+			logger.Error(err, "BR-GATEWAY-185: Cache stopped unexpectedly")
+		}
+	}()
+
+	// Wait for cache sync (timeout after 30s)
+	syncCtx, syncCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer syncCancel()
+	if !k8sCache.WaitForCacheSync(syncCtx) {
+		cancel()
+		return nil, fmt.Errorf("failed to sync Kubernetes cache (timeout)")
+	}
+	logger.Info("BR-GATEWAY-185: Kubernetes cache synced with spec.signalFingerprint index")
+
+	// Create client backed by cache (reads go through cache, writes go to API)
+	ctrlClient, err := client.New(kubeConfig, client.Options{
+		Scheme: scheme,
+		Cache: &client.CacheOptions{
+			Reader: k8sCache,
+		},
+	})
+	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
 	}
 
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
+	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	// Store cache and cancel function for cleanup
+	server.k8sCache = k8sCache
+	server.cacheCancel = cancel
+
+	return server, nil
 }
 
 // createServerWithClients is the common server creation logic
@@ -698,6 +758,12 @@ func (s *Server) Stop(ctx context.Context) error {
 			s.logger.Error(err, "DD-AUDIT-003: Failed to close audit store (potential audit data loss)")
 			// Non-fatal: don't fail shutdown for audit store errors
 		}
+	}
+
+	// BR-GATEWAY-185 v1.1: Stop K8s cache
+	if s.cacheCancel != nil {
+		s.cacheCancel()
+		s.logger.Info("BR-GATEWAY-185: Kubernetes cache stopped")
 	}
 
 	s.logger.Info("Gateway server stopped")

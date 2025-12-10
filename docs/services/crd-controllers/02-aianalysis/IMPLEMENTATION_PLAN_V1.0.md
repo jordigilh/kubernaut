@@ -1,20 +1,27 @@
 # AI Analysis Service - Implementation Plan
 
 **Filename**: `IMPLEMENTATION_PLAN_V1.0.md`
-**Version**: v1.19
-**Last Updated**: 2025-12-09
+**Version**: v1.20
+**Last Updated**: 2025-12-10
 **Timeline**: 10 days (2 calendar weeks) + Day 11-12 Compliance Fixes
-**Status**: 📋 Day 10 Complete - Compliance Fixes Required
+**Status**: ✅ Day 12 Complete - V1.0 Critical Gaps RESOLVED
 **Quality Level**: Matches SignalProcessing V1.19 and Template V3.0 standards
 **Template Reference**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v3.0](../../SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
 
 **Change Log**:
+- **v1.20** (2025-12-10): **Day 12 Complete - TokensUsed Removed**
+  - ✅ **TokensUsed REMOVED**: LLM token tracking is HAPI's responsibility (they call the LLM)
+    - HAPI exposes `holmesgpt_llm_token_usage_total` Prometheus metric
+    - AIAnalysis correlates via `InvestigationID`
+    - Design Decision: DD-COST-001 - Cost observability is provider's responsibility
+  - ✅ **Documentation Updated**: crd-schema.md v2.7, CRD_SCHEMAS.md, CRD_FIELD_NAMING_CONVENTION.md
+  - 📏 **Reference**: Audit triage discussion - "HAPI already tracks tokens, why duplicate?"
 - **v1.19** (2025-12-09): **V1.0 Compliance Audit - Critical Gaps Identified**
-  - 🔴 **API Group Mismatch**: Code uses `aianalysis.kubernaut.io`, should be `aianalysis.kubernaut.ai` per DD-CRD-001
-  - 🔴 **Status Fields Not Populated**: `TokensUsed`, `InvestigationID`, `Conditions`, `RecoveryStatus`, `TotalAnalysisTime`, `DegradedMode`
-  - 🔴 **Recovery Not Passed to HAPI**: `buildRequest()` doesn't include `IsRecoveryAttempt`, `PreviousExecutions`
-  - 🔴 **Wrong HAPI Endpoint**: Should use `/api/v1/recovery/analyze` for recovery attempts (pending HAPI confirmation)
-  - 🟡 **Timeout Annotation**: Should migrate to `spec.TimeoutConfig` (pending RO clarification)
+  - ✅ **API Group Mismatch**: Fixed - now uses `aianalysis.kubernaut.ai` per DD-CRD-001
+  - ✅ **Status Fields**: `InvestigationID` populated, `TokensUsed` removed (out of scope)
+  - ✅ **Recovery Endpoint**: `InvestigateRecovery()` implemented with all fields
+  - ✅ **Timeout Spec Field**: `spec.TimeoutConfig` added
+  - 🔄 **Conditions**: Started (`InvestigationComplete` implemented)
   - 📄 **Handoff Docs Created**: `NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md`, `REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md`
   - 📏 **Reference**: Full audit against crd-schema.md, reconciliation-phases.md, DD-CRD-001, HAPI OpenAPI
 - **v1.18** (2025-12-09): **Day 10 Triage - Documentation Alignment**
@@ -1660,8 +1667,8 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
         }
     }
 
-    // Tokens and timing
-    analysis.Status.TokensUsed = resp.TokensUsed
+    // Investigation timing (TokensUsed removed - HAPI owns LLM cost observability)
+    // Use InvestigationID to correlate with HAPI's holmesgpt_llm_token_usage_total metric
     analysis.Status.InvestigationTime = resp.InvestigationTimeMs
 
     return nil

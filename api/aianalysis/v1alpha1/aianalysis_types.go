@@ -406,9 +406,11 @@ type AIAnalysisStatus struct {
 	// HolmesGPT investigation ID for correlation
 	// +kubebuilder:validation:MaxLength=253
 	InvestigationID string `json:"investigationId,omitempty"`
-	// LLM tokens consumed
-	// +kubebuilder:validation:Minimum=0
-	TokensUsed int `json:"tokensUsed,omitempty"`
+	// NOTE: TokensUsed REMOVED (Dec 2025)
+	// Reason: LLM token tracking is HAPI's responsibility (they call the LLM)
+	// Observability: HAPI exposes holmesgpt_llm_token_usage_total Prometheus metric
+	// Correlation: Use InvestigationID to link AIAnalysis CRD to HAPI metrics
+	// Design Decision: DD-COST-001 - Cost observability is provider's responsibility
 	// Investigation duration in seconds
 	// +kubebuilder:validation:Minimum=0
 	InvestigationTime int64 `json:"investigationTime,omitempty"`

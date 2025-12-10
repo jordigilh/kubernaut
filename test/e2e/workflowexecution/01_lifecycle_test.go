@@ -196,18 +196,125 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 		})
 	})
 
-	Context("BR-WE-012: Exponential Backoff Skip Reasons", func() {
-		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN
-		// Use PIt() for tests not yet implemented
+	Context("BR-WE-012: PreviousExecutionFailed Safety Blocking", func() {
+		// Business Outcome: Operators are protected from cascading failures when
+		// a workflow execution fails during execution (wasExecutionFailure: true).
+		// The system must block subsequent retries until manual intervention.
 		//
-		// Rationale: Exponential backoff E2E requires multiple failure cycles
-		// which is time-consuming and expensive. BR-WE-012 is already covered by:
-		// - Unit tests: test/unit/workflowexecution/controller_test.go
-		// - Integration tests: test/integration/workflowexecution/backoff_test.go
-		//
-		// This PIt() serves as documentation that E2E coverage could be added
-		// if more comprehensive E2E validation is needed in the future.
-		PIt("should report ExhaustedRetries or PreviousExecutionFailed in skip details")
+		// Per TESTING_GUIDELINES.md: Tests must validate business outcomes
+
+		It("should block retry with PreviousExecutionFailed after execution failure", func() {
+			// Business Value: Prevents non-idempotent operations from causing cascading damage
+			// Example: "increase-replicas" fails after step 1 (replicas +1). Retry would add +1 again.
+
+			// Create first WFE that will fail during execution
+			targetResource := fmt.Sprintf("default/deployment/backoff-test-%d", time.Now().UnixNano())
+			wfe1Name := fmt.Sprintf("e2e-backoff1-%d", time.Now().UnixNano())
+
+			wfe1 := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      wfe1Name,
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + wfe1Name,
+						Namespace:  "default",
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-intentional-failure",
+						Version:        "v1.0.0",
+						ContainerImage: "quay.io/kubernaut/workflows/test-intentional-failure:v1.0.0",
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"FAILURE_REASON": "E2E backoff test - simulated execution failure",
+					},
+				},
+			}
+
+			defer func() {
+				_ = deleteWFE(wfe1)
+			}()
+
+			Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
+
+			// Wait for first WFE to fail (simulates wasExecutionFailure: true)
+			Eventually(func() string {
+				updated, _ := getWFE(wfe1.Name, wfe1.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 120*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+
+			GinkgoWriter.Println("✅ First WFE failed (execution failure simulated)")
+
+			// Verify first WFE has wasExecutionFailure: true
+			failed, _ := getWFE(wfe1.Name, wfe1.Namespace)
+			if failed.Status.FailureDetails != nil {
+				GinkgoWriter.Printf("   FailureDetails.WasExecutionFailure: %v\n",
+					failed.Status.FailureDetails.WasExecutionFailure)
+			}
+
+			// Create second WFE targeting same resource + workflow
+			// Business Expectation: Should be blocked with PreviousExecutionFailed
+			wfe2Name := fmt.Sprintf("e2e-backoff2-%d", time.Now().UnixNano())
+			wfe2 := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      wfe2Name,
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + wfe2Name,
+						Namespace:  "default",
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-intentional-failure",
+						Version:        "v1.0.0",
+						ContainerImage: "quay.io/kubernaut/workflows/test-intentional-failure:v1.0.0",
+					},
+					TargetResource: targetResource, // Same target as first WFE
+					Parameters: map[string]string{
+						"FAILURE_REASON": "Should be blocked by PreviousExecutionFailed",
+					},
+				},
+			}
+
+			defer func() {
+				_ = deleteWFE(wfe2)
+			}()
+
+			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
+
+			// Business Outcome: Second WFE should be Skipped with PreviousExecutionFailed
+			// This protects operators from cascading non-idempotent failures
+			Eventually(func() string {
+				updated, _ := getWFE(wfe2.Name, wfe2.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 30*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseSkipped),
+				"Business Outcome: Retry MUST be blocked when previous execution failed")
+
+			// Verify skip reason
+			wfe2Updated, err := getWFE(wfe2.Name, wfe2.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(wfe2Updated.Status.SkipDetails).ToNot(BeNil(),
+				"Business Outcome: SkipDetails must explain why retry was blocked")
+			Expect(wfe2Updated.Status.SkipDetails.Reason).To(Equal(workflowexecutionv1alpha1.SkipReasonPreviousExecutionFailed),
+				"Business Outcome: Reason must be PreviousExecutionFailed to indicate manual review needed")
+
+			GinkgoWriter.Println("✅ BR-WE-012: Second WFE correctly blocked with PreviousExecutionFailed")
+			GinkgoWriter.Printf("   SkipReason: %s\n", wfe2Updated.Status.SkipDetails.Reason)
+			GinkgoWriter.Printf("   Message: %s\n", wfe2Updated.Status.SkipDetails.Message)
+		})
 	})
 
 	Context("BR-WE-004: Failure Details Actionable", func() {

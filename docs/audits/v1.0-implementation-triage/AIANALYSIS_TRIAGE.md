@@ -62,7 +62,7 @@ api/aianalysis/v1alpha1/groupversion_info.go:
 | Status Field | Required By | Actual State (Dec 10) | Status |
 |--------------|-------------|----------------------|--------|
 | `InvestigationID` | crd-schema.md | ✅ Populated | **FIXED** |
-| `TokensUsed` | DD-005 | ⚠️ Not populated | HAPI doesn't return |
+| ~~`TokensUsed`~~ | ~~DD-005~~ | ✅ **REMOVED** | **OUT OF SCOPE** |
 | `Conditions` | K8s best practice | ✅ `InvestigationComplete` | **STARTED** |
 | `RecoveryStatus` | crd-schema.md | ⚠️ Not populated | Deferred |
 | `TotalAnalysisTime` | DD-005 | ⚠️ Not populated | Future |
@@ -71,6 +71,10 @@ api/aianalysis/v1alpha1/groupversion_info.go:
 **Evidence (Dec 10)**:
 - `pkg/aianalysis/handlers/investigating.go:377`: `analysis.Status.InvestigationID = resp.IncidentID` ✅
 - `pkg/aianalysis/conditions.go` created with condition helpers ✅
+- **TokensUsed REMOVED**: LLM token tracking is HAPI's responsibility (they call the LLM)
+  - HAPI exposes `holmesgpt_llm_token_usage_total` Prometheus metric
+  - AIAnalysis correlates via `InvestigationID`
+  - Design Decision: DD-COST-001 - Cost observability is provider's responsibility
 
 **Remaining**: Lower priority items deferred to post-V1.0.
 

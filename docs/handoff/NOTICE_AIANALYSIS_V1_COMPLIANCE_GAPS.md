@@ -52,9 +52,10 @@ These are tracked for visibility only:
 
 | Gap | Status | Owner |
 |-----|--------|-------|
-| Status fields not populated (TokensUsed, InvestigationID, etc.) | 🔄 In Progress | AIAnalysis |
+| Status fields not populated (InvestigationID, etc.) | ✅ Partial | AIAnalysis |
+| ~~TokensUsed~~ | ✅ **REMOVED** - Out of scope (HAPI owns LLM cost observability) | AIAnalysis |
 | Conditions not implemented | 🔄 In Progress | AIAnalysis |
-| Timeout annotation → spec field migration | ⏳ Pending RO response | AIAnalysis |
+| Timeout annotation → spec field migration | ✅ **FIXED** | AIAnalysis |
 
 ---
 

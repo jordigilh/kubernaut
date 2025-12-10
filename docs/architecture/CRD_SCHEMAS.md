@@ -899,8 +899,8 @@ type AIAnalysisStatus struct {
     // +kubebuilder:validation:MaxLength=253
     InvestigationID string `json:"investigationId,omitempty"`
 
-    // +kubebuilder:validation:Minimum=0
-    TokensUsed int `json:"tokensUsed,omitempty"`
+    // NOTE: TokensUsed REMOVED (Dec 2025) - HAPI owns LLM cost observability
+    // Use InvestigationID to correlate with HAPI's holmesgpt_llm_token_usage_total metric
 
     // +kubebuilder:validation:Minimum=0
     InvestigationTime int64 `json:"investigationTime,omitempty"` // milliseconds
@@ -1541,7 +1541,7 @@ type DeliveryAttempt struct {
 - **Enum**: LLMProvider, Phase
 - **Numeric**: MaxTokens (1-100000), Temperature (0.0-1.0), Confidence (0.0-1.0)
 - **MaxLength**: LLMModel (253), InvestigationID (253)
-- **Minimum**: TokensUsed (≥0), InvestigationTime (≥0)
+- **Minimum**: InvestigationTime (≥0)
 
 ### WorkflowExecution
 - **Enum**: Phase, RollbackStrategy, ExecutionStrategy, StepStatus, Outcome, ResourceHealth
@@ -1567,4 +1567,6 @@ type DeliveryAttempt struct {
 **Last Updated**: October 12, 2025 (Added NotificationRequest CRD)
 **Validates Against**: Kubebuilder v3.x, Kubernetes 1.28+
 **Confidence**: 95% - All validations tested and verified in generated CRD manifests
+
+
 

@@ -107,9 +107,9 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
-	// 4. Apply database migrations
+	// 4. Apply database migrations using shared migration library
 	fmt.Fprintf(writer, "📋 Applying database migrations...\n")
-	if err := applyMigrationsInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
@@ -531,170 +531,14 @@ func deployRedisInNamespace(ctx context.Context, namespace, kubeconfigPath strin
 	return nil
 }
 
-// ApplyMigrations is an exported wrapper for applying migrations to a namespace.
+// ApplyMigrations is an exported wrapper for applying ALL migrations to a namespace.
 // This is useful for re-applying migrations after PostgreSQL restarts (e.g., in DLQ tests).
+//
+// DEPRECATED: Use ApplyAllMigrations() for DS full schema, or ApplyAuditMigrations() for audit-only.
+// This function is kept for backward compatibility.
 func ApplyMigrations(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	return applyMigrationsInNamespace(ctx, namespace, kubeconfigPath, writer)
-}
-
-func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	// Apply migrations by connecting directly to PostgreSQL
-	clientset, err := getKubernetesClient(kubeconfigPath)
-	if err != nil {
-		return err
-	}
-
-	// Wait for PostgreSQL pod to be ready and get pod name
-	var podName string
-	Eventually(func() error {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=postgresql",
-		})
-		if err != nil {
-			return fmt.Errorf("failed to list pods: %w", err)
-		}
-		if len(pods.Items) == 0 {
-			return fmt.Errorf("no PostgreSQL pods found")
-		}
-
-		// Check if pod is ready
-		pod := pods.Items[0]
-		for _, condition := range pod.Status.Conditions {
-			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-				podName = pod.Name
-				return nil
-			}
-		}
-		return fmt.Errorf("PostgreSQL pod not ready yet")
-	}, 60*time.Second, 2*time.Second).Should(Succeed(), "PostgreSQL pod should be ready for migrations")
-
-	// Get PostgreSQL service cluster IP
-	service, err := clientset.CoreV1().Services(namespace).Get(ctx, "postgresql", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get PostgreSQL service: %w", err)
-	}
-
-	postgresHost := fmt.Sprintf("postgresql.%s.svc.cluster.local", namespace)
-	connStr := fmt.Sprintf("host=%s port=5432 user=slm_user password=test_password dbname=action_history sslmode=disable", postgresHost)
-
-	// For E2E tests, we'll use kubectl exec to run migrations inside the pod
-	// This avoids needing to set up port-forwarding
-	fmt.Fprintf(writer, "   📋 Applying migrations via kubectl exec in pod %s...\n", podName)
-
-	// Read migration files from workspace
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-
-	migrations := []string{
-		"001_initial_schema.sql",
-		"002_fix_partitioning.sql",
-		"003_stored_procedures.sql",
-		"004_add_effectiveness_assessment_due.sql",
-		"005_vector_schema.sql",
-		"006_effectiveness_assessment.sql",
-		"009_update_vector_dimensions.sql",
-		"007_add_context_column.sql",
-		"008_context_api_compatibility.sql",
-		"010_audit_write_api_phase1.sql",
-		"011_rename_alert_to_signal.sql",
-		"012_adr033_multidimensional_tracking.sql",
-		"013_create_audit_events_table.sql",
-		"015_create_workflow_catalog_table.sql",
-		"016_update_embedding_dimensions.sql",
-		"017_add_workflow_schema_fields.sql",
-		"018_rename_execution_bundle_to_container_image.sql",
-		"019_uuid_primary_key.sql",
-		"020_add_workflow_label_columns.sql", // DD-WORKFLOW-001 v1.6: custom_labels + detected_labels
-		"1000_create_audit_events_partitions.sql",
-	}
-
-	for _, migration := range migrations {
-		migrationPath := filepath.Join(workspaceRoot, "migrations", migration)
-		content, err := os.ReadFile(migrationPath)
-		if err != nil {
-			fmt.Fprintf(writer, "   ⚠️  Skipping migration %s (not found)\n", migration)
-			continue
-		}
-
-		// Remove CONCURRENTLY keyword for test environment
-		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
-
-		// Extract only the UP migration (ignore DOWN section)
-		if strings.Contains(migrationSQL, "-- +goose Down") {
-			parts := strings.Split(migrationSQL, "-- +goose Down")
-			migrationSQL = parts[0]
-		}
-
-		// Apply migration via psql in the pod using stdin (handles multi-statement SQL better)
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-i", "-n", namespace, podName, "--",
-			"psql", "-U", "slm_user", "-d", "action_history")
-		cmd.Stdin = strings.NewReader(migrationSQL)
-
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			// Check if error is due to already existing objects (idempotent)
-			outputStr := string(output)
-			if strings.Contains(outputStr, "already exists") ||
-				strings.Contains(outputStr, "duplicate key") ||
-				strings.Contains(outputStr, "relation") && strings.Contains(outputStr, "already exists") {
-				fmt.Fprintf(writer, "   ✅ Migration %s already applied\n", migration)
-				continue
-			}
-			// Some migrations may have partial failures but still succeed overall
-			// Check if there's actual error output vs just notices
-			if !strings.Contains(outputStr, "ERROR:") {
-				fmt.Fprintf(writer, "   ✅ Applied %s (with notices)\n", migration)
-				continue
-			}
-			fmt.Fprintf(writer, "   ❌ Migration %s failed: %s\n", migration, outputStr)
-			return fmt.Errorf("migration %s failed: %w", migration, err)
-		}
-		fmt.Fprintf(writer, "   ✅ Applied %s\n", migration)
-	}
-
-	// Grant permissions
-	grantSQL := `
-		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
-		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
-		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
-	`
-	grantCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-i", "-n", namespace, podName, "--",
-		"psql", "-U", "slm_user", "-d", "action_history")
-	grantCmd.Stdin = strings.NewReader(grantSQL)
-	grantCmd.Run()
-
-	// Verify critical tables exist with Eventually() retry logic
-	fmt.Fprintf(writer, "   🔍 Verifying critical tables exist...\n")
-	criticalTables := []string{
-		"remediation_workflow_catalog",
-		"audit_events",
-		"notification_audit",
-	}
-
-	Eventually(func() error {
-		for _, table := range criticalTables {
-			checkSQL := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1;", table)
-			checkCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-i", "-n", namespace, podName, "--",
-				"psql", "-U", "slm_user", "-d", "action_history", "-c", checkSQL)
-			output, err := checkCmd.CombinedOutput()
-			if err != nil {
-				outputStr := string(output)
-				if strings.Contains(outputStr, "does not exist") {
-					return fmt.Errorf("table %s does not exist", table)
-				}
-				// Table exists but might be empty - that's OK
-			}
-		}
-		return nil
-	}, 30*time.Second, 2*time.Second).Should(Succeed(), "Critical tables should exist after migrations")
-
-	fmt.Fprintf(writer, "   ✅ All critical tables verified\n")
-	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n")
-	_ = service // Use service to avoid unused variable warning
-	_ = connStr // Use connStr to avoid unused variable warning
-	return nil
+	// Delegate to shared migration library
+	return ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
 }
 
 func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {

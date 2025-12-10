@@ -64,7 +64,7 @@ func NewPhaseBasedDeduplicationChecker(k8sClient client.Client) *PhaseBasedDedup
 //
 // DD-GATEWAY-011 v1.3: Phase-Based Deduplication Decision
 // This method:
-// 1. Lists RRs matching the fingerprint label
+// 1. Lists RRs matching the fingerprint via field selector (BR-GATEWAY-185 v1.1)
 // 2. Checks if any RR is in a non-terminal phase (including Blocked)
 // 3. Returns true (deduplicate) if active RR exists
 // 4. Returns false (allow new RR) if no active RR exists
@@ -74,34 +74,32 @@ func NewPhaseBasedDeduplicationChecker(k8sClient client.Client) *PhaseBasedDedup
 // - Gateway does NOT create Blocked RRs
 // - Gateway simply checks: "Is there an active RR?" → update dedup, else create new
 //
+// BR-GATEWAY-185 v1.1: Use spec.signalFingerprint field selector instead of labels
+// - Labels are mutable and truncated to 63 chars (data loss risk)
+// - spec.signalFingerprint is immutable and supports full 64-char SHA256
+//
 // Business Requirements:
 // - BR-GATEWAY-181: Move deduplication tracking to status
-// - BR-GATEWAY-185: Redis deprecation path
+// - BR-GATEWAY-185: Field selector for fingerprint lookup (v1.1)
 // - BR-ORCH-042: Consecutive failure blocking (RO responsibility, NOT Gateway)
 //
 // Parameters:
 // - ctx: Context for cancellation and timeout
 // - namespace: Namespace to search in
-// - fingerprint: Signal fingerprint to match
+// - fingerprint: Signal fingerprint to match (full 64-char SHA256)
 //
 // Returns:
 // - bool: true if should deduplicate (in-progress RR exists)
 // - *RemediationRequest: existing in-progress RR (nil if none)
 // - error: K8s API errors
 func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, namespace, fingerprint string) (bool, *remediationv1alpha1.RemediationRequest, error) {
-	// List RRs matching the fingerprint label
+	// List RRs matching the fingerprint via field selector (BR-GATEWAY-185 v1.1)
+	// NO truncation - uses full 64-char SHA256 fingerprint
 	rrList := &remediationv1alpha1.RemediationRequestList{}
-
-	// Use label selector to find RRs with matching fingerprint
-	// Label format: kubernaut.ai/signal-fingerprint (truncated to 63 chars for K8s label limit)
-	labelFingerprint := fingerprint
-	if len(labelFingerprint) > 63 {
-		labelFingerprint = labelFingerprint[:63]
-	}
 
 	if err := c.client.List(ctx, rrList,
 		client.InNamespace(namespace),
-		client.MatchingLabels{"kubernaut.ai/signal-fingerprint": labelFingerprint},
+		client.MatchingFields{"spec.signalFingerprint": fingerprint},
 	); err != nil {
 		return false, nil, err
 	}

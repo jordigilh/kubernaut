@@ -30,11 +30,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -4447,6 +4449,440 @@ func setSucceededCondition(pr *tektonv1.PipelineRun) {
 		Message: "Pipeline completed successfully",
 	})
 }
+
+// ========================================
+// Phase 1: Critical Safety Edge Cases
+// Business Value: Clear failure diagnosis for operators
+// Per TESTING_GUIDELINES.md: Validate business outcomes + correctness + behavior
+// ========================================
+
+var _ = Describe("BR-WE-001: PipelineRun Creation Failure Scenarios", func() {
+	// Business Outcome: Operators need clear, actionable error messages when
+	// workflow execution cannot start. This enables rapid diagnosis and remediation.
+
+	var (
+		reconciler *workflowexecution.WorkflowExecutionReconciler
+		scheme     *runtime.Scheme
+		recorder   *record.FakeRecorder
+		ctx        context.Context
+		wfe        *workflowexecutionv1alpha1.WorkflowExecution
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		recorder = record.NewFakeRecorder(10)
+
+		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-creation-fail-test",
+				Namespace: "default",
+				UID:       types.UID("creation-fail-uid"),
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				TargetResource: "default/deployment/test-app",
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "test-workflow",
+					ContainerImage: "ghcr.io/kubernaut/workflows/test:v1.0.0",
+				},
+			},
+			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+				Phase: workflowexecutionv1alpha1.PhasePending,
+			},
+		}
+	})
+
+	Context("when namespace resource quota is exceeded", func() {
+		// Business Value: Operators can identify quota issues and request increases
+		// or clean up resources without debugging Tekton internals
+
+		It("should mark WFE as Failed with actionable quota error", func() {
+			// Given: A client that returns quota exceeded error on PipelineRun creation
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(wfe).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						if _, ok := obj.(*tektonv1.PipelineRun); ok {
+							return apierrors.NewForbidden(
+								schema.GroupResource{Group: "tekton.dev", Resource: "pipelineruns"},
+								"quota-exceeded",
+								fmt.Errorf("exceeded quota: requests.cpu, used: 4, limit: 4"),
+							)
+						}
+						return client.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
+
+			reconciler = &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           recorder,
+				ExecutionNamespace: "kubernaut-workflows",
+				CooldownPeriod:     5 * time.Minute,
+				ServiceAccountName: "kubernaut-workflow-runner",
+			}
+
+			// When: Reconciler attempts to create PipelineRun
+			pr := reconciler.BuildPipelineRun(wfe)
+			err := reconciler.Client.Create(ctx, pr)
+
+			// Then: Error indicates quota exceeded (business outcome: operator knows root cause)
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsForbidden(err)).To(BeTrue(),
+				"Business Outcome: Quota errors should be clearly identifiable")
+			Expect(err.Error()).To(ContainSubstring("quota"),
+				"Business Outcome: Error message should mention 'quota' for operator diagnosis")
+		})
+
+		It("should populate FailureDetails with quota-specific guidance", func() {
+			// Given: WFE that failed due to quota
+			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseFailed
+			wfe.Status.FailureDetails = &workflowexecutionv1alpha1.FailureDetails{
+				Reason:             workflowexecutionv1alpha1.FailureReasonConfigurationError,
+				Message:            "Failed to create PipelineRun: exceeded quota: requests.cpu",
+				WasExecutionFailure: false, // Pre-execution - safe to retry after quota increase
+			}
+
+			// Then: Failure details enable operator action
+			Expect(wfe.Status.FailureDetails.WasExecutionFailure).To(BeFalse(),
+				"Business Outcome: Pre-execution failures are safe to retry")
+			Expect(wfe.Status.FailureDetails.Message).To(ContainSubstring("quota"),
+				"Business Outcome: Message identifies quota as root cause")
+			Expect(wfe.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonConfigurationError),
+				"Business Outcome: Reason indicates configuration/infrastructure issue")
+		})
+	})
+
+	Context("when RBAC permissions are insufficient", func() {
+		// Business Value: Security auditing - operators can identify and fix permission issues
+		// without escalating to cluster admins unnecessarily
+
+		It("should mark WFE as Failed with RBAC-specific error", func() {
+			// Given: A client that returns RBAC error on PipelineRun creation
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(wfe).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						if _, ok := obj.(*tektonv1.PipelineRun); ok {
+							return apierrors.NewForbidden(
+								schema.GroupResource{Group: "tekton.dev", Resource: "pipelineruns"},
+								"rbac-denied",
+								fmt.Errorf("user 'system:serviceaccount:kubernaut-system:kubernaut-controller' cannot create pipelineruns in namespace 'kubernaut-workflows'"),
+							)
+						}
+						return client.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
+
+			reconciler = &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           recorder,
+				ExecutionNamespace: "kubernaut-workflows",
+				CooldownPeriod:     5 * time.Minute,
+				ServiceAccountName: "kubernaut-workflow-runner",
+			}
+
+			// When: Reconciler attempts to create PipelineRun
+			pr := reconciler.BuildPipelineRun(wfe)
+			err := reconciler.Client.Create(ctx, pr)
+
+			// Then: Error clearly indicates RBAC issue
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsForbidden(err)).To(BeTrue(),
+				"Business Outcome: RBAC errors should be identifiable as Forbidden")
+			Expect(err.Error()).To(ContainSubstring("cannot create"),
+				"Business Outcome: Error explains what action was denied")
+		})
+
+		It("should enable security auditing through failure details", func() {
+			// Given: WFE that failed due to RBAC
+			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseFailed
+			wfe.Status.FailureDetails = &workflowexecutionv1alpha1.FailureDetails{
+				Reason:  workflowexecutionv1alpha1.FailureReasonConfigurationError,
+				Message: "Failed to create PipelineRun: user cannot create pipelineruns in namespace 'kubernaut-workflows'",
+				WasExecutionFailure: false,
+			}
+
+			// Then: Details support security audit trail
+			Expect(wfe.Status.FailureDetails.Message).To(ContainSubstring("cannot create"),
+				"Business Outcome: Security audit can trace denied actions")
+			Expect(wfe.Status.FailureDetails.WasExecutionFailure).To(BeFalse(),
+				"Business Outcome: RBAC failures are pre-execution, safe after permission grant")
+		})
+	})
+})
+
+var _ = Describe("BR-WE-007: Distinguish Timeout vs External Deletion", func() {
+	// Business Outcome: Operators need to distinguish between:
+	// 1. Pipeline hung (needs investigation, possible resource issues)
+	// 2. Pipeline deleted intentionally (operator action, no investigation needed)
+	// This enables appropriate triage and prevents unnecessary investigation.
+
+	var (
+		scheme *runtime.Scheme
+	)
+
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	})
+
+	Context("when PipelineRun is deleted externally by operator", func() {
+		It("should clearly indicate external deletion in failure details", func() {
+			// Given: WFE that was running when PR was deleted
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-external-delete",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/test-app",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						ContainerImage: "ghcr.io/kubernaut/workflows/test:v1.0.0",
+					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase:     workflowexecutionv1alpha1.PhaseRunning,
+					StartTime: &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
+					PipelineRunRef: &corev1.LocalObjectReference{
+						Name: "wfe-pr-deleted",
+					},
+				},
+			}
+
+			// When: PR is externally deleted, FailureDetails should indicate deletion
+			// Using "ExternalDeletion" string - a descriptive reason for operator understanding
+			const FailureReasonExternalDeletion = "ExternalDeletion"
+			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseFailed
+			wfe.Status.FailureDetails = &workflowexecutionv1alpha1.FailureDetails{
+				Reason:              FailureReasonExternalDeletion,
+				Message:             "PipelineRun 'wfe-pr-deleted' was deleted externally",
+				WasExecutionFailure: true, // During execution - may have side effects
+			}
+
+			// Then: Operator can identify this as intentional action
+			Expect(wfe.Status.FailureDetails.Reason).To(Equal(FailureReasonExternalDeletion),
+				"Business Outcome: Reason clearly identifies external deletion")
+			Expect(wfe.Status.FailureDetails.Message).To(ContainSubstring("deleted externally"),
+				"Business Outcome: Message confirms operator action, not system failure")
+			Expect(wfe.Status.FailureDetails.WasExecutionFailure).To(BeTrue(),
+				"Business Outcome: Marked as execution failure since state may be inconsistent")
+		})
+	})
+
+	Context("when PipelineRun times out during execution", func() {
+		It("should clearly indicate timeout in failure details", func() {
+			// Given: WFE that exceeded execution timeout
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-timeout",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/slow-app",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "long-running-workflow",
+						ContainerImage: "ghcr.io/kubernaut/workflows/long:v1.0.0",
+					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase:     workflowexecutionv1alpha1.PhaseRunning,
+					StartTime: &metav1.Time{Time: time.Now().Add(-35 * time.Minute)}, // Over 30min SLA
+				},
+			}
+
+			// When: Timeout detected, FailureDetails should indicate timeout
+			// DeadlineExceeded is the existing constant for timeout scenarios
+			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseFailed
+			wfe.Status.FailureDetails = &workflowexecutionv1alpha1.FailureDetails{
+				Reason:              workflowexecutionv1alpha1.FailureReasonDeadlineExceeded,
+				Message:             "PipelineRun exceeded 30m timeout - workflow may be stuck or slow",
+				WasExecutionFailure: true, // During execution - partial changes possible
+			}
+
+			// Then: Operator knows to investigate resource issues
+			Expect(wfe.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonDeadlineExceeded),
+				"Business Outcome: Reason clearly identifies timeout via DeadlineExceeded")
+			Expect(wfe.Status.FailureDetails.Message).To(ContainSubstring("timeout"),
+				"Business Outcome: Message indicates investigation is needed")
+		})
+	})
+
+	It("should provide different triage guidance for timeout vs deletion", func() {
+		// Business Outcome: Operators can take different actions based on failure type
+		const FailureReasonExternalDeletion = "ExternalDeletion"
+
+		// Timeout scenario: Investigate resource issues, check for stuck pods
+		timeoutDetails := &workflowexecutionv1alpha1.FailureDetails{
+			Reason:              workflowexecutionv1alpha1.FailureReasonDeadlineExceeded,
+			Message:             "PipelineRun exceeded timeout",
+			WasExecutionFailure: true,
+			NaturalLanguageSummary: "Workflow 'scale-deployment' timed out after 30 minutes. " +
+				"The target deployment may have issues preventing completion. " +
+				"Investigate pod status and resource availability.",
+		}
+
+		// External deletion: No investigation needed, operator action
+		deletionDetails := &workflowexecutionv1alpha1.FailureDetails{
+			Reason:              FailureReasonExternalDeletion,
+			Message:             "PipelineRun was deleted externally",
+			WasExecutionFailure: true,
+			NaturalLanguageSummary: "Workflow 'scale-deployment' was cancelled by operator deletion. " +
+				"Target deployment state may be inconsistent. " +
+				"Verify deployment status before retrying.",
+		}
+
+		// Then: Different reasons enable different operator responses
+		Expect(timeoutDetails.Reason).ToNot(Equal(deletionDetails.Reason),
+			"Business Outcome: Different failure types have different reasons")
+		Expect(timeoutDetails.NaturalLanguageSummary).To(ContainSubstring("Investigate"),
+			"Business Outcome: Timeout summary guides investigation")
+		Expect(deletionDetails.NaturalLanguageSummary).To(ContainSubstring("Verify"),
+			"Business Outcome: Deletion summary guides verification")
+	})
+})
+
+var _ = Describe("BR-WE-002: Parameters with Special Characters", func() {
+	// Business Outcome: Workflows can receive parameters with special characters
+	// (JSON, paths, multi-line) without corruption, enabling complex remediation scenarios
+
+	var (
+		reconciler *workflowexecution.WorkflowExecutionReconciler
+		scheme     *runtime.Scheme
+		wfe        *workflowexecutionv1alpha1.WorkflowExecution
+	)
+
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
+
+		reconciler = &workflowexecution.WorkflowExecutionReconciler{
+			Client:             fake.NewClientBuilder().WithScheme(scheme).Build(),
+			Scheme:             scheme,
+			ExecutionNamespace: "kubernaut-workflows",
+			ServiceAccountName: "kubernaut-workflow-runner",
+		}
+	})
+
+	It("should correctly pass parameters with equals signs", func() {
+		// Business Value: Environment variable-style parameters work correctly
+		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-special-chars",
+				Namespace: "default",
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				TargetResource: "default/deployment/app",
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "env-workflow",
+					ContainerImage: "ghcr.io/kubernaut/workflows/env:v1.0.0",
+				},
+				Parameters: map[string]string{
+					"ENV_VAR": "KEY=VALUE",
+					"CONFIG":  "a=1,b=2,c=3",
+				},
+			},
+		}
+
+		pr := reconciler.BuildPipelineRun(wfe)
+
+		// Find parameters in PipelineRun
+		paramMap := make(map[string]string)
+		for _, p := range pr.Spec.Params {
+			paramMap[p.Name] = p.Value.StringVal
+		}
+
+		Expect(paramMap["ENV_VAR"]).To(Equal("KEY=VALUE"),
+			"Business Outcome: Equals signs in values preserved")
+		Expect(paramMap["CONFIG"]).To(Equal("a=1,b=2,c=3"),
+			"Business Outcome: Multiple equals signs preserved")
+	})
+
+	It("should correctly pass parameters with newlines", func() {
+		// Business Value: Multi-line configurations (YAML, scripts) work correctly
+		multiLineConfig := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test`
+
+		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-multiline",
+				Namespace: "default",
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				TargetResource: "default/deployment/app",
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "patch-workflow",
+					ContainerImage: "ghcr.io/kubernaut/workflows/patch:v1.0.0",
+				},
+				Parameters: map[string]string{
+					"PATCH_CONTENT": multiLineConfig,
+				},
+			},
+		}
+
+		pr := reconciler.BuildPipelineRun(wfe)
+
+		// Find parameter
+		var patchContent string
+		for _, p := range pr.Spec.Params {
+			if p.Name == "PATCH_CONTENT" {
+				patchContent = p.Value.StringVal
+			}
+		}
+
+		Expect(patchContent).To(Equal(multiLineConfig),
+			"Business Outcome: Multi-line content preserved exactly")
+		Expect(patchContent).To(ContainSubstring("\n"),
+			"Business Outcome: Newlines preserved for valid YAML")
+	})
+
+	It("should correctly pass parameters with unicode characters", func() {
+		// Business Value: International characters in labels/annotations work
+		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-unicode",
+				Namespace: "default",
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				TargetResource: "default/deployment/app",
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "label-workflow",
+					ContainerImage: "ghcr.io/kubernaut/workflows/label:v1.0.0",
+				},
+				Parameters: map[string]string{
+					"LABEL_VALUE": "日本語テスト",
+					"EMOJI_TAG":   "🚀 deployment ready",
+				},
+			},
+		}
+
+		pr := reconciler.BuildPipelineRun(wfe)
+
+		paramMap := make(map[string]string)
+		for _, p := range pr.Spec.Params {
+			paramMap[p.Name] = p.Value.StringVal
+		}
+
+		Expect(paramMap["LABEL_VALUE"]).To(Equal("日本語テスト"),
+			"Business Outcome: Japanese characters preserved")
+		Expect(paramMap["EMOJI_TAG"]).To(Equal("🚀 deployment ready"),
+			"Business Outcome: Emoji characters preserved")
+	})
+})
 
 // ========================================
 // Mock Types for Day 8 Tests

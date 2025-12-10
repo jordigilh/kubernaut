@@ -179,7 +179,7 @@ var _ = Describe("AIAnalysis Controller", func() {
                         },
                     },
                     ContextUsed: &holmesgpt.ContextMetadata{
-                        TokensUsed:        1250,
+                        // NOTE: TokensUsed removed from AIAnalysis - HAPI owns LLM cost observability
                         ProcessingTime:    "3.2s",
                         ModelVersion:      "gpt-4o-2024-05-13",
                     },
