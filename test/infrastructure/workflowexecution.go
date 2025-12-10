@@ -699,12 +699,13 @@ metadata:
   name: datastorage
   namespace: kubernaut-system
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: datastorage
   ports:
   - port: 8080
     targetPort: 8080
+    nodePort: 30081
     name: http
   - port: 9090
     targetPort: 9090

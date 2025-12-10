@@ -267,7 +267,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 	// 2. PostgreSQL database accessible
 	// 3. Controller configured with --datastorage-url
 	Context("BR-WE-005: Audit Persistence in PostgreSQL (E2E)", Label("datastorage", "audit"), func() {
-		const dataStorageServiceURL = "http://datastorage-service.kubernaut-system:8080"
+		// NodePort access per DD-TEST-001: localhost:8081 → NodePort 30081 → DS pod:8080
+		const dataStorageServiceURL = "http://localhost:8081"
 
 		It("should persist audit events to Data Storage for completed workflow", func() {
 			// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - NO EXCEPTIONS

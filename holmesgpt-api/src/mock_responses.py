@@ -141,16 +141,21 @@ DEFAULT_SCENARIO = MockScenario(
 )
 
 
-def get_mock_scenario(signal_type: str) -> MockScenario:
+def get_mock_scenario(signal_type: Optional[str]) -> MockScenario:
     """
     Get the mock scenario for a given signal type.
 
     Args:
-        signal_type: The signal type from the incident request
+        signal_type: The signal type from the incident request (can be None)
 
     Returns:
-        MockScenario for the signal type, or DEFAULT_SCENARIO if not found
+        MockScenario for the signal type, or DEFAULT_SCENARIO if not found or None
     """
+    # Handle None or empty signal_type
+    if not signal_type:
+        logger.info("BR-HAPI-212: No signal_type provided, using default")
+        return DEFAULT_SCENARIO
+
     # Try exact match first
     if signal_type in MOCK_SCENARIOS:
         return MOCK_SCENARIOS[signal_type]
