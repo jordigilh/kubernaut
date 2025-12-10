@@ -442,6 +442,8 @@ func deployAlertManagerInNamespace(namespace, kubeconfigPath string, writer io.W
 }
 
 // deployGatewayInNamespace deploys the Gateway service in the specified namespace
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now stateless, K8s-native
+// DD-AUDIT-003: Gateway requires Data Storage URL for audit event emission
 func deployGatewayInNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
@@ -455,15 +457,17 @@ func deployGatewayInNamespace(namespace, kubeconfigPath string, writer io.Writer
 		return fmt.Errorf("failed to read Gateway template: %w", err)
 	}
 
-	// Replace namespace placeholder and Redis address (in both ConfigMap and args)
-	// NOTE: Redis service is named "redis" (simple deployment), not "redis-master"
+	// Replace namespace placeholder
 	manifestContent := strings.ReplaceAll(string(templateContent), "namespace: kubernaut-system", fmt.Sprintf("namespace: %s", namespace))
+
+	// DD-GATEWAY-012: Remove Redis references (Gateway is now Redis-free)
+	// The template should not have Redis references, but clean up any legacy references
+	manifestContent = strings.ReplaceAll(manifestContent, "--redis=", "# REMOVED: --redis=")
+
+	// DD-AUDIT-003: Update Data Storage URL for audit event emission
 	manifestContent = strings.ReplaceAll(manifestContent,
-		"addr: \"redis-master.kubernaut-system.svc.cluster.local:6379\"",
-		fmt.Sprintf("addr: \"redis.%s.svc.cluster.local:6379\"", namespace))
-	manifestContent = strings.ReplaceAll(manifestContent,
-		"--redis=redis-master.kubernaut-system.svc.cluster.local:6379",
-		fmt.Sprintf("--redis=redis.%s.svc.cluster.local:6379", namespace))
+		"data_storage_url: \"http://datastorage-service.kubernaut-system.svc.cluster.local:8080\"",
+		fmt.Sprintf("data_storage_url: \"http://datastorage-service.%s.svc.cluster.local:8080\"", namespace))
 
 	// Apply manifest
 	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
@@ -476,7 +480,7 @@ func deployGatewayInNamespace(namespace, kubeconfigPath string, writer io.Writer
 		return fmt.Errorf("failed to deploy Gateway: %w", err)
 	}
 
-	fmt.Fprintln(writer, "   Gateway service deployed")
+	fmt.Fprintln(writer, "   Gateway service deployed (DD-GATEWAY-012: Redis-free)")
 	return nil
 }
 

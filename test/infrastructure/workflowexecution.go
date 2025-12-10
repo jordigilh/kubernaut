@@ -121,8 +121,7 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 	}
 
 	// 4. Build and deploy Data Storage with proper ADR-030 config
-	// NOTE: Database migrations are applied by DS team's shared library
-	// See: REQUEST_SHARED_E2E_MIGRATION_LIBRARY.md
+	// Migrations are applied AFTER DS is ready (step 6)
 	fmt.Fprintf(output, "  💾 Building and deploying Data Storage...\n")
 	if err := deployDataStorageWithConfig(clusterName, kubeconfigPath, output); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage: %w", err)
@@ -134,6 +133,22 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 		return fmt.Errorf("Data Storage did not become ready: %w", err)
 	}
 	fmt.Fprintf(output, "✅ Data Storage infrastructure deployed\n")
+
+	// 6. Apply audit migrations using DS team's shared library
+	// This creates: audit_events table + partitions + indexes
+	// Required for BR-WE-005 audit persistence
+	fmt.Fprintf(output, "\n📋 Applying audit migrations...\n")
+	if err := ApplyAuditMigrations(context.Background(), WorkflowExecutionNamespace, kubeconfigPath, output); err != nil {
+		return fmt.Errorf("failed to apply audit migrations: %w", err)
+	}
+
+	// 7. Verify migrations applied successfully
+	config := DefaultMigrationConfig(WorkflowExecutionNamespace, kubeconfigPath)
+	config.Tables = AuditTables
+	if err := VerifyMigrations(context.Background(), config, output); err != nil {
+		return fmt.Errorf("audit migration verification failed: %w", err)
+	}
+	fmt.Fprintf(output, "✅ Audit migrations verified\n")
 
 	// Create execution namespace
 	fmt.Fprintf(output, "\n📁 Creating execution namespace %s...\n", ExecutionNamespace)

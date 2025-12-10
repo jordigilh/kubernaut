@@ -158,10 +158,7 @@ func init() {
 		ChildCRDCreationsTotal,
 		DuplicatesSkippedTotal,
 		TimeoutsTotal,
-		// BR-ORCH-042: Blocking metrics
-		BlockedTotal,
-		BlockedCooldownExpiredTotal,
-		CurrentBlockedGauge,
+		// TODO(BR-ORCH-042): Register blocking metrics after TDD implementation
 	)
 }
 

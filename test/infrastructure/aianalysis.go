@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -515,6 +516,28 @@ spec:
 }
 
 func deployDataStorage(clusterName, kubeconfigPath string, writer io.Writer) error {
+	// Apply database migrations BEFORE deploying Data Storage
+	// This ensures audit_events and workflow_catalog tables exist
+	// Using shared migration library from DS_E2E_MIGRATION_LIBRARY_IMPLEMENTATION_SCHEDULE.md
+	fmt.Fprintln(writer, "  📋 Applying database migrations (shared library)...")
+	ctx := context.Background()
+
+	// AIAnalysis needs audit_events + workflow catalog
+	config := DefaultMigrationConfig("kubernaut-system", kubeconfigPath)
+	config.Tables = []string{"audit_events", "remediation_workflow_catalog"}
+	if err := ApplyMigrationsWithConfig(ctx, config, writer); err != nil {
+		fmt.Fprintf(writer, "  ⚠️  Migration warning (may already be applied): %v\n", err)
+		// Don't fail - tables might already exist or DS handles migrations
+	}
+
+	// Verify critical tables exist
+	verifyConfig := DefaultMigrationConfig("kubernaut-system", kubeconfigPath)
+	verifyConfig.Tables = []string{"audit_events"}
+	if err := VerifyMigrations(ctx, verifyConfig, writer); err != nil {
+		fmt.Fprintf(writer, "  ⚠️  Verification warning: %v\n", err)
+		// Continue anyway - DS may self-heal
+	}
+
 	// Get project root for build context
 	projectRoot := getProjectRoot()
 

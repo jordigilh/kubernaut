@@ -144,10 +144,13 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 	})
 
 	It("should generate correlated audit events persisted to PostgreSQL", func() {
-		// Skip if Data Storage is not available
-		if dataStorageNodePort == 0 {
-			Skip("Data Storage not deployed - run with audit infrastructure")
-		}
+		// Per TESTING_GUIDELINES.md: E2E tests MUST use real services, Skip() is FORBIDDEN
+		// If Data Storage is unavailable, test MUST fail with clear error
+		Expect(dataStorageNodePort).ToNot(Equal(0),
+			"REQUIRED: Data Storage not available\n"+
+				"  Per TESTING_GUIDELINES.md: E2E tests MUST use real services\n"+
+				"  Per DD-AUDIT-003: Audit infrastructure is MANDATORY\n"+
+				"  Audit infrastructure should be deployed in SynchronizedBeforeSuite")
 
 		// ===== STEP 1: Create all NotificationRequest CRDs =====
 		By("Creating 3 NotificationRequests with same remediation context")

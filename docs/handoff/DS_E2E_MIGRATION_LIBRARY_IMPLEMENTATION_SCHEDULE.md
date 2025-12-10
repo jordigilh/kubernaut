@@ -134,19 +134,19 @@ Update each service's infrastructure file to use shared library:
 
 | Task | Duration | Status |
 |------|----------|--------|
-| Create `test/infrastructure/migrations.go` | 30 min | ⏳ |
-| Define `MigrationConfig` and `Migration` structs | 15 min | ⏳ |
-| Extract migration list from `datastorage.go` | 30 min | ⏳ |
-| Implement `ApplyMigrations()` with selective API | 30 min | ⏳ |
-| Implement `ApplyAuditMigrations()` shortcut | 15 min | ⏳ |
-| Add `VerifyMigrations()` function | 15 min | ⏳ |
+| Create `test/infrastructure/migrations.go` | 30 min | ✅ Done |
+| Define `MigrationConfig` and `Migration` structs | 15 min | ✅ Done |
+| Extract migration list from `datastorage.go` | 30 min | ✅ Done |
+| Implement `ApplyMigrations()` with selective API | 30 min | ✅ Done |
+| Implement `ApplyAuditMigrations()` shortcut | 15 min | ✅ Done |
+| Add `VerifyMigrations()` function | 15 min | ✅ Done |
 
 #### Phase 2: Test with DS E2E (1 hour)
 
 | Task | Duration | Status |
 |------|----------|--------|
-| Run `make test-e2e-datastorage` with new library | 30 min | ⏳ |
-| Fix any issues | 30 min | ⏳ |
+| Run `make test-e2e-datastorage` with new library | 30 min | ✅ Done |
+| Fix any issues | 30 min | ✅ Done |
 
 ---
 

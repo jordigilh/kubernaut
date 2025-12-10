@@ -638,162 +638,39 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 	}
 
 	// ========================================
-	// TDD CYCLE 2: HYBRID SCORING SQL QUERY WITH LABEL BOOSTING (GREEN)
+	// V1.0 SCORING: BASE SEMANTIC SIMILARITY ONLY
 	// ========================================
-	// Semantic search query with pgvector + hybrid scoring
-	// ORDER BY: final_score DESC (highest score first)
-	// Score components:
+	// Authority: DD-WORKFLOW-004 v2.0 (CRITICAL REVISION)
+	//
+	// V1.0 Decision: NO boost/penalty logic
+	//   - confidence = base_similarity (cosine similarity from pgvector)
+	//   - Hardcoded label weights REMOVED per DD-WORKFLOW-004 v2.0
+	//   - Custom labels are customer-defined via Rego; Kubernaut cannot assign weights
+	//
+	// V2.0+ Roadmap: Configurable label weights via ConfigMap (deferred)
+	//
+	// Score components (V1.0):
 	//   - base_similarity: cosine similarity from pgvector (0.0-1.0)
-	//   - label_boost: boost from matching optional labels (0.0-0.46)
-	//   - label_penalty: penalty from conflicting optional labels (0.0-0.20) [TDD Cycle 3]
-	//   - final_score: LEAST(base_similarity + label_boost - label_penalty, 1.0) [TDD Cycle 4]
+	//   - label_boost: 0.0 (deferred to V2.0+)
+	//   - label_penalty: 0.0 (deferred to V2.0+)
+	//   - final_score: base_similarity (no boost/penalty in V1.0)
+	//   - confidence: base_similarity (API contract field)
 	//
-	// Boost Weights (DD-WORKFLOW-004 v1.1):
-	//   - resource_management: +0.10
-	//   - gitops_tool: +0.10
-	//   - environment: +0.08
-	//   - business_category: +0.08
-	//   - priority: +0.05
-	//   - risk_tolerance: +0.05
-	//   - Max total boost: 0.46
-
-	// ========================================
-	// TDD CYCLE 2: LABEL BOOST CALCULATION (REFACTOR)
-	// ========================================
-	// DD-WORKFLOW-001 v1.6: Boost/penalty applies to DetectedLabels string fields
-	// Build label boost calculation using extracted constants
-	// Each matching optional label adds its weight to the total boost
-	//
-	// NOTE: Since we now filter in WHERE clause (BR-STORAGE-020), the boost only applies
-	// to workflows that MATCH the filter. Workflows with matching detected_labels get a boost.
-	// Workflows with NULL detected_labels pass the filter but don't get a boost.
-	boostCases := []string{}
-
-	// DetectedLabels boosts (only if filter provided)
-	// DD-WORKFLOW-001 v1.6: Only string fields support boost/penalty
-	// DD-WORKFLOW-001 v2.1: Skip boost for fields in failedDetections
-	if request.Filters != nil && request.Filters.DetectedLabels != nil {
-		dl := request.Filters.DetectedLabels
-		failedDetections := dl.FailedDetections
-
-		// Boost 1: git_ops_tool (+0.10)
-		// Example: argocd workflow gets boost when searching for argocd
-		// Wildcard "*" matches any non-null value
-		// Skip if "gitOpsTool" is in failedDetections
-		// NOTE: Boost uses hardcoded value comparison, not parameter, to avoid index issues
-		if dl.GitOpsTool != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelGitOpsTool, failedDetections) {
-			if *dl.GitOpsTool == "*" {
-				// Wildcard: boost if any value is present
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'git_ops_tool' IS NOT NULL THEN %.2f", boostWeightGitOpsTool))
-			} else {
-				// Exact match - use literal value in SQL (safe since it's validated enum)
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'git_ops_tool' = '%s' THEN %.2f", *dl.GitOpsTool, boostWeightGitOpsTool))
-			}
-		}
-
-		// Boost 2: pod_security_level REMOVED in DD-WORKFLOW-001 v2.2
-		// Rationale: PSP deprecated in K8s 1.21, removed in K8s 1.25
-
-		// Boost 3: service_mesh (+0.08)
-		// Example: istio workflow gets boost when searching for istio
-		// Skip if "serviceMesh" is in failedDetections
-		if dl.ServiceMesh != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelServiceMesh, failedDetections) {
-			if *dl.ServiceMesh == "*" {
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'service_mesh' IS NOT NULL THEN %.2f", boostWeightBusinessCategory))
-			} else {
-				boostCases = append(boostCases, fmt.Sprintf("WHEN detected_labels->>'service_mesh' = '%s' THEN %.2f", *dl.ServiceMesh, boostWeightBusinessCategory))
-			}
-		}
-	}
-
-	// Build label boost SQL expression
-	labelBoostSQL := "0.0"
-	if len(boostCases) > 0 {
-		// Sum all matching label boosts
-		caseExpressions := []string{}
-		for _, boostCase := range boostCases {
-			caseExpressions = append(caseExpressions, fmt.Sprintf("(CASE %s ELSE 0.0 END)", boostCase))
-		}
-		labelBoostSQL = strings.Join(caseExpressions, " + ")
-	}
-
-	// ========================================
-	// TDD CYCLE 3: LABEL PENALTY CALCULATION (REFACTOR)
-	// ========================================
-	// Build label penalty calculation
-	// DD-WORKFLOW-001 v1.6: Penalty applies to DetectedLabels string fields
-	// DD-WORKFLOW-001 v2.1: Skip penalty for fields in failedDetections
-	//
-	// Penalty Logic:
-	// - Applies when workflow label EXISTS but CONFLICTS with search filter
-	// - Only git_ops_tool has penalties (other DetectedLabels don't)
-	// - Rationale: GitOps tool is a critical decision (argocd vs flux)
-	// - Skip if field is in failedDetections
-	//
-	// Examples:
-	// - Searching for argocd, find flux workflow → -0.10 penalty
-	// - Searching for "*" (any GitOps), find flux workflow → 0.0 penalty (wildcard matches)
-	// - gitOpsTool in failedDetections → 0.0 penalty (skipped)
-	penaltyCases := []string{}
-
-	if request.Filters != nil && request.Filters.DetectedLabels != nil {
-		dl := request.Filters.DetectedLabels
-		failedDetections := dl.FailedDetections
-
-		// Penalty 1: git_ops_tool conflict (-0.10)
-		// Critical label: ArgoCD vs Flux are incompatible tools
-		// Wildcard "*" does NOT apply penalty (matches any value)
-		// Skip if "gitOpsTool" is in failedDetections
-		// NOTE: Uses literal value in SQL (safe since it's validated enum)
-		if dl.GitOpsTool != nil && *dl.GitOpsTool != "*" && !models.ShouldSkipDetectedLabel(models.DetectedLabelGitOpsTool, failedDetections) {
-			// Exact match required - penalty if workflow has different tool
-			penaltyCases = append(penaltyCases, fmt.Sprintf(
-				"WHEN detected_labels->>'git_ops_tool' IS NOT NULL AND detected_labels->>'git_ops_tool' != '%s' THEN %.2f",
-				*dl.GitOpsTool,
-				penaltyWeightGitOpsTool,
-			))
-		}
-	}
-
-	// Build label penalty SQL expression
-	labelPenaltySQL := "0.0"
-	if len(penaltyCases) > 0 {
-		// Sum all conflicting label penalties
-		caseExpressions := []string{}
-		for _, penaltyCase := range penaltyCases {
-			caseExpressions = append(caseExpressions, fmt.Sprintf("(CASE %s ELSE 0.0 END)", penaltyCase))
-		}
-		labelPenaltySQL = strings.Join(caseExpressions, " + ")
-	}
-
-	// ========================================
-	// TDD CYCLE 4: FINAL SCORE CALCULATION WITH CAPPING (GREEN)
-	// ========================================
-	// Final Score Formula:
-	//   final_score = LEAST(base_similarity + label_boost - label_penalty, 1.0)
-	//
-	// Capping Rationale:
-	//   - Scores must remain in [0.0, 1.0] range for consistency
-	//   - High base similarity (e.g., 0.95) + high boost (e.g., 0.18) could exceed 1.0
-	//   - LEAST() function caps the score at 1.0
-	//
-	// Example:
-	//   base=0.95, boost=0.18, penalty=0.0 → uncapped=1.13 → final=1.0 (capped)
-	//   base=0.80, boost=0.10, penalty=0.0 → uncapped=0.90 → final=0.90 (not capped)
+	// See: docs/architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md
 
 	query := fmt.Sprintf(`
 		SELECT
 			*,
 			(1 - (embedding <=> $1)) AS base_similarity,
-			(%s) AS label_boost,
-			(%s) AS label_penalty,
-			LEAST((1 - (embedding <=> $1)) + (%s) - (%s), 1.0) AS final_score,
+			0.0 AS label_boost,
+			0.0 AS label_penalty,
+			(1 - (embedding <=> $1)) AS final_score,
 			(1 - (embedding <=> $1)) AS similarity_score
 		FROM remediation_workflow_catalog
 		%s
 		ORDER BY final_score DESC
 		LIMIT $%d
-	`, labelBoostSQL, labelPenaltySQL, labelBoostSQL, labelPenaltySQL, whereClause, argIndex)
+	`, whereClause, argIndex)
 
 	args = append(args, topK)
 

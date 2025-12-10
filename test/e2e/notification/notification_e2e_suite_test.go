@@ -152,6 +152,13 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Notification Controller pod did not become ready")
 		logger.Info("✅ Notification Controller pod is ready")
 
+		// Deploy Audit Infrastructure (PostgreSQL + Data Storage + migrations)
+		// Required for BR-NOT-062, BR-NOT-063, BR-NOT-064 E2E tests
+		logger.Info("Deploying Audit Infrastructure (PostgreSQL + Data Storage)...")
+		err = infrastructure.DeployNotificationAuditInfrastructure(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Audit infrastructure deployment should succeed")
+		logger.Info("✅ Audit infrastructure ready")
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Ready for parallel processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
