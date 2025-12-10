@@ -26,7 +26,7 @@ Endpoint tests are skipped; internal logic preserved in src/extensions/postexec.
 import pytest
 
 
-@pytest.mark.skip(reason="DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0")
+@pytest.mark.xfail(reason="DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0", run=False)
 class TestPostExecEndpoint:
     """Tests for /api/v1/postexec/analyze endpoint"""
 

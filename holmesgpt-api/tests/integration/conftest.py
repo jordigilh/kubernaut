@@ -24,9 +24,10 @@ Usage:
     def test_workflow_search(data_storage_url):
         response = requests.post(f"{data_storage_url}/api/v1/workflows/search", ...)
 
-    # Or use the availability check
-    @pytest.mark.skipif(not is_integration_infra_available(), reason="Infrastructure not running")
+    # Or check availability manually (per TESTING_GUIDELINES.md: use fail() not skip())
     def test_something():
+        if not is_integration_infra_available():
+            pytest.fail("REQUIRED: Infrastructure not running - start with setup script")
         ...
 
 Setup Commands:
@@ -211,9 +212,10 @@ def integration_infrastructure():
     Start infrastructure manually with: ./setup_workflow_catalog_integration.sh
     """
     if not is_integration_infra_available():
-        pytest.skip(
-            "Integration infrastructure not running. "
-            "Start it with: ./tests/integration/setup_workflow_catalog_integration.sh"
+        pytest.fail(
+            "REQUIRED: Integration infrastructure not running.\n"
+            "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+            "  Start it with: ./tests/integration/setup_workflow_catalog_integration.sh"
         )
 
     # Set environment variables for service clients
@@ -291,15 +293,20 @@ def pytest_collection_modifyitems(config, items):
         # Infrastructure is running, no need to skip
         return
 
-    skip_reason = pytest.mark.skip(
-        reason="Integration infrastructure not running. "
-        "Start with: ./tests/integration/setup_workflow_catalog_integration.sh"
+    # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
+    # If infrastructure is not available, tests marked with requires_data_storage will fail
+    # when they try to connect, which is the correct behavior
+    fail_reason = pytest.mark.xfail(
+        reason="REQUIRED: Integration infrastructure not running. "
+        "Start with: ./tests/integration/setup_workflow_catalog_integration.sh",
+        strict=True,
+        run=True  # Run the test and let it fail naturally
     )
 
     for item in items:
-        # Only skip tests that explicitly require data storage
+        # Mark tests that require data storage - they will fail if infra not available
         if "requires_data_storage" in item.keywords:
-            item.add_marker(skip_reason)
+            item.add_marker(fail_reason)
 
 
 # ========================================

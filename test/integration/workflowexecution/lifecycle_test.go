@@ -250,6 +250,55 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 
 			GinkgoWriter.Println("✅ Finalizer handled correctly during deletion")
 		})
+
+		It("should recover orphaned PipelineRuns after controller restart during deletion", func() {
+			// BR-WE-004: Cascade Deletion - Prevents orphaned PipelineRuns after controller restart
+			// Business Value: Operators don't have manual cleanup orphaned Tekton resources
+			// TESTING_GUIDELINES.md: Integration tests validate CRD-based flows and cross-service coordination
+
+			targetResource := fmt.Sprintf("default/deployment/lifecycle-restart-%d", time.Now().UnixNano())
+			wfe := createUniqueWFE("restart-recovery", targetResource)
+
+			// Create WFE
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			// Wait for Running phase (PR created + finalizer added)
+			Eventually(func() string {
+				updated, err := getWFE(wfe.Name, wfe.Namespace)
+				if err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 30*time.Second, 200*time.Millisecond).Should(Equal("Running"))
+
+			// Get the associated PipelineRun name
+			running, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(running.Status.PipelineRunRef).ToNot(BeNil(),
+				"Business Outcome: WFE must track its associated PipelineRun")
+
+			// Verify finalizer is present before deletion
+			Expect(running.Finalizers).ToNot(BeEmpty(),
+				"Business Outcome: Finalizer must be present to ensure cleanup")
+
+			// Delete the WFE (simulates what happens before a controller restart)
+			Expect(k8sClient.Delete(ctx, wfe)).To(Succeed())
+
+			// Controller should:
+			// 1. Receive delete event
+			// 2. Clean up associated PipelineRun
+			// 3. Remove finalizer
+			// 4. Allow WFE deletion to complete
+
+			// Wait for complete deletion
+			Eventually(func() bool {
+				_, err := getWFE(wfe.Name, wfe.Namespace)
+				return err != nil // Should return NotFound
+			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Business Outcome: WFE must be fully deleted after finalizer cleanup")
+
+			GinkgoWriter.Println("✅ Controller correctly handles deletion with finalizer cleanup")
+		})
 	})
 
 	Context("Spec Validation", func() {

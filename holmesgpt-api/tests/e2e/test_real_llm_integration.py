@@ -1078,7 +1078,7 @@ class TestRealRecoveryAnalysis:
 
 @pytest.mark.integration
 @pytest.mark.real_llm
-@pytest.mark.skip(reason="DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0")
+@pytest.mark.xfail(reason="DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0", run=False)
 class TestRealPostExecAnalysis:
     """Tests for real post-execution analysis using configured LLM provider
 

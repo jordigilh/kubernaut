@@ -110,21 +110,26 @@ func CreateIntegrationCluster(clusterName, kubeconfigPath string, writer io.Writ
 	return nil
 }
 
-// DeployTestServices deploys Redis and Gateway in a test namespace
+// DeployTestServices deploys Gateway and supporting infrastructure in a test namespace
 // This is called in BeforeAll for each test
+//
+// DD-GATEWAY-012: Gateway is now Redis-FREE - only Gateway pod is deployed
+// DD-AUDIT-003: Gateway emits audit events to Data Storage - requires audit migrations
 //
 // NOTE: AlertManager is NOT deployed - E2E tests send payloads directly to Gateway endpoint
 //
 // Steps:
 // 1. Create namespace
-// 2. Deploy Redis (1 pod - simple deployment)
-// 3. Deploy Gateway (1 pod)
-// 4. Wait for all services ready
+// 2. Deploy PostgreSQL + apply audit migrations (for audit event persistence)
+// 3. Deploy Data Storage service (receives audit events from Gateway)
+// 4. Deploy Gateway (1 pod - Redis-free, K8s-native)
+// 5. Wait for all services ready
 //
-// Time: ~10 seconds (simple Redis deployment)
+// Time: ~20 seconds
 func DeployTestServices(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	fmt.Fprintf(writer, "Deploying Test Services in Namespace: %s\n", namespace)
+	fmt.Fprintf(writer, "DD-GATEWAY-012: Redis-FREE deployment\n")
 	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	// 1. Create test namespace
@@ -143,20 +148,32 @@ func DeployTestServices(ctx context.Context, namespace, kubeconfigPath string, w
 		fmt.Fprintf(writer, "   kubernaut-system namespace already exists\n")
 	}
 
-	// 3. Deploy Redis (simple deployment)
-	fmt.Fprintf(writer, "🚀 Deploying Redis...\n")
-	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy Redis: %w", err)
+	// 3. Deploy PostgreSQL for Data Storage (DD-AUDIT-003: audit event persistence)
+	fmt.Fprintf(writer, "🚀 Deploying PostgreSQL for audit events...\n")
+	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
 
-	// 4. Deploy Gateway
+	// 4. Apply audit migrations (DD-AUDIT-003: Gateway emits audit events)
+	fmt.Fprintf(writer, "📋 Applying audit migrations...\n")
+	if err := ApplyAuditMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply audit migrations: %w", err)
+	}
+
+	// 5. Deploy Data Storage service (receives audit events from Gateway)
+	fmt.Fprintf(writer, "🚀 Deploying Data Storage service...\n")
+	if err := deployDataStorageInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Data Storage: %w", err)
+	}
+
+	// 6. Deploy Gateway (DD-GATEWAY-012: Redis-free, K8s-native)
 	// NOTE: AlertManager is NOT deployed - E2E tests send payloads directly to Gateway endpoint
-	fmt.Fprintf(writer, "🚀 Deploying Gateway...\n")
+	fmt.Fprintf(writer, "🚀 Deploying Gateway (Redis-FREE)...\n")
 	if err := deployGatewayInNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Gateway: %w", err)
 	}
 
-	// 5. Wait for all services ready
+	// 7. Wait for all services ready
 	fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
 	if err := waitForServicesReady(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
@@ -464,17 +481,24 @@ func deployGatewayInNamespace(namespace, kubeconfigPath string, writer io.Writer
 }
 
 // waitForServicesReady waits for all services to be ready in the namespace
+// DD-GATEWAY-012: Redis removed - Gateway is now stateless, K8s-native
 func waitForServicesReady(namespace, kubeconfigPath string, writer io.Writer) error {
 	maxAttempts := 60
 	delay := 2 * time.Second
 
-	// Wait for Redis (simple deployment, not master-replica)
-	fmt.Fprintf(writer, "   Waiting for Redis...\n")
-	if err := waitForPods(namespace, "app=redis", 1, maxAttempts, delay, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("Redis not ready: %w", err)
+	// Wait for PostgreSQL (DD-AUDIT-003: audit event persistence)
+	fmt.Fprintf(writer, "   Waiting for PostgreSQL...\n")
+	if err := waitForPods(namespace, "app=postgresql", 1, maxAttempts, delay, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("PostgreSQL not ready: %w", err)
 	}
 
-	// Wait for Gateway
+	// Wait for Data Storage (DD-AUDIT-003: receives audit events from Gateway)
+	fmt.Fprintf(writer, "   Waiting for Data Storage...\n")
+	if err := waitForPods(namespace, "app=datastorage", 1, maxAttempts, delay, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("Data Storage not ready: %w", err)
+	}
+
+	// Wait for Gateway (DD-GATEWAY-012: Redis-free, K8s-native)
 	fmt.Fprintf(writer, "   Waiting for Gateway...\n")
 	if err := waitForPods(namespace, "app=gateway", 1, maxAttempts, delay, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("Gateway not ready: %w", err)

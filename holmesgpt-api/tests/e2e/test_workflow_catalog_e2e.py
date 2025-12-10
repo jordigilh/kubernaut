@@ -107,9 +107,13 @@ class TestCriticalUserJourneys:
         data = json.loads(result.data)
         workflows = data["workflows"]
 
-        # Skip if no test data bootstrapped
+        # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
         if len(workflows) == 0:
-            pytest.skip("E1.1: No test data bootstrapped - run bootstrap-workflows.sh")
+            pytest.fail(
+                "REQUIRED: E1.1 - No test data bootstrapped.\n"
+                "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+                "  Run: ./scripts/bootstrap-workflows.sh"
+            )
 
         top_workflow = workflows[0]
 
@@ -167,9 +171,13 @@ class TestCriticalUserJourneys:
         data = json.loads(result.data)
         workflows = data["workflows"]
 
-        # Skip if no test data bootstrapped
+        # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
         if len(workflows) == 0:
-            pytest.skip("E1.2: No test data bootstrapped - run bootstrap-workflows.sh")
+            pytest.fail(
+                "REQUIRED: E1.2 - No test data bootstrapped.\n"
+                "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+                "  Run: ./scripts/bootstrap-workflows.sh"
+            )
 
         top_workflow = workflows[0]
 

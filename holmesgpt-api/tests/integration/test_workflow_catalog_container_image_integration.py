@@ -309,9 +309,13 @@ class TestWorkflowCatalogContainerImageIntegration:
         data = json.loads(result.data)
         workflows = data.get("workflows", [])
 
-        # Skip if no test data available
+        # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
         if len(workflows) == 0:
-            pytest.skip("No test workflows available - run bootstrap-workflows.sh")
+            pytest.fail(
+                "REQUIRED: No test workflows available.\n"
+                "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+                "  Run: ./scripts/bootstrap-workflows.sh"
+            )
 
         # ASSERT: At least one workflow has container_image with OCI format
         workflow_with_image_found = False
@@ -373,9 +377,13 @@ class TestWorkflowCatalogContainerImageDirectAPI:
         data = response.json()
         workflows = data.get("workflows", [])
 
-        # Skip if no test data available
+        # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
         if len(workflows) == 0:
-            pytest.skip("No test workflows available - run bootstrap-workflows.sh")
+            pytest.fail(
+                "REQUIRED: No test workflows available.\n"
+                "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+                "  Run: ./scripts/bootstrap-workflows.sh"
+            )
 
         # ASSERT: container_image in API response (DD-WORKFLOW-002 v3.0 flat format)
         for wf in workflows:

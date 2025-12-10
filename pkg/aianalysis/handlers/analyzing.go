@@ -19,6 +19,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,6 +76,8 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		analysis.Status.Phase = aianalysis.PhaseFailed
 		analysis.Status.Message = "No workflow selected - investigation may have failed"
 		analysis.Status.Reason = "NoWorkflowSelected"
+		// Set AnalysisComplete=False condition
+		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
 		return ctrl.Result{}, nil
 	}
 
@@ -90,6 +93,8 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		analysis.Status.Phase = aianalysis.PhaseFailed
 		analysis.Status.Message = "Rego evaluation failed unexpectedly"
 		analysis.Status.Reason = "RegoEvaluationError"
+		// Set AnalysisComplete=False condition
+		aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
 		return ctrl.Result{}, nil
 	}
 
@@ -107,7 +112,20 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	// BR-AI-019: Populate ApprovalContext if approval is required
 	if result.ApprovalRequired {
 		h.populateApprovalContext(analysis, result)
+		// Set ApprovalRequired condition
+		aianalysis.SetApprovalRequired(analysis, true, aianalysis.ReasonPolicyRequiresApproval, result.Reason)
+	} else {
+		// Set ApprovalRequired=False condition (auto-approved)
+		aianalysis.SetApprovalRequired(analysis, false, "AutoApproved", "Policy evaluation does not require manual approval")
 	}
+
+	// Set WorkflowResolved condition (we already validated workflow exists above)
+	aianalysis.SetWorkflowResolved(analysis, true, aianalysis.ReasonWorkflowSelected,
+		"Workflow "+analysis.Status.SelectedWorkflow.WorkflowID+" selected with confidence "+
+			formatConfidence(analysis.Status.SelectedWorkflow.Confidence))
+
+	// Set AnalysisComplete condition
+	aianalysis.SetAnalysisComplete(analysis, true, "Rego policy evaluation completed successfully")
 
 	// Transition directly to Completed (per reconciliation-phases.md v2.0)
 	now := metav1.Now()
@@ -242,6 +260,11 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 	}
 
 	return input
+}
+
+// formatConfidence formats a confidence score as a percentage string.
+func formatConfidence(confidence float64) string {
+	return fmt.Sprintf("%.0f%%", confidence*100)
 }
 
 // buildDetectedLabelsMap converts the typed DetectedLabels struct to a map for Rego.

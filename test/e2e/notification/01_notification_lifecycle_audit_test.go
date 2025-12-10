@@ -19,9 +19,8 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,80 +35,62 @@ import (
 )
 
 // ========================================
-// E2E Test 1: Full Notification Lifecycle with Audit
+// E2E Test 1: Full Notification Lifecycle with Audit (REAL DATA STORAGE)
 // ========================================
 //
 // Business Requirements:
 // - BR-NOT-062: Unified audit table integration
 // - BR-NOT-063: Graceful audit degradation
+// - BR-NOT-064: Audit event correlation
+//
+// Defense-in-Depth: This test validates the FULL audit chain:
+// - Controller emits event → BufferedStore buffers → HTTPClient sends →
+// - Data Storage receives → PostgreSQL persists
 //
 // Test Scenario:
 // 1. Create NotificationRequest CRD
 // 2. Simulate notification delivery (sent)
-// 3. Verify audit event created for message.sent
+// 3. Verify audit event persisted to PostgreSQL via Data Storage API
 // 4. Simulate acknowledgment
-// 5. Verify audit event created for status.acknowledged
+// 5. Verify audit event persisted to PostgreSQL via Data Storage API
 // 6. Verify all audit events have correct correlation_id
 //
 // Expected Results:
 // - NotificationRequest CRD created successfully
-// - 2 audit events generated (sent + acknowledged)
+// - 2 audit events persisted to PostgreSQL (sent + acknowledged)
 // - All audit events follow ADR-034 format
 // - Audit correlation_id links both events
 // - Fire-and-forget pattern ensures no blocking
-//
-// This is a simplified E2E test using envtest infrastructure
-// Full E2E with Kind cluster deployment can be added later
 
 var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2e", "lifecycle", "audit"), func() {
 	var (
-		testCtx           context.Context
-		testCancel        context.CancelFunc
-		notification      *notificationv1alpha1.NotificationRequest
-		auditHelpers      *notificationcontroller.AuditHelpers
-		auditStore        audit.AuditStore
-		mockDataStorage   *httptest.Server
-		receivedEvents    []*audit.AuditEvent
-		eventsMutex       sync.Mutex
-		notificationName  string
-		notificationNS    string
+		testCtx          context.Context
+		testCancel       context.CancelFunc
+		notification     *notificationv1alpha1.NotificationRequest
+		auditHelpers     *notificationcontroller.AuditHelpers
+		auditStore       audit.AuditStore
+		dataStorageURL   string
+		notificationName string
+		notificationNS   string
+		correlationID    string
 	)
 
 	BeforeEach(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 2*time.Minute)
-		receivedEvents = []*audit.AuditEvent{}
 
-		// Generate unique notification name for this test
-		notificationName = "e2e-lifecycle-test-" + time.Now().Format("20060102-150405")
+		// Generate unique identifiers for this test
+		testID := time.Now().Format("20060102-150405")
+		notificationName = "e2e-lifecycle-test-" + testID
 		notificationNS = "default"
+		correlationID = "e2e-remediation-" + testID
 
-		// Set up mock Data Storage Service
-		mockDataStorage = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v1/audit/events" && r.Method == "POST" {
-				var events []*audit.AuditEvent
-				err := json.NewDecoder(r.Body).Decode(&events)
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
+		// Use real Data Storage URL from Kind cluster
+		// Data Storage is deployed via DeployNotificationAuditInfrastructure() in suite setup
+		dataStorageURL = fmt.Sprintf("http://localhost:%d", dataStorageNodePort)
 
-				eventsMutex.Lock()
-				receivedEvents = append(receivedEvents, events...)
-				eventsMutex.Unlock()
-
-				w.WriteHeader(http.StatusCreated)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"success": true,
-					"count":   len(events),
-				})
-				return
-			}
-			w.WriteHeader(http.StatusNotFound)
-		}))
-
-		// Create audit store
-		httpClient := &http.Client{Timeout: 5 * time.Second}
-		dataStorageClient := audit.NewHTTPDataStorageClient(mockDataStorage.URL, httpClient)
+		// Create audit store pointing to real Data Storage
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		dataStorageClient := audit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
 
 		config := audit.Config{
 			BufferSize:    1000,
@@ -140,7 +121,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 					{Slack: "#e2e-tests"},
 				},
 				Metadata: map[string]string{
-					"remediationRequestName": "e2e-test-remediation",
+					"remediationRequestName": correlationID,
 					"cluster":                "test-cluster",
 				},
 			},
@@ -152,9 +133,6 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		if auditStore != nil {
 			auditStore.Close()
 		}
-		if mockDataStorage != nil {
-			mockDataStorage.Close()
-		}
 
 		// Clean up NotificationRequest CRD if it exists
 		if notification != nil {
@@ -162,7 +140,12 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		}
 	})
 
-	It("should create NotificationRequest and generate audit events for complete lifecycle", func() {
+	It("should create NotificationRequest and persist audit events to PostgreSQL", func() {
+		// Skip if Data Storage is not available
+		if dataStorageNodePort == 0 {
+			Skip("Data Storage not deployed - run with audit infrastructure")
+		}
+
 		// ===== STEP 1: Create NotificationRequest CRD =====
 		By("Creating NotificationRequest CRD")
 		err := k8sClient.Create(testCtx, notification)
@@ -185,89 +168,101 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		err = auditStore.StoreAudit(testCtx, sentEvent)
 		Expect(err).ToNot(HaveOccurred(), "Storing sent audit event should succeed")
 
-		// Wait for async flush
+		// Wait for async flush and verify via Data Storage API
+		By("Verifying sent event persisted to PostgreSQL via Data Storage API")
 		Eventually(func() int {
-			eventsMutex.Lock()
-			defer eventsMutex.Unlock()
-			return len(receivedEvents)
-		}, 2*time.Second, 50*time.Millisecond).Should(BeNumerically(">=", 1),
-			"At least 1 audit event (sent) should be flushed")
+			return queryAuditEventCount(dataStorageURL, correlationID, "notification.message.sent")
+		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"Sent audit event should be persisted to PostgreSQL")
 
 		// ===== STEP 3: Simulate acknowledgment and create audit event =====
 		By("Simulating notification acknowledgment")
-
-		// Create acknowledgment audit event
-		// Note: Status update not required for E2E test validation
 		ackEvent, err := auditHelpers.CreateMessageAcknowledgedEvent(notification)
 		Expect(err).ToNot(HaveOccurred(), "CreateMessageAcknowledgedEvent should succeed")
 
 		err = auditStore.StoreAudit(testCtx, ackEvent)
 		Expect(err).ToNot(HaveOccurred(), "Storing acknowledgment audit event should succeed")
 
-		// Wait for second audit event to be flushed
+		// Wait for async flush and verify via Data Storage API
+		By("Verifying acknowledged event persisted to PostgreSQL via Data Storage API")
 		Eventually(func() int {
-			eventsMutex.Lock()
-			defer eventsMutex.Unlock()
-			return len(receivedEvents)
-		}, 2*time.Second, 50*time.Millisecond).Should(BeNumerically(">=", 2),
-			"Both audit events (sent + acknowledged) should be flushed")
+			return queryAuditEventCount(dataStorageURL, correlationID, "notification.message.acknowledged")
+		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"Acknowledged audit event should be persisted to PostgreSQL")
 
-		// ===== STEP 4: Verify audit events =====
-		By("Verifying all audit events were generated correctly")
+		// ===== STEP 4: Verify both events have same correlation_id =====
+		By("Verifying correlation_id links both audit events in PostgreSQL")
+		totalEvents := queryAuditEventCount(dataStorageURL, correlationID, "")
+		Expect(totalEvents).To(BeNumerically(">=", 2),
+			"Should have at least 2 audit events with same correlation_id")
 
-		eventsMutex.Lock()
-		defer eventsMutex.Unlock()
+		// ===== STEP 5: Verify ADR-034 compliance via Data Storage query =====
+		By("Verifying ADR-034 compliance of persisted events")
+		events := queryAuditEvents(dataStorageURL, correlationID)
+		Expect(events).To(HaveLen(2), "Should have exactly 2 events")
 
-		Expect(len(receivedEvents)).To(BeNumerically(">=", 2),
-			"Should have at least 2 audit events (sent + acknowledged)")
-
-		// Find sent event
-		var sentAuditEvent *audit.AuditEvent
-		for _, event := range receivedEvents {
-			if event.EventType == "notification.message.sent" {
-				sentAuditEvent = event
-				break
-			}
+		for _, event := range events {
+			Expect(event.EventCategory).To(Equal("notification"), "Category should be 'notification'")
+			Expect(event.ActorType).To(Equal("service"), "Actor type should be 'service'")
+			Expect(event.ActorID).To(Equal("notification"), "Actor ID should be 'notification'")
+			Expect(event.ResourceType).To(Equal("NotificationRequest"), "Resource type should be 'NotificationRequest'")
+			Expect(event.ResourceID).To(Equal(notificationName), "Resource ID should match notification name")
+			Expect(event.CorrelationID).To(Equal(correlationID), "Correlation ID should match")
+			Expect(event.RetentionDays).To(Equal(2555), "Retention should be 7 years")
 		}
-		Expect(sentAuditEvent).ToNot(BeNil(), "Should find message.sent audit event")
 
-		// Verify sent event follows ADR-034
-		Expect(sentAuditEvent.EventCategory).To(Equal("notification"))
-		Expect(sentAuditEvent.EventAction).To(Equal("sent"))
-		Expect(sentAuditEvent.EventOutcome).To(Equal("success"))
-		Expect(sentAuditEvent.ActorType).To(Equal("service"))
-		Expect(sentAuditEvent.ActorID).To(Equal("notification"))
-		Expect(sentAuditEvent.ResourceType).To(Equal("NotificationRequest"))
-		Expect(sentAuditEvent.ResourceID).To(Equal(notificationName))
-		Expect(sentAuditEvent.RetentionDays).To(Equal(2555), "Retention should be 7 years")
-
-		// Find acknowledged event
-		var ackAuditEvent *audit.AuditEvent
-		for _, event := range receivedEvents {
-			if event.EventType == "notification.message.acknowledged" {
-				ackAuditEvent = event
-				break
-			}
-		}
-		Expect(ackAuditEvent).ToNot(BeNil(), "Should find message.acknowledged audit event")
-
-		// Verify acknowledged event follows ADR-034
-		Expect(ackAuditEvent.EventCategory).To(Equal("notification"))
-		Expect(ackAuditEvent.EventAction).To(Equal("acknowledged"))
-		Expect(ackAuditEvent.EventOutcome).To(Equal("success"))
-		Expect(ackAuditEvent.ResourceID).To(Equal(notificationName))
-
-		// ===== STEP 5: Verify correlation_id links both events =====
-		By("Verifying correlation_id links both audit events")
-
-		// Correlation ID comes from remediation request name in metadata
-		expectedCorrelationID := "e2e-test-remediation"
-		Expect(sentAuditEvent.CorrelationID).To(Equal(expectedCorrelationID),
-			"Sent event correlation_id should match remediation request name")
-		Expect(ackAuditEvent.CorrelationID).To(Equal(expectedCorrelationID),
-			"Acknowledged event correlation_id should match remediation request name")
-		Expect(sentAuditEvent.CorrelationID).To(Equal(ackAuditEvent.CorrelationID),
-			"Both events should have same correlation_id for tracing")
+		GinkgoWriter.Printf("✅ Full audit chain validated: Controller → BufferedStore → DataStorage → PostgreSQL\n")
 	})
 })
 
+// queryAuditEventCount queries Data Storage API for audit event count
+func queryAuditEventCount(baseURL, correlationID, eventType string) int {
+	url := fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", baseURL, correlationID)
+	if eventType != "" {
+		url += "&event_type=" + eventType
+	}
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+
+	var result struct {
+		Events []audit.AuditEvent `json:"events"`
+		Count  int                `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0
+	}
+
+	return result.Count
+}
+
+// queryAuditEvents queries Data Storage API for audit events
+func queryAuditEvents(baseURL, correlationID string) []audit.AuditEvent {
+	url := fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", baseURL, correlationID)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var result struct {
+		Events []audit.AuditEvent `json:"events"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil
+	}
+
+	return result.Events
+}

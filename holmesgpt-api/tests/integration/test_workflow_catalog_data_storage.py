@@ -273,9 +273,12 @@ class TestSemanticSearchBehavior:
             # Top result should be OOMKilled-related (if data is bootstrapped)
             print(f"I2.1: Found {len(workflows)} workflows, top: {top_wf.get('signal_type')}")
         else:
-            # No data bootstrapped - this is acceptable for contract validation
-            print("I2.1: No workflows found (test data not bootstrapped)")
-            pytest.skip("No test data bootstrapped - run bootstrap-workflows.sh")
+            # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
+            pytest.fail(
+                "REQUIRED: I2.1 - No test data bootstrapped.\n"
+                "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+                "  Run: ./scripts/bootstrap-workflows.sh"
+            )
 
     def test_different_queries_return_different_results_i2_2(self, workflow_catalog_tool):
         """

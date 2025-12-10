@@ -69,6 +69,10 @@ var (
 	// E2E file output directory (for FileService validation)
 	e2eFileOutputDir string
 
+	// Data Storage NodePort for audit E2E tests (0 if not deployed)
+	// When audit infrastructure is deployed, this is set to the NodePort for external access
+	dataStorageNodePort int
+
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 )

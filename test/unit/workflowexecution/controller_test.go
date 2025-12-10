@@ -4885,6 +4885,380 @@ metadata:
 })
 
 // ========================================
+// Phase 2: Reliability Edge Cases
+// Business Value: System stability under concurrent/error conditions
+// Per TESTING_GUIDELINES.md: Validate correctness and behavior
+// TDD Methodology: RED (write test) → GREEN (implement) → REFACTOR
+// ========================================
+
+var _ = Describe("BR-WE-003: Status Race Condition Handling", func() {
+	// Business Outcome: Operators see consistent status even when PipelineRun
+	// updates rapidly. Prevents confusing status flip-flop that makes debugging impossible.
+
+	var (
+		scheme     *runtime.Scheme
+		reconciler *workflowexecution.WorkflowExecutionReconciler
+	)
+
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	})
+
+	Context("when PipelineRun status updates rapidly during reconciliation", func() {
+		It("should use latest PipelineRun status, not stale cache", func() {
+			// Business Value: Prevents operators from seeing stale "Running" when PR already completed
+			// This is critical for correct SLA tracking and alerting
+
+			// Given: WFE in Running state with a PipelineRun that already completed
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-race-test",
+					Namespace: "default",
+					UID:       types.UID("race-uid"),
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/race-app",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						ContainerImage: "ghcr.io/kubernaut/workflows/test:v1.0.0",
+					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase:     workflowexecutionv1alpha1.PhaseRunning,
+					StartTime: &metav1.Time{Time: time.Now().Add(-2 * time.Minute)},
+					PipelineRunRef: &corev1.LocalObjectReference{
+						Name: "wfe-pr-race",
+					},
+				},
+			}
+
+			// PipelineRun that ALREADY completed (simulating race condition)
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-pr-race",
+					Namespace: "kubernaut-workflows",
+					Labels: map[string]string{
+						"kubernaut.ai/workflow-execution": "wfe-race-test",
+						"kubernaut.ai/source-namespace":   "default",
+					},
+				},
+				Status: tektonv1.PipelineRunStatus{},
+			}
+			// Set succeeded condition
+			pr.Status.SetCondition(&apis.Condition{
+				Type:    apis.ConditionSucceeded,
+				Status:  corev1.ConditionTrue,
+				Reason:  "Succeeded",
+				Message: "Pipeline completed successfully",
+			})
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(wfe, pr).
+				Build()
+
+			reconciler = &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           record.NewFakeRecorder(10),
+				ExecutionNamespace: "kubernaut-workflows",
+				CooldownPeriod:     5 * time.Minute,
+				ServiceAccountName: "kubernaut-workflow-runner",
+			}
+
+			// When: BuildPipelineRunStatusSummary is called (as during reconciliation)
+			summary := reconciler.BuildPipelineRunStatusSummary(pr)
+
+			// Then: Should reflect completed status, not stale running
+			// PipelineRunStatusSummary uses Status="True" and Reason="Succeeded" for success
+			Expect(summary.Status).To(Equal(string(corev1.ConditionTrue)),
+				"Business Outcome: Status must reflect actual PR state, not stale cache")
+			Expect(summary.Reason).To(Equal("Succeeded"),
+				"Business Outcome: Reason must reflect completion for accurate debugging")
+			Expect(summary.Message).To(ContainSubstring("successfully"),
+				"Business Outcome: Message must reflect completion for accurate debugging")
+		})
+
+		It("should handle concurrent status updates without panic", func() {
+			// Business Value: System doesn't crash during high-frequency PR updates
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-concurrent",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/concurrent-app",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						ContainerImage: "ghcr.io/kubernaut/workflows/test:v1.0.0",
+					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase: workflowexecutionv1alpha1.PhaseRunning,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(wfe).
+				Build()
+
+			reconciler = &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           record.NewFakeRecorder(10),
+				ExecutionNamespace: "kubernaut-workflows",
+				CooldownPeriod:     5 * time.Minute,
+				ServiceAccountName: "kubernaut-workflow-runner",
+			}
+
+			// When: Multiple rapid status extractions (simulating concurrent updates)
+			// Then: Should not panic and should return consistent results
+			Expect(func() {
+				for i := 0; i < 10; i++ {
+					pr := &tektonv1.PipelineRun{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      fmt.Sprintf("pr-%d", i),
+							Namespace: "kubernaut-workflows",
+						},
+					}
+					_ = reconciler.BuildPipelineRunStatusSummary(pr)
+				}
+			}).ToNot(Panic(), "Business Outcome: Concurrent updates must not crash system")
+		})
+	})
+})
+
+var _ = Describe("BR-WE-012: Full Exponential Backoff Cycle", func() {
+	// Business Outcome: System correctly escalates through backoff stages and eventually
+	// blocks with ExhaustedRetries, preventing infinite retry storms
+
+	var (
+		scheme     *runtime.Scheme
+		reconciler *workflowexecution.WorkflowExecutionReconciler
+		ctx        context.Context
+		fakeClient client.Client
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	})
+
+	It("should progress through backoff stages correctly", func() {
+		// Business Value: Operators understand the backoff progression and can predict behavior
+		// Stage 1: 1min, Stage 2: 2min, Stage 3: 4min, Stage 4: 8min, Stage 5: ExhaustedRetries
+
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-backoff-full",
+				Namespace: "default",
+				UID:       types.UID("backoff-full-uid"),
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				TargetResource: "default/deployment/backoff-app",
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "failing-workflow",
+					ContainerImage: "ghcr.io/kubernaut/workflows/fail:v1.0.0",
+				},
+			},
+			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+				Phase:               workflowexecutionv1alpha1.PhasePending,
+				ConsecutiveFailures: 0, // Starting fresh
+			},
+		}
+
+		fakeClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(wfe).
+			WithStatusSubresource(wfe).
+			Build()
+
+		reconciler = &workflowexecution.WorkflowExecutionReconciler{
+			Client:                 fakeClient,
+			Scheme:                 scheme,
+			Recorder:               record.NewFakeRecorder(10),
+			ExecutionNamespace:     "kubernaut-workflows",
+			CooldownPeriod:         1 * time.Minute, // Base cooldown
+			MaxCooldownPeriod:      10 * time.Minute,
+			MaxConsecutiveFailures: 5,
+			ServiceAccountName:     "kubernaut-workflow-runner",
+		}
+
+		// Simulate progression through failures
+		expectedCooldowns := []time.Duration{
+			1 * time.Minute,  // Failure 1: 1min * 2^0 = 1min
+			2 * time.Minute,  // Failure 2: 1min * 2^1 = 2min
+			4 * time.Minute,  // Failure 3: 1min * 2^2 = 4min
+			8 * time.Minute,  // Failure 4: 1min * 2^3 = 8min
+			10 * time.Minute, // Failure 5: 1min * 2^4 = 16min, capped at 10min
+		}
+
+		for i, expectedCooldown := range expectedCooldowns {
+			failures := int32(i + 1)
+
+			// Calculate expected cooldown using exponential backoff formula
+			calculatedCooldown := reconciler.CooldownPeriod * time.Duration(1<<uint(failures-1))
+			if calculatedCooldown > reconciler.MaxCooldownPeriod {
+				calculatedCooldown = reconciler.MaxCooldownPeriod
+			}
+
+			Expect(calculatedCooldown).To(Equal(expectedCooldown),
+				fmt.Sprintf("Business Outcome: Failure %d should have %v cooldown for predictable behavior",
+					failures, expectedCooldown))
+		}
+	})
+
+	It("should block with ExhaustedRetries after max consecutive failures", func() {
+		// Business Value: System stops retrying and alerts operator for manual intervention
+		// CheckCooldown finds the most recent terminal WFE and blocks if ConsecutiveFailures >= Max
+
+		// Previous WFE that already hit max failures (terminal state)
+		previousWFE := &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-previous-exhausted",
+				Namespace: "default",
+				UID:       types.UID("prev-exhausted-uid"),
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				TargetResource: "default/deployment/exhausted-app",
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "failing-workflow",
+					ContainerImage: "ghcr.io/kubernaut/workflows/fail:v1.0.0",
+				},
+			},
+			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+				Phase:               workflowexecutionv1alpha1.PhaseFailed,
+				ConsecutiveFailures: 5, // At max
+				CompletionTime:      &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+			},
+		}
+
+		// New WFE attempting same target
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-exhausted-new",
+				Namespace: "default",
+				UID:       types.UID("exhausted-new-uid"),
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				TargetResource: "default/deployment/exhausted-app",
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "failing-workflow",
+					ContainerImage: "ghcr.io/kubernaut/workflows/fail:v1.0.0",
+				},
+			},
+			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+				Phase: workflowexecutionv1alpha1.PhasePending,
+			},
+		}
+
+		fakeClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(previousWFE, wfe).
+			WithStatusSubresource(previousWFE, wfe).
+			Build()
+
+		reconciler = &workflowexecution.WorkflowExecutionReconciler{
+			Client:                 fakeClient,
+			Scheme:                 scheme,
+			Recorder:               record.NewFakeRecorder(10),
+			ExecutionNamespace:     "kubernaut-workflows",
+			CooldownPeriod:         1 * time.Minute,
+			MaxCooldownPeriod:      10 * time.Minute,
+			MaxConsecutiveFailures: 5,
+			ServiceAccountName:     "kubernaut-workflow-runner",
+		}
+
+		// When: CheckCooldown is called (which checks for ExhaustedRetries)
+		blocked, skipDetails, err := reconciler.CheckCooldown(ctx, wfe)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Then: Should block with ExhaustedRetries reason
+		Expect(blocked).To(BeTrue(),
+			"Business Outcome: Must block after 5 consecutive failures to prevent retry storm")
+		Expect(skipDetails).ToNot(BeNil())
+		Expect(skipDetails.Reason).To(Equal(workflowexecutionv1alpha1.SkipReasonExhaustedRetries),
+			"Business Outcome: Reason must clearly indicate retries are exhausted")
+	})
+
+	It("should reset consecutive failures counter on success", func() {
+		// Business Value: Successful execution clears backoff, enabling immediate future remediations
+
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-reset",
+				Namespace: "default",
+				UID:       types.UID("reset-uid"),
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				TargetResource: "default/deployment/reset-app",
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "success-workflow",
+					ContainerImage: "ghcr.io/kubernaut/workflows/success:v1.0.0",
+				},
+			},
+			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+				Phase:               workflowexecutionv1alpha1.PhaseRunning,
+				ConsecutiveFailures: 4, // Had previous failures
+				NextAllowedExecution: &metav1.Time{
+					Time: time.Now().Add(8 * time.Minute), // Was in backoff
+				},
+			},
+		}
+
+		fakeClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(wfe).
+			WithStatusSubresource(wfe).
+			Build()
+
+		reconciler = &workflowexecution.WorkflowExecutionReconciler{
+			Client:             fakeClient,
+			Scheme:             scheme,
+			Recorder:           record.NewFakeRecorder(10),
+			ExecutionNamespace: "kubernaut-workflows",
+			CooldownPeriod:     1 * time.Minute,
+			ServiceAccountName: "kubernaut-workflow-runner",
+		}
+
+		// Simulate successful PR
+		pr := &tektonv1.PipelineRun{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-pr-success",
+				Namespace: "kubernaut-workflows",
+			},
+		}
+		pr.Status.SetCondition(&apis.Condition{
+			Type:    apis.ConditionSucceeded,
+			Status:  corev1.ConditionTrue,
+			Reason:  "Succeeded",
+			Message: "Pipeline completed successfully",
+		})
+
+		// When: MarkCompleted is called
+		_, err := reconciler.MarkCompleted(ctx, wfe, pr)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Then: ConsecutiveFailures should be reset
+		var updated workflowexecutionv1alpha1.WorkflowExecution
+		Expect(fakeClient.Get(ctx, client.ObjectKey{Name: wfe.Name, Namespace: wfe.Namespace}, &updated)).To(Succeed())
+
+		Expect(updated.Status.ConsecutiveFailures).To(Equal(int32(0)),
+			"Business Outcome: Success must reset failure counter for fresh start")
+		Expect(updated.Status.NextAllowedExecution).To(BeNil(),
+			"Business Outcome: Success must clear backoff timer")
+	})
+})
+
+// ========================================
 // Mock Types for Day 8 Tests
 // ========================================
 

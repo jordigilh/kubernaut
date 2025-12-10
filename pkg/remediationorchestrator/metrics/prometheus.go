@@ -140,44 +140,10 @@ var (
 		[]string{"phase", "namespace"},
 	)
 
-	// ========================================
-	// BLOCKING METRICS (BR-ORCH-042)
-	// ========================================
-
-	// BlockedTotal counts RRs blocked due to consecutive failures
-	// Reference: BR-ORCH-042
-	BlockedTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "blocked_total",
-			Help:      "Total RemediationRequests blocked due to consecutive failures",
-		},
-		[]string{"namespace", "reason"},
-	)
-
-	// BlockedCooldownExpiredTotal counts blocked RRs that expired
-	// Reference: BR-ORCH-042.3
-	BlockedCooldownExpiredTotal = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "blocked_cooldown_expired_total",
-			Help:      "Total blocked RRs that expired and transitioned to Failed",
-		},
-	)
-
-	// CurrentBlockedGauge tracks current blocked RR count
-	// Reference: BR-ORCH-042
-	CurrentBlockedGauge = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "blocked_current",
-			Help:      "Current number of blocked RRs",
-		},
-		[]string{"namespace"},
-	)
+	// TODO(BR-ORCH-042): Add blocking metrics here after TDD implementation
+	// - BlockedTotal: Counter for RRs blocked due to consecutive failures
+	// - BlockedCooldownExpiredTotal: Counter for expired blocked RRs
+	// - CurrentBlockedGauge: Gauge for current blocked RR count
 )
 
 func init() {

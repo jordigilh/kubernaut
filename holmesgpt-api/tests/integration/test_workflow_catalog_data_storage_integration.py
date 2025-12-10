@@ -190,9 +190,13 @@ class TestWorkflowCatalogEndToEnd:
 
         workflows = data["workflows"]
 
-        # Skip if no test data available
+        # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
         if len(workflows) == 0:
-            pytest.skip("No test workflows available - run bootstrap-workflows.sh")
+            pytest.fail(
+                "REQUIRED: No test workflows available.\n"
+                "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+                "  Run: ./scripts/bootstrap-workflows.sh"
+            )
 
         # CORRECTNESS VALIDATION: DD-WORKFLOW-002 v3.0 workflow structure (FLAT)
         first_workflow = workflows[0]
@@ -251,9 +255,13 @@ class TestWorkflowCatalogEndToEnd:
         data = json.loads(result.data)
         workflows = data["workflows"]
 
-        # Skip if no test data available
+        # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
         if len(workflows) == 0:
-            pytest.skip("No test workflows available - run bootstrap-workflows.sh")
+            pytest.fail(
+                "REQUIRED: No test workflows available.\n"
+                "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+                "  Run: ./scripts/bootstrap-workflows.sh"
+            )
 
         # DD-WORKFLOW-002 v3.0: confidence is the only scoring field exposed
         # (base_similarity, label_boost are internal Data Storage details)
@@ -330,9 +338,13 @@ class TestWorkflowCatalogEndToEnd:
         data = json.loads(result.data)
         workflows = data["workflows"]
 
-        # Skip if no test data available
+        # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
         if len(workflows) == 0:
-            pytest.skip("No CrashLoopBackOff test workflows available - run bootstrap-workflows.sh")
+            pytest.fail(
+                "REQUIRED: No CrashLoopBackOff test workflows available.\n"
+                "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+                "  Run: ./scripts/bootstrap-workflows.sh"
+            )
 
         # DD-WORKFLOW-002 v3.0: signal_type is singular string (not array)
         for workflow in workflows:

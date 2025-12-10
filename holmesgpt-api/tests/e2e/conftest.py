@@ -113,10 +113,12 @@ def data_storage_stack():
     is_available, data_storage_url = _check_go_infrastructure()
 
     if not is_available:
-        pytest.skip(
-            "Data Storage infrastructure not available.\n"
-            "Run 'make test-e2e-datastorage' first, then 'make test-e2e-holmesgpt'.\n"
-            "Or run 'make test-e2e-holmesgpt-full' for complete setup."
+        pytest.fail(
+            "REQUIRED: Data Storage infrastructure not available.\n"
+            "  Per TESTING_GUIDELINES.md: E2E tests must use real services\n"
+            "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\n"
+            "  Run 'make test-e2e-datastorage' first, then 'make test-e2e-holmesgpt'.\n"
+            "  Or run 'make test-e2e-holmesgpt-full' for complete setup."
         )
 
     # Wait for full readiness

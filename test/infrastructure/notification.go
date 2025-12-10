@@ -267,6 +267,74 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	return nil
 }
 
+// DeployNotificationAuditInfrastructure deploys PostgreSQL and Data Storage for audit E2E tests
+// This enables real audit event persistence instead of mocks (BR-NOT-062, BR-NOT-063, BR-NOT-064)
+//
+// Steps:
+// 1. Deploy PostgreSQL with pgvector
+// 2. Apply audit migrations using shared library
+// 3. Deploy Data Storage Service
+// 4. Wait for services ready
+//
+// Time: ~60 seconds
+//
+// Usage:
+//
+//	// In E2E test BeforeSuite or BeforeEach:
+//	err := infrastructure.DeployNotificationAuditInfrastructure(ctx, namespace, kubeconfigPath, GinkgoWriter)
+func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "Deploying Audit Infrastructure in Namespace: %s\n", namespace)
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// 1. Deploy PostgreSQL with pgvector
+	fmt.Fprintf(writer, "🚀 Deploying PostgreSQL with pgvector...\n")
+	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
+	}
+
+	// 2. Apply audit migrations using shared library
+	fmt.Fprintf(writer, "📋 Applying audit migrations...\n")
+	if err := ApplyAuditMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply audit migrations: %w", err)
+	}
+
+	// 3. Build and load Data Storage image (if not already loaded)
+	fmt.Fprintf(writer, "🔨 Building Data Storage image...\n")
+	if err := buildDataStorageImage(writer); err != nil {
+		return fmt.Errorf("failed to build Data Storage image: %w", err)
+	}
+
+	// 4. Load Data Storage image into Kind cluster
+	fmt.Fprintf(writer, "📦 Loading Data Storage image into Kind cluster...\n")
+	clusterName := "notification-e2e" // Matches CreateNotificationCluster
+	if err := loadDataStorageImage(clusterName, writer); err != nil {
+		return fmt.Errorf("failed to load Data Storage image: %w", err)
+	}
+
+	// 5. Deploy Data Storage Service
+	fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
+	}
+
+	// 6. Wait for Data Storage ready
+	fmt.Fprintf(writer, "⏳ Waiting for Data Storage Service ready...\n")
+	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("Data Storage not ready: %w", err)
+	}
+
+	fmt.Fprintf(writer, "✅ Audit infrastructure ready in namespace %s\n", namespace)
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	return nil
+}
+
+// GetDataStorageServiceURL returns the Data Storage Service URL for E2E tests
+// Used by tests to configure audit store to point to real Data Storage
+func GetDataStorageServiceURL(namespace string) string {
+	return fmt.Sprintf("http://datastorage.%s.svc.cluster.local:8080", namespace)
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal Helper Functions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
