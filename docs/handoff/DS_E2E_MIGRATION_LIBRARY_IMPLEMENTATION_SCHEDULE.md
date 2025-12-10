@@ -270,13 +270,13 @@ func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Wri
 
 ### Day 2: December 12, 2025 (2-3 hours)
 
-#### Phase 1: Update WE Infrastructure (PRIORITY - BLOCKED)
+#### Phase 1: Update WE Infrastructure (PRIORITY - UNBLOCKED)
 
 | Task | Duration | Status | Priority |
 |------|----------|--------|----------|
-| Update `workflowexecution.go` to use shared library | 30 min | ⏳ | 🔴 HIGH |
-| Test WE E2E: `make test-e2e-workflowexecution` | 30 min | ⏳ | 🔴 HIGH |
-| Notify WE team: "Unblocked!" | 5 min | ⏳ | 🔴 HIGH |
+| Update `workflowexecution.go` to use shared library | 30 min | 🟢 Ready | 🔴 HIGH |
+| Test WE E2E: `make test-e2e-workflowexecution` | 30 min | 🟢 Ready | 🔴 HIGH |
+| Notify WE team: "Unblocked!" | 5 min | 🟢 Ready | 🔴 HIGH |
 
 **WE Integration Code**:
 
