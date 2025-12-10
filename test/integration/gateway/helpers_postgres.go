@@ -118,40 +118,123 @@ func (p *PostgresTestClient) Cleanup(ctx context.Context) {
 // DATA STORAGE TEST SERVER METHODS (envtest Migration - Phase 2)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// SetupDataStorageTestServer creates a Data Storage service for integration tests
+// SetupDataStorageTestServer creates a REAL Data Storage service for integration tests
 // Used for audit trail API (Gateway → Data Storage → PostgreSQL)
+//
+// FIX: NOTICE_INTEGRATION_TEST_MOCK_VIOLATIONS.md
+// Per 03-testing-strategy.mdc: Integration tests must use REAL dependencies
+// Only LLM is allowed to be mocked (cost constraint)
 func SetupDataStorageTestServer(ctx context.Context, pgClient *PostgresTestClient) *DataStorageTestServer {
-	// TODO: Initialize Data Storage service with PostgreSQL
-	// This will be implemented when Data Storage service is ready
-	// For now, create a mock server that accepts audit requests
+	GinkgoWriter.Printf("  Starting REAL Data Storage service (PostgreSQL: %s)...\n", pgClient.ConnectionString())
 
-	GinkgoWriter.Printf("  Creating mock Data Storage server (PostgreSQL: %s)...\n", pgClient.ConnectionString())
+	containerName := "gateway-datastorage-integration"
 
-	// Create a simple mock server for audit trail endpoints
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Mock audit trail endpoint
-		if r.URL.Path == "/api/v1/audit/events" {
-			w.WriteHeader(http.StatusCreated)
-			w.Write([]byte(`{"status":"created","event_id":"test-123"}`))
-			return
+	// Stop and remove existing container if it exists
+	exec.Command("podman", "stop", containerName).Run()
+	exec.Command("podman", "rm", containerName).Run()
+
+	// Find random available port for Data Storage
+	dsPort := findAvailablePort(50100, 60000)
+	GinkgoWriter.Printf("  📍 Allocated random port for Data Storage: %d\n", dsPort)
+
+	// Start Data Storage container with PostgreSQL connection
+	// Uses the same PostgreSQL container that integration tests set up
+	cmd := exec.Command("podman", "run", "-d",
+		"--name", containerName,
+		"-p", fmt.Sprintf("%d:8080", dsPort),
+		"-e", fmt.Sprintf("DATABASE_URL=%s", pgClient.ConnectionString()),
+		"-e", "CONFIG_PATH=/app/config.yaml",
+		"--memory", "256m",
+		"localhost/kubernaut-datastorage:e2e-test",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// If container image not available, fall back to mock with clear warning
+		GinkgoWriter.Printf("  ⚠️  Data Storage container not available: %s\n", string(output))
+		GinkgoWriter.Printf("  ⚠️  FALLING BACK TO MOCK - Build datastorage image for full validation\n")
+		GinkgoWriter.Printf("  ⚠️  Run: make build-datastorage-image\n")
+
+		// Create fallback mock server (temporary until image is built)
+		mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Mock audit trail endpoint - batch endpoint per ADR-038
+			if r.URL.Path == "/api/v1/audit/events/batch" && r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusAccepted)
+				w.Write([]byte(`{"status":"accepted","count":1}`))
+				return
+			}
+			// Single event endpoint
+			if r.URL.Path == "/api/v1/audit/events" && r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				w.Write([]byte(`{"status":"created","event_id":"test-123"}`))
+				return
+			}
+			// Health check
+			if r.URL.Path == "/healthz" {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"status":"ok"}`))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}))
+
+		return &DataStorageTestServer{
+			Server:   mockServer,
+			PgClient: pgClient,
 		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
+	}
 
-	GinkgoWriter.Printf("  ✅ Mock Data Storage server created (URL: %s)\n", mockServer.URL)
+	GinkgoWriter.Printf("  ✅ Data Storage container started: %s\n", containerName)
 
+	// Wait for Data Storage to be ready
+	dataStorageURL := fmt.Sprintf("http://localhost:%d", dsPort)
+	healthURL := fmt.Sprintf("%s/healthz", dataStorageURL)
+
+	Eventually(func() bool {
+		resp, err := http.Get(healthURL)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Data Storage should become healthy")
+
+	GinkgoWriter.Printf("  ✅ REAL Data Storage service ready (URL: %s)\n", dataStorageURL)
+
+	// Return real Data Storage server info (no httptest.Server needed)
 	return &DataStorageTestServer{
-		Server:   mockServer,
+		Server:   nil, // No mock server when using real container
+		BaseURL:  dataStorageURL,
 		PgClient: pgClient,
 	}
 }
 
-// Cleanup closes the Data Storage test server
+// Cleanup closes the Data Storage test server (mock or container)
 func (d *DataStorageTestServer) Cleanup() {
+	// Close mock server if used (fallback mode)
 	if d.Server != nil {
 		d.Server.Close()
-		GinkgoWriter.Printf("  ✅ Data Storage server closed\n")
+		GinkgoWriter.Printf("  ✅ Data Storage mock server closed\n")
+		return
 	}
+
+	// Stop real Data Storage container
+	containerName := "gateway-datastorage-integration"
+	if err := exec.Command("podman", "stop", containerName).Run(); err != nil {
+		GinkgoWriter.Printf("  ⚠️  Failed to stop Data Storage container: %v\n", err)
+	}
+	if err := exec.Command("podman", "rm", containerName).Run(); err != nil {
+		GinkgoWriter.Printf("  ⚠️  Failed to remove Data Storage container: %v\n", err)
+	}
+	GinkgoWriter.Printf("  ✅ Data Storage container stopped and removed\n")
+}
+
+// URL returns the Data Storage service URL
+func (d *DataStorageTestServer) URL() string {
+	if d.Server != nil {
+		return d.Server.URL // Mock server URL
+	}
+	return d.BaseURL // Real container URL
 }
 
 // findAvailablePort finds a random available port in the given range

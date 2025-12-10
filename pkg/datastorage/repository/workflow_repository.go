@@ -897,30 +897,31 @@ func toJSONArray(items []string) string {
 }
 
 // ========================================
-// HYBRID SCORING CONSTANTS
+// V2.0+ ROADMAP: CONFIGURABLE LABEL WEIGHTS
 // ========================================
-// Authority: DD-WORKFLOW-004 v1.1 (Hybrid Weighted Label Scoring)
-// TDD Cycle 2: Optional Label Boost Weights
-// TDD Cycle 3: Optional Label Penalty Weights
-
-const (
-	// Boost weights for optional labels (when they match)
-	boostWeightResourceManagement = 0.10 // GitOps vs Manual vs Automated
-	boostWeightGitOpsTool         = 0.10 // ArgoCD vs Flux vs None
-	boostWeightEnvironment        = 0.08 // Production vs Staging vs Development
-	boostWeightBusinessCategory   = 0.08 // Payments, Auth, Data-Processing, etc.
-	boostWeightPriority           = 0.05 // P0, P1, P2, P3, P4
-	boostWeightRiskTolerance      = 0.05 // Low, Medium, High
-
-	// Penalty weights for optional labels (when they conflict)
-	// Only resource_management and gitops_tool have penalties
-	// Other labels (environment, business_category, priority, risk_tolerance) don't penalize
-	penaltyWeightResourceManagement = 0.10 // Penalty for conflicting resource management
-	penaltyWeightGitOpsTool         = 0.10 // Penalty for conflicting GitOps tool
-
-	// Maximum possible boost (sum of all boost weights)
-	maxLabelBoost = 0.46
-
-	// Maximum possible penalty (sum of penalty weights)
-	maxLabelPenalty = 0.20
-)
+// Authority: DD-WORKFLOW-004 v2.0 (Hybrid Weighted Label Scoring)
+//
+// V1.0 Decision: NO hardcoded boost/penalty weights
+//   - Custom labels are customer-defined via Rego policies
+//   - Kubernaut cannot assign weights to customer-defined labels
+//   - Scoring uses base semantic similarity only
+//
+// V2.0+ Roadmap: Customer-configurable weights via ConfigMap
+//   - Customers define their own label weights
+//   - Dynamic SQL generation from configuration
+//   - See DD-WORKFLOW-004 v2.0 for design
+//
+// These constants are PRESERVED for V2.0+ reference but NOT USED in V1.0:
+//
+// const (
+// 	boostWeightResourceManagement = 0.10 // V2.0+: GitOps vs Manual vs Automated
+// 	boostWeightGitOpsTool         = 0.10 // V2.0+: ArgoCD vs Flux vs None
+// 	boostWeightEnvironment        = 0.08 // V2.0+: Production vs Staging vs Development
+// 	boostWeightBusinessCategory   = 0.08 // V2.0+: Payments, Auth, Data-Processing, etc.
+// 	boostWeightPriority           = 0.05 // V2.0+: P0, P1, P2, P3, P4
+// 	boostWeightRiskTolerance      = 0.05 // V2.0+: Low, Medium, High
+// 	penaltyWeightResourceManagement = 0.10 // V2.0+: Penalty for conflicting resource management
+// 	penaltyWeightGitOpsTool         = 0.10 // V2.0+: Penalty for conflicting GitOps tool
+// 	maxLabelBoost   = 0.46 // V2.0+: Maximum possible boost
+// 	maxLabelPenalty = 0.20 // V2.0+: Maximum possible penalty
+// )

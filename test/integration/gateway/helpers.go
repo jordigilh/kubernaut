@@ -281,29 +281,33 @@ func (k *K8sTestClient) DeleteCRD(ctx context.Context, name, namespace string) e
 // StartTestGateway creates a Gateway server for integration tests
 // Returns the Gateway server instance for creating test HTTP servers
 //
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native
+// DD-AUDIT-003: Gateway emits audit events to Data Storage
+//
 // Example usage:
 //
-//	gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+//	gatewayServer, err := StartTestGateway(ctx, k8sClient, dataStorageURL)
 //	Expect(err).ToNot(HaveOccurred())
 //	testServer := httptest.NewServer(gatewayServer.Handler())
 //	defer testServer.Close()
 //	resp, _ := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", body)
 //
 // DD-GATEWAY-004: Authentication removed - security now at network layer
-func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) (*gateway.Server, error) {
+func StartTestGateway(ctx context.Context, k8sClient *K8sTestClient, dataStorageURL string) (*gateway.Server, error) {
 	// Use production logger with console output to capture errors in test logs
 	logConfig := zap.NewProductionConfig()
 	logConfig.OutputPaths = []string{"stdout"}
 	logConfig.ErrorOutputPaths = []string{"stderr"}
 	logger, _ := logConfig.Build()
 
-	return StartTestGatewayWithLogger(ctx, redisClient, k8sClient, logger)
+	return StartTestGatewayWithLogger(ctx, k8sClient, dataStorageURL, logger)
 }
 
 // StartTestGatewayWithLogger creates and starts a Gateway server with a custom logger
 // This is useful for observability tests that need to capture and verify log output
-func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, logger *zap.Logger) (*gateway.Server, error) {
-	return StartTestGatewayWithOptions(ctx, redisClient, k8sClient, DefaultTestServerOptions())
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
+func StartTestGatewayWithLogger(ctx context.Context, k8sClient *K8sTestClient, dataStorageURL string, logger *zap.Logger) (*gateway.Server, error) {
+	return StartTestGatewayWithOptions(ctx, k8sClient, dataStorageURL, DefaultTestServerOptions())
 }
 
 // StartTestGatewayWithOptions creates a Gateway server with custom timeout options

@@ -247,6 +247,14 @@ var _ = SynchronizedBeforeSuite(
 			"url", metricsURL,
 			"attempts", attemptCount)
 
+		// Set Data Storage NodePort for E2E audit tests
+		// Per DD-TEST-001: Data Storage uses NodePort 30090 in Kind clusters
+		// Per TESTING_GUIDELINES.md: E2E tests MUST use real services (Skip() forbidden)
+		dataStorageNodePort = 30090
+		logger.Info("✅ Data Storage NodePort configured for audit E2E tests",
+			"process", GinkgoParallelProcess(),
+			"port", dataStorageNodePort)
+
 		logger.Info("✅ Process ready",
 			"process", GinkgoParallelProcess(),
 			"fileOutputDir", e2eFileOutputDir)

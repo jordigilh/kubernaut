@@ -162,7 +162,7 @@ func DeployTestServices(ctx context.Context, namespace, kubeconfigPath string, w
 
 	// 5. Deploy Data Storage service (receives audit events from Gateway)
 	fmt.Fprintf(writer, "🚀 Deploying Data Storage service...\n")
-	if err := deployDataStorageInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage: %w", err)
 	}
 

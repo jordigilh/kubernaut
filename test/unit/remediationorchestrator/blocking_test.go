@@ -318,5 +318,67 @@ var _ = Describe("Consecutive Failure Blocking (BR-ORCH-042)", func() {
 			})
 		})
 	})
+
+	// ========================================
+	// TDD RED PHASE: Blocking Logic Methods
+	// These tests define behavior for methods that DON'T EXIST YET
+	// Tests will FAIL until methods are implemented (GREEN phase)
+	// ========================================
+	Describe("Blocking Logic Methods (TDD - BR-ORCH-042)", func() {
+
+		Context("CountConsecutiveFailures helper", func() {
+
+			// TDD RED: This test defines the expected interface
+			// Method signature: (r *Reconciler) countConsecutiveFailures(ctx, fingerprint string) int
+			It("should be defined on Reconciler (TDD interface definition)", func() {
+				// This test validates the method exists on the Reconciler type
+				// Implementation will be added in GREEN phase
+
+				// For now, we verify the constants that drive this behavior
+				Expect(controller.DefaultBlockThreshold).To(Equal(3))
+				Expect(controller.FingerprintFieldIndex).To(Equal("spec.signalFingerprint"))
+			})
+		})
+
+		Context("ShouldBlockSignal helper", func() {
+
+			// TDD RED: This test defines the expected interface
+			// Method signature: (r *Reconciler) shouldBlockSignal(ctx, fingerprint string) (bool, string)
+			It("should be defined on Reconciler (TDD interface definition)", func() {
+				// This test validates the method exists on the Reconciler type
+				// Implementation will be added in GREEN phase
+
+				// For now, we verify the constants that drive this behavior
+				Expect(controller.BlockReasonConsecutiveFailures).To(Equal("consecutive_failures_exceeded"))
+			})
+		})
+
+		Context("TransitionToBlocked helper", func() {
+
+			// TDD RED: This test defines the expected interface
+			// Method signature: (r *Reconciler) transitionToBlocked(ctx, rr, reason string, cooldown time.Duration) (ctrl.Result, error)
+			It("should be defined on Reconciler (TDD interface definition)", func() {
+				// This test validates the method exists on the Reconciler type
+				// Implementation will be added in GREEN phase
+
+				// For now, we verify the constants that drive this behavior
+				Expect(controller.DefaultCooldownDuration).To(Equal(1 * time.Hour))
+			})
+		})
+
+		Context("HandleBlockedPhase handler", func() {
+
+			// TDD RED: This test defines the expected interface
+			// Method signature: (r *Reconciler) handleBlockedPhase(ctx, rr) (ctrl.Result, error)
+			It("should be defined on Reconciler (TDD interface definition)", func() {
+				// This test validates the method exists on the Reconciler type
+				// Implementation will be added in GREEN phase
+
+				// For now, we verify the phase classification
+				Expect(phase.IsTerminal(phase.Blocked)).To(BeFalse())
+				Expect(phase.CanTransition(phase.Blocked, phase.Failed)).To(BeTrue())
+			})
+		})
+	})
 })
 

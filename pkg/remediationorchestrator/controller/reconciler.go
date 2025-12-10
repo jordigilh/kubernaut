@@ -149,7 +149,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return r.handleAwaitingApprovalPhase(ctx, rr)
 	case phase.Executing:
 		return r.handleExecutingPhase(ctx, rr, aggregatedStatus)
-	// TODO(BR-ORCH-042): Add case phase.Blocked handler here
+	case phase.Blocked:
+		// BR-ORCH-042: Handle blocked phase (cooldown expiry check)
+		return r.handleBlockedPhase(ctx, rr)
 	default:
 		logger.Info("Unknown phase", "phase", rr.Status.OverallPhase)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -442,11 +444,30 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 }
 
 // transitionToFailed transitions the RR to Failed phase.
-// TODO(BR-ORCH-042): Add consecutive failure blocking check here
+// BR-ORCH-042: Before transitioning to terminal Failed, checks if this failure
+// triggers consecutive failure blocking (≥3 consecutive failures for same fingerprint).
+// If blocking is triggered, transitions to non-terminal Blocked phase instead.
 func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase, failureReason string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-	_ = logger // Suppress unused variable warning until blocking logic is implemented
 
+	// BR-ORCH-042: Check if this failure triggers blocking
+	// Skip if already transitioning from Blocked phase (cooldown expiry) to avoid infinite loop
+	if failurePhase != "blocked" {
+		// Count consecutive failures BEFORE this one (current failure not yet recorded)
+		consecutiveFailures := r.countConsecutiveFailures(ctx, rr.Spec.SignalFingerprint)
+
+		// +1 for this failure (not yet in status)
+		if consecutiveFailures+1 >= DefaultBlockThreshold {
+			logger.Info("Consecutive failure threshold reached, blocking signal",
+				"consecutiveFailures", consecutiveFailures+1,
+				"threshold", DefaultBlockThreshold,
+				"fingerprint", rr.Spec.SignalFingerprint,
+			)
+			return r.transitionToBlocked(ctx, rr, BlockReasonConsecutiveFailures, DefaultCooldownDuration)
+		}
+	}
+
+	// Normal terminal Failed transition
 	oldPhase := rr.Status.OverallPhase
 	startTime := rr.CreationTimestamp.Time
 
@@ -589,8 +610,26 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 }
 
 // SetupWithManager sets up the controller with the Manager.
-// TODO(BR-ORCH-042): Add field index on spec.signalFingerprint for consecutive failure lookups
+// Creates field index on spec.signalFingerprint for O(1) consecutive failure lookups.
+// Reference: BR-ORCH-042, BR-GATEWAY-185 v1.1
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// BR-ORCH-042, BR-GATEWAY-185 v1.1: Create field index on spec.signalFingerprint
+	// Uses immutable spec field (64 chars) instead of mutable labels (63 chars max)
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&remediationv1.RemediationRequest{},
+		FingerprintFieldIndex, // "spec.signalFingerprint"
+		func(obj client.Object) []string {
+			rr := obj.(*remediationv1.RemediationRequest)
+			if rr.Spec.SignalFingerprint == "" {
+				return nil
+			}
+			return []string{rr.Spec.SignalFingerprint}
+		},
+	); err != nil {
+		return fmt.Errorf("failed to create field index on spec.signalFingerprint: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1.RemediationRequest{}).
 		Complete(r)

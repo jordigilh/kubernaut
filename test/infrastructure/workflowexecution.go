@@ -137,15 +137,26 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 	// 6. Apply audit migrations using DS team's shared library
 	// This creates: audit_events table + partitions + indexes
 	// Required for BR-WE-005 audit persistence
+	// Note: WE uses AIAnalysis pattern with label "app=postgres" (not "app=postgresql")
 	fmt.Fprintf(output, "\n📋 Applying audit migrations...\n")
-	if err := ApplyAuditMigrations(context.Background(), WorkflowExecutionNamespace, kubeconfigPath, output); err != nil {
+	migrationConfig := DefaultMigrationConfig(WorkflowExecutionNamespace, kubeconfigPath)
+	migrationConfig.PostgresService = "postgres" // Match AIAnalysis pattern (label: app=postgres)
+	if err := ApplyMigrationsWithConfig(context.Background(), MigrationConfig{
+		Namespace:       WorkflowExecutionNamespace,
+		KubeconfigPath:  kubeconfigPath,
+		PostgresService: "postgres", // Match AIAnalysis PostgreSQL deployment
+		PostgresUser:    "slm_user",
+		PostgresDB:      "action_history",
+		Tables:          AuditTables,
+	}, output); err != nil {
 		return fmt.Errorf("failed to apply audit migrations: %w", err)
 	}
 
 	// 7. Verify migrations applied successfully
-	config := DefaultMigrationConfig(WorkflowExecutionNamespace, kubeconfigPath)
-	config.Tables = AuditTables
-	if err := VerifyMigrations(context.Background(), config, output); err != nil {
+	verifyConfig := DefaultMigrationConfig(WorkflowExecutionNamespace, kubeconfigPath)
+	verifyConfig.PostgresService = "postgres"
+	verifyConfig.Tables = AuditTables
+	if err := VerifyMigrations(context.Background(), verifyConfig, output); err != nil {
 		return fmt.Errorf("audit migration verification failed: %w", err)
 	}
 	fmt.Fprintf(output, "✅ Audit migrations verified\n")

@@ -82,20 +82,27 @@ var _ = Describe("Notification Audit Integration Tests (Real Infrastructure)", f
 		// Check if Data Storage is available
 		resp, err := httpClient.Get(dataStorageURL + "/health")
 		if err != nil {
-			Skip(fmt.Sprintf("Data Storage not available at %s - run 'podman-compose -f podman-compose.test.yml up -d'", dataStorageURL))
+			Fail(fmt.Sprintf(
+				"REQUIRED: Data Storage not available at %s\n"+
+					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
+					"  Start with: podman-compose -f podman-compose.test.yml up -d",
+				dataStorageURL))
 		}
 		resp.Body.Close()
 
 		// Connect to PostgreSQL for verification
 		db, err = sql.Open("postgres", postgresURL)
-		if err != nil {
-			Skip(fmt.Sprintf("PostgreSQL not available: %v - run 'podman-compose -f podman-compose.test.yml up -d postgres'", err))
-		}
+		Expect(err).ToNot(HaveOccurred(),
+			"REQUIRED: PostgreSQL connection failed\n"+
+				"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
+				"  Start with: podman-compose -f podman-compose.test.yml up -d postgres")
 
 		// Verify PostgreSQL connection
-		if err := db.Ping(); err != nil {
-			Skip(fmt.Sprintf("PostgreSQL not reachable: %v", err))
-		}
+		err = db.Ping()
+		Expect(err).ToNot(HaveOccurred(),
+			"REQUIRED: PostgreSQL not reachable\n"+
+				"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
+				"  Verify PostgreSQL is running: podman-compose -f podman-compose.test.yml ps")
 
 		// Create audit store with REAL Data Storage client
 		dataStorageClient := audit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
