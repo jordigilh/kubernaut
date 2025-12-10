@@ -289,7 +289,9 @@ logger.info("RFC 7807 exception handlers enabled (BR-HAPI-200)")
 # No router.config anti-pattern - tests use mock LLM server instead
 app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])
 app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
-app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
+# DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0
+# Logic preserved in src/extensions/postexec.py for V1.1
+# app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
 app.include_router(health.router, tags=["Health"])
 
 

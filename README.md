@@ -62,7 +62,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 | **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (240 tests: 120U+114I+6E2E) |
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (727 tests: 551U+163I+13E2E) |
 | **HolmesGPT API** | ✅ **v3.10 PRODUCTION-READY** | AI investigation wrapper | 48 BRs (601 tests: 474U+77I+45E2E+5smoke) |
-| **Notification Service** | ✅ **PRODUCTION-READY** | Multi-channel delivery | 17 BRs (453 tests: 336U+105I+12E2E) |
+| **Notification Service** | ✅ **PRODUCTION-READY** | Multi-channel delivery | 17 BRs (349 tests: 225U+112I+12E2E) |
 | **Signal Processing** | 🔄 **Phase 3 (In Progress)** | Signal enrichment | - |
 | **AI Analysis** | 🔄 **Phase 4 (In Progress)** | AI-powered analysis | - |
 | **Remediation Execution** | ✅ **v1.0 PRODUCTION-READY** | Tekton workflow orchestration | 12 BRs (225 tests: 178U+47I) |

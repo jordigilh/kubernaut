@@ -585,7 +585,26 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 }
 
 // SetupWithManager sets up the controller with the Manager.
+// Creates field index on spec.signalFingerprint for O(1) consecutive failure lookups.
+// Reference: BR-ORCH-042, BR-GATEWAY-185 v1.1
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// BR-ORCH-042, BR-GATEWAY-185 v1.1: Create field index on spec.signalFingerprint
+	// Uses immutable spec field (64 chars) instead of mutable labels (63 chars max)
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&remediationv1.RemediationRequest{},
+		FingerprintFieldIndex, // "spec.signalFingerprint"
+		func(obj client.Object) []string {
+			rr := obj.(*remediationv1.RemediationRequest)
+			if rr.Spec.SignalFingerprint == "" {
+				return nil
+			}
+			return []string{rr.Spec.SignalFingerprint}
+		},
+	); err != nil {
+		return fmt.Errorf("failed to create field index on spec.signalFingerprint: %w", err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1.RemediationRequest{}).
 		Complete(r)
