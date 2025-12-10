@@ -1272,13 +1272,14 @@ labels["team"] := ["platform"  // Missing closing bracket
 			defer deleteTestNamespace(ns)
 
 			By("Creating RemediationRequest with 0 recovery attempts (first attempt)")
+			now := metav1.Now()
 			rr := &remediationv1alpha1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-rr-first",
 					Namespace: ns,
 				},
 				Spec: remediationv1alpha1.RemediationRequestSpec{
-					SignalFingerprint: "rc001def456abc123def456abc123def456abc123def456abc123def456ab001",
+					SignalFingerprint: "a001def456abc123def456abc123def456abc123def456abc123def456abc001",
 					SignalName:        "RecoveryFirstSignal",
 					Severity:          "critical",
 					SignalType:        "prometheus",
@@ -1288,8 +1289,13 @@ labels["team"] := ["platform"  // Missing closing bracket
 						Name:      "test-pod",
 						Namespace: ns,
 					},
-					FiringTime:   metav1.Now(),
-					ReceivedTime: metav1.Now(),
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -1307,7 +1313,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "rc001def456abc123def456abc123def456abc123def456abc123def456ab001",
+						Fingerprint: "a001def456abc123def456abc123def456abc123def456abc123def456abc001",
 						Name:        "RecoveryFirst",
 						Severity:    "critical",
 						Type:        "prometheus",
@@ -1349,6 +1355,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 			By("Creating RemediationRequest with recovery attempts (retry)")
 			startTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 			failureReason := "PreviousExecutionTimedOut"
+			now := metav1.Now()
 
 			rr := &remediationv1alpha1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1356,7 +1363,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 					Namespace: ns,
 				},
 				Spec: remediationv1alpha1.RemediationRequestSpec{
-					SignalFingerprint: "rc002def456abc123def456abc123def456abc123def456abc123def456ab002",
+					SignalFingerprint: "a002def456abc123def456abc123def456abc123def456abc123def456abc002",
 					SignalName:        "RecoveryRetrySignal",
 					Severity:          "critical",
 					SignalType:        "prometheus",
@@ -1366,8 +1373,13 @@ labels["team"] := ["platform"  // Missing closing bracket
 						Name:      "test-pod",
 						Namespace: ns,
 					},
-					FiringTime:   metav1.Now(),
-					ReceivedTime: metav1.Now(),
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: startTime,
+						LastOccurrence:  now,
+						OccurrenceCount: 3,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
@@ -1387,7 +1399,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "rc002def456abc123def456abc123def456abc123def456abc123def456ab002",
+						Fingerprint: "a002def456abc123def456abc123def456abc123def456abc123def456abc002",
 						Name:        "RecoveryRetry",
 						Severity:    "critical",
 						Type:        "prometheus",
@@ -1439,7 +1451,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "rc003def456abc123def456abc123def456abc123def456abc123def456ab003",
+						Fingerprint: "a003def456abc123def456abc123def456abc123def456abc123def456abc003",
 						Name:        "RecoveryMissing",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -1488,7 +1500,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "rc004def456abc123def456abc123def456abc123def456abc123def456ab004",
+						Fingerprint: "a004def456abc123def456abc123def456abc123def456abc123def456abc004",
 						Name:        "NoRRRef",
 						Severity:    "info",
 						Type:        "prometheus",

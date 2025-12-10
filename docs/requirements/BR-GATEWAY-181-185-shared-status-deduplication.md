@@ -256,7 +256,7 @@ func SetupWithManager(mgr ctrl.Manager) error {
 // Use field selector for efficient O(1) lookup
 func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remediationv1.RemediationRequest {
     rrList := &remediationv1.RemediationRequestList{}
-    
+
     // BR-GATEWAY-185 v1.1: Use field selector on immutable spec field
     g.client.List(ctx, rrList,
         client.MatchingFields{"spec.signalFingerprint": fingerprint}, // Full 64-char fingerprint

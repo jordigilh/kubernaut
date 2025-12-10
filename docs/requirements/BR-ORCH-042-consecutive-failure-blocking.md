@@ -81,12 +81,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // countConsecutiveFailures - use field selector (not labels)
 func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint string) int {
     rrList := &remediationv1.RemediationRequestList{}
-    
+
     // Use field selector on immutable spec field (not mutable labels)
     r.client.List(ctx, rrList,
         client.MatchingFields{"spec.signalFingerprint": fingerprint}, // Full 64-char fingerprint
     )
-    
+
     // Sort by creation time, count consecutive Failed phases
     // ...
 }
@@ -280,7 +280,7 @@ func (g *Gateway) HandleSignal(ctx context.Context, signal Signal) error {
 
 func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remediationv1.RemediationRequest {
     rrList := &remediationv1.RemediationRequestList{}
-    
+
     // Use field selector on immutable spec.signalFingerprint (not mutable labels)
     // See BR-GATEWAY-185 v1.1 for rationale
     g.client.List(ctx, rrList,
