@@ -245,10 +245,12 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 						SignalType: "OOMKilled",
 						Severity:   "high",
 					},
-					SelectedWorkflow: client.SelectedWorkflowSummary{
-						WorkflowID:     "restart-pod-v1",
-						ContainerImage: "kubernaut/restart:v1",
-					},
+				SelectedWorkflow: client.SelectedWorkflowSummary{
+					WorkflowID:     "restart-pod-v1",
+					Version:        "1.0.0",
+					ContainerImage: "kubernaut/restart:v1",
+					Rationale:      "Selected based on OOMKilled signal type",
+				},
 					Failure: client.ExecutionFailure{
 						FailedStepIndex: 0,
 						FailedStepName:  "restart-container",

@@ -45,25 +45,35 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### 📊 Summary
 
-**Total Business Requirements**: 51 essential BRs (139 deferred BRs for v2.0)
+**Total Business Requirements**: 52 essential BRs (139 deferred BRs for v2.0)
 **Categories**: 8
 **Priority Breakdown**:
 - P0 (Critical): 46 BRs (core business logic + graceful shutdown + recovery context + LLM sanitization)
-- P1 (High): 5 BRs (RFC 7807 + hot-reload + enhancements)
+- P1 (High): 6 BRs (RFC 7807 + hot-reload + mock mode + enhancements)
 
 **Implementation Status**:
-- ✅ Implemented: 50 BRs (100%)
+- ✅ Implemented: 51 BRs
 - 📋 V1.0 Planned: 1 BR (BR-HAPI-211 LLM Input Sanitization)
+- ⏸️ V1.1 Deferred: BR-HAPI-POSTEXEC-* (endpoint not exposed per DD-017)
 - BR-HAPI-192 (Recovery Context Consumption): ✅ Complete
 - BR-HAPI-199 (ConfigMap Hot-Reload): ✅ Complete
 - BR-HAPI-200 (Investigation Inconclusive): ✅ Complete
-- BR-HAPI-211 (LLM Input Sanitization): 📋 **V1.0 PLANNED**
+- BR-HAPI-211 (LLM Input Sanitization): 📋 **V1.0 PLANNED** - Blocks GA
+- BR-HAPI-212 (Mock LLM Mode): ✅ **Complete** (Dec 10, 2025)
 
-**Test Coverage** (Updated Dec 9, 2025):
-- Unit: 568 tests (100% passing)
+**Test Coverage** (Updated Dec 10, 2025):
+- Unit: 590+ tests (100% passing)
 - Integration: 84 tests (100% passing)
 - E2E: 53 tests (100% passing, runs against mock LLM)
-- **Total: 705 tests**
+- Mock Mode: 24 tests (100% passing)
+- **Total: 750+ tests**
+
+**V1.0 Endpoint Availability**:
+| Endpoint | Status |
+|----------|--------|
+| `/api/v1/incident/analyze` | ✅ Available |
+| `/api/v1/recovery/analyze` | ✅ Available |
+| `/api/v1/postexec/analyze` | ⏸️ V1.1 (DD-017) |
 
 **Deferred BRs**: 139 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
 
@@ -640,6 +650,42 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 | No K8s secrets leak to LLM | Unit tests + base64 detection |
 
 **Full Specification**: [BR-HAPI-211](../../../requirements/BR-HAPI-211-llm-input-sanitization.md)
+
+---
+
+### BR-HAPI-212: Mock LLM Mode for Integration Testing (V1.0)
+**Status**: ✅ **IMPLEMENTED** (December 10, 2025)
+**Priority**: P1 (HIGH)
+**Implementation Time**: ~3 hours
+**Design Reference**: [RESPONSE_HAPI_MOCK_LLM_MODE.md](../../../../handoff/RESPONSE_HAPI_MOCK_LLM_MODE.md)
+
+**Description**: The HolmesGPT API Service MUST provide a mock LLM mode for integration testing, allowing consumer services (AIAnalysis, etc.) to run tests without:
+- LLM API costs
+- Non-deterministic responses
+- API key requirements in CI/CD
+
+**Business Justification**:
+- AIAnalysis team requested mock mode for integration testing (REQUEST_HAPI_MOCK_LLM_MODE.md)
+- CI/CD pipelines should not require LLM API keys
+- Deterministic responses enable reliable assertions in tests
+
+**Implementation**:
+- **Environment Variable**: `MOCK_LLM_MODE=true`
+- **Mock Response Generator**: `src/mock_responses.py`
+- **Signal Type Mapping**: 6 pre-defined scenarios (OOMKilled, CrashLoopBackOff, NodeNotReady, ImagePullBackOff, Evicted, FailedScheduling)
+- **Endpoints Supported**: `/incident/analyze`, `/recovery/analyze`
+
+**Acceptance Criteria**:
+- [x] `MOCK_LLM_MODE=true` environment variable enables mock mode
+- [x] Mock responses are schema-compliant (pass IncidentResponse/RecoveryResponse validation)
+- [x] Mock responses are deterministic based on input `signal_type`
+- [x] Request validation still runs (catches invalid requests)
+- [x] No LLM API calls made when mock mode enabled
+- [x] Works with both `/incident/analyze` and `/recovery/analyze` endpoints
+- [x] 24+ unit tests validating mock mode behavior
+
+**Test Coverage**:
+- Unit: `tests/unit/test_mock_mode.py` (24 tests)
 
 ---
 

@@ -306,8 +306,14 @@ def generate_mock_recovery_response(request_data: Dict[str, Any]) -> Dict[str, A
 
     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+    # Get incident_id from request (required by response schema)
+    incident_id = request_data.get("incident_id", "mock-incident-unknown")
+
     response = {
+        "incident_id": incident_id,  # Required field
         "remediation_id": remediation_id,
+        "can_recover": True,  # Required field - mock always returns recoverable
+        "analysis_confidence": scenario.confidence - 0.05,  # Required field
         "analysis": f"""## Mock Recovery Analysis (BR-HAPI-212)
 
 This is a **deterministic mock response** for integration testing.
