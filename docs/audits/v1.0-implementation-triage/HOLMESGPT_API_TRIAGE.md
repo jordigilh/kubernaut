@@ -2,6 +2,7 @@
 
 **Service**: HolmesGPT-API (Python Stateless)
 **Date**: December 9, 2025
+**Last Updated**: December 10, 2025
 **Status**: 📋 COMPREHENSIVE TRIAGE
 
 ---
@@ -10,12 +11,13 @@
 
 | Metric | Value | Assessment |
 |--------|-------|------------|
-| **Unit Tests (Python)** | 609 | ✅ **Highest** |
-| **Test Files** | 50 | ✅ Comprehensive |
+| **Unit Tests (Python)** | 631+ | ✅ **Highest** |
+| **Test Files** | 51 | ✅ Comprehensive |
 | **Integration Tests** | Included in unit | - |
 | **E2E Tests** | Included in unit | - |
-| **Total Tests** | **609** | ✅ **Highest overall** |
+| **Total Tests** | **631+** | ✅ **Highest overall** |
 | **Service Type** | Python Stateless | ✅ No CRD |
+| **V1.0 BRs** | 50/51 implemented | ⚠️ BR-HAPI-211 pending |
 
 ---
 
@@ -71,25 +73,67 @@ Per `NOTICE_AIANALYSIS_HAPI_CONTRACT_MISMATCH.md`:
 
 ---
 
+## 🔴 Critical Gaps (Updated Dec 10, 2025)
+
+### 1. BR-HAPI-211: LLM Input Sanitization (P0 CRITICAL)
+**Status**: 📋 **NOT IMPLEMENTED** - Blocks V1.0 GA
+**Issue**: No `src/sanitization/` directory exists. DD-HAPI-005 design decision documented but implementation not started.
+**Risk**: Credentials may leak to external LLM providers (OpenAI, Anthropic)
+**Action**: HAPI team must implement before V1.0 GA
+
+### 2. DD-005 Metrics Naming Non-Compliance (P2)
+**Status**: 🔴 **Non-compliant**
+**Issue**: Metrics use `holmesgpt_` prefix, DD-005 requires `holmesgpt_api_` prefix
+**Examples**:
+- Current: `holmesgpt_investigations_total`
+- Required: `holmesgpt_api_investigations_total`
+**Action**: Rename all metrics in `src/middleware/metrics.py`
+
+### 3. PostExec Endpoint Deferred (P1)
+**Status**: ⚠️ **Documentation Gap**
+**Issue**: `/postexec/analyze` endpoint removed from V1.0 per DD-017 (Effectiveness Monitor V1.1 Deferral), but HAPI docs still list it as implemented
+**Action**: Update `BUSINESS_REQUIREMENTS.md` to mark BR-HAPI-POSTEXEC-* as V1.1
+
+### 4. BR-HAPI-212: Mock LLM Mode (Low)
+**Status**: ✅ **Implemented Dec 10, 2025**
+**Issue**: Not documented in business requirements
+**Action**: Add BR-HAPI-212 to `BUSINESS_REQUIREMENTS.md`
+
+---
+
 ## 🎯 Action Items
 
-| # | Task | Priority | Est. Time |
-|---|------|----------|-----------|
-| 1 | Verify DD-005 metrics naming | P2 | 1h |
-| 2 | Cross-check OpenAPI vs implementation | P2 | 2h |
-| 3 | Document LLM provider configuration | P2 | 1h |
+| # | Task | Priority | Est. Time | Status |
+|---|------|----------|-----------|--------|
+| 1 | **Implement BR-HAPI-211 LLM sanitization** | **P0** | **7h** | 🔴 Blocks GA |
+| 2 | Fix DD-005 metrics naming (`holmesgpt_` → `holmesgpt_api_`) | P2 | 2h | 🔴 Non-compliant |
+| 3 | Update docs: postexec deferred to V1.1 (DD-017) | P1 | 30m | ⚠️ Doc gap |
+| 4 | Add BR-HAPI-212 to business requirements | Low | 15m | ⚠️ Doc gap |
+| 5 | Cross-check OpenAPI vs implementation | P2 | 2h | ⏳ Pending |
 
 ---
 
 ## 📝 Notes for Team Review
 
-- HAPI has the highest test count (609)
-- V1.0 is complete per completion notice
+- HAPI has the highest test count (631+)
+- V1.0 is **98% complete** (50/51 BRs) - BR-HAPI-211 pending
 - Contract gaps are on the **consumer side** (AIAnalysis), not HAPI
 - Python service with pytest framework
+- **PostExec endpoint removed** from V1.0 per DD-017
 
 ---
 
-**Triage Confidence**: 92%
+## 📋 Recent Changes (Dec 10, 2025)
+
+| Change | Reference |
+|--------|-----------|
+| Mock LLM mode implemented (BR-HAPI-212) | `RESPONSE_HAPI_MOCK_LLM_MODE.md` |
+| PostExec endpoint disabled for V1.0 | DD-017 |
+| E2E PostExec tests skipped | `test_real_llm_integration.py` |
+| 24 mock mode unit tests added | `test_mock_mode.py` |
+
+---
+
+**Triage Confidence**: 88% (reduced due to BR-HAPI-211 gap)
 
 

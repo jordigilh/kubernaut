@@ -15,7 +15,7 @@
 | **WorkflowExecution** | CRD | 192 | ✅ `.ai` | ✅ Good | 85% |
 | **Notification** | CRD | 236 | ✅ `.ai` | ✅ Good | 90% |
 | **Gateway** | Stateless | 285 | N/A | ✅ Good | 90% |
-| **HolmesGPT-API** | Python | 609 | N/A | ✅ V1.0 Complete | 92% |
+| **HolmesGPT-API** | Python | 631+ | N/A | ⚠️ BR-HAPI-211 pending | 88% |
 | **DataStorage** | Stateless | 525 | N/A | ⚠️ DD-005 gaps | 85% |
 | **TOTAL** | | **~2,424** | | | |
 
@@ -36,6 +36,8 @@
 |---------|-----|----------|
 | AIAnalysis | Recovery endpoint not implemented | P0 |
 | AIAnalysis | Status fields not populated | P1 |
+| **HolmesGPT-API** | **BR-HAPI-211 LLM Input Sanitization not implemented** | **P0** |
+| HolmesGPT-API | DD-005 metrics naming non-compliant (`holmesgpt_` vs `holmesgpt_api_`) | P2 |
 | DataStorage | Log sanitization may be missing | P1 |
 | DataStorage | Batch audit endpoint pending | P1 |
 
@@ -51,7 +53,7 @@
 | [WorkflowExecution](./WORKFLOWEXECUTION_TRIAGE.md) | WORKFLOWEXECUTION_TRIAGE.md | - | ✅ API Group correct |
 | [Notification](./NOTIFICATION_TRIAGE.md) | NOTIFICATION_TRIAGE.md | - | ✅ V1.0 Complete |
 | [Gateway](./GATEWAY_TRIAGE.md) | GATEWAY_TRIAGE.md | - | ✅ Highest test coverage |
-| [HolmesGPT-API](./HOLMESGPT_API_TRIAGE.md) | HOLMESGPT_API_TRIAGE.md | - | ✅ V1.0 Complete, 609 tests |
+| [HolmesGPT-API](./HOLMESGPT_API_TRIAGE.md) | HOLMESGPT_API_TRIAGE.md | - | ⚠️ BR-HAPI-211 pending, 631+ tests |
 | [DataStorage](./DATASTORAGE_TRIAGE.md) | DATASTORAGE_TRIAGE.md | - | ⚠️ DD-005 doc/code gap |
 
 ---
@@ -74,7 +76,7 @@
 | Service | Unit | Integration | E2E | Total |
 |---------|------|-------------|-----|-------|
 | Gateway | 105 | 155 | 25 | **285** |
-| HolmesGPT-API | 609 | - | - | **609** |
+| HolmesGPT-API | 631+ | - | - | **631+** |
 | DataStorage | 338 | 174 | 13 | **525** |
 | **Stateless Total** | **1,052** | **329** | **38** | **1,419** |
 
@@ -119,7 +121,7 @@
 | **WorkflowExecution** | [WORKFLOWEXECUTION_TRIAGE.md](./WORKFLOWEXECUTION_TRIAGE.md) | ⏳ Verify BR mapping |
 | **Notification** | [NOTIFICATION_TRIAGE.md](./NOTIFICATION_TRIAGE.md) | ✅ Acknowledge V1.0 complete |
 | **Gateway** | [GATEWAY_TRIAGE.md](./GATEWAY_TRIAGE.md) | ⏳ Verify DD-005 compliance |
-| **HolmesGPT-API** | [HOLMESGPT_API_TRIAGE.md](./HOLMESGPT_API_TRIAGE.md) | ✅ Acknowledge V1.0 complete |
+| **HolmesGPT-API** | [HOLMESGPT_API_TRIAGE.md](./HOLMESGPT_API_TRIAGE.md) | ⚠️ Implement BR-HAPI-211, fix DD-005 metrics |
 | **DataStorage** | [DATASTORAGE_TRIAGE.md](./DATASTORAGE_TRIAGE.md) | ⚠️ Fix DD-005 gaps |
 
 ---

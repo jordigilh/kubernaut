@@ -79,7 +79,7 @@ func CreateWorkflowExecutionCluster(...) error {
 
 ```go
 // ApplyMigrations applies all Data Storage migrations to a namespace
-// 
+//
 // Parameters:
 //   - ctx: Context for cancellation
 //   - namespace: Kubernetes namespace where PostgreSQL is running

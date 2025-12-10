@@ -2,70 +2,96 @@
 
 **Team**: SignalProcessing
 **Date**: December 10, 2025
-**Decision**: 🟢 **N/A - No Migrations Required**
+**Decision**: ✅ **APPROVED**
 
 ---
 
 ## Feedback
 
-### 1. Agreement: **N/A** - SP E2E Tests Don't Use DataStorage
+### 1. Agreement: **YES** - SP Requires DataStorage for Audit
 
-SignalProcessing E2E tests run in a pure Kubernetes environment:
+Per authoritative documentation:
 
-| Component | Deployed in SP E2E? |
-|-----------|---------------------|
-| Kind cluster | ✅ Yes |
-| SP CRD | ✅ Yes |
-| SP Controller | ✅ Yes |
-| Rego ConfigMaps | ✅ Yes |
-| PostgreSQL | ❌ No |
-| DataStorage | ❌ No |
+| Requirement | Impact |
+|-------------|--------|
+| **BR-SP-090** | Categorization Audit Trail - Log all decisions via Data Storage API |
+| **ADR-032** | Audit writes via Data Storage REST API (**MANDATORY**) |
+| **ADR-038** | Async Buffered Audit Ingestion (fire-and-forget pattern) |
 
-**Evidence**: `test/infrastructure/signalprocessing.go` deploys only the controller and CRD - no database dependencies.
+**SP has a hard dependency on DataStorage** for audit event persistence.
 
-### 2. Required Migrations: **None**
+### 2. Required Migrations
 
-SP E2E tests validate:
-- CRD creation and status updates
-- Environment classification (BR-SP-051-053)
-- Priority assignment (BR-SP-070-072)
-- Owner chain traversal (BR-SP-100)
-- Detected labels (BR-SP-101)
+SP E2E tests need the `audit_events` table to test BR-SP-090:
 
-All test assertions read from CRD status - no database queries.
+| Table | Required | Reason |
+|-------|----------|--------|
+| `audit_events` | ✅ **YES** | BR-SP-090: Store categorization audit trail |
+| `audit_events_*` partitions | ✅ **YES** | ADR-038: Partitioned storage |
+
+**Migration Files Needed**:
+- `013_create_audit_events_table.sql`
+- `1000_create_audit_events_partitions.sql`
 
 ### 3. Concerns: **None**
 
-The proposal is valid for services that use DataStorage. SP supports the initiative but has no requirements.
+The shared library approach is correct - DS owns the schema, SP consumes it.
 
-### 4. Preferred Location: **N/A**
+### 4. Preferred Location: **`test/infrastructure/migrations.go`**
 
-SP has no preference as we won't consume the library.
+Consistent with existing infrastructure pattern.
 
-### 5. Additional Requirements: **None**
+### 5. Additional Requirements
 
----
+**Current SP E2E Gap**:
 
-## 📋 Note on SP Audit Integration
+The current SP E2E tests (`test/e2e/signalprocessing/`) do NOT deploy DataStorage, so:
+- `AuditClient` is **nil** in current tests
+- BR-SP-090 is NOT fully E2E tested
 
-The SP controller has an optional `AuditClient` (BR-SP-090) that sends audit events to DataStorage:
+**Future Enhancement Needed**:
+
+Once the shared migration library exists, SP E2E infrastructure should:
 
 ```go
-// signalprocessing_controller.go:64
-AuditClient *audit.AuditClient // BR-SP-090: Categorization Audit Trail
+// test/infrastructure/signalprocessing.go - ENHANCEMENT NEEDED
+func SetupSignalProcessingE2ECluster(...) error {
+    // ... create Kind cluster ...
 
-// signalprocessing_controller.go:273-275
-if r.AuditClient != nil {
-    r.AuditClient.RecordSignalProcessed(ctx, sp)
+    // Deploy PostgreSQL + Redis (for DataStorage)
+    if err := deployPostgresAndRedis(kubeconfigPath, namespace, output); err != nil {
+        return err
+    }
+
+    // Apply migrations using shared library
+    if err := ApplyMigrations(kubeconfigPath, namespace, AuditMigrations, output); err != nil {
+        return err
+    }
+
+    // Deploy DataStorage
+    if err := deployDataStorage(kubeconfigPath, namespace, output); err != nil {
+        return err
+    }
+
+    // Deploy SP controller with AuditClient configured
+    // ...
 }
 ```
 
-However, in E2E tests:
-- `AuditClient` is **nil** (not wired up)
-- Audit events are not tested at E2E level
-- Audit testing is covered in unit/integration tests with mocks
+---
 
-If future E2E tests require full audit integration, SP would then need the shared migration library.
+## 📋 Current vs Required E2E Infrastructure
+
+| Component | Current | Required for BR-SP-090 |
+|-----------|---------|------------------------|
+| Kind cluster | ✅ | ✅ |
+| SP CRD | ✅ | ✅ |
+| SP Controller | ✅ | ✅ |
+| Rego ConfigMaps | ✅ | ✅ |
+| PostgreSQL | ❌ | ✅ |
+| Redis | ❌ | ✅ |
+| DataStorage | ❌ | ✅ |
+| `audit_events` table | ❌ | ✅ |
 
 ---
 
@@ -73,13 +99,15 @@ If future E2E tests require full audit integration, SP would then need the share
 
 | Question | Answer |
 |----------|--------|
-| Does SP need this library? | **No** (currently) |
-| Does SP support the proposal? | **Yes** |
-| Will SP use it if needed? | **Yes** (future audit E2E) |
+| Does SP need this library? | **YES** |
+| Required migrations | `audit_events` + partitions |
+| Current E2E status | ❌ Missing DS dependency |
+| Owner | **DataStorage Team** (schema owner) |
+| Location | `test/infrastructure/migrations.go` |
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: December 10, 2025
+**Updated**: December 10, 2025 (Fixed: SP DOES require DataStorage per BR-SP-090)
 **Maintained By**: SignalProcessing Team
-

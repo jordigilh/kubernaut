@@ -186,6 +186,8 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### Category 3: Post-Execution Analysis (BR-HAPI-POSTEXEC-001 to 005)
 
+> ⏸️ **V1.1 DEFERRED**: Per [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md), the `/postexec/analyze` endpoint is deferred to V1.1. The Effectiveness Monitor service (the only consumer) is not available in V1.0. Implementation exists but endpoint is not exposed.
+
 #### BR-HAPI-POSTEXEC-001: Post-Execution Effectiveness Analysis
 
 **Description**: The HolmesGPT API Service MUST analyze the effectiveness of executed remediation actions by comparing pre-execution and post-execution cluster state, providing success metrics and improvement recommendations.
@@ -212,9 +214,9 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 **Test Coverage**:
 - Unit: `test_postexec.py:24` (24 test scenarios)
 - Integration: `test_sdk_integration.py` (post-execution analysis)
-- E2E: Deferred to v2.0
+- E2E: ⏸️ Skipped in V1.0 (DD-017)
 
-**Implementation Status**: ✅ Implemented (100%)
+**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0
 
 **Related BRs**: BR-HAPI-RECOVERY-001 (Recovery Analysis), BR-HAPI-001 (Investigation)
 
@@ -230,7 +232,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 **Priority**: P0 (CRITICAL)
 
-**Implementation Status**: ✅ Implemented (100%)
+**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0 (DD-017)
 
 **Related BRs**: BR-HAPI-POSTEXEC-001 (Core Post-Execution Analysis)
 
