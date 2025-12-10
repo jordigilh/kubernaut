@@ -270,10 +270,9 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	}
 
 	// BR-SP-090: Record audit event on completion
-	if r.AuditClient != nil {
-		r.AuditClient.RecordSignalProcessed(ctx, sp)
-		r.AuditClient.RecordClassificationDecision(ctx, sp)
-	}
+	// ADR-032: Audit is MANDATORY - not optional. AuditClient must be wired up.
+	r.AuditClient.RecordSignalProcessed(ctx, sp)
+	r.AuditClient.RecordClassificationDecision(ctx, sp)
 
 	return ctrl.Result{}, nil
 }

@@ -34,7 +34,9 @@ package main
 
 import (
 	"flag"
+	"net/http"
 	"os"
+	"time"
 
 	// Standard Kubernetes imports
 	"k8s.io/apimachinery/pkg/runtime"
@@ -48,6 +50,8 @@ import (
 	// SignalProcessing imports
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
 )
 
@@ -128,10 +132,40 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Setup reconciler
+	// ========================================
+	// AUDIT CLIENT SETUP (MANDATORY per ADR-032)
+	// ========================================
+	// ADR-032: Audit is MANDATORY - controller will crash if not configured
+	// ADR-038: Fire-and-forget pattern via BufferedStore
+	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
+	if dataStorageURL == "" {
+		dataStorageURL = "http://datastorage-service:8080" // Default for in-cluster
+	}
+	setupLog.Info("configuring audit client", "dataStorageURL", dataStorageURL)
+
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	dsClient := sharedaudit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
+
+	auditStore, err := sharedaudit.NewBufferedStore(
+		dsClient,
+		sharedaudit.DefaultConfig(),
+		"signalprocessing",
+		ctrl.Log.WithName("audit"),
+	)
+	if err != nil {
+		setupLog.Error(err, "FATAL: failed to create audit store - audit is MANDATORY per ADR-032")
+		os.Exit(1)
+	}
+
+	// Create service-specific audit client (BR-SP-090)
+	auditClient := audit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
+	setupLog.Info("audit client configured successfully")
+
+	// Setup reconciler with MANDATORY audit client
 	if err = (&signalprocessing.SignalProcessingReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		AuditClient: auditClient, // MANDATORY per ADR-032
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")
 		os.Exit(1)
