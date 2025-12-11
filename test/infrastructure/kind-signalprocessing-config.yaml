@@ -32,6 +32,14 @@ nodes:
   - containerPort: 30182  # SignalProcessing Metrics NodePort (per DD-TEST-001)
     hostPort: 9182        # Port on host machine (localhost:9182/metrics)
     protocol: TCP
+  # BR-SP-090: DataStorage NodePort for audit E2E testing
+  - containerPort: 30081  # DataStorage NodePort (per DD-TEST-001)
+    hostPort: 30081       # Port on host machine (localhost:30081)
+    protocol: TCP
+  # BR-SP-090: PostgreSQL NodePort for migration testing
+  - containerPort: 30432  # PostgreSQL NodePort
+    hostPort: 30432       # Port on host machine (localhost:30432)
+    protocol: TCP
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
