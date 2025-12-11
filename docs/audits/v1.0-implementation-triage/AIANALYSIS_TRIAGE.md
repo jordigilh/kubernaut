@@ -66,7 +66,7 @@ api/aianalysis/v1alpha1/groupversion_info.go:
 | `InvestigationID` | crd-schema.md | ✅ Populated | ✅ **COMPLETE** |
 | ~~`TokensUsed`~~ | ~~DD-005~~ | ✅ **REMOVED** | ✅ **OUT OF SCOPE** |
 | `Conditions` | K8s best practice | ✅ **All 4 Conditions** | ✅ **COMPLETE (Dec 11)** |
-| `RecoveryStatus` | crd-schema.md | ⚠️ Not populated | ⏳ **Deferred (pending verification)** |
+| `RecoveryStatus` | crd-schema.md | ⚠️ Not populated | 🔴 **V1.0 REQUIRED** (crd-schema.md example shows it populated) |
 | `TotalAnalysisTime` | DD-005 | ⚠️ Not populated | ⏸️ **Deferred to V1.1+** |
 | `DegradedMode` | crd-schema.md | ⚠️ Not populated | ⏸️ **Deferred to V1.1+** |
 
@@ -85,8 +85,9 @@ api/aianalysis/v1alpha1/groupversion_info.go:
   - AIAnalysis correlates via `InvestigationID`
   - Design Decision: DD-COST-001 - Cost observability is provider's responsibility
 
-**Critical Fields**: 3/3 complete (InvestigationID, TokensUsed removal, Conditions) ✅
-**Deferred Fields**: 3 fields deferred to post-V1.0 (RecoveryStatus pending verification, TotalAnalysisTime, DegradedMode)
+**Critical Fields**: 3/4 complete (InvestigationID ✅, TokensUsed removal ✅, Conditions ✅, RecoveryStatus ❌)
+**Deferred Fields**: 2 fields deferred to post-V1.0 (TotalAnalysisTime, DegradedMode)
+**Remaining V1.0 Work**: RecoveryStatus implementation (2-3 hours)
 
 ---
 
