@@ -294,12 +294,132 @@ class TestMockRecoveryResponse:
         assert recovery_response["confidence"] == incident_response["confidence"] - 0.05
 
 
+class TestMockEdgeCaseIncidentResponses:
+    """Tests for edge case incident mock responses (BR-HAPI-197)."""
+
+    def test_no_workflow_found_edge_case(self):
+        """BR-HAPI-197: MOCK_NO_WORKFLOW_FOUND triggers needs_human_review."""
+        request_data = {
+            "incident_id": "edge-case-001",
+            "signal_type": "MOCK_NO_WORKFLOW_FOUND",
+            "resource_namespace": "test",
+        }
+
+        response = generate_mock_incident_response(request_data)
+
+        assert response["needs_human_review"] is True
+        assert response["human_review_reason"] == "no_matching_workflows"
+        assert response["selected_workflow"] is None
+        assert response["confidence"] == 0.0
+
+    def test_low_confidence_edge_case(self):
+        """BR-HAPI-197: MOCK_LOW_CONFIDENCE triggers needs_human_review."""
+        request_data = {
+            "incident_id": "edge-case-002",
+            "signal_type": "MOCK_LOW_CONFIDENCE",
+            "resource_namespace": "test",
+        }
+
+        response = generate_mock_incident_response(request_data)
+
+        assert response["needs_human_review"] is True
+        assert response["human_review_reason"] == "low_confidence"
+        assert response["selected_workflow"] is not None  # Tentative workflow
+        assert response["selected_workflow"]["confidence"] < 0.5
+        assert len(response["alternative_workflows"]) > 0
+
+    def test_max_retries_edge_case(self):
+        """BR-HAPI-197: MOCK_MAX_RETRIES_EXHAUSTED provides validation history."""
+        request_data = {
+            "incident_id": "edge-case-003",
+            "signal_type": "MOCK_MAX_RETRIES_EXHAUSTED",
+            "resource_namespace": "test",
+        }
+
+        response = generate_mock_incident_response(request_data)
+
+        assert response["needs_human_review"] is True
+        assert response["human_review_reason"] == "llm_parsing_error"
+        assert response["selected_workflow"] is None
+        assert len(response["validation_attempts_history"]) >= 3
+
+    def test_edge_case_signal_type_case_insensitive(self):
+        """BR-HAPI-212: Edge case signal types should be case-insensitive."""
+        request_data = {
+            "signal_type": "mock_no_workflow_found",  # lowercase
+            "resource_namespace": "test",
+        }
+
+        response = generate_mock_incident_response(request_data)
+        assert response["needs_human_review"] is True
+        assert response["human_review_reason"] == "no_matching_workflows"
+
+
+class TestMockEdgeCaseRecoveryResponses:
+    """Tests for edge case recovery mock responses (BR-HAPI-197, BR-HAPI-212)."""
+
+    def test_not_reproducible_returns_no_recovery(self):
+        """BR-HAPI-212: MOCK_NOT_REPRODUCIBLE triggers can_recover=false."""
+        request_data = {
+            "incident_id": "edge-recovery-001",
+            "remediation_id": "rem-001",
+            "signal_type": "MOCK_NOT_REPRODUCIBLE",
+            "previous_workflow_id": "prev-workflow-v1",
+        }
+
+        response = generate_mock_recovery_response(request_data)
+
+        assert response["can_recover"] is False  # Key assertion
+        assert response["needs_human_review"] is False  # No review needed
+        assert response["selected_workflow"] is None
+        assert response["analysis_confidence"] > 0.8  # High confidence resolved
+
+        # Verify state_changed is True (resource is now healthy)
+        recovery_analysis = response.get("recovery_analysis", {})
+        prev_assessment = recovery_analysis.get("previous_attempt_assessment", {})
+        assert prev_assessment.get("state_changed") is True
+
+    def test_no_recovery_workflow_returns_human_review(self):
+        """BR-HAPI-197: MOCK_NO_WORKFLOW_FOUND triggers needs_human_review for recovery."""
+        request_data = {
+            "incident_id": "edge-recovery-002",
+            "remediation_id": "rem-002",
+            "signal_type": "MOCK_NO_WORKFLOW_FOUND",
+            "previous_workflow_id": "prev-workflow-v1",
+        }
+
+        response = generate_mock_recovery_response(request_data)
+
+        assert response["can_recover"] is True  # Recovery possible manually
+        assert response["needs_human_review"] is True
+        assert response["human_review_reason"] == "no_matching_workflows"
+        assert response["selected_workflow"] is None
+
+    def test_low_confidence_recovery_returns_human_review(self):
+        """BR-HAPI-197: MOCK_LOW_CONFIDENCE triggers needs_human_review for recovery."""
+        request_data = {
+            "incident_id": "edge-recovery-003",
+            "remediation_id": "rem-003",
+            "signal_type": "MOCK_LOW_CONFIDENCE",
+            "previous_workflow_id": "prev-workflow-v1",
+        }
+
+        response = generate_mock_recovery_response(request_data)
+
+        assert response["can_recover"] is True
+        assert response["needs_human_review"] is True
+        assert response["human_review_reason"] == "low_confidence"
+        assert response["analysis_confidence"] < 0.5
+        assert response["selected_workflow"] is not None  # Tentative
+
+
 # NOTE: Integration-style tests removed for unit test module.
 # Full integration tests with FastAPI TestClient require complete request schemas
 # which evolve with the IncidentRequest/RecoveryRequest models.
 # See tests/integration/ for endpoint integration tests.
 #
 # The unit tests above (TestMockModeDetection, TestMockScenarioSelection,
-# TestMockIncidentResponse, TestMockRecoveryResponse) thoroughly test
-# the mock_responses.py module without requiring FastAPI TestClient.
+# TestMockIncidentResponse, TestMockRecoveryResponse, TestMockEdgeCaseIncidentResponses,
+# TestMockEdgeCaseRecoveryResponses) thoroughly test the mock_responses.py module
+# without requiring FastAPI TestClient.
 

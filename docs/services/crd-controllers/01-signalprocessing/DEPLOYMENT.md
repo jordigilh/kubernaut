@@ -583,3 +583,4 @@ spec:
 - [DD-006: Controller Scaffolding](../../../architecture/decisions/DD-006-controller-scaffolding-strategy.md)
 
 
+

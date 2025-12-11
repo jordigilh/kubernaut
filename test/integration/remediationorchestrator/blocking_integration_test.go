@@ -351,3 +351,4 @@ func simulateCompletedPhase(namespace, name string) {
 	GinkgoWriter.Printf("✅ Simulated Completed phase: %s/%s\n", namespace, name)
 }
 
+

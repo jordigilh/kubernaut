@@ -141,6 +141,37 @@ DEFAULT_SCENARIO = MockScenario(
 )
 
 
+# =============================================================================
+# EDGE CASE SCENARIOS FOR NON-HAPPY PATH TESTING
+# =============================================================================
+# These special signal types trigger non-happy path responses for E2E testing.
+# BR-HAPI-212: Mock mode must support testing of failure scenarios.
+
+# Edge case: No workflow found - triggers needs_human_review=true
+EDGE_CASE_NO_WORKFLOW = "MOCK_NO_WORKFLOW_FOUND"
+
+# Edge case: Low confidence - triggers needs_human_review=true  
+EDGE_CASE_LOW_CONFIDENCE = "MOCK_LOW_CONFIDENCE"
+
+# Edge case: Not reproducible - triggers can_recover=false for recovery
+EDGE_CASE_NOT_REPRODUCIBLE = "MOCK_NOT_REPRODUCIBLE"
+
+# Edge case: Max retries exhausted - triggers needs_human_review with validation history
+EDGE_CASE_MAX_RETRIES = "MOCK_MAX_RETRIES_EXHAUSTED"
+
+
+def is_edge_case_signal(signal_type: Optional[str]) -> bool:
+    """Check if signal_type is a special edge case trigger."""
+    if not signal_type:
+        return False
+    return signal_type.upper() in [
+        EDGE_CASE_NO_WORKFLOW,
+        EDGE_CASE_LOW_CONFIDENCE,
+        EDGE_CASE_NOT_REPRODUCIBLE,
+        EDGE_CASE_MAX_RETRIES,
+    ]
+
+
 def get_mock_scenario(signal_type: Optional[str]) -> MockScenario:
     """
     Get the mock scenario for a given signal type.
@@ -178,8 +209,13 @@ def generate_mock_incident_response(request_data: Dict[str, Any]) -> Dict[str, A
 
     This function:
     1. Extracts signal_type from request
-    2. Selects appropriate mock scenario
+    2. Selects appropriate mock scenario (or edge case)
     3. Returns schema-compliant response without calling LLM
+
+    Edge Case Signal Types (for testing non-happy paths):
+    - MOCK_NO_WORKFLOW_FOUND: Returns needs_human_review=true, no workflow
+    - MOCK_LOW_CONFIDENCE: Returns needs_human_review=true, low_confidence reason
+    - MOCK_MAX_RETRIES_EXHAUSTED: Returns with validation_attempts_history
 
     Args:
         request_data: The incident request data (from IncidentRequest model)
@@ -193,6 +229,27 @@ def generate_mock_incident_response(request_data: Dict[str, Any]) -> Dict[str, A
     resource_name = request_data.get("resource_name", "unknown-resource")
     resource_kind = request_data.get("resource_kind", "Pod")
 
+    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    # Handle edge case: No workflow found
+    if signal_type and signal_type.upper() == EDGE_CASE_NO_WORKFLOW:
+        return _generate_no_workflow_response(
+            incident_id, signal_type, namespace, resource_kind, resource_name, timestamp
+        )
+
+    # Handle edge case: Low confidence
+    if signal_type and signal_type.upper() == EDGE_CASE_LOW_CONFIDENCE:
+        return _generate_low_confidence_response(
+            incident_id, signal_type, namespace, resource_kind, resource_name, timestamp
+        )
+
+    # Handle edge case: Max retries exhausted
+    if signal_type and signal_type.upper() == EDGE_CASE_MAX_RETRIES:
+        return _generate_max_retries_response(
+            incident_id, signal_type, namespace, resource_kind, resource_name, timestamp
+        )
+
+    # Normal happy path scenario
     scenario = get_mock_scenario(signal_type)
 
     # Build parameters with values from request where applicable
@@ -201,8 +258,6 @@ def generate_mock_incident_response(request_data: Dict[str, Any]) -> Dict[str, A
         parameters["NAMESPACE"] = namespace
     if "NODE_NAME" in parameters and parameters["NODE_NAME"] == "from-request":
         parameters["NODE_NAME"] = resource_name
-
-    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     response = {
         "incident_id": incident_id,
@@ -283,11 +338,212 @@ Confidence: {scenario.confidence * 100:.0f}%
     return response
 
 
+def _generate_no_workflow_response(
+    incident_id: str, signal_type: str, namespace: str,
+    resource_kind: str, resource_name: str, timestamp: str
+) -> Dict[str, Any]:
+    """Generate mock response for no matching workflow scenario (BR-HAPI-197)."""
+    logger.info({
+        "event": "mock_edge_case_no_workflow",
+        "br": "BR-HAPI-212",
+        "incident_id": incident_id,
+        "edge_case": "no_matching_workflows"
+    })
+
+    return {
+        "incident_id": incident_id,
+        "analysis": f"""## Mock Analysis - No Workflow Found (BR-HAPI-212)
+
+This is a **deterministic mock response** simulating the edge case where
+no matching workflow is found in the catalog.
+
+### Signal Information
+- Signal Type: {signal_type}
+- Resource: {namespace}/{resource_kind}/{resource_name}
+
+### Root Cause Analysis (MOCK)
+The signal indicates an unusual condition that does not match any known
+remediation workflow in the catalog.
+
+### Result
+**No workflow selected** - Human review required.
+""",
+        "root_cause_analysis": {
+            "summary": "Unable to find matching workflow for this signal type (MOCK edge case)",
+            "severity": "medium",
+            "contributing_factors": ["unknown_signal_pattern", "no_catalog_match"]
+        },
+        "selected_workflow": None,  # Key difference: no workflow
+        "alternative_workflows": [],
+        "confidence": 0.0,
+        "timestamp": timestamp,
+        "target_in_owner_chain": True,
+        "warnings": [
+            "MOCK_MODE: Edge case - no matching workflow found",
+            "BR-HAPI-197: needs_human_review=true, reason=no_matching_workflows"
+        ],
+        "needs_human_review": True,
+        "human_review_reason": "no_matching_workflows",
+        "validation_attempts_history": []
+    }
+
+
+def _generate_low_confidence_response(
+    incident_id: str, signal_type: str, namespace: str,
+    resource_kind: str, resource_name: str, timestamp: str
+) -> Dict[str, Any]:
+    """Generate mock response for low confidence scenario (BR-HAPI-197)."""
+    logger.info({
+        "event": "mock_edge_case_low_confidence",
+        "br": "BR-HAPI-212",
+        "incident_id": incident_id,
+        "edge_case": "low_confidence"
+    })
+
+    return {
+        "incident_id": incident_id,
+        "analysis": f"""## Mock Analysis - Low Confidence (BR-HAPI-212)
+
+This is a **deterministic mock response** simulating the edge case where
+AI analysis has low confidence in the selected workflow.
+
+### Signal Information
+- Signal Type: {signal_type}
+- Resource: {namespace}/{resource_kind}/{resource_name}
+
+### Root Cause Analysis (MOCK)
+Analysis was inconclusive. Multiple potential causes identified but
+confidence is too low for automated remediation.
+
+### Result
+Workflow tentatively selected but **human review required** due to low confidence.
+""",
+        "root_cause_analysis": {
+            "summary": "Multiple potential causes - confidence too low for automation (MOCK edge case)",
+            "severity": "medium",
+            "contributing_factors": ["ambiguous_symptoms", "multiple_potential_causes"]
+        },
+        "selected_workflow": {
+            "workflow_id": "mock-low-confidence-workflow-v1",
+            "title": "Low Confidence Remediation (MOCK)",
+            "version": "1.0.0",
+            "containerImage": "kubernaut/mock-workflow-low-confidence:v1.0.0",
+            "confidence": 0.45,  # Below threshold
+            "rationale": "Tentative selection with low confidence (BR-HAPI-212 edge case)",
+            "parameters": {"NAMESPACE": namespace}
+        },
+        "alternative_workflows": [
+            {
+                "workflow_id": "mock-alternative-1-v1",
+                "container_image": None,
+                "confidence": 0.42,
+                "rationale": "Close alternative - human should choose"
+            },
+            {
+                "workflow_id": "mock-alternative-2-v1",
+                "container_image": None,
+                "confidence": 0.40,
+                "rationale": "Another possibility - human should evaluate"
+            }
+        ],
+        "confidence": 0.45,
+        "timestamp": timestamp,
+        "target_in_owner_chain": True,
+        "warnings": [
+            "MOCK_MODE: Edge case - low confidence analysis",
+            "BR-HAPI-197: needs_human_review=true, reason=low_confidence",
+            "Multiple workflows have similar confidence - manual selection recommended"
+        ],
+        "needs_human_review": True,
+        "human_review_reason": "low_confidence",
+        "validation_attempts_history": []
+    }
+
+
+def _generate_max_retries_response(
+    incident_id: str, signal_type: str, namespace: str,
+    resource_kind: str, resource_name: str, timestamp: str
+) -> Dict[str, Any]:
+    """Generate mock response for max retries exhausted scenario (BR-HAPI-197)."""
+    logger.info({
+        "event": "mock_edge_case_max_retries",
+        "br": "BR-HAPI-212",
+        "incident_id": incident_id,
+        "edge_case": "max_retries_exhausted"
+    })
+
+    # Simulate validation attempts history
+    validation_history = [
+        {
+            "attempt_number": 1,
+            "workflow_id": "mock-retry-workflow-1-v1",
+            "validation_passed": False,
+            "failure_reason": "Image not found in catalog (MOCK)"
+        },
+        {
+            "attempt_number": 2,
+            "workflow_id": "mock-retry-workflow-2-v1",
+            "validation_passed": False,
+            "failure_reason": "Parameter validation failed (MOCK)"
+        },
+        {
+            "attempt_number": 3,
+            "workflow_id": "mock-retry-workflow-3-v1",
+            "validation_passed": False,
+            "failure_reason": "Version mismatch (MOCK)"
+        }
+    ]
+
+    return {
+        "incident_id": incident_id,
+        "analysis": f"""## Mock Analysis - Max Retries Exhausted (BR-HAPI-212)
+
+This is a **deterministic mock response** simulating the edge case where
+LLM self-correction exhausted all retry attempts.
+
+### Signal Information
+- Signal Type: {signal_type}
+- Resource: {namespace}/{resource_kind}/{resource_name}
+
+### Validation History
+- Attempt 1: Image not found
+- Attempt 2: Parameter validation failed
+- Attempt 3: Version mismatch
+
+### Result
+All {len(validation_history)} validation attempts failed. **Human review required**.
+""",
+        "root_cause_analysis": {
+            "summary": "LLM could not produce valid workflow after max retries (MOCK edge case)",
+            "severity": "high",
+            "contributing_factors": ["validation_failures", "catalog_mismatch", "llm_parsing_issues"]
+        },
+        "selected_workflow": None,  # Failed to select valid workflow
+        "alternative_workflows": [],
+        "confidence": 0.0,
+        "timestamp": timestamp,
+        "target_in_owner_chain": True,
+        "warnings": [
+            "MOCK_MODE: Edge case - max retries exhausted",
+            "BR-HAPI-197: needs_human_review=true, reason=llm_parsing_error",
+            f"All {len(validation_history)} validation attempts failed"
+        ],
+        "needs_human_review": True,
+        "human_review_reason": "llm_parsing_error",
+        "validation_attempts_history": validation_history
+    }
+
+
 def generate_mock_recovery_response(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generate a deterministic mock response for /recovery/analyze endpoint.
 
     BR-HAPI-212: Mock LLM Mode for Integration Testing
+
+    Edge Case Signal Types (for testing non-happy paths):
+    - MOCK_NOT_REPRODUCIBLE: Returns can_recover=false (issue resolved itself)
+    - MOCK_NO_WORKFLOW_FOUND: Returns needs_human_review=true, no recovery workflow
+    - MOCK_LOW_CONFIDENCE: Returns needs_human_review=true for recovery
 
     Args:
         request_data: The recovery request data
@@ -299,16 +555,33 @@ def generate_mock_recovery_response(request_data: Dict[str, Any]) -> Dict[str, A
     signal_type = request_data.get("signal_type", request_data.get("current_signal_type", "Unknown"))
     previous_workflow_id = request_data.get("previous_workflow_id", "unknown-workflow")
     namespace = request_data.get("namespace", request_data.get("resource_namespace", "default"))
+    incident_id = request_data.get("incident_id", "mock-incident-unknown")
 
+    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    # Handle edge case: Signal not reproducible (issue resolved itself)
+    if signal_type and signal_type.upper() == EDGE_CASE_NOT_REPRODUCIBLE:
+        return _generate_not_reproducible_recovery_response(
+            incident_id, remediation_id, previous_workflow_id, timestamp
+        )
+
+    # Handle edge case: No recovery workflow available
+    if signal_type and signal_type.upper() == EDGE_CASE_NO_WORKFLOW:
+        return _generate_no_recovery_workflow_response(
+            incident_id, remediation_id, signal_type, previous_workflow_id, timestamp
+        )
+
+    # Handle edge case: Low confidence for recovery
+    if signal_type and signal_type.upper() == EDGE_CASE_LOW_CONFIDENCE:
+        return _generate_low_confidence_recovery_response(
+            incident_id, remediation_id, signal_type, previous_workflow_id, namespace, timestamp
+        )
+
+    # Normal happy path scenario
     scenario = get_mock_scenario(signal_type)
 
     # For recovery, we use a slightly different workflow to simulate "trying something new"
     recovery_workflow_id = f"{scenario.workflow_id}-recovery"
-
-    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-    # Get incident_id from request (required by response schema)
-    incident_id = request_data.get("incident_id", "mock-incident-unknown")
 
     response = {
         "incident_id": incident_id,  # Required field
@@ -375,6 +648,198 @@ Workflow ID: `{recovery_workflow_id}`
     })
 
     return response
+
+
+def _generate_not_reproducible_recovery_response(
+    incident_id: str, remediation_id: str, previous_workflow_id: str, timestamp: str
+) -> Dict[str, Any]:
+    """
+    Generate mock response for signal not reproducible scenario.
+
+    BR-HAPI-212: When the original signal cannot be reproduced, the issue
+    may have resolved itself (e.g., pod restarted and is now healthy).
+    In this case, can_recover=false because no recovery action is needed.
+    """
+    logger.info({
+        "event": "mock_edge_case_not_reproducible",
+        "br": "BR-HAPI-212",
+        "remediation_id": remediation_id,
+        "edge_case": "signal_not_reproducible"
+    })
+
+    return {
+        "incident_id": incident_id,
+        "remediation_id": remediation_id,
+        "can_recover": False,  # Key difference: no recovery needed
+        "analysis_confidence": 0.95,  # High confidence that issue resolved
+        "analysis": """## Mock Recovery Analysis - Signal Not Reproducible (BR-HAPI-212)
+
+This is a **deterministic mock response** simulating the edge case where
+the original signal cannot be reproduced.
+
+### Recovery Context
+The original issue appears to have resolved itself. The pod/resource
+is now in a healthy state.
+
+### Analysis
+- Original signal no longer present
+- Resource health checks passing
+- No recovery action required
+
+### Result
+**No recovery needed** - Issue self-resolved.
+""",
+        "recovery_analysis": {
+            "previous_attempt_assessment": {
+                "workflow_id": previous_workflow_id,
+                "failure_understood": True,
+                "failure_reason_analysis": "Previous workflow may have worked - signal no longer reproducible (MOCK)",
+                "state_changed": True,  # State changed to healthy
+                "current_signal_type": None  # No signal anymore
+            },
+            "root_cause_refinement": "Issue appears to have self-resolved. Original signal not reproducible."
+        },
+        "selected_workflow": None,  # No workflow needed
+        "alternative_workflows": [],
+        "confidence": 0.95,
+        "timestamp": timestamp,
+        "warnings": [
+            "MOCK_MODE: Edge case - signal not reproducible",
+            "BR-HAPI-212: can_recover=false, issue self-resolved"
+        ],
+        "needs_human_review": False,  # No review needed - issue resolved
+        "human_review_reason": None
+    }
+
+
+def _generate_no_recovery_workflow_response(
+    incident_id: str, remediation_id: str, signal_type: str,
+    previous_workflow_id: str, timestamp: str
+) -> Dict[str, Any]:
+    """Generate mock response for no recovery workflow available."""
+    logger.info({
+        "event": "mock_edge_case_no_recovery_workflow",
+        "br": "BR-HAPI-212",
+        "remediation_id": remediation_id,
+        "edge_case": "no_recovery_workflow"
+    })
+
+    return {
+        "incident_id": incident_id,
+        "remediation_id": remediation_id,
+        "can_recover": True,  # Recovery might be possible...
+        "analysis_confidence": 0.0,  # ...but we have no workflow
+        "analysis": f"""## Mock Recovery Analysis - No Workflow Found (BR-HAPI-212)
+
+This is a **deterministic mock response** simulating the edge case where
+no suitable recovery workflow can be found.
+
+### Recovery Context
+- Previous Workflow: {previous_workflow_id}
+- Current Signal Type: {signal_type}
+
+### Analysis
+The previous workflow failed but no alternative recovery workflow
+matches the current state. Manual intervention required.
+
+### Result
+**No recovery workflow** - Human review required.
+""",
+        "recovery_analysis": {
+            "previous_attempt_assessment": {
+                "workflow_id": previous_workflow_id,
+                "failure_understood": True,
+                "failure_reason_analysis": "Previous workflow failed, but no alternative found (MOCK)",
+                "state_changed": False,
+                "current_signal_type": signal_type
+            },
+            "root_cause_refinement": "Unable to find recovery workflow for this scenario."
+        },
+        "selected_workflow": None,
+        "alternative_workflows": [],
+        "confidence": 0.0,
+        "timestamp": timestamp,
+        "warnings": [
+            "MOCK_MODE: Edge case - no recovery workflow found",
+            "BR-HAPI-197: needs_human_review=true, reason=no_matching_workflows"
+        ],
+        "needs_human_review": True,
+        "human_review_reason": "no_matching_workflows"
+    }
+
+
+def _generate_low_confidence_recovery_response(
+    incident_id: str, remediation_id: str, signal_type: str,
+    previous_workflow_id: str, namespace: str, timestamp: str
+) -> Dict[str, Any]:
+    """Generate mock response for low confidence recovery."""
+    logger.info({
+        "event": "mock_edge_case_low_confidence_recovery",
+        "br": "BR-HAPI-212",
+        "remediation_id": remediation_id,
+        "edge_case": "low_confidence_recovery"
+    })
+
+    return {
+        "incident_id": incident_id,
+        "remediation_id": remediation_id,
+        "can_recover": True,
+        "analysis_confidence": 0.35,
+        "analysis": f"""## Mock Recovery Analysis - Low Confidence (BR-HAPI-212)
+
+This is a **deterministic mock response** simulating the edge case where
+recovery is possible but confidence is too low for automation.
+
+### Recovery Context
+- Previous Workflow: {previous_workflow_id}
+- Current Signal Type: {signal_type}
+
+### Analysis
+A potential recovery workflow was identified but confidence is below
+the automation threshold. Human review recommended.
+
+### Result
+Recovery workflow tentatively selected but **human review required**.
+""",
+        "recovery_analysis": {
+            "previous_attempt_assessment": {
+                "workflow_id": previous_workflow_id,
+                "failure_understood": False,  # Low confidence in understanding
+                "failure_reason_analysis": "Failure reason unclear - low confidence analysis (MOCK)",
+                "state_changed": False,
+                "current_signal_type": signal_type
+            },
+            "root_cause_refinement": "Root cause analysis inconclusive - multiple possibilities."
+        },
+        "selected_workflow": {
+            "workflow_id": "mock-low-confidence-recovery-v1",
+            "title": "Low Confidence Recovery (MOCK)",
+            "version": "1.0.0",
+            "confidence": 0.35,
+            "rationale": "Tentative recovery selection with low confidence (BR-HAPI-212)",
+            "parameters": {
+                "NAMESPACE": namespace,
+                "RECOVERY_MODE": "cautious",
+                "PREVIOUS_WORKFLOW": previous_workflow_id
+            }
+        },
+        "alternative_workflows": [
+            {
+                "workflow_id": "mock-recovery-alternative-v1",
+                "container_image": None,
+                "confidence": 0.32,
+                "rationale": "Alternative with similar confidence"
+            }
+        ],
+        "confidence": 0.35,
+        "timestamp": timestamp,
+        "warnings": [
+            "MOCK_MODE: Edge case - low confidence recovery",
+            "BR-HAPI-197: needs_human_review=true, reason=low_confidence"
+        ],
+        "needs_human_review": True,
+        "human_review_reason": "low_confidence"
+    }
 
 
 # NOTE: generate_mock_postexec_response is NOT implemented for V1.0

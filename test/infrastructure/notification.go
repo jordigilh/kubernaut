@@ -293,6 +293,12 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
 
+	// 1.5. Deploy Redis (required by Data Storage for caching)
+	fmt.Fprintf(writer, "🚀 Deploying Redis...\n")
+	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Redis: %w", err)
+	}
+
 	// 2. Apply audit migrations using shared library
 	fmt.Fprintf(writer, "📋 Applying audit migrations...\n")
 	if err := ApplyAuditMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
