@@ -33,16 +33,25 @@ import (
 // DD-RECOVERY-002: Direct recovery flow
 //
 // Testing Strategy (per TESTING_GUIDELINES.md + user clarification):
-// - Integration tests use REAL HAPI service via podman-compose.test.yml
+// - Integration tests use REAL HAPI service via AIAnalysis-specific infrastructure
 // - HAPI runs with MOCK_LLM_ENABLED=true (cost constraint)
 // - Tests verify contract compliance with /api/v1/recovery/analyze endpoint
 //
-// Infrastructure Required:
-//   podman-compose -f podman-compose.test.yml up -d holmesgpt-api
+// Infrastructure Required (AIAnalysis-Specific):
+//   podman-compose -f test/integration/aianalysis/podman-compose.yml up -d
+//
+//   This starts AIAnalysis's dedicated infrastructure stack:
+//   - PostgreSQL (:15434)
+//   - Redis (:16380)
+//   - DataStorage API (:18091)
+//   - HolmesGPT API (:18120) with MOCK_LLM_MODE=true
 //
 // Environment Variables:
 //   HOLMESGPT_URL: Override default HAPI URL (default: http://localhost:18120)
-//   Port 18120 per DD-TEST-001 (HAPI integration range: 18120-18129)
+//
+// Port Allocation (DD-TEST-001):
+//   - HAPI: 18120 (AIAnalysis integration range: 18120-18129)
+//   - No collisions with other services (DataStorage uses 18090, Gateway uses 50001-60000)
 
 var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery", "hapi"), func() {
 	var (

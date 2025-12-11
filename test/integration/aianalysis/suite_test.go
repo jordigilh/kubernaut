@@ -22,11 +22,20 @@ limitations under the License.
 // - BR-AI-002: HolmesGPT-API integration
 // - BR-AI-003: Rego policy evaluation
 //
-// Test Strategy: envtest with mock HolmesGPT-API client (per ADR-004)
+// Test Strategy: Two integration test categories:
+// 1. **Envtest-only tests** (this file): Use mock HAPI for fast controller testing
+// 2. **Real service tests** (recovery_integration_test.go): Use real HAPI via podman-compose
+//
 // Defense-in-Depth (per 03-testing-strategy.mdc):
 // - Unit tests (70%+): Mock K8s client + mock HAPI
-// - Integration tests (>50%): Real K8s API (envtest) + mock HAPI
+// - Integration tests (>50%): Real K8s API (envtest) + mock/real HAPI
 // - E2E tests (10-15%): Real K8s API (KIND) + real HAPI
+//
+// Infrastructure:
+// - This suite: NO infrastructure needed (uses mocks)
+// - recovery_integration_test.go: Requires AIAnalysis infrastructure
+//   → Run: podman-compose -f test/integration/aianalysis/podman-compose.yml up -d
+//   → Ports: PostgreSQL 15434, Redis 16380, DS 18091, HAPI 18120
 package aianalysis
 
 import (

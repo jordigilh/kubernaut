@@ -24,8 +24,9 @@ limitations under the License.
 // - TESTING_GUIDELINES.md: "If Data Storage is unavailable, E2E tests should FAIL, not skip"
 //
 // Test Strategy:
-// - Integration tests require real Data Storage running via podman-compose.test.yml
+// - Integration tests require real Data Storage running via AIAnalysis-specific infrastructure
 // - Audit events are written and then verified via direct DB query
+// - Uses AIAnalysis's dedicated DS instance (port 18091, not shared 18090)
 //
 // Business Requirements:
 // - BR-AI-001: AI Analysis CRD lifecycle management
