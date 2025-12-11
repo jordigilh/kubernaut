@@ -276,9 +276,24 @@ Please respond with decisions using this template:
 
 | Team | Status | Response Date |
 |------|--------|---------------|
-| Gateway | ⏳ Pending | - |
+| Gateway | ✅ [RESPONSE](./RESPONSE_GATEWAY_INTEGRATION_MOCK_VIOLATIONS.md) | 2025-12-11 |
 | DataStorage | ⏳ Pending | - |
 | Notification | ✅ [RESPONSE](./RESPONSE_NOTIFICATION_INTEGRATION_MOCK_VIOLATIONS.md) | 2025-12-10 |
+
+### Gateway Team Response Summary
+
+**Decision**: ✅ **PARTIAL FIX + MIGRATION PLAN**
+
+**Changes Made**:
+- Updated `helpers_postgres.go` to attempt real Data Storage container deployment
+- Falls back to mock with clear warning if container unavailable
+- Updated `helpers.go` to align with DD-GATEWAY-012 (Redis removed)
+- Added `DataStorageURL` to Gateway configuration
+
+**Remaining Work**:
+- 25+ test files still reference `RedisTestClient` (backward-compatible but deprecated)
+- Full migration planned for V1.0 release
+- Redis-specific test files to be deleted
 
 ### Notification Team Response Summary
 

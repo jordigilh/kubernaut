@@ -42,7 +42,10 @@ limitations under the License.
 package signalprocessing_e2e
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -777,3 +780,185 @@ var _ = Describe("BR-SP-102: CustomLabels Enable Business-Specific Routing", fun
 		Expect(final.Status.KubernetesContext.CustomLabels).To(HaveKey("team"))
 	})
 })
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BR-SP-090: Categorization Audit Trail
+// BUSINESS VALUE: Compliance audit trail for all signal processing decisions
+// STAKEHOLDER: Compliance team needs immutable record of classification decisions
+// ADR-032: Data Access Layer Isolation - audit writes via Data Storage REST API
+// ADR-038: Async Buffered Audit - fire-and-forget pattern, <1ms overhead
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evidence", func() {
+	var testNs string
+
+	BeforeEach(func() {
+		testNs = fmt.Sprintf("e2e-audit-%d", time.Now().UnixNano())
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNs,
+				Labels: map[string]string{
+					"kubernaut.ai/environment": "production",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNs}})
+	})
+
+	// BR-SP-090: Verify audit events are written to DataStorage
+	It("BR-SP-090: should write audit events to DataStorage when signal is processed", func() {
+		By("Creating a SignalProcessing CR")
+		fingerprint := "e2eaudit1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+		sp := &signalprocessingv1alpha1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-audit-test",
+				Namespace: testNs,
+			},
+			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint:  fingerprint,
+					Name:         "AuditTestSignal",
+					Severity:     "critical",
+					Type:         "prometheus",
+					TargetType:   "kubernetes",
+					ReceivedTime: metav1.Now(),
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "audit-test-pod",
+						Namespace: testNs,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for signal processing to complete")
+		Eventually(func() signalprocessingv1alpha1.SignalProcessingPhase {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return ""
+			}
+			return updated.Status.Phase
+		}, timeout, interval).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
+
+		By("Querying DataStorage audit API for signal.processed events")
+		// DataStorage is exposed on NodePort 30081 → localhost:8081 via Kind port mapping
+		// For in-cluster access, we use port-forward or exec into the cluster
+		// Here we query via the DataStorage service using kubectl exec
+
+		Eventually(func() bool {
+			// Query audit events from DataStorage
+			auditEvents, err := queryAuditEvents(fingerprint)
+			if err != nil {
+				GinkgoWriter.Printf("  ⚠️  Audit query failed: %v\n", err)
+				return false
+			}
+
+			// Verify we got audit events
+			if len(auditEvents) == 0 {
+				GinkgoWriter.Printf("  ⏳ No audit events found yet\n")
+				return false
+			}
+
+			GinkgoWriter.Printf("  ✅ Found %d audit events for fingerprint\n", len(auditEvents))
+
+			// Verify event types
+			hasSignalProcessed := false
+			hasClassificationDecision := false
+			for _, event := range auditEvents {
+				GinkgoWriter.Printf("    • Event: %s\n", event.EventType)
+				if event.EventType == "signal.processed" {
+					hasSignalProcessed = true
+				}
+				if event.EventType == "classification.decision" {
+					hasClassificationDecision = true
+				}
+			}
+
+			return hasSignalProcessed && hasClassificationDecision
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"Expected signal.processed AND classification.decision audit events")
+
+		By("Verifying audit event data integrity")
+		auditEvents, err := queryAuditEvents(fingerprint)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(auditEvents)).To(BeNumerically(">=", 2))
+
+		// Find signal.processed event and validate data
+		var signalEvent *AuditEvent
+		for i := range auditEvents {
+			if auditEvents[i].EventType == "signal.processed" {
+				signalEvent = &auditEvents[i]
+				break
+			}
+		}
+		Expect(signalEvent).ToNot(BeNil(), "signal.processed event should exist")
+		Expect(signalEvent.ServiceName).To(Equal("signalprocessing"))
+		Expect(signalEvent.ResourceType).To(Equal("SignalProcessing"))
+		Expect(signalEvent.ResourceName).To(Equal("e2e-audit-test"))
+		Expect(signalEvent.ResourceNamespace).To(Equal(testNs))
+	})
+})
+
+// AuditEvent represents an audit event from DataStorage
+type AuditEvent struct {
+	EventType         string                 `json:"event_type"`
+	ServiceName       string                 `json:"service_name"`
+	ResourceType      string                 `json:"resource_type"`
+	ResourceName      string                 `json:"resource_name"`
+	ResourceNamespace string                 `json:"resource_namespace"`
+	CorrelationID     string                 `json:"correlation_id"`
+	EventData         map[string]interface{} `json:"event_data"`
+	Timestamp         time.Time              `json:"timestamp"`
+}
+
+// AuditQueryResponse represents the response from DataStorage audit API
+type AuditQueryResponse struct {
+	Events []AuditEvent `json:"events"`
+	Total  int          `json:"total"`
+}
+
+// queryAuditEvents queries DataStorage for audit events matching the fingerprint
+func queryAuditEvents(fingerprint string) ([]AuditEvent, error) {
+	// DataStorage is accessible via NodePort 30081 in Kind cluster
+	// We use the host port mapping: localhost:8081 → NodePort 30081
+	//
+	// Alternative: kubectl exec into a pod and curl the service directly
+	// For now, we assume Kind port mapping is configured
+
+	url := fmt.Sprintf("http://localhost:30081/api/v1/audit?service_name=signalprocessing&limit=100")
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query audit API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("audit API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var queryResp AuditQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&queryResp); err != nil {
+		return nil, fmt.Errorf("failed to decode audit response: %w", err)
+	}
+
+	// Filter events by fingerprint (since API doesn't support fingerprint filter)
+	var filtered []AuditEvent
+	for _, event := range queryResp.Events {
+		if data, ok := event.EventData["fingerprint"].(string); ok && data == fingerprint {
+			filtered = append(filtered, event)
+		}
+		// Also check correlation_id which may contain the fingerprint
+		if event.CorrelationID == fingerprint {
+			filtered = append(filtered, event)
+		}
+	}
+
+	return filtered, nil
+}
