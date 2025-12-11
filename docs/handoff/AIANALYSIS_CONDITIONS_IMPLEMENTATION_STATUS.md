@@ -63,7 +63,7 @@ const (
 // AIAnalysisStatus defines the observed state of AIAnalysis
 type AIAnalysisStatus struct {
     // ... other fields ...
-    
+
     // Conditions
     Conditions []metav1.Condition `json:"conditions,omitempty"`
 }

@@ -1,336 +1,394 @@
-# NOTICE: Integration Test Infrastructure Ownership Clarification
+# NOTICE: Integration Test Infrastructure - Actual Architecture
 
 **Date**: 2025-12-11
-**Version**: 1.0
-**From**: AIAnalysis Team (Triage)
+**Version**: 1.2 (Corrected - Actual Architecture)
+**From**: RO Team (Triage)
 **To**: All Service Teams
-**Status**: 🟢 **CLARIFIED - EACH SERVICE OWNS INFRASTRUCTURE**
+**Status**: 🟢 **CLARIFIED** - Each service manages own infrastructure
 **Priority**: HIGH
 
 ---
 
 ## 📋 Summary
 
-**Issue**: The shared `podman-compose.test.yml` is causing port collisions when multiple services run integration tests in parallel.
+**Issue**: Confusion about integration test infrastructure ownership and who starts what.
 
-**Root Cause**: Multiple services are using the **same** `podman-compose.test.yml` with **fixed ports**, causing collisions when tests run in parallel.
+**Root Cause**: Assumption that there's a "shared Data Storage service" for integration tests.
 
-**Clarification**: There is **NO shared DataStorage service** for integration or E2E tests. Each service must start its own complete infrastructure stack.
-
----
-
-## 🎯 Architectural Clarification
-
-### Service Infrastructure Requirements
-
-| Service | Must Start | Port Allocation (DD-TEST-001) |
-|---------|-----------|-------------------------------|
-| **DataStorage** | PostgreSQL, Redis, DS API | PostgreSQL: 15433, Redis: 16379, API: 18090 |
-| **AIAnalysis** | PostgreSQL, Redis, DS API, HAPI | PostgreSQL: 15434, Redis: 16380, DS: 18091, HAPI: 18120 |
-| **Gateway** | PostgreSQL, Redis, DS API | PostgreSQL: 15435, Redis: 16381, DS: 18092 |
-| **Notification** | PostgreSQL, Redis, DS API | PostgreSQL: 15436, Redis: 16382, DS: 18093 |
-| **RO** | PostgreSQL, Redis, DS API | PostgreSQL: 15437, Redis: 16383, DS: 18094 |
-| **WE** | PostgreSQL, Redis, DS API | PostgreSQL: 15438, Redis: 16384, DS: 18095 |
-| **SP** | PostgreSQL, Redis, DS API | PostgreSQL: 15439, Redis: 16385, DS: 18096 |
-
-### Key Insight
-
-**Each service starts its own infrastructure stack:**
-- PostgreSQL + Redis + DataStorage API + service-specific dependencies
-- Uses **unique ports** per DD-TEST-001 to prevent collisions
-- **No shared infrastructure** - each service is independent
-- Enables **parallel test execution** without port conflicts
+**Clarification**: **Each service starts its own infrastructure in `BeforeSuite`** or requires manual setup. There is NO shared automated infrastructure.
 
 ---
 
-## 🏗️ Correct Architecture: Each Service Owns Its Infrastructure
+## 🎯 Actual Architecture (From Code Analysis)
+
+### Service-by-Service Infrastructure Startup
+
+| Service | Infrastructure Started in BeforeSuite | Manual Setup Required | E2E Infrastructure |
+|---------|--------------------------------------|----------------------|-------------------|
+| **DataStorage** | ✅ PostgreSQL + Redis + DS | ❌ None | Port 15433, 16379, 18090 |
+| **Gateway** | ✅ PostgreSQL + Redis + DS | ❌ None | Dynamic (50001-60000) |
+| **RO** | ✅ envtest only | ✅ Manual `podman-compose` for audit tests | E2E: DS in Kind |
+| **WE** | ✅ envtest only | ✅ Manual `podman-compose` for audit tests | E2E: DS in Kind |
+| **Notification** | ✅ envtest only | ✅ Manual `podman-compose` for audit tests | E2E: DS in Kind |
+| **SP** | ✅ envtest only | ❌ None (ADR-038: Audit Non-Blocking) | ✅ **E2E: DS in Kind** (BR-SP-090) |
+
+### Key Insights
+
+1. **DataStorage** starts PostgreSQL, Redis, and DS in `SynchronizedBeforeSuite` (lines 335-427 of `suite_test.go`)
+2. **Gateway** starts PostgreSQL, Redis, and DS in `SynchronizedBeforeSuite` (lines 56-178 of `suite_test.go`)
+3. **RO/WE/Notification** use envtest only, but **REQUIRE manual `podman-compose up`** for audit tests to PASS
+4. **SignalProcessing** uses envtest for integration tests (ADR-038: Audit Non-Blocking), deploys DS in Kind for E2E tests (BR-SP-090)
+5. **Root `podman-compose.test.yml`** is a **manual developer convenience**, NOT automated infrastructure
+
+---
+
+## 🔍 Evidence from Codebase
+
+### DataStorage Integration Tests
+
+```go:366:400:test/integration/datastorage/suite_test.go
+// 2. Start PostgreSQL with pgvector
+GinkgoWriter.Println("📦 Starting PostgreSQL container...")
+startPostgreSQL()
+
+// 3. Start Redis for DLQ
+GinkgoWriter.Println("📦 Starting Redis container...")
+startRedis()
+
+// 6. Setup Data Storage Service
+GinkgoWriter.Println("🚀 Starting Data Storage Service container...")
+startDataStorageService()
+```
+
+**Verdict**: DataStorage starts its own infrastructure automatically in BeforeSuite.
+
+### Gateway Integration Tests
+
+```go:140:160:test/integration/gateway/suite_test.go
+// 2. Start Redis container
+suiteLogger.Info("📦 Starting Redis container...")
+redisPort, err := infrastructure.StartRedisContainer("gateway-redis-integration", 16380, GinkgoWriter)
+
+// 3. Start PostgreSQL container
+suiteLogger.Info("📦 Starting PostgreSQL container...")
+suitePgClient = SetupPostgresTestClient(ctx)
+
+// 4. Start Data Storage service
+suiteLogger.Info("📦 Starting Data Storage service...")
+suiteDataStorage = SetupDataStorageTestServer(ctx, suitePgClient)
+```
+
+**Verdict**: Gateway starts its own infrastructure automatically in SynchronizedBeforeSuite.
+
+### RO Integration Tests
+
+```go:87:202:test/integration/remediationorchestrator/suite_test.go
+var _ = BeforeSuite(func() {
+    // ... register CRD schemes ...
+
+    By("Bootstrapping test environment with ALL CRDs")
+    testEnv = &envtest.Environment{
+        CRDDirectoryPaths: []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+    }
+
+    // NO PostgreSQL, Redis, or DS started here
+})
+```
+
+**Verdict**: RO starts envtest only (NO database containers).
+
+### SignalProcessing Integration Tests
+
+```go:87:190:test/integration/signalprocessing/suite_test.go
+var _ = BeforeSuite(func() {
+    // ... register CRD schemes ...
+
+    By("Bootstrapping test environment")
+    testEnv = &envtest.Environment{
+        CRDDirectoryPaths: []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+    }
+
+    // NO PostgreSQL, Redis, or DS started here
+    // Per ADR-038: Audit is non-blocking, processing continues without DS
+})
+```
+
+**Verdict**: SP integration tests use envtest only (NO audit infrastructure per ADR-038).
+
+### SignalProcessing E2E Tests
+
+```go:106:111:test/e2e/signalprocessing/suite_test.go
+// BR-SP-090: Deploy DataStorage infrastructure for audit testing
+// This must be done BEFORE deploying the controller
+By("Deploying DataStorage for BR-SP-090 audit testing")
+err = infrastructure.DeployDataStorageForSignalProcessing(ctx, kubeconfigPath, GinkgoWriter)
+Expect(err).ToNot(HaveOccurred())
+```
+
+**Verdict**: SP E2E tests deploy PostgreSQL + Redis + DS in Kind cluster (BR-SP-090: Audit Trail Compliance).
+
+### RO Audit Integration Test (FIXED)
+
+```go:50:73:test/integration/remediationorchestrator/audit_integration_test.go
+BeforeEach(func() {
+    // REQUIRED: Data Storage must be running for audit integration tests
+    // Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - tests must FAIL
+    dsURL := "http://localhost:18090"
+    resp, err := client.Get(dsURL + "/health")
+    if err != nil || resp.StatusCode != http.StatusOK {
+        Fail(fmt.Sprintf(
+            "❌ REQUIRED: Data Storage not available at %s\n"+
+            "  Per DD-AUDIT-003: RemediationOrchestrator MUST have audit capability\n"+
+            "  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n\n"+
+            "  Start infrastructure first:\n"+
+            "    podman-compose -f podman-compose.test.yml up -d",
+            dsURL))
+    }
+})
+```
+
+**Verdict**: RO audit tests **FAIL** if Data Storage is not running at `:18090`. This requires MANUAL `podman-compose up`.
+
+---
+
+## 🏗️ Correct Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ DataStorage Integration Tests                              │
 │                                                             │
-│   test/integration/datastorage/podman-compose.yml:          │
+│   BeforeSuite automatically starts:                         │
 │     - PostgreSQL (:15433)                                   │
 │     - Redis (:16379)                                        │
-│     - DataStorage API (:18090)                              │
-│     - Goose migrations                                      │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ AIAnalysis Integration Tests                               │
+│     - DataStorage (:18090)                                  │
 │                                                             │
-│   test/integration/aianalysis/podman-compose.yml:           │
-│     - PostgreSQL (:15434)  ← AIAnalysis ports               │
-│     - Redis (:16380)                                        │
-│     - DataStorage API (:18091)                              │
-│     - HolmesGPT API (:18120)                                │
-│     - Goose migrations                                      │
+│   Tests run against THIS infrastructure                     │
+│   AfterSuite tears down infrastructure                      │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
 │ Gateway Integration Tests                                   │
 │                                                             │
-│   test/integration/gateway/podman-compose.yml:              │
-│     - PostgreSQL (:15435)  ← Gateway ports                  │
-│     - Redis (:16381)                                        │
-│     - DataStorage API (:18092)                              │
-│     - Goose migrations                                      │
+│   SynchronizedBeforeSuite automatically starts:             │
+│     - PostgreSQL (dynamic: 50001-60000)                     │
+│     - Redis (16380)                                         │
+│     - DataStorage (dynamic: 50001-60000)                    │
+│                                                             │
+│   Tests run against THIS infrastructure                     │
+│   SynchronizedAfterSuite tears down infrastructure          │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│ Notification/RO/WE/SP Integration Tests                     │
+│ RO/WE/Notification/SP Integration Tests                    │
 │                                                             │
-│   Each service has its own podman-compose.yml with          │
-│   unique ports per DD-TEST-001                              │
+│   BeforeSuite starts: envtest ONLY (no containers)          │
+│                                                             │
+│   Audit tests REQUIRE manual setup:                         │
+│     podman-compose -f podman-compose.test.yml up -d         │
+│                                                             │
+│   If DataStorage not at :18090 → audit tests FAIL           │
+│   (Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN)          │
 └─────────────────────────────────────────────────────────────┘
 
-✅ NO PORT COLLISIONS - Each service uses unique ports
-✅ PARALLEL EXECUTION - All services can test simultaneously
-✅ ISOLATED INFRASTRUCTURE - No shared dependencies
+┌─────────────────────────────────────────────────────────────┐
+│ podman-compose.test.yml (Root Level)                       │
+│                                                             │
+│   MANUAL developer convenience only:                        │
+│     - PostgreSQL (:15433)                                   │
+│     - Redis (:16379)                                        │
+│     - DataStorage (:18090)                                  │
+│                                                             │
+│   Used by: RO/WE/Notification audit tests (manual)         │
+│   NOT used by: DataStorage or Gateway (start own)          │
+│   NOT automated: Developer must run "podman-compose up"     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📝 Required Changes: Each Service Creates Its Own Compose File
+## 📝 Testing Workflows
 
-### 1. Create Per-Service Compose Files with Unique Ports
+### DataStorage Integration Tests
+```bash
+# Infrastructure is AUTOMATED (BeforeSuite)
+make test-integration-datastorage
 
-| Service | Compose File | Ports (from DD-TEST-001) |
-|---------|--------------|--------------------------|
-| **DataStorage** | `test/integration/datastorage/podman-compose.yml` | PostgreSQL: 15433, Redis: 16379, DS: 18090 |
-| **AIAnalysis** | `test/integration/aianalysis/podman-compose.yml` | PostgreSQL: 15434, Redis: 16380, DS: 18091, HAPI: 18120 |
-| **Gateway** | `test/integration/gateway/podman-compose.yml` | PostgreSQL: 15435, Redis: 16381, DS: 18092 |
-| **Notification** | `test/integration/notification/podman-compose.yml` | PostgreSQL: 15436, Redis: 16382, DS: 18093 |
-| **RO** | `test/integration/remediationorchestrator/podman-compose.yml` | PostgreSQL: 15437, Redis: 16383, DS: 18094 |
-| **WE** | `test/integration/workflowexecution/podman-compose.yml` | PostgreSQL: 15438, Redis: 16384, DS: 18095 |
-| **SP** | `test/integration/signalprocessing/podman-compose.yml` | PostgreSQL: 15439, Redis: 16385, DS: 18096 |
+# BeforeSuite starts PostgreSQL, Redis, DS automatically
+# Tests run
+# AfterSuite tears down infrastructure automatically
+```
 
-### 2. Update Each Service's suite_test.go
+### Gateway Integration Tests
+```bash
+# Infrastructure is AUTOMATED (SynchronizedBeforeSuite)
+make test-integration-gateway
 
-Add infrastructure startup/teardown in `BeforeSuite`/`AfterSuite`:
+# SynchronizedBeforeSuite starts PostgreSQL, Redis, DS with dynamic ports
+# Tests run in parallel
+# SynchronizedAfterSuite tears down infrastructure
+```
+
+### RO Integration Tests (Non-Audit)
+```bash
+# Infrastructure is AUTOMATED (envtest only)
+make test-integration-remediationorchestrator
+
+# BeforeSuite starts envtest (no containers)
+# Blocking, phase, creator tests run (no audit needed)
+# AfterSuite stops envtest
+```
+
+### SignalProcessing Integration Tests
+```bash
+# Infrastructure is AUTOMATED (envtest only)
+make test-integration-signalprocessing
+
+# BeforeSuite starts envtest (no containers)
+# Per ADR-038: Audit is non-blocking, tests pass without DS
+# AfterSuite stops envtest
+```
+
+### SignalProcessing E2E Tests
+```bash
+# Infrastructure is AUTOMATED (deploys DS in Kind)
+make test-e2e-signalprocessing
+
+# SynchronizedBeforeSuite:
+#   - Creates Kind cluster
+#   - Deploys PostgreSQL + Redis + DS (BR-SP-090)
+#   - Deploys SP controller
+# Tests validate audit trail compliance
+# SynchronizedAfterSuite tears down Kind cluster
+```
+
+### RO Integration Tests (With Audit)
+```bash
+# Infrastructure REQUIRES MANUAL SETUP
+podman-compose -f podman-compose.test.yml up -d  # MANUAL STEP
+
+# Then run tests
+make test-integration-remediationorchestrator
+
+# BeforeSuite starts envtest
+# Audit tests connect to manually-started DS at :18090
+# If DS not running → audit tests FAIL (not skip)
+# AfterSuite stops envtest (DS stays running for next test run)
+
+# Manual teardown
+podman-compose -f podman-compose.test.yml down
+```
+
+---
+
+## 🚫 What Changed: Skip() Violation Fixed
+
+### Before (WRONG - Violates TESTING_GUIDELINES.md)
 
 ```go
-var _ = BeforeSuite(func() {
-    // Start service-specific podman-compose stack
-    err := infrastructure.StartServiceInfrastructure(GinkgoWriter)
-    Expect(err).ToNot(HaveOccurred())
-})
-
-var _ = AfterSuite(func() {
-    // Stop service-specific podman-compose stack
-    infrastructure.StopServiceInfrastructure(GinkgoWriter)
-})
+// ❌ FORBIDDEN per TESTING_GUIDELINES.md lines 420-536
+if err != nil {
+    Skip("Data Storage not available - run: podman-compose up")
+}
 ```
 
-### 3. Remove Shared `podman-compose.test.yml` (Root Level)
+### After (CORRECT - Per TESTING_GUIDELINES.md)
 
-| File | Action |
-|------|--------|
-| `podman-compose.test.yml` (root) | ❌ **DELETE** - No longer shared |
-
-### 4. Update Documentation
-
-| File | Change |
-|------|--------|
-| `TESTING_GUIDELINES.md` | Document per-service infrastructure ownership |
-| `DD-TEST-001` | Already defines unique ports per service |
-| Service READMEs | Add "Integration Test Setup" instructions |
-
----
-
-## 🔧 Port Allocation Per Service (DD-TEST-001 Compliant)
-
-### All Services Start Their Own Infrastructure
-
-| Service | PostgreSQL | Redis | DataStorage API | Additional |
-|---------|-----------|-------|----------------|------------|
-| **DataStorage** | 15433 | 16379 | 18090 | — |
-| **AIAnalysis** | 15434 | 16380 | 18091 | HAPI: 18120 |
-| **Gateway** | 15435 | 16381 | 18092 | — |
-| **Notification** | 15436 | 16382 | 18093 | — |
-| **RO** | 15437 | 16383 | 18094 | — |
-| **WE** | 15438 | 16384 | 18095 | — |
-| **SP** | 15439 | 16385 | 18096 | — |
-
-### Parallel Execution Enabled
-
-With unique ports per service, all integration tests can run simultaneously:
-
-```bash
-# Run all integration tests in parallel - NO COLLISIONS!
-make test-integration-datastorage &
-make test-integration-aianalysis &
-make test-integration-gateway &
-make test-integration-notification &
-make test-integration-ro &
-make test-integration-we &
-make test-integration-sp &
-wait
+```go
+// ✅ REQUIRED: Fail with clear error message
+if err != nil || resp.StatusCode != http.StatusOK {
+    Fail(fmt.Sprintf(
+        "❌ REQUIRED: Data Storage not available at %s\n"+
+        "  Per DD-AUDIT-003: RemediationOrchestrator MUST have audit capability\n"+
+        "  Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN\n\n"+
+        "  Start with: podman-compose -f podman-compose.test.yml up -d",
+        dsURL))
+}
 ```
 
----
-
-## ✅ Benefits
-
-1. **No port collisions** - Each service uses unique ports from DD-TEST-001
-2. **Parallel execution** - All services can test simultaneously in CI/CD
-3. **Isolation** - One service's test failures don't affect others
-4. **Clear ownership** - Each service team owns their compose file
-5. **Developer flexibility** - Developers can test any service without coordination
+**Rationale** (from TESTING_GUIDELINES.md lines 424-436):
+- **False confidence**: Skipped tests show "green" but don't validate anything
+- **Hidden dependencies**: Missing infrastructure goes undetected in CI
+- **Compliance gaps**: Audit tests skipped = audit not validated (DD-AUDIT-003 violation)
+- **Architectural enforcement**: If RO can run without DS, audit is effectively optional
 
 ---
 
-## 🗳️ Action Required Per Service
+## 🔧 Port Allocation Summary
 
-Each service team must create their own `podman-compose.yml`:
+| Service | PostgreSQL | Redis | DataStorage | Startup |
+|---------|-----------|-------|-------------|---------|
+| **DataStorage** | 15433 | 16379 | 18090 | Automated (BeforeSuite) |
+| **Gateway** | Dynamic | 16380 | Dynamic | Automated (SynchronizedBeforeSuite) |
+| **Manual (podman-compose)** | 15433 | 16379 | 18090 | Manual (`podman-compose up`) |
 
-| Team | Status | Action Required |
-|------|--------|----------------|
-| **DataStorage** | ⏳ **TODO** | Move `podman-compose.test.yml` to `test/integration/datastorage/` |
-| **AIAnalysis** | ✅ **IN PROGRESS** | Create `test/integration/aianalysis/podman-compose.yml` (ports: 15434, 16380, 18091, 18120) |
-| **Gateway** | ⚠️  **REVIEW** | Uses dynamic ports - may need DD-TEST-001 compliance review |
-| **Notification** | ⏳ **TODO** | Create `test/integration/notification/podman-compose.yml` (ports: 15436, 16382, 18093) |
-| **RO** | ⏳ **TODO** | Create `test/integration/remediationorchestrator/podman-compose.yml` (ports: 15437, 16383, 18094) |
-| **WE** | ⏳ **TODO** | Create `test/integration/workflowexecution/podman-compose.yml` (ports: 15438, 16384, 18095) |
-| **SP** | ⏳ **TODO** | Create `test/integration/signalprocessing/podman-compose.yml` (ports: 15439, 16385, 18096) |
+### Why No Port Collisions?
+
+1. **DataStorage** uses ports 15433, 16379, 18090 (started in its own test suite)
+2. **Gateway** uses dynamic ports for PostgreSQL/DS, fixed 16380 for Redis (started in its own test suite)
+3. **Manual podman-compose** uses ports 15433, 16379, 18090 (only started when developer runs it)
+
+**Key**: DataStorage integration tests and manual `podman-compose` use the SAME ports, but they're never running simultaneously:
+- When DataStorage tests run → DataStorage starts its infrastructure
+- When RO audit tests run → Developer manually starts `podman-compose`
+- They don't interfere because they run at different times
+
+---
+
+## ✅ Action Items
+
+### Completed
+- [x] Fixed RO audit test to FAIL instead of Skip (per TESTING_GUIDELINES.md)
+- [x] Documented actual architecture (each service starts own infrastructure)
+- [x] Clarified that `podman-compose.test.yml` is manual, not automated
+
+### Pending
+- [ ] Consider if RO/WE/Notification should start their own DS in BeforeSuite (like Gateway does)
+- [ ] Update CI/CD to handle manual infrastructure requirements
+- [ ] Document Gateway's Dead Letter Queue (DLQ) implementation dependency on Redis
 
 ---
 
 ## 📚 References
 
-- `docs/development/business-requirements/TESTING_GUIDELINES.md` - Authoritative testing policy
-- `docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md` - Port allocation
-- `podman-compose.test.yml` - Current shared file (to be moved)
+- `test/integration/datastorage/suite_test.go` lines 335-427 - DataStorage BeforeSuite
+- `test/integration/gateway/suite_test.go` lines 56-267 - Gateway SynchronizedBeforeSuite
+- `test/integration/remediationorchestrator/suite_test.go` lines 87-202 - RO BeforeSuite
+- `test/integration/remediationorchestrator/audit_integration_test.go` lines 50-73 - RO audit test
+- `docs/development/business-requirements/TESTING_GUIDELINES.md` lines 420-536 - Skip() is FORBIDDEN
 
 ---
 
-**Next Steps**:
-1. **Each service team**: Create `test/integration/[service]/podman-compose.yml` with allocated ports
-2. **Each service team**: Add infrastructure start/stop in `suite_test.go` 
-3. **DataStorage team**: Move root `podman-compose.test.yml` to `test/integration/datastorage/`
-4. **All teams**: Test parallel execution to verify no port collisions
-5. **Cleanup**: Delete root-level `podman-compose.test.yml` after all services migrated
+## 🎯 Summary
 
----
+### The Truth About Integration Test Infrastructure
 
-## 📝 Team Responses
+1. **NO shared automated infrastructure** - each service manages its own
+2. **DataStorage and Gateway** start their own PostgreSQL + Redis + DS in BeforeSuite
+3. **RO/WE/Notification** require MANUAL `podman-compose up` for audit tests
+4. **SignalProcessing** integration tests use envtest only (ADR-038); E2E tests deploy DS in Kind (BR-SP-090)
+5. **Skip() is ABSOLUTELY FORBIDDEN** - tests must FAIL if dependencies are missing
+6. **Root `podman-compose.test.yml`** is a manual developer convenience, NOT automation
 
-### Notification Team Response
+### Developer Workflows
 
-**Date**: 2025-12-11
-**Status**: ⚠️  **NEEDS UPDATE** (was approved based on incorrect premise)
-**Responded By**: Notification Team
+**DataStorage/Gateway developers**: Just run `make test-integration-{service}` (infrastructure automated)
 
-#### Current State Analysis
+**RO/WE/Notification developers**:
+```bash
+# Start infrastructure MANUALLY first
+podman-compose -f podman-compose.test.yml up -d
 
-Notification integration tests connect to DataStorage HTTP API:
+# Then run tests
+make test-integration-remediationorchestrator
 
-```go
-// From test/integration/notification/audit_integration_test.go:71-73
-dataStorageURL = os.Getenv("DATA_STORAGE_URL")
-if dataStorageURL == "" {
-    dataStorageURL = "http://localhost:18090" // ⚠️  WRONG PORT - This is DataStorage's port!
-}
+# Audit tests will pass because DS is at :18090
+# If you forget this step → audit tests FAIL (as they should)
 ```
 
-#### ⚠️  Correction Needed
-
-| Issue | Current | Required |
-|-------|---------|----------|
-| **Port collision** | Uses DataStorage's port (18090) | Must use Notification's port (18093) |
-| **Missing infrastructure** | Expects shared DS | Must start own PostgreSQL, Redis, DS |
-| **Compose file** | None | Create `test/integration/notification/podman-compose.yml` |
-
-#### Required Changes
-
-1. **Create** `test/integration/notification/podman-compose.yml` with ports:
-   - PostgreSQL: 15436
-   - Redis: 16382
-   - DataStorage: **18093** (not 18090!)
-   - Goose migrations
-
-2. **Update** `suite_test.go` to start/stop infrastructure
-
-3. **Update** tests to use `http://localhost:18093`
-
 ---
 
-### WorkflowExecution (WE) Team Response
-
-**Date**: 2025-12-11
-**Status**: ⚠️  **NEEDS UPDATE** (was approved based on incorrect premise)
-**Responded By**: WorkflowExecution Team
-
-#### Current State Analysis
-
-WE integration tests connect to DataStorage HTTP API:
-
-```go
-// From test/integration/workflowexecution/audit_datastorage_test.go:51-52
-const dataStorageURL = "http://localhost:18090"  // ⚠️  WRONG PORT - This is DataStorage's port!
-```
-
-#### ⚠️  Correction Needed
-
-| Issue | Current | Required |
-|-------|---------|----------|
-| **Port collision** | Uses DataStorage's port (18090) | Must use WE's port (18095) |
-| **Missing infrastructure** | Expects shared DS | Must start own PostgreSQL, Redis, DS |
-| **Compose file** | Uses root compose | Create `test/integration/workflowexecution/podman-compose.yml` |
-
-#### Required Changes
-
-1. **Create** `test/integration/workflowexecution/podman-compose.yml` with ports:
-   - PostgreSQL: 15438
-   - Redis: 16384
-   - DataStorage: **18095** (not 18090!)
-   - Goose migrations
-
-2. **Update** `suite_test.go` to start/stop infrastructure
-
-3. **Update** tests to use `http://localhost:18095`
-
----
-
-### Gateway Team Response
-
-**Date**: 2025-12-11
-**Status**: ⚠️  **NEEDS REVIEW** (uses dynamic ports instead of DD-TEST-001 allocation)
-**Responded By**: Gateway Team
-
-#### Current State Analysis
-
-Gateway integration tests use **dynamic port allocation**:
-
-```go
-// From test/integration/gateway/helpers_postgres.go
-port := findAvailablePort(50001, 60000)  // Random ports, not DD-TEST-001
-dataStorageURL := fmt.Sprintf("http://localhost:%d", dsPort)
-```
-
-#### ⚠️  DD-TEST-001 Compliance Review
-
-| Aspect | Current | DD-TEST-001 Requirement |
-|--------|---------|-------------------------|
-| **Port strategy** | Random (50001-60000) | Fixed (15435, 16381, 18092) |
-| **Infrastructure** | Starts own DS | ✅ Correct |
-| **Parallel safety** | ✅ Random ports work | ✅ But not documented |
-
-#### Decision Required
-
-**Option A: Keep Random Ports (Current)**
-- ✅ Proven to work
-- ✅ Maximum flexibility
-- ❌ Not DD-TEST-001 compliant
-- ❌ Harder to debug (ports change each run)
-
-**Option B: Switch to DD-TEST-001 Ports**
-- ✅ Consistent with other services
-- ✅ Easier to debug
-- ✅ DD-TEST-001 compliant
-- ❌ Requires code changes
-
-**Recommendation**: Stay with random ports but document in DD-TEST-001 as "dynamic allocation"
-
----
-
+**Document Status**: ✅ Corrected (v1.2 - Actual Architecture)
+**Created**: 2025-12-11
+**Corrected**: 2025-12-11 (v1.2 - reflects actual code behavior)
+**Skip() Violation**: ✅ Fixed in RO audit test
+**TESTING_GUIDELINES.md**: ✅ Compliant
