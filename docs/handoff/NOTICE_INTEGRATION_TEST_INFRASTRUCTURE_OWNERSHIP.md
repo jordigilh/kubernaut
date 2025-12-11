@@ -4,164 +4,195 @@
 **Version**: 1.0
 **From**: AIAnalysis Team (Triage)
 **To**: All Service Teams
-**Status**: 🟡 **DECISION REQUIRED**
+**Status**: 🟢 **CLARIFIED - EACH SERVICE OWNS INFRASTRUCTURE**
 **Priority**: HIGH
 
 ---
 
 ## 📋 Summary
 
-**Issue**: The shared `podman-compose.test.yml` is causing port collisions when multiple services run integration tests in parallel. Services are incorrectly starting PostgreSQL/Redis containers they don't actually need.
+**Issue**: The shared `podman-compose.test.yml` is causing port collisions when multiple services run integration tests in parallel.
 
-**Root Cause**: Services are starting their own database containers when they only need HTTP access to Data Storage.
+**Root Cause**: Multiple services are using the **same** `podman-compose.test.yml` with **fixed ports**, causing collisions when tests run in parallel.
+
+**Clarification**: There is **NO shared DataStorage service** for integration or E2E tests. Each service must start its own complete infrastructure stack.
 
 ---
 
 ## 🎯 Architectural Clarification
 
-### Service Dependencies (Actual vs Assumed)
+### Service Infrastructure Requirements
 
-| Service | Assumed Dependencies | **Actual Dependencies** |
-|---------|---------------------|-------------------------|
-| **DataStorage** | PostgreSQL, Redis | ✅ PostgreSQL, Redis (owns the data) |
-| **AIAnalysis** | PostgreSQL, Redis, DS, HAPI | ✅ **DS HTTP API**, **HAPI HTTP API** only |
-| **Gateway** | PostgreSQL, Redis, DS | ✅ **DS HTTP API** only |
-| **Notification** | PostgreSQL, Redis, DS | ✅ **DS HTTP API** only |
-| **RO/WE/SP** | PostgreSQL, Redis, DS | ✅ **DS HTTP API** only |
+| Service | Must Start | Port Allocation (DD-TEST-001) |
+|---------|-----------|-------------------------------|
+| **DataStorage** | PostgreSQL, Redis, DS API | PostgreSQL: 15433, Redis: 16379, API: 18090 |
+| **AIAnalysis** | PostgreSQL, Redis, DS API, HAPI | PostgreSQL: 15434, Redis: 16380, DS: 18091, HAPI: 18120 |
+| **Gateway** | PostgreSQL, Redis, DS API | PostgreSQL: 15435, Redis: 16381, DS: 18092 |
+| **Notification** | PostgreSQL, Redis, DS API | PostgreSQL: 15436, Redis: 16382, DS: 18093 |
+| **RO** | PostgreSQL, Redis, DS API | PostgreSQL: 15437, Redis: 16383, DS: 18094 |
+| **WE** | PostgreSQL, Redis, DS API | PostgreSQL: 15438, Redis: 16384, DS: 18095 |
+| **SP** | PostgreSQL, Redis, DS API | PostgreSQL: 15439, Redis: 16385, DS: 18096 |
 
 ### Key Insight
 
-**Only DataStorage** needs direct database access:
-- Tests vector queries against PostgreSQL + pgvector
-- Tests Redis caching and DLQ behavior
-- **Owns `podman-compose.test.yml`**
-
-**All CRD Controllers** need HTTP APIs:
-- Data Storage HTTP API for audit (`:18090`)
-- HAPI HTTP API for AI analysis (`:8081` - AIAnalysis only)
-- **Do NOT need their own PostgreSQL/Redis containers**
+**Each service starts its own infrastructure stack:**
+- PostgreSQL + Redis + DataStorage API + service-specific dependencies
+- Uses **unique ports** per DD-TEST-001 to prevent collisions
+- **No shared infrastructure** - each service is independent
+- Enables **parallel test execution** without port conflicts
 
 ---
 
-## 🏗️ Proposed Architecture
+## 🏗️ Correct Architecture: Each Service Owns Its Infrastructure
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ DataStorage Service (OWNER of podman-compose.test.yml)      │
+│ DataStorage Integration Tests                              │
 │                                                             │
-│   podman-compose.test.yml:                                  │
-│     - PostgreSQL (:15433) - vector database                 │
-│     - Redis (:16379) - caching, DLQ                         │
-│     - Data Storage (:18090) - HTTP API                      │
+│   test/integration/datastorage/podman-compose.yml:          │
+│     - PostgreSQL (:15433)                                   │
+│     - Redis (:16379)                                        │
+│     - DataStorage API (:18090)                              │
 │     - Goose migrations                                      │
-│                                                             │
-│   Tests: Vector queries, caching, persistence, migrations   │
 └─────────────────────────────────────────────────────────────┘
-                              ↓ HTTP API (:18090)
+
 ┌─────────────────────────────────────────────────────────────┐
-│ CRD Controller Integration Tests                            │
-│ (AIAnalysis, Gateway, Notification, RO, WE, SP)             │
+│ AIAnalysis Integration Tests                               │
 │                                                             │
-│   Infrastructure: envtest only                              │
-│   External: Connect to running Data Storage HTTP API        │
-│                                                             │
-│   NO PostgreSQL containers needed                           │
-│   NO Redis containers needed                                │
+│   test/integration/aianalysis/podman-compose.yml:           │
+│     - PostgreSQL (:15434)  ← AIAnalysis ports               │
+│     - Redis (:16380)                                        │
+│     - DataStorage API (:18091)                              │
+│     - HolmesGPT API (:18120)                                │
+│     - Goose migrations                                      │
 └─────────────────────────────────────────────────────────────┘
-                              ↓ (AIAnalysis only)
+
 ┌─────────────────────────────────────────────────────────────┐
-│ HAPI Service                                                │
+│ Gateway Integration Tests                                   │
 │                                                             │
-│   holmesgpt-api/podman-compose.yml (HAPI-owned):            │
-│     - HolmesGPT-API (:8081) - AI analysis                   │
-│     - MOCK_LLM_MODE=true for tests                          │
-│                                                             │
-│   Only AIAnalysis integration tests need this               │
+│   test/integration/gateway/podman-compose.yml:              │
+│     - PostgreSQL (:15435)  ← Gateway ports                  │
+│     - Redis (:16381)                                        │
+│     - DataStorage API (:18092)                              │
+│     - Goose migrations                                      │
 └─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ Notification/RO/WE/SP Integration Tests                     │
+│                                                             │
+│   Each service has its own podman-compose.yml with          │
+│   unique ports per DD-TEST-001                              │
+└─────────────────────────────────────────────────────────────┘
+
+✅ NO PORT COLLISIONS - Each service uses unique ports
+✅ PARALLEL EXECUTION - All services can test simultaneously
+✅ ISOLATED INFRASTRUCTURE - No shared dependencies
 ```
 
 ---
 
-## 📝 Required Changes
+## 📝 Required Changes: Each Service Creates Its Own Compose File
 
-### 1. Move `podman-compose.test.yml` to DataStorage
+### 1. Create Per-Service Compose Files with Unique Ports
 
-| Current | Proposed |
-|---------|----------|
-| `podman-compose.test.yml` (root) | `test/integration/datastorage/podman-compose.yml` |
+| Service | Compose File | Ports (from DD-TEST-001) |
+|---------|--------------|--------------------------|
+| **DataStorage** | `test/integration/datastorage/podman-compose.yml` | PostgreSQL: 15433, Redis: 16379, DS: 18090 |
+| **AIAnalysis** | `test/integration/aianalysis/podman-compose.yml` | PostgreSQL: 15434, Redis: 16380, DS: 18091, HAPI: 18120 |
+| **Gateway** | `test/integration/gateway/podman-compose.yml` | PostgreSQL: 15435, Redis: 16381, DS: 18092 |
+| **Notification** | `test/integration/notification/podman-compose.yml` | PostgreSQL: 15436, Redis: 16382, DS: 18093 |
+| **RO** | `test/integration/remediationorchestrator/podman-compose.yml` | PostgreSQL: 15437, Redis: 16383, DS: 18094 |
+| **WE** | `test/integration/workflowexecution/podman-compose.yml` | PostgreSQL: 15438, Redis: 16384, DS: 18095 |
+| **SP** | `test/integration/signalprocessing/podman-compose.yml` | PostgreSQL: 15439, Redis: 16385, DS: 18096 |
 
-### 2. Create HAPI-specific compose (if needed)
+### 2. Update Each Service's suite_test.go
 
-| Service | Compose File |
-|---------|--------------|
-| **HAPI** | `holmesgpt-api/podman-compose.test.yml` |
+Add infrastructure startup/teardown in `BeforeSuite`/`AfterSuite`:
 
-### 3. Update CRD Controller Tests
+```go
+var _ = BeforeSuite(func() {
+    // Start service-specific podman-compose stack
+    err := infrastructure.StartServiceInfrastructure(GinkgoWriter)
+    Expect(err).ToNot(HaveOccurred())
+})
 
-| Service | Current | Proposed |
-|---------|---------|----------|
-| **AIAnalysis** | Starts own PostgreSQL | Connect to running DS + HAPI |
-| **Gateway** | Starts own PostgreSQL/Redis | Connect to running DS |
-| **Notification** | Starts own PostgreSQL/Redis | Connect to running DS |
-| **RO/WE/SP** | Starts own PostgreSQL | Connect to running DS |
+var _ = AfterSuite(func() {
+    // Stop service-specific podman-compose stack
+    infrastructure.StopServiceInfrastructure(GinkgoWriter)
+})
+```
+
+### 3. Remove Shared `podman-compose.test.yml` (Root Level)
+
+| File | Action |
+|------|--------|
+| `podman-compose.test.yml` (root) | ❌ **DELETE** - No longer shared |
 
 ### 4. Update Documentation
 
 | File | Change |
 |------|--------|
-| `TESTING_GUIDELINES.md` | Clarify DS ownership of podman-compose |
-| Service test docs | Remove "start postgres/redis" instructions |
-| Integration test comments | Update startup commands |
+| `TESTING_GUIDELINES.md` | Document per-service infrastructure ownership |
+| `DD-TEST-001` | Already defines unique ports per service |
+| Service READMEs | Add "Integration Test Setup" instructions |
 
 ---
 
-## 🔧 Port Allocation (DD-TEST-001 Compliant)
+## 🔧 Port Allocation Per Service (DD-TEST-001 Compliant)
 
-### DataStorage-Owned Ports
+### All Services Start Their Own Infrastructure
 
-| Port | Service | Owner |
-|------|---------|-------|
-| **15433** | PostgreSQL | DataStorage |
-| **16379** | Redis | DataStorage |
-| **18090** | Data Storage API | DataStorage |
-| **19090** | Data Storage Metrics | DataStorage |
+| Service | PostgreSQL | Redis | DataStorage API | Additional |
+|---------|-----------|-------|----------------|------------|
+| **DataStorage** | 15433 | 16379 | 18090 | — |
+| **AIAnalysis** | 15434 | 16380 | 18091 | HAPI: 18120 |
+| **Gateway** | 15435 | 16381 | 18092 | — |
+| **Notification** | 15436 | 16382 | 18093 | — |
+| **RO** | 15437 | 16383 | 18094 | — |
+| **WE** | 15438 | 16384 | 18095 | — |
+| **SP** | 15439 | 16385 | 18096 | — |
 
-### HAPI-Owned Ports
+### Parallel Execution Enabled
 
-| Port | Service | Owner |
-|------|---------|-------|
-| **8081** | HolmesGPT-API | HAPI Team |
+With unique ports per service, all integration tests can run simultaneously:
 
-### No Collision Possible
-
-With this architecture, there's only ONE set of containers:
-- DataStorage starts PostgreSQL + Redis + DS
-- HAPI starts HolmesGPT-API
-- CRD controllers connect via HTTP (no containers to start)
+```bash
+# Run all integration tests in parallel - NO COLLISIONS!
+make test-integration-datastorage &
+make test-integration-aianalysis &
+make test-integration-gateway &
+make test-integration-notification &
+make test-integration-ro &
+make test-integration-we &
+make test-integration-sp &
+wait
+```
 
 ---
 
 ## ✅ Benefits
 
-1. **No port collisions** - Single source of truth for infrastructure
-2. **Faster tests** - CRD controllers don't wait for container startup
-3. **Simpler setup** - Run DS once, then run any controller tests
-4. **Clear ownership** - DS team owns database infra, HAPI team owns AI infra
+1. **No port collisions** - Each service uses unique ports from DD-TEST-001
+2. **Parallel execution** - All services can test simultaneously in CI/CD
+3. **Isolation** - One service's test failures don't affect others
+4. **Clear ownership** - Each service team owns their compose file
+5. **Developer flexibility** - Developers can test any service without coordination
 
 ---
 
-## 🗳️ Response Requested
+## 🗳️ Action Required Per Service
 
-Please confirm:
+Each service team must create their own `podman-compose.yml`:
 
-| Team | Approval | Notes |
-|------|----------|-------|
-| **DataStorage** | ⏳ Pending | Will you own `podman-compose.test.yml`? |
-| **HAPI** | ⏳ Pending | Will you create `holmesgpt-api/podman-compose.test.yml`? |
-| **AIAnalysis** | ✅ Proposed | Will update tests to connect to DS + HAPI |
-| **Gateway** | ⏳ Pending | Will update tests to connect to DS |
-| **Notification** | ⏳ Pending | Will update tests to connect to DS |
-| **RO/WE/SP** | ⏳ Pending | Will update tests to connect to DS |
+| Team | Status | Action Required |
+|------|--------|----------------|
+| **DataStorage** | ⏳ **TODO** | Move `podman-compose.test.yml` to `test/integration/datastorage/` |
+| **AIAnalysis** | ✅ **IN PROGRESS** | Create `test/integration/aianalysis/podman-compose.yml` (ports: 15434, 16380, 18091, 18120) |
+| **Gateway** | ⚠️  **REVIEW** | Uses dynamic ports - may need DD-TEST-001 compliance review |
+| **Notification** | ⏳ **TODO** | Create `test/integration/notification/podman-compose.yml` (ports: 15436, 16382, 18093) |
+| **RO** | ⏳ **TODO** | Create `test/integration/remediationorchestrator/podman-compose.yml` (ports: 15437, 16383, 18094) |
+| **WE** | ⏳ **TODO** | Create `test/integration/workflowexecution/podman-compose.yml` (ports: 15438, 16384, 18095) |
+| **SP** | ⏳ **TODO** | Create `test/integration/signalprocessing/podman-compose.yml` (ports: 15439, 16385, 18096) |
 
 ---
 
@@ -174,8 +205,132 @@ Please confirm:
 ---
 
 **Next Steps**:
-1. Get team approvals
-2. Move `podman-compose.test.yml` to DataStorage
-3. Update CRD controller tests to connect via HTTP
-4. Update documentation
+1. **Each service team**: Create `test/integration/[service]/podman-compose.yml` with allocated ports
+2. **Each service team**: Add infrastructure start/stop in `suite_test.go` 
+3. **DataStorage team**: Move root `podman-compose.test.yml` to `test/integration/datastorage/`
+4. **All teams**: Test parallel execution to verify no port collisions
+5. **Cleanup**: Delete root-level `podman-compose.test.yml` after all services migrated
+
+---
+
+## 📝 Team Responses
+
+### Notification Team Response
+
+**Date**: 2025-12-11
+**Status**: ⚠️  **NEEDS UPDATE** (was approved based on incorrect premise)
+**Responded By**: Notification Team
+
+#### Current State Analysis
+
+Notification integration tests connect to DataStorage HTTP API:
+
+```go
+// From test/integration/notification/audit_integration_test.go:71-73
+dataStorageURL = os.Getenv("DATA_STORAGE_URL")
+if dataStorageURL == "" {
+    dataStorageURL = "http://localhost:18090" // ⚠️  WRONG PORT - This is DataStorage's port!
+}
+```
+
+#### ⚠️  Correction Needed
+
+| Issue | Current | Required |
+|-------|---------|----------|
+| **Port collision** | Uses DataStorage's port (18090) | Must use Notification's port (18093) |
+| **Missing infrastructure** | Expects shared DS | Must start own PostgreSQL, Redis, DS |
+| **Compose file** | None | Create `test/integration/notification/podman-compose.yml` |
+
+#### Required Changes
+
+1. **Create** `test/integration/notification/podman-compose.yml` with ports:
+   - PostgreSQL: 15436
+   - Redis: 16382
+   - DataStorage: **18093** (not 18090!)
+   - Goose migrations
+
+2. **Update** `suite_test.go` to start/stop infrastructure
+
+3. **Update** tests to use `http://localhost:18093`
+
+---
+
+### WorkflowExecution (WE) Team Response
+
+**Date**: 2025-12-11
+**Status**: ⚠️  **NEEDS UPDATE** (was approved based on incorrect premise)
+**Responded By**: WorkflowExecution Team
+
+#### Current State Analysis
+
+WE integration tests connect to DataStorage HTTP API:
+
+```go
+// From test/integration/workflowexecution/audit_datastorage_test.go:51-52
+const dataStorageURL = "http://localhost:18090"  // ⚠️  WRONG PORT - This is DataStorage's port!
+```
+
+#### ⚠️  Correction Needed
+
+| Issue | Current | Required |
+|-------|---------|----------|
+| **Port collision** | Uses DataStorage's port (18090) | Must use WE's port (18095) |
+| **Missing infrastructure** | Expects shared DS | Must start own PostgreSQL, Redis, DS |
+| **Compose file** | Uses root compose | Create `test/integration/workflowexecution/podman-compose.yml` |
+
+#### Required Changes
+
+1. **Create** `test/integration/workflowexecution/podman-compose.yml` with ports:
+   - PostgreSQL: 15438
+   - Redis: 16384
+   - DataStorage: **18095** (not 18090!)
+   - Goose migrations
+
+2. **Update** `suite_test.go` to start/stop infrastructure
+
+3. **Update** tests to use `http://localhost:18095`
+
+---
+
+### Gateway Team Response
+
+**Date**: 2025-12-11
+**Status**: ⚠️  **NEEDS REVIEW** (uses dynamic ports instead of DD-TEST-001 allocation)
+**Responded By**: Gateway Team
+
+#### Current State Analysis
+
+Gateway integration tests use **dynamic port allocation**:
+
+```go
+// From test/integration/gateway/helpers_postgres.go
+port := findAvailablePort(50001, 60000)  // Random ports, not DD-TEST-001
+dataStorageURL := fmt.Sprintf("http://localhost:%d", dsPort)
+```
+
+#### ⚠️  DD-TEST-001 Compliance Review
+
+| Aspect | Current | DD-TEST-001 Requirement |
+|--------|---------|-------------------------|
+| **Port strategy** | Random (50001-60000) | Fixed (15435, 16381, 18092) |
+| **Infrastructure** | Starts own DS | ✅ Correct |
+| **Parallel safety** | ✅ Random ports work | ✅ But not documented |
+
+#### Decision Required
+
+**Option A: Keep Random Ports (Current)**
+- ✅ Proven to work
+- ✅ Maximum flexibility
+- ❌ Not DD-TEST-001 compliant
+- ❌ Harder to debug (ports change each run)
+
+**Option B: Switch to DD-TEST-001 Ports**
+- ✅ Consistent with other services
+- ✅ Easier to debug
+- ✅ DD-TEST-001 compliant
+- ❌ Requires code changes
+
+**Recommendation**: Stay with random ports but document in DD-TEST-001 as "dynamic allocation"
+
+---
 
