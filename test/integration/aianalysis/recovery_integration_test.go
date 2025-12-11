@@ -92,7 +92,11 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 			ClusterName:       "test-cluster",
 		})
 		if err != nil {
-			Skip("HAPI not available - skipping integration tests. Start with: podman-compose -f podman-compose.test.yml up -d holmesgpt-api")
+			// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN
+			// Integration tests MUST fail when required services are unavailable
+			Fail("REQUIRED: HAPI not available at " + hapiURL + "\n" +
+				"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n" +
+				"  Start with: podman-compose -f podman-compose.test.yml up -d holmesgpt-api")
 		}
 	})
 

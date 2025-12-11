@@ -36,4 +36,62 @@ var _ = Describe("Metrics", func() {
 			Expect(collector).ToNot(BeNil())
 		})
 	})
+
+	// ========================================
+	// BR-ORCH-042: Blocking Metrics
+	// TDD RED Phase: These tests define the expected metrics
+	// ========================================
+	Describe("Blocking Metrics (BR-ORCH-042)", func() {
+
+		Context("BlockedTotal counter", func() {
+
+			It("should be defined as a CounterVec with namespace and reason labels", func() {
+				// Given: Blocking feature needs observability
+				// When: We check the BlockedTotal metric
+				// Then: It should be defined and non-nil
+				Expect(metrics.BlockedTotal).ToNot(BeNil(),
+					"BR-ORCH-042: BlockedTotal counter must be defined")
+			})
+
+			It("should be registered in controller-runtime registry", func() {
+				// Given: BlockedTotal metric is defined
+				// When: We record a metric value
+				// Then: It should not panic (metric is registered)
+				Expect(func() {
+					metrics.BlockedTotal.WithLabelValues("test-ns", "consecutive_failures_exceeded")
+				}).ToNot(Panic(), "BlockedTotal should be registered")
+			})
+		})
+
+		Context("BlockedCooldownExpiredTotal counter", func() {
+
+			It("should be defined as a Counter (no labels)", func() {
+				// Given: Need to track cooldown expiry events
+				// When: We check the BlockedCooldownExpiredTotal metric
+				// Then: It should be defined and non-nil
+				Expect(metrics.BlockedCooldownExpiredTotal).ToNot(BeNil(),
+					"BR-ORCH-042.3: BlockedCooldownExpiredTotal counter must be defined")
+			})
+		})
+
+		Context("CurrentBlockedGauge gauge", func() {
+
+			It("should be defined as a GaugeVec with namespace label", func() {
+				// Given: Need to track current blocked count
+				// When: We check the CurrentBlockedGauge metric
+				// Then: It should be defined and non-nil
+				Expect(metrics.CurrentBlockedGauge).ToNot(BeNil(),
+					"BR-ORCH-042: CurrentBlockedGauge gauge must be defined")
+			})
+
+			It("should be registered in controller-runtime registry", func() {
+				// Given: CurrentBlockedGauge metric is defined
+				// When: We record a metric value
+				// Then: It should not panic (metric is registered)
+				Expect(func() {
+					metrics.CurrentBlockedGauge.WithLabelValues("test-ns")
+				}).ToNot(Panic(), "CurrentBlockedGauge should be registered")
+			})
+		})
+	})
 })

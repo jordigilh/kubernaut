@@ -140,10 +140,47 @@ var (
 		[]string{"phase", "namespace"},
 	)
 
-	// TODO(BR-ORCH-042): Add blocking metrics here after TDD implementation
-	// - BlockedTotal: Counter for RRs blocked due to consecutive failures
-	// - BlockedCooldownExpiredTotal: Counter for expired blocked RRs
-	// - CurrentBlockedGauge: Gauge for current blocked RR count
+	// ========================================
+	// BLOCKING METRICS (BR-ORCH-042)
+	// TDD: Tests in test/unit/remediationorchestrator/metrics_test.go
+	// ========================================
+
+	// BlockedTotal counts RRs blocked due to consecutive failures
+	// Reference: BR-ORCH-042
+	// Labels: namespace (K8s namespace), reason (block reason)
+	BlockedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "blocked_total",
+			Help:      "Total RemediationRequests blocked due to consecutive failures",
+		},
+		[]string{"namespace", "reason"},
+	)
+
+	// BlockedCooldownExpiredTotal counts blocked RRs that expired
+	// Reference: BR-ORCH-042.3
+	BlockedCooldownExpiredTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "blocked_cooldown_expired_total",
+			Help:      "Total blocked RRs that expired and transitioned to Failed",
+		},
+	)
+
+	// CurrentBlockedGauge tracks current blocked RR count
+	// Reference: BR-ORCH-042
+	// Labels: namespace (K8s namespace)
+	CurrentBlockedGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "blocked_current",
+			Help:      "Current number of blocked RRs",
+		},
+		[]string{"namespace"},
+	)
 )
 
 func init() {
@@ -158,7 +195,10 @@ func init() {
 		ChildCRDCreationsTotal,
 		DuplicatesSkippedTotal,
 		TimeoutsTotal,
-		// TODO(BR-ORCH-042): Register blocking metrics after TDD implementation
+		// BR-ORCH-042: Blocking metrics (TDD validated)
+		BlockedTotal,
+		BlockedCooldownExpiredTotal,
+		CurrentBlockedGauge,
 	)
 }
 

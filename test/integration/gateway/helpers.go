@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	gatewayconfig "github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -312,19 +311,18 @@ func StartTestGatewayWithLogger(ctx context.Context, k8sClient *K8sTestClient, d
 
 // StartTestGatewayWithOptions creates a Gateway server with custom timeout options
 // Used for testing HTTP timeout behavior (BR-GATEWAY-019, BR-GATEWAY-020)
-func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, opts *TestServerOptions) (*gateway.Server, error) {
+//
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native
+// DD-AUDIT-003: Gateway emits audit events to Data Storage
+func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, dataStorageURL string, opts *TestServerOptions) (*gateway.Server, error) {
 	// Use production logger with console output to capture errors in test logs
 	logConfig := zap.NewProductionConfig()
 	logConfig.OutputPaths = []string{"stdout"}
 	logConfig.ErrorOutputPaths = []string{"stderr"}
 	logger, _ := logConfig.Build()
 
-	// v2.9: Wire deduplication and storm detection services (REQUIRED)
-	// BR-GATEWAY-008, BR-GATEWAY-009, BR-GATEWAY-010
-	// These services are MANDATORY - Gateway will not start without them
-	if redisClient == nil || redisClient.Client == nil {
-		return nil, fmt.Errorf("Redis client is required for Gateway startup (BR-GATEWAY-008, BR-GATEWAY-009)")
-	}
+	// DD-GATEWAY-012: Redis REMOVED - Gateway is now stateless, K8s-native
+	// Deduplication and storm tracking now use RR status (DD-GATEWAY-011)
 
 	// Use options if provided, otherwise use defaults
 	if opts == nil {
@@ -333,6 +331,7 @@ func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClie
 
 	// Create ServerConfig for tests (nested structure)
 	// Uses fast TTLs and low thresholds for rapid test execution
+	// DD-GATEWAY-012: NO Redis configuration - Gateway is Redis-free
 	cfg := &gatewayconfig.ServerConfig{
 		Server: gatewayconfig.ServerSettings{
 			ListenAddr:   ":8080",
@@ -343,23 +342,14 @@ func StartTestGatewayWithOptions(ctx context.Context, redisClient *RedisTestClie
 
 		// Middleware: Rate limiting removed (ADR-048) - delegated to proxy
 
+		// DD-GATEWAY-012: Redis REMOVED
+		// DD-AUDIT-003: Data Storage URL for audit event emission
 		Infrastructure: gatewayconfig.InfrastructureSettings{
-			Redis: &rediscache.Options{
-				Addr:         redisClient.Client.Options().Addr,
-				DB:           redisClient.Client.Options().DB,
-				Password:     redisClient.Client.Options().Password,
-				DialTimeout:  redisClient.Client.Options().DialTimeout,
-				ReadTimeout:  redisClient.Client.Options().ReadTimeout,
-				WriteTimeout: redisClient.Client.Options().WriteTimeout,
-				PoolSize:     redisClient.Client.Options().PoolSize,
-				MinIdleConns: redisClient.Client.Options().MinIdleConns,
-			},
+			DataStorageURL: dataStorageURL,
 		},
 
 		Processing: gatewayconfig.ProcessingSettings{
-			Deduplication: gatewayconfig.DeduplicationSettings{
-				TTL: 5 * time.Second, // Production: 5 minutes
-			},
+			// DD-GATEWAY-012: Deduplication TTL no longer used (RR status-based)
 			Storm: gatewayconfig.StormSettings{
 				RateThreshold:     10,              // Production: 10 alerts/minute (test needs 3+ for env classification tests)
 				PatternThreshold:  5,               // Production: 5 similar alerts
@@ -1346,8 +1336,13 @@ func createTestK8sClient(ctx context.Context) (*K8sTestClient, string) {
 
 // createTestGatewayServer starts Gateway server and wraps it in httptest.Server
 // TDD REFACTOR: Extracted from SetupPriority1Test for better readability
+// DD-GATEWAY-012: Redis DEPRECATED - parameter kept for backward compatibility during migration
 func createTestGatewayServer(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) *httptest.Server {
-	gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+	// DD-GATEWAY-012: Redis is no longer used by Gateway
+	// Create a mock Data Storage URL for tests (will be replaced with real service)
+	dataStorageURL := "http://localhost:8080" // Mock/placeholder
+
+	gatewayServer, err := StartTestGateway(ctx, k8sClient, dataStorageURL)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to start test gateway: %v", err))
 	}

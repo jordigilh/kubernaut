@@ -46,6 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 )
 
@@ -198,9 +199,16 @@ func (r *Reconciler) transitionToBlocked(ctx context.Context, rr *remediationv1.
 		return ctrl.Result{}, fmt.Errorf("failed to transition to Blocked: %w", err)
 	}
 
-	// TODO(BR-ORCH-042): Add metrics after TDD metrics tests
-	// metrics.BlockedTotal.WithLabelValues(rr.Namespace, reason).Inc()
-	// metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Inc()
+	// BR-ORCH-042: Record blocking metrics (TDD validated)
+	metrics.BlockedTotal.WithLabelValues(rr.Namespace, reason).Inc()
+	metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Inc()
+
+	// Record phase transition metric
+	metrics.PhaseTransitionsTotal.WithLabelValues(
+		string(phase.Failed),  // from_phase
+		string(phase.Blocked), // to_phase
+		rr.Namespace,
+	).Inc()
 
 	logger.Info("Signal blocked due to consecutive failures",
 		"reason", reason,
@@ -230,9 +238,9 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 	if time.Now().After(rr.Status.BlockedUntil.Time) {
 		logger.Info("Blocked cooldown expired, transitioning to terminal Failed")
 
-		// TODO(BR-ORCH-042): Add metrics after TDD metrics tests
-		// metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
-		// metrics.BlockedCooldownExpiredTotal.Inc()
+		// BR-ORCH-042: Record cooldown expiry metrics (TDD validated)
+		metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
+		metrics.BlockedCooldownExpiredTotal.Inc()
 
 		// Get block reason for the failure message
 		blockReason := "unknown"

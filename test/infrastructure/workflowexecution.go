@@ -129,7 +129,7 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 
 	// 5. Wait for DS to be ready
 	fmt.Fprintf(output, "  ⏳ Waiting for Data Storage to be ready...\n")
-	if err := waitForDataStorageReady(kubeconfigPath, output); err != nil {
+	if err := waitForWEDataStorageReady(kubeconfigPath, output); err != nil {
 		return fmt.Errorf("Data Storage did not become ready: %w", err)
 	}
 	fmt.Fprintf(output, "✅ Data Storage infrastructure deployed\n")
@@ -777,9 +777,9 @@ func waitForDeploymentReady(kubeconfigPath, deploymentName string, output io.Wri
 	return nil
 }
 
-// waitForDataStorageReady waits for Data Storage deployment to be ready
+// waitForWEDataStorageReady waits for Data Storage deployment to be ready (WorkflowExecution)
 // Uses kubectl wait with 120s timeout (DS may take time to connect to PostgreSQL)
-func waitForDataStorageReady(kubeconfigPath string, output io.Writer) error {
+func waitForWEDataStorageReady(kubeconfigPath string, output io.Writer) error {
 	if err := waitForDeploymentReady(kubeconfigPath, "datastorage", output); err != nil {
 		return err
 	}

@@ -105,6 +105,133 @@ func CreateSignalProcessingCluster(clusterName, kubeconfigPath string, writer io
 	return nil
 }
 
+// DeployDataStorageForSignalProcessing deploys DataStorage infrastructure for BR-SP-090 audit testing.
+// This includes PostgreSQL, Redis, migrations, and DataStorage service in kubernaut-system namespace.
+//
+// Prerequisites:
+// - Kind cluster must be created (CreateSignalProcessingCluster)
+// - kubernaut-system namespace must exist
+//
+// This enables the SignalProcessing controller to write audit events to DataStorage.
+func DeployDataStorageForSignalProcessing(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "BR-SP-090: Deploying DataStorage for Audit Testing")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	namespace := "kubernaut-system"
+
+	// 1. Build DataStorage image (if not already done)
+	fmt.Fprintln(writer, "🔨 Building DataStorage image...")
+	if err := buildDataStorageImage(writer); err != nil {
+		return fmt.Errorf("failed to build DataStorage image: %w", err)
+	}
+
+	// 2. Load DataStorage image into Kind
+	fmt.Fprintln(writer, "📦 Loading DataStorage image into Kind...")
+	if err := loadDataStorageImageForSP(writer); err != nil {
+		return fmt.Errorf("failed to load DataStorage image: %w", err)
+	}
+
+	// 3. Deploy PostgreSQL
+	fmt.Fprintln(writer, "🚀 Deploying PostgreSQL...")
+	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
+	}
+
+	// 4. Deploy Redis (required by DataStorage)
+	fmt.Fprintln(writer, "🚀 Deploying Redis...")
+	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Redis: %w", err)
+	}
+
+	// 5. Apply audit migrations using shared library
+	fmt.Fprintln(writer, "📋 Applying audit migrations...")
+	if err := ApplyAuditMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply audit migrations: %w", err)
+	}
+
+	// 6. Deploy DataStorage service
+	fmt.Fprintln(writer, "🚀 Deploying DataStorage service...")
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy DataStorage: %w", err)
+	}
+
+	// 7. Wait for DataStorage to be ready
+	fmt.Fprintln(writer, "⏳ Waiting for DataStorage to be ready...")
+	if err := waitForSPDataStorageReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("DataStorage not ready: %w", err)
+	}
+
+	fmt.Fprintln(writer, "✅ DataStorage infrastructure ready for BR-SP-090 audit testing")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// loadDataStorageImageForSP loads the DataStorage image into the SP Kind cluster
+func loadDataStorageImageForSP(writer io.Writer) error {
+	// Get cluster name - should match what's used in CreateSignalProcessingCluster
+	clusterName := "signalprocessing-e2e"
+
+	// Check if using podman or docker
+	containerRuntime := "docker"
+	if _, err := exec.LookPath("podman"); err == nil {
+		containerRuntime = "podman"
+	}
+
+	// Tag image for Kind compatibility
+	tagCmd := exec.Command(containerRuntime, "tag",
+		"localhost/kubernaut-datastorage:e2e-test",
+		"localhost/kubernaut-datastorage:e2e-test")
+	if output, err := tagCmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(writer, "⚠️  Image tagging failed (may already be correct): %s\n", output)
+	}
+
+	// Load into Kind cluster
+	cmd := exec.Command("kind", "load", "docker-image",
+		"localhost/kubernaut-datastorage:e2e-test",
+		"--name", clusterName)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to load DataStorage image into Kind: %w", err)
+	}
+
+	fmt.Fprintln(writer, "  ✅ DataStorage image loaded into Kind cluster")
+	return nil
+}
+
+// waitForSPDataStorageReady waits for DataStorage service to be ready in SP E2E tests
+func waitForSPDataStorageReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	timeout := 120 * time.Second
+	interval := 5 * time.Second
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		// Check if DataStorage pod is ready
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "pods", "-n", namespace, "-l", "app=datastorage",
+			"-o", "jsonpath={.items[0].status.conditions[?(@.type=='Ready')].status}")
+
+		output, err := cmd.Output()
+		if err == nil && strings.TrimSpace(string(output)) == "True" {
+			// Also check if service is accessible
+			healthCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+				"exec", "-n", namespace, "deploy/datastorage", "--",
+				"curl", "-sf", "http://localhost:8080/health")
+			if healthCmd.Run() == nil {
+				fmt.Fprintln(writer, "  ✅ DataStorage is ready and healthy")
+				return nil
+			}
+		}
+
+		fmt.Fprintln(writer, "  ⏳ DataStorage not ready yet, waiting...")
+		time.Sleep(interval)
+	}
+
+	return fmt.Errorf("DataStorage not ready after %v", timeout)
+}
+
 // DeleteSignalProcessingCluster deletes the Kind cluster and cleans up resources.
 func DeleteSignalProcessingCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	fmt.Fprintln(writer, "🗑️  Deleting SignalProcessing E2E cluster...")
@@ -545,6 +672,9 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        # BR-SP-090: Point to DataStorage service in kubernaut-system namespace
+        - name: DATA_STORAGE_URL
+          value: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
         livenessProbe:
           httpGet:
             path: /healthz

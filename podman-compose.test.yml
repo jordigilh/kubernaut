@@ -1,39 +1,19 @@
 version: '3.8'
 
 services:
-  # Database migration service - applies goose migrations before other services start
+  # Database migration service - uses goose for proper migration handling
   # Fixes: NOTICE_DATASTORAGE_MIGRATION_NOT_AUTO_APPLIED.md
+  # Unified Approach: Uses goose (same format as migrations/*.sql)
+  # Reference: docs/handoff/REQUEST_SHARED_E2E_MIGRATION_LIBRARY.md
   migrate:
-    image: quay.io/jordigilh/pgvector:pg16
+    image: ghcr.io/pressly/goose:3.18.0
     volumes:
       - ./migrations:/migrations:ro
     environment:
-      - PGHOST=postgres
-      - PGPORT=5432
-      - PGUSER=slm_user
-      - PGPASSWORD=test_password
-      - PGDATABASE=action_history
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        echo "🔄 Waiting for PostgreSQL to be ready..."
-        until pg_isready -h postgres -U slm_user -d action_history; do
-          sleep 1
-        done
-        echo "✅ PostgreSQL is ready, applying migrations..."
-
-        # Apply each migration file in order
-        for f in /migrations/*.sql; do
-          echo "📄 Applying: $$(basename $$f)"
-          # Strip goose directives and apply SQL
-          sed -e '/^-- +goose/d' "$$f" | psql -h postgres -U slm_user -d action_history -f - 2>&1 || true
-        done
-
-        echo "✅ All migrations applied successfully"
-
-        # Verify key tables exist
-        echo "🔍 Verifying tables..."
-        psql -h postgres -U slm_user -d action_history -c "\dt" | head -20
+      - GOOSE_DRIVER=postgres
+      - GOOSE_DBSTRING=postgres://slm_user:test_password@postgres:5432/action_history?sslmode=disable
+    # Goose applies migrations in order, tracks state, and FAILS on errors (no silent failures!)
+    command: ["-dir", "/migrations", "up"]
     networks:
       - test-network
     depends_on:

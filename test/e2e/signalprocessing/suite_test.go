@@ -103,8 +103,14 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.CreateSignalProcessingCluster(clusterName, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Deploy SignalProcessing controller
+		// BR-SP-090: Deploy DataStorage infrastructure for audit testing
+		// This must be done BEFORE deploying the controller
 		ctx := context.Background()
+		By("Deploying DataStorage for BR-SP-090 audit testing")
+		err = infrastructure.DeployDataStorageForSignalProcessing(ctx, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Deploy SignalProcessing controller
 		err = infrastructure.DeploySignalProcessingController(ctx, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
