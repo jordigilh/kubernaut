@@ -41,7 +41,8 @@ import (
 //   podman-compose -f podman-compose.test.yml up -d holmesgpt-api
 //
 // Environment Variables:
-//   HOLMESGPT_URL: Override default HAPI URL (default: http://localhost:8081)
+//   HOLMESGPT_URL: Override default HAPI URL (default: http://localhost:18120)
+//   Port 18120 per DD-TEST-001 (HAPI integration range: 18120-18129)
 
 var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery", "hapi"), func() {
 	var (
@@ -55,7 +56,8 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 		// Get HAPI URL from environment or use default from podman-compose.test.yml
 		hapiURL = os.Getenv("HOLMESGPT_URL")
 		if hapiURL == "" {
-			hapiURL = "http://localhost:8081"
+			// DD-TEST-001: HAPI integration port range 18120-18129
+			hapiURL = "http://localhost:18120"
 		}
 
 		// Create real HAPI client

@@ -1,0 +1,126 @@
+# AIAnalysis Integration Test Infrastructure
+# Port Allocation per DD-TEST-001: Port Allocation Strategy
+#
+# Service Ports (AIAnalysis-specific):
+#   PostgreSQL:       15434 → 5432
+#   Redis:            16380 → 6379
+#   Data Storage API: 18091 → 8080
+#   HolmesGPT API:    18120 → 8080
+#
+# These ports are dedicated to AIAnalysis integration tests to prevent
+# collisions with other services running tests in parallel.
+
+version: '3.8'
+
+services:
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: aianalysis_postgres_test
+    environment:
+      POSTGRES_USER: kubernaut
+      POSTGRES_PASSWORD: kubernaut-test-password
+      POSTGRES_DB: kubernaut
+    ports:
+      - "15434:5432"  # AIAnalysis integration test PostgreSQL port
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kubernaut"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aianalysis_test_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: aianalysis_redis_test
+    ports:
+      - "16380:6379"  # AIAnalysis integration test Redis port
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - aianalysis_test_network
+
+  datastorage:
+    image: kubernaut/datastorage:latest
+    container_name: aianalysis_datastorage_test
+    build:
+      context: ../../../
+      dockerfile: cmd/datastorage/Dockerfile
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: kubernaut
+      POSTGRES_PASSWORD: kubernaut-test-password
+      POSTGRES_DB: kubernaut
+      REDIS_ADDR: redis:6379
+      PORT: 8080
+      EMBEDDING_SERVICE_URL: http://localhost:18000  # Mock embedding service
+    ports:
+      - "18091:8080"  # AIAnalysis integration test DataStorage API port
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aianalysis_test_network
+
+  holmesgpt-api:
+    image: kubernaut/holmesgpt-api:latest
+    container_name: aianalysis_holmesgpt_test
+    build:
+      context: ../../../holmesgpt-api
+      dockerfile: Dockerfile
+    environment:
+      # Mock LLM mode for integration tests (no real LLM calls)
+      MOCK_LLM_ENABLED: "true"
+      # DataStorage connection
+      DATASTORAGE_URL: http://datastorage:8080
+      # No LLM_MODEL required in mock mode
+      PORT: 8080
+    ports:
+      - "18120:8080"  # AIAnalysis integration test HolmesGPT API port
+    depends_on:
+      datastorage:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aianalysis_test_network
+
+  # Goose migrations (runs once and exits)
+  goose:
+    image: kubernaut/goose-migrations:latest
+    container_name: aianalysis_goose_migrations
+    build:
+      context: ../../../
+      dockerfile: build/migrations/Dockerfile
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: kubernaut
+      POSTGRES_PASSWORD: kubernaut-test-password
+      POSTGRES_DB: kubernaut
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - aianalysis_test_network
+    command: ["up"]
+
+networks:
+  aianalysis_test_network:
+    name: aianalysis_test_network
+    driver: bridge
+
