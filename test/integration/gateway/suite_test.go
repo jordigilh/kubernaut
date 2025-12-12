@@ -45,12 +45,11 @@ import (
 
 // Suite-level resources (envtest migration)
 var (
-	suiteK8sClient        *K8sTestClient                      // Shared K8s client for cleanup
-	suiteCtx              context.Context                     // Suite context
-	suiteLogger           logr.Logger                         // Suite logger (DD-005: logr.Logger)
-	testEnv               *envtest.Environment                // envtest environment (in-memory K8s)
-	suiteDataStorageInfra *infrastructure.DataStorageInfrastructure // Shared DS infrastructure (PostgreSQL + Redis + DS)
-	k8sConfig             *rest.Config                        // Kubernetes client config from envtest
+	suiteK8sClient *K8sTestClient       // Shared K8s client for cleanup
+	suiteCtx       context.Context     // Suite context
+	suiteLogger    logr.Logger         // Suite logger (DD-005: logr.Logger)
+	testEnv        *envtest.Environment // envtest environment (in-memory K8s)
+	k8sConfig      *rest.Config        // Kubernetes client config from envtest
 )
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
@@ -72,13 +71,24 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	suiteLogger.Info("  • RemediationRequest CRD (cluster-wide)")
 	suiteLogger.Info("  • Data Storage infrastructure (PostgreSQL + Redis + DS service)")
 	suiteLogger.Info("  • Parallel Execution: 4 concurrent processors")
-	suiteLogger.Info("  • Using shared infrastructure pattern (test/infrastructure/datastorage.go)")
+	suiteLogger.Info("  • Pattern: AIAnalysis (Programmatic podman-compose)")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	var err error
 	ctx := context.Background()
 
-	// 1. Start envtest (in-memory K8s API server)
+	// 1. Start Gateway integration infrastructure (podman-compose)
+	//    This starts: PostgreSQL, Redis, DataStorage (with migrations)
+	//    Per DD-TEST-001: Ports 15437, 16383, 18091
+	suiteLogger.Info("📦 Starting Gateway integration infrastructure (podman-compose)...")
+	err = infrastructure.StartGatewayIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	suiteLogger.Info("   ✅ All services started and healthy")
+
+	// Store Data Storage URL for tests
+	dataStorageURL := fmt.Sprintf("http://localhost:%d", infrastructure.GatewayIntegrationDataStoragePort)
+
+	// 2. Start envtest (in-memory K8s API server)
 	suiteLogger.Info("📦 Starting envtest (in-memory K8s API)...")
 
 	// Set KUBEBUILDER_ASSETS if not already set
@@ -137,41 +147,26 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	suiteLogger.Info(fmt.Sprintf("   ✅ envtest started (K8s API: %s)", k8sConfig.Host))
 
-	// 2. Start Data Storage infrastructure (PostgreSQL + Redis + DS)
-	//    Using shared infrastructure pattern (test/infrastructure/datastorage.go)
-	//    This handles PostgreSQL, Redis, migrations, and Data Storage service startup
-	suiteLogger.Info("📦 Starting Data Storage infrastructure (shared pattern)...")
-
-	// Use shared infrastructure with default config (migrations expect slm_user)
-	// Note: Using defaults to match migration scripts expectations
-	dsInfra, err := infrastructure.StartDataStorageInfrastructure(nil, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Data Storage infrastructure must start successfully")
-	Expect(dsInfra).ToNot(BeNil(), "Data Storage infrastructure must not be nil")
-
-	// Store infrastructure handle for cleanup
-	suiteDataStorageInfra = dsInfra
-	dataStorageURL := dsInfra.ServiceURL
-
-	suiteLogger.Info(fmt.Sprintf("   ✅ Data Storage infrastructure started (URL: %s)", dataStorageURL))
-
 	// AIAnalysis Pattern: Log complete infrastructure summary for debugging
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	suiteLogger.Info("Gateway Integration Test Infrastructure")
+	suiteLogger.Info("Gateway Integration Test Infrastructure - Ready")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info(fmt.Sprintf("  K8s API:        %s", k8sConfig.Host))
-	suiteLogger.Info(fmt.Sprintf("  DataStorage:    %s (shared infrastructure)", dataStorageURL))
-	suiteLogger.Info(fmt.Sprintf("  PostgreSQL:     %s", dsInfra.PostgresContainer))
-	suiteLogger.Info(fmt.Sprintf("  Redis:          %s", dsInfra.RedisContainer))
+	suiteLogger.Info(fmt.Sprintf("  DataStorage:    %s", dataStorageURL))
+	suiteLogger.Info(fmt.Sprintf("  PostgreSQL:     localhost:%d", infrastructure.GatewayIntegrationPostgresPort))
+	suiteLogger.Info(fmt.Sprintf("  Redis:          localhost:%d", infrastructure.GatewayIntegrationRedisPort))
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Validate Data Storage health before proceeding
+	// Validate Data Storage health before proceeding (already validated by infrastructure startup)
 	healthURL := dataStorageURL + "/healthz"
 	healthResp, err := http.Get(healthURL)
 	if err != nil || healthResp.StatusCode != http.StatusOK {
-		Fail(fmt.Sprintf("Data Storage health check failed at %s", healthURL))
+		Fail(fmt.Sprintf("Data Storage health check failed at %s (status: %d, err: %v)", healthURL, healthResp.StatusCode, err))
 	}
-	healthResp.Body.Close()
-	suiteLogger.Info("✅ Data Storage is healthy")
+	if healthResp != nil {
+		healthResp.Body.Close()
+	}
+	suiteLogger.Info("   ✅ Data Storage health re-validated")
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Infrastructure Setup Complete - Ready for Parallel Tests")
@@ -276,10 +271,11 @@ var _ = SynchronizedAfterSuite(func() {
 		fmt.Println("\n✅ No test namespaces created")
 	}
 
-	// Stop Data Storage infrastructure (PostgreSQL + Redis + DS)
-	if suiteDataStorageInfra != nil {
-		suiteLogger.Info("Stopping Data Storage infrastructure...")
-		suiteDataStorageInfra.Stop(GinkgoWriter)
+	// Stop Gateway integration infrastructure (podman-compose)
+	suiteLogger.Info("Stopping Gateway integration infrastructure...")
+	err := infrastructure.StopGatewayIntegrationInfrastructure(GinkgoWriter)
+	if err != nil {
+		suiteLogger.Info("Failed to stop Gateway infrastructure", "error", err)
 	}
 
 	// Stop envtest

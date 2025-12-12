@@ -2,9 +2,9 @@
 
 ## 🎯 **Executive Summary**
 
-**Date**: 2025-12-11  
-**Status**: 7 integration tests failing due to business logic issues (NOT architectural issues)  
-**Scope**: SignalProcessing controller business logic  
+**Date**: 2025-12-11
+**Status**: 7 integration tests failing due to business logic issues (NOT architectural issues)
+**Scope**: SignalProcessing controller business logic
 **Priority**: V1.0 Critical (these are core BR requirements)
 
 **Key Finding**: After fixing architectural issues (RemediationRequestRef), the tests now run successfully through all phases, but business logic is returning empty/wrong values.
@@ -29,7 +29,7 @@
 
 ### **1. BR-SP-052: ConfigMap Environment Classification**
 
-**Test**: `should classify environment from ConfigMap fallback`  
+**Test**: `should classify environment from ConfigMap fallback`
 **File**: `reconciler_integration_test.go:311`
 
 **Expected**:
@@ -43,13 +43,13 @@ final.Status.EnvironmentClassification.Source = "configmap"
 final.Status.EnvironmentClassification.Environment = "unknown"
 ```
 
-**Root Cause**: ConfigMap-based environment classification not working  
+**Root Cause**: ConfigMap-based environment classification not working
 **Test Setup**:
 - Namespace has prefix "staging-app" (should trigger ConfigMap rule)
 - No `kubernaut.ai/environment` label on namespace
 - ConfigMap fallback should classify as "staging" from namespace prefix
 
-**Business Logic Issue**: 
+**Business Logic Issue**:
 - Controller not reading ConfigMap rules
 - OR ConfigMap not being created/mounted correctly
 - OR prefix-based classification logic not implemented
@@ -60,7 +60,7 @@ final.Status.EnvironmentClassification.Environment = "unknown"
 
 ### **2. BR-SP-002: Namespace Label Business Classification**
 
-**Test**: `should classify business unit from namespace labels`  
+**Test**: `should classify business unit from namespace labels`
 **File**: `reconciler_integration_test.go:348`
 
 **Expected**:
@@ -73,7 +73,7 @@ final.Status.BusinessClassification.BusinessUnit = "payments"
 final.Status.BusinessClassification.BusinessUnit = "" (empty or nil)
 ```
 
-**Root Cause**: Namespace label classification not reading labels  
+**Root Cause**: Namespace label classification not reading labels
 **Test Setup**:
 - Namespace has label `kubernaut.ai/team: "payments"`
 - Should classify business unit as "payments"
@@ -89,7 +89,7 @@ final.Status.BusinessClassification.BusinessUnit = "" (empty or nil)
 
 ### **3. BR-SP-100: Owner Chain Traversal**
 
-**Test**: `should build owner chain from Pod to Deployment`  
+**Test**: `should build owner chain from Pod to Deployment`
 **File**: `reconciler_integration_test.go:421`
 
 **Expected**:
@@ -104,7 +104,7 @@ final.Status.KubernetesContext.OwnerChain[1].Kind = "Deployment"
 final.Status.KubernetesContext.OwnerChain = [] (empty, length = 0)
 ```
 
-**Root Cause**: Owner chain traversal not executing  
+**Root Cause**: Owner chain traversal not executing
 **Test Setup**:
 - Pod owned by ReplicaSet
 - ReplicaSet owned by Deployment
@@ -121,7 +121,7 @@ final.Status.KubernetesContext.OwnerChain = [] (empty, length = 0)
 
 ### **4. BR-SP-101: HPA Detection**
 
-**Test**: `should detect HPA enabled`  
+**Test**: `should detect HPA enabled`
 **File**: `reconciler_integration_test.go:515`
 
 **Expected**:
@@ -134,7 +134,7 @@ final.Status.KubernetesContext.DetectedLabels.HasHPA = true
 final.Status.KubernetesContext.DetectedLabels.HasHPA = false
 ```
 
-**Root Cause**: HPA detection query not finding HPA resource  
+**Root Cause**: HPA detection query not finding HPA resource
 **Test Setup**:
 - HPA resource created for Deployment "hpa-deployment"
 - Target resource is the Deployment with HPA
@@ -150,7 +150,7 @@ final.Status.KubernetesContext.DetectedLabels.HasHPA = false
 
 ### **5. BR-SP-102: Rego Policy CustomLabels Population**
 
-**Test**: `should populate CustomLabels from Rego policy`  
+**Test**: `should populate CustomLabels from Rego policy`
 **File**: `reconciler_integration_test.go:567`
 
 **Expected**:
@@ -163,7 +163,7 @@ final.Status.KubernetesContext.CustomLabels = {"team": ["platform"]}  (not empty
 final.Status.KubernetesContext.CustomLabels = {} (empty map)
 ```
 
-**Root Cause**: Rego policy evaluation not running or not populating results  
+**Root Cause**: Rego policy evaluation not running or not populating results
 **Test Setup**:
 - ConfigMap with labels.rego policy created
 - Policy returns `labels["team"] := ["platform"]`
@@ -180,7 +180,7 @@ final.Status.KubernetesContext.CustomLabels = {} (empty map)
 
 ### **6. BR-SP-001: Degraded Mode When Pod Not Found**
 
-**Test**: `should enter degraded mode when pod not found`  
+**Test**: `should enter degraded mode when pod not found`
 **File**: `reconciler_integration_test.go:652`
 
 **Expected**:
@@ -194,7 +194,7 @@ final.Status.KubernetesContext.Confidence <= 0.5
 final.Status.KubernetesContext.DegradedMode = false
 ```
 
-**Root Cause**: Degraded mode not being set when resource lookup fails  
+**Root Cause**: Degraded mode not being set when resource lookup fails
 **Test Setup**:
 - Target resource is "non-existent-pod" (does not exist)
 - Should detect failure and set DegradedMode=true
@@ -210,7 +210,7 @@ final.Status.KubernetesContext.DegradedMode = false
 
 ### **7. BR-SP-102: Multiple Keys from Rego Policy**
 
-**Test**: `should handle Rego policy returning multiple keys`  
+**Test**: `should handle Rego policy returning multiple keys`
 **File**: `reconciler_integration_test.go:975`
 
 **Expected**:
@@ -224,7 +224,7 @@ CustomLabels["team"], CustomLabels["tier"], CustomLabels["cost-center"]
 final.Status.KubernetesContext.CustomLabels = nil (length = 0)
 ```
 
-**Root Cause**: Same as #5 - Rego policy evaluation not working  
+**Root Cause**: Same as #5 - Rego policy evaluation not working
 **Test Setup**:
 - ConfigMap with policy returning 3 keys
 - Should extract all 3 keys into CustomLabels
@@ -440,7 +440,7 @@ This would explain ALL 7 failures with a single root cause.
 
 ### **V1.0 Impact**
 
-**Severity**: 🔴 **CRITICAL**  
+**Severity**: 🔴 **CRITICAL**
 **Reason**: 5+ core BRs not working in integration tests
 
 **V1.0 Readiness**: ⚠️ **BLOCKED** until business logic issues resolved
@@ -457,7 +457,7 @@ This would explain ALL 7 failures with a single root cause.
 4. Fix root cause
 5. Validate all tests pass
 
-**Time**: 2-3 hours  
+**Time**: 2-3 hours
 **Confidence**: 90% will identify root cause
 
 ### **Option B: Test Setup Review**
@@ -468,7 +468,7 @@ This would explain ALL 7 failures with a single root cause.
 4. Fix test setup
 5. Rerun tests
 
-**Time**: 1-2 hours  
+**Time**: 1-2 hours
 **Confidence**: 70% will fix issues
 
 ### **Option C: Defer to SP Team**
@@ -477,8 +477,8 @@ Document findings and hand off to SP team for investigation.
 
 ---
 
-**Status**: ⏸️ **Investigation Required**  
-**Next Owner**: SP Team / Integration Test Owner  
-**Estimated Fix Time**: 2-4 hours once root cause identified  
+**Status**: ⏸️ **Investigation Required**
+**Next Owner**: SP Team / Integration Test Owner
+**Estimated Fix Time**: 2-4 hours once root cause identified
 **Priority**: 🔴 **V1.0 CRITICAL**
 
