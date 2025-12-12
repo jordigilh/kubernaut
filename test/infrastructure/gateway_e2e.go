@@ -179,7 +179,7 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	fmt.Fprintln(writer, "   Building Docker image using Podman...")
 	buildCmd := exec.Command("podman", "build",
 		"-t", "gateway:e2e-test",
-		"-f", projectRoot+"/cmd/gateway/Dockerfile",
+		"-f", projectRoot+"/Dockerfile.gateway",
 		projectRoot,
 	)
 	buildCmd.Stdout = writer
