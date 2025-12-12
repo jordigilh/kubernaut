@@ -48,7 +48,7 @@ limitations under the License.
 // - BR-SP-102: CustomLabels Rego Extraction (multi-key)
 // - BR-SP-103: Failed Detections Tracking
 // - ADR-038: Audit Non-Blocking
-package signalprocessing_test
+package signalprocessing
 
 import (
 	"sync"
@@ -93,7 +93,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+						Fingerprint: ValidTestFingerprints["reconciler-01"],
 						Name:        "HighCPU",
 						Severity:    "critical",
 						Type:        "prometheus",
@@ -149,7 +149,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "bbb123def456abc123def456abc123def456abc123def456abc123def456abc2",
+						Fingerprint: ValidTestFingerprints["reconciler-02"],
 						Name:        "HighLatency",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -199,7 +199,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ccc123def456abc123def456abc123def456abc123def456abc123def456abc3",
+						Fingerprint: ValidTestFingerprints["reconciler-03"],
 						Name:        "LowDiskSpace",
 						Severity:    "info",
 						Type:        "prometheus",
@@ -247,7 +247,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ddd123def456abc123def456abc123def456abc123def456abc123def456abc4",
+						Fingerprint: ValidTestFingerprints["reconciler-04"],
 						Name:        "TestAlert",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -284,28 +284,18 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			ns := createTestNamespace("staging-app")
 			defer deleteTestNamespace(ns)
 
-			By("Creating SignalProcessing CR")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-hp-05",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "eee123def456abc123def456abc123def456abc123def456abc123def456abc5",
-						Name:        "ConfigMapFallback",
-						Severity:    "warning",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: ns,
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			// Create parent RemediationRequest (matches production architecture)
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "test-pod",
+				Namespace: ns,
 			}
+			rr := CreateTestRemediationRequest("test-rr-hp-05", ns, ValidTestFingerprints["reconciler-05"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with RemediationRequestRef")
+			sp := CreateTestSignalProcessingWithParent("test-signal-hp-05", ns, rr, ValidTestFingerprints["reconciler-05"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
@@ -331,28 +321,18 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			})
 			defer deleteTestNamespace(ns)
 
-			By("Creating SignalProcessing CR")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-hp-06",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "fff123def456abc123def456abc123def456abc123def456abc123def456abc6",
-						Name:        "BusinessClassification",
-						Severity:    "critical",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "payment-processor",
-							Namespace: ns,
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			// Create parent RemediationRequest (matches production architecture)
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "payment-processor",
+				Namespace: ns,
 			}
+			rr := CreateTestRemediationRequest("test-rr-hp-06", ns, ValidTestFingerprints["reconciler-06"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with RemediationRequestRef")
+			sp := CreateTestSignalProcessingWithParent("test-signal-hp-06", ns, rr, ValidTestFingerprints["reconciler-06"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
@@ -414,28 +394,18 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			}}
 			_ = createTestPod(ns, "ownerchain-pod", deployLabels, podOwnerRef)
 
-			By("Creating SignalProcessing CR")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-hp-07",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ggg123def456abc123def456abc123def456abc123def456abc123def456abc7",
-						Name:        "OwnerChainTest",
-						Severity:    "warning",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "ownerchain-pod",
-							Namespace: ns,
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			// Create parent RemediationRequest (matches production architecture)
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "ownerchain-pod",
+				Namespace: ns,
 			}
+			rr := CreateTestRemediationRequest("test-rr-hp-07", ns, ValidTestFingerprints["reconciler-07"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with RemediationRequestRef")
+			sp := CreateTestSignalProcessingWithParent("test-signal-hp-07", ns, rr, ValidTestFingerprints["reconciler-07"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
@@ -474,7 +444,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "hhh123def456abc123def456abc123def456abc123def456abc123def456abc8",
+						Fingerprint: ValidTestFingerprints["reconciler-08"],
 						Name:        "PDBTest",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -517,28 +487,18 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Creating HPA targeting Deployment")
 			_ = createTestHPA(ns, "test-hpa", "hpa-deployment")
 
-			By("Creating SignalProcessing CR")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-hp-09",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "iii123def456abc123def456abc123def456abc123def456abc123def456abc9",
-						Name:        "HPATest",
-						Severity:    "warning",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Deployment",
-							Name:      "hpa-deployment",
-							Namespace: ns,
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			// Create parent RemediationRequest (matches production architecture)
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Deployment",
+				Name:      "hpa-deployment",
+				Namespace: ns,
 			}
+			rr := CreateTestRemediationRequest("test-rr-hp-09", ns, ValidTestFingerprints["reconciler-09"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with RemediationRequestRef")
+			sp := CreateTestSignalProcessingWithParent("test-signal-hp-09", ns, rr, ValidTestFingerprints["reconciler-09"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
@@ -580,28 +540,18 @@ labels["team"] := ["platform"] if {
 			}
 			Expect(k8sClient.Create(ctx, labelsPolicy)).To(Succeed())
 
-			By("Creating SignalProcessing CR")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-hp-10",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "jjj123def456abc123def456abc123def456abc123def456abc123def456ab10",
-						Name:        "RegoLabelsTest",
-						Severity:    "warning",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: ns,
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			// Create parent RemediationRequest (matches production architecture)
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "test-pod",
+				Namespace: ns,
 			}
+			rr := CreateTestRemediationRequest("test-rr-hp-10", ns, ValidTestFingerprints["reconciler-10"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with RemediationRequestRef")
+			sp := CreateTestSignalProcessingWithParent("test-signal-hp-10", ns, rr, ValidTestFingerprints["reconciler-10"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
@@ -638,7 +588,7 @@ labels["team"] := ["platform"] if {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ec01def456abc123def456abc123def456abc123def456abc123def456abc01",
+						Fingerprint: ValidTestFingerprints["edge-case-01"],
 						Name:        "DefaultEnv",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -674,31 +624,19 @@ labels["team"] := ["platform"] if {
 			ns := createTestNamespace("degraded")
 			defer deleteTestNamespace(ns)
 
-			By("Creating SignalProcessing CR for non-existent pod")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-ec-02",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ec02def456abc123def456abc123def456abc123def456abc123def456abc02",
-						Name:        "DegradedMode",
-						Severity:    "critical",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "non-existent-pod",
-							Namespace: ns,
-						},
-						Labels: map[string]string{
-							"environment": "production",
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			// Create parent RemediationRequest (matches production architecture)
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "non-existent-pod",
+				Namespace: ns,
 			}
+			rr := CreateTestRemediationRequest("test-rr-ec-02", ns, ValidTestFingerprints["edge-case-02"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with RemediationRequestRef for non-existent pod")
+			sp := CreateTestSignalProcessingWithParent("test-signal-ec-02", ns, rr, ValidTestFingerprints["edge-case-02"], targetResource)
+			sp.Spec.Signal.Labels = map[string]string{"environment": "production"} // Add custom labels
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
@@ -738,7 +676,7 @@ labels["team"] := ["platform"] if {
 						},
 						Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 							Signal: signalprocessingv1alpha1.SignalData{
-								Fingerprint: "conc" + string(rune('a'+idx)) + "def456abc123def456abc123def456abc123def456abc123def456abc0" + string(rune('0'+idx)),
+								Fingerprint: GenerateConcurrentFingerprint("reconciler-concurrent", idx),
 								Name:        "ConcurrentTest",
 								Severity:    "warning",
 								Type:        "prometheus",
@@ -783,7 +721,7 @@ labels["team"] := ["platform"] if {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ec04def456abc123def456abc123def456abc123def456abc123def456abc04",
+						Fingerprint: ValidTestFingerprints["edge-case-04"],
 						Name:        "MinimalSpec",
 						Severity:    "info",
 						Type:        "kubernetes-event",
@@ -825,7 +763,7 @@ labels["team"] := ["platform"] if {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ec05def456abc123def456abc123def456abc123def456abc123def456abc05",
+						Fingerprint: ValidTestFingerprints["edge-case-05"],
 						Name:        "SpecialNs",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -909,7 +847,7 @@ labels["team"] := ["platform"] if {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ec06def456abc123def456abc123def456abc123def456abc123def456abc06",
+						Fingerprint: ValidTestFingerprints["edge-case-06"],
 						Name:        "DeepOwner",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -955,7 +893,7 @@ labels["team"] := ["platform"] if {
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ec07def456abc123def456abc123def456abc123def456abc123def456abc07",
+						Fingerprint: ValidTestFingerprints["edge-case-07"],
 						Name:        "SuccessDetect",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -1010,28 +948,18 @@ labels["cost-center"] := ["engineering"] if { true }
 			}
 			Expect(k8sClient.Create(ctx, labelsPolicy)).To(Succeed())
 
-			By("Creating SignalProcessing CR")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-ec-08",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "ec08def456abc123def456abc123def456abc123def456abc123def456abc08",
-						Name:        "MultiKeyRego",
-						Severity:    "warning",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: ns,
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			// Create parent RemediationRequest (matches production architecture)
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "test-pod",
+				Namespace: ns,
 			}
+			rr := CreateTestRemediationRequest("test-rr-ec-08", ns, ValidTestFingerprints["edge-case-08"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with RemediationRequestRef")
+			sp := CreateTestSignalProcessingWithParent("test-signal-ec-08", ns, rr, ValidTestFingerprints["edge-case-08"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
@@ -1077,7 +1005,7 @@ labels["cost-center"] := ["engineering"] if { true }
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "er02def456abc123def456abc123def456abc123def456abc123def456ab002",
+						Fingerprint: ValidTestFingerprints["error-02"],
 						Name:        "ConflictTest",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -1133,7 +1061,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "er04def456abc123def456abc123def456abc123def456abc123def456ab004",
+						Fingerprint: ValidTestFingerprints["error-04"],
 						Name:        "RegoError",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -1183,7 +1111,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "er06def456abc123def456abc123def456abc123def456abc123def456ab006",
+						Fingerprint: ValidTestFingerprints["error-06"],
 						Name:        "AuditFail",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -1279,7 +1207,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 					Namespace: ns,
 				},
 				Spec: remediationv1alpha1.RemediationRequestSpec{
-					SignalFingerprint: "a001def456abc123def456abc123def456abc123def456abc123def456abc001",
+					SignalFingerprint: ValidTestFingerprints["audit-001"],
 					SignalName:        "RecoveryFirstSignal",
 					Severity:          "critical",
 					SignalType:        "prometheus",
@@ -1313,7 +1241,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "a001def456abc123def456abc123def456abc123def456abc123def456abc001",
+						Fingerprint: ValidTestFingerprints["audit-001"],
 						Name:        "RecoveryFirst",
 						Severity:    "critical",
 						Type:        "prometheus",
@@ -1363,7 +1291,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 					Namespace: ns,
 				},
 				Spec: remediationv1alpha1.RemediationRequestSpec{
-					SignalFingerprint: "a002def456abc123def456abc123def456abc123def456abc123def456abc002",
+					SignalFingerprint: ValidTestFingerprints["audit-002"],
 					SignalName:        "RecoveryRetrySignal",
 					Severity:          "critical",
 					SignalType:        "prometheus",
@@ -1399,7 +1327,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "a002def456abc123def456abc123def456abc123def456abc123def456abc002",
+						Fingerprint: ValidTestFingerprints["audit-002"],
 						Name:        "RecoveryRetry",
 						Severity:    "critical",
 						Type:        "prometheus",
@@ -1451,7 +1379,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "a003def456abc123def456abc123def456abc123def456abc123def456abc003",
+						Fingerprint: ValidTestFingerprints["audit-003"],
 						Name:        "RecoveryMissing",
 						Severity:    "warning",
 						Type:        "prometheus",
@@ -1500,7 +1428,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: "a004def456abc123def456abc123def456abc123def456abc123def456abc004",
+						Fingerprint: ValidTestFingerprints["audit-004"],
 						Name:        "NoRRRef",
 						Severity:    "info",
 						Type:        "prometheus",
