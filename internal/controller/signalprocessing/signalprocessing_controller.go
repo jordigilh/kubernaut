@@ -248,7 +248,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	}
 
 	// 4. Detect labels (BR-SP-101)
-	detectedLabels := r.detectLabels(ctx, k8sCtx, targetNs, logger)
+	detectedLabels := r.detectLabels(ctx, k8sCtx, targetNs, targetKind, targetName, logger)
 	k8sCtx.DetectedLabels = detectedLabels
 
 	// 5. Custom labels (BR-SP-102) - enhanced extraction from namespace labels + test-aware fallback
@@ -463,7 +463,7 @@ func (r *SignalProcessingReconciler) buildOwnerChain(ctx context.Context, namesp
 
 // detectLabels detects cluster characteristics.
 // BR-SP-101: Detected Labels
-func (r *SignalProcessingReconciler) detectLabels(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace string, logger logr.Logger) *signalprocessingv1alpha1.DetectedLabels {
+func (r *SignalProcessingReconciler) detectLabels(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace string, targetKind, targetName string, logger logr.Logger) *signalprocessingv1alpha1.DetectedLabels {
 	labels := &signalprocessingv1alpha1.DetectedLabels{}
 
 	// 1. IsProduction - from namespace labels
@@ -506,7 +506,7 @@ func (r *SignalProcessingReconciler) detectLabels(ctx context.Context, k8sCtx *s
 	labels.HasPDB = r.hasPDB(ctx, namespace, k8sCtx, logger)
 
 	// 5. HasHPA - check for HorizontalPodAutoscaler
-	labels.HasHPA = r.hasHPA(ctx, namespace, k8sCtx, logger)
+	labels.HasHPA = r.hasHPA(ctx, namespace, targetKind, targetName, k8sCtx, logger)
 
 	// 6. NetworkIsolated - check for NetworkPolicy
 	labels.NetworkIsolated = r.hasNetworkPolicy(ctx, namespace, logger)
@@ -563,35 +563,27 @@ func (r *SignalProcessingReconciler) hasPDB(ctx context.Context, namespace strin
 }
 
 // hasHPA checks if any HPA targets resources in the owner chain.
-func (r *SignalProcessingReconciler) hasHPA(ctx context.Context, namespace string, k8sCtx *signalprocessingv1alpha1.KubernetesContext, logger logr.Logger) bool {
+func (r *SignalProcessingReconciler) hasHPA(ctx context.Context, namespace string, targetKind, targetName string, k8sCtx *signalprocessingv1alpha1.KubernetesContext, logger logr.Logger) bool {
 	hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
 	if err := r.List(ctx, hpaList, client.InNamespace(namespace)); err != nil {
 		logger.V(1).Info("Failed to list HPAs", "error", err)
 		return false
 	}
 
-	// Check if any HPA targets a resource in the owner chain
+	// Check if any HPA targets this workload
+	// BR-SP-101: Check both direct target and owner chain
 	for _, hpa := range hpaList.Items {
 		targetRef := hpa.Spec.ScaleTargetRef
+		
+		// 1. Check if HPA directly targets the signal's target resource
+		if targetRef.Kind == targetKind && targetRef.Name == targetName {
+			return true
+		}
+		
+		// 2. Check if HPA targets a resource in the owner chain
 		for _, owner := range k8sCtx.OwnerChain {
 			if owner.Kind == targetRef.Kind && owner.Name == targetRef.Name {
 				return true
-			}
-		}
-		// Also check if Deployment in status matches
-		if k8sCtx.Deployment != nil {
-			if targetRef.Kind == "Deployment" {
-				// Try to match by checking if this HPA targets a deployment with same labels
-				deploy := &appsv1.Deployment{}
-				if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: targetRef.Name}, deploy); err == nil {
-					// Check if pod labels match deployment selector
-					if k8sCtx.Pod != nil && deploy.Spec.Selector != nil {
-						selector, err := metav1.LabelSelectorAsSelector(deploy.Spec.Selector)
-						if err == nil && selector.Matches(labels.Set(k8sCtx.Pod.Labels)) {
-							return true
-						}
-					}
-				}
 			}
 		}
 	}
