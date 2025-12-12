@@ -20,11 +20,20 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
+
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -92,43 +101,68 @@ func CreateAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 	fmt.Fprintln(writer, "  • AIAnalysis (port 8084) - CRD controller")
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// Create context for infrastructure deployment
+	ctx := context.Background()
+	namespace := "kubernaut-system"
+
 	// 1. Create Kind cluster with AIAnalysis config
 	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
 	if err := createAIAnalysisKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
-	// 2. Install AIAnalysis CRD
+	// 2. Create namespace for deployments (ignore if already exists)
+	fmt.Fprintln(writer, "📁 Creating namespace...")
+	createNsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"create", "namespace", namespace)
+	nsOutput := &strings.Builder{}
+	createNsCmd.Stdout = io.MultiWriter(writer, nsOutput)
+	createNsCmd.Stderr = io.MultiWriter(writer, nsOutput)
+	if err := createNsCmd.Run(); err != nil {
+		// Ignore if namespace already exists
+		if !strings.Contains(nsOutput.String(), "AlreadyExists") {
+			return fmt.Errorf("failed to create namespace: %w", err)
+		}
+		fmt.Fprintln(writer, "  (namespace already exists, continuing...)")
+	}
+
+	// 3. Install AIAnalysis CRD
 	fmt.Fprintln(writer, "📋 Installing AIAnalysis CRD...")
 	if err := installAIAnalysisCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install AIAnalysis CRD: %w", err)
 	}
 
-	// 3. Deploy PostgreSQL
+	// 4. Deploy PostgreSQL (using shared function from datastorage.go)
 	fmt.Fprintln(writer, "🐘 Deploying PostgreSQL...")
-	if err := deployPostgreSQL(kubeconfigPath, writer); err != nil {
+	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
 
-	// 4. Deploy Redis
+	// 5. Deploy Redis (using shared function from datastorage.go)
 	fmt.Fprintln(writer, "🔴 Deploying Redis...")
-	if err := deployRedis(kubeconfigPath, writer); err != nil {
+	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
-	// 5. Build and deploy Data Storage
+	// 5. Wait for infrastructure to be ready
+	fmt.Fprintln(writer, "⏳ Waiting for PostgreSQL and Redis to be ready...")
+	if err := waitForAIAnalysisInfraReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("infrastructure not ready: %w", err)
+	}
+
+	// 7. Build and deploy Data Storage (now safe - dependencies ready)
 	fmt.Fprintln(writer, "💾 Building and deploying Data Storage...")
 	if err := deployDataStorage(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage: %w", err)
 	}
 
-	// 6. Build and deploy HolmesGPT-API
+	// 8. Build and deploy HolmesGPT-API
 	fmt.Fprintln(writer, "🤖 Building and deploying HolmesGPT-API...")
 	if err := deployHolmesGPTAPI(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy HolmesGPT-API: %w", err)
 	}
 
-	// 7. Build and deploy AIAnalysis controller
+	// 9. Build and deploy AIAnalysis controller
 	fmt.Fprintln(writer, "🧠 Building and deploying AIAnalysis controller...")
 	if err := deployAIAnalysisController(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy AIAnalysis controller: %w", err)
@@ -378,142 +412,11 @@ func findCRDFile(name string) string {
 	return ""
 }
 
-func deployPostgreSQL(kubeconfigPath string, writer io.Writer) error {
-	// Create namespace
-	createNamespaceCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"create", "namespace", "kubernaut-system", "--dry-run=client", "-o", "yaml")
-	applyCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-
-	// Use io.Pipe to connect stdout of create to stdin of apply
-	pipeReader, pipeWriter := io.Pipe()
-	createNamespaceCmd.Stdout = pipeWriter
-	applyCmd.Stdin = pipeReader
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
-
-	if err := createNamespaceCmd.Start(); err != nil {
-		return err
-	}
-	if err := applyCmd.Start(); err != nil {
-		return err
-	}
-	// Close pipe writer after create command finishes
-	go func() {
-		createNamespaceCmd.Wait()
-		pipeWriter.Close()
-	}()
-	createNamespaceCmd.Wait()
-	applyCmd.Wait()
-
-	// Deploy PostgreSQL using manifest
-	manifestPath := findManifest("postgres.yaml", "test/e2e/aianalysis/manifests")
-	if manifestPath != "" {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-			"apply", "-f", manifestPath)
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-		return cmd.Run()
-	}
-
-	// Fallback: create inline deployment
-	fmt.Fprintln(writer, "  Using inline PostgreSQL deployment...")
-	return createInlinePostgreSQL(kubeconfigPath, writer)
-}
-
-func createInlinePostgreSQL(kubeconfigPath string, writer io.Writer) error {
-	manifest := `
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: postgres
-  namespace: kubernaut-system
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
-    spec:
-      containers:
-      - name: postgres
-        image: quay.io/jordigilh/pgvector:pg16
-        ports:
-        - containerPort: 5432
-        env:
-        - name: POSTGRES_DB
-          value: action_history
-        - name: POSTGRES_USER
-          value: slm_user
-        - name: POSTGRES_PASSWORD
-          value: test_password
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: kubernaut-system
-spec:
-  type: NodePort
-  selector:
-    app: postgres
-  ports:
-  - port: 5432
-    targetPort: 5432
-    nodePort: 30433
-`
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = stringReader(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	return cmd.Run()
-}
-
-func deployRedis(kubeconfigPath string, writer io.Writer) error {
-	manifest := `
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-  namespace: kubernaut-system
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis
-    spec:
-      containers:
-      - name: redis
-        image: quay.io/jordigilh/redis:7-alpine
-        ports:
-        - containerPort: 6379
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-  namespace: kubernaut-system
-spec:
-  type: NodePort
-  selector:
-    app: redis
-  ports:
-  - port: 6379
-    targetPort: 6379
-    nodePort: 30380
-`
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = stringReader(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	return cmd.Run()
-}
+// NOTE: deployPostgreSQL, createInlinePostgreSQL, and deployRedis functions removed
+// Now using shared functions from datastorage.go:
+// - deployPostgreSQLInNamespace (used by Gateway, SignalProcessing, Notification, DataStorage)
+// - deployRedisInNamespace (used by Gateway, SignalProcessing, Notification, DataStorage)
+// This reduces code duplication and ensures consistent infrastructure across all services
 
 func deployDataStorage(clusterName, kubeconfigPath string, writer io.Writer) error {
 	// Apply database migrations BEFORE deploying Data Storage
@@ -550,15 +453,7 @@ func deployDataStorage(clusterName, kubeconfigPath string, writer io.Writer) err
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 	if err := buildCmd.Run(); err != nil {
-		// Try docker as fallback
-		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-datastorage:latest",
-			"-f", "docker/data-storage.Dockerfile", ".")
-		buildCmd.Dir = projectRoot
-		buildCmd.Stdout = writer
-		buildCmd.Stderr = writer
-		if err := buildCmd.Run(); err != nil {
-			return fmt.Errorf("failed to build Data Storage: %w", err)
-		}
+		return fmt.Errorf("failed to build Data Storage with podman: %w", err)
 	}
 
 	// Load into Kind
@@ -640,15 +535,7 @@ func deployHolmesGPTAPI(clusterName, kubeconfigPath string, writer io.Writer) er
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 	if err := buildCmd.Run(); err != nil {
-		// Try docker as fallback
-		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-holmesgpt-api:latest",
-			"-f", "holmesgpt-api/Dockerfile", ".")
-		buildCmd.Dir = projectRoot
-		buildCmd.Stdout = writer
-		buildCmd.Stderr = writer
-		if err := buildCmd.Run(); err != nil {
-			return fmt.Errorf("failed to build HolmesGPT-API: %w", err)
-		}
+		return fmt.Errorf("failed to build HolmesGPT-API with podman: %w", err)
 	}
 
 	// Load into Kind
@@ -724,15 +611,7 @@ func deployAIAnalysisController(clusterName, kubeconfigPath string, writer io.Wr
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 	if err := buildCmd.Run(); err != nil {
-		// Try docker as fallback
-		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-aianalysis:latest",
-			"-f", "docker/aianalysis.Dockerfile", ".")
-		buildCmd.Dir = projectRoot
-		buildCmd.Stdout = writer
-		buildCmd.Stderr = writer
-		if err := buildCmd.Run(); err != nil {
-			return fmt.Errorf("failed to build AIAnalysis controller: %w", err)
-		}
+		return fmt.Errorf("failed to build AIAnalysis controller with podman: %w", err)
 	}
 
 	// Load into Kind
@@ -923,19 +802,13 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	// Try Podman first (macOS)
+	// Save image with podman
 	fmt.Fprintf(writer, "  Exporting image %s...\n", imageName)
 	saveCmd := exec.Command("podman", "save", "-o", tmpFile.Name(), "localhost/"+imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 	if err := saveCmd.Run(); err != nil {
-		// Try Docker as fallback
-		saveCmd = exec.Command("docker", "save", "-o", tmpFile.Name(), imageName)
-		saveCmd.Stdout = writer
-		saveCmd.Stderr = writer
-		if err := saveCmd.Run(); err != nil {
-			return fmt.Errorf("failed to save image %s: %w", imageName, err)
-		}
+		return fmt.Errorf("failed to save image %s with podman: %w", imageName, err)
 	}
 
 	// Load image archive into Kind
@@ -996,20 +869,7 @@ data:
 	return cmd.Run()
 }
 
-func findManifest(name, dir string) string {
-	candidates := []string{
-		filepath.Join(dir, name),
-		filepath.Join("../", dir, name),
-		filepath.Join("../../", dir, name),
-	}
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			absPath, _ := filepath.Abs(path)
-			return absPath
-		}
-	}
-	return ""
-}
+// NOTE: findManifest function removed - no longer needed with shared deployment functions
 
 // stringReader creates an io.Reader from a string
 type stringReaderImpl struct {
@@ -1028,4 +888,387 @@ func (r *stringReaderImpl) Read(p []byte) (n int, err error) {
 	n = copy(p, r.data[r.pos:])
 	r.pos += n
 	return n, nil
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HAPI Container Infrastructure (for Integration Tests)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Per NOTICE_INTEGRATION_TEST_INFRASTRUCTURE_OWNERSHIP.md:
+// - AIAnalysis integration tests connect to HAPI via HTTP
+// - HAPI is started programmatically (not via shared podman-compose)
+// - HAPI requires Data Storage HTTP API to be running (owned by DS team)
+//
+// Port Allocation (per DD-TEST-001):
+//   HAPI: Default 18081 (can be overridden for parallel tests)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const (
+	// DefaultHAPIPort is the default port for HAPI in integration tests
+	DefaultHAPIPort = 18081
+
+	// HAPIImageName is the image name for HAPI container
+	HAPIImageName = "kubernaut-holmesgpt-api:test"
+)
+
+// AIAnalysis Integration Test Ports (per DD-TEST-001)
+const (
+	// PostgreSQL port for AIAnalysis integration tests
+	AIAnalysisIntegrationPostgresPort = 15434
+
+	// Redis port for AIAnalysis integration tests
+	AIAnalysisIntegrationRedisPort = 16380
+
+	// DataStorage API port for AIAnalysis integration tests
+	AIAnalysisIntegrationDataStoragePort = 18091
+
+	// HolmesGPT API port for AIAnalysis integration tests
+	AIAnalysisIntegrationHAPIPort = 18120
+
+	// Compose project name for AIAnalysis integration tests
+	AIAnalysisIntegrationComposeProject = "aianalysis-integration"
+
+	// Compose file path relative to project root
+	AIAnalysisIntegrationComposeFile = "test/integration/aianalysis/podman-compose.yml"
+)
+
+// HAPIContainerConfig holds configuration for starting HAPI container
+type HAPIContainerConfig struct {
+	// ContainerName is the unique name for the container
+	ContainerName string
+	// Port is the host port to expose HAPI on (container always uses 8080)
+	Port int
+	// DataStorageURL is the URL of the Data Storage service
+	DataStorageURL string
+	// BuildImage if true, builds the HAPI image before starting
+	BuildImage bool
+}
+
+// StartHAPIContainer starts a HAPI container for integration testing
+//
+// This starts HolmesGPT-API with MOCK_LLM_MODE=true for deterministic testing
+// without incurring LLM costs.
+//
+// Prerequisites:
+// - Data Storage must be running and accessible at DataStorageURL
+// - Podman machine must be running
+//
+// Parameters:
+// - config: Container configuration
+// - writer: io.Writer for progress output
+//
+// Returns:
+// - int: The actual port HAPI is running on
+// - error: Any errors during container creation
+func StartHAPIContainer(config HAPIContainerConfig, writer io.Writer) (int, error) {
+	if config.ContainerName == "" {
+		config.ContainerName = "aianalysis-hapi-integration"
+	}
+	if config.Port == 0 {
+		config.Port = DefaultHAPIPort
+	}
+	if config.DataStorageURL == "" {
+		config.DataStorageURL = "http://host.containers.internal:18090"
+	}
+
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "Starting HAPI Container for Integration Tests\n")
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "  Container: %s\n", config.ContainerName)
+	fmt.Fprintf(writer, "  Port: %d\n", config.Port)
+	fmt.Fprintf(writer, "  Data Storage: %s\n", config.DataStorageURL)
+	fmt.Fprintf(writer, "  Mock LLM: ENABLED\n")
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// Check if port is available
+	if !isHAPIPortAvailable(config.Port) {
+		return 0, fmt.Errorf("port %d is already in use", config.Port)
+	}
+
+	// Check if container already exists and is running
+	checkCmd := exec.Command("podman", "ps", "--filter", fmt.Sprintf("name=%s", config.ContainerName), "--format", "{{.Names}}")
+	output, _ := checkCmd.CombinedOutput()
+	if strings.TrimSpace(string(output)) == config.ContainerName {
+		fmt.Fprintf(writer, "✅ HAPI container '%s' already running on port %d\n", config.ContainerName, config.Port)
+		return config.Port, nil
+	}
+
+	// Check if container exists but stopped
+	checkStoppedCmd := exec.Command("podman", "ps", "-a", "--filter", fmt.Sprintf("name=%s", config.ContainerName), "--format", "{{.Names}}")
+	stoppedOutput, _ := checkStoppedCmd.CombinedOutput()
+	if strings.TrimSpace(string(stoppedOutput)) == config.ContainerName {
+		// Container exists but stopped, remove it
+		fmt.Fprintf(writer, "🗑️  Removing stopped HAPI container '%s'...\n", config.ContainerName)
+		rmCmd := exec.Command("podman", "rm", config.ContainerName)
+		_ = rmCmd.Run()
+	}
+
+	// Build image if requested
+	if config.BuildImage {
+		fmt.Fprintf(writer, "🔨 Building HAPI image...\n")
+		if err := buildHAPIImage(writer); err != nil {
+			return 0, fmt.Errorf("failed to build HAPI image: %w", err)
+		}
+	}
+
+	// Start container with mock LLM mode
+	fmt.Fprintf(writer, "🚀 Starting HAPI container...\n")
+	cmd := exec.Command("podman", "run", "-d",
+		"--name", config.ContainerName,
+		"-p", fmt.Sprintf("%d:8080", config.Port),
+		"-e", "MOCK_LLM_MODE=true",
+		"-e", fmt.Sprintf("DATASTORAGE_URL=%s", config.DataStorageURL),
+		"-e", "LOG_LEVEL=INFO",
+		"--add-host", "host.containers.internal:host-gateway",
+		HAPIImageName,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("failed to start HAPI container: %w, output: %s", err, string(output))
+	}
+
+	// Wait for HAPI to be ready
+	fmt.Fprintf(writer, "⏳ Waiting for HAPI to be ready...\n")
+	if err := waitForHAPIHealth(config.Port, 60*time.Second); err != nil {
+		// Get container logs for debugging
+		logsCmd := exec.Command("podman", "logs", "--tail", "50", config.ContainerName)
+		logs, _ := logsCmd.CombinedOutput()
+		return 0, fmt.Errorf("HAPI not ready: %w\nContainer logs:\n%s", err, string(logs))
+	}
+
+	fmt.Fprintf(writer, "✅ HAPI container '%s' started on port %d\n", config.ContainerName, config.Port)
+	return config.Port, nil
+}
+
+// StopHAPIContainer stops and removes a HAPI container
+func StopHAPIContainer(containerName string, writer io.Writer) error {
+	if containerName == "" {
+		containerName = "aianalysis-hapi-integration"
+	}
+
+	fmt.Fprintf(writer, "🛑 Stopping HAPI container '%s'...\n", containerName)
+
+	// Check if container exists
+	checkCmd := exec.Command("podman", "ps", "-a", "--filter", fmt.Sprintf("name=%s", containerName), "--format", "{{.Names}}")
+	output, _ := checkCmd.CombinedOutput()
+	if strings.TrimSpace(string(output)) != containerName {
+		fmt.Fprintf(writer, "✅ HAPI container '%s' does not exist (already cleaned up)\n", containerName)
+		return nil
+	}
+
+	// Stop container
+	stopCmd := exec.Command("podman", "stop", containerName)
+	if err := stopCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "⚠️  Warning: Failed to stop HAPI container '%s': %v\n", containerName, err)
+	}
+
+	// Remove container
+	rmCmd := exec.Command("podman", "rm", containerName)
+	if err := rmCmd.Run(); err != nil {
+		return fmt.Errorf("failed to remove HAPI container: %w", err)
+	}
+
+	fmt.Fprintf(writer, "✅ HAPI container '%s' stopped and removed\n", containerName)
+	return nil
+}
+
+// buildHAPIImage builds the HAPI Docker image
+func buildHAPIImage(writer io.Writer) error {
+	projectRoot := getProjectRoot()
+
+	cmd := exec.Command("podman", "build",
+		"-t", HAPIImageName,
+		"-f", "holmesgpt-api/Dockerfile",
+		".",
+	)
+	cmd.Dir = projectRoot
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	return cmd.Run()
+}
+
+// waitForHAPIHealth waits for HAPI health endpoint to respond
+func waitForHAPIHealth(port int, timeout time.Duration) error {
+	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(healthURL)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return fmt.Errorf("timeout waiting for HAPI health at %s", healthURL)
+}
+
+// isHAPIPortAvailable checks if a TCP port is available for binding
+func isHAPIPortAvailable(port int) bool {
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	listener.Close()
+	return true
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AIAnalysis Integration Test Infrastructure (Podman Compose)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// StartAIAnalysisIntegrationInfrastructure starts the full podman-compose stack for AIAnalysis integration tests
+// This includes: PostgreSQL, Redis, DataStorage API, and HolmesGPT API
+func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	composeFile := filepath.Join(projectRoot, AIAnalysisIntegrationComposeFile)
+
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "Starting AIAnalysis Integration Test Infrastructure\n")
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", AIAnalysisIntegrationPostgresPort)
+	fmt.Fprintf(writer, "  Redis:          localhost:%d\n", AIAnalysisIntegrationRedisPort)
+	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", AIAnalysisIntegrationDataStoragePort)
+	fmt.Fprintf(writer, "  HolmesGPT API:  http://localhost:%d\n", AIAnalysisIntegrationHAPIPort)
+	fmt.Fprintf(writer, "  Compose File:   %s\n", AIAnalysisIntegrationComposeFile)
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// Check if podman-compose is available
+	if err := exec.Command("podman-compose", "--version").Run(); err != nil {
+		return fmt.Errorf("podman-compose not found: %w (install via: pip install podman-compose)", err)
+	}
+
+	// Start services
+	cmd := exec.Command("podman-compose",
+		"-f", composeFile,
+		"-p", AIAnalysisIntegrationComposeProject,
+		"up", "-d", "--build",
+	)
+	cmd.Dir = projectRoot
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	fmt.Fprintf(writer, "⏳ Starting containers...\n")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start podman-compose stack: %w", err)
+	}
+
+	// Wait for services to be healthy
+	fmt.Fprintf(writer, "⏳ Waiting for services to be healthy...\n")
+
+	// Wait for DataStorage
+	if err := waitForHTTPHealth(
+		fmt.Sprintf("http://localhost:%d/health", AIAnalysisIntegrationDataStoragePort),
+		60*time.Second,
+	); err != nil {
+		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
+	}
+	fmt.Fprintf(writer, "✅ DataStorage is healthy\n")
+
+	// Wait for HolmesGPT API
+	if err := waitForHTTPHealth(
+		fmt.Sprintf("http://localhost:%d/health", AIAnalysisIntegrationHAPIPort),
+		60*time.Second,
+	); err != nil {
+		return fmt.Errorf("HolmesGPT API failed to become healthy: %w", err)
+	}
+	fmt.Fprintf(writer, "✅ HolmesGPT API is healthy\n")
+
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "✅ AIAnalysis Integration Infrastructure Ready\n")
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	return nil
+}
+
+// StopAIAnalysisIntegrationInfrastructure stops and cleans up the AIAnalysis integration test infrastructure
+func StopAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	composeFile := filepath.Join(projectRoot, AIAnalysisIntegrationComposeFile)
+
+	fmt.Fprintf(writer, "🛑 Stopping AIAnalysis Integration Infrastructure...\n")
+
+	// Stop and remove containers
+	cmd := exec.Command("podman-compose",
+		"-f", composeFile,
+		"-p", AIAnalysisIntegrationComposeProject,
+		"down", "-v",
+	)
+	cmd.Dir = projectRoot
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(writer, "⚠️  Warning: Error stopping infrastructure: %v\n", err)
+		return err
+	}
+
+	fmt.Fprintf(writer, "✅ AIAnalysis Integration Infrastructure stopped and cleaned up\n")
+	return nil
+}
+
+// waitForAIAnalysisInfraReady waits for PostgreSQL and Redis to be ready
+// This ensures Data Storage can successfully connect when it starts
+// Pattern adapted from waitForDataStorageServicesReady in datastorage.go
+func waitForAIAnalysisInfraReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Build Kubernetes clientset
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to build kubeconfig: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	// Wait for PostgreSQL pod to be ready
+	fmt.Fprintf(writer, "   ⏳ Waiting for PostgreSQL pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=postgresql",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "PostgreSQL pod should become ready")
+	fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n")
+
+	// Wait for Redis pod to be ready
+	fmt.Fprintf(writer, "   ⏳ Waiting for Redis pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=redis",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "Redis pod should become ready")
+	fmt.Fprintf(writer, "   ✅ Redis ready\n")
+
+	return nil
 }
