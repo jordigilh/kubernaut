@@ -252,46 +252,47 @@ import rego.v1
 # BR-SP-071: Severity fallback matrix
 # Timestamps set by Go code (metav1.Time), not Rego
 # Using else chain to prevent eval_conflict_error
+# NOTE: input.environment is a STRING (e.g., "production"), not a struct
 
 # Priority matrix: environment × severity
 result := {"priority": "P0", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment.environment == "production"
+    input.environment == "production"
     input.signal.severity == "critical"
 }
 
 else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment.environment == "production"
+    input.environment == "production"
     input.signal.severity == "warning"
 }
 
 else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment.environment == "staging"
+    input.environment == "staging"
     input.signal.severity == "critical"
 }
 
 else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment.environment == "staging"
+    input.environment == "staging"
     input.signal.severity == "warning"
 }
 
 else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment.environment == "development"
+    input.environment == "development"
     input.signal.severity == "critical"
 }
 
 else := {"priority": "P3", "confidence": 1.0, "source": "policy-matrix"} if {
-    input.environment.environment == "development"
+    input.environment == "development"
     input.signal.severity == "warning"
 }
 
 # BR-SP-071: Severity-only fallback
 else := {"priority": "P1", "confidence": 0.7, "source": "severity-fallback"} if {
-    input.environment.environment == "unknown"
+    input.environment == "unknown"
     input.signal.severity == "critical"
 }
 
 else := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if {
-    input.environment.environment == "unknown"
+    input.environment == "unknown"
     input.signal.severity == "warning"
 }
 

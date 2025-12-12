@@ -85,28 +85,18 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			podLabels := map[string]string{"app": "api-server"}
 			_ = createTestPod(ns, "api-server-xyz", podLabels, nil)
 
-			By("Creating SignalProcessing CR")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-hp-01",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: ValidTestFingerprints["reconciler-01"],
-						Name:        "HighCPU",
-						Severity:    "critical",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Pod",
-							Name:      "api-server-xyz",
-							Namespace: ns,
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "api-server-xyz",
+				Namespace: ns,
 			}
+			rrName := "test-signal-hp-01-rr"
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-01"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with parent RR")
+			sp := CreateTestSignalProcessingWithParent("test-signal-hp-01", ns, rr, ValidTestFingerprints["reconciler-01"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
@@ -141,28 +131,18 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			deployLabels := map[string]string{"app": "web-frontend"}
 			_ = createTestDeployment(ns, "web-frontend", deployLabels)
 
-			By("Creating SignalProcessing CR")
-			sp := &signalprocessingv1alpha1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-signal-hp-02",
-					Namespace: ns,
-				},
-				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint: ValidTestFingerprints["reconciler-02"],
-						Name:        "HighLatency",
-						Severity:    "warning",
-						Type:        "prometheus",
-						TargetType:  "kubernetes",
-						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-							Kind:      "Deployment",
-							Name:      "web-frontend",
-							Namespace: ns,
-						},
-						ReceivedTime: metav1.Now(),
-					},
-				},
+			By("Creating parent RemediationRequest")
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Deployment",
+				Name:      "web-frontend",
+				Namespace: ns,
 			}
+			rrName := "test-signal-hp-02-rr"
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-02"], targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Creating SignalProcessing CR with parent RR")
+			sp := CreateTestSignalProcessingWithParent("test-signal-hp-02", ns, rr, ValidTestFingerprints["reconciler-02"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 			defer func() { _ = deleteAndWait(sp, timeout) }()
 
