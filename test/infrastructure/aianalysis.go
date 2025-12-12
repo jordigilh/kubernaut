@@ -462,8 +462,49 @@ func deployDataStorage(clusterName, kubeconfigPath string, writer io.Writer) err
 		return fmt.Errorf("failed to load image: %w", err)
 	}
 
-	// Deploy manifest
+	// Deploy manifest with ConfigMap (ADR-030 authoritative pattern)
 	manifest := `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datastorage-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      host: 0.0.0.0
+      port: 8080
+      timeout: 30s
+      graceful_shutdown_timeout: 30s
+    postgres:
+      host: postgres
+      port: 5432
+      database: action_history
+      max_connections: 25
+      secrets_file: /etc/datastorage/secrets/db-secrets.yaml
+    redis:
+      host: redis
+      port: 6379
+      secrets_file: /etc/datastorage/secrets/redis-secrets.yaml
+    cache:
+      default_ttl: 300s
+      embedding_ttl: 3600s
+    logging:
+      level: debug
+      format: json
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: datastorage-secret
+  namespace: kubernaut-system
+stringData:
+  db-secrets.yaml: |
+    username: slm_user
+    password: test_password
+  redis-secrets.yaml: |
+    password: ""
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -481,25 +522,27 @@ spec:
     spec:
       containers:
       - name: datastorage
-        image: kubernaut-datastorage:latest
+        image: localhost/kubernaut-datastorage:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 8080
         env:
-        - name: POSTGRES_HOST
-          value: postgres
-        - name: POSTGRES_PORT
-          value: "5432"
-        - name: POSTGRES_USER
-          value: slm_user
-        - name: POSTGRES_PASSWORD
-          value: test_password
-        - name: POSTGRES_DB
-          value: action_history
-        - name: REDIS_HOST
-          value: redis
-        - name: REDIS_PORT
-          value: "6379"
+        - name: CONFIG_PATH
+          value: /etc/datastorage/config.yaml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/datastorage
+          readOnly: true
+        - name: secrets
+          mountPath: /etc/datastorage/secrets
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: datastorage-config
+      - name: secrets
+        secret:
+          secretName: datastorage-secret
 ---
 apiVersion: v1
 kind: Service
@@ -563,7 +606,7 @@ spec:
     spec:
       containers:
       - name: holmesgpt-api
-        image: kubernaut-holmesgpt-api:latest
+        image: localhost/kubernaut-holmesgpt-api:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 8080
@@ -674,7 +717,7 @@ spec:
       serviceAccountName: aianalysis-controller
       containers:
       - name: controller
-        image: kubernaut-aianalysis:latest
+        image: localhost/kubernaut-aianalysis:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 8081

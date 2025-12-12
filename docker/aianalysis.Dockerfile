@@ -32,8 +32,12 @@ COPY --chown=1001:0 . .
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
+ARG TARGETARCH
+ARG GOOS=linux
+# Use TARGETARCH if set (multi-arch build), otherwise auto-detect from runtime
+ARG GOARCH=${TARGETARCH:-amd64}
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" \
     -a -installsuffix cgo \
     -o aianalysis-controller ./cmd/aianalysis
