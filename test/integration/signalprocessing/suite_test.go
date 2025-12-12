@@ -27,7 +27,7 @@ limitations under the License.
 //	ginkgo -p --procs=4 ./test/integration/signalprocessing/...
 //
 // MANDATORY: All tests use unique namespaces for parallel execution isolation.
-package signalprocessing_test
+package signalprocessing
 
 import (
 	"context"
@@ -61,6 +61,9 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
+	"github.com/jordigilh/kubernaut/pkg/audit"
+	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Test constants for timeout and polling intervals
@@ -77,6 +80,7 @@ var (
 	cfg        *rest.Config
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
+	auditStore audit.AuditStore // Audit store for BR-SP-090
 )
 
 func TestSignalProcessingIntegration(t *testing.T) {
@@ -84,13 +88,35 @@ func TestSignalProcessingIntegration(t *testing.T) {
 	RunSpecs(t, "SignalProcessing Controller Integration Suite (ENVTEST)")
 }
 
-var _ = BeforeSuite(func() {
+// SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
+// This follows AIAnalysis/Gateway pattern for automated infrastructure startup
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// PROCESS 1 ONLY: Start shared infrastructure (runs ONCE)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("SignalProcessing Integration Test Suite - Automated Setup")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("Creating test infrastructure...")
+	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
+	GinkgoWriter.Println("  • PostgreSQL (port 15436)")
+	GinkgoWriter.Println("  • Redis (port 16382)")
+	GinkgoWriter.Println("  • Data Storage API (port 18094)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
+	By("Starting SignalProcessing integration infrastructure (podman-compose)")
+	// This starts: PostgreSQL, Redis, DataStorage (with migrations)
+	// Per DD-TEST-001: Ports 15435, 16381, 18094
+	err := infrastructure.StartSignalProcessingIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	GinkgoWriter.Println("✅ All services started and healthy")
+
 	By("Registering SignalProcessing CRD scheme")
-	err := signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
+	err = signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Registering Remediation CRD scheme for BR-SP-003 tests")
@@ -151,6 +177,21 @@ var _ = BeforeSuite(func() {
 	createEnvironmentConfigMap()
 	GinkgoWriter.Println("✅ Environment ConfigMap created in kubernaut-system namespace")
 
+	// Create audit store (BufferedStore pattern per ADR-038)
+	// Uses DataStorage API on port 18094 (per DD-TEST-001)
+	GinkgoWriter.Println("📋 Setting up audit store...")
+	dsClient := audit.NewHTTPDataStorageClient(
+		fmt.Sprintf("http://localhost:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
+		nil,
+	)
+	auditConfig := audit.DefaultConfig()
+	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
+	logger := zap.New(zap.WriteTo(GinkgoWriter))
+
+	auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "signalprocessing", logger)
+	Expect(err).ToNot(HaveOccurred(), "Audit store creation must succeed for BR-SP-090")
+	GinkgoWriter.Println("✅ Audit store configured")
+
 	By("Setting up the controller manager")
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
@@ -160,12 +201,15 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	By("Setting up the SignalProcessing controller")
-	// Create controller with all dependencies
-	// NOTE: Full dependency injection will be added as controller is implemented
+	By("Setting up the SignalProcessing controller with audit client")
+	// Create audit client for BR-SP-090 compliance
+	auditClient := spaudit.NewAuditClient(auditStore, logger)
+
+	// Create controller with MANDATORY audit client (ADR-032)
 	err = (&signalprocessing.SignalProcessingReconciler{
-		Client: k8sManager.GetClient(),
-		Scheme: k8sManager.GetScheme(),
+		Client:      k8sManager.GetClient(),
+		Scheme:      k8sManager.GetScheme(),
+		AuditClient: auditClient, // BR-SP-090: Audit is MANDATORY
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -186,7 +230,16 @@ var _ = BeforeSuite(func() {
 	GinkgoWriter.Println("  • SignalProcessing CRD installed")
 	GinkgoWriter.Println("  • SignalProcessing controller running")
 	GinkgoWriter.Println("  • Environment ConfigMap ready")
+	GinkgoWriter.Println("  • Audit infrastructure: PostgreSQL:15436, Redis:16382, DataStorage:18094")
 	GinkgoWriter.Println("")
+
+	return []byte{} // No data to share across processes
+}, func(data []byte) {
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// ALL PROCESSES: Setup per-process references (runs on EVERY parallel process)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// No per-process setup needed for SP integration tests
+	// All processes share the same k8sClient, k8sManager, auditStore created in Process 1
 })
 
 var _ = AfterSuite(func() {
@@ -194,7 +247,19 @@ var _ = AfterSuite(func() {
 
 	cancel()
 
-	err := testEnv.Stop()
+	// Clean up audit infrastructure (BR-SP-090)
+	if auditStore != nil {
+		GinkgoWriter.Println("🧹 Closing audit store...")
+		err := auditStore.Close()
+		Expect(err).ToNot(HaveOccurred())
+	}
+
+	// Stop podman-compose stack (PostgreSQL, Redis, DataStorage)
+	GinkgoWriter.Println("🧹 Stopping SignalProcessing integration infrastructure...")
+	err := infrastructure.StopSignalProcessingIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 
 	GinkgoWriter.Println("✅ Cleanup complete")

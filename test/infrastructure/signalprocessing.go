@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -172,24 +173,17 @@ func loadDataStorageImageForSP(writer io.Writer) error {
 	// Get cluster name - should match what's used in CreateSignalProcessingCluster
 	clusterName := "signalprocessing-e2e"
 
-	// Check if using podman or docker
-	containerRuntime := "docker"
-	if _, err := exec.LookPath("podman"); err == nil {
-		containerRuntime = "podman"
+	// Save image to tar (following Gateway pattern - more reliable with Podman)
+	saveCmd := exec.Command("podman", "save", "localhost/kubernaut-datastorage:e2e-test", "-o", "/tmp/datastorage-e2e-sp.tar")
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save image: %w", err)
 	}
 
-	// Tag image for Kind compatibility
-	tagCmd := exec.Command(containerRuntime, "tag",
-		"localhost/kubernaut-datastorage:e2e-test",
-		"localhost/kubernaut-datastorage:e2e-test")
-	if output, err := tagCmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(writer, "⚠️  Image tagging failed (may already be correct): %s\n", output)
-	}
-
-	// Load into Kind cluster
-	cmd := exec.Command("kind", "load", "docker-image",
-		"localhost/kubernaut-datastorage:e2e-test",
-		"--name", clusterName)
+	// Load image archive into Kind cluster
+	cmd := exec.Command("kind", "load", "image-archive", "/tmp/datastorage-e2e-sp.tar", "--name", clusterName)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 
@@ -740,5 +734,126 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 		time.Sleep(interval)
 	}
 	return fmt.Errorf("controller not ready after %v", timeout)
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SignalProcessing Integration Test Infrastructure (Podman Compose)
+// Per DD-TEST-001: Port Allocation Strategy
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const (
+	// SignalProcessing integration test ports (per DD-TEST-001)
+	// NOTE: RO uses 15435/16381, so SP gets the next available
+	SignalProcessingIntegrationPostgresPort    = 15436 // PostgreSQL for audit storage
+	SignalProcessingIntegrationRedisPort       = 16382 // Redis for DataStorage DLQ
+	SignalProcessingIntegrationDataStoragePort = 18094 // DataStorage API for audit events
+
+	// Compose configuration
+	SignalProcessingIntegrationComposeFile    = "test/integration/signalprocessing/podman-compose.signalprocessing.test.yml"
+	SignalProcessingIntegrationComposeProject = "signalprocessing_integration_test"
+)
+
+// StartSignalProcessingIntegrationInfrastructure starts the full podman-compose stack for SignalProcessing integration tests
+// This includes: PostgreSQL, Redis, and DataStorage API (for BR-SP-090 audit trail)
+//
+// Port Allocation (per DD-TEST-001):
+//   - PostgreSQL:     15435
+//   - Redis:          16381
+//   - DataStorage:    18094
+//
+// This function is designed to be called from SynchronizedBeforeSuite (Process 1 only)
+func StartSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	composeFile := filepath.Join(projectRoot, SignalProcessingIntegrationComposeFile)
+
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "Starting SignalProcessing Integration Test Infrastructure\n")
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d (RO:15435, SP:15436)\n", SignalProcessingIntegrationPostgresPort)
+	fmt.Fprintf(writer, "  Redis:          localhost:%d (RO:16381, SP:16382)\n", SignalProcessingIntegrationRedisPort)
+	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", SignalProcessingIntegrationDataStoragePort)
+	fmt.Fprintf(writer, "  Compose File:   %s\n", SignalProcessingIntegrationComposeFile)
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// Check if podman-compose is available
+	if err := exec.Command("podman-compose", "--version").Run(); err != nil {
+		return fmt.Errorf("podman-compose not found: %w (install via: pip install podman-compose)", err)
+	}
+
+	// Start services
+	cmd := exec.Command("podman-compose",
+		"-f", composeFile,
+		"-p", SignalProcessingIntegrationComposeProject,
+		"up", "-d", "--build",
+	)
+	cmd.Dir = projectRoot
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	fmt.Fprintf(writer, "⏳ Starting containers...\n")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start podman-compose stack: %w", err)
+	}
+
+	// Wait for DataStorage to be healthy (includes PostgreSQL + Redis dependencies)
+	fmt.Fprintf(writer, "⏳ Waiting for DataStorage to be healthy (includes PostgreSQL + Redis)...\n")
+	if err := waitForHTTPHealth(
+		fmt.Sprintf("http://localhost:%d/health", SignalProcessingIntegrationDataStoragePort),
+		120*time.Second, // Longer timeout for migrations
+	); err != nil {
+		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
+	}
+	fmt.Fprintf(writer, "✅ DataStorage is healthy (PostgreSQL + Redis ready)\n")
+
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "✅ SignalProcessing Integration Infrastructure Ready\n")
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	return nil
+}
+
+// StopSignalProcessingIntegrationInfrastructure stops and cleans up the SignalProcessing integration test infrastructure
+func StopSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	composeFile := filepath.Join(projectRoot, SignalProcessingIntegrationComposeFile)
+
+	fmt.Fprintf(writer, "🛑 Stopping SignalProcessing Integration Infrastructure...\n")
+
+	// Stop and remove containers
+	cmd := exec.Command("podman-compose",
+		"-f", composeFile,
+		"-p", SignalProcessingIntegrationComposeProject,
+		"down", "-v",
+	)
+	cmd.Dir = projectRoot
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(writer, "⚠️  Warning: Error stopping infrastructure: %v\n", err)
+		return err
+	}
+
+	fmt.Fprintf(writer, "✅ SignalProcessing Integration Infrastructure stopped and cleaned up\n")
+	return nil
+}
+
+// waitForHTTPHealth waits for an HTTP health endpoint to respond with 200 OK
+func waitForHTTPHealth(healthURL string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(healthURL)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	return fmt.Errorf("timeout waiting for health endpoint: %s", healthURL)
 }
 
