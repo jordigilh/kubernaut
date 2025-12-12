@@ -202,9 +202,10 @@ logging:
 
 	// Start Data Storage container with PostgreSQL connection and config/secrets mounts
 	// Uses the same PostgreSQL container that integration tests set up
+	// Use --network=host so DS can connect to PostgreSQL on localhost
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", containerName,
-		"-p", fmt.Sprintf("%d:8080", dsPort),
+		"--network=host", // Required for DS to connect to PostgreSQL container
 		"-e", "CONFIG_PATH=/app/config.yaml",
 		"-v", fmt.Sprintf("%s:/app/config.yaml:ro", configPath),                      // Mount config file
 		"-v", fmt.Sprintf("%s:/app/secrets/db-secrets.yaml:ro", dbSecretsPath),       // Mount DB secrets
@@ -252,7 +253,8 @@ logging:
 	GinkgoWriter.Printf("  ✅ Data Storage container started: %s\n", containerName)
 
 	// Wait for Data Storage to be ready (with container health check)
-	dataStorageURL := fmt.Sprintf("http://localhost:%d", dsPort)
+	// Note: Using --network=host, so DS binds to port 8080 on host (from server.port in config)
+	dataStorageURL := "http://localhost:8080"
 	healthURL := fmt.Sprintf("%s/healthz", dataStorageURL)
 
 	healthy := false
