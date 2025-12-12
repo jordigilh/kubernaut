@@ -347,6 +347,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Kind:       "Deployment",
 				Name:       deployment.Name,
 				UID:        deployment.UID,
+				Controller: func() *bool { t := true; return &t }(), // Required for owner chain traversal
 			}}
 			rs := &appsv1.ReplicaSet{
 				ObjectMeta: metav1.ObjectMeta{
@@ -374,6 +375,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Kind:       "ReplicaSet",
 				Name:       rs.Name,
 				UID:        rs.UID,
+				Controller: func() *bool { t := true; return &t }(), // Required for owner chain traversal
 			}}
 			_ = createTestPod(ns, "ownerchain-pod", deployLabels, podOwnerRef)
 
