@@ -148,7 +148,7 @@ func SetupDataStorageTestServer(ctx context.Context, pgClient *PostgresTestClien
 	}
 	GinkgoWriter.Printf("  📁 Created config directory: %s\n", configDir)
 
-	// Create config.yaml with minimal settings (no Redis for Gateway tests)
+	// Create config.yaml with secrets file reference (ADR-030 Section 6)
 	configYAML := fmt.Sprintf(`
 service:
   name: data-storage
@@ -160,12 +160,12 @@ database:
   port: %d
   name: %s
   user: %s
-  password: %s
   ssl_mode: disable
   max_open_conns: 25
+  secretsFile: "/app/secrets/db-secrets.yaml"
 logging:
   level: debug
-`, pgClient.Host, pgClient.Port, pgClient.Database, pgClient.User, pgClient.Password)
+`, pgClient.Host, pgClient.Port, pgClient.Database, pgClient.User)
 
 	configPath := filepath.Join(configDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
@@ -173,13 +173,22 @@ logging:
 	}
 	GinkgoWriter.Printf("  ✅ Created config.yaml\n")
 
-	// Start Data Storage container with PostgreSQL connection and config mount
+	// Create db-secrets.yaml (ADR-030 Section 6)
+	dbSecretsYAML := fmt.Sprintf("username: %s\npassword: %s\n", pgClient.User, pgClient.Password)
+	dbSecretsPath := filepath.Join(configDir, "db-secrets.yaml")
+	if err := os.WriteFile(dbSecretsPath, []byte(dbSecretsYAML), 0644); err != nil {
+		Fail(fmt.Sprintf("Failed to write db-secrets.yaml: %v", err))
+	}
+	GinkgoWriter.Printf("  ✅ Created db-secrets.yaml\n")
+
+	// Start Data Storage container with PostgreSQL connection and config/secrets mounts
 	// Uses the same PostgreSQL container that integration tests set up
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", containerName,
 		"-p", fmt.Sprintf("%d:8080", dsPort),
 		"-e", "CONFIG_PATH=/app/config.yaml",
-		"-v", fmt.Sprintf("%s:/app/config.yaml:ro", configPath), // Mount config file
+		"-v", fmt.Sprintf("%s:/app/config.yaml:ro", configPath),         // Mount config file
+		"-v", fmt.Sprintf("%s:/app/secrets/db-secrets.yaml:ro", dbSecretsPath), // Mount secrets file
 		"--memory", "256m",
 		"localhost/kubernaut-datastorage:e2e-test",
 	)
