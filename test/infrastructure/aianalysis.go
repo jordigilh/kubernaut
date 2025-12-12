@@ -471,24 +471,33 @@ metadata:
   namespace: kubernaut-system
 data:
   config.yaml: |
+    shutdownTimeout: 30s
     server:
-      host: 0.0.0.0
       port: 8080
-      timeout: 30s
-      graceful_shutdown_timeout: 30s
-    postgres:
-      host: postgres
+      host: "0.0.0.0"
+      read_timeout: 30s
+      write_timeout: 30s
+    database:
+      host: postgresql
       port: 5432
-      database: action_history
-      max_connections: 25
-      secrets_file: /etc/datastorage/secrets/db-secrets.yaml
+      name: action_history
+      user: slm_user
+      ssl_mode: disable
+      max_open_conns: 25
+      max_idle_conns: 5
+      conn_max_lifetime: 5m
+      conn_max_idle_time: 10m
+      secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+      usernameKey: "username"
+      passwordKey: "password"
     redis:
-      host: redis
-      port: 6379
-      secrets_file: /etc/datastorage/secrets/redis-secrets.yaml
-    cache:
-      default_ttl: 300s
-      embedding_ttl: 3600s
+      addr: redis:6379
+      db: 0
+      dlq_stream_name: dlq-stream
+      dlq_max_len: 1000
+      dlq_consumer_group: dlq-group
+      secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+      passwordKey: "password"
     logging:
       level: debug
       format: json
