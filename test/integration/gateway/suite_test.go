@@ -158,7 +158,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Validate Data Storage health before proceeding (already validated by infrastructure startup)
-	healthURL := dataStorageURL + "/healthz"
+	healthURL := dataStorageURL + "/health"
 	healthResp, err := http.Get(healthURL)
 	if err != nil || healthResp.StatusCode != http.StatusOK {
 		Fail(fmt.Sprintf("Data Storage health check failed at %s (status: %d, err: %v)", healthURL, healthResp.StatusCode, err))

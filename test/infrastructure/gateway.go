@@ -77,7 +77,7 @@ func StartGatewayIntegrationInfrastructure(writer io.Writer) error {
 
 	// Wait for DataStorage (this validates postgres + redis + migrations + datastorage)
 	if err := waitForGatewayHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/healthz", GatewayIntegrationDataStoragePort),
+		fmt.Sprintf("http://localhost:%d/health", GatewayIntegrationDataStoragePort),
 		90*time.Second, // Longer timeout for migrations + build
 		writer,
 	); err != nil {
