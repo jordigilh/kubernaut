@@ -1222,28 +1222,20 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 		"1000_create_audit_events_partitions.sql",
 	}
 
+	// Find workspace root once (project root with go.mod)
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
 	for _, migration := range migrations {
-		// Try multiple paths to find migrations (supports running from different directories)
-		migrationPaths := []string{
-			filepath.Join("migrations", migration),                   // From workspace root
-			filepath.Join("..", "..", "..", "migrations", migration), // From test/integration/contextapi/
-			filepath.Join("..", "..", "migrations", migration),       // From test/integration/
-		}
+		// Use absolute path from project root (no relative path issues)
+		migrationPath := filepath.Join(workspaceRoot, "migrations", migration)
 
-		var content []byte
-		var err error
-		found := false
-		for _, migrationPath := range migrationPaths {
-			content, err = os.ReadFile(migrationPath)
-			if err == nil {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			fmt.Fprintf(writer, "  ❌ Migration file not found: %v\n", err)
-			return fmt.Errorf("migration file %s not found: %w", migration, err)
+		content, err := os.ReadFile(migrationPath)
+		if err != nil {
+			fmt.Fprintf(writer, "  ❌ Migration file not found at %s: %v\n", migrationPath, err)
+			return fmt.Errorf("migration file %s not found at %s: %w", migration, migrationPath, err)
 		}
 
 		// Remove CONCURRENTLY keyword for test environment
