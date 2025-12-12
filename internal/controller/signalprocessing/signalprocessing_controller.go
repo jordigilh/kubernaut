@@ -57,7 +57,9 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 )
 
 // SignalProcessingReconciler reconciles a SignalProcessing object.
@@ -77,6 +79,11 @@ type SignalProcessingReconciler struct {
 	// Day 7 Owner Chain Builder (per IMPLEMENTATION_PLAN_V1.31.md)
 	// This is OPTIONAL - controller falls back to inline implementation if nil
 	OwnerChainBuilder *ownerchain.Builder // BR-SP-100: Owner chain traversal
+
+	// Day 8-9 Enrichment Components (per IMPLEMENTATION_PLAN_V1.31.md)
+	// These are OPTIONAL - controller falls back to inline implementation if nil
+	RegoEngine    *rego.Engine            // BR-SP-102: CustomLabels Rego extraction
+	LabelDetector *detection.LabelDetector // BR-SP-101: DetectedLabels auto-detection
 }
 
 // +kubebuilder:rbac:groups=signalprocessing.kubernaut.ai,resources=signalprocessings,verbs=get;list;watch;create;update;patch;delete

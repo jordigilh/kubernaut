@@ -52,7 +52,11 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 )
 
 var (
@@ -161,11 +165,86 @@ func main() {
 	auditClient := audit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
 	setupLog.Info("audit client configured successfully")
 
-	// Setup reconciler with MANDATORY audit client
+	// ========================================
+	// REGO-BASED CLASSIFIERS SETUP
+	// ========================================
+	// BR-SP-051-053: Environment classification
+	// BR-SP-070-072: Priority assignment
+	// BR-SP-002: Business unit classification
+	
+	ctx := ctrl.SetupSignalHandler()
+	
+	envClassifier, err := classifier.NewEnvironmentClassifier(
+		ctx,
+		"/etc/signalprocessing/policies/environment.rego",
+		mgr.GetClient(),
+		ctrl.Log.WithName("classifier.environment"),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create environment classifier")
+		os.Exit(1)
+	}
+	setupLog.Info("environment classifier configured")
+
+	priorityEngine, err := classifier.NewPriorityEngine(
+		ctx,
+		"/etc/signalprocessing/policies/priority.rego",
+		ctrl.Log.WithName("classifier.priority"),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create priority engine")
+		os.Exit(1)
+	}
+	setupLog.Info("priority engine configured")
+
+	businessClassifier, err := classifier.NewBusinessClassifier(
+		ctx,
+		"/etc/signalprocessing/policies/business.rego",
+		ctrl.Log.WithName("classifier.business"),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create business classifier")
+		os.Exit(1)
+	}
+	setupLog.Info("business classifier configured")
+
+	// ========================================
+	// ENRICHMENT COMPONENTS SETUP
+	// ========================================
+	// BR-SP-001: Kubernetes context enrichment
+	// BR-SP-100: Owner chain traversal
+	// BR-SP-101: Detected labels auto-detection
+	// BR-SP-102: CustomLabels Rego extraction
+
+	regoEngine := rego.NewEngine(
+		ctrl.Log.WithName("rego.engine"),
+		"/etc/signalprocessing/policies/customlabels.rego",
+	)
+	setupLog.Info("rego engine configured")
+
+	ownerChainBuilder := ownerchain.NewBuilder(
+		mgr.GetClient(),
+		ctrl.Log.WithName("ownerchain"),
+	)
+	setupLog.Info("owner chain builder configured")
+
+	labelDetector := detection.NewLabelDetector(
+		mgr.GetClient(),
+		ctrl.Log.WithName("detection"),
+	)
+	setupLog.Info("label detector configured")
+
+	// Setup reconciler with ALL required components
 	if err = (&signalprocessing.SignalProcessingReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		AuditClient: auditClient, // MANDATORY per ADR-032
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		AuditClient:        auditClient,
+		EnvClassifier:      envClassifier,
+		PriorityEngine:     priorityEngine,
+		BusinessClassifier: businessClassifier,
+		RegoEngine:         regoEngine,
+		OwnerChainBuilder:  ownerChainBuilder,
+		LabelDetector:      labelDetector,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")
 		os.Exit(1)
@@ -182,7 +261,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
