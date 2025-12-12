@@ -163,6 +163,8 @@ database:
   ssl_mode: disable
   max_open_conns: 25
   secretsFile: "/app/secrets/db-secrets.yaml"
+  usernameKey: "username"
+  passwordKey: "password"
 logging:
   level: debug
 `, pgClient.Host, pgClient.Port, pgClient.Database, pgClient.User)
