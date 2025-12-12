@@ -223,25 +223,21 @@ result := {"environment": lower(env), "confidence": 0.95, "source": "namespace-l
 }
 
 # BR-SP-052: ConfigMap fallback (confidence 0.80)
-result := {"environment": "production", "confidence": 0.80, "source": "configmap"} if {
-    not input.namespace.labels["kubernaut.ai/environment"]
+# Use else to prevent conflicts (only ONE result rule can match)
+else := {"environment": "production", "confidence": 0.80, "source": "configmap"} if {
     startswith(input.namespace.name, "prod")
 }
 
-result := {"environment": "staging", "confidence": 0.80, "source": "configmap"} if {
-    not input.namespace.labels["kubernaut.ai/environment"]
+else := {"environment": "staging", "confidence": 0.80, "source": "configmap"} if {
     startswith(input.namespace.name, "staging")
 }
 
-result := {"environment": "development", "confidence": 0.80, "source": "configmap"} if {
-    not input.namespace.labels["kubernaut.ai/environment"]
+else := {"environment": "development", "confidence": 0.80, "source": "configmap"} if {
     startswith(input.namespace.name, "dev")
 }
 
 # BR-SP-053: Default fallback (confidence 0.0)
-result := {"environment": "unknown", "confidence": 0.0, "source": "default"} if {
-    not input.namespace.labels["kubernaut.ai/environment"]
-}
+else := {"environment": "unknown", "confidence": 0.0, "source": "default"}
 `)
 	Expect(err).ToNot(HaveOccurred())
 	envPolicyFile.Close()
@@ -255,6 +251,7 @@ import rego.v1
 # BR-SP-070: Rego-based priority assignment
 # BR-SP-071: Severity fallback matrix
 # Timestamps set by Go code (metav1.Time), not Rego
+# Using else chain to prevent eval_conflict_error
 
 # Priority matrix: environment × severity
 result := {"priority": "P0", "confidence": 1.0, "source": "policy-matrix"} if {
@@ -262,44 +259,44 @@ result := {"priority": "P0", "confidence": 1.0, "source": "policy-matrix"} if {
     input.signal.severity == "critical"
 }
 
-result := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
+else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment.environment == "production"
     input.signal.severity == "warning"
 }
 
-result := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
+else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment.environment == "staging"
     input.signal.severity == "critical"
 }
 
-result := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
+else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment.environment == "staging"
     input.signal.severity == "warning"
 }
 
-result := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
+else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment.environment == "development"
     input.signal.severity == "critical"
 }
 
-result := {"priority": "P3", "confidence": 1.0, "source": "policy-matrix"} if {
+else := {"priority": "P3", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment.environment == "development"
     input.signal.severity == "warning"
 }
 
 # BR-SP-071: Severity-only fallback
-result := {"priority": "P1", "confidence": 0.7, "source": "severity-fallback"} if {
+else := {"priority": "P1", "confidence": 0.7, "source": "severity-fallback"} if {
     input.environment.environment == "unknown"
     input.signal.severity == "critical"
 }
 
-result := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if {
+else := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if {
     input.environment.environment == "unknown"
     input.signal.severity == "warning"
 }
 
 # Default
-result := {"priority": "P3", "confidence": 0.5, "source": "default"}
+else := {"priority": "P3", "confidence": 0.5, "source": "default"}
 `)
 	Expect(err).ToNot(HaveOccurred())
 	priorityPolicyFile.Close()
