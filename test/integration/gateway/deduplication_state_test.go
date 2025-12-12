@@ -549,25 +549,27 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			Expect(err).ToNot(HaveOccurred())
 			crdName := response1.RemediationRequestName
 
-			By("2. Set CRD state to unknown value")
-			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
-			crd.Status.OverallPhase = remediationv1alpha1.RemediationPhase("UnknownPhase") // Not in final state whitelist
-			err = testClient.Client.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+		By("2. Set CRD state to non-terminal phase (simulates unknown/in-progress state)")
+		// Note: Using "Blocked" as a valid non-terminal phase to test conservative fail-safe
+		// DD-GATEWAY-009: Whitelist approach means any non-terminal phase (including Blocked) is treated as in-progress
+		crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+		crd.Status.OverallPhase = remediationv1alpha1.PhaseBlocked // Valid non-terminal phase
+		err = testClient.Client.Status().Update(ctx, crd)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Wait for status update to propagate
-			Eventually(func() string {
-				updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
-				if updatedCRD == nil {
-					return ""
-				}
-				return string(updatedCRD.Status.OverallPhase)
-			}, 3*time.Second, 500*time.Millisecond).Should(Equal("UnknownPhase"))
+		// Wait for status update to propagate
+		Eventually(func() string {
+			updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			if updatedCRD == nil {
+				return ""
+			}
+			return string(updatedCRD.Status.OverallPhase)
+		}, 3*time.Second, 500*time.Millisecond).Should(Equal(string(remediationv1alpha1.PhaseBlocked)))
 
-			By("3. Send alert again (should treat as DUPLICATE due to conservative fail-safe)")
-			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
-			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
-				"Unknown state should trigger duplicate (conservative: assume in-progress)")
+		By("3. Send alert again (should treat as DUPLICATE due to conservative fail-safe)")
+		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+		Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
+			"Non-terminal state (Blocked) should trigger duplicate (conservative: assume in-progress)")
 
 			var response2 gateway.ProcessingResponse
 			err = json.Unmarshal(resp2.Body, &response2)

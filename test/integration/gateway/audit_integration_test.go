@@ -163,10 +163,10 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(err).ToNot(HaveOccurred())
 			correlationID := gatewayResp.RemediationRequestName // Use RR name as correlation
 
-			By("2. Query Data Storage for audit event")
-			// Query: GET /api/v1/audit-events?event_category=gateway&correlation_id={correlationID}
-			queryURL := fmt.Sprintf("%s/api/v1/audit-events?event_category=gateway&correlation_id=%s",
-				dataStorageURL, correlationID)
+		By("2. Query Data Storage for audit event")
+		// Query: GET /api/v1/audit/events?service=gateway&correlation_id={correlationID}
+		queryURL := fmt.Sprintf("%s/api/v1/audit/events?service=gateway&correlation_id=%s",
+			dataStorageURL, correlationID)
 
 			// Wait for audit event to appear (async write may have small delay)
 			var auditEvents []map[string]interface{}
@@ -183,17 +183,19 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					return 0
 				}
 
-				var result struct {
-					Events []map[string]interface{} `json:"events"`
-					Total  int                      `json:"total"`
-				}
-				if err := json.NewDecoder(auditResp.Body).Decode(&result); err != nil {
-					GinkgoWriter.Printf("Failed to decode audit response: %v\n", err)
-					return 0
-				}
+			var result struct {
+				Data       []map[string]interface{} `json:"data"`
+				Pagination struct {
+					Total int `json:"total"`
+				} `json:"pagination"`
+			}
+			if err := json.NewDecoder(auditResp.Body).Decode(&result); err != nil {
+				GinkgoWriter.Printf("Failed to decode audit response: %v\n", err)
+				return 0
+			}
 
-				auditEvents = result.Events
-				return result.Total
+			auditEvents = result.Data
+			return result.Pagination.Total
 			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
 				"BR-GATEWAY-190: Gateway MUST emit 'signal.received' audit event")
 
@@ -203,8 +205,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			event := auditEvents[0]
 			Expect(event["event_category"]).To(Equal("gateway"),
 				"event_category should be 'gateway'")
-			Expect(event["event_type"]).To(Equal("signal.received"),
-				"event_type should be 'signal.received'")
+		Expect(event["event_type"]).To(Equal("gateway.signal.received"),
+			"event_type should be 'gateway.signal.received'")
 			Expect(event["event_outcome"]).To(Equal("success"),
 				"event_outcome should be 'success' for processed signal")
 
@@ -268,8 +270,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"Duplicate should return 202 Accepted")
 
 			By("3. Query Data Storage for deduplication audit event")
-			queryURL := fmt.Sprintf("%s/api/v1/audit-events?event_category=gateway&event_type=signal.deduplicated&correlation_id=%s",
-				dataStorageURL, correlationID)
+		queryURL := fmt.Sprintf("%s/api/v1/audit/events?service=gateway&event_type=gateway.signal.deduplicated&correlation_id=%s",
+			dataStorageURL, correlationID)
 
 			var auditEvents []map[string]interface{}
 			Eventually(func() int {
@@ -283,18 +285,20 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					return 0
 				}
 
-				var result struct {
-					Events []map[string]interface{} `json:"events"`
-					Total  int                      `json:"total"`
-				}
-				if err := json.NewDecoder(auditResp.Body).Decode(&result); err != nil {
-					return 0
-				}
+			var result struct {
+				Data       []map[string]interface{} `json:"data"`
+				Pagination struct {
+					Total int `json:"total"`
+				} `json:"pagination"`
+			}
+			if err := json.NewDecoder(auditResp.Body).Decode(&result); err != nil {
+				return 0
+			}
 
-				auditEvents = result.Events
-				return result.Total
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-GATEWAY-191: Gateway MUST emit 'signal.deduplicated' audit event")
+			auditEvents = result.Data
+			return result.Pagination.Total
+		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"BR-GATEWAY-191: Gateway MUST emit 'signal.deduplicated' audit event")
 
 			By("4. Verify deduplication audit event content")
 			event := auditEvents[0]
@@ -355,8 +359,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			}
 
 			By("3. Query Data Storage for storm audit event")
-			queryURL := fmt.Sprintf("%s/api/v1/audit-events?event_category=gateway&event_type=storm.detected&correlation_id=%s",
-				dataStorageURL, correlationID)
+		queryURL := fmt.Sprintf("%s/api/v1/audit/events?service=gateway&event_type=gateway.storm.detected&correlation_id=%s",
+			dataStorageURL, correlationID)
 
 			var auditEvents []map[string]interface{}
 			Eventually(func() int {
@@ -370,18 +374,20 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					return 0
 				}
 
-				var result struct {
-					Events []map[string]interface{} `json:"events"`
-					Total  int                      `json:"total"`
-				}
-				if err := json.NewDecoder(auditResp.Body).Decode(&result); err != nil {
-					return 0
-				}
+			var result struct {
+				Data       []map[string]interface{} `json:"data"`
+				Pagination struct {
+					Total int `json:"total"`
+				} `json:"pagination"`
+			}
+			if err := json.NewDecoder(auditResp.Body).Decode(&result); err != nil {
+				return 0
+			}
 
-				auditEvents = result.Events
-				return result.Total
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-GATEWAY-192: Gateway MUST emit 'storm.detected' audit event")
+			auditEvents = result.Data
+			return result.Pagination.Total
+		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"BR-GATEWAY-192: Gateway MUST emit 'storm.detected' audit event")
 
 			By("4. Verify storm audit event content")
 			event := auditEvents[0]
