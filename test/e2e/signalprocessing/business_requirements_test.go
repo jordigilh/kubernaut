@@ -886,7 +886,13 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 		Eventually(func() signalprocessingv1alpha1.SignalProcessingPhase {
 			var updated signalprocessingv1alpha1.SignalProcessing
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				GinkgoWriter.Printf("  ⚠️  Failed to get SignalProcessing: %v\n", err)
 				return ""
+			}
+			GinkgoWriter.Printf("  🔍 Current phase: %s (expected: %s)\n", updated.Status.Phase, signalprocessingv1alpha1.PhaseCompleted)
+			if updated.Status.Phase != signalprocessingv1alpha1.PhaseCompleted {
+				// Log controller pod status for debugging
+				GinkgoWriter.Printf("  📋 Phase not completed yet, checking controller status...\n")
 			}
 			return updated.Status.Phase
 		}, timeout, interval).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
