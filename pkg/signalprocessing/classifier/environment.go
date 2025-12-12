@@ -41,6 +41,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/open-policy-agent/opa/v1/rego"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -147,9 +148,10 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, k8sCtx *signalproc
 	if k8sCtx != nil && k8sCtx.Namespace != nil {
 		if env := c.tryConfigMapFallback(k8sCtx.Namespace.Name); env != "" {
 			result := &signalprocessingv1alpha1.EnvironmentClassification{
-				Environment: strings.ToLower(env), // Case-insensitive per BR-SP-051
-				Confidence:  configMapConfidence,
-				Source:      "configmap",
+				Environment:  strings.ToLower(env), // Case-insensitive per BR-SP-051
+				Confidence:   configMapConfidence,
+				Source:       "configmap",
+				ClassifiedAt: metav1.Now(),
 			}
 			c.logger.V(1).Info("Environment classified via ConfigMap",
 				"namespace", k8sCtx.Namespace.Name,
@@ -161,9 +163,10 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, k8sCtx *signalproc
 	// Step 3: Try signal labels fallback (confidence 0.80)
 	if env := c.trySignalLabelsFallback(signal); env != "" {
 		result := &signalprocessingv1alpha1.EnvironmentClassification{
-			Environment: strings.ToLower(env), // Case-insensitive per BR-SP-051
-			Confidence:  signalLabelsConfidence,
-			Source:      "signal-labels",
+			Environment:  strings.ToLower(env), // Case-insensitive per BR-SP-051
+			Confidence:   signalLabelsConfidence,
+			Source:       "signal-labels",
+			ClassifiedAt: metav1.Now(),
 		}
 		c.logger.V(1).Info("Environment classified via signal labels",
 			"environment", result.Environment)
@@ -219,9 +222,10 @@ func (c *EnvironmentClassifier) evaluateRego(ctx context.Context, input map[stri
 	}
 
 	return &signalprocessingv1alpha1.EnvironmentClassification{
-		Environment: environment,
-		Confidence:  confidence,
-		Source:      source,
+		Environment:  environment,
+		Confidence:   confidence,
+		Source:       source,
+		ClassifiedAt: metav1.Now(), // Set timestamp in Go, not Rego
 	}, nil
 }
 
@@ -373,9 +377,10 @@ func matchPattern(pattern, name string) bool {
 // BR-SP-053: Default to "unknown" with 0.0 confidence.
 func (c *EnvironmentClassifier) defaultResult() *signalprocessingv1alpha1.EnvironmentClassification {
 	return &signalprocessingv1alpha1.EnvironmentClassification{
-		Environment: "unknown",
-		Confidence:  defaultConfidence,
-		Source:      "default",
+		Environment:  "unknown",
+		Confidence:   defaultConfidence,
+		Source:       "default",
+		ClassifiedAt: metav1.Now(),
 	}
 }
 

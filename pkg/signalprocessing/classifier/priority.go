@@ -34,6 +34,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/open-policy-agent/opa/v1/rego"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
@@ -194,6 +195,7 @@ func (p *PriorityEngine) extractAndValidateResult(results rego.ResultSet, severi
 		Confidence: confidence,
 		Source:     "rego-policy",
 		PolicyName: policyName,
+		AssignedAt: metav1.Now(), // Set timestamp in Go, not Rego
 	}, nil
 }
 
@@ -224,6 +226,7 @@ func (p *PriorityEngine) fallbackBySeverity(severity string) *signalprocessingv1
 		Priority:   priority,
 		Confidence: fallbackConfidence,
 		Source:     "fallback-severity",
+		AssignedAt: metav1.Now(), // Set timestamp in Go, not Rego
 	}
 }
 
