@@ -49,36 +49,40 @@ spec:
                 type: array
               deduplication:
                 description: |-
-                  Deduplication Metadata
+                  Deduplication Metadata (DEPRECATED per DD-GATEWAY-011)
                   Tracking information for duplicate signal suppression
                   Uses shared type for API contract alignment with SignalProcessing CRD
+                  DD-GATEWAY-011: DEPRECATED - Moved to status.deduplication
+                  Gateway Team Fix (2025-12-12): Made optional to unblock Gateway integration tests
+                  RO Team: See docs/handoff/NOTICE_GW_CRD_SCHEMA_FIX_SPEC_DEDUPLICATION.md
                 properties:
                   correlationId:
                     description: Optional correlation ID for grouping related signals
                     type: string
                   firstOccurrence:
-                    description: Timestamp when this signal fingerprint was first
-                      seen
+                    description: |-
+                      Timestamp when this signal fingerprint was first seen
+                      DD-GATEWAY-011: Made optional (moved to status.deduplication)
                     format: date-time
                     type: string
                   isDuplicate:
                     description: True if this signal is a duplicate of an active remediation
                     type: boolean
                   lastOccurrence:
-                    description: Timestamp when this signal fingerprint was last seen
+                    description: |-
+                      Timestamp when this signal fingerprint was last seen
+                      DD-GATEWAY-011: Made optional (moved to status.deduplication)
                     format: date-time
                     type: string
                   occurrenceCount:
-                    description: Total count of occurrences of this signal
+                    description: |-
+                      Total count of occurrences of this signal
+                      DD-GATEWAY-011: Made optional (moved to status.deduplication)
                     type: integer
                   previousRemediationRequestRef:
                     description: Reference to previous RemediationRequest CRD (if
                       duplicate)
                     type: string
-                required:
-                - firstOccurrence
-                - lastOccurrence
-                - occurrenceCount
                 type: object
               firingTime:
                 description: |-
@@ -227,7 +231,6 @@ spec:
                     type: string
                 type: object
             required:
-            - deduplication
             - firingTime
             - receivedTime
             - severity
@@ -492,11 +495,22 @@ spec:
                 - ManualReviewRequired
                 type: string
               overallPhase:
-                description: |-
-                  Phase tracking for orchestration
-                  Valid values: "Pending", "Processing", "Analyzing", "AwaitingApproval", "Executing",
-                                "Blocked" (non-terminal), "Completed", "Failed", "TimedOut", "Skipped"
-                  Reference: BR-ORCH-042 (Blocked phase for consecutive failure cooldown)
+                description: "Phase tracking for orchestration.\nUses typed RemediationPhase
+                  constants for type safety and cross-service integration.\n\n\U0001F3DB️
+                  BR-COMMON-001: Capitalized phase values per Kubernetes API conventions.\nReference:
+                  BR-ORCH-042 (Blocked phase for consecutive failure cooldown)"
+                enum:
+                - Pending
+                - Processing
+                - Analyzing
+                - AwaitingApproval
+                - Executing
+                - Blocked
+                - Completed
+                - Failed
+                - TimedOut
+                - Skipped
+                - Cancelled
                 type: string
               processingStartTime:
                 description: |-

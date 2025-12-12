@@ -40,7 +40,7 @@ import (
 // Reference: docs/requirements/BR-COMMON-001-phase-value-format-standard.md
 // Reference: docs/handoff/RO_VICEVERSA_PATTERN_IMPLEMENTATION.md
 //
-// +kubebuilder:validation:Enum=Pending;Processing;Analyzing;AwaitingApproval;Executing;Blocked;Completed;Failed;TimedOut;Skipped
+// +kubebuilder:validation:Enum=Pending;Processing;Analyzing;AwaitingApproval;Executing;Blocked;Completed;Failed;TimedOut;Skipped;Cancelled
 type RemediationPhase string
 
 const (
