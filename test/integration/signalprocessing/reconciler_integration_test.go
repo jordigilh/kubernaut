@@ -332,8 +332,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		})
 
 		// Owner chain traversal from Pod to Deployment
-		// NOTE: Skipped for V1.0 - owner chain builder needs debugging
-		PIt("BR-SP-100: should build owner chain from Pod to Deployment", func() {
+		It("BR-SP-100: should build owner chain from Pod to Deployment", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("ownerchain")
 			defer deleteTestNamespace(ns)
@@ -459,8 +458,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		})
 
 		// HPA detection for auto-scaling
-		// NOTE: Skipped for V1.0 - HPA detection needs debugging  
-		PIt("BR-SP-101: should detect HPA enabled", func() {
+		It("BR-SP-101: should detect HPA enabled", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("hpa-test")
 			defer deleteTestNamespace(ns)
@@ -501,8 +499,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		})
 
 		// CustomLabels extraction from Rego policy
-		// NOTE: Skipped for V1.0 - labels.rego not implemented yet
-		PIt("BR-SP-102: should populate CustomLabels from Rego policy", func() {
+		It("BR-SP-102: should populate CustomLabels from Rego policy", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("rego-labels")
 			defer deleteTestNamespace(ns)
@@ -605,8 +602,7 @@ labels["team"] := ["platform"] if {
 		})
 
 		// Degraded mode when target resource not found
-		// NOTE: Skipped for V1.0 - degraded mode detection needs debugging
-		PIt("BR-SP-001: should enter degraded mode when pod not found", func() {
+		It("BR-SP-001: should enter degraded mode when pod not found", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("degraded")
 			defer deleteTestNamespace(ns)
@@ -911,8 +907,7 @@ labels["team"] := ["platform"] if {
 		})
 
 		// Multi-key Rego policy evaluation
-		// NOTE: Skipped for V1.0 - labels.rego not implemented yet
-		PIt("BR-SP-102: should handle Rego policy returning multiple keys", func() {
+		It("BR-SP-102: should handle Rego policy returning multiple keys", func() {
 			By("Creating namespace")
 			ns := createTestNamespace("multi-key-rego")
 			defer deleteTestNamespace(ns)
