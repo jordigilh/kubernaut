@@ -63,6 +63,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -205,13 +206,166 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Create audit client for BR-SP-090 compliance
 	auditClient := spaudit.NewAuditClient(auditStore, logger)
 
-	// Create controller with MANDATORY audit client (ADR-032)
+	By("Creating temporary Rego policy files for classifiers")
+	// Day 10 Integration: Create Rego policy files (IMPLEMENTATION_PLAN_V1.31.md)
+	// These files match the classifier's expected input schema
+	envPolicyFile, err := os.CreateTemp("", "environment-*.rego")
+	Expect(err).ToNot(HaveOccurred())
+	_, err = envPolicyFile.WriteString(`package signalprocessing.environment
+
+import rego.v1
+
+# BR-SP-051: Namespace label priority (confidence 0.95)
+result := {"environment": lower(env), "confidence": 0.95, "source": "namespace-labels", "classified_at": time.now_ns()} if {
+    env := input.namespace.labels["kubernaut.ai/environment"]
+    env != ""
+}
+
+# BR-SP-052: ConfigMap fallback (confidence 0.80)
+result := {"environment": "production", "confidence": 0.80, "source": "configmap", "classified_at": time.now_ns()} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    startswith(input.namespace.name, "prod")
+}
+
+result := {"environment": "staging", "confidence": 0.80, "source": "configmap", "classified_at": time.now_ns()} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    startswith(input.namespace.name, "staging")
+}
+
+result := {"environment": "development", "confidence": 0.80, "source": "configmap", "classified_at": time.now_ns()} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+    startswith(input.namespace.name, "dev")
+}
+
+# BR-SP-053: Default fallback (confidence 0.0)
+result := {"environment": "unknown", "confidence": 0.0, "source": "default", "classified_at": time.now_ns()} if {
+    not input.namespace.labels["kubernaut.ai/environment"]
+}
+`)
+	Expect(err).ToNot(HaveOccurred())
+	envPolicyFile.Close()
+
+	priorityPolicyFile, err := os.CreateTemp("", "priority-*.rego")
+	Expect(err).ToNot(HaveOccurred())
+	_, err = priorityPolicyFile.WriteString(`package signalprocessing.priority
+
+import rego.v1
+
+# BR-SP-070: Rego-based priority assignment
+# BR-SP-071: Severity fallback matrix
+
+# Priority matrix: environment × severity
+result := {"priority": "P0", "confidence": 1.0, "source": "policy-matrix", "assigned_at": time.now_ns()} if {
+    input.environment.environment == "production"
+    input.signal.severity == "critical"
+}
+
+result := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix", "assigned_at": time.now_ns()} if {
+    input.environment.environment == "production"
+    input.signal.severity == "warning"
+}
+
+result := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix", "assigned_at": time.now_ns()} if {
+    input.environment.environment == "staging"
+    input.signal.severity == "critical"
+}
+
+result := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix", "assigned_at": time.now_ns()} if {
+    input.environment.environment == "staging"
+    input.signal.severity == "warning"
+}
+
+result := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix", "assigned_at": time.now_ns()} if {
+    input.environment.environment == "development"
+    input.signal.severity == "critical"
+}
+
+result := {"priority": "P3", "confidence": 1.0, "source": "policy-matrix", "assigned_at": time.now_ns()} if {
+    input.environment.environment == "development"
+    input.signal.severity == "warning"
+}
+
+# BR-SP-071: Severity-only fallback
+result := {"priority": "P1", "confidence": 0.7, "source": "severity-fallback", "assigned_at": time.now_ns()} if {
+    input.environment.environment == "unknown"
+    input.signal.severity == "critical"
+}
+
+result := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback", "assigned_at": time.now_ns()} if {
+    input.environment.environment == "unknown"
+    input.signal.severity == "warning"
+}
+
+# Default
+result := {"priority": "P3", "confidence": 0.5, "source": "default", "assigned_at": time.now_ns()}
+`)
+	Expect(err).ToNot(HaveOccurred())
+	priorityPolicyFile.Close()
+
+	By("Initializing classifiers (Day 10 integration)")
+	// Initialize Environment Classifier (BR-SP-051, BR-SP-052, BR-SP-053)
+	envClassifier, err := classifier.NewEnvironmentClassifier(
+		ctx,
+		envPolicyFile.Name(),
+		k8sManager.GetClient(),
+		logger,
+	)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Initialize Priority Engine (BR-SP-070, BR-SP-071, BR-SP-072)
+	priorityEngine, err := classifier.NewPriorityEngine(
+		ctx,
+		priorityPolicyFile.Name(),
+		logger,
+	)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Create business policy file for BR-SP-002, BR-SP-080, BR-SP-081
+	businessPolicyFile, err := os.CreateTemp("", "business-*.rego")
+	Expect(err).ToNot(HaveOccurred())
+	_, err = businessPolicyFile.WriteString(`package signalprocessing.business
+
+import rego.v1
+
+# BR-SP-002: Business unit classification
+# Simple policy for testing - uses namespace labels
+result := {
+    "business_unit": input.namespace.labels["kubernaut.ai/business-unit"],
+    "service_owner": input.namespace.labels["kubernaut.ai/service-owner"],
+    "criticality": input.namespace.labels["kubernaut.ai/criticality"],
+    "sla_requirement": input.namespace.labels["kubernaut.ai/sla"],
+    "confidence": 0.95,
+    "source": "namespace-labels"
+}
+`)
+	Expect(err).ToNot(HaveOccurred())
+	businessPolicyFile.Close()
+
+	// Initialize Business Classifier (BR-SP-002, BR-SP-080, BR-SP-081)
+	businessClassifier, err := classifier.NewBusinessClassifier(
+		ctx,
+		businessPolicyFile.Name(),
+		logger,
+	)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Create controller with MANDATORY audit client + classifiers (Day 10)
 	err = (&signalprocessing.SignalProcessingReconciler{
-		Client:      k8sManager.GetClient(),
-		Scheme:      k8sManager.GetScheme(),
-		AuditClient: auditClient, // BR-SP-090: Audit is MANDATORY
+		Client:             k8sManager.GetClient(),
+		Scheme:             k8sManager.GetScheme(),
+		AuditClient:        auditClient,        // BR-SP-090: Audit is MANDATORY
+		EnvClassifier:      envClassifier,      // BR-SP-051-053: Environment classification
+		PriorityEngine:     priorityEngine,     // BR-SP-070-072: Priority assignment
+		BusinessClassifier: businessClassifier, // BR-SP-002, BR-SP-080-081: Business classification
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Schedule cleanup of temp files
+	DeferCleanup(func() {
+		os.Remove(envPolicyFile.Name())
+		os.Remove(priorityPolicyFile.Name())
+		os.Remove(businessPolicyFile.Name())
+	})
 
 	By("Starting the controller manager")
 	go func() {
@@ -647,7 +801,7 @@ func createSignalProcessingCR(namespace, name string, signal signalprocessingv1a
 		signal.TargetResource,
 	)
 	Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-	
+
 	return sp
 }
 
