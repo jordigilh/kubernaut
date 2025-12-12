@@ -48,6 +48,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -96,9 +97,16 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Initialize status if needed
 	if sp.Status.Phase == "" {
-		sp.Status.Phase = signalprocessingv1alpha1.PhasePending
-		sp.Status.StartTime = &metav1.Time{Time: time.Now()}
-		if err := r.Status().Update(ctx, sp); err != nil {
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Refetch to get latest resourceVersion (BR-ORCH-038 pattern)
+			if err := r.Get(ctx, req.NamespacedName, sp); err != nil {
+				return err
+			}
+			sp.Status.Phase = signalprocessingv1alpha1.PhasePending
+			sp.Status.StartTime = &metav1.Time{Time: time.Now()}
+			return r.Status().Update(ctx, sp)
+		})
+		if err != nil {
 			logger.Error(err, "Failed to initialize status")
 			return ctrl.Result{}, err
 		}
@@ -125,9 +133,17 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	case signalprocessingv1alpha1.PhaseCategorizing:
 		result, err = r.reconcileCategorizing(ctx, sp, logger)
 	default:
-		// Unknown phase - transition to enriching
-		sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
-		if err := r.Status().Update(ctx, sp); err != nil {
+		// Unknown phase - transition to enriching with retry on conflict (BR-ORCH-038 pattern)
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Refetch to get latest resourceVersion
+			fresh := &signalprocessingv1alpha1.SignalProcessing{}
+			if err := r.Get(ctx, client.ObjectKeyFromObject(sp), fresh); err != nil {
+				return err
+			}
+			fresh.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
+			return r.Status().Update(ctx, fresh)
+		})
+		if err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
@@ -140,8 +156,16 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
 	logger.V(1).Info("Processing Pending phase")
 
-	sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
-	if err := r.Status().Update(ctx, sp); err != nil {
+	// Transition to Enriching with retry on conflict (BR-ORCH-038 pattern)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Refetch to get latest resourceVersion
+		if err := r.Get(ctx, client.ObjectKeyFromObject(sp), sp); err != nil {
+			return err
+		}
+		sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
+		return r.Status().Update(ctx, sp)
+	})
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{Requeue: true}, nil
@@ -223,12 +247,22 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		// Non-fatal - continue without recovery context
 	}
 
-	// Update status
-	sp.Status.KubernetesContext = k8sCtx
-	sp.Status.RecoveryContext = recoveryCtx
-	sp.Status.Phase = signalprocessingv1alpha1.PhaseClassifying
-	if err := r.Status().Update(ctx, sp); err != nil {
-		return ctrl.Result{}, err
+	// Update status with retry on conflict (BR-ORCH-038 pattern)
+	// Authority: pkg/remediationorchestrator/controller/reconciler.go:508-517
+	updateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Refetch to get latest resourceVersion
+		fresh := &signalprocessingv1alpha1.SignalProcessing{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(sp), fresh); err != nil {
+			return err
+		}
+		// Apply enrichment updates
+		fresh.Status.KubernetesContext = k8sCtx
+		fresh.Status.RecoveryContext = recoveryCtx
+		fresh.Status.Phase = signalprocessingv1alpha1.PhaseClassifying
+		return r.Status().Update(ctx, fresh)
+	})
+	if updateErr != nil {
+		return ctrl.Result{}, updateErr
 	}
 	return ctrl.Result{Requeue: true}, nil
 }
@@ -244,16 +278,25 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 
 	// 1. Environment Classification (BR-SP-051-053)
 	envClass := r.classifyEnvironment(k8sCtx, signal, logger)
-	sp.Status.EnvironmentClassification = envClass
 
 	// 2. Priority Assignment (BR-SP-070-072)
 	priorityAssignment := r.assignPriority(envClass, signal, logger)
-	sp.Status.PriorityAssignment = priorityAssignment
 
-	// Transition to categorizing
-	sp.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
-	if err := r.Status().Update(ctx, sp); err != nil {
-		return ctrl.Result{}, err
+	// Transition to categorizing with retry on conflict (BR-ORCH-038 pattern)
+	updateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Refetch to get latest resourceVersion
+		fresh := &signalprocessingv1alpha1.SignalProcessing{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(sp), fresh); err != nil {
+			return err
+		}
+		// Apply classification updates
+		fresh.Status.EnvironmentClassification = envClass
+		fresh.Status.PriorityAssignment = priorityAssignment
+		fresh.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
+		return r.Status().Update(ctx, fresh)
+	})
+	if updateErr != nil {
+		return ctrl.Result{}, updateErr
 	}
 	return ctrl.Result{Requeue: true}, nil
 }
@@ -268,21 +311,32 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 
 	// Business classification
 	bizClass := r.classifyBusiness(k8sCtx, envClass, logger)
-	sp.Status.BusinessClassification = bizClass
 
-	// Mark as completed
-	sp.Status.Phase = signalprocessingv1alpha1.PhaseCompleted
-	now := metav1.Now()
-	sp.Status.CompletionTime = &now
-
-	if err := r.Status().Update(ctx, sp); err != nil {
-		return ctrl.Result{}, err
+	// Mark as completed with retry on conflict (BR-ORCH-038 pattern)
+	updateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Refetch to get latest resourceVersion
+		fresh := &signalprocessingv1alpha1.SignalProcessing{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(sp), fresh); err != nil {
+			return err
+		}
+		// Apply final updates
+		fresh.Status.BusinessClassification = bizClass
+		fresh.Status.Phase = signalprocessingv1alpha1.PhaseCompleted
+		now := metav1.Now()
+		fresh.Status.CompletionTime = &now
+		return r.Status().Update(ctx, fresh)
+	})
+	if updateErr != nil {
+		return ctrl.Result{}, updateErr
 	}
 
 	// BR-SP-090: Record audit event on completion
 	// ADR-032: Audit is MANDATORY - not optional. AuditClient must be wired up.
-	r.AuditClient.RecordSignalProcessed(ctx, sp)
-	r.AuditClient.RecordClassificationDecision(ctx, sp)
+	// Note: Need to refetch sp to get updated resourceVersion for audit
+	if err := r.Get(ctx, client.ObjectKeyFromObject(sp), sp); err == nil {
+		r.AuditClient.RecordSignalProcessed(ctx, sp)
+		r.AuditClient.RecordClassificationDecision(ctx, sp)
+	}
 
 	return ctrl.Result{}, nil
 }
