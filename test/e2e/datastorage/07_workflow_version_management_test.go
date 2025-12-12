@@ -26,10 +26,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/go-logr/logr"
 )
 
 // Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
@@ -154,8 +154,11 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				"description":   "Increases memory limits conservatively for OOMKilled pods",
 				"content":       "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery\nspec:\n  tasks:\n  - name: increase-memory\n    taskRef:\n      name: kubectl-patch",
 				"labels": map[string]interface{}{
-					"signal_type": "OOMKilled",
-					"severity":    "critical",
+					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
+					"severity":    "critical",   // mandatory
+					"component":   "deployment", // mandatory
+					"priority":    "P0",         // mandatory
+					"environment": "production", // mandatory
 				},
 				"container_image": "quay.io/kubernaut/workflow-oom:v1.0.0@sha256:abc123def456",
 			}
@@ -204,8 +207,11 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				"content":          "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery-v1.1\nspec:\n  tasks:\n  - name: increase-memory\n    taskRef:\n      name: kubectl-patch-v2",
 				"previous_version": "v1.0.0",
 				"labels": map[string]interface{}{
-					"signal_type": "OOMKilled",
-					"severity":    "critical",
+					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
+					"severity":    "critical",   // mandatory
+					"component":   "deployment", // mandatory
+					"priority":    "P0",         // mandatory
+					"environment": "production", // mandatory
 				},
 				"container_image": "quay.io/kubernaut/workflow-oom:v1.1.0@sha256:def456ghi789",
 			}
@@ -260,8 +266,11 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				"content":          "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery-v2\nspec:\n  tasks:\n  - name: scale-horizontal\n    taskRef:\n      name: kubectl-scale",
 				"previous_version": "v1.1.0",
 				"labels": map[string]interface{}{
-					"signal_type": "OOMKilled",
-					"severity":    "critical",
+					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
+					"severity":    "critical",   // mandatory
+					"component":   "deployment", // mandatory
+					"priority":    "P0",         // mandatory
+					"environment": "production", // mandatory
 				},
 				"container_image": "quay.io/kubernaut/workflow-oom:v2.0.0@sha256:ghi789jkl012",
 			}
@@ -301,13 +310,16 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should return flat response structure in search (DD-WORKFLOW-002 v3.0)", func() {
 			testLogger.Info("🔍 Testing search response structure...")
 
-			// DD-WORKFLOW-002 v3.0: Search should return flat structure
+			// V1.0: Label-only search with 5 mandatory filters (DD-WORKFLOW-001 v1.4)
 			searchReq := map[string]interface{}{
-				"query":              "OOMKilled critical memory",
-				"label.signal_type":  "OOMKilled",
-				"label.severity":     "critical",
-				"top_k":              10,
-				"min_similarity":     0.0,
+				"filters": map[string]interface{}{
+					"signal_type": "OOMKilled",  // mandatory
+					"severity":    "critical",   // mandatory
+					"component":   "deployment", // mandatory
+					"environment": "production", // mandatory
+					"priority":    "P0",         // mandatory
+				},
+				"top_k": 10,
 			}
 
 			reqBody, err := json.Marshal(searchReq)
@@ -417,4 +429,3 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		})
 	})
 })
-

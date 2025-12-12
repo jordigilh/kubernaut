@@ -59,7 +59,7 @@ func NewHolmesGPTClient(cfg Config) *HolmesGPTClient {
 type IncidentRequest struct {
 	// REQUIRED fields per HAPI OpenAPI spec
 	IncidentID        string `json:"incident_id"`
-	RemediationID     string `json:"remediation_id"`      // MANDATORY per DD-WORKFLOW-002
+	RemediationID     string `json:"remediation_id"` // MANDATORY per DD-WORKFLOW-002
 	SignalType        string `json:"signal_type"`
 	Severity          string `json:"severity"`
 	SignalSource      string `json:"signal_source"`
@@ -171,13 +171,13 @@ type SelectedWorkflowSummary struct {
 // ExecutionFailure contains structured failure information
 // Uses Kubernetes reason codes as API contract (DD-RECOVERY-003)
 type ExecutionFailure struct {
-	FailedStepIndex int     `json:"failed_step_index"`
-	FailedStepName  string  `json:"failed_step_name"`
-	Reason          string  `json:"reason"` // Kubernetes reason code (e.g., OOMKilled, DeadlineExceeded)
-	Message         string  `json:"message"`
-	ExitCode        *int32  `json:"exit_code,omitempty"`
-	FailedAt        string  `json:"failed_at"`       // ISO timestamp
-	ExecutionTime   string  `json:"execution_time"`  // Duration (e.g., "2m34s")
+	FailedStepIndex int    `json:"failed_step_index"`
+	FailedStepName  string `json:"failed_step_name"`
+	Reason          string `json:"reason"` // Kubernetes reason code (e.g., OOMKilled, DeadlineExceeded)
+	Message         string `json:"message"`
+	ExitCode        *int32 `json:"exit_code,omitempty"`
+	FailedAt        string `json:"failed_at"`      // ISO timestamp
+	ExecutionTime   string `json:"execution_time"` // Duration (e.g., "2m34s")
 }
 
 // IncidentResponse represents response from HolmesGPT-API /api/v1/incident/analyze
@@ -218,6 +218,10 @@ type IncidentResponse struct {
 	// HAPI retries up to 3 times with LLM self-correction
 	// Provides audit trail for operator notifications and debugging
 	ValidationAttemptsHistory []ValidationAttempt `json:"validation_attempts_history,omitempty"`
+	// BR-AI-082: Recovery-specific analysis
+	// Present only when calling /api/v1/recovery/analyze with isRecoveryAttempt=true
+	// Used to populate AIAnalysis.Status.RecoveryStatus
+	RecoveryAnalysis *RecoveryAnalysis `json:"recovery_analysis,omitempty"`
 }
 
 // ValidationAttempt contains details of a single HAPI validation attempt
@@ -274,6 +278,36 @@ type AlternativeWorkflow struct {
 	Confidence float64 `json:"confidence"`
 	// Rationale explaining why this workflow was considered
 	Rationale string `json:"rationale"`
+}
+
+// ========================================
+// BR-AI-082: Recovery Analysis Types
+// DD-RECOVERY-002: Direct recovery flow implementation
+// ========================================
+
+// RecoveryAnalysis contains recovery-specific analysis from HAPI
+// Present only when calling /api/v1/recovery/analyze with isRecoveryAttempt=true
+// Used to populate AIAnalysis.Status.RecoveryStatus
+type RecoveryAnalysis struct {
+	// Assessment of why previous attempt failed and current state
+	PreviousAttemptAssessment PreviousAttemptAssessment `json:"previous_attempt_assessment"`
+	// Refined root cause based on failed workflow execution
+	RootCauseRefinement string `json:"root_cause_refinement,omitempty"`
+}
+
+// PreviousAttemptAssessment from HAPI recovery analysis
+// Contains AI's assessment of the failed workflow execution
+type PreviousAttemptAssessment struct {
+	// Workflow that failed
+	WorkflowID string `json:"workflow_id"`
+	// Whether the failure was understood by AI
+	FailureUnderstood bool `json:"failure_understood"`
+	// Analysis of why the workflow failed
+	FailureReasonAnalysis string `json:"failure_reason_analysis"`
+	// Whether the signal type changed due to failed workflow
+	StateChanged bool `json:"state_changed"`
+	// Current signal type (may differ from original after failed workflow)
+	CurrentSignalType *string `json:"current_signal_type"`
 }
 
 // Investigate calls the HolmesGPT-API incident analyze endpoint

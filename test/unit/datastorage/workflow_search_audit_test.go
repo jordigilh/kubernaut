@@ -52,17 +52,23 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 	// TEST 1: Audit Event Builder - V1.0 Scoring
 	// ========================================
 	Context("when building workflow search audit event", func() {
-		It("should build audit event with V1.0 scoring (confidence only)", func() {
+		It("should build audit event with V1.0 scoring (label-only search)", func() {
 			// BUSINESS SCENARIO: BR-AUDIT-026 - Scoring capture
-			// DD-WORKFLOW-004 v2.0: V1.0 = confidence only (no boost/penalty breakdown)
+			// V1.0: Label-only search with confidence from label matching
 			//
-			// BEHAVIOR: Audit event captures search results with similarity scores
-			// CORRECTNESS: Event contains exact query, workflow IDs, and scores from response
+			// BEHAVIOR: Audit event captures search results with label-based scores
+			// CORRECTNESS: Event contains filters, workflow IDs, and scores from response
 
-			// ARRANGE: Create search request and response
+			// ARRANGE: Create search request and response (V1.0 label-only)
 			searchRequest := &models.WorkflowSearchRequest{
-				Query: "OOMKilled critical memory increase",
-				TopK:  3,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "OOMKilled",
+					Severity:    "critical",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P1",
+				},
+				TopK: 3,
 			}
 
 			// DD-WORKFLOW-002 v3.0: FLAT response structure with UUID workflow_id
@@ -70,27 +76,35 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 				Workflows: []models.WorkflowSearchResult{
 					{
 						// DD-WORKFLOW-002 v3.0: Flat fields (no nested Workflow)
-						WorkflowID:     "550e8400-e29b-41d4-a716-446655440000",
-						Title:          "Pod OOM GitOps Recovery",
-						Description:    "OOMKilled critical: Increases memory via GitOps PR",
-						BaseSimilarity: 0.92,
-						Confidence:     0.92, // V1.0 scoring: confidence = BaseSimilarity
-						FinalScore:     0.92,
-						Rank:           1,
+						WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
+						Title:        "Pod OOM GitOps Recovery",
+						Description:  "OOMKilled critical: Increases memory via GitOps PR",
+						Confidence:   0.92, // V1.0 scoring: label-based confidence
+						LabelBoost:   0.15,
+						LabelPenalty: 0.05,
+						FinalScore:   0.92,
+						Rank:         1,
 					},
 					{
 						// DD-WORKFLOW-002 v3.0: Flat fields (no nested Workflow)
-						WorkflowID:     "660f9500-f30c-52e5-b827-557766551111",
-						Title:          "Pod OOM Manual Recovery",
-						Description:    "OOMKilled critical: Increases memory via kubectl",
-						BaseSimilarity: 0.88,
-						Confidence:     0.88, // V1.0 scoring: confidence = BaseSimilarity
-						FinalScore:     0.88,
-						Rank:           2,
+						WorkflowID:   "660f9500-f30c-52e5-b827-557766551111",
+						Title:        "Pod OOM Manual Recovery",
+						Description:  "OOMKilled critical: Increases memory via kubectl",
+						Confidence:   0.88, // V1.0 scoring: label-based confidence
+						LabelBoost:   0.10,
+						LabelPenalty: 0.00,
+						FinalScore:   0.88,
+						Rank:         2,
 					},
 				},
 				TotalResults: 2,
-				Query:        "OOMKilled critical memory increase",
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "OOMKilled",
+					Severity:    "critical",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P1",
+				},
 			}
 
 			searchDuration := 45 * time.Millisecond
@@ -116,19 +130,29 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			Expect(auditEvent.EventOutcome).To(Equal("success"),
 				"Event outcome should be 'success' when search returns results")
 
-			// BEHAVIOR: CorrelationID is a query hash for audit trail linking
-			// Implementation uses SHA256 hash of query (first 16 hex chars) for deterministic correlation
+			// BEHAVIOR: CorrelationID is a filter hash for audit trail linking
+			// V1.0: Implementation uses SHA256 hash of filters (first 16 hex chars) for deterministic correlation
 			Expect(auditEvent.CorrelationID).To(MatchRegexp(`^[0-9a-f]{16}$`),
-				"CorrelationID should be a 16-character hex hash of the query for audit correlation")
+				"CorrelationID should be a 16-character hex hash of the filters for audit correlation")
 
 			// Unmarshal event_data to STRUCTURED type (compile-time safe)
 			var eventData audit.WorkflowSearchEventData
 			err = json.Unmarshal(auditEvent.EventData, &eventData)
 			Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
 
-			// CORRECTNESS: Query metadata matches input exactly (BR-AUDIT-025)
-			Expect(eventData.Query.Text).To(Equal("OOMKilled critical memory increase"),
-				"Query text should match the exact search query for audit reconstruction")
+			// CORRECTNESS: Filter metadata matches input exactly (BR-AUDIT-025)
+			Expect(eventData.Query.Filters).NotTo(BeNil(),
+				"Query metadata should contain filters")
+			Expect(eventData.Query.Filters.SignalType).To(Equal("OOMKilled"),
+				"SignalType should match the exact search filter for audit reconstruction")
+			Expect(eventData.Query.Filters.Severity).To(Equal("critical"),
+				"Severity should match the exact search filter")
+			Expect(eventData.Query.Filters.Component).To(Equal("pod"),
+				"Component should match the exact search filter")
+			Expect(eventData.Query.Filters.Environment).To(Equal("production"),
+				"Environment should match the exact search filter")
+			Expect(eventData.Query.Filters.Priority).To(Equal("P1"),
+				"Priority should match the exact search filter")
 			Expect(eventData.Query.TopK).To(Equal(3),
 				"TopK should match requested result limit")
 
@@ -148,26 +172,34 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			// CORRECTNESS: Search metadata captures performance data (BR-AUDIT-028)
 			Expect(eventData.SearchMetadata.DurationMs).To(BeNumerically("==", 45),
 				"DurationMs should equal search duration in milliseconds")
-			Expect(eventData.SearchMetadata.EmbeddingModel).To(Equal("all-mpnet-base-v2"),
-				"EmbeddingModel should identify the model used for semantic search")
-			Expect(eventData.SearchMetadata.EmbeddingDimensions).To(BeNumerically(">", 0),
-				"EmbeddingDimensions should be captured for audit trail")
 		})
 
-		It("should generate deterministic correlation_id based on query hash", func() {
+		It("should generate deterministic correlation_id based on filter hash", func() {
 			// BUSINESS SCENARIO: BR-AUDIT-021 - Audit trail correlation
-			// BEHAVIOR: Each search generates a deterministic correlation ID based on query hash
-			// CORRECTNESS: Same query produces same CorrelationID for traceability
+			// BEHAVIOR: Each search generates a deterministic correlation ID based on filter hash
+			// CORRECTNESS: Same filters produce same CorrelationID for traceability
 
 			searchRequest := &models.WorkflowSearchRequest{
-				Query: "CrashLoopBackOff high",
-				TopK:  5,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "CrashLoopBackOff",
+					Severity:    "high",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P2",
+				},
+				TopK: 5,
 			}
 
 			searchResponse := &models.WorkflowSearchResponse{
 				Workflows:    []models.WorkflowSearchResult{},
 				TotalResults: 0,
-				Query:        "CrashLoopBackOff high",
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "CrashLoopBackOff",
+					Severity:    "high",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P2",
+				},
 			}
 
 			auditEvent, err := NewWorkflowSearchAuditEvent(
@@ -178,12 +210,12 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 
-			// CORRECTNESS: CorrelationID is a deterministic query hash (16 hex chars)
-			// Same query should produce same correlation ID for traceability
+			// CORRECTNESS: CorrelationID is a deterministic filter hash (16 hex chars)
+			// Same filters should produce same correlation ID for traceability
 			Expect(auditEvent.CorrelationID).To(MatchRegexp(`^[0-9a-f]{16}$`),
 				"CorrelationID should be a 16-character hex hash for audit correlation")
 
-			// BEHAVIOR: Same query produces same correlation ID (deterministic)
+			// BEHAVIOR: Same filters produce same correlation ID (deterministic)
 			auditEvent2, err := NewWorkflowSearchAuditEvent(
 				searchRequest,
 				searchResponse,
@@ -191,12 +223,18 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(auditEvent2.CorrelationID).To(Equal(auditEvent.CorrelationID),
-				"Same query should produce same correlation ID for deterministic audit linking")
+				"Same filters should produce same correlation ID for deterministic audit linking")
 
-			// BEHAVIOR: Different query produces different correlation ID
+			// BEHAVIOR: Different filters produce different correlation ID
 			differentRequest := &models.WorkflowSearchRequest{
-				Query: "Different query text",
-				TopK:  5,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "ImagePullBackOff",
+					Severity:    "critical",
+					Component:   "pod",
+					Environment: "staging",
+					Priority:    "P1",
+				},
+				TopK: 5,
 			}
 			auditEvent3, err := NewWorkflowSearchAuditEvent(
 				differentRequest,
@@ -205,7 +243,7 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(auditEvent3.CorrelationID).ToNot(Equal(auditEvent.CorrelationID),
-				"Different query should produce different correlation ID")
+				"Different filters should produce different correlation ID")
 		})
 
 		It("should handle empty results with success outcome", func() {
@@ -216,14 +254,26 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			// CORRECTNESS: Event data accurately reflects zero results
 
 			searchRequest := &models.WorkflowSearchRequest{
-				Query: "NonExistentSignal unknown",
-				TopK:  3,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "NonExistentSignal",
+					Severity:    "unknown",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P1",
+				},
+				TopK: 3,
 			}
 
 			searchResponse := &models.WorkflowSearchResponse{
 				Workflows:    []models.WorkflowSearchResult{},
 				TotalResults: 0,
-				Query:        "NonExistentSignal unknown",
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "NonExistentSignal",
+					Severity:    "unknown",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P1",
+				},
 			}
 
 			auditEvent, err := NewWorkflowSearchAuditEvent(
@@ -252,21 +302,30 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			Expect(eventData.Results.Workflows).To(BeEmpty(),
 				"Workflows array should be empty when no workflows match")
 
-			// CORRECTNESS: Query is still captured for debugging
-			Expect(eventData.Query.Text).To(Equal("NonExistentSignal unknown"),
-				"Query should be captured even when no results found for debugging")
+			// CORRECTNESS: Filters are still captured for debugging
+			Expect(eventData.Query.Filters).NotTo(BeNil(),
+				"Filters should be captured even when no results found for debugging")
+			Expect(eventData.Query.Filters.SignalType).To(Equal("NonExistentSignal"),
+				"SignalType should be captured for debugging")
+			Expect(eventData.Query.Filters.Severity).To(Equal("unknown"),
+				"Severity should be captured for debugging")
 		})
 
 		It("should capture complete workflow metadata for each result", func() {
 			// BUSINESS SCENARIO: BR-AUDIT-027 - Workflow metadata capture
 			// DD-WORKFLOW-014: All workflow fields for debugging
-			//
 			// BEHAVIOR: Each workflow result includes identifying metadata
 			// CORRECTNESS: WorkflowID, Name, and Description match the response exactly
 
 			searchRequest := &models.WorkflowSearchRequest{
-				Query: "OOMKilled critical",
-				TopK:  1,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "OOMKilled",
+					Severity:    "critical",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P1",
+				},
+				TopK: 1,
 			}
 
 			// DD-WORKFLOW-002 v3.0: Flat response structure with UUID workflow_id
@@ -274,17 +333,24 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 				Workflows: []models.WorkflowSearchResult{
 					{
 						// DD-WORKFLOW-002 v3.0: Flat fields (Workflow field is json:"-")
-						WorkflowID:     "770e8400-e29b-41d4-a716-446655440002",
-						Title:          "Pod OOM Recovery",
-						Description:    "OOMKilled critical: Comprehensive OOM recovery",
-						Confidence:     0.95,
-						BaseSimilarity: 0.95,
-						FinalScore:     0.95,
-						Rank:           1,
+						WorkflowID:   "770e8400-e29b-41d4-a716-446655440002",
+						Title:        "Pod OOM Recovery",
+						Description:  "OOMKilled critical: Comprehensive OOM recovery",
+						Confidence:   0.95,
+						LabelBoost:   0.20,
+						LabelPenalty: 0.00,
+						FinalScore:   0.95,
+						Rank:         1,
 					},
 				},
 				TotalResults: 1,
-				Query:        "OOMKilled critical",
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "OOMKilled",
+					Severity:    "critical",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P1",
+				},
 			}
 
 			auditEvent, err := NewWorkflowSearchAuditEvent(
@@ -319,7 +385,7 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 
 			// CORRECTNESS: Score matches input
 			Expect(firstWorkflow.Scoring.Confidence).To(BeNumerically("==", 0.95),
-				"Scoring.Confidence should match BaseSimilarity from result")
+				"Scoring.Confidence should match Confidence from result")
 		})
 	})
 
@@ -340,13 +406,26 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			// CORRECTNESS: Event is valid even with minimal search data
 
 			searchRequest := &models.WorkflowSearchRequest{
-				Query: "minimal query",
-				TopK:  3,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "Unknown",
+					Severity:    "low",
+					Component:   "pod",
+					Environment: "development",
+					Priority:    "P4",
+				},
+				TopK: 3,
 			}
 
 			searchResponse := &models.WorkflowSearchResponse{
 				Workflows:    []models.WorkflowSearchResult{},
 				TotalResults: 0,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "Unknown",
+					Severity:    "low",
+					Component:   "pod",
+					Environment: "development",
+					Priority:    "P4",
+				},
 			}
 
 			auditEvent, err := NewWorkflowSearchAuditEvent(

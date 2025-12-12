@@ -19,10 +19,8 @@ package datastorage
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,9 +37,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
 
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
@@ -85,10 +81,6 @@ var (
 	datastorageURL    string
 	configDir         string // ADR-030: Directory for config and secret files
 	schemaName        string // Schema name for this parallel process (for isolation)
-
-	// BR-STORAGE-014: Embedding service integration
-	embeddingServer *httptest.Server // Mock embedding service
-	embeddingClient embedding.Client
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -113,7 +105,7 @@ func generateTestUUID() uuid.UUID {
 // 2. Copy table structure from public schema (without data)
 // 3. Set search_path to use this schema
 //
-// Note: Extensions (pgvector, uuid-ossp) are database-wide and already created in public schema
+// Note: Extensions (uuid-ossp) are database-wide and already created in public schema
 func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 	schemaName := fmt.Sprintf("test_process_%d", processNum)
 
@@ -271,6 +263,14 @@ func preflightCheck() error {
 // cleanupContainers removes any existing test containers and networks
 // This is called both in preflight and after tests to ensure clean state
 func cleanupContainers() {
+	// Allow skipping cleanup for debugging (DS team investigation)
+	if os.Getenv("KEEP_CONTAINERS_ON_FAILURE") != "" {
+		GinkgoWriter.Println("⚠️  Skipping cleanup (KEEP_CONTAINERS_ON_FAILURE=1 set for debugging)")
+		GinkgoWriter.Printf("   To inspect: podman ps -a | grep datastorage\n")
+		GinkgoWriter.Printf("   Logs: podman logs datastorage-service-test\n")
+		return
+	}
+
 	GinkgoWriter.Println("🧹 Cleaning up test infrastructure...")
 
 	// Stop and remove integration test containers
@@ -361,7 +361,7 @@ var _ = SynchronizedBeforeSuite(
 			createNetwork()
 		}
 
-		// 2. Start PostgreSQL with pgvector
+		// 2. Start PostgreSQL
 		GinkgoWriter.Println("📦 Starting PostgreSQL container...")
 		startPostgreSQL()
 
@@ -467,37 +467,6 @@ var _ = SynchronizedBeforeSuite(
 		dlqClient, err = dlq.NewClient(redisClient, logger)
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
-		// BR-STORAGE-014: Create mock embedding service for integration tests
-		GinkgoWriter.Printf("🏗️  [Process %d] Creating mock embedding service...\n", processNum)
-		embeddingServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Mock 768-dimensional embedding response
-			mockEmbedding := make([]float32, 768)
-			for i := range mockEmbedding {
-				mockEmbedding[i] = float32(i) * 0.001 // Generate deterministic values
-			}
-
-			resp := map[string]interface{}{
-				"embedding":  mockEmbedding,
-				"dimensions": 768,
-				"model":      "all-mpnet-base-v2",
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
-		}))
-
-		// Create Redis cache for embeddings
-		redisOpts := &redis.Options{
-			Addr: fmt.Sprintf("%s:%s", os.Getenv("REDIS_HOST"), os.Getenv("REDIS_PORT")),
-		}
-		redisSharedClient := rediscache.NewClient(redisOpts, logger)
-		embeddingCache := rediscache.NewCache[[]float32](redisSharedClient, "embeddings", 24*time.Hour)
-
-		// Create embedding client
-		embeddingClient = embedding.NewClient(embeddingServer.URL, embeddingCache, logger)
-		GinkgoWriter.Printf("✅ [Process %d] Mock embedding service ready at %s\n", processNum, embeddingServer.URL)
-
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests in schema: %s\n", processNum, schemaName)
 	},
 )
@@ -540,12 +509,6 @@ var _ = AfterSuite(func() {
 
 	if redisClient != nil {
 		redisClient.Close()
-	}
-
-	// Clean up mock embedding server
-	if embeddingServer != nil {
-		embeddingServer.Close()
-		GinkgoWriter.Printf("🧹 [Process %d] Closed mock embedding server\n", processNum)
 	}
 
 	// Use centralized cleanup function (only process 1)
@@ -596,7 +559,7 @@ func createNetwork() {
 	GinkgoWriter.Println("✅ Podman network created")
 }
 
-// startPostgreSQL starts PostgreSQL container with pgvector
+// startPostgreSQL starts PostgreSQL container
 // When POSTGRES_HOST is set (e.g., in Docker Compose), skip container creation
 func startPostgreSQL() {
 	// Check if running in Docker Compose environment
@@ -631,7 +594,7 @@ func startPostgreSQL() {
 	exec.Command("podman", "stop", postgresContainer).Run()
 	exec.Command("podman", "rm", postgresContainer).Run()
 
-	// Start PostgreSQL with pgvector
+	// Start PostgreSQL
 	// Use --network=datastorage-test for container-to-container communication
 	// Increase max_connections for parallel test execution (default is 100)
 	cmd := exec.Command("podman", "run", "-d",
@@ -641,7 +604,7 @@ func startPostgreSQL() {
 		"-e", "POSTGRES_DB=action_history",
 		"-e", "POSTGRES_USER=slm_user",
 		"-e", "POSTGRES_PASSWORD=test_password",
-		"quay.io/jordigilh/pgvector:pg16",
+		"postgres:16-alpine",
 		"-c", "max_connections=200")
 
 	output, err := cmd.CombinedOutput()
@@ -818,33 +781,24 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	_, err := targetDB.ExecContext(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	Expect(err).ToNot(HaveOccurred())
 
-	// 2. Enable pgvector extension BEFORE migrations
-	GinkgoWriter.Println("  🔌 Enabling pgvector extension...")
-	_, err = targetDB.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
-	Expect(err).ToNot(HaveOccurred())
-
-	// 3. Apply ALL migrations in order (mirrors production)
+	// 2. Apply ALL migrations in order (mirrors production)
 	GinkgoWriter.Println("  📜 Applying all migrations in order...")
 	migrations := []string{
 		"001_initial_schema.sql",
 		"002_fix_partitioning.sql",
 		"003_stored_procedures.sql",
 		"004_add_effectiveness_assessment_due.sql",
-		"005_vector_schema.sql",
+
 		"006_effectiveness_assessment.sql",
-		"009_update_vector_dimensions.sql",
-		"007_add_context_column.sql",
-		"008_context_api_compatibility.sql",
-		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
 		"012_adr033_multidimensional_tracking.sql",           // ADR-033: Multi-dimensional success tracking
 		"013_create_audit_events_table.sql",                  // ADR-034: Unified audit events table
-		"015_create_workflow_catalog_table.sql",              // BR-STORAGE-012/013/014: Workflow catalog with semantic search
-		"016_update_embedding_dimensions.sql",                // BR-STORAGE-014: Update to 768 dimensions (all-mpnet-base-v2)
+		"015_create_workflow_catalog_table.sql",              // BR-STORAGE-012: Workflow catalog (V1.0 label-only)
 		"017_add_workflow_schema_fields.sql",                 // ADR-043: Add parameters, execution_engine, execution_bundle
 		"018_rename_execution_bundle_to_container_image.sql", // DD-WORKFLOW-002 v2.4: Rename to container_image, add container_digest
 		"019_uuid_primary_key.sql",                           // DD-WORKFLOW-002 v3.0: UUID primary key, workflow_name field
 		"020_add_workflow_label_columns.sql",                 // DD-WORKFLOW-001 v1.6: Add custom_labels, detected_labels columns
+		"021_create_notification_audit_table.sql",            // BR-NOT-062, BR-NOT-063, BR-NOT-064: Notification audit persistence
 		"1000_create_audit_events_partitions.sql",            // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 
@@ -897,33 +851,24 @@ func applyMigrationsWithPropagation() {
 	_, err := db.ExecContext(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	Expect(err).ToNot(HaveOccurred())
 
-	// 2. Enable pgvector extension BEFORE migrations
-	GinkgoWriter.Println("  🔌 Enabling pgvector extension...")
-	_, err = db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
-	Expect(err).ToNot(HaveOccurred())
-
-	// 3. Apply ALL migrations in order (mirrors production)
+	// 2. Apply ALL migrations in order (mirrors production)
 	GinkgoWriter.Println("  📜 Applying all migrations in order...")
 	migrations := []string{
 		"001_initial_schema.sql",
 		"002_fix_partitioning.sql",
 		"003_stored_procedures.sql",
 		"004_add_effectiveness_assessment_due.sql",
-		"005_vector_schema.sql",
+
 		"006_effectiveness_assessment.sql",
-		"009_update_vector_dimensions.sql",
-		"007_add_context_column.sql",
-		"008_context_api_compatibility.sql",
-		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
 		"012_adr033_multidimensional_tracking.sql",           // ADR-033: Multi-dimensional success tracking
 		"013_create_audit_events_table.sql",                  // ADR-034: Unified audit events table
-		"015_create_workflow_catalog_table.sql",              // BR-STORAGE-012/013/014: Workflow catalog with semantic search
-		"016_update_embedding_dimensions.sql",                // BR-STORAGE-014: Update to 768 dimensions (all-mpnet-base-v2)
+		"015_create_workflow_catalog_table.sql",              // BR-STORAGE-012: Workflow catalog (V1.0 label-only)
 		"017_add_workflow_schema_fields.sql",                 // ADR-043: Add parameters, execution_engine, execution_bundle
 		"018_rename_execution_bundle_to_container_image.sql", // DD-WORKFLOW-002 v2.4: Rename to container_image, add container_digest
 		"019_uuid_primary_key.sql",                           // DD-WORKFLOW-002 v3.0: UUID primary key, workflow_name field
 		"020_add_workflow_label_columns.sql",                 // DD-WORKFLOW-001 v1.6: Add custom_labels, detected_labels columns
+		"021_create_notification_audit_table.sql",            // BR-NOT-062, BR-NOT-063, BR-NOT-064: Notification audit persistence
 		"1000_create_audit_events_partitions.sql",            // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 

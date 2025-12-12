@@ -9,6 +9,9 @@ nodes:
   - containerPort: 30186  # Notification metrics NodePort (per DD-TEST-001)
     hostPort: 9186        # Port on host machine (localhost:9186)
     protocol: TCP
+  - containerPort: 30090  # Data Storage NodePort for audit E2E tests
+    hostPort: 30090       # Port on host machine (localhost:30090)
+    protocol: TCP
   # Mount host directory for E2E file delivery validation
   # This allows tests to directly read files written by FileService
   # Note: hostPath is set dynamically by CreateNotificationCluster:

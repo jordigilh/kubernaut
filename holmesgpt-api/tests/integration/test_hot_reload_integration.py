@@ -226,8 +226,9 @@ class TestMetricsIntegration:
         content = response.body.decode('utf-8')
 
         # Verify our metrics are in the output
-        assert 'holmesgpt_config_reload_total' in content
-        assert 'holmesgpt_config_reload_errors_total' in content
-        assert 'holmesgpt_config_last_reload_timestamp' in content
+        # DD-005: All metrics use holmesgpt_api_ prefix
+        assert 'holmesgpt_api_config_reload_total' in content
+        assert 'holmesgpt_api_config_reload_errors_total' in content
+        assert 'holmesgpt_api_config_last_reload_timestamp' in content
 
 

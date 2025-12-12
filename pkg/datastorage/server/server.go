@@ -21,7 +21,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -34,10 +33,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -201,59 +198,23 @@ func NewServer(
 	logger.V(1).Info("Creating workflow catalog dependencies...")
 	sqlxDB := sqlx.NewDb(db, "pgx") // Wrap *sql.DB with sqlx for workflow repository
 
-	// BR-STORAGE-014: Create embedding client with Redis caching
-	// Sidecar pattern: Python embedding service on localhost:8086
-	embeddingBaseURL := "http://localhost:8086"
-	if envURL := os.Getenv("EMBEDDING_SERVICE_URL"); envURL != "" {
-		embeddingBaseURL = envURL
-	}
+	// V1.0: Embedding service removed (label-only search)
+	// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
+	// Workflow repository no longer requires embedding client
+	workflowRepo := repository.NewWorkflowRepository(sqlxDB, logger, nil)
 
-	// Create Redis cache for embeddings (24-hour TTL)
-	// DD-005 v2.0: Use logr.Logger directly for shared libraries
-	redisOpts := &redis.Options{
-		Addr:     redisAddr,
-		Password: redisPassword,
-	}
-	redisSharedClient := rediscache.NewClient(redisOpts, logger) // Use logr.Logger directly (DD-005 v2.0)
-	embeddingCache := rediscache.NewCache[[]float32](redisSharedClient, "embeddings", 24*time.Hour)
-
-	// Create embedding client
-	embeddingClient := embedding.NewClient(embeddingBaseURL, embeddingCache, logger)
-
-	// Health check embedding service (non-blocking)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := embeddingClient.Health(ctx); err != nil {
-			logger.Info("Embedding service health check failed (will retry on first use)",
-				"error", err,
-				"url", embeddingBaseURL)
-		} else {
-			logger.Info("Embedding service healthy",
-				"url", embeddingBaseURL)
-		}
-	}()
-
-	// Create workflow repository with embedding client
-	workflowRepo := repository.NewWorkflowRepository(sqlxDB, logger, embeddingClient)
-
-	// Keep placeholder service for backward compatibility (if needed elsewhere)
-	embeddingService := embedding.NewPlaceholderService(logger)
-
-	logger.V(1).Info("Workflow catalog dependencies created",
-		"workflow_repo_nil", workflowRepo == nil,
-		"embedding_client_nil", embeddingClient == nil,
-		"embedding_service_nil", embeddingService == nil)
+	logger.V(1).Info("Workflow catalog dependencies created (label-only search)",
+		"workflow_repo_nil", workflowRepo == nil)
 
 	// Create database adapter for READ API handlers
 	dbAdapter := adapter.NewDBAdapter(db, logger)
 
 	// Create READ API handler with logger, ADR-033 repository, workflow catalog, and audit store
+	// V1.0: Embedding service removed (label-only search)
 	handler := NewHandler(dbAdapter,
 		WithLogger(logger),
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
-		WithEmbeddingService(embeddingService),
 		WithAuditStore(auditStore))
 
 	return &Server{

@@ -17,6 +17,7 @@ limitations under the License.
 package remediationorchestrator_test
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -93,7 +94,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 				if err != nil {
 					return ""
 				}
-				return fetched.Status.OverallPhase
+				return string(fetched.Status.OverallPhase)
 			}, timeout, interval).ShouldNot(BeEmpty())
 
 			By("Verifying the RemediationRequest has been processed")
@@ -163,7 +164,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 					return ""
 				}
-				return rr.Status.OverallPhase
+				return string(rr.Status.OverallPhase)
 			}, timeout, interval).Should(Equal("Analyzing"))
 
 			By("Waiting for AIAnalysis to be created")
@@ -255,7 +256,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			By("Verifying RR status updated")
 			rr := &remediationv1.RemediationRequest{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
-			Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 			Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"))
 
 			GinkgoWriter.Printf("✅ BR-ORCH-036: ManualReview notification created for WorkflowResolutionFailed\n")
@@ -302,7 +303,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 
 			ai.Status.Phase = "Completed"
 			ai.Status.RootCause = "Problem self-resolved - container restarted successfully"
-			ai.Status.Reason = "ProblemResolved"
+			ai.Status.Reason = "WorkflowNotNeeded"
 			ai.Status.SubReason = "ProblemResolved"
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
@@ -322,7 +323,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			By("Verifying RR status")
 			rr := &remediationv1.RemediationRequest{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
-			Expect(rr.Status.OverallPhase).To(Equal("Completed"))
+			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
 
 			GinkgoWriter.Printf("✅ BR-ORCH-037: RR completed with NoActionRequired for WorkflowNotNeeded\n")
 		})
@@ -396,7 +397,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 					return ""
 				}
-				return rr.Status.OverallPhase
+				return string(rr.Status.OverallPhase)
 			}, timeout, interval).Should(Equal("AwaitingApproval"))
 
 			By("Waiting for RemediationApprovalRequest to be created")
@@ -472,11 +473,114 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 					return ""
 				}
-				return rr.Status.OverallPhase
+				return string(rr.Status.OverallPhase)
 			}, timeout, interval).Should(Equal("Executing"))
 
 			GinkgoWriter.Printf("✅ BR-ORCH-026: RR transitioned to Executing after RAR approval\n")
 		})
+
+		It("should handle RAR deletion gracefully (operator error)", func() {
+			// Scenario: Operator accidentally deletes RAR CRD during approval wait
+			// Business Outcome: RR transitions to Failed with clear error
+			// Confidence: 95% - Real operator error scenario
+
+			ctx := context.Background()
+
+			By("Creating a RemediationRequest that requires approval")
+			rrName := fmt.Sprintf("rr-rar-delete-%d", time.Now().UnixNano())
+			now := metav1.Now()
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rrName,
+					Namespace: namespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+					SignalName:        "TestApprovalRequiredAlert",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					FiringTime:        now,
+					ReceivedTime:      now,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Waiting for SignalProcessing to be created")
+			spName := fmt.Sprintf("sp-%s", rrName)
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			}, timeout, interval).Should(Succeed(), "SignalProcessing should be created")
+
+			// Complete SP manually
+			sp := &signalprocessingv1.SignalProcessing{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)).To(Succeed())
+			sp.Status.Phase = "Completed"
+			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+
+			By("Waiting for AIAnalysis to be created")
+			Eventually(func() error {
+				ai := &aianalysisv1.AIAnalysis{}
+				aiName := fmt.Sprintf("ai-%s", rrName)
+				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+			}, timeout, interval).Should(Succeed())
+
+			By("Completing AIAnalysis with ApprovalRequired=true")
+			ai := &aianalysisv1.AIAnalysis{}
+			aiName := fmt.Sprintf("ai-%s", rrName)
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+			ai.Status.Phase = "Completed"
+			ai.Status.ApprovalRequired = true
+			ai.Status.ApprovalReason = "High-risk operation requires approval"
+			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+			By("Waiting for RAR to be created")
+			rarName := fmt.Sprintf("rar-%s", rrName)
+			Eventually(func() error {
+				rar := &remediationv1.RemediationApprovalRequest{}
+				return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+			}, timeout, interval).Should(Succeed())
+
+			By("Waiting for RR to transition to AwaitingApproval")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+					return ""
+				}
+				return string(rr.Status.OverallPhase)
+			}, timeout, interval).Should(Equal("AwaitingApproval"))
+
+			By("Simulating operator error: Deleting RAR mid-approval")
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
+
+			// Trigger reconcile by updating RR (simulates watch event)
+			rr = &remediationv1.RemediationRequest{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+			rr.Annotations = map[string]string{"trigger": "reconcile"}
+			Expect(k8sClient.Update(ctx, rr)).To(Succeed())
+
+			// Then: RR should transition to Failed (RAR deleted, approval impossible)
+			Eventually(func() string {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
+					return ""
+				}
+				return string(updated.Status.OverallPhase)
+			}, timeout, interval).Should(Equal("Failed"),
+				"RR must transition to Failed when RAR is deleted (graceful operator error handling)")
+
+			// Verify: Error message mentions RAR deletion
+			Eventually(func() string {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
+					return ""
+				}
+				return updated.Status.Message
+			}, timeout, interval).Should(ContainSubstring("approval"),
+				"Error message must indicate approval-related failure for operator clarity")
+		})
 	})
 })
-

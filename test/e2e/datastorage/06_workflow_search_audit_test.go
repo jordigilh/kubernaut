@@ -123,8 +123,7 @@ var _ = Describe("Scenario 6: Workflow Search Audit Trail", Label("e2e", "workfl
 			workflowID := fmt.Sprintf("wf-audit-test-%s", testID)
 
 			// ADR-043 compliant workflow-schema.yaml content
-			// YAML uses underscored keys (signal_type, risk_tolerance)
-			// DD-WORKFLOW-001: All 7 mandatory labels required
+			// V1.0: 4 mandatory labels (severity, component, priority, environment)
 			workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
 kind: WorkflowSchema
 metadata:
@@ -132,12 +131,9 @@ metadata:
   version: "1.0.0"
   description: Recover from OOMKilled using kubectl rollout restart
 labels:
-  signal_type: OOMKilled
   severity: critical
   environment: production
-  priority: p0
-  risk_tolerance: low
-  business_category: revenue-critical
+  priority: P0
   component: deployment
 parameters:
   - name: DEPLOYMENT_NAME
@@ -164,15 +160,13 @@ execution:
 				"owner":         "platform-team",
 				"maintainer":    "oncall@example.com",
 				"content":       workflowSchemaContent,
-				// JSON labels use hyphenated keys (signal_type, risk_tolerance)
+				// V1.0: 5 mandatory labels (DD-WORKFLOW-001 v1.4)
 				"labels": map[string]interface{}{
-					"signal_type":       "OOMKilled",
-					"severity":          "critical",
-					"environment":       "production",
-					"priority":          "P0",
-					"risk_tolerance":    "low",
-					"business_category": "revenue-critical",
-					"component":         "deployment",
+					"signal_type": "OOMKilled",  // mandatory
+					"severity":    "critical",   // mandatory
+					"environment": "production", // mandatory
+					"priority":    "P0",         // mandatory
+					"component":   "deployment", // mandatory
 				},
 				"container_image": containerImage,
 			}
@@ -205,14 +199,15 @@ execution:
 
 			remediationID := fmt.Sprintf("rem-%s", testID)
 			searchRequest := map[string]interface{}{
-				"query":          "OOMKilled critical memory increase",
 				"remediation_id": remediationID,
 				"filters": map[string]interface{}{
-					"signal_type": "OOMKilled",
-					"severity":    "critical",
+					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
+					"severity":    "critical",   // mandatory
+					"component":   "deployment", // mandatory
+					"environment": "production", // mandatory
+					"priority":    "P0",         // mandatory
 				},
-				"top_k":          5,
-				"min_similarity": 0.5,
+				"top_k": 5,
 			}
 
 			searchJSON, err := json.Marshal(searchRequest)
@@ -329,10 +324,17 @@ execution:
 			Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
 
 			// Verify query metadata (BR-AUDIT-025)
+			// V1.0: Label-only search (no text field, uses structured filters)
 			queryData, ok := eventDataMap["query"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "event_data should contain 'query' object")
-			Expect(queryData["text"]).To(Equal("OOMKilled critical memory increase"),
-				"Query text should match search request")
+
+			// V1.0: Verify filters instead of text (label-only architecture)
+			filters, ok := queryData["filters"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "query should contain 'filters' object")
+			Expect(filters["signal_type"]).To(Equal("OOMKilled"), "Filters should capture signal_type")
+			Expect(filters["severity"]).To(Equal("critical"), "Filters should capture severity")
+			Expect(filters["component"]).To(Equal("deployment"), "Filters should capture component")
+
 			Expect(queryData["top_k"]).To(BeNumerically("==", 5),
 				"Query top_k should match search request")
 
@@ -392,11 +394,13 @@ execution:
 			for i := 0; i < numSearches; i++ {
 				remediationID := fmt.Sprintf("rem-async-%s-%d", testID, i)
 				searchRequest := map[string]interface{}{
-					"query":          "OOMKilled critical",
 					"remediation_id": remediationID,
 					"filters": map[string]interface{}{
-						"signal_type": "OOMKilled",
-						"severity":    "critical",
+						"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
+						"severity":    "critical",   // mandatory
+						"component":   "deployment", // mandatory
+						"environment": "production", // mandatory
+						"priority":    "P0",         // mandatory
 					},
 					"top_k": 3,
 				}

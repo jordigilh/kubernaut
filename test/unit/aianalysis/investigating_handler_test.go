@@ -780,4 +780,162 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 	})
+
+	// BR-AI-082: RecoveryStatus population tests
+	Describe("RecoveryStatus Population", func() {
+		// Test 1: Populate RecoveryStatus when recovery_analysis present
+		Context("when isRecoveryAttempt=true AND recovery_analysis present", func() {
+			BeforeEach(func() {
+				// Mock recovery response with recovery_analysis
+				mockClient.InvestigateRecoveryFunc = func(ctx context.Context, req *client.RecoveryRequest) (*client.IncidentResponse, error) {
+					currentSignalType := "OOMKilled"
+					return &client.IncidentResponse{
+						IncidentID: "test-incident",
+						Analysis:   "Recovery analysis performed",
+						Confidence: 0.85,
+						RecoveryAnalysis: &client.RecoveryAnalysis{
+							PreviousAttemptAssessment: client.PreviousAttemptAssessment{
+								WorkflowID:            "restart-pod-v1",
+								FailureUnderstood:     true,
+								FailureReasonAnalysis: "Previous workflow did not resolve memory leak",
+								StateChanged:          false,
+								CurrentSignalType:     &currentSignalType,
+							},
+							RootCauseRefinement: "Memory leak persists after restart",
+						},
+						SelectedWorkflow: &client.SelectedWorkflow{
+							WorkflowID:     "scale-deployment-v1",
+							ContainerImage: "kubernaut.io/workflows/scale:v1",
+							Confidence:     0.85,
+							Rationale:      "Scale to handle memory pressure",
+						},
+						Timestamp: "2025-12-11T10:00:00Z",
+					}, nil
+				}
+			})
+
+			It("should populate RecoveryStatus with all fields from HAPI response", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.IsRecoveryAttempt = true
+				analysis.Spec.RecoveryAttemptNumber = 1
+				analysis.Spec.PreviousExecutions = []aianalysisv1.PreviousExecution{
+					{
+						WorkflowExecutionRef: "we-001",
+						OriginalRCA: aianalysisv1.OriginalRCA{
+							Summary:    "OOM detected",
+							SignalType: "OOMKilled",
+							Severity:   "high",
+						},
+						SelectedWorkflow: aianalysisv1.SelectedWorkflowSummary{
+							WorkflowID:     "restart-pod-v1",
+							Version:        "1.0",
+							ContainerImage: "kubernaut.io/workflows/restart:v1",
+						},
+						Failure: aianalysisv1.ExecutionFailure{
+							FailedStepIndex: 2,
+							FailedStepName:  "verify-health",
+							Reason:          "OOMKilled",
+							Message:         "Pod still OOMKilled after restart",
+							FailedAt:        metav1.Now(),
+							ExecutionTime:   "5m",
+						},
+					},
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				// Business outcome: Operator sees recovery failure assessment
+				Expect(analysis.Status.RecoveryStatus).NotTo(BeNil(), "RecoveryStatus should be populated")
+				Expect(analysis.Status.RecoveryStatus.StateChanged).To(BeFalse(), "StateChanged should match HAPI response")
+				Expect(analysis.Status.RecoveryStatus.CurrentSignalType).To(Equal("OOMKilled"), "CurrentSignalType should be mapped")
+				Expect(analysis.Status.RecoveryStatus.PreviousAttemptAssessment).NotTo(BeNil())
+				Expect(analysis.Status.RecoveryStatus.PreviousAttemptAssessment.FailureUnderstood).To(BeTrue())
+				Expect(analysis.Status.RecoveryStatus.PreviousAttemptAssessment.FailureReasonAnalysis).To(Equal("Previous workflow did not resolve memory leak"))
+			})
+		})
+
+		// Test 2: RecoveryStatus nil when recovery_analysis absent
+		Context("when isRecoveryAttempt=true BUT recovery_analysis absent", func() {
+			BeforeEach(func() {
+				// Mock recovery response WITHOUT recovery_analysis
+				mockClient.InvestigateRecoveryFunc = func(ctx context.Context, req *client.RecoveryRequest) (*client.IncidentResponse, error) {
+					return &client.IncidentResponse{
+						IncidentID:       "test-incident",
+						Analysis:         "Recovery analysis performed",
+						Confidence:       0.85,
+						RecoveryAnalysis: nil, // No recovery_analysis from HAPI
+						SelectedWorkflow: &client.SelectedWorkflow{
+							WorkflowID:     "scale-deployment-v1",
+							ContainerImage: "kubernaut.io/workflows/scale:v1",
+							Confidence:     0.85,
+							Rationale:      "Scale to handle load",
+						},
+						Timestamp: "2025-12-11T10:00:00Z",
+					}, nil
+				}
+			})
+
+			It("should leave RecoveryStatus nil when HAPI does not return recovery_analysis", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.IsRecoveryAttempt = true
+				analysis.Spec.RecoveryAttemptNumber = 1
+				analysis.Spec.PreviousExecutions = []aianalysisv1.PreviousExecution{
+					{
+						WorkflowExecutionRef: "we-001",
+						OriginalRCA: aianalysisv1.OriginalRCA{
+							Summary:    "OOM detected",
+							SignalType: "OOMKilled",
+							Severity:   "high",
+						},
+					},
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				// Business outcome: RecoveryStatus remains nil when HAPI doesn't provide data
+				Expect(analysis.Status.RecoveryStatus).To(BeNil(), "RecoveryStatus should remain nil when recovery_analysis not present")
+			})
+		})
+
+		// Test 3: RecoveryStatus nil for initial incidents
+		Context("when isRecoveryAttempt=false (initial incident)", func() {
+			BeforeEach(func() {
+				// Mock initial incident response (no recovery)
+				mockClient.WithFullResponse(
+					"Initial investigation complete",
+					0.9,
+					true,
+					[]string{},
+					&client.RootCauseAnalysis{
+						Summary:  "OOM detected",
+						Severity: "high",
+					},
+					&client.SelectedWorkflow{
+						WorkflowID:     "restart-pod-v1",
+						ContainerImage: "kubernaut.io/workflows/restart:v1",
+						Confidence:     0.9,
+						Rationale:      "Restart pod to resolve OOM",
+					},
+					nil,
+				)
+			})
+
+			It("should NOT populate RecoveryStatus for initial incidents", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.IsRecoveryAttempt = false // Initial incident
+				// No PreviousExecutions for initial incident
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				// Business outcome: RecoveryStatus only populated for recovery attempts
+				Expect(analysis.Status.RecoveryStatus).To(BeNil(), "RecoveryStatus should be nil for initial incidents")
+				// Regular fields still populated
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing))
+				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil())
+			})
+		})
+	})
 })

@@ -119,12 +119,12 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 	consecutiveFailures := 0
 	for _, rr := range rrList.Items {
 		switch rr.Status.OverallPhase {
-		case string(phase.Failed):
+		case phase.Failed:
 			// Failed RR - increment counter
 			// Note: BR-ORCH-042 specifically says "Failed RRs" - TimedOut not counted
 			consecutiveFailures++
 
-		case string(phase.Completed):
+		case phase.Completed:
 			// Completed RR - success resets the counter (AC-042-1-2)
 			logger.V(1).Info("Found Completed RR, resetting failure count",
 				"consecutiveFailures", consecutiveFailures,
@@ -132,11 +132,11 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 			)
 			return consecutiveFailures
 
-		case string(phase.Blocked):
+		case phase.Blocked:
 			// Blocked RR - skip (don't double-count the blocking trigger)
 			continue
 
-		case string(phase.Skipped):
+		case phase.Skipped:
 			// Skipped RR - not a remediation failure, skip
 			// Skipped means resource lock prevented execution, not remediation failure
 			continue
@@ -187,7 +187,7 @@ func (r *Reconciler) transitionToBlocked(ctx context.Context, rr *remediationv1.
 		}
 
 		// Transition to Blocked phase
-		rr.Status.OverallPhase = string(phase.Blocked)
+		rr.Status.OverallPhase = phase.Blocked
 		rr.Status.BlockedUntil = &blockedUntil
 		rr.Status.BlockReason = &reason
 		rr.Status.Message = blockMessage
@@ -205,8 +205,8 @@ func (r *Reconciler) transitionToBlocked(ctx context.Context, rr *remediationv1.
 
 	// Record phase transition metric
 	metrics.PhaseTransitionsTotal.WithLabelValues(
-		string(phase.Failed),  // from_phase
-		string(phase.Blocked), // to_phase
+		string(phase.Failed),  // from_phase (metrics need string)
+		string(phase.Blocked), // to_phase (metrics need string)
 		rr.Namespace,
 	).Inc()
 
@@ -274,7 +274,7 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 			return err
 		}
 
-		rr.Status.OverallPhase = string(phase.Failed)
+		rr.Status.OverallPhase = phase.Failed
 		rr.Status.FailurePhase = &failurePhase
 		rr.Status.FailureReason = &failureReason
 		// Clear blocking fields since we're transitioning to terminal
@@ -298,4 +298,3 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 	)
 	return ctrl.Result{}, nil
 }
-

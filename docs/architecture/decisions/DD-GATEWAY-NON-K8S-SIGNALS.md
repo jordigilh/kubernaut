@@ -242,3 +242,5 @@ func (c *CRDCreator) validateResourceInfo(signal *types.NormalizedSignal) error 
 
 
 
+
+

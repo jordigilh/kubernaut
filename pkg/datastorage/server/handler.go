@@ -27,7 +27,6 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
@@ -56,12 +55,12 @@ type DBInterface interface {
 // BR-STORAGE-024: RFC 7807 error responses
 //
 // REFACTOR: Enhanced with structured logging, request timing, and observability
+// V1.0: Embedding service removed (label-only search per CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md)
 type Handler struct {
 	db                    DBInterface
 	logger                logr.Logger
 	actionTraceRepository *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
-	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog
-	embeddingService      embedding.Service                 // BR-STORAGE-013: Embedding generation
+	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
 	auditStore            audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
 }
 
@@ -89,14 +88,6 @@ func WithActionTraceRepository(repo *repository.ActionTraceRepository) HandlerOp
 func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
 	return func(h *Handler) {
 		h.workflowRepo = repo
-	}
-}
-
-// WithEmbeddingService sets the embedding service for semantic search
-// BR-STORAGE-013: Embedding generation for semantic search
-func WithEmbeddingService(service embedding.Service) HandlerOption {
-	return func(h *Handler) {
-		h.embeddingService = service
 	}
 }
 

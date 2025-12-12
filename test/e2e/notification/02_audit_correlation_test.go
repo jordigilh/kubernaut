@@ -245,7 +245,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			Expect(event.ActorType).To(Equal("service"), "ActorType should be 'service'")
 			Expect(event.ActorID).To(Equal("notification"), "ActorID should be service name")
 			Expect(event.ResourceType).To(Equal("NotificationRequest"), "ResourceType should be 'NotificationRequest'")
-			Expect(event.RetentionDays).To(Equal(2555), "RetentionDays should be 2555 (7 years)")
+			// Note: RetentionDays is stored in PostgreSQL but not returned by Data Storage Query API
 
 			// Verify event outcome is valid
 			Expect(event.EventOutcome).To(BeElementOf("success", "failure", "error"),

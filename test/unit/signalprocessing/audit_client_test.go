@@ -138,11 +138,11 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 	Describe("BR-SP-090: RecordPhaseTransition", func() {
 		Context("Happy Path", func() {
-			// AC-HP-03: Record phase transition
-			It("AC-HP-03: should record phase transition with from/to phases", func() {
-				sp := createTestSignalProcessing("transition-test")
+		// AC-HP-03: Record phase transition
+		It("AC-HP-03: should record phase transition with from/to phases", func() {
+			sp := createTestSignalProcessing("transition-test")
 
-				auditClient.RecordPhaseTransition(ctx, sp, "pending", "enriching")
+			auditClient.RecordPhaseTransition(ctx, sp, string(signalprocessingv1alpha1.PhasePending), string(signalprocessingv1alpha1.PhaseEnriching))
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]

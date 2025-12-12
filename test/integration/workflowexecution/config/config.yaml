@@ -1,0 +1,41 @@
+# Data Storage Configuration for WorkflowExecution Integration Tests
+# Port: 18100 (WE-specific, no conflicts with other services)
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+
+database:
+  host: postgres
+  port: 5432
+  database: action_history
+  sslMode: disable
+  maxConnections: 10
+  connectionTimeout: 10s
+  secretsFile: "/etc/datastorage/db-secrets.yaml"
+
+redis:
+  host: redis
+  port: 6379
+  database: 0
+  maxRetries: 3
+  poolSize: 10
+  secretsFile: "/etc/datastorage/redis-secrets.yaml"
+
+storage:
+  batchSize: 100
+  flushInterval: 5s
+  maxRetries: 3
+  retryDelay: 1s
+
+logging:
+  level: info
+  format: json
+
+metrics:
+  enabled: true
+  port: 9090
+
+

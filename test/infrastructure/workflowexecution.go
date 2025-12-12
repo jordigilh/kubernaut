@@ -98,15 +98,18 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 	// Following AIAnalysis E2E pattern: build → load → deploy (runs once, shared by 4 parallel procs)
 	fmt.Fprintf(output, "\n🗄️  Deploying Data Storage infrastructure (BR-WE-005 audit events)...\n")
 
-	// 1. Deploy PostgreSQL
+	// Create context for infrastructure deployment
+	ctx := context.Background()
+
+	// 1. Deploy PostgreSQL (using shared function from datastorage.go)
 	fmt.Fprintf(output, "  🐘 Deploying PostgreSQL...\n")
-	if err := deployPostgreSQL(kubeconfigPath, output); err != nil {
+	if err := deployPostgreSQLInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, output); err != nil {
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
 
-	// 2. Deploy Redis
+	// 2. Deploy Redis (using shared function from datastorage.go)
 	fmt.Fprintf(output, "  🔴 Deploying Redis...\n")
-	if err := deployRedis(kubeconfigPath, output); err != nil {
+	if err := deployRedisInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, output); err != nil {
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 

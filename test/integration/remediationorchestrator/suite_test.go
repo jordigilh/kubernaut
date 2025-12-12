@@ -31,6 +31,7 @@ package remediationorchestrator_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,11 +60,12 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	// Import RO controller
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/controller"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Test constants for timeout and polling intervals
@@ -84,18 +86,40 @@ var (
 
 func TestRemediationOrchestratorIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "RemediationOrchestrator Controller Integration Suite (ENVTEST)")
+	RunSpecs(t, "RemediationOrchestrator Controller Integration Suite (ENVTEST + AIAnalysis Pattern)")
 }
 
-var _ = BeforeSuite(func() {
+// SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
+// Pattern: AIAnalysis (Programmatic podman-compose + parallel-safe)
+// Authority: docs/handoff/TRIAGE_RO_INFRASTRUCTURE_BOOTSTRAP_COMPARISON.md
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// This runs ONCE on process 1 only - creates shared infrastructure
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("RemediationOrchestrator Integration Test Suite - Automated Setup")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("Creating test infrastructure...")
+	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
+	GinkgoWriter.Println("  • PostgreSQL (port 15435)")
+	GinkgoWriter.Println("  • Redis (port 16381)")
+	GinkgoWriter.Println("  • Data Storage API (port 18140)")
+	GinkgoWriter.Println("  • Pattern: AIAnalysis (Programmatic podman-compose)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 	ctx, cancel = context.WithCancel(context.TODO())
+
+	By("Starting RO integration infrastructure (podman-compose)")
+	// This starts: PostgreSQL, Redis, DataStorage
+	// Per DD-TEST-001: Ports 15435, 16381, 18140
+	err := infrastructure.StartROIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	GinkgoWriter.Println("✅ All external services started and healthy")
 
 	By("Registering ALL CRD schemes for RO orchestration")
 
 	// RemediationRequest and RemediationApprovalRequest (RO owns these)
-	err := remediationv1.AddToScheme(scheme.Scheme)
+	err = remediationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// SignalProcessing (RO creates these)
@@ -114,7 +138,7 @@ var _ = BeforeSuite(func() {
 	err = notificationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Bootstrapping test environment with ALL CRDs")
+	By("Bootstrapping envtest with ALL CRDs")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
@@ -134,7 +158,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	By("Creating namespaces for testing")
+	By("Creating required namespaces")
 	// Create kubernaut-system namespace for controller
 	systemNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -198,18 +222,96 @@ var _ = BeforeSuite(func() {
 	GinkgoWriter.Println("    - WorkflowExecution")
 	GinkgoWriter.Println("    - NotificationRequest")
 	GinkgoWriter.Println("  • RemediationOrchestrator controller running")
+	GinkgoWriter.Println("  • REAL services available:")
+	GinkgoWriter.Println("    - PostgreSQL: localhost:15435")
+	GinkgoWriter.Println("    - Redis: localhost:16381")
+	GinkgoWriter.Println("    - Data Storage: http://localhost:18140")
 	GinkgoWriter.Println("")
-})
 
-var _ = AfterSuite(func() {
-	By("Tearing down the test environment")
-
-	cancel()
-
-	err := testEnv.Stop()
+	// Serialize REST config to pass to all processes
+	// Each process needs to create its own k8s client
+	configBytes, err := json.Marshal(struct {
+		Host     string
+		CAData   []byte
+		CertData []byte
+		KeyData  []byte
+	}{
+		Host:     cfg.Host,
+		CAData:   cfg.CAData,
+		CertData: cfg.CertData,
+		KeyData:  cfg.KeyData,
+	})
 	Expect(err).NotTo(HaveOccurred())
 
-	GinkgoWriter.Println("✅ Cleanup complete")
+	return configBytes
+}, func(data []byte) {
+	// This runs on ALL parallel processes (including process 1)
+	// Each process creates its own k8s client and context
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	// Deserialize REST config from process 1
+	var configData struct {
+		Host     string
+		CAData   []byte
+		CertData []byte
+		KeyData  []byte
+	}
+	err := json.Unmarshal(data, &configData)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Register ALL CRD schemes (MUST be done before creating client)
+	err = remediationv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = signalprocessingv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = aianalysisv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = workflowexecutionv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = notificationv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Create per-process REST config
+	cfg = &rest.Config{
+		Host: configData.Host,
+		TLSClientConfig: rest.TLSClientConfig{
+			CAData:   configData.CAData,
+			CertData: configData.CertData,
+			KeyData:  configData.KeyData,
+		},
+	}
+
+	// Create per-process k8s client
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient).NotTo(BeNil())
+
+	// Create per-process context ONLY if not already set (process 1 has it from first function)
+	// Process 1: ctx already set and used by controller manager - don't overwrite!
+	// Processes 2-4: Need ctx for test operations
+	if ctx == nil {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
+})
+
+// SynchronizedAfterSuite ensures proper cleanup in parallel execution
+var _ = SynchronizedAfterSuite(func() {
+	// This runs on ALL parallel processes - no cleanup needed per process
+}, func() {
+	// This runs ONCE on the last parallel process - cleanup shared infrastructure
+	By("Tearing down the test environment")
+	cancel()
+
+	if testEnv != nil {
+		err := testEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	By("Stopping RO integration infrastructure")
+	err := infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).NotTo(HaveOccurred())
+
+	GinkgoWriter.Println("✅ Cleanup complete - all services stopped")
 })
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
@@ -273,7 +375,7 @@ func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration
 		if err != nil {
 			return false, err
 		}
-		return rr.Status.OverallPhase == expectedPhase, nil
+		return string(rr.Status.OverallPhase) == expectedPhase, nil
 	})
 }
 
@@ -372,4 +474,3 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 
 	return k8sClient.Status().Update(ctx, sp)
 }
-

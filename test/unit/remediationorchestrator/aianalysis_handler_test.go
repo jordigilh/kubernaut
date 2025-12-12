@@ -216,7 +216,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				updatedRR := &remediationv1.RemediationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(updatedRR.Status.OverallPhase).To(Equal("Completed"))
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
 				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"))
 				Expect(updatedRR.Status.CompletedAt).ToNot(BeNil())
 			})
@@ -295,7 +295,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				updatedRR := &remediationv1.RemediationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(updatedRR.Status.OverallPhase).To(Equal("Failed"))
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
 				Expect(*updatedRR.Status.FailurePhase).To(Equal("ai_analysis"))
 				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
@@ -346,7 +346,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				updatedRR := &remediationv1.RemediationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(updatedRR.Status.OverallPhase).To(Equal("Failed"))
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				Expect(*updatedRR.Status.FailurePhase).To(Equal("ai_analysis"))
 				Expect(*updatedRR.Status.FailureReason).To(ContainSubstring("APIError"))
 
@@ -359,4 +359,3 @@ var _ = Describe("AIAnalysisHandler", func() {
 		})
 	})
 })
-

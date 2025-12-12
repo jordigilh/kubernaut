@@ -128,6 +128,13 @@ func (c *WorkflowExecutionCreator) Create(
 		},
 	}
 
+	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
+	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	}
+
 	// Set owner reference for cascade deletion (BR-ORCH-031)
 	if err := controllerutil.SetControllerReference(rr, we, c.scheme); err != nil {
 		logger.Error(err, "Failed to set owner reference")

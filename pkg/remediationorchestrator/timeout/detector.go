@@ -61,7 +61,7 @@ func (d *Detector) CheckTimeout(rr *remediationv1.RemediationRequest) TimeoutRes
 	currentPhase := rr.Status.OverallPhase
 
 	// Skip if terminal state
-	if d.IsTerminalPhase(currentPhase) {
+	if d.IsTerminalPhase(string(currentPhase)) {
 		return TimeoutResult{TimedOut: false}
 	}
 
@@ -124,13 +124,13 @@ func (d *Detector) CheckPhaseTimeout(rr *remediationv1.RemediationRequest) Timeo
 	}
 
 	// Get timeout for current phase (with per-remediation override)
-	timeout := d.GetPhaseTimeout(rr, currentPhase)
+	timeout := d.GetPhaseTimeout(rr, string(currentPhase))
 	elapsed := time.Since(*phaseStartTime)
 
 	if elapsed > timeout {
 		return TimeoutResult{
 			TimedOut:      true,
-			TimedOutPhase: currentPhase,
+			TimedOutPhase: string(currentPhase),
 			Elapsed:       elapsed,
 		}
 	}
@@ -177,4 +177,3 @@ func (d *Detector) GetPhaseTimeout(rr *remediationv1.RemediationRequest, phase s
 func (d *Detector) IsTerminalPhase(phase string) bool {
 	return terminalPhases[phase]
 }
-

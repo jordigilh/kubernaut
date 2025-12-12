@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // HTTPDataStorageClient implements DataStorageClient for HTTP-based Data Storage Service communication
@@ -23,7 +24,7 @@ type HTTPDataStorageClient struct {
 //
 // Parameters:
 //   - baseURL: Base URL of the Data Storage Service (e.g., "http://datastorage-service:8080")
-//   - httpClient: Configured HTTP client with appropriate timeouts
+//   - httpClient: Configured HTTP client with appropriate timeouts (nil = use default client)
 //
 // Returns:
 //   - DataStorageClient: Client implementing the DataStorageClient interface
@@ -32,7 +33,14 @@ type HTTPDataStorageClient struct {
 //
 //	httpClient := &http.Client{Timeout: 5 * time.Second}
 //	client := audit.NewHTTPDataStorageClient("http://datastorage-service:8080", httpClient)
+//
+// If httpClient is nil, a default http.Client with 30-second timeout is created.
 func NewHTTPDataStorageClient(baseURL string, httpClient *http.Client) DataStorageClient {
+	// Use default client with reasonable timeout if none provided
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+
 	return &HTTPDataStorageClient{
 		baseURL:    baseURL,
 		httpClient: httpClient,

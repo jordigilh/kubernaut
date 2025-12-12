@@ -1,0 +1,121 @@
+version: '3.8'
+
+# RemediationOrchestrator Integration Test Infrastructure
+# RO-specific ports per DD-TEST-001: Port Allocation Strategy
+#
+# Authority: docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md
+# Pattern: Service-specific infrastructure per ADR-016
+#
+# Port Allocation (from DD-TEST-001 documented ranges):
+#   PostgreSQL:       15435 (from range 15433-15442, sequential after DS/EM)
+#   Redis:            16381 (from range 16379-16388, sequential after DS/Gateway)
+#   Data Storage API: 18140 (after stateless services 18000-18139)
+#   DS Metrics:       18141
+#
+# These ports prevent conflicts with other services running tests in parallel.
+
+services:
+  # Database migrations (runs once and exits)
+  # Uses postgres image with psql (avoids goose image pull issues)
+  # Extracts only "Up" section from goose-formatted migrations
+  # Pattern: AIAnalysis (proven workaround for ghcr.io/pressly/goose 403 Forbidden)
+  migrate:
+    image: postgres:16-alpine
+    container_name: ro_migrations
+    volumes:
+      - ../../../migrations:/migrations:ro
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: slm_user
+      PGPASSWORD: test_password
+      PGDATABASE: action_history
+    # Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Waiting for PostgreSQL..."
+        until pg_isready -h postgres -U slm_user; do sleep 1; done
+        echo "Applying migrations (Up sections only)..."
+        find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
+          echo "Applying $$f..."
+          sed -n '1,/^-- +goose Down/p' "$$f" | grep -v '^-- +goose Down' | psql
+        done
+        echo "Migrations complete!"
+    networks:
+      - ro-test-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # PostgreSQL for RO integration tests
+  # Port: 15435 (RO-specific, from DD-TEST-001 range 15433-15442)
+  postgres:
+    image: postgres:16-alpine
+    container_name: ro-postgres-integration
+    environment:
+      POSTGRES_DB: action_history
+      POSTGRES_USER: slm_user
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "15435:5432"
+    networks:
+      - ro-test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slm_user -d action_history"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis for RO integration tests
+  # Port: 16381 (RO-specific, from DD-TEST-001 range 16379-16388)
+  redis:
+    image: quay.io/jordigilh/redis:7-alpine
+    container_name: ro-redis-integration
+    ports:
+      - "16381:6379"
+    networks:
+      - ro-test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Data Storage Service for RO integration tests
+  # Port: 18140 (RO-specific, after stateless services range per DD-TEST-001)
+  # Metrics: 18141
+  datastorage:
+    build:
+      context: ../../..
+      dockerfile: docker/data-storage.Dockerfile
+    container_name: ro-datastorage-integration
+    environment:
+      - CONFIG_PATH=/etc/datastorage/config.yaml
+    ports:
+      - "18140:8080"  # Data Storage HTTP API
+      - "18141:9090"  # Metrics
+    volumes:
+      - ./config:/etc/datastorage:ro
+    networks:
+      - ro-test-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+networks:
+  ro-test-network:
+    driver: bridge
+

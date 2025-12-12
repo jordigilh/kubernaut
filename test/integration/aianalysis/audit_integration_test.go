@@ -81,7 +81,7 @@ var _ = Describe("AIAnalysis Audit Integration - DD-AUDIT-003", Label("integrati
 		// Determine Data Storage URL from environment or default
 		datastorageURL = os.Getenv("DATASTORAGE_URL")
 		if datastorageURL == "" {
-			datastorageURL = "http://localhost:18090" // Default from podman-compose.test.yml (DD-TEST-001)
+			datastorageURL = "http://localhost:18091" // AIAnalysis integration test DataStorage port (DD-TEST-001)
 		}
 
 		// MANDATORY: Verify Data Storage is available (per TESTING_GUIDELINES.md)
@@ -109,7 +109,7 @@ var _ = Describe("AIAnalysis Audit Integration - DD-AUDIT-003", Label("integrati
 		}
 		pgPort := os.Getenv("POSTGRES_PORT")
 		if pgPort == "" {
-			pgPort = "15433" // Default from podman-compose.test.yml (DD-TEST-001)
+			pgPort = "15434" // AIAnalysis integration test PostgreSQL port (DD-TEST-001)
 		}
 
 		connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", pgHost, pgPort)
@@ -483,4 +483,3 @@ var _ = Describe("AIAnalysis Audit Integration - DD-AUDIT-003", Label("integrati
 		})
 	})
 })
-

@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,6 +43,8 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
@@ -61,6 +64,7 @@ type Reconciler struct {
 	spCreator           *creator.SignalProcessingCreator
 	aiAnalysisCreator   *creator.AIAnalysisCreator
 	weCreator           *creator.WorkflowExecutionCreator
+	approvalCreator     *creator.ApprovalCreator
 	// Audit integration (DD-AUDIT-003, BR-STORAGE-001)
 	auditStore   audit.AuditStore
 	auditHelpers *roaudit.Helpers
@@ -79,6 +83,7 @@ func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditSto
 		spCreator:           creator.NewSignalProcessingCreator(c, s),
 		aiAnalysisCreator:   creator.NewAIAnalysisCreator(c, s),
 		weCreator:           creator.NewWorkflowExecutionCreator(c, s),
+		approvalCreator:     creator.NewApprovalCreator(c, s),
 		auditStore:          auditStore,
 		auditHelpers:        roaudit.NewHelpers(roaudit.ServiceName),
 	}
@@ -105,16 +110,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	defer func() {
 		metrics.ReconcileDurationSeconds.WithLabelValues(
 			rr.Namespace,
-			rr.Status.OverallPhase,
+			string(rr.Status.OverallPhase),
 		).Observe(time.Since(startTime).Seconds())
-		metrics.ReconcileTotal.WithLabelValues(rr.Namespace, rr.Status.OverallPhase).Inc()
+		metrics.ReconcileTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
 	}()
 
 	// Initialize phase if empty (new RemediationRequest from Gateway)
 	// Per DD-GATEWAY-011: RO owns status.overallPhase, Gateway creates instances without status
 	if rr.Status.OverallPhase == "" {
 		logger.Info("Initializing new RemediationRequest", "name", rr.Name)
-		rr.Status.OverallPhase = string(phase.Pending)
+		rr.Status.OverallPhase = phase.Pending
 		rr.Status.StartTime = &metav1.Time{Time: startTime}
 		if err := r.client.Status().Update(ctx, rr); err != nil {
 			logger.Error(err, "Failed to initialize RemediationRequest status")
@@ -178,6 +183,25 @@ func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.R
 	}
 	logger.Info("Created SignalProcessing CRD", "spName", spName)
 
+	// Set SignalProcessingRef in status for aggregator (BR-ORCH-029)
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			return err
+		}
+		rr.Status.SignalProcessingRef = &corev1.ObjectReference{
+			APIVersion: signalprocessingv1.GroupVersion.String(),
+			Kind:       "SignalProcessing",
+			Name:       spName,
+			Namespace:  rr.Namespace,
+		}
+		return r.client.Status().Update(ctx, rr)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to set SignalProcessingRef in status")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+	logger.V(1).Info("Set SignalProcessingRef in status", "spName", spName)
+
 	// Transition to Processing phase
 	return r.transitionPhase(ctx, rr, phase.Processing)
 }
@@ -188,10 +212,51 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "spPhase", agg.SignalProcessingPhase)
 
 	switch agg.SignalProcessingPhase {
-	case "Completed":
-		logger.Info("SignalProcessing completed, transitioning to Analyzing")
+	case string(signalprocessingv1.PhaseCompleted):
+		logger.Info("SignalProcessing completed, creating AIAnalysis")
+
+		// Fetch SignalProcessing CRD to pass enrichment data to AIAnalysis
+		sp := &signalprocessingv1.SignalProcessing{}
+		err := r.client.Get(ctx, client.ObjectKey{
+			Name:      rr.Status.SignalProcessingRef.Name,
+			Namespace: rr.Status.SignalProcessingRef.Namespace,
+		}, sp)
+		if err != nil {
+			logger.Error(err, "Failed to fetch SignalProcessing CRD")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		// Create AIAnalysis CRD (BR-ORCH-025, BR-ORCH-031)
+		aiName, err := r.aiAnalysisCreator.Create(ctx, rr, sp)
+		if err != nil {
+			logger.Error(err, "Failed to create AIAnalysis CRD")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		logger.Info("Created AIAnalysis CRD", "aiName", aiName)
+
+		// Set AIAnalysisRef in status for aggregator (BR-ORCH-029)
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				return err
+			}
+			rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+				APIVersion: aianalysisv1.GroupVersion.String(),
+				Kind:       "AIAnalysis",
+				Name:       aiName,
+				Namespace:  rr.Namespace,
+			}
+			return r.client.Status().Update(ctx, rr)
+		})
+		if err != nil {
+			logger.Error(err, "Failed to set AIAnalysisRef in status")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		logger.V(1).Info("Set AIAnalysisRef in status", "aiName", aiName)
+
+		// Transition to Analyzing phase
 		return r.transitionPhase(ctx, rr, phase.Analyzing)
-	case "Failed":
+
+	case string(signalprocessingv1.PhaseFailed):
 		logger.Info("SignalProcessing failed, transitioning to Failed")
 		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing failed")
 	case "":
@@ -232,6 +297,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 
 	// Delegate to AIAnalysisHandler for Completed/Failed phases
 	// This handles BR-ORCH-036 (manual review), BR-ORCH-037 (workflow not needed)
+	// Phase values per api/aianalysis/v1alpha1: Pending|Investigating|Analyzing|Completed|Failed
 	switch ai.Status.Phase {
 	case "Completed":
 		// Check for WorkflowNotNeeded (BR-ORCH-037)
@@ -240,19 +306,59 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			return r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
 		}
 
-		// Check for approval required
+		// Check for approval required (BR-ORCH-026)
 		if ai.Status.ApprovalRequired {
 			logger.Info("AIAnalysis completed with approval required")
+
+			// Create RemediationApprovalRequest (BR-ORCH-026)
+			rarName, err := r.approvalCreator.Create(ctx, rr, ai)
+			if err != nil {
+				logger.Error(err, "Failed to create RemediationApprovalRequest")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			logger.Info("Created RemediationApprovalRequest", "rarName", rarName)
+
+			// Create approval notification (BR-ORCH-001)
 			result, err := r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
 			if err != nil {
 				return result, err
 			}
-			// Transition to AwaitingApproval
+
+			// Transition to AwaitingApproval (RAR will be found by deterministic name)
 			return r.transitionPhase(ctx, rr, phase.AwaitingApproval)
 		}
 
-		// Normal completion - transition to Executing
-		logger.Info("AIAnalysis completed, transitioning to Executing")
+		// Normal completion - create WorkflowExecution and transition to Executing
+		logger.Info("AIAnalysis completed, creating WorkflowExecution")
+
+		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
+		weName, err := r.weCreator.Create(ctx, rr, ai)
+		if err != nil {
+			logger.Error(err, "Failed to create WorkflowExecution CRD")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		logger.Info("Created WorkflowExecution CRD", "weName", weName)
+
+		// Set WorkflowExecutionRef in status for aggregator (BR-ORCH-029)
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				return err
+			}
+			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+				APIVersion: workflowexecutionv1.GroupVersion.String(),
+				Kind:       "WorkflowExecution",
+				Name:       weName,
+				Namespace:  rr.Namespace,
+			}
+			return r.client.Status().Update(ctx, rr)
+		})
+		if err != nil {
+			logger.Error(err, "Failed to set WorkflowExecutionRef in status")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		logger.V(1).Info("Set WorkflowExecutionRef in status", "weName", weName)
+
+		// Transition to Executing phase
 		return r.transitionPhase(ctx, rr, phase.Executing)
 
 	case "Failed":
@@ -302,6 +408,46 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			"decidedBy", rar.Status.DecidedBy,
 			"message", rar.Status.DecisionMessage,
 		)
+
+		// Fetch AIAnalysis CRD to get workflow details for WorkflowExecution
+		ai := &aianalysisv1.AIAnalysis{}
+		err := r.client.Get(ctx, client.ObjectKey{
+			Name:      rr.Status.AIAnalysisRef.Name,
+			Namespace: rr.Status.AIAnalysisRef.Namespace,
+		}, ai)
+		if err != nil {
+			logger.Error(err, "Failed to fetch AIAnalysis CRD")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		// Create WorkflowExecution CRD (BR-ORCH-025, BR-ORCH-031)
+		weName, err := r.weCreator.Create(ctx, rr, ai)
+		if err != nil {
+			logger.Error(err, "Failed to create WorkflowExecution CRD")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		logger.Info("Created WorkflowExecution CRD after approval", "weName", weName)
+
+		// Set WorkflowExecutionRef in status for aggregator (BR-ORCH-029)
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				return err
+			}
+			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+				APIVersion: workflowexecutionv1.GroupVersion.String(),
+				Kind:       "WorkflowExecution",
+				Name:       weName,
+				Namespace:  rr.Namespace,
+			}
+			return r.client.Status().Update(ctx, rr)
+		})
+		if err != nil {
+			logger.Error(err, "Failed to set WorkflowExecutionRef in status")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		logger.V(1).Info("Set WorkflowExecutionRef in status after approval", "weName", weName)
+
+		// Transition to Executing phase
 		return r.transitionPhase(ctx, rr, phase.Executing)
 
 	case remediationv1.ApprovalDecisionRejected:
@@ -348,6 +494,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1.RemediationRequest, agg *aggregator.AggregatedStatus) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "wePhase", agg.WorkflowExecutionPhase)
 
+	// Phase values per api/workflowexecution/v1alpha1: Pending|Running|Completed|Failed|Skipped
 	switch agg.WorkflowExecutionPhase {
 	case "Completed":
 		logger.Info("WorkflowExecution completed, transitioning to Completed")
@@ -378,7 +525,7 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		}
 
 		// Update only RO-owned fields
-		rr.Status.OverallPhase = string(newPhase)
+		rr.Status.OverallPhase = newPhase
 		now := metav1.Now()
 
 		// Set phase start times
@@ -400,10 +547,10 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 
 	// Record metric
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
-	metrics.PhaseTransitionsTotal.WithLabelValues(oldPhase, string(newPhase), rr.Namespace).Inc()
+	metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(newPhase), rr.Namespace).Inc()
 
 	// Emit audit event (DD-AUDIT-003)
-	r.emitPhaseTransitionAudit(ctx, rr, oldPhase, string(newPhase))
+	r.emitPhaseTransitionAudit(ctx, rr, string(oldPhase), string(newPhase))
 
 	logger.Info("Phase transition successful", "from", oldPhase, "to", newPhase)
 	return ctrl.Result{Requeue: true}, nil
@@ -420,7 +567,7 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 			return err
 		}
 
-		rr.Status.OverallPhase = string(phase.Completed)
+		rr.Status.OverallPhase = phase.Completed
 		rr.Status.Outcome = outcome
 		now := metav1.Now()
 		rr.Status.CompletedAt = &now
@@ -433,7 +580,7 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 	}
 
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
-	metrics.PhaseTransitionsTotal.WithLabelValues(oldPhase, string(phase.Completed), rr.Namespace).Inc()
+	metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(phase.Completed), rr.Namespace).Inc()
 
 	// Emit audit event (DD-AUDIT-003)
 	durationMs := time.Since(startTime).Milliseconds()
@@ -476,7 +623,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 			return err
 		}
 
-		rr.Status.OverallPhase = string(phase.Failed)
+		rr.Status.OverallPhase = phase.Failed
 		rr.Status.FailurePhase = &failurePhase
 		rr.Status.FailureReason = &failureReason
 
@@ -488,7 +635,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	}
 
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
-	metrics.PhaseTransitionsTotal.WithLabelValues(oldPhase, string(phase.Failed), rr.Namespace).Inc()
+	metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(phase.Failed), rr.Namespace).Inc()
 
 	// Emit audit event (DD-AUDIT-003)
 	durationMs := time.Since(startTime).Milliseconds()
@@ -632,5 +779,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1.RemediationRequest{}).
+		Owns(&signalprocessingv1.SignalProcessing{}).
+		Owns(&aianalysisv1.AIAnalysis{}).
+		Owns(&workflowexecutionv1.WorkflowExecution{}).
+		Owns(&remediationv1.RemediationApprovalRequest{}).
 		Complete(r)
 }

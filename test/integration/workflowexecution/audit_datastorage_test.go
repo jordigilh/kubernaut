@@ -43,13 +43,13 @@ import (
 // See: NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md
 //
 // To run these tests:
-// 1. Start services: podman-compose -f podman-compose.test.yml up -d
+// 1. Start WE infrastructure: cd test/integration/workflowexecution && podman-compose -f podman-compose.test.yml up -d
 // 2. Run tests: go test ./test/integration/workflowexecution/... -v -run "DataStorage"
 
 var _ = Describe("Audit Events with Real Data Storage Service", Label("datastorage", "audit"), func() {
-	// Data Storage service URL from podman-compose.test.yml
-	// Port 18090 is mapped to container port 8080 per DD-TEST-001
-	const dataStorageURL = "http://localhost:18090"
+	// Data Storage service URL from WE-specific podman-compose.test.yml
+	// Port 18100 is WE-specific (+10 from DS baseline 18090)
+	const dataStorageURL = "http://localhost:18100"
 
 	var (
 		httpClient *http.Client
@@ -72,7 +72,9 @@ var _ = Describe("Audit Events with Real Data Storage Service", Label("datastora
 					"  Per DD-AUDIT-003: WorkflowExecution is P0 - MUST generate audit traces\n"+
 					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
 					"  Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN - tests must FAIL\n\n"+
-					"  Start infrastructure: podman-compose -f podman-compose.test.yml up -d",
+					"  Start WE infrastructure:\n"+
+					"    cd test/integration/workflowexecution\n"+
+					"    podman-compose -f podman-compose.test.yml up -d",
 				dataStorageURL))
 		}
 		resp.Body.Close()

@@ -98,6 +98,15 @@
 - [UPDATED_BUSINESS_REQUIREMENTS_CRD.md](../UPDATED_BUSINESS_REQUIREMENTS_CRD.md)
 - [DECLARATIVE_CRD_DESIGN_SUMMARY.md](../DECLARATIVE_CRD_DESIGN_SUMMARY.md)
 
+**V1.0 Remaining Features** (Approved for December 2025):
+- 📋 **BR-NOT-069**: Routing Rule Visibility via Kubernetes Conditions
+  - **Status**: ✅ Approved
+  - **Effort**: 3 hours
+  - **Target**: Before Kubernaut V1.0 release (end of December 2025)
+  - **Description**: Expose routing rule resolution via `RoutingResolved` condition in CRD status
+  - **Spec**: [BR-NOT-069-routing-rule-visibility-conditions.md](../../../requirements/BR-NOT-069-routing-rule-visibility-conditions.md)
+  - **Implementation Plan**: [RESPONSE_NO_CONDITIONS_IMPLEMENTATION.md](../../../handoff/RESPONSE_NO_CONDITIONS_IMPLEMENTATION.md)
+
 ---
 
 ## 🎯 Service Overview

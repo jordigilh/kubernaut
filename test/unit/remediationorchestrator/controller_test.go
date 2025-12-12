@@ -17,9 +17,13 @@ limitations under the License.
 package remediationorchestrator_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -69,6 +73,166 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 			It("should have SetupWithManager method for controller registration", func() {
 				// Verify method exists (compile-time check)
 				Expect(reconciler.SetupWithManager).ToNot(BeNil())
+			})
+		})
+	})
+
+	// ========================================
+	// Terminal Phase Edge Cases
+	// Tests defensive programming for terminal state handling
+	// Business Value: Prevents re-processing completed remediations
+	// ========================================
+	Describe("Terminal Phase Edge Cases", func() {
+		Context("when RemediationRequest is in terminal phase", func() {
+			It("should not process Completed RR even if child CRD status changes", func() {
+				// Scenario: RR marked Completed, but watch triggers reconcile due to child update
+				// Business Value: Prevents accidental re-opening of completed remediations
+				// Confidence: 95% - Prevents real production bug
+
+				ctx := context.Background()
+
+				// Given: Completed RemediationRequest
+				rr := &remediationv1.RemediationRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "completed-rr",
+						Namespace: "default",
+					},
+					Status: remediationv1.RemediationRequestStatus{
+						OverallPhase: remediationv1.PhaseCompleted,
+						Outcome:      "Success",
+					},
+				}
+
+				// When: Reconcile is triggered (watch event from child CRD)
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(rr).
+					WithStatusSubresource(rr).
+					Build()
+				testReconciler := controller.NewReconciler(fakeClient, scheme, nil)
+
+				result, err := testReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      rr.Name,
+						Namespace: rr.Namespace,
+					},
+				})
+
+				// Then: Should skip reconciliation (no processing)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.Requeue).To(BeFalse(), "Terminal phases should not requeue")
+				Expect(result.RequeueAfter).To(BeZero(), "Terminal phases should not schedule requeue")
+
+				// Verify: Phase remains Completed (not modified)
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = fakeClient.Get(ctx, types.NamespacedName{
+					Name:      rr.Name,
+					Namespace: rr.Namespace,
+				}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
+					"Completed phase must remain unchanged")
+			})
+
+			It("should not process Failed RR even if status.Message is updated", func() {
+				// Scenario: Operator updates message on Failed RR for clarification
+				// Business Value: Prevents unexpected state changes from metadata updates
+				// Confidence: 90% - Common operator workflow
+
+				ctx := context.Background()
+
+				// Given: Failed RemediationRequest
+				failureMsg := "Original failure message"
+				rr := &remediationv1.RemediationRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "failed-rr",
+						Namespace: "default",
+					},
+					Status: remediationv1.RemediationRequestStatus{
+						OverallPhase: remediationv1.PhaseFailed,
+						Message:      failureMsg,
+					},
+				}
+
+				// When: Reconcile is triggered after message update
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(rr).
+					WithStatusSubresource(rr).
+					Build()
+				testReconciler := controller.NewReconciler(fakeClient, scheme, nil)
+
+				result, err := testReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      rr.Name,
+						Namespace: rr.Namespace,
+					},
+				})
+
+				// Then: Should skip reconciliation
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.Requeue).To(BeFalse())
+
+				// Verify: Phase remains Failed
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = fakeClient.Get(ctx, types.NamespacedName{
+					Name:      rr.Name,
+					Namespace: rr.Namespace,
+				}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
+					"Failed phase must remain in terminal state")
+			})
+
+			It("should handle Skipped RR with later duplicate detection correctly", func() {
+				// Scenario: RR marked Skipped (duplicate), another RR for same fingerprint arrives
+				// Business Value: Validates skip deduplication correctness
+				// Confidence: 95% - Critical for BR-ORCH-032 deduplication logic
+
+				ctx := context.Background()
+
+				// Given: Skipped RemediationRequest (already processed as duplicate)
+				rr := &remediationv1.RemediationRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "skipped-rr",
+						Namespace: "default",
+					},
+					Status: remediationv1.RemediationRequestStatus{
+						OverallPhase: remediationv1.PhaseSkipped,
+						SkipReason:   "ResourceBusy",
+						DuplicateOf:  "original-rr",
+					},
+				}
+
+				// When: Reconcile is triggered
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(rr).
+					WithStatusSubresource(rr).
+					Build()
+				testReconciler := controller.NewReconciler(fakeClient, scheme, nil)
+
+				result, err := testReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      rr.Name,
+						Namespace: rr.Namespace,
+					},
+				})
+
+				// Then: Should skip reconciliation (terminal phase)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.Requeue).To(BeFalse())
+
+				// Verify: Phase remains Skipped, DuplicateOf preserved
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = fakeClient.Get(ctx, types.NamespacedName{
+					Name:      rr.Name,
+					Namespace: rr.Namespace,
+				}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseSkipped))
+				Expect(updatedRR.Status.DuplicateOf).To(Equal("original-rr"),
+					"Duplicate tracking must be preserved")
 			})
 		})
 	})

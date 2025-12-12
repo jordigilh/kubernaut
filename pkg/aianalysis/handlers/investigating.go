@@ -34,6 +34,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/client"
+	aianalysismetrics "github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -95,6 +96,11 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		)
 		recoveryReq := h.buildRecoveryRequest(analysis)
 		resp, err = h.hgClient.InvestigateRecovery(ctx, recoveryReq)
+
+		// BR-AI-082: Populate RecoveryStatus if recovery_analysis present
+		if err == nil && resp != nil {
+			h.populateRecoveryStatus(analysis, resp)
+		}
 	} else {
 		req := h.buildRequest(analysis)
 		resp, err = h.hgClient.Investigate(ctx, req)
@@ -132,7 +138,7 @@ func (h *InvestigatingHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *
 	// BR-AI-080: Build request with all required HAPI fields
 	req := &client.IncidentRequest{
 		// REQUIRED fields per HAPI OpenAPI spec
-		IncidentID:        analysis.Name,              // Q1: Use CR name
+		IncidentID:        analysis.Name,               // Q1: Use CR name
 		RemediationID:     analysis.Spec.RemediationID, // Q2: Use spec field (MANDATORY per DD-WORKFLOW-002)
 		SignalType:        spec.SignalType,
 		Severity:          spec.Severity,
@@ -645,4 +651,63 @@ func (h *InvestigatingHandler) convertValidationAttempts(attempts []client.Valid
 		})
 	}
 	return result
+}
+
+// ========================================
+// BR-AI-082: RECOVERY STATUS POPULATION
+// Populates status.recoveryStatus from HAPI recovery_analysis
+// ========================================
+
+// populateRecoveryStatus populates RecoveryStatus from HAPI recovery_analysis
+// BR-AI-082: Recovery status observability
+// Called only for recovery attempts (isRecoveryAttempt=true) after successful HAPI call
+func (h *InvestigatingHandler) populateRecoveryStatus(
+	analysis *aianalysisv1.AIAnalysis,
+	resp *client.IncidentResponse,
+) {
+	// Defensive nil check - if HAPI doesn't return recovery_analysis, leave RecoveryStatus nil
+	if resp == nil || resp.RecoveryAnalysis == nil {
+		h.log.V(1).Info("HAPI did not return recovery_analysis, skipping RecoveryStatus population",
+			"analysis", analysis.Name,
+			"namespace", analysis.Namespace,
+			"isRecoveryAttempt", analysis.Spec.IsRecoveryAttempt,
+			"attemptNumber", analysis.Spec.RecoveryAttemptNumber,
+		)
+		// Metric: Track when HAPI doesn't provide recovery_analysis
+		aianalysismetrics.RecordRecoveryStatusSkipped()
+		return
+	}
+
+	recoveryAnalysis := resp.RecoveryAnalysis
+	prevAssessment := recoveryAnalysis.PreviousAttemptAssessment
+
+	h.log.Info("Populating RecoveryStatus from HAPI response",
+		"analysis", analysis.Name,
+		"namespace", analysis.Namespace,
+		"stateChanged", prevAssessment.StateChanged,
+		"failureUnderstood", prevAssessment.FailureUnderstood,
+		"currentSignalType", safeStringValue(prevAssessment.CurrentSignalType),
+		"attemptNumber", analysis.Spec.RecoveryAttemptNumber,
+	)
+
+	// Map HAPI recovery_analysis to CRD RecoveryStatus
+	analysis.Status.RecoveryStatus = &aianalysisv1.RecoveryStatus{
+		StateChanged:      prevAssessment.StateChanged,
+		CurrentSignalType: safeStringValue(prevAssessment.CurrentSignalType),
+		PreviousAttemptAssessment: &aianalysisv1.PreviousAttemptAssessment{
+			FailureUnderstood:     prevAssessment.FailureUnderstood,
+			FailureReasonAnalysis: prevAssessment.FailureReasonAnalysis,
+		},
+	}
+
+	// Metric: Track successful RecoveryStatus population with failure assessment
+	aianalysismetrics.RecordRecoveryStatusPopulated(prevAssessment.FailureUnderstood, prevAssessment.StateChanged)
+}
+
+// safeStringValue safely extracts string from pointer, returning empty string if nil
+func safeStringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

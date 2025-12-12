@@ -1,0 +1,179 @@
+version: '3.8'
+
+# ============================================================================
+# HolmesGPT API Service - Self-Contained Test Infrastructure
+# ============================================================================
+#
+# OWNER: HAPI Team
+# PURPOSE: HAPI-specific testing (integration, E2E)
+# AUTHORITY: DD-TEST-001-port-allocation-strategy.md
+#
+# This file is SELF-CONTAINED - includes all dependencies:
+#   - PostgreSQL (for Data Storage)
+#   - Redis (for Data Storage)
+#   - Migrations (schema setup)
+#   - Data Storage service
+#   - HolmesGPT API service
+#
+# Port Allocation (DD-TEST-001 Compliant - HAPI Range: 18120-18129):
+#   - PostgreSQL:     18125 (internal to HAPI stack)
+#   - Redis:          18126 (internal to HAPI stack)
+#   - Data Storage:   18121 (dependency for HAPI)
+#   - HolmesGPT API:  18120 (primary HAPI port)
+#
+# Usage:
+#   cd holmesgpt-api
+#   podman-compose -f podman-compose.test.yml up -d
+#
+#   # Wait for healthy state
+#   podman-compose -f podman-compose.test.yml ps
+#
+#   # Run tests
+#   HAPI_URL=http://localhost:18120 \
+#   DATA_STORAGE_URL=http://localhost:18121 \
+#   MOCK_LLM_MODE=true \
+#   pytest tests/integration/ tests/e2e/ -v
+#
+#   # Cleanup
+#   podman-compose -f podman-compose.test.yml down -v
+#
+# ============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL - Data Storage dependency (V1.0 label-only, no pgvector)
+  # Port: 18125 (DD-TEST-001: HAPI internal range)
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: action_history
+      POSTGRES_USER: slm_user
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "18125:5432"
+    networks:
+      - hapi-test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slm_user -d action_history"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --------------------------------------------------------------------------
+  # Redis - Data Storage dependency
+  # Port: 18126 (DD-TEST-001: HAPI internal range)
+  # --------------------------------------------------------------------------
+  redis:
+    image: quay.io/jordigilh/redis:7-alpine
+    ports:
+      - "18126:6379"
+    networks:
+      - hapi-test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --------------------------------------------------------------------------
+  # Migration Service - Schema setup
+  # Uses postgres image with psql (goose image requires auth)
+  # Extracts only "Up" section from goose-formatted migrations
+  # --------------------------------------------------------------------------
+  migrate:
+    image: postgres:16-alpine
+    volumes:
+      - ../migrations:/migrations:ro
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=slm_user
+      - PGPASSWORD=test_password
+      - PGDATABASE=action_history
+    # Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Waiting for PostgreSQL..."
+        until pg_isready -h postgres -U slm_user; do sleep 1; done
+        echo "Applying migrations (Up sections only)..."
+        find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
+          echo "Applying $$f..."
+          sed -n '1,/^-- +goose Down/p' "$$f" | grep -v '^-- +goose Down' | psql
+        done
+        echo "Migrations complete!"
+    networks:
+      - hapi-test-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # --------------------------------------------------------------------------
+  # Data Storage Service - HAPI dependency
+  # Port: 18121 (DD-TEST-001: HAPI internal range)
+  # --------------------------------------------------------------------------
+  datastorage:
+    build:
+      context: ..
+      dockerfile: docker/data-storage.Dockerfile
+    environment:
+      - CONFIG_PATH=/etc/datastorage/config.yaml
+    ports:
+      - "18121:8080"
+      - "19121:9090"  # Metrics port
+    volumes:
+      - ../test/integration/datastorage/config:/etc/datastorage:ro
+    networks:
+      - hapi-test-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # --------------------------------------------------------------------------
+  # HolmesGPT-API Service
+  # Port: 18120 (DD-TEST-001: HAPI primary port)
+  # --------------------------------------------------------------------------
+  holmesgpt-api:
+    build:
+      context: ..
+      dockerfile: holmesgpt-api/Dockerfile
+    environment:
+      - CONFIG_PATH=/etc/holmesgpt/config.yaml
+      # Mock LLM mode for integration tests (BR-HAPI-212)
+      # Returns deterministic responses without calling real LLM
+      - MOCK_LLM_MODE=true
+      # Data Storage connection (internal network)
+      - DATASTORAGE_URL=http://datastorage:8080
+      # Logging
+      - LOG_LEVEL=INFO
+    ports:
+      # DD-TEST-001: HAPI primary integration port
+      - "18120:8080"
+    networks:
+      - hapi-test-network
+    depends_on:
+      datastorage:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+networks:
+  hapi-test-network:
+    driver: bridge

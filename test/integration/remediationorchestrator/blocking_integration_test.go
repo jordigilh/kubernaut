@@ -17,6 +17,7 @@ limitations under the License.
 package remediationorchestrator_test
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -78,7 +80,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				if err != nil {
 					return ""
 				}
-				return rr.Status.OverallPhase
+				return string(rr.Status.OverallPhase)
 			}, timeout, interval).ShouldNot(BeEmpty(), "RR3 should be initialized")
 
 			// Now simulate failure for RR3 - this should trigger blocking
@@ -183,7 +185,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			rrFinal := &remediationv1.RemediationRequest{}
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rrFinal.Status.OverallPhase).To(Equal("Blocked"))
+			Expect(rrFinal.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
 			Expect(rrFinal.Status.BlockedUntil).ToNot(BeNil())
 			Expect(*rrFinal.Status.BlockReason).To(Equal("consecutive_failures_exceeded"))
 		})
@@ -216,7 +218,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				pastTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 				reason := "consecutive_failures_exceeded"
 
-				rrGet.Status.OverallPhase = "Blocked"
+				rrGet.Status.OverallPhase = remediationv1.PhaseBlocked
 				rrGet.Status.BlockedUntil = &pastTime
 				rrGet.Status.BlockReason = &reason
 
@@ -251,7 +253,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 				reason := "manual_block"
 
-				rrGet.Status.OverallPhase = "Blocked"
+				rrGet.Status.OverallPhase = remediationv1.PhaseBlocked
 				rrGet.Status.BlockedUntil = nil // No auto-expiry
 				rrGet.Status.BlockReason = &reason
 				rrGet.Status.Message = "Manually blocked by operator"
@@ -263,9 +265,211 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			rrFinal := &remediationv1.RemediationRequest{}
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rrFinal.Status.OverallPhase).To(Equal("Blocked"))
+			Expect(rrFinal.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
 			Expect(rrFinal.Status.BlockedUntil).To(BeNil(),
 				"Manual blocks should have nil BlockedUntil (no auto-expiry)")
+		})
+	})
+
+	// ========================================
+	// Fingerprint Edge Cases
+	// Business Value: Data quality resilience and multi-tenant isolation
+	// Confidence: 95% - Real data quality scenarios
+	// ========================================
+	Describe("Blocking Logic Fingerprint Edge Cases", func() {
+		var namespace string
+
+		BeforeEach(func() {
+			namespace = createTestNamespace("ro-fingerprint")
+		})
+
+		AfterEach(func() {
+			deleteTestNamespace(namespace)
+		})
+
+		It("should handle RR with empty fingerprint gracefully (gateway bug)", func() {
+			// Scenario: Gateway sends RR with empty spec.signalFingerprint
+			// Business Outcome: RR processes normally, no blocking applied
+			// Confidence: 95% - Real Gateway data quality scenario
+
+			ctx := context.Background()
+
+			// Given: RemediationRequest with empty fingerprint (Gateway bug)
+			now := metav1.Now()
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "empty-fp-rr",
+					Namespace: namespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalName:        "test-empty-fp",
+					SignalFingerprint: "", // Empty fingerprint (Gateway bug)
+					Severity:          "critical",
+					SignalType:        "test",
+					TargetType:        "kubernetes",
+					FiringTime:        now,
+					ReceivedTime:      now,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app",
+						Namespace: namespace,
+					},
+				},
+			}
+
+			// When: Creating RR
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			// Then: RR should process normally (no blocking without fingerprint match)
+			Eventually(func() string {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      rr.Name,
+					Namespace: rr.Namespace,
+				}, updated); err != nil {
+					return ""
+				}
+				return string(updated.Status.OverallPhase)
+			}, "10s", "100ms").ShouldNot(Equal("Blocked"),
+				"RR with empty fingerprint should not be blocked (no fingerprint match possible)")
+
+			// Verify: RR progresses to Processing (not stuck)
+			Eventually(func() string {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      rr.Name,
+					Namespace: rr.Namespace,
+				}, updated); err != nil {
+					return ""
+				}
+				return string(updated.Status.OverallPhase)
+			}, "10s", "100ms").Should(Or(
+				Equal("Processing"),
+				Equal("Analyzing"),
+			), "RR with empty fingerprint must process normally (graceful data quality handling)")
+		})
+
+		It("should isolate blocking by namespace (multi-tenant)", func() {
+			// Scenario: Same fingerprint in ns-a and ns-b, 3 failures in ns-a
+			// Business Outcome: ns-a blocked, ns-b processes independently
+			// Confidence: 90% - Critical multi-tenant isolation
+
+			ctx := context.Background()
+
+			// Create second namespace for isolation test
+			nsB := createTestNamespace("ro-fingerprint-b")
+			defer deleteTestNamespace(nsB)
+
+			sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2" // Valid 64-char hex
+
+			// Given: 3 failed RRs in namespace A (should trigger blocking)
+			now := metav1.Now()
+			for i := 0; i < 3; i++ {
+				rr := &remediationv1.RemediationRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      fmt.Sprintf("fail-rr-a-%d", i),
+						Namespace: namespace,
+					},
+					Spec: remediationv1.RemediationRequestSpec{
+					SignalName:        "test-signal-a",
+					SignalFingerprint: sharedFP,
+					Severity:          "critical",
+						SignalType:        "test",
+						TargetType:        "kubernetes",
+						FiringTime:        now,
+						ReceivedTime:      now,
+						TargetResource: remediationv1.ResourceIdentifier{
+							Kind:      "Deployment",
+							Name:      fmt.Sprintf("test-app-a-%d", i),
+							Namespace: namespace,
+						},
+					},
+					Status: remediationv1.RemediationRequestStatus{
+						OverallPhase: remediationv1.PhaseFailed,
+						Outcome:      "TestFailure",
+						CompletedAt:  &metav1.Time{Time: time.Now().Add(-time.Duration(3-i) * time.Minute)}, // Stagger timestamps
+					},
+				}
+				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+				// Get the RR back to ensure UID is set
+				Expect(k8sClient.Get(ctx, client.ObjectKey{Name: rr.Name, Namespace: rr.Namespace}, rr)).To(Succeed())
+				// Now update status
+				Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+			}
+
+			// When: Creating new RR with same fingerprint in namespace A
+			rrA4 := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "fail-rr-a-4",
+					Namespace: namespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalName:        "test-signal-a4",
+					SignalFingerprint: sharedFP,
+					Severity:          "High",
+					SignalType:        "test",
+					TargetType:        "kubernetes",
+					FiringTime:        now,
+					ReceivedTime:      now,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app-a-4",
+						Namespace: namespace,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, rrA4)).To(Succeed())
+
+			// And: Creating RR with same fingerprint in namespace B (different tenant)
+			rrB1 := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-b-1",
+					Namespace: nsB,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalName:        "test-signal-b1",
+					SignalFingerprint: sharedFP, // Same fingerprint as ns-a
+					Severity:          "critical",
+					SignalType:        "test",
+					TargetType:        "kubernetes",
+					FiringTime:        now,
+					ReceivedTime:      now,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app-b-1",
+						Namespace: nsB,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, rrB1)).To(Succeed())
+
+			// Then: RR in namespace A should be Blocked (3 consecutive failures)
+			Eventually(func() string {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      rrA4.Name,
+					Namespace: rrA4.Namespace,
+				}, updated); err != nil {
+					return ""
+				}
+				return string(updated.Status.OverallPhase)
+			}, "10s", "100ms").Should(Equal("Blocked"),
+				"4th RR with same fingerprint in ns-a should be Blocked")
+
+			// Then: RR in namespace B should process normally (not affected by ns-a failures)
+			Eventually(func() string {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      rrB1.Name,
+					Namespace: rrB1.Namespace,
+				}, updated); err != nil {
+					return ""
+				}
+				return string(updated.Status.OverallPhase)
+			}, "10s", "100ms").Should(Or(
+				Equal("Processing"),
+				Equal("Analyzing"),
+			), "RR in ns-b must NOT be blocked by ns-a failures (namespace isolation)")
 		})
 	})
 })
@@ -350,5 +554,3 @@ func simulateCompletedPhase(namespace, name string) {
 
 	GinkgoWriter.Printf("✅ Simulated Completed phase: %s/%s\n", namespace, name)
 }
-
-

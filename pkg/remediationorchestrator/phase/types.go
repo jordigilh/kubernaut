@@ -15,48 +15,60 @@ limitations under the License.
 */
 
 // Package phase provides phase constants and state machine logic for RO.
+// Phase constants are now exported from the API package (api/remediation/v1alpha1)
+// for external consumer usage per the Viceversa Pattern.
+//
+// This package re-exports them for internal RO convenience and provides
+// state machine logic (IsTerminal, CanTransition, Validate).
 package phase
 
-import "fmt"
+import (
+	"fmt"
 
-// Phase represents the orchestration phase of a RemediationRequest
-type Phase string
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+)
 
+// Phase is an alias for the API-exported RemediationPhase type.
+// This allows internal RO code to continue using `phase.Phase` without changes.
+//
+// 🏛️ Single Source of Truth: api/remediation/v1alpha1/RemediationPhase
+type Phase = remediationv1.RemediationPhase
+
+// Re-export API constants for internal RO convenience.
+// External consumers should import from api/remediation/v1alpha1 directly.
 const (
 	// Pending - Initial state, waiting to start
-	Pending Phase = "Pending"
+	Pending = remediationv1.PhasePending
 
 	// Processing - SignalProcessing CRD created, awaiting completion
-	Processing Phase = "Processing"
+	Processing = remediationv1.PhaseProcessing
 
 	// Analyzing - AIAnalysis CRD created, awaiting completion
-	Analyzing Phase = "Analyzing"
+	Analyzing = remediationv1.PhaseAnalyzing
 
 	// AwaitingApproval - Waiting for human approval (BR-ORCH-001)
-	AwaitingApproval Phase = "AwaitingApproval"
+	AwaitingApproval = remediationv1.PhaseAwaitingApproval
 
 	// Executing - WorkflowExecution CRD created, awaiting completion
-	Executing Phase = "Executing"
+	Executing = remediationv1.PhaseExecuting
+
+	// Blocked - Remediation blocked due to consecutive failures (NON-terminal)
+	// Reference: BR-ORCH-042, DD-GATEWAY-011 v1.3
+	Blocked = remediationv1.PhaseBlocked
 
 	// Completed - All phases completed successfully (terminal state)
-	Completed Phase = "Completed"
+	Completed = remediationv1.PhaseCompleted
 
 	// Failed - A phase failed (terminal state)
-	Failed Phase = "Failed"
+	Failed = remediationv1.PhaseFailed
 
 	// TimedOut - A phase exceeded timeout (terminal state)
 	// Reference: BR-ORCH-027 (global), BR-ORCH-028 (per-phase)
-	TimedOut Phase = "TimedOut"
+	TimedOut = remediationv1.PhaseTimedOut
 
 	// Skipped - WorkflowExecution was skipped due to resource lock (terminal state)
 	// Reference: BR-ORCH-032
-	Skipped Phase = "Skipped"
-
-	// Blocked - Remediation blocked due to consecutive failures (NON-terminal state)
-	// New signals for same fingerprint will update deduplication but not create new RRs.
-	// RO will transition to Failed after BlockedUntil cooldown expires.
-	// Reference: BR-ORCH-042, DD-GATEWAY-011 v1.3
-	Blocked Phase = "Blocked"
+	Skipped = remediationv1.PhaseSkipped
 )
 
 // IsTerminal returns true if the phase is a terminal state.

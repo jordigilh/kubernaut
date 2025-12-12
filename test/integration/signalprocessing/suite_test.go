@@ -64,6 +64,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -349,7 +350,11 @@ result := {
 	)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Create controller with MANDATORY audit client + classifiers (Day 10)
+	By("Initializing owner chain builder (Day 7 integration)")
+	// Initialize Owner Chain Builder (BR-SP-100)
+	ownerChainBuilder := ownerchain.NewBuilder(k8sManager.GetClient(), logger)
+
+	// Create controller with MANDATORY audit client + classifiers + owner chain builder
 	err = (&signalprocessing.SignalProcessingReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
@@ -357,6 +362,7 @@ result := {
 		EnvClassifier:      envClassifier,      // BR-SP-051-053: Environment classification
 		PriorityEngine:     priorityEngine,     // BR-SP-070-072: Priority assignment
 		BusinessClassifier: businessClassifier, // BR-SP-002, BR-SP-080-081: Business classification
+		OwnerChainBuilder:  ownerChainBuilder,  // BR-SP-100: Owner chain traversal
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

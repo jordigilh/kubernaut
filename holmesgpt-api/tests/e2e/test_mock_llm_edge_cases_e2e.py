@@ -51,7 +51,8 @@ pytestmark = [
 ]
 
 # HAPI service URL - configurable for different environments
-HAPI_URL = os.getenv("HAPI_URL", "http://localhost:8081")
+# Port 18120 per DD-TEST-001 (HAPI integration range: 18120-18129)
+HAPI_URL = os.getenv("HAPI_URL", "http://localhost:18120")
 
 
 def make_incident_request(signal_type: str) -> dict:

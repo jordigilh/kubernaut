@@ -32,7 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	// DD-GATEWAY-011: sharedtypes import removed (Spec.Deduplication no longer populated)
 )
 
 // CRDCreator converts NormalizedSignal to RemediationRequest CRD
@@ -375,13 +375,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 			StormAlertCount:   signal.AlertCount,
 			AffectedResources: signal.AffectedResources,
 
-			// Deduplication metadata (initial values)
-			// Uses shared type field names (per RO team API Contract Alignment)
-			Deduplication: sharedtypes.DeduplicationInfo{
-				FirstOccurrence: metav1.NewTime(signal.ReceivedTime),
-				LastOccurrence:  metav1.NewTime(signal.ReceivedTime),
-				OccurrenceCount: 1,
-			},
+			// DD-GATEWAY-011: Deduplication REMOVED from Spec (moved to Status)
+			// Gateway now owns status.deduplication (initialized by StatusUpdater)
+			// Spec.Deduplication kept in API for backwards compatibility but NOT populated
 		},
 	}
 

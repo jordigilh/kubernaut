@@ -1,7 +1,7 @@
 # Notification Controller
 
-**Version**: v1.4.0
-**Status**: ✅ Production-Ready (35 test files, 100% pass rate) + Day 13 Enhancement Scheduled
+**Version**: v1.5.0
+**Status**: ✅ Production-Ready (35 test files, 100% pass rate) + BR-NOT-069 Pending Implementation
 **Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
 **Metrics Port**: 9186 (`/metrics` - with auth filter, DD-TEST-001 compliant)
 **CRD**: NotificationRequest
@@ -690,7 +690,18 @@ err := r.Create(ctx, notification)
 
 ## 📝 Version History
 
-### **Version 1.4.0** (2025-12-06) - **CURRENT**
+### **Version 1.5.0** (2025-12-11) - **PENDING IMPLEMENTATION**
+- 📋 **BR-NOT-069**: Routing Rule Visibility via Kubernetes Conditions
+  - **Status**: ✅ Approved for Kubernaut V1.0 (December 2025)
+  - **Description**: Expose routing rule resolution via `RoutingResolved` condition in CRD status
+  - **Effort**: 3 hours implementation time
+  - **Value**: kubectl-based routing diagnostics without log access
+  - **Related**: BR-NOT-065 (Routing Rules), BR-NOT-066 (Config Format)
+- ✅ **API Specification**: Updated to v2.3 with NotificationRequest CRD types and Conditions documentation
+- 📄 **Business Requirements**: Updated to 18 BRs total (17 implemented, 1 approved for V1.0)
+- 🔗 **Handoff Response**: Created RESPONSE_NO_CONDITIONS_IMPLEMENTATION.md with implementation plan
+
+### **Version 1.4.0** (2025-12-06)
 - ✅ **Skip-Reason Label Routing**: Added `kubernaut.ai/skip-reason` routing label (DD-WE-004 integration)
 - ✅ **Label Constants**: Implemented `LabelSkipReason` and skip reason value constants
 - ✅ **API Specification**: Updated to v2.1 with routing labels section
@@ -757,12 +768,13 @@ err := r.Create(ctx, notification)
 
 ### **V2.0 Planned Features**
 
-1. **Additional Channels** (BR-NOT-067 to BR-NOT-069):
+1. **Additional Channels** (BR-NOT-067, BR-NOT-068):
    - Email (SMTP) with HTML templates
    - PagerDuty incidents
    - Microsoft Teams with Adaptive Cards
    - SMS via Twilio/SNS
    - Custom webhooks
+   - Note: BR-NOT-069 moved to V1.0 (Kubernetes Conditions)
 
 3. **Performance Optimization**:
    - Batch notification delivery

@@ -34,49 +34,53 @@ AIAnalysis Integration Test Stack:
 
 ## Quick Start
 
-### 1. Start Infrastructure
+### Run Integration Tests (Infrastructure Auto-Started)
 
 ```bash
-# From project root
-podman-compose -f test/integration/aianalysis/podman-compose.yml up -d --build
-
-# Wait for health checks (or use the infrastructure helper)
-# The compose file includes health checks for all services
-```
-
-### 2. Run Integration Tests
-
-```bash
-# Run all AIAnalysis integration tests
+# From project root - infrastructure starts automatically
 make test-integration-aianalysis
 
-# Or run specific test files
-go test -v ./test/integration/aianalysis/recovery_integration_test.go
+# Or run directly with go test
+go test -v ./test/integration/aianalysis/...
 ```
 
-### 3. Stop Infrastructure
+**What happens automatically**:
+1. ✅ PostgreSQL + pgvector starts (port 15434)
+2. ✅ Redis starts (port 16380)
+3. ✅ Data Storage API starts (port 18091)
+4. ✅ HolmesGPT API starts (port 18120, MOCK_LLM_MODE=true)
+5. ✅ Tests run
+6. ✅ All services stop automatically after tests complete
+
+**No manual `podman-compose` required!** The test suite manages infrastructure lifecycle automatically.
+
+### Manual Infrastructure Control (Advanced)
+
+If you need to start/stop services manually for debugging:
 
 ```bash
-# Stop and remove containers + volumes
+# Start infrastructure manually (optional)
+podman-compose -f test/integration/aianalysis/podman-compose.yml up -d --build
+
+# Stop infrastructure manually (optional)
 podman-compose -f test/integration/aianalysis/podman-compose.yml down -v
 ```
 
 ## Infrastructure Helpers
 
-The `test/infrastructure/aianalysis.go` package provides programmatic helpers:
+The `test/infrastructure/aianalysis.go` package provides programmatic helpers that are **automatically called** in `suite_test.go`:
 
 ```go
 import "github.com/jordigilh/kubernaut/test/infrastructure"
 
-// In suite_test.go BeforeSuite
+// Called automatically in SynchronizedBeforeSuite (process 1 only)
 err := infrastructure.StartAIAnalysisIntegrationInfrastructure(GinkgoWriter)
-if err != nil {
-    return err
-}
 
-// In suite_test.go AfterSuite
+// Called automatically in SynchronizedAfterSuite (last process only)
 infrastructure.StopAIAnalysisIntegrationInfrastructure(GinkgoWriter)
 ```
+
+**Result**: Infrastructure lifecycle is fully managed by the test suite following Gateway/Notification pattern.
 
 ## Parallel Execution
 
@@ -149,4 +153,5 @@ redis-cli -p 16380 ping
 - **DD-TEST-001**: Port allocation strategy (authoritative)
 - **TESTING_GUIDELINES.md**: Testing methodology
 - **NOTICE_INTEGRATION_TEST_INFRASTRUCTURE_OWNERSHIP.md**: Infrastructure ownership clarification
+
 

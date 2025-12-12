@@ -133,7 +133,7 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 		}
 
 		// Update only RO-owned fields
-		rr.Status.OverallPhase = "Completed"
+		rr.Status.OverallPhase = remediationv1.PhaseCompleted
 		rr.Status.Outcome = "NoActionRequired"
 		rr.Status.Message = ai.Status.Message
 		now := metav1.Now()
@@ -281,7 +281,7 @@ func (h *AIAnalysisHandler) handleWorkflowResolutionFailed(
 		}
 
 		// Update failure tracking
-		rr.Status.OverallPhase = "Failed"
+		rr.Status.OverallPhase = remediationv1.PhaseFailed
 		rr.Status.Outcome = "ManualReviewRequired"
 		failurePhase := "ai_analysis"
 		rr.Status.FailurePhase = &failurePhase
@@ -336,7 +336,7 @@ func (h *AIAnalysisHandler) propagateFailure(
 			return err
 		}
 
-		rr.Status.OverallPhase = "Failed"
+		rr.Status.OverallPhase = remediationv1.PhaseFailed
 		failurePhase := "ai_analysis"
 		rr.Status.FailurePhase = &failurePhase
 		failureReason := fmt.Sprintf("%s: %s", ai.Status.Reason, ai.Status.Message)
@@ -373,5 +373,3 @@ func IsWorkflowNotNeeded(ai *aianalysisv1.AIAnalysis) bool {
 func RequiresManualReview(ai *aianalysisv1.AIAnalysis) bool {
 	return IsWorkflowResolutionFailed(ai)
 }
-
-

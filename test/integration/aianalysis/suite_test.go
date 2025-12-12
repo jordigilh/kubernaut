@@ -24,22 +24,24 @@ limitations under the License.
 //
 // Test Strategy: Two integration test categories:
 // 1. **Envtest-only tests** (this file): Use mock HAPI for fast controller testing
-// 2. **Real service tests** (recovery_integration_test.go): Use real HAPI via podman-compose
+// 2. **Real service tests** (recovery_integration_test.go): Use real HAPI (auto-started)
 //
 // Defense-in-Depth (per 03-testing-strategy.mdc):
 // - Unit tests (70%+): Mock K8s client + mock HAPI
 // - Integration tests (>50%): Real K8s API (envtest) + mock/real HAPI
 // - E2E tests (10-15%): Real K8s API (KIND) + real HAPI
 //
-// Infrastructure:
-// - This suite: NO infrastructure needed (uses mocks)
-// - recovery_integration_test.go: Requires AIAnalysis infrastructure
-//   → Run: podman-compose -f test/integration/aianalysis/podman-compose.yml up -d
-//   → Ports: PostgreSQL 15434, Redis 16380, DS 18091, HAPI 18120
+// Infrastructure (AUTO-STARTED in SynchronizedBeforeSuite):
+// - PostgreSQL (port 15434): Persistence layer
+// - Redis (port 16380): Caching layer
+// - Data Storage API (port 18091): Audit trail
+// - HolmesGPT API (port 18120): AI analysis service (MOCK_LLM_MODE=true)
+// - All services started via podman-compose programmatically
 package aianalysis
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,6 +67,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 var (
@@ -84,13 +87,34 @@ func TestAIAnalysisIntegration(t *testing.T) {
 	RunSpecs(t, "AIAnalysis Controller Integration Suite (Envtest)")
 }
 
-var _ = BeforeSuite(func() {
+// SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
+// This follows Gateway/Notification pattern for automated infrastructure startup
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// This runs ONCE on process 1 only - creates shared infrastructure
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("AIAnalysis Integration Test Suite - Automated Setup")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("Creating test infrastructure...")
+	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
+	GinkgoWriter.Println("  • PostgreSQL + pgvector (port 15434)")
+	GinkgoWriter.Println("  • Redis (port 16380)")
+	GinkgoWriter.Println("  • Data Storage API (port 18091)")
+	GinkgoWriter.Println("  • HolmesGPT API (port 18120, MOCK_LLM_MODE=true)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
+	By("Starting AIAnalysis integration infrastructure (podman-compose)")
+	// This starts: PostgreSQL, Redis, DataStorage, HolmesGPT-API
+	// Per DD-TEST-001: Ports 15434, 16380, 18091, 18120
+	err := infrastructure.StartAIAnalysisIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	GinkgoWriter.Println("✅ All services started and healthy")
+
 	By("Registering AIAnalysis CRD scheme")
-	err := aianalysisv1alpha1.AddToScheme(scheme.Scheme)
+	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Bootstrapping test environment")
@@ -201,17 +225,110 @@ var _ = BeforeSuite(func() {
 	GinkgoWriter.Println("  • AIAnalysis CRD installed")
 	GinkgoWriter.Println("  • AIAnalysis controller running with mock HolmesGPT client")
 	GinkgoWriter.Println("  • Mock Rego evaluator (staging=auto-approve, production=manual)")
+	GinkgoWriter.Println("  • REAL services available for recovery_integration_test.go:")
+	GinkgoWriter.Println("    - PostgreSQL: localhost:15434")
+	GinkgoWriter.Println("    - Redis: localhost:16380")
+	GinkgoWriter.Println("    - Data Storage: http://localhost:18091")
+	GinkgoWriter.Println("    - HolmesGPT API: http://localhost:18120 (mock LLM)")
 	GinkgoWriter.Println("")
+
+	// Serialize REST config to pass to all processes
+	// Each process needs to create its own k8s client
+	configBytes, err := json.Marshal(struct {
+		Host     string
+		CAData   []byte
+		CertData []byte
+		KeyData  []byte
+	}{
+		Host:     cfg.Host,
+		CAData:   cfg.CAData,
+		CertData: cfg.CertData,
+		KeyData:  cfg.KeyData,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	return configBytes
+}, func(data []byte) {
+	// This runs on ALL parallel processes (including process 1)
+	// Each process creates its own k8s client and context
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	// Deserialize REST config from process 1
+	var configData struct {
+		Host     string
+		CAData   []byte
+		CertData []byte
+		KeyData  []byte
+	}
+	err := json.Unmarshal(data, &configData)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Register AIAnalysis CRD scheme (MUST be done before creating client)
+	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Create per-process REST config
+	cfg = &rest.Config{
+		Host: configData.Host,
+		TLSClientConfig: rest.TLSClientConfig{
+			CAData:   configData.CAData,
+			CertData: configData.CertData,
+			KeyData:  configData.KeyData,
+		},
+	}
+
+	// Create per-process k8s client
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient).NotTo(BeNil())
+
+	// Create per-process context ONLY if not already set (process 1 has it from first function)
+	// Process 1: ctx already set and used by controller manager - don't overwrite!
+	// Processes 2-4: Need ctx for test operations
+	if ctx == nil {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
+
+	// Create per-process mock client (each process gets its own mock)
+	mockHGClient = testutil.NewMockHolmesGPTClient()
+	mockHGClient.WithFullResponse(
+		"Integration test: Issue identified and workflow selected",
+		0.85,
+		true,
+		[]string{},
+		nil,
+		&hgclient.SelectedWorkflow{
+			WorkflowID:     "wf-restart-pod",
+			ContainerImage: "kubernaut/workflow-restart-pod:v1.0",
+			Confidence:     0.85,
+			Rationale:      "Restarts the target pod to recover from CrashLoopBackOff",
+			Parameters: map[string]string{
+				"TARGET_POD":       "test-pod",
+				"TARGET_NAMESPACE": "default",
+			},
+		},
+		nil,
+	)
 })
 
-var _ = AfterSuite(func() {
+// SynchronizedAfterSuite ensures proper cleanup in parallel execution
+var _ = SynchronizedAfterSuite(func() {
+	// This runs on ALL parallel processes - no cleanup needed per process
+}, func() {
+	// This runs ONCE on the last parallel process - cleanup shared infrastructure
 	By("Tearing down the test environment")
 	cancel()
 
-	err := testEnv.Stop()
+	if testEnv != nil {
+		err := testEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	By("Stopping AIAnalysis integration infrastructure")
+	err := infrastructure.StopAIAnalysisIntegrationInfrastructure(GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred())
 
-	GinkgoWriter.Println("✅ Cleanup complete")
+	GinkgoWriter.Println("✅ Cleanup complete - all services stopped")
 })
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.

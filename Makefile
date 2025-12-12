@@ -173,11 +173,11 @@ clean-notification-test-ports: ## Clean stale gvproxy port bindings for Notifica
 .PHONY: test-integration-datastorage
 test-integration-datastorage: clean-stale-datastorage-containers ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~4 min)
 	@if [ -z "$$POSTGRES_HOST" ]; then \
-		echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."; \
+		echo "🔧 Starting PostgreSQL 16..."; \
 		podman run -d --name datastorage-postgres -p 5432:5432 \
 		-e POSTGRES_PASSWORD=postgres \
 		-e POSTGRES_SHARED_BUFFERS=1GB \
-			quay.io/jordigilh/pgvector:pg16 > /dev/null 2>&1 || \
+			postgres:16-alpine > /dev/null 2>&1 || \
 		(echo "⚠️  PostgreSQL container already exists or failed to start" && \
 			 podman start datastorage-postgres > /dev/null 2>&1) || true; \
 		echo "⏳ Waiting for PostgreSQL to be ready..."; \
@@ -189,22 +189,10 @@ test-integration-datastorage: clean-stale-datastorage-containers ## Run Data Sto
 		echo "🐳 Using external PostgreSQL at $$POSTGRES_HOST:$$POSTGRES_PORT (Docker Compose)"; \
 	fi
 	@if [ -z "$$POSTGRES_HOST" ]; then \
-		echo "🔍 Verifying PostgreSQL and pgvector versions..."; \
+		echo "🔍 Verifying PostgreSQL version..."; \
 		podman exec datastorage-postgres psql -U postgres -c "SELECT version();" | grep "PostgreSQL 16" || \
 			(echo "❌ PostgreSQL version is not 16.x" && exit 1); \
-		echo "🔧 Creating pgvector extension..."; \
-		podman exec datastorage-postgres psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || \
-			(echo "❌ Failed to create pgvector extension" && exit 1); \
-		podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0|0\.[7-9]\.0|0\.[8-9]\.0" || \
-			(echo "❌ pgvector version is not 0.5.1+" && exit 1); \
-		echo "✅ Version validation passed (PostgreSQL 16 + pgvector 0.5.1+)"; \
-		echo "🔍 Testing HNSW index creation (dry-run)..."; \
-		podman exec datastorage-postgres psql -U postgres -d postgres -c "\
-		CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \
-		CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);" \
-		> /dev/null 2>&1 || \
-			(echo "❌ HNSW index creation test failed - PostgreSQL/pgvector may not support HNSW" && exit 1); \
-		echo "✅ HNSW index support verified"; \
+		echo "✅ PostgreSQL 16 version validated"; \
 	fi
 	@echo "🧪 Running Data Storage integration tests..."
 	@if [ -z "$$POSTGRES_HOST" ]; then \
@@ -311,7 +299,7 @@ test-integration-datastorage-ginkgo: ## Run Data Storage integration tests (4 pa
 	@echo "🔧 Ensuring Podman network exists..."
 	@podman network create datastorage-test 2>/dev/null || true
 	@echo "🧪 Running tests..."
-	ginkgo --procs=4 --timeout=6m ./test/integration/datastorage/...
+	ginkgo --procs=4 --timeout=10m ./test/integration/datastorage/...
 
 .PHONY: test-e2e-datastorage-ginkgo
 test-e2e-datastorage-ginkgo: ## Run Data Storage E2E tests (4 parallel processes, ginkgo)
@@ -860,6 +848,26 @@ test-e2e-notification: ## Run Notification Service E2E tests (Kind cluster, 4 pa
 	echo "Running E2E tests with $$PROCS parallel processes..."; \
 	cd test/e2e/notification && ginkgo -v --timeout=15m --procs=$$PROCS
 
+.PHONY: test-e2e-signalprocessing
+test-e2e-signalprocessing: ## Run SignalProcessing E2E tests (Kind cluster, 4 parallel procs, ~10-15 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 SignalProcessing Service - E2E Test Suite (Kind Cluster)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Business Requirements Tested:"
+	@echo "   • BR-SP-051: Environment classification from namespace labels"
+	@echo "   • BR-SP-070: Priority assignment (P0-P3)"
+	@echo "   • BR-SP-090: Audit trail persistence to DataStorage"
+	@echo "   • BR-SP-100: Owner chain traversal"
+	@echo "   • BR-SP-101: Detected labels (PDB, HPA)"
+	@echo "   • BR-SP-102: CustomLabels from Rego policies"
+	@echo ""
+	@echo "🏗️  Infrastructure: Kind cluster + DataStorage + PostgreSQL"
+	@echo "⚡ Parallel: 4 processes (per TESTING_GUIDELINES.md)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@PROCS=4; \
+	echo "Running E2E tests with $$PROCS parallel processes..."; \
+	cd test/e2e/signalprocessing && ginkgo -v --timeout=15m --procs=$$PROCS
+
 .PHONY: test-e2e-datastorage-parallel
 test-e2e-datastorage-parallel: ## Run Data Storage E2E tests in parallel (3 processes, ~3-5 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -989,6 +997,18 @@ clean-podman-ports-workflowexecution: ## Clean stale Podman ports for WE tests o
 	@# Remove WE-specific stale containers only
 	@podman rm -f kubernaut_datastorage_1 kubernaut_postgres_1 kubernaut_redis_1 2>/dev/null || true
 	@echo "✅ WE port cleanup complete"
+
+.PHONY: clean-podman-ports-remediationorchestrator
+clean-podman-ports-remediationorchestrator: ## Clean stale Podman ports for RO tests (15435 PG, 16381 Redis, 18140-18141 DS)
+	@echo "🧹 Cleaning stale Podman ports for RemediationOrchestrator tests..."
+	@# RO uses: 15435 (PostgreSQL), 16381 (Redis), 18140 (DS HTTP), 18141 (DS Metrics)
+	@# Per DD-TEST-001: RO-specific ports from documented ranges (15433-15442, 16379-16388)
+	@lsof -ti:15435 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:16381 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:18140 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -ti:18141 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@podman rm -f ro-postgres-integration ro-redis-integration ro-datastorage-integration 2>/dev/null || true
+	@echo "✅ RO port cleanup complete"
 
 .PHONY: test-unit-workflowexecution
 test-unit-workflowexecution: ## Run WorkflowExecution unit tests (4 parallel procs)

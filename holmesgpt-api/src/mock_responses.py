@@ -150,7 +150,7 @@ DEFAULT_SCENARIO = MockScenario(
 # Edge case: No workflow found - triggers needs_human_review=true
 EDGE_CASE_NO_WORKFLOW = "MOCK_NO_WORKFLOW_FOUND"
 
-# Edge case: Low confidence - triggers needs_human_review=true  
+# Edge case: Low confidence - triggers needs_human_review=true
 EDGE_CASE_LOW_CONFIDENCE = "MOCK_LOW_CONFIDENCE"
 
 # Edge case: Not reproducible - triggers can_recover=false for recovery

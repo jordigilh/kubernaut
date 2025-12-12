@@ -59,7 +59,7 @@ import (
 // - Complete infrastructure isolation
 // - No impact from other tests
 
-var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2e", "dlq", "p0"), Ordered, func() {
+var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Response", Label("e2e", "dlq", "p0"), Serial, Ordered, func() {
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger

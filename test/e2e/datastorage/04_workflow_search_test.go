@@ -154,34 +154,26 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "OOM Recovery with GitOps (ArgoCD)",
 					description: "Recover from OOMKilled using GitOps with ArgoCD",
 					labels: map[string]interface{}{
-						"signal_type":         "OOMKilled",
-						"severity":            "critical",
-						"resource_management": "gitops",
-						"gitops_tool":         "argocd",
-						"environment":         "production",
-						"business_category":   "revenue-critical",
-						"priority":            "P0",
-						"risk_tolerance":      "low",
-						"component":           "deployment",
+						"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
+						"severity":    "critical",   // mandatory
+						"component":   "deployment", // mandatory
+						"priority":    "P0",         // mandatory
+						"environment": "production", // mandatory
 					},
-					embedding: generateTestEmbedding("OOMKilled critical gitops argocd production"),
+					embedding: nil, // V1.0: no embeddings
 				},
 				{
 					workflowID:  fmt.Sprintf("wf-gitops-flux-%s", testID),
 					name:        "OOM Recovery with GitOps (Flux)",
 					description: "Recover from OOMKilled using GitOps with Flux",
 					labels: map[string]interface{}{
-						"signal_type":         "OOMKilled",
-						"severity":            "critical",
-						"resource_management": "gitops",
-						"gitops_tool":         "flux",
-						"environment":         "production",
-						"business_category":   "revenue-critical",
-						"priority":            "P0",
-						"risk_tolerance":      "low",
-						"component":           "deployment",
+						"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
+						"severity":    "critical",   // mandatory
+						"component":   "deployment", // mandatory
+						"priority":    "P0",         // mandatory
+						"environment": "production", // mandatory
 					},
-					embedding: generateTestEmbedding("OOMKilled critical gitops flux production"),
+					embedding: nil, // V1.0: no embeddings
 				},
 				{
 					workflowID:  fmt.Sprintf("wf-manual-%s", testID),
@@ -204,44 +196,38 @@ var _ = Describe("Scenario 4: Workflow Search with Hybrid Weighted Scoring", Lab
 					name:        "OOM Recovery (Generic)",
 					description: "Generic OOM recovery workflow",
 					labels: map[string]interface{}{
-						"signal_type":       "OOMKilled",
-						"severity":          "critical",
-						"environment":       "production",
-						"priority":          "P1",
-						"risk_tolerance":    "medium",
-						"business_category": "availability",
-						"component":         "pod",
+						"severity":    "critical",   // mandatory
+						"component":   "pod",        // mandatory
+						"priority":    "P1",         // mandatory
+						"environment": "production", // mandatory
 					},
-					embedding: generateTestEmbedding("OOMKilled critical generic recovery"),
+					embedding: nil, // V1.0: no embeddings
 				},
 				{
 					workflowID:  fmt.Sprintf("wf-different-signal-%s", testID),
 					name:        "CrashLoopBackOff Recovery",
 					description: "Recover from CrashLoopBackOff",
 					labels: map[string]interface{}{
-						"signal_type":       "CrashLoopBackOff",
-						"severity":          "high",
-						"environment":       "staging",
-						"priority":          "P2",
-						"risk_tolerance":    "high",
-						"business_category": "performance",
-						"component":         "pod",
+						"signal_type": "CrashLoopBackOff", // mandatory (DD-WORKFLOW-001 v1.4)
+						"severity":    "high",             // mandatory
+						"component":   "pod",              // mandatory
+						"priority":    "P2",               // mandatory
+						"environment": "staging",          // mandatory
 					},
-					embedding: generateTestEmbedding("CrashLoopBackOff high recovery"),
+					embedding: nil, // V1.0: no embeddings
 				},
 			}
 
 			// Create workflows via API with ADR-043 compliant content
 			for i, wf := range workflows {
-				// Get risk_tolerance for YAML content (convert from hyphenated JSON key)
-				riskTolerance := wf.labels["risk_tolerance"]
+				// V1.0: Only 4 mandatory labels
+				severity := wf.labels["severity"]
 				environment := wf.labels["environment"]
 				priority := wf.labels["priority"]
-				businessCategory := wf.labels["business_category"]
 				component := wf.labels["component"]
 
 				// Generate ADR-043 compliant workflow-schema.yaml content
-				// YAML uses underscored keys (signal_type, risk_tolerance)
+				// V1.0: Simplified 4-label schema
 				workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
 kind: WorkflowSchema
 metadata:
@@ -249,12 +235,9 @@ metadata:
   version: "1.0.0"
   description: %s
 labels:
-  signal_type: %s
   severity: %s
-  risk_tolerance: %s
   environment: %s
   priority: %s
-  business_category: %s
   component: %s
 parameters:
   - name: NAMESPACE
@@ -268,8 +251,7 @@ parameters:
 execution:
   engine: tekton
   bundle: ghcr.io/kubernaut/workflows/test:v1.0.0
-`, wf.workflowID, wf.description, wf.labels["signal_type"], wf.labels["severity"],
-					riskTolerance, environment, priority, businessCategory, component)
+`, wf.workflowID, wf.description, severity, environment, priority, component)
 
 				// DD-WORKFLOW-002 v2.4: container_image is MANDATORY with digest
 				containerImage := fmt.Sprintf("ghcr.io/kubernaut/workflows/%s:v1.0.0@sha256:%064d", wf.workflowID, i+1)
@@ -316,19 +298,17 @@ execution:
 
 			testLogger.Info("✅ All workflows created successfully")
 
-			// ACT: Search for OOMKilled workflows with GitOps + ArgoCD preference
-			testLogger.Info("🔍 Searching for workflows with hybrid weighted scoring...")
-			testLogger.Info("   Query: 'OOMKilled critical with GitOps ArgoCD'")
-			testLogger.Info("   Filters: signal_type=OOMKilled, severity=critical, resource_management=gitops, gitops_tool=argocd")
+			// ACT: Search for OOMKilled workflows with V1.0 label-only filtering
+			testLogger.Info("🔍 Searching for workflows with V1.0 label-only scoring...")
+			testLogger.Info("   Filters: signal_type=OOMKilled, severity=critical, component=deployment, environment=production, priority=P0")
 
 			searchReq := map[string]interface{}{
-				"query":     "OOMKilled critical with GitOps ArgoCD",
-				"embedding": generateTestEmbedding("OOMKilled critical gitops argocd production"),
 				"filters": map[string]interface{}{
-					"signal_type":         "OOMKilled",
-					"severity":            "critical",
-					"resource_management": "gitops",
-					"gitops_tool":         "argocd",
+					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
+					"severity":    "critical",   // mandatory
+					"component":   "deployment", // mandatory
+					"environment": "production", // mandatory
+					"priority":    "P0",         // mandatory
 				},
 				"top_k": 5,
 			}

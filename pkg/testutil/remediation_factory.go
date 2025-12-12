@@ -113,7 +113,7 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 
 	// Apply phase if provided
 	if len(opts) > 0 && opts[0].Phase != "" {
-		rr.Status.OverallPhase = opts[0].Phase
+		rr.Status.OverallPhase = remediationv1.RemediationPhase(opts[0].Phase)
 	}
 
 	// Apply TimeoutConfig if provided (BR-ORCH-028)

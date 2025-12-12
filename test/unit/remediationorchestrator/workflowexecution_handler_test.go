@@ -72,10 +72,9 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 		Context("BR-ORCH-032: ResourceBusy skip reason", func() {
 			// Test #2: HandleSkipped with ResourceBusy sets OverallPhase="Skipped" and requeues
 			It("should set OverallPhase=Skipped and SkipReason=ResourceBusy and requeue", func() {
-				client := fakeClient.Build()
-				h = handler.NewWorkflowExecutionHandler(client, scheme)
-
 				rr := testutil.NewRemediationRequest("test-rr", "default")
+				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
 				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
 				we := &workflowexecutionv1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
@@ -102,7 +101,7 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify status update
-				Expect(rr.Status.OverallPhase).To(Equal("Skipped"))
+				Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseSkipped))
 				Expect(rr.Status.SkipReason).To(Equal("ResourceBusy"))
 				Expect(rr.Status.DuplicateOf).To(Equal("we-parent-rr"))
 
@@ -115,10 +114,9 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 		Context("BR-ORCH-032: RecentlyRemediated skip reason", func() {
 			// Test #3: HandleSkipped with RecentlyRemediated sets OverallPhase="Skipped" and requeues
 			It("should set OverallPhase=Skipped and SkipReason=RecentlyRemediated and requeue", func() {
-				client := fakeClient.Build()
-				h = handler.NewWorkflowExecutionHandler(client, scheme)
-
 				rr := testutil.NewRemediationRequest("test-rr", "default")
+				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
 				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
 				we := &workflowexecutionv1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
@@ -147,7 +145,7 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify status update
-				Expect(rr.Status.OverallPhase).To(Equal("Skipped"))
+				Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseSkipped))
 				Expect(rr.Status.SkipReason).To(Equal("RecentlyRemediated"))
 				Expect(rr.Status.DuplicateOf).To(Equal("we-previous-rr"))
 
@@ -159,10 +157,9 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 		Context("BR-ORCH-032, BR-ORCH-036: ExhaustedRetries skip reason", func() {
 			// Test #4: HandleSkipped with ExhaustedRetries sets OverallPhase="Failed" + RequiresManualReview
 			It("should set OverallPhase=Failed and RequiresManualReview=true and NOT requeue", func() {
-				client := fakeClient.Build()
-				h = handler.NewWorkflowExecutionHandler(client, scheme)
-
 				rr := testutil.NewRemediationRequest("test-rr", "default")
+				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
 				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
 				we := &workflowexecutionv1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
@@ -184,7 +181,7 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify status - FAILED, not Skipped (per BR-ORCH-032 v1.1)
-				Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+				Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				Expect(rr.Status.SkipReason).To(Equal("ExhaustedRetries"))
 				Expect(rr.Status.RequiresManualReview).To(BeTrue())
 				Expect(rr.Status.DuplicateOf).To(BeEmpty()) // NOT a duplicate
@@ -197,10 +194,9 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 		Context("BR-ORCH-032, BR-ORCH-036: PreviousExecutionFailed skip reason", func() {
 			// Test #5: HandleSkipped with PreviousExecutionFailed sets OverallPhase="Failed" + RequiresManualReview
 			It("should set OverallPhase=Failed and RequiresManualReview=true for cluster state concerns", func() {
-				client := fakeClient.Build()
-				h = handler.NewWorkflowExecutionHandler(client, scheme)
-
 				rr := testutil.NewRemediationRequest("test-rr", "default")
+				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
 				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
 				we := &workflowexecutionv1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
@@ -221,7 +217,7 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify status - FAILED, not Skipped (per BR-ORCH-032 v1.1)
-				Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+				Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				Expect(rr.Status.SkipReason).To(Equal("PreviousExecutionFailed"))
 				Expect(rr.Status.RequiresManualReview).To(BeTrue())
 				Expect(rr.Status.DuplicateOf).To(BeEmpty()) // NOT a duplicate
@@ -288,10 +284,9 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 		Context("BR-ORCH-032, DD-WE-004: HandleFailed", func() {
 			// Test #8: HandleFailed with WasExecutionFailure sets RequiresManualReview=true
 			It("should set RequiresManualReview=true when WasExecutionFailure=true", func() {
-				client := fakeClient.Build()
-				h = handler.NewWorkflowExecutionHandler(client, scheme)
-
 				rr := testutil.NewRemediationRequest("test-rr", "default")
+				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
 				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
 				we := &workflowexecutionv1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
@@ -301,14 +296,14 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 					Status: workflowexecutionv1.WorkflowExecutionStatus{
 						Phase: "Failed",
 						FailureDetails: &workflowexecutionv1.FailureDetails{
-							WasExecutionFailure:            true,
-							NaturalLanguageSummary:         "Workflow step 2 failed during pod restart",
-							FailedTaskIndex:                2,
-							FailedTaskName:                 "restart-pod",
-							Reason:                         "OOMKilled",
-							Message:                        "Container killed due to OOM",
-							FailedAt:                       metav1.Now(),
-							ExecutionTimeBeforeFailure:     "2m30s",
+							WasExecutionFailure:        true,
+							NaturalLanguageSummary:     "Workflow step 2 failed during pod restart",
+							FailedTaskIndex:            2,
+							FailedTaskName:             "restart-pod",
+							Reason:                     "OOMKilled",
+							Message:                    "Container killed due to OOM",
+							FailedAt:                   metav1.Now(),
+							ExecutionTimeBeforeFailure: "2m30s",
 						},
 					},
 				}
@@ -317,7 +312,7 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify status - execution failure requires manual review
-				Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+				Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				Expect(rr.Status.RequiresManualReview).To(BeTrue())
 				Expect(rr.Status.Message).To(Equal(we.Status.FailureDetails.NaturalLanguageSummary))
 
@@ -327,10 +322,9 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 
 			// Test #9: HandleFailed without WasExecutionFailure considers recovery
 			It("should consider recovery when WasExecutionFailure=false", func() {
-				client := fakeClient.Build()
-				h = handler.NewWorkflowExecutionHandler(client, scheme)
-
 				rr := testutil.NewRemediationRequest("test-rr", "default")
+				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				h = handler.NewWorkflowExecutionHandler(client, scheme)
 				sp := testutil.NewCompletedSignalProcessing("test-sp", "default")
 				we := &workflowexecutionv1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
@@ -340,14 +334,14 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 					Status: workflowexecutionv1.WorkflowExecutionStatus{
 						Phase: "Failed",
 						FailureDetails: &workflowexecutionv1.FailureDetails{
-							WasExecutionFailure:            false, // Pre-execution failure
-							NaturalLanguageSummary:         "Failed to resolve workflow from catalog",
-							FailedTaskIndex:                0,
-							FailedTaskName:                 "validate-workflow",
-							Reason:                         "ConfigurationError",
-							Message:                        "Workflow not found in catalog",
-							FailedAt:                       metav1.Now(),
-							ExecutionTimeBeforeFailure:     "0s",
+							WasExecutionFailure:        false, // Pre-execution failure
+							NaturalLanguageSummary:     "Failed to resolve workflow from catalog",
+							FailedTaskIndex:            0,
+							FailedTaskName:             "validate-workflow",
+							Reason:                     "ConfigurationError",
+							Message:                    "Workflow not found in catalog",
+							FailedAt:                   metav1.Now(),
+							ExecutionTimeBeforeFailure: "0s",
 						},
 					},
 				}
@@ -357,7 +351,7 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 
 				// Pre-execution failures may be recoverable
 				// For now, also mark as failed but may requeue for recovery
-				Expect(rr.Status.OverallPhase).To(Equal("Failed"))
+				Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 				// Pre-execution failures don't require manual review by default
 				Expect(rr.Status.RequiresManualReview).To(BeFalse())
 				Expect(result.Requeue).To(BeFalse())
@@ -544,4 +538,3 @@ var _ = Describe("WorkflowExecutionHandler", func() {
 		})
 	})
 })
-

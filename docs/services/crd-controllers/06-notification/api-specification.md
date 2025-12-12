@@ -1,7 +1,7 @@
 # Notification Service - API Specification
 
-**Version**: 2.2
-**Last Updated**: 2025-12-07
+**Version**: 2.3
+**Last Updated**: 2025-12-11
 **Service Type**: CRD Controller (NotificationRequest CRD)
 **Architecture**: Declarative Kubernetes-native notification delivery
 **Audit Integration**: ADR-034 Unified Audit Table (v2.0)
@@ -489,6 +489,99 @@ type SimpleNotificationResponse struct {
 	Channels       map[string]ChannelStatus  `json:"channels"`
 }
 ```
+
+### **NotificationRequest CRD Types**
+
+```go
+// NotificationRequest is the Schema for the notificationrequests API
+type NotificationRequest struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   NotificationRequestSpec   `json:"spec,omitempty"`
+	Status NotificationRequestStatus `json:"status,omitempty"`
+}
+
+type NotificationRequestSpec struct {
+	// Type: "escalation" | "simple" | "approval" | "manual-review"
+	Type string `json:"type"`
+
+	// Recipient: email address or user identifier
+	Recipient string `json:"recipient,omitempty"`
+
+	// Channels: explicit channel list (if empty, uses routing rules)
+	Channels []string `json:"channels,omitempty"`
+
+	// Priority: "critical" | "high" | "normal" | "low"
+	Priority string `json:"priority,omitempty"`
+
+	// Subject: notification subject line
+	Subject string `json:"subject,omitempty"`
+
+	// Body: notification body content
+	Body string `json:"body"`
+
+	// Metadata: additional structured data
+	Metadata *runtime.RawExtension `json:"metadata,omitempty"`
+}
+
+type NotificationRequestStatus struct {
+	// Phase: Current lifecycle phase
+	// Values: "Pending" | "Sending" | "Sent" | "PartiallySent" | "Failed"
+	Phase string `json:"phase,omitempty"`
+
+	// DeliveryAttempts: Record of all delivery attempts
+	DeliveryAttempts []DeliveryAttempt `json:"deliveryAttempts,omitempty"`
+
+	// FailureReason: Human-readable failure reason
+	FailureReason string `json:"failureReason,omitempty"`
+
+	// LastAttemptTime: Timestamp of most recent delivery attempt
+	LastAttemptTime *metav1.Time `json:"lastAttemptTime,omitempty"`
+
+	// Conditions: Standard Kubernetes conditions for status reporting
+	// Supported conditions:
+	//   - RoutingResolved (BR-NOT-069): Routing rule resolution status
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type DeliveryAttempt struct {
+	Channel   string       `json:"channel"`
+	Timestamp metav1.Time  `json:"timestamp"`
+	Success   bool         `json:"success"`
+	Error     string       `json:"error,omitempty"`
+	Attempt   int          `json:"attempt"`
+}
+```
+
+#### **Kubernetes Conditions (BR-NOT-069)**
+
+The `Status.Conditions` field follows standard Kubernetes conventions:
+
+**RoutingResolved Condition**:
+- **Type**: `RoutingResolved`
+- **Status**: `True` | `False` | `Unknown`
+- **Reason**: `RoutingRuleMatched` | `RoutingFallback` | `RoutingError`
+- **Message**: Human-readable description (e.g., "Matched rule 'critical-alerts' → channels: [pagerduty, slack]")
+
+**Example kubectl Output**:
+```bash
+$ kubectl describe notificationrequest notif-abc123
+...
+Status:
+  Phase: Sent
+  Conditions:
+    Type:                RoutingResolved
+    Status:              True
+    Last Transition Time: 2025-12-11T10:30:00Z
+    Reason:              RoutingRuleMatched
+    Message:             Matched rule 'critical-alerts' → channels: [pagerduty, slack]
+    Observed Generation: 1
+```
+
+**Related Documentation**:
+- Full specification: [BR-NOT-069](../../../requirements/BR-NOT-069-routing-rule-visibility-conditions.md)
+- Routing rules: BR-NOT-065 (Channel Routing Based on Labels)
 
 ---
 

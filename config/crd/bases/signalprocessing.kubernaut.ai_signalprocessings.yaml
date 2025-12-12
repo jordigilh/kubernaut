@@ -644,12 +644,12 @@ spec:
                 description: 'Phase: Pending, Enriching, Classifying, Categorizing,
                   Completed, Failed'
                 enum:
-                - pending
-                - enriching
-                - classifying
-                - categorizing
-                - completed
-                - failed
+                - Pending
+                - Enriching
+                - Classifying
+                - Categorizing
+                - Completed
+                - Failed
                 type: string
               priorityAssignment:
                 description: |-

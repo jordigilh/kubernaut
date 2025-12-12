@@ -138,22 +138,23 @@ type EnrichmentConfig struct {
 
 // SignalProcessingPhase represents the current phase of SignalProcessing reconciliation.
 // BR-SP-051: Phase State Machine
-// +kubebuilder:validation:Enum=pending;enriching;classifying;categorizing;completed;failed
+// BR-COMMON-001: Capitalized phase values per Kubernetes API conventions
+// +kubebuilder:validation:Enum=Pending;Enriching;Classifying;Categorizing;Completed;Failed
 type SignalProcessingPhase string
 
 const (
 	// PhasePending is the initial state when SignalProcessing is created.
-	PhasePending SignalProcessingPhase = "pending"
+	PhasePending SignalProcessingPhase = "Pending"
 	// PhaseEnriching is when K8s context enrichment is in progress.
-	PhaseEnriching SignalProcessingPhase = "enriching"
+	PhaseEnriching SignalProcessingPhase = "Enriching"
 	// PhaseClassifying is when environment/priority classification is in progress.
-	PhaseClassifying SignalProcessingPhase = "classifying"
+	PhaseClassifying SignalProcessingPhase = "Classifying"
 	// PhaseCategorizing is when business categorization is in progress.
-	PhaseCategorizing SignalProcessingPhase = "categorizing"
+	PhaseCategorizing SignalProcessingPhase = "Categorizing"
 	// PhaseCompleted is the terminal success state.
-	PhaseCompleted SignalProcessingPhase = "completed"
+	PhaseCompleted SignalProcessingPhase = "Completed"
 	// PhaseFailed is the terminal error state.
-	PhaseFailed SignalProcessingPhase = "failed"
+	PhaseFailed SignalProcessingPhase = "Failed"
 )
 
 // SignalProcessingStatus defines the observed state of SignalProcessing.

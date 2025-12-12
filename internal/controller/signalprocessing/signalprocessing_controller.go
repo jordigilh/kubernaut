@@ -57,6 +57,7 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 )
 
 // SignalProcessingReconciler reconciles a SignalProcessing object.
@@ -66,12 +67,16 @@ type SignalProcessingReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	AuditClient *audit.AuditClient // BR-SP-090: Categorization Audit Trail
-	
+
 	// Day 4-6 Classifiers (Rego-based, per IMPLEMENTATION_PLAN_V1.31.md)
 	// These are OPTIONAL - controller falls back to hardcoded logic if nil
 	EnvClassifier      *classifier.EnvironmentClassifier // BR-SP-051, BR-SP-052, BR-SP-053
 	PriorityEngine     *classifier.PriorityEngine        // BR-SP-070, BR-SP-071, BR-SP-072
 	BusinessClassifier *classifier.BusinessClassifier    // BR-SP-002, BR-SP-080, BR-SP-081
+
+	// Day 7 Owner Chain Builder (per IMPLEMENTATION_PLAN_V1.31.md)
+	// This is OPTIONAL - controller falls back to inline implementation if nil
+	OwnerChainBuilder *ownerchain.Builder // BR-SP-100: Owner chain traversal
 }
 
 // +kubebuilder:rbac:groups=signalprocessing.kubernaut.ai,resources=signalprocessings,verbs=get;list;watch;create;update;patch;delete
@@ -212,11 +217,22 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	}
 
 	// 2. Build owner chain (BR-SP-100)
-	ownerChain, err := r.buildOwnerChain(ctx, targetNs, targetKind, targetName)
-	if err != nil {
-		logger.V(1).Info("Owner chain build failed", "error", err)
+	// Per IMPLEMENTATION_PLAN_V1.31.md Day 7: Use proper OwnerChain Builder
+	if r.OwnerChainBuilder != nil {
+		ownerChain, err := r.OwnerChainBuilder.Build(ctx, targetNs, targetKind, targetName)
+		if err != nil {
+			logger.V(1).Info("Owner chain build failed", "error", err)
+		} else {
+			k8sCtx.OwnerChain = ownerChain
+		}
 	} else {
-		k8sCtx.OwnerChain = ownerChain
+		// Fallback to inline implementation (for backward compatibility)
+		ownerChain, err := r.buildOwnerChain(ctx, targetNs, targetKind, targetName)
+		if err != nil {
+			logger.V(1).Info("Owner chain build failed (inline fallback)", "error", err)
+		} else {
+			k8sCtx.OwnerChain = ownerChain
+		}
 	}
 
 	// 3. Enrich target resource details
@@ -235,13 +251,21 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	detectedLabels := r.detectLabels(ctx, k8sCtx, targetNs, logger)
 	k8sCtx.DetectedLabels = detectedLabels
 
-	// 5. Custom labels (BR-SP-102) - basic extraction from namespace labels
+	// 5. Custom labels (BR-SP-102) - enhanced extraction from namespace labels
+	// TODO: Wire Rego engine once type system alignment is resolved
 	customLabels := make(map[string][]string)
 	if k8sCtx.Namespace != nil {
-		for k, v := range k8sCtx.Namespace.Labels {
-			if k == "kubernaut.ai/team" {
-				customLabels["team"] = []string{v}
-			}
+		// Extract team label
+		if team, ok := k8sCtx.Namespace.Labels["kubernaut.ai/team"]; ok && team != "" {
+			customLabels["team"] = []string{team}
+		}
+		// Extract cost center label
+		if cost, ok := k8sCtx.Namespace.Labels["kubernaut.ai/cost-center"]; ok && cost != "" {
+			customLabels["cost"] = []string{cost}
+		}
+		// Extract region label
+		if region, ok := k8sCtx.Namespace.Labels["kubernaut.ai/region"]; ok && region != "" {
+			customLabels["region"] = []string{region}
 		}
 	}
 	if len(customLabels) > 0 {

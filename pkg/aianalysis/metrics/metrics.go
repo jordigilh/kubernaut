@@ -153,6 +153,31 @@ var (
 		},
 		[]string{"field_name"},
 	)
+
+	// ========================================
+	// RECOVERY METRICS (aianalysis_recovery_*)
+	// BR-AI-082: Track RecoveryStatus population
+	// Business Value: MEDIUM - Recovery observability
+	// ========================================
+
+	// RecoveryStatusPopulatedTotal tracks successful RecoveryStatus population
+	// Business: "How many recovery attempts populate status?"
+	RecoveryStatusPopulatedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "aianalysis_recovery_status_populated_total",
+			Help: "Total number of times RecoveryStatus was populated from HAPI recovery_analysis",
+		},
+		[]string{"failure_understood", "state_changed"},
+	)
+
+	// RecoveryStatusSkippedTotal tracks when HAPI doesn't return recovery_analysis
+	// Quality: "How often is HAPI not returning recovery analysis?"
+	RecoveryStatusSkippedTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "aianalysis_recovery_status_skipped_total",
+			Help: "Total number of times RecoveryStatus was skipped (nil recovery_analysis from HAPI)",
+		},
+	)
 )
 
 func init() {
@@ -167,6 +192,9 @@ func init() {
 		// Audit/Quality metrics (2)
 		ValidationAttemptsTotal,
 		DetectedLabelsFailuresTotal,
+		// Recovery metrics (2)
+		RecoveryStatusPopulatedTotal,
+		RecoveryStatusSkippedTotal,
 	)
 }
 
@@ -231,3 +259,24 @@ func RecordDetectedLabelsFailure(fieldName string) {
 	DetectedLabelsFailuresTotal.WithLabelValues(fieldName).Inc()
 }
 
+// RecordRecoveryStatusPopulated records successful RecoveryStatus population
+// Business: Recovery observability (BR-AI-082)
+func RecordRecoveryStatusPopulated(failureUnderstood, stateChanged bool) {
+	failureStr := boolToString(failureUnderstood)
+	stateStr := boolToString(stateChanged)
+	RecoveryStatusPopulatedTotal.WithLabelValues(failureStr, stateStr).Inc()
+}
+
+// RecordRecoveryStatusSkipped records when HAPI doesn't return recovery_analysis
+// Quality: HAPI contract compliance tracking
+func RecordRecoveryStatusSkipped() {
+	RecoveryStatusSkippedTotal.Inc()
+}
+
+// boolToString converts bool to string for metric labels
+func boolToString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}

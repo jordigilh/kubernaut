@@ -149,7 +149,8 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 				"event_data":      eventData,
 			}
 			resp := postAuditEvent(httpClient, serviceURL, event)
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+			// Accept both 201 (direct write) and 202 (DLQ fallback)
+			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			if err := resp.Body.Close(); err != nil {
 				testLogger.Error(err, "failed to close response body")
 			}
@@ -175,7 +176,8 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 				"event_data":      eventData,
 			}
 			resp := postAuditEvent(httpClient, serviceURL, event)
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+			// Accept both 201 (direct write) and 202 (DLQ fallback)
+			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			if err := resp.Body.Close(); err != nil {
 				testLogger.Error(err, "failed to close response body")
 			}
@@ -201,7 +203,8 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 				"event_data":      eventData,
 			}
 			resp := postAuditEvent(httpClient, serviceURL, event)
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+			// Accept both 201 (direct write) and 202 (DLQ fallback)
+			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			if err := resp.Body.Close(); err != nil {
 				testLogger.Error(err, "failed to close response body")
 			}

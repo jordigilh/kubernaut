@@ -4,8 +4,8 @@
 **Service Type**: CRD Controller
 **CRD**: NotificationRequest
 **Controller**: NotificationRequestReconciler
-**Version**: v1.4.0
-**Last Updated**: December 7, 2025
+**Version**: v1.5.0
+**Last Updated**: December 11, 2025
 **Status**: Production-Ready
 
 ---
@@ -46,16 +46,20 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ### 📊 Summary
 
-**Total Business Requirements**: 17
+**Total Business Requirements**: 18
 **Categories**: 9
 **Priority Breakdown**:
 - P0 (Critical): 10 BRs (BR-NOT-050, 051, 052, 053, 054, 055, 058, 060, 061, 065)
-- P1 (High): 7 BRs (BR-NOT-056, 057, 059, 066, 067, 068)
+- P1 (High): 8 BRs (BR-NOT-056, 057, 059, 066, 067, 068, 069)
+
+**Implementation Status**:
+- Implemented: 17 BRs (94%)
+- Approved for Kubernaut V1.0: 1 BR (BR-NOT-069)
 
 **Test Coverage**:
 - Unit: 82 test specs (95% confidence)
 - Integration: 21 test scenarios (90% confidence)
-- E2E: Not yet implemented (planned for v1.1)
+- E2E: 4 test files (100% passing)
 
 ---
 
@@ -626,6 +630,25 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 
 ---
 
+#### BR-NOT-069: Routing Rule Visibility via Kubernetes Conditions
+
+**Full Specification**: [BR-NOT-069-routing-rule-visibility-conditions.md](../../../requirements/BR-NOT-069-routing-rule-visibility-conditions.md)
+
+**Description**: The Notification Service MUST expose routing rule resolution status via Kubernetes Conditions, enabling operators to debug label-based channel routing without accessing controller logs.
+
+**Priority**: P1 (HIGH)
+
+**Key Features**:
+- `RoutingResolved` condition shows matched rule name and channels
+- Visible via `kubectl describe` (no log access needed)
+- Fallback detection when no rules match
+
+**Implementation Status**: ✅ Approved (V1.1 - Q1 2026)
+
+**Related BRs**: BR-NOT-065 (Channel Routing), BR-NOT-066 (Config Format), BR-NOT-067 (Hot-Reload)
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
@@ -648,10 +671,10 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 - **Planned**: Real Slack webhook delivery, end-to-end lifecycle validation
 
 ### BR Coverage
-- **Total BRs**: 17
-- **Unit Test Coverage**: 100% (17/17 BRs)
-- **Integration Test Coverage**: 100% (17/17 BRs)
-- **Overall Coverage**: 100%
+- **Total BRs**: 18 (BR-NOT-050 through BR-NOT-069)
+- **Unit Test Coverage**: 94% (17/18 BRs) - BR-NOT-069 pending implementation
+- **Integration Test Coverage**: 94% (17/18 BRs) - BR-NOT-069 pending implementation
+- **Overall Coverage**: 94% (17/18 implemented, 1 approved for Kubernaut V1.0)
 
 ---
 
@@ -668,6 +691,13 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 
 ## 📝 Version History
 
+### Version 1.5.0 (2025-12-11)
+- Added BR-NOT-069: Routing Rule Visibility via Kubernetes Conditions
+- 18 business requirements total (17 implemented, 1 approved for Kubernaut V1.0)
+- Response to AIAnalysis team Conditions implementation request
+- RoutingResolved condition approved, ChannelReachable deferred
+- Target: December 2025 (before Kubernaut V1.0 release)
+
 ### Version 1.4.0 (2025-12-07)
 - Updated documentation to reflect actual implementation status
 - 17 business requirements implemented (added BR-NOT-065 to BR-NOT-068)
@@ -683,8 +713,8 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 
 ---
 
-**Document Version**: v1.4.0
-**Last Updated**: December 7, 2025
+**Document Version**: v1.5.0
+**Last Updated**: December 11, 2025
 **Maintained By**: Kubernaut Architecture Team
-**Status**: Production-Ready
+**Status**: Production-Ready (18 BRs: 17 implemented, 1 approved for V1.1)
 

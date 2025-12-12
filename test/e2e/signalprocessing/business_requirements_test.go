@@ -812,7 +812,7 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 	// BR-SP-090: Verify audit events are written to DataStorage
 	It("BR-SP-090: should write audit events to DataStorage when signal is processed", func() {
 		By("Creating a SignalProcessing CR")
-		fingerprint := "e2eaudit1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+		fingerprint := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-audit-test",
@@ -864,39 +864,52 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 				return false
 			}
 
-			GinkgoWriter.Printf("  ✅ Found %d audit events for fingerprint\n", len(auditEvents))
+			GinkgoWriter.Printf("  ✅ Found %d total audit events\n", len(auditEvents))
 
-			// Verify event types
+			// Filter events for our specific SignalProcessing resource
 			hasSignalProcessed := false
 			hasClassificationDecision := false
 			for _, event := range auditEvents {
-				GinkgoWriter.Printf("    • Event: %s\n", event.EventType)
-				if event.EventType == "signal.processed" {
+				// Only check events for this specific test resource
+				if event.ResourceName != "e2e-audit-test" {
+					continue
+				}
+				GinkgoWriter.Printf("    • Event: %s (resource: %s)\n", event.EventType, event.ResourceName)
+				if event.EventType == "signalprocessing.signal.processed" {
 					hasSignalProcessed = true
 				}
-				if event.EventType == "classification.decision" {
+				if event.EventType == "signalprocessing.classification.decision" {
 					hasClassificationDecision = true
 				}
 			}
 
 			return hasSignalProcessed && hasClassificationDecision
 		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"Expected signal.processed AND classification.decision audit events")
+			"Expected signalprocessing.signal.processed AND signalprocessing.classification.decision audit events")
 
 		By("Verifying audit event data integrity")
 		auditEvents, err := queryAuditEvents(fingerprint)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(len(auditEvents)).To(BeNumerically(">=", 2))
 
-		// Find signal.processed event and validate data
+		// Filter events for our specific resource
+		var resourceEvents []AuditEvent
+		for _, event := range auditEvents {
+			if event.ResourceName == "e2e-audit-test" {
+				resourceEvents = append(resourceEvents, event)
+			}
+		}
+		Expect(len(resourceEvents)).To(BeNumerically(">=", 2),
+			"Expected at least 2 audit events for resource e2e-audit-test")
+
+		// Find signalprocessing.signal.processed event and validate data
 		var signalEvent *AuditEvent
-		for i := range auditEvents {
-			if auditEvents[i].EventType == "signal.processed" {
-				signalEvent = &auditEvents[i]
+		for i := range resourceEvents {
+			if resourceEvents[i].EventType == "signalprocessing.signal.processed" {
+				signalEvent = &resourceEvents[i]
 				break
 			}
 		}
-		Expect(signalEvent).ToNot(BeNil(), "signal.processed event should exist")
+		Expect(signalEvent).ToNot(BeNil(), "signalprocessing.signal.processed event should exist")
 		Expect(signalEvent.ServiceName).To(Equal("signalprocessing"))
 		Expect(signalEvent.ResourceType).To(Equal("SignalProcessing"))
 		Expect(signalEvent.ResourceName).To(Equal("e2e-audit-test"))
@@ -922,15 +935,14 @@ type AuditQueryResponse struct {
 	Total  int          `json:"total"`
 }
 
-// queryAuditEvents queries DataStorage for audit events matching the fingerprint
+// queryAuditEvents queries DataStorage for all signalprocessing audit events
+// Note: E2E test doesn't use RemediationRequestRef, so CorrelationID is empty
+// We query all signalprocessing events and let the test filter by ResourceName
 func queryAuditEvents(fingerprint string) ([]AuditEvent, error) {
 	// DataStorage is accessible via NodePort 30081 in Kind cluster
-	// We use the host port mapping: localhost:8081 → NodePort 30081
-	//
-	// Alternative: kubectl exec into a pod and curl the service directly
-	// For now, we assume Kind port mapping is configured
+	// We use the host port mapping: localhost:30081 → NodePort 30081
 
-	url := fmt.Sprintf("http://localhost:30081/api/v1/audit?service_name=signalprocessing&limit=100")
+	url := fmt.Sprintf("http://localhost:30081/api/v1/audit/events?service=signalprocessing&limit=100")
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -948,17 +960,6 @@ func queryAuditEvents(fingerprint string) ([]AuditEvent, error) {
 		return nil, fmt.Errorf("failed to decode audit response: %w", err)
 	}
 
-	// Filter events by fingerprint (since API doesn't support fingerprint filter)
-	var filtered []AuditEvent
-	for _, event := range queryResp.Events {
-		if data, ok := event.EventData["fingerprint"].(string); ok && data == fingerprint {
-			filtered = append(filtered, event)
-		}
-		// Also check correlation_id which may contain the fingerprint
-		if event.CorrelationID == fingerprint {
-			filtered = append(filtered, event)
-		}
-	}
-
-	return filtered, nil
+	// Return all events - test will filter by ResourceName
+	return queryResp.Events, nil
 }

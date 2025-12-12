@@ -137,6 +137,10 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 	event.ActorID = "signalprocessing-controller"
 	event.ResourceType = "SignalProcessing"
 	event.ResourceID = sp.Name
+	resourceName := sp.Name
+	event.ResourceName = &resourceName // BR-SP-090: Set ResourceName for audit queries
+	// Authority: RO always creates SP with RemediationRequestRef (pkg/remediationorchestrator/creator/signalprocessing.go:91-97)
+	// Production architecture: SignalProcessing CRs MUST have parent RemediationRequest
 	event.CorrelationID = sp.Spec.RemediationRequestRef.Name
 	event.Namespace = &namespace
 	event.EventData = eventDataBytes
@@ -175,6 +179,8 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 	event.ActorID = "signalprocessing-controller"
 	event.ResourceType = "SignalProcessing"
 	event.ResourceID = sp.Name
+	resourceName := sp.Name
+	event.ResourceName = &resourceName // BR-SP-090: Set ResourceName for audit queries
 	event.CorrelationID = sp.Spec.RemediationRequestRef.Name
 	event.Namespace = &namespace
 	event.EventData = eventDataBytes
@@ -223,6 +229,8 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 	event.ActorID = "signalprocessing-controller"
 	event.ResourceType = "SignalProcessing"
 	event.ResourceID = sp.Name
+	resourceName := sp.Name
+	event.ResourceName = &resourceName // BR-SP-090: Set ResourceName for audit queries
 	event.CorrelationID = sp.Spec.RemediationRequestRef.Name
 	event.Namespace = &namespace
 	event.EventData = eventDataBytes
@@ -263,6 +271,8 @@ func (c *AuditClient) RecordEnrichmentComplete(ctx context.Context, sp *signalpr
 	event.ActorID = "signalprocessing-controller"
 	event.ResourceType = "SignalProcessing"
 	event.ResourceID = sp.Name
+	resourceName := sp.Name
+	event.ResourceName = &resourceName // BR-SP-090: Set ResourceName for audit queries
 	event.CorrelationID = sp.Spec.RemediationRequestRef.Name
 	event.Namespace = &namespace
 	event.EventData = eventDataBytes
@@ -298,6 +308,8 @@ func (c *AuditClient) RecordError(ctx context.Context, sp *signalprocessingv1alp
 	event.ActorID = "signalprocessing-controller"
 	event.ResourceType = "SignalProcessing"
 	event.ResourceID = sp.Name
+	resourceName := sp.Name
+	event.ResourceName = &resourceName // BR-SP-090: Set ResourceName for audit queries
 	event.CorrelationID = sp.Spec.RemediationRequestRef.Name
 	event.Namespace = &namespace
 	event.EventData = eventDataBytes
@@ -307,6 +319,8 @@ func (c *AuditClient) RecordError(ctx context.Context, sp *signalprocessingv1alp
 		c.log.Error(storeErr, "Failed to write error audit")
 	}
 }
+
+
 
 
 

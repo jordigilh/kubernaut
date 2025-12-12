@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	pkgaudit "github.com/jordigilh/kubernaut/pkg/audit"
@@ -56,11 +57,11 @@ type WorkflowSearchEventData struct {
 }
 
 // QueryMetadata captures the search query parameters (BR-AUDIT-025).
+// V1.0: Uses structured WorkflowSearchFilters for type safety (00-project-guidelines.mdc)
 type QueryMetadata struct {
-	Text          string                 `json:"text"`
-	TopK          int                    `json:"top_k"`
-	MinSimilarity *float64               `json:"min_similarity,omitempty"`
-	Filters       map[string]interface{} `json:"filters,omitempty"`
+	TopK     int                           `json:"top_k"`
+	MinScore float64                       `json:"min_score,omitempty"`
+	Filters  *models.WorkflowSearchFilters `json:"filters"` // Structured type for compile-time validation
 }
 
 // ResultsMetadata captures the search results (BR-AUDIT-027).
@@ -200,89 +201,15 @@ func (b *WorkflowSearchAuditEventBuilder) buildEventData() *WorkflowSearchEventD
 
 // buildQueryMetadata constructs the query section of event_data.
 // BR-AUDIT-025: Query metadata capture
+// V1.0: Label-only search (no query text, uses MinScore)
+// Uses structured WorkflowSearchFilters for type safety (00-project-guidelines.mdc)
 func (b *WorkflowSearchAuditEventBuilder) buildQueryMetadata() QueryMetadata {
-	query := QueryMetadata{
-		Text: b.request.Query,
-		TopK: b.request.TopK,
+	// Direct assignment of structured type - no manual map construction needed
+	return QueryMetadata{
+		TopK:     b.request.TopK,
+		MinScore: b.request.MinScore,
+		Filters:  b.request.Filters, // Structured type preserves all fields
 	}
-
-	// Add min_similarity if specified
-	if b.request.MinSimilarity != nil {
-		query.MinSimilarity = b.request.MinSimilarity
-	}
-
-	// Add filters if present
-	// DD-WORKFLOW-001 v1.6: All API fields use snake_case
-	if b.request.Filters != nil {
-		filters := make(map[string]interface{})
-
-		// 5 Mandatory Labels (DD-WORKFLOW-001 v1.4)
-		if b.request.Filters.SignalType != "" {
-			filters["signal_type"] = b.request.Filters.SignalType
-		}
-		if b.request.Filters.Severity != "" {
-			filters["severity"] = b.request.Filters.Severity
-		}
-		if b.request.Filters.Component != "" {
-			filters["component"] = b.request.Filters.Component
-		}
-		if b.request.Filters.Environment != "" {
-			filters["environment"] = b.request.Filters.Environment
-		}
-		if b.request.Filters.Priority != "" {
-			filters["priority"] = b.request.Filters.Priority
-		}
-
-		// DetectedLabels (DD-WORKFLOW-001 v1.6)
-		if b.request.Filters.DetectedLabels != nil {
-			detectedLabels := make(map[string]interface{})
-			dl := b.request.Filters.DetectedLabels
-
-			// Boolean fields (only include when true)
-			if dl.GitOpsManaged != nil && *dl.GitOpsManaged {
-				detectedLabels["git_ops_managed"] = true
-			}
-			if dl.PDBProtected != nil && *dl.PDBProtected {
-				detectedLabels["pdb_protected"] = true
-			}
-			if dl.HPAEnabled != nil && *dl.HPAEnabled {
-				detectedLabels["hpa_enabled"] = true
-			}
-			if dl.Stateful != nil && *dl.Stateful {
-				detectedLabels["stateful"] = true
-			}
-			if dl.HelmManaged != nil && *dl.HelmManaged {
-				detectedLabels["helm_managed"] = true
-			}
-			if dl.NetworkIsolated != nil && *dl.NetworkIsolated {
-				detectedLabels["network_isolated"] = true
-			}
-
-			// String fields (include value or "*" wildcard)
-			if dl.GitOpsTool != nil {
-				detectedLabels["git_ops_tool"] = *dl.GitOpsTool
-			}
-			// PodSecurityLevel REMOVED in DD-WORKFLOW-001 v2.2
-			if dl.ServiceMesh != nil {
-				detectedLabels["service_mesh"] = *dl.ServiceMesh
-			}
-
-			if len(detectedLabels) > 0 {
-				filters["detected_labels"] = detectedLabels
-			}
-		}
-
-		// CustomLabels (DD-WORKFLOW-001 v1.5)
-		if len(b.request.Filters.CustomLabels) > 0 {
-			filters["custom_labels"] = b.request.Filters.CustomLabels
-		}
-
-		if len(filters) > 0 {
-			query.Filters = filters
-		}
-	}
-
-	return query
 }
 
 // buildResultsMetadata constructs the results section of event_data.
@@ -340,8 +267,21 @@ func (b *WorkflowSearchAuditEventBuilder) buildSearchMetadata() SearchExecutionM
 }
 
 // generateQueryHash generates a unique identifier for the search query.
+// V1.0: Hash based on filters (label-only search, no query text)
 func (b *WorkflowSearchAuditEventBuilder) generateQueryHash() string {
-	hash := sha256.Sum256([]byte(b.request.Query))
+	if b.request.Filters == nil {
+		return "00000000000000" // Empty hash for invalid request
+	}
+
+	// Create hash from filter values (deterministic label-based search)
+	hashInput := fmt.Sprintf("%s-%s-%s-%s-%s",
+		b.request.Filters.SignalType,
+		b.request.Filters.Severity,
+		b.request.Filters.Component,
+		b.request.Filters.Environment,
+		b.request.Filters.Priority,
+	)
+	hash := sha256.Sum256([]byte(hashInput))
 	return hex.EncodeToString(hash[:8]) // First 8 bytes = 16 hex chars
 }
 
@@ -402,10 +342,9 @@ func ValidateWorkflowAuditEvent(event *pkgaudit.AuditEvent) error {
 		return &ValidationError{Field: "event_data", Message: "invalid JSON: " + err.Error()}
 	}
 
-	// Check for query field (Text is required)
-	if eventData.Query.Text == "" {
-		return &ValidationError{Field: "query", Message: "missing required field: query"}
-	}
+	// Query field validation (Text field removed per embedding removal)
+	// Filters-based search uses QueryMetadata.Filters instead
+	// No validation needed - Filters can be empty for broad search
 
 	// Results field is always present due to struct initialization
 	// But we need to validate that workflows have confidence

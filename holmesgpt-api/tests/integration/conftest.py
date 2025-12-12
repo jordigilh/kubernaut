@@ -56,15 +56,18 @@ import requests
 # HolmesGPT API Integration Test Ports (18120-18129 range)
 # Data Storage as DEPENDENCY uses different ports than Data Storage's own tests
 # Per DD-TEST-001: HolmesGPT-API is service index 5, uses dependency ports accordingly
-POSTGRES_PORT = "15435"      # PostgreSQL for Data Storage dependency (not 15433 - that's DS's own)
-REDIS_PORT = "16381"         # Redis for Data Storage dependency (not 16379 - that's DS's own)
-EMBEDDING_SERVICE_PORT = "18001"  # Embedding Service (not 18000 - that's DS's own)
-DATA_STORAGE_PORT = "18094"  # Data Storage as dependency (not 18090 - that's DS's own)
-HOLMESGPT_API_PORT = "18120" # HolmesGPT API's own port
+# Legacy port removed - POSTGRES_PORT now defined below with HAPI ports
+# HAPI-owned compose ports (holmesgpt-api/podman-compose.test.yml)
+# All ports in DD-TEST-001 HAPI range: 18120-18129
+REDIS_PORT = os.getenv("REDIS_PORT", "18126")           # HAPI internal Redis
+EMBEDDING_SERVICE_PORT = os.getenv("EMBEDDING_SERVICE_PORT", "18001")  # Embedding Service (if needed)
+DATA_STORAGE_PORT = os.getenv("DATA_STORAGE_PORT", "18121")  # HAPI internal Data Storage
+HOLMESGPT_API_PORT = os.getenv("HOLMESGPT_API_PORT", "18120")  # HAPI primary port
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "18125")    # HAPI internal PostgreSQL
 
-# Service URLs
-DATA_STORAGE_URL = f"http://localhost:{DATA_STORAGE_PORT}"
-EMBEDDING_SERVICE_URL = f"http://localhost:{EMBEDDING_SERVICE_PORT}"
+# Service URLs - configurable via environment
+DATA_STORAGE_URL = os.getenv("DATA_STORAGE_URL", f"http://localhost:{DATA_STORAGE_PORT}")
+EMBEDDING_SERVICE_URL = os.getenv("EMBEDDING_SERVICE_URL", f"http://localhost:{EMBEDDING_SERVICE_PORT}")
 
 
 def is_service_available(url: str, timeout: float = 2.0) -> bool:

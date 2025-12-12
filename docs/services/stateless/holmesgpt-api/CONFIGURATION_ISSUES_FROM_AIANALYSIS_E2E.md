@@ -1,9 +1,9 @@
 # HolmesGPT-API Configuration Issues - From AIAnalysis E2E Testing
 
-**Date**: 2025-12-12  
-**Reporter**: AIAnalysis Team  
-**Environment**: E2E Testing (Kind cluster)  
-**Status**: 🟢 **1 Fixed** | 🔴 **1 Outstanding**  
+**Date**: 2025-12-12
+**Reporter**: AIAnalysis Team
+**Environment**: E2E Testing (Kind cluster)
+**Status**: 🟢 **1 Fixed** | 🔴 **1 Outstanding**
 **Impact**: Blocking 11/13 AIAnalysis E2E test failures
 
 ---
@@ -30,8 +30,8 @@ ValueError: LLM_MODEL environment variable or config.llm.model is required
 
 ### **Error Details**:
 ```
-{'event': 'incident_analysis_failed', 
- 'incident_id': 'e2e-prod-incident-1765556676170980000', 
+{'event': 'incident_analysis_failed',
+ 'incident_id': 'e2e-prod-incident-1765556676170980000',
  'error': '500: LLM_MODEL environment variable or config.llm.model is required'}
 
 Traceback:
@@ -68,10 +68,10 @@ Recovery endpoint returns 500 errors **even after** `LLM_MODEL` is configured.
 
 ### **Error Details**:
 ```
-{'event': 'http_exception', 
- 'request_id': '9fe6879e-2d42-4ba1-a344-a92b3c3bd59e', 
- 'path': '/api/v1/recovery/analyze', 
- 'status_code': 500, 
+{'event': 'http_exception',
+ 'request_id': '9fe6879e-2d42-4ba1-a344-a92b3c3bd59e',
+ 'path': '/api/v1/recovery/analyze',
+ 'status_code': 500,
  'detail': 'LLM_MODEL environment variable or config.llm.model is required'}
 ```
 
@@ -245,7 +245,7 @@ def get_model_config_for_sdk(app_config):
     # If MOCK_LLM_ENABLED, provide default
     if os.getenv("MOCK_LLM_ENABLED") == "true":
         return "mock://default-model", "mock"
-    
+
     # Otherwise require explicit config
     if not app_config.llm.model:
         raise ValueError("LLM_MODEL environment variable or config.llm.model is required")
@@ -385,8 +385,8 @@ make test-e2e-aianalysis
 
 ---
 
-**Status**: 🟡 **Awaiting HAPI Team Investigation**  
-**Priority**: **HIGH** (blocking 50% of AIAnalysis functionality)  
-**Estimated Fix Time**: 2-3 hours  
-**Date**: 2025-12-12  
+**Status**: 🟡 **Awaiting HAPI Team Investigation**
+**Priority**: **HIGH** (blocking 50% of AIAnalysis functionality)
+**Estimated Fix Time**: 2-3 hours
+**Date**: 2025-12-12
 **Next Steps**: HAPI team investigation of recovery endpoint config requirements

@@ -52,6 +52,6 @@ func (m *Manager) TransitionTo(rr *remediationv1.RemediationRequest, target Phas
 		return fmt.Errorf("invalid phase transition from %s to %s", current, target)
 	}
 
-	rr.Status.OverallPhase = string(target)
+	rr.Status.OverallPhase = target
 	return nil
 }

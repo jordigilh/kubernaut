@@ -27,12 +27,8 @@ import (
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
-
-// randomSuffix generates a unique suffix for test resource names
-func randomSuffix() string {
-	return time.Now().Format("20060102150405")
-}
 
 var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integration", "reconciliation"), func() {
 	const (
@@ -50,7 +46,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		BeforeEach(func() {
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "integration-test-" + randomSuffix(),
+					Name:      testutil.UniqueTestName("integration-test"),
 					Namespace: "default",
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
@@ -161,7 +157,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		BeforeEach(func() {
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "error-recovery-" + randomSuffix(),
+					Name:      testutil.UniqueTestName("error-recovery"),
 					Namespace: "default",
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{

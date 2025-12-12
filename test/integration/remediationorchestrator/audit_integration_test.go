@@ -18,6 +18,7 @@ package remediationorchestrator_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -50,13 +51,24 @@ var _ = Describe("Audit Integration Tests", Label("integration", "audit"), func(
 	BeforeEach(func() {
 		ctx = context.Background()
 
-		// Skip if Data Storage is not available
-		// Per TESTING_GUIDELINES.md: Integration tests require podman-compose infrastructure
-		dsURL := "http://localhost:18090"
+		// REQUIRED: Data Storage must be running for audit integration tests
+		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - tests must FAIL
+		// Per DD-AUDIT-003: Audit capability is MANDATORY for RO service
+		// Per DD-TEST-001: RO uses port 18140 (RO-specific, not shared)
+		dsURL := "http://localhost:18140"
 		client := &http.Client{Timeout: 2 * time.Second}
-		_, err := client.Get(dsURL + "/health")
-		if err != nil {
-			Skip("Data Storage not available at " + dsURL + " - run: podman-compose -f podman-compose.test.yml up -d")
+		resp, err := client.Get(dsURL + "/health")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			Fail(fmt.Sprintf(
+				"❌ REQUIRED: Data Storage not available at %s\n"+
+					"  Per DD-AUDIT-003: RemediationOrchestrator MUST have audit capability\n"+
+					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
+					"  Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN\n\n"+
+					"  Start infrastructure first:\n"+
+					"    podman-compose -f podman-compose.test.yml up -d\n\n"+
+					"  Then run tests:\n"+
+					"    make test-integration-remediationorchestrator",
+				dsURL))
 		}
 
 		// Create audit store with real Data Storage client
@@ -313,5 +325,52 @@ var _ = Describe("Audit Integration Tests", Label("integration", "audit"), func(
 			time.Sleep(500 * time.Millisecond)
 		})
 	})
-})
 
+	// ========================================
+	// Audit Failure Scenarios (ADR-038 Best-Effort Audit)
+	// Business Value: Ensures audit failures never block remediation
+	// Confidence: 95% - Critical availability requirement
+	// ========================================
+	Describe("Audit Failure Scenarios", func() {
+		It("should not block StoreAudit when DataStorage is temporarily unavailable", func() {
+			// Scenario: DataStorage down during audit emission
+			// Business Outcome: StoreAudit returns quickly, doesn't block
+			// Confidence: 95% - Validates ADR-038 async design
+
+			// Given: Audit store with unreachable DataStorage URL
+			unreachableURL := "http://localhost:9999" // Non-existent port
+			dsClient := audit.NewHTTPDataStorageClient(unreachableURL, &http.Client{Timeout: 100 * time.Millisecond})
+			config := audit.DefaultConfig()
+			config.FlushInterval = 50 * time.Millisecond
+			logger := zap.New(zap.WriteTo(GinkgoWriter))
+
+			failureStore, err := audit.NewBufferedStore(dsClient, config, roaudit.ServiceName, logger)
+			Expect(err).ToNot(HaveOccurred())
+			defer failureStore.Close()
+
+			// When: Storing audit event (DataStorage unavailable)
+			event, err := auditHelpers.BuildLifecycleStartedEvent(
+				"test-unavailable-correlation",
+				"integration-test",
+				"rr-unavailable-test",
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Measure StoreAudit call duration
+			start := time.Now()
+			err = failureStore.StoreAudit(ctx, event)
+			elapsed := time.Since(start)
+
+			// Then: StoreAudit should not block (returns immediately, fails async)
+			// ADR-038: Buffered ingestion means write is non-blocking
+			Expect(err).ToNot(HaveOccurred(),
+				"StoreAudit must not error synchronously (buffered, async)")
+			Expect(elapsed).To(BeNumerically("<", 50*time.Millisecond),
+				"StoreAudit must return immediately (<50ms), not block on DataStorage failure (ADR-038)")
+
+			// Verify: Event is buffered but won't be persisted (best-effort)
+			// No assertion on persistence - ADR-038: best-effort means silent drop is acceptable
+			GinkgoWriter.Printf("✅ ADR-038: Audit emission non-blocking even when DataStorage unavailable (took %v)\n", elapsed)
+		})
+	})
+})

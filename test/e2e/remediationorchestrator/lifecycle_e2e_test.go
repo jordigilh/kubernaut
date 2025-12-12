@@ -327,18 +327,23 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						APIVersion: remediationv1.GroupVersion.String(),
 					},
 					AIAnalysisRef: remediationv1.ObjectRef{
-						Name:      "ai-" + rr.Name,
-						Namespace: testNS,
+						Name: "ai-" + rr.Name,
 					},
 					Confidence:      0.65,
 					ConfidenceLevel: "medium",
-					RecommendedWorkflow: remediationv1.WorkflowSummary{
-						WorkflowID:   "wf-delete-pod",
-						WorkflowName: "Delete Pod",
-						Version:      "v1.0.0",
+					Reason:          "Confidence below auto-approve threshold",
+					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+						WorkflowID:     "wf-delete-pod",
+						Version:        "v1.0.0",
+						ContainerImage: "quay.io/kubernaut/workflow-delete-pod:v1.0.0",
+						Rationale:      "Pod restart recommended due to OOM",
 					},
 					InvestigationSummary: "Pod restart recommended due to OOM",
-					RequiredBy:           metav1.NewTime(time.Now().Add(24 * time.Hour)),
+					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+						{Action: "Delete pod", Rationale: "Free up memory"},
+					},
+					WhyApprovalRequired: "Confidence 0.65 is below auto-approve threshold of 0.80",
+					RequiredBy:          metav1.NewTime(time.Now().Add(24 * time.Hour)),
 				},
 			}
 			Expect(k8sClient.Create(ctx, rar)).To(Succeed())
@@ -426,18 +431,23 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						APIVersion: remediationv1.GroupVersion.String(),
 					},
 					AIAnalysisRef: remediationv1.ObjectRef{
-						Name:      "ai-" + rr.Name,
-						Namespace: testNS,
+						Name: "ai-" + rr.Name,
 					},
 					Confidence:      0.45,
 					ConfidenceLevel: "low",
-					RecommendedWorkflow: remediationv1.WorkflowSummary{
-						WorkflowID:   "wf-dangerous-op",
-						WorkflowName: "Dangerous Operation",
-						Version:      "v1.0.0",
+					Reason:          "Confidence below auto-approve threshold",
+					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+						WorkflowID:     "wf-dangerous-op",
+						Version:        "v1.0.0",
+						ContainerImage: "quay.io/kubernaut/workflow-dangerous:v1.0.0",
+						Rationale:      "Dangerous operation requires approval",
 					},
 					InvestigationSummary: "Risky operation",
-					RequiredBy:           metav1.NewTime(time.Now().Add(1 * time.Hour)),
+					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+						{Action: "Execute dangerous operation", Rationale: "Last resort"},
+					},
+					WhyApprovalRequired: "Confidence 0.45 is below auto-approve threshold of 0.80",
+					RequiredBy:          metav1.NewTime(time.Now().Add(1 * time.Hour)),
 				},
 			}
 			Expect(k8sClient.Create(ctx, rar)).To(Succeed())

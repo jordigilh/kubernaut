@@ -1,17 +1,38 @@
 # DD-WORKFLOW-004: Hybrid Weighted Label Scoring for Workflow Selection
 
 **Date**: November 22, 2025
-**Status**: ✅ **APPROVED**
+**Status**: ✅ **APPROVED** (V1.5 IMPLEMENTED)
 **Confidence**: 95%
 **Purpose**: Define the hybrid weighted scoring strategy for workflow catalog semantic search that combines strict filtering for mandatory labels with semantic similarity ranking.
 **Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v1.8 (Mandatory Label Schema), DD-HAPI-001 (Custom Labels Auto-Append)
-**Version**: 2.2
+**Version**: 1.5 (CURRENT), 2.2 (SPECIFICATION)
 
 ---
 
 ## 📝 **Changelog**
 
-### Version 2.2 (2025-11-30)
+### Version 1.5 (2025-12-11) **← CURRENT IMPLEMENTATION**
+**IMPLEMENTATION**: Fixed weights for DetectedLabels (no configuration).
+
+**Changes**:
+- ✅ **Implemented hybrid scoring** with fixed DetectedLabel weights
+- ✅ **Package created**: `pkg/datastorage/scoring` with weight definitions
+- ✅ **SQL updated**: Dynamic boost/penalty calculation in `workflow_repository.go`
+- ✅ **Comprehensive tests**: 16 unit tests + 4 integration tests
+- ✅ **Security**: Enum sanitization prevents SQL injection
+- ✅ **Fixed weights based on correctness impact**:
+  - HIGH (0.10): `gitOpsManaged`, `gitOpsTool` (apply penalty on conflict)
+  - MEDIUM (0.05): `pdbProtected`, `serviceMesh`
+  - LOW (0.02-0.03): `networkIsolated`, `helmManaged`, `stateful`, `hpaEnabled`
+
+**Rationale**:
+- Fixed weights enable faster delivery (1-2 days vs. 1 week for ConfigMap)
+- DetectedLabels are universal across K8s clusters (predictable impact)
+- ConfigMap configuration deferred to V2.0+ after customer validation
+
+**Implementation Authority**: `docs/services/stateless/data-storage/V1.5_HYBRID_SCORING_IMPLEMENTATION.md`
+
+### Version 2.2 (2025-11-30) **← SPECIFICATION (Not Yet Implemented)**
 **ALIGNMENT**: Updated to DD-WORKFLOW-001 v1.8 (snake_case API fields + DetectedLabels wildcards).
 
 **Changes**:
@@ -94,12 +115,15 @@
 
 **Decision**: Implement a **Two-Phase Semantic Search** approach for workflow selection:
 
-### V1.0 (Current - Base Similarity Only)
+### V1.5 (Current - Fixed DetectedLabel Weights) **← IMPLEMENTED 2025-12-11**
 1. **Phase 1: Strict Filtering** for mandatory labels (`signal_type`, `severity`, + other mandatory labels) - mismatch = exclude workflow
-2. **Phase 2: Semantic Ranking** using pgvector cosine similarity - `confidence = base_similarity`
+2. **Phase 2: Hybrid Scoring** using pgvector cosine similarity + fixed DetectedLabel boost/penalty
+   - `confidence = LEAST(base_similarity + label_boost - label_penalty, 1.0)`
+   - **Fixed weights**: gitOpsManaged (0.10), pdbProtected (0.05), serviceMesh (0.05), etc.
+   - **No configuration required**: Weights hard-coded based on correctness impact
 
 ### V2.0+ (Future - Configurable Label Weights)
-3. **Configurable Boost/Penalty** for customer-defined labels - weights defined per customer environment
+3. **Configurable Boost/Penalty** via ConfigMap - customers can customize weights per their environment
 
 **Key Insight**: Custom labels (both keys AND values) are **customer-defined** via Rego policies and matched against workflow labels. Kubernaut enforces only **5 mandatory labels** (DD-WORKFLOW-001 v1.8). Additionally, **DetectedLabels** are auto-populated (V1.0) and **CustomLabels** (including `risk_tolerance`) are user-defined via Rego (V1.0). Any boost/penalty logic for custom labels requires customer configuration, which is deferred to V2.0+.
 

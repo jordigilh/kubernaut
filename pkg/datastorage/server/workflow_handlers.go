@@ -73,21 +73,8 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate embedding if not provided and embedding service is available
-	if workflow.Embedding == nil && h.embeddingService != nil {
-		// Generate embedding from workflow description and name
-		embeddingText := workflow.Name + " " + workflow.Description
-		embedding, err := h.embeddingService.GenerateEmbedding(r.Context(), embeddingText)
-		if err != nil {
-			h.logger.Info("Failed to generate embedding for workflow, continuing without embedding",
-				"workflow_name", workflow.WorkflowName,
-				"error", err.Error(),
-			)
-			// Continue without embedding - it's optional
-		} else {
-			workflow.Embedding = embedding
-		}
-	}
+	// V1.0: Embedding generation removed (label-only search)
+	// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
 
 	// Set default status if not provided
 	if workflow.Status == "" {
@@ -151,8 +138,9 @@ func (h *Handler) validateCreateWorkflowRequest(workflow *models.RemediationWork
 }
 
 // HandleWorkflowSearch handles POST /api/v1/workflows/search
-// BR-STORAGE-013: Semantic search for remediation workflows
+// BR-STORAGE-013: Label-based workflow search (V1.0 - embeddings removed)
 // BR-AUDIT-023: Audit event generation for workflow search
+// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
 func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
@@ -168,10 +156,10 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate request
+	// Validate request (filters are required for label-only search)
 	if err := h.validateWorkflowSearchRequest(&searchReq); err != nil {
 		h.logger.Error(err, "Invalid workflow search request",
-			"query", searchReq.Query,
+			"filters", searchReq.Filters,
 		)
 		h.writeRFC7807Error(w, http.StatusBadRequest,
 			"https://kubernaut.dev/problems/bad-request",
@@ -181,40 +169,12 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate embedding from query text if not provided
-	if searchReq.Embedding == nil {
-		if h.embeddingService == nil {
-			h.logger.Error(fmt.Errorf("embedding service not configured"), "Embedding service not configured",
-				"query", searchReq.Query,
-			)
-			h.writeRFC7807Error(w, http.StatusInternalServerError,
-				"https://kubernaut.dev/problems/internal-error",
-				"Internal Server Error",
-				"Embedding service not configured",
-			)
-			return
-		}
-
-		embedding, err := h.embeddingService.GenerateEmbedding(r.Context(), searchReq.Query)
-		if err != nil {
-			h.logger.Error(err, "Failed to generate embedding",
-				"query", searchReq.Query,
-			)
-			h.writeRFC7807Error(w, http.StatusInternalServerError,
-				"https://kubernaut.dev/problems/internal-error",
-				"Internal Server Error",
-				fmt.Sprintf("Failed to generate embedding: %v", err),
-			)
-			return
-		}
-		searchReq.Embedding = embedding
-	}
-
-	// Execute semantic search
-	response, err := h.workflowRepo.SearchByEmbedding(r.Context(), &searchReq)
+	// Execute label-only search (NO embedding generation)
+	// V1.0: Pure SQL label matching with wildcard weighting
+	response, err := h.workflowRepo.SearchByLabels(r.Context(), &searchReq)
 	if err != nil {
 		h.logger.Error(err, "Failed to search workflows",
-			"query", searchReq.Query,
+			"filters", searchReq.Filters,
 			"top_k", searchReq.TopK,
 		)
 		h.writeRFC7807Error(w, http.StatusInternalServerError,
@@ -235,7 +195,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 			auditEvent, err := dsaudit.NewWorkflowSearchAuditEvent(&searchReq, response, duration)
 			if err != nil {
 				h.logger.Error(err, "Failed to create workflow search audit event",
-					"query", searchReq.Query,
+					"filters", searchReq.Filters,
 				)
 				return
 			}
@@ -247,7 +207,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 
 			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
 				h.logger.Error(err, "Failed to store workflow search audit event",
-					"query", searchReq.Query,
+					"filters", searchReq.Filters,
 				)
 			}
 		}()
@@ -255,7 +215,7 @@ func (h *Handler) HandleWorkflowSearch(w http.ResponseWriter, r *http.Request) {
 
 	// Log success
 	h.logger.Info("Workflow search completed",
-		"query", searchReq.Query,
+		"filters", searchReq.Filters,
 		"results_count", len(response.Workflows),
 		"top_k", searchReq.TopK,
 		"duration_ms", duration.Milliseconds(),
@@ -673,11 +633,31 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 }
 
 // validateWorkflowSearchRequest validates the workflow search request
+// V1.0: Label-only search validation (filters required, no query/embedding)
 func (h *Handler) validateWorkflowSearchRequest(req *models.WorkflowSearchRequest) error {
-	if req.Query == "" {
-		return fmt.Errorf("query is required")
+	// V1.0: Filters are required for label-only search
+	if req.Filters == nil {
+		return fmt.Errorf("filters are required for label-only search")
 	}
 
+	// Validate mandatory filter fields (5 required)
+	if req.Filters.SignalType == "" {
+		return fmt.Errorf("filters.signal_type is required")
+	}
+	if req.Filters.Severity == "" {
+		return fmt.Errorf("filters.severity is required")
+	}
+	if req.Filters.Component == "" {
+		return fmt.Errorf("filters.component is required")
+	}
+	if req.Filters.Environment == "" {
+		return fmt.Errorf("filters.environment is required")
+	}
+	if req.Filters.Priority == "" {
+		return fmt.Errorf("filters.priority is required")
+	}
+
+	// Validate TopK
 	if req.TopK <= 0 {
 		req.TopK = 10 // Default to 10 results
 	}
@@ -685,10 +665,9 @@ func (h *Handler) validateWorkflowSearchRequest(req *models.WorkflowSearchReques
 		req.TopK = 100 // Max 100 results
 	}
 
-	if req.MinSimilarity != nil {
-		if *req.MinSimilarity < 0 || *req.MinSimilarity > 1 {
-			return fmt.Errorf("min_similarity must be between 0 and 1")
-		}
+	// Validate MinScore (replaces MinSimilarity)
+	if req.MinScore < 0 || req.MinScore > 1 {
+		return fmt.Errorf("min_score must be between 0 and 1")
 	}
 
 	return nil

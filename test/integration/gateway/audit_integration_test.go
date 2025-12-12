@@ -86,7 +86,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 		// MANDATORY: Verify Data Storage is running
 		// Per TESTING_GUIDELINES.md: Tests MUST FAIL if infrastructure unavailable
-		healthResp, err := http.Get(dataStorageURL + "/healthz")
+		healthResp, err := http.Get(dataStorageURL + "/health")
 		if err != nil {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage not available at %s\n"+

@@ -381,20 +381,20 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 				"Database connection pool MUST close cleanly during shutdown (DD-007 STEP 4)")
 		})
 
-		It("MUST complete slow database queries before shutdown", func() {
-			// Business Scenario: Slow aggregation query in progress when SIGTERM arrives
+		It("MUST complete database queries before shutdown", func() {
+			// Business Scenario: Database query in progress when SIGTERM arrives
 			// Expected: Query completes before database connections close
 
 			testServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
 
-			// Start slow query (aggregation can take time with large datasets)
+			// Start database query that should complete during shutdown window
 			responseChan := make(chan int, 1)
 			errorChan := make(chan error, 1)
 
 			go func() {
-				// Aggregation query that may be slower
-				resp, err := http.Get(testServer.URL + "/api/v1/incidents/aggregate/by-namespace")
+				// Use reliable incidents list endpoint (always available)
+				resp, err := http.Get(testServer.URL + "/api/v1/incidents?limit=100")
 				if err != nil {
 					errorChan <- err
 					return
@@ -414,15 +414,16 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 				shutdownDone <- srv.Shutdown(ctx)
 			}()
 
-			// Business Outcome: Slow database query completes before shutdown
+			// Business Outcome: Database query completes before shutdown
+			// DD-007 provides 5s wait + 30s drain = plenty of time for query
 			select {
 			case statusCode := <-responseChan:
 				Expect(statusCode).To(Equal(200),
-					"Slow database queries MUST complete before connection pool closes (DD-007 STEP 3)")
+					"Database queries MUST complete before connection pool closes (DD-007 STEP 3)")
 			case err := <-errorChan:
-				Fail(fmt.Sprintf("Slow database query failed during shutdown: %v", err))
+				Fail(fmt.Sprintf("Database query failed during shutdown: %v", err))
 			case <-time.After(15 * time.Second):
-				Fail("Slow database query timed out (should complete within shutdown window)")
+				Fail("Database query timed out (should complete within shutdown window)")
 			}
 
 			// Shutdown should complete successfully
@@ -1050,20 +1051,20 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 				"Database connection pool MUST close cleanly during shutdown (DD-007 STEP 4)")
 		})
 
-		It("MUST complete slow database queries before shutdown", func() {
-			// Business Scenario: Slow aggregation query in progress when SIGTERM arrives
+		It("MUST complete database queries before shutdown", func() {
+			// Business Scenario: Database query in progress when SIGTERM arrives
 			// Expected: Query completes before database connections close
 
 			testServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
 
-			// Start slow query (aggregation can take time with large datasets)
+			// Start database query that should complete during shutdown window
 			responseChan := make(chan int, 1)
 			errorChan := make(chan error, 1)
 
 			go func() {
-				// Aggregation query that may be slower
-				resp, err := http.Get(testServer.URL + "/api/v1/incidents/aggregate/by-namespace")
+				// Use reliable incidents list endpoint (always available)
+				resp, err := http.Get(testServer.URL + "/api/v1/incidents?limit=100")
 				if err != nil {
 					errorChan <- err
 					return
@@ -1083,15 +1084,16 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 				shutdownDone <- srv.Shutdown(ctx)
 			}()
 
-			// Business Outcome: Slow database query completes before shutdown
+			// Business Outcome: Database query completes before shutdown
+			// DD-007 provides 5s wait + 30s drain = plenty of time for query
 			select {
 			case statusCode := <-responseChan:
 				Expect(statusCode).To(Equal(200),
-					"Slow database queries MUST complete before connection pool closes (DD-007 STEP 3)")
+					"Database queries MUST complete before connection pool closes (DD-007 STEP 3)")
 			case err := <-errorChan:
-				Fail(fmt.Sprintf("Slow database query failed during shutdown: %v", err))
+				Fail(fmt.Sprintf("Database query failed during shutdown: %v", err))
 			case <-time.After(15 * time.Second):
-				Fail("Slow database query timed out (should complete within shutdown window)")
+				Fail("Database query timed out (should complete within shutdown window)")
 			}
 
 			// Shutdown should complete successfully

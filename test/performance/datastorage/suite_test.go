@@ -28,9 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
 // Performance Test Suite for Data Storage Service
@@ -67,9 +65,6 @@ var (
 
 	// Database connection (reuses integration test infrastructure)
 	db *sqlx.DB
-
-	// Repository for testing
-	workflowRepo *repository.WorkflowRepository
 )
 
 var _ = BeforeSuite(func() {
@@ -106,18 +101,6 @@ var _ = BeforeSuite(func() {
 	if err != nil {
 		Skip(fmt.Sprintf("PostgreSQL not available (integration test infrastructure not running): %v", err))
 	}
-
-	// Verify pgvector extension is available
-	var hasExtension bool
-	err = db.Get(&hasExtension, "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')")
-	Expect(err).ToNot(HaveOccurred())
-	if !hasExtension {
-		Skip("pgvector extension not available")
-	}
-
-	// Initialize repository with mock embedding client (not needed for query performance tests)
-	mockEmbeddingClient := testutil.NewMockEmbeddingClient()
-	workflowRepo = repository.NewWorkflowRepository(db, logger, mockEmbeddingClient)
 
 	logger.Info("✅ Performance test suite setup complete")
 })

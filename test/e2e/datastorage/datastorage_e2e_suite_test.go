@@ -35,7 +35,7 @@ import (
 // Test suite for Data Storage E2E tests
 // This suite sets up a complete production-like environment:
 // - Kind cluster (2 nodes: 1 control-plane + 1 worker) with NodePort exposure
-// - PostgreSQL with pgvector (for audit events storage)
+// - PostgreSQL 16 (V1.0 label-only, for audit events and workflow catalog)
 // - Redis (for DLQ fallback)
 // - Data Storage service (deployed to Kind cluster)
 //
@@ -97,7 +97,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Creating Kind cluster with NodePort exposure...")
 		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 		logger.Info("  • NodePort exposure: Data Storage (30081→8081), PostgreSQL (30432→5432)")
-		logger.Info("  • PostgreSQL with pgvector (audit events storage)")
+		logger.Info("  • PostgreSQL 16 (V1.0 label-only, audit events and workflow catalog)")
 		logger.Info("  • Redis (DLQ fallback)")
 		logger.Info("  • Data Storage Docker image (build + load)")
 		logger.Info("  • Kubeconfig: ~/.kube/datastorage-e2e-config")

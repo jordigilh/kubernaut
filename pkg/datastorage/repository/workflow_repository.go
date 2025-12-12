@@ -21,11 +21,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/jmoiron/sqlx"
-	"github.com/pgvector/pgvector-go"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -62,32 +62,11 @@ func NewWorkflowRepository(db *sqlx.DB, logger logr.Logger, embeddingClient embe
 
 // Create inserts a new workflow into the catalog
 // BR-STORAGE-012: Workflow catalog persistence
-// BR-STORAGE-014: Automatic embedding generation for semantic search
+// V1.0: Embedding generation removed (label-only search)
 // DD-WORKFLOW-002 v3.0: Handles is_latest_version flag within a transaction
 func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.RemediationWorkflow) error {
-	// Generate embedding if not provided and embedding client is available
-	if workflow.Embedding == nil && r.embeddingClient != nil {
-		// Construct searchable text from workflow metadata
-		searchText := r.buildSearchText(workflow)
-
-		// Generate embedding vector
-		embeddingVec, err := r.embeddingClient.Embed(ctx, searchText)
-		if err != nil {
-			r.logger.Info("failed to generate embedding, proceeding without it",
-				"workflow_id", workflow.WorkflowID,
-				"version", workflow.Version,
-				"error", err)
-			// Continue without embedding (graceful degradation)
-		} else {
-			// Convert []float32 to *pgvector.Vector
-			vec := pgvector.NewVector(embeddingVec)
-			workflow.Embedding = &vec
-			r.logger.V(1).Info("generated embedding for workflow",
-				"workflow_id", workflow.WorkflowID,
-				"version", workflow.Version,
-				"dimensions", len(embeddingVec))
-		}
-	}
+	// V1.0: Embeddings no longer generated (label-only search)
+	// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
 
 	// DD-WORKFLOW-002 v3.0: Use transaction to ensure is_latest_version consistency
 	// When creating a new version, mark all previous versions as not latest
@@ -136,17 +115,17 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Remedi
 		INSERT INTO remediation_workflow_catalog (
 			workflow_name, version, name, description, owner, maintainer,
 			content, content_hash, parameters, execution_engine, container_image, container_digest,
-			labels, custom_labels, detected_labels, embedding, status,
+			labels, custom_labels, detected_labels, status,
 			is_latest_version, previous_version, version_notes, change_summary,
 			approved_by, approved_at, expected_success_rate, expected_duration_seconds,
 			created_by
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
-			$13, $14, $15, $16, $17,
-			$18, $19, $20, $21,
-			$22, $23, $24, $25,
-			$26
+			$13, $14, $15, $16,
+			$17, $18, $19, $20,
+			$21, $22, $23, $24,
+			$25
 		)
 		RETURNING workflow_id
 	`
@@ -165,7 +144,7 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Remedi
 	err = tx.QueryRowContext(ctx, insertQuery,
 		workflow.WorkflowName, workflow.Version, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
 		workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.ContainerImage, workflow.ContainerDigest,
-		workflow.Labels, customLabels, detectedLabels, workflow.Embedding, workflow.Status,
+		workflow.Labels, customLabels, detectedLabels, workflow.Status, // V1.0: no embedding column
 		workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
 		workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
 		workflow.CreatedBy,
@@ -193,7 +172,6 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Remedi
 		"workflow_id", workflow.WorkflowID,
 		"workflow_name", workflow.WorkflowName,
 		"version", workflow.Version,
-		"has_embedding", workflow.Embedding != nil,
 		"is_latest_version", workflow.IsLatestVersion)
 
 	return nil
@@ -410,19 +388,42 @@ func (r *WorkflowRepository) List(ctx context.Context, filters *models.WorkflowS
 // BR-STORAGE-013: Semantic Search API
 // DD-WORKFLOW-002: MCP Workflow Catalog Architecture
 
-// SearchByEmbedding performs semantic search using pgvector
-// TDD CYCLE 1: Mandatory Label Filtering (GREEN Phase)
-// BR-STORAGE-013: Hybrid Weighted Scoring
-// DD-WORKFLOW-004 v1.1: Hybrid Weighted Label Scoring
-func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *models.WorkflowSearchRequest) (*models.WorkflowSearchResponse, error) {
-	if request.Embedding == nil {
-		return nil, fmt.Errorf("embedding is required for semantic search")
+// ========================================
+// LABEL-ONLY SEARCH (V1.0)
+// ========================================
+// Authority: DD-WORKFLOW-004 v1.5 (Label-Only Scoring)
+// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
+
+// SearchByLabels performs label-only workflow search with wildcard weighting
+// V1.0: Pure SQL label matching without embeddings (increases correctness 81% → 95%)
+//
+// Rationale: Indeterministic LLM-generated keywords decrease workflow selection
+// correctness. Label-only search with wildcard weighting provides deterministic
+// matching with high accuracy.
+//
+// Scoring Formula:
+//   - base_score: 5.0 (all 5 mandatory labels matched via hard WHERE filter)
+//   - label_boost: DetectedLabel boosts (0.0-0.39) with wildcard support
+//   - label_penalty: High-impact conflicting DetectedLabels (0.0-0.20)
+//   - raw_score: base_score + label_boost - label_penalty
+//   - final_score: raw_score / 10.0 (normalized to 0.0-1.0 range)
+//
+// Wildcard Weighting:
+//   - Exact match (gitOpsTool='argocd'): Full boost (0.10)
+//   - Wildcard match (gitOpsTool='*'): Half boost (0.05)
+//   - Conflicting match: Full penalty (-0.10)
+//
+// See: docs/handoff/SQL_WILDCARD_WEIGHTING_IMPLEMENTATION.md
+func (r *WorkflowRepository) SearchByLabels(ctx context.Context, request *models.WorkflowSearchRequest) (*models.WorkflowSearchResponse, error) {
+	// Validate filters are provided (required for label-only search)
+	if request.Filters == nil {
+		return nil, fmt.Errorf("filters are required for label-only search")
 	}
 
-	// Build WHERE clause for filters
+	// Build WHERE clause for hard filters
 	whereClauses := []string{}
-	args := []interface{}{request.Embedding} // $1 is the embedding vector
-	argIndex := 2
+	args := []interface{}{}
+	argIndex := 1
 
 	// Default: only active workflows unless IncludeDisabled is true
 	if !request.IncludeDisabled {
@@ -435,196 +436,58 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 	whereClauses = append(whereClauses, "is_latest_version = true")
 
 	// ========================================
-	// TDD CYCLE 1: MANDATORY LABEL FILTERING (REFACTOR)
+	// MANDATORY LABEL FILTERING (5 labels)
 	// ========================================
-	// Authority: DD-LLM-001 v1.0 (MCP Search Taxonomy)
-	// DD-WORKFLOW-004 v1.1: Hybrid Weighted Label Scoring
-	//
-	// Mandatory labels provide strict filtering (Phase 1):
-	// - signal_type: Exact match required (e.g., "OOMKilled", "MemoryLeak")
-	// - severity: Exact match required (e.g., "critical", "high", "medium", "low")
-	//
-	// These filters reduce the candidate set before semantic ranking.
-	// Only workflows matching BOTH mandatory labels proceed to scoring.
+	// Authority: DD-WORKFLOW-001 v1.6 (5 mandatory labels)
+	// These filters provide the base score of 5.0 (one point per exact match)
 
-	// Apply mandatory label filters
-	// DD-WORKFLOW-001 v1.6: 5 mandatory labels with snake_case JSON tags
-	if request.Filters != nil {
-		// Mandatory Filter 1: signal_type (exact match)
-		// Example: labels->>'signal_type' = 'OOMKilled'
-		if request.Filters.SignalType != "" {
-			whereClauses = append(whereClauses, fmt.Sprintf("labels->>'signal_type' = $%d", argIndex))
-			args = append(args, request.Filters.SignalType)
-			argIndex++
-		}
-
-		// Mandatory Filter 2: severity (exact match)
-		// Example: labels->>'severity' = 'critical'
-		if request.Filters.Severity != "" {
-			whereClauses = append(whereClauses, fmt.Sprintf("labels->>'severity' = $%d", argIndex))
-			args = append(args, request.Filters.Severity)
-			argIndex++
-		}
-
-		// Mandatory Filter 3: component (exact match)
-		// Example: labels->>'component' = 'pod'
-		if request.Filters.Component != "" {
-			whereClauses = append(whereClauses, fmt.Sprintf("labels->>'component' = $%d", argIndex))
-			args = append(args, request.Filters.Component)
-			argIndex++
-		}
-
-		// Mandatory Filter 4: environment (exact match)
-		// Example: labels->>'environment' = 'production'
-		if request.Filters.Environment != "" {
-			whereClauses = append(whereClauses, fmt.Sprintf("labels->>'environment' = $%d", argIndex))
-			args = append(args, request.Filters.Environment)
-			argIndex++
-		}
-
-		// Mandatory Filter 5: priority (exact match)
-		// Example: labels->>'priority' = 'P0'
-		if request.Filters.Priority != "" {
-			whereClauses = append(whereClauses, fmt.Sprintf("labels->>'priority' = $%d", argIndex))
-			args = append(args, request.Filters.Priority)
-			argIndex++
-		}
-
-		// DD-WORKFLOW-001 v1.5: Custom labels (subdomain-based)
-		// Format: custom_labels @> '{"subdomain": ["value"]}'::jsonb
-		for subdomain, values := range request.Filters.CustomLabels {
-			if len(values) > 0 {
-				customLabelJSON, _ := json.Marshal(map[string][]string{subdomain: values})
-				whereClauses = append(whereClauses, fmt.Sprintf("custom_labels @> $%d::jsonb", argIndex))
-				args = append(args, string(customLabelJSON))
-				argIndex++
-			}
-		}
+	// Mandatory Filter 1: signal_type (exact match)
+	if request.Filters.SignalType == "" {
+		return nil, fmt.Errorf("filters.signal_type is required")
 	}
-
-	// ========================================
-	// BR-STORAGE-020: DETECTED LABELS FILTERING WITH failedDetections SKIP LOGIC
-	// ========================================
-	// DD-WORKFLOW-001 v2.1: When matching incident DetectedLabels against workflow
-	// catalog detected_labels, skip fields that are in failedDetections.
-	//
-	// Filtering Logic:
-	// - If field is in failedDetections → SKIP the filter (treat as "no preference")
-	// - If field is NOT in failedDetections → APPLY the filter
-	//
-	// Example:
-	// - failedDetections: ["pdbProtected"] → skip pdbProtected filter, apply others
-	// - failedDetections: [] → apply all filters
-	if request.Filters != nil && request.Filters.DetectedLabels != nil {
-		dl := request.Filters.DetectedLabels
-		failedDetections := dl.FailedDetections
-
-		// Filter 1: git_ops_tool (string field)
-		// Skip if "gitOpsTool" is in failedDetections
-		if dl.GitOpsTool != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelGitOpsTool, failedDetections) {
-			if *dl.GitOpsTool == "*" {
-				// Wildcard: workflow must have SOME git_ops_tool value
-				whereClauses = append(whereClauses, "detected_labels->>'git_ops_tool' IS NOT NULL")
-			} else {
-				// Exact match: workflow's git_ops_tool must match OR be NULL (no requirement)
-				whereClauses = append(whereClauses, fmt.Sprintf(
-					"(detected_labels->>'git_ops_tool' = $%d OR detected_labels->>'git_ops_tool' IS NULL)",
-					argIndex))
-				args = append(args, *dl.GitOpsTool)
-				argIndex++
-			}
-		}
-
-		// Filter 2: pod_security_level REMOVED in DD-WORKFLOW-001 v2.2
-		// Rationale: PSP deprecated in K8s 1.21, removed in K8s 1.25
-		// PSS is enforced at namespace-level, not pod-level
-
-		// Filter 3: service_mesh (string field)
-		// Skip if "serviceMesh" is in failedDetections
-		if dl.ServiceMesh != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelServiceMesh, failedDetections) {
-			if *dl.ServiceMesh == "*" {
-				whereClauses = append(whereClauses, "detected_labels->>'service_mesh' IS NOT NULL")
-			} else {
-				whereClauses = append(whereClauses, fmt.Sprintf(
-					"(detected_labels->>'service_mesh' = $%d OR detected_labels->>'service_mesh' IS NULL)",
-					argIndex))
-				args = append(args, *dl.ServiceMesh)
-				argIndex++
-			}
-		}
-
-		// Filter 4: git_ops_managed (boolean field)
-		// Skip if "gitOpsManaged" is in failedDetections
-		if dl.GitOpsManaged != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelGitOpsManaged, failedDetections) {
-			whereClauses = append(whereClauses, fmt.Sprintf(
-				"(detected_labels->>'git_ops_managed' = $%d OR detected_labels->>'git_ops_managed' IS NULL)",
-				argIndex))
-			args = append(args, fmt.Sprintf("%t", *dl.GitOpsManaged))
-			argIndex++
-		}
-
-		// Filter 5: pdb_protected (boolean field)
-		// Skip if "pdbProtected" is in failedDetections
-		if dl.PDBProtected != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelPDBProtected, failedDetections) {
-			whereClauses = append(whereClauses, fmt.Sprintf(
-				"(detected_labels->>'pdb_protected' = $%d OR detected_labels->>'pdb_protected' IS NULL)",
-				argIndex))
-			args = append(args, fmt.Sprintf("%t", *dl.PDBProtected))
-			argIndex++
-		}
-
-		// Filter 6: hpa_enabled (boolean field)
-		// Skip if "hpaEnabled" is in failedDetections
-		if dl.HPAEnabled != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelHPAEnabled, failedDetections) {
-			whereClauses = append(whereClauses, fmt.Sprintf(
-				"(detected_labels->>'hpa_enabled' = $%d OR detected_labels->>'hpa_enabled' IS NULL)",
-				argIndex))
-			args = append(args, fmt.Sprintf("%t", *dl.HPAEnabled))
-			argIndex++
-		}
-
-		// Filter 7: stateful (boolean field)
-		// Skip if "stateful" is in failedDetections
-		if dl.Stateful != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelStateful, failedDetections) {
-			whereClauses = append(whereClauses, fmt.Sprintf(
-				"(detected_labels->>'stateful' = $%d OR detected_labels->>'stateful' IS NULL)",
-				argIndex))
-			args = append(args, fmt.Sprintf("%t", *dl.Stateful))
-			argIndex++
-		}
-
-		// Filter 8: helm_managed (boolean field)
-		// Skip if "helmManaged" is in failedDetections
-		if dl.HelmManaged != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelHelmManaged, failedDetections) {
-			whereClauses = append(whereClauses, fmt.Sprintf(
-				"(detected_labels->>'helm_managed' = $%d OR detected_labels->>'helm_managed' IS NULL)",
-				argIndex))
-			args = append(args, fmt.Sprintf("%t", *dl.HelmManaged))
-			argIndex++
-		}
-
-		// Filter 9: network_isolated (boolean field)
-		// Skip if "networkIsolated" is in failedDetections
-		if dl.NetworkIsolated != nil && !models.ShouldSkipDetectedLabel(models.DetectedLabelNetworkIsolated, failedDetections) {
-			whereClauses = append(whereClauses, fmt.Sprintf(
-				"(detected_labels->>'network_isolated' = $%d OR detected_labels->>'network_isolated' IS NULL)",
-				argIndex))
-			args = append(args, fmt.Sprintf("%t", *dl.NetworkIsolated))
-			argIndex++
-		}
-	}
-
-	// Apply minimum similarity threshold
-	minSimilarity := 0.7 // Default: 70% similarity
-	if request.MinSimilarity != nil {
-		minSimilarity = *request.MinSimilarity
-	}
-
-	// pgvector cosine similarity: 1 - (embedding <=> $1)
-	// Higher similarity = closer to 1.0
-	whereClauses = append(whereClauses, fmt.Sprintf("(1 - (embedding <=> $1)) >= $%d", argIndex))
-	args = append(args, minSimilarity)
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'signal_type' = $%d", argIndex))
+	args = append(args, request.Filters.SignalType)
 	argIndex++
+
+	// Mandatory Filter 2: severity (exact match)
+	if request.Filters.Severity == "" {
+		return nil, fmt.Errorf("filters.severity is required")
+	}
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'severity' = $%d", argIndex))
+	args = append(args, request.Filters.Severity)
+	argIndex++
+
+	// Mandatory Filter 3: component (exact match)
+	if request.Filters.Component == "" {
+		return nil, fmt.Errorf("filters.component is required")
+	}
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'component' = $%d", argIndex))
+	args = append(args, request.Filters.Component)
+	argIndex++
+
+	// Mandatory Filter 4: environment (exact match)
+	if request.Filters.Environment == "" {
+		return nil, fmt.Errorf("filters.environment is required")
+	}
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'environment' = $%d", argIndex))
+	args = append(args, request.Filters.Environment)
+	argIndex++
+
+	// Mandatory Filter 5: priority (exact match)
+	if request.Filters.Priority == "" {
+		return nil, fmt.Errorf("filters.priority is required")
+	}
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'priority' = $%d", argIndex))
+	args = append(args, request.Filters.Priority)
+	argIndex++
+
+	// ========================================
+	// CUSTOM LABELS REMOVED FROM HARD FILTERING
+	// ========================================
+	// V1.0: CustomLabels moved to scoring with wildcard support (no hard filtering)
+	// Authority: DD-WORKFLOW-004 v1.5 + user confirmation 2025-12-11
+	// Rationale: Wildcard matching allows workflows to specify "*" for any value,
+	// enabling exact matches to rank higher than wildcard matches.
 
 	whereClause := ""
 	if len(whereClauses) > 0 {
@@ -638,56 +501,67 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 	}
 
 	// ========================================
-	// V1.0 SCORING: BASE SEMANTIC SIMILARITY ONLY
+	// V1.0 SCORING: LABEL-ONLY WITH WILDCARD WEIGHTING
 	// ========================================
-	// Authority: DD-WORKFLOW-004 v2.0 (CRITICAL REVISION)
+	// Authority: DD-WORKFLOW-004 v1.5 (Label-Only Scoring)
+	// Authority: SQL_WILDCARD_WEIGHTING_IMPLEMENTATION.md
 	//
-	// V1.0 Decision: NO boost/penalty logic
-	//   - confidence = base_similarity (cosine similarity from pgvector)
-	//   - Hardcoded label weights REMOVED per DD-WORKFLOW-004 v2.0
-	//   - Custom labels are customer-defined via Rego; Kubernaut cannot assign weights
+	// Scoring Components:
+	//   - base_score: 5.0 (from 5 mandatory labels, hard-filtered in WHERE)
+	//   - detected_label_boost: DetectedLabel boosts with wildcard support (0.0-0.39)
+	//   - custom_label_boost: CustomLabel boosts with wildcard support (0.0-0.50) [V1.0 NEW]
+	//   - label_penalty: High-impact conflicting DetectedLabels (0.0-0.20)
+	//   - raw_score: base_score + detected_label_boost + custom_label_boost - label_penalty
+	//   - final_score: raw_score / 10.0 (normalized to 0.0-1.0 range)
 	//
-	// V2.0+ Roadmap: Configurable label weights via ConfigMap (deferred)
-	//
-	// Score components (V1.0):
-	//   - base_similarity: cosine similarity from pgvector (0.0-1.0)
-	//   - label_boost: 0.0 (deferred to V2.0+)
-	//   - label_penalty: 0.0 (deferred to V2.0+)
-	//   - final_score: base_similarity (no boost/penalty in V1.0)
-	//   - confidence: base_similarity (API contract field)
-	//
-	// See: docs/architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md
+	// Wildcard Logic (for ALL label types):
+	//   - Exact match: Full boost (gitOpsTool='argocd' → +0.10)
+	//   - Wildcard match: Half boost (gitOpsTool='*' → +0.05)
+	//   - Conflicting match: Full penalty (gitOpsTool mismatch → -0.10)
+	//   - No filter: No boost/penalty (gitOpsTool absent → 0.0)
+
+	// Build scoring SQL components with wildcard support
+	detectedLabelBoostSQL := r.buildDetectedLabelsBoostSQLWithWildcard(request)
+	customLabelBoostSQL := r.buildCustomLabelsBoostSQLWithWildcard(request)
+	labelPenaltySQL := r.buildDetectedLabelsPenaltySQL(request)
 
 	query := fmt.Sprintf(`
-		SELECT
-			*,
-			(1 - (embedding <=> $1)) AS base_similarity,
-			0.0 AS label_boost,
-			0.0 AS label_penalty,
-			(1 - (embedding <=> $1)) AS final_score,
-			(1 - (embedding <=> $1)) AS similarity_score
-		FROM remediation_workflow_catalog
-		%s
+		SELECT * FROM (
+			SELECT
+				*,
+				%s AS detected_label_boost,
+				%s AS custom_label_boost,
+				%s AS label_penalty,
+				(5.0 + (%s) + (%s) - (%s)) / 10.0 AS final_score
+			FROM remediation_workflow_catalog
+			%s
+		) scored_workflows
+		WHERE final_score >= $%d
 		ORDER BY final_score DESC
 		LIMIT $%d
-	`, whereClause, argIndex)
+	`, detectedLabelBoostSQL, customLabelBoostSQL, labelPenaltySQL,
+		detectedLabelBoostSQL, customLabelBoostSQL, labelPenaltySQL,
+		whereClause,
+		argIndex, argIndex+1)
 
-	args = append(args, topK)
+	// Add MinScore and TopK to args
+	args = append(args, request.MinScore) // $argIndex
+	args = append(args, topK)             // $argIndex+1
 
-	// Execute query
+	// Execute query with label-only scoring (V1.0: includes CustomLabels wildcard)
 	type workflowWithScore struct {
 		models.RemediationWorkflow
-		BaseSimilarity  float64 `db:"base_similarity"`
-		LabelBoost      float64 `db:"label_boost"`
-		LabelPenalty    float64 `db:"label_penalty"`
-		FinalScore      float64 `db:"final_score"`
-		SimilarityScore float64 `db:"similarity_score"`
+		DetectedLabelBoost float64 `db:"detected_label_boost"`
+		CustomLabelBoost   float64 `db:"custom_label_boost"`
+		LabelPenalty       float64 `db:"label_penalty"`
+		FinalScore         float64 `db:"final_score"`
 	}
 
 	var results []workflowWithScore
 	err := r.db.SelectContext(ctx, &results, query, args...)
 	if err != nil {
-		r.logger.Error(err, "failed to search workflows", "query", request.Query)
+		r.logger.Error(err, "failed to search workflows by labels",
+			"filters", request.Filters)
 		return nil, fmt.Errorf("failed to search workflows: %w", err)
 	}
 
@@ -716,6 +590,7 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 		}
 
 		// DD-WORKFLOW-002 v3.0: Flat response structure
+		// V1.0: Label-only scoring (no BaseSimilarity or SimilarityScore)
 		searchResults[i] = models.WorkflowSearchResult{
 			// Flat fields per DD-WORKFLOW-002 v3.0
 			WorkflowID:      result.WorkflowID,
@@ -725,14 +600,12 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 			ContainerImage:  containerImage,
 			ContainerDigest: containerDigest,
 
-			// Scoring fields
-			Confidence:      result.FinalScore, // DD-WORKFLOW-002 v3.0: "confidence" = final_score
-			BaseSimilarity:  result.BaseSimilarity,
-			LabelBoost:      result.LabelBoost,
-			LabelPenalty:    result.LabelPenalty,
-			FinalScore:      result.FinalScore,
-			SimilarityScore: result.SimilarityScore,
-			Rank:            i + 1,
+			// V1.0: Label-only scoring fields (with CustomLabels wildcard support)
+			Confidence:   result.FinalScore,                                   // DD-WORKFLOW-002 v3.0: "confidence" = final_score
+			LabelBoost:   result.DetectedLabelBoost + result.CustomLabelBoost, // Combined boost
+			LabelPenalty: result.LabelPenalty,
+			FinalScore:   result.FinalScore,
+			Rank:         i + 1,
 
 			// DD-WORKFLOW-001 v1.6: Label columns in response
 			CustomLabels:   result.CustomLabels,
@@ -746,15 +619,386 @@ func (r *WorkflowRepository) SearchByEmbedding(ctx context.Context, request *mod
 	response := &models.WorkflowSearchResponse{
 		Workflows:    searchResults,
 		TotalResults: len(searchResults),
-		Query:        request.Query,
 		Filters:      request.Filters,
 	}
 
-	r.logger.Info("semantic search completed",
-		"query", request.Query,
+	r.logger.Info("label-only search completed",
+		"filters", request.Filters,
 		"results", len(searchResults))
 
 	return response, nil
+}
+
+// ========================================
+// HYBRID SCORING HELPER FUNCTIONS
+// ========================================
+// Authority: DD-WORKFLOW-004 v1.5 (Fixed DetectedLabel Weights)
+// Package: pkg/datastorage/scoring
+
+// sanitizeEnumValue validates that a string value is in the allowed enum set.
+// Returns the value if valid, empty string if invalid.
+// This prevents SQL injection from unexpected enum values.
+func sanitizeEnumValue(value string, allowedValues []string) string {
+	for _, allowed := range allowedValues {
+		if value == allowed {
+			return value
+		}
+	}
+	return "" // Invalid value, return empty string
+}
+
+// sanitizeJSONBKey sanitizes JSONB keys for SQL queries
+// Removes characters that could cause SQL injection
+func sanitizeJSONBKey(key string) string {
+	// Allow alphanumeric, underscore, hyphen only
+	return regexp.MustCompile(`[^a-zA-Z0-9_\-]`).ReplaceAllString(key, "")
+}
+
+// sanitizeSQLString sanitizes string values for SQL queries
+// Escapes single quotes to prevent SQL injection
+func sanitizeSQLString(value string) string {
+	return strings.ReplaceAll(value, "'", "''")
+}
+
+// buildDetectedLabelsBoostSQL generates SQL to calculate the label boost score.
+// Returns SQL expression that sums weights for matching DetectedLabels.
+//
+// Logic:
+//   - For each DetectedLabel in the query that matches workflow's detected_labels
+//   - Add the fixed weight from scoring.DetectedLabelWeights
+//   - If query has no DetectedLabels, return "0.0" (no boost)
+//
+// Example SQL output:
+//
+//	COALESCE(
+//	  CASE WHEN detected_labels->>'git_ops_managed' = 'true' THEN 0.10 ELSE 0.0 END +
+//	  CASE WHEN detected_labels->>'pdb_protected' = 'true' THEN 0.05 ELSE 0.0 END,
+//	  0.0
+//	)
+func (r *WorkflowRepository) buildDetectedLabelsBoostSQL(request *models.WorkflowSearchRequest) string {
+	if request.Filters == nil || request.Filters.DetectedLabels == nil {
+		return "0.0" // No DetectedLabels in query = no boost
+	}
+
+	dl := request.Filters.DetectedLabels
+	boostCases := []string{}
+
+	// Import weights from scoring package (would need to import)
+	// For now, use constants inline to avoid circular dependencies
+	weights := map[string]float64{
+		"git_ops_managed":  0.10,
+		"git_ops_tool":     0.10,
+		"pdb_protected":    0.05,
+		"service_mesh":     0.05,
+		"network_isolated": 0.03,
+		"helm_managed":     0.02,
+		"stateful":         0.02,
+		"hpa_enabled":      0.02,
+	}
+
+	// GitOpsManaged (boolean)
+	if dl.GitOpsManaged != nil && *dl.GitOpsManaged {
+		weight := weights["git_ops_managed"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'git_ops_managed' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// GitOpsTool (string)
+	if dl.GitOpsTool != nil {
+		weight := weights["git_ops_tool"]
+		tool := sanitizeEnumValue(*dl.GitOpsTool, []string{"argocd", "flux"})
+		if tool != "" {
+			boostCases = append(boostCases,
+				fmt.Sprintf("CASE WHEN detected_labels->>'git_ops_tool' = '%s' THEN %.2f ELSE 0.0 END", tool, weight))
+		}
+	}
+
+	// PDBProtected (boolean)
+	if dl.PDBProtected != nil && *dl.PDBProtected {
+		weight := weights["pdb_protected"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'pdb_protected' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// ServiceMesh (string)
+	if dl.ServiceMesh != nil {
+		weight := weights["service_mesh"]
+		mesh := sanitizeEnumValue(*dl.ServiceMesh, []string{"istio", "linkerd"})
+		if mesh != "" {
+			boostCases = append(boostCases,
+				fmt.Sprintf("CASE WHEN detected_labels->>'service_mesh' = '%s' THEN %.2f ELSE 0.0 END", mesh, weight))
+		}
+	}
+
+	// NetworkIsolated (boolean)
+	if dl.NetworkIsolated != nil && *dl.NetworkIsolated {
+		weight := weights["network_isolated"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'network_isolated' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// HelmManaged (boolean)
+	if dl.HelmManaged != nil && *dl.HelmManaged {
+		weight := weights["helm_managed"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'helm_managed' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// Stateful (boolean)
+	if dl.Stateful != nil && *dl.Stateful {
+		weight := weights["stateful"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'stateful' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// HPAEnabled (boolean)
+	if dl.HPAEnabled != nil && *dl.HPAEnabled {
+		weight := weights["hpa_enabled"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'hpa_enabled' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	if len(boostCases) == 0 {
+		return "0.0" // No matching labels = no boost
+	}
+
+	// Sum all boost cases
+	return fmt.Sprintf("COALESCE((%s), 0.0)", strings.Join(boostCases, " + "))
+}
+
+// buildDetectedLabelsPenaltySQL generates SQL to calculate the label penalty score.
+// Returns SQL expression that sums penalties for conflicting high-impact DetectedLabels.
+//
+// Logic:
+//   - Only high-impact labels apply penalties: gitOpsManaged, gitOpsTool
+//   - If query has DetectedLabel=true but workflow has DetectedLabel=false (or missing) → penalty
+//   - If query has DetectedLabel=toolA but workflow has DetectedLabel=toolB → penalty
+//
+// Example SQL output:
+//
+//	COALESCE(
+//	  CASE WHEN detected_labels->>'git_ops_managed' IS NULL OR detected_labels->>'git_ops_managed' = 'false' THEN 0.10 ELSE 0.0 END,
+//	  0.0
+//	)
+func (r *WorkflowRepository) buildDetectedLabelsPenaltySQL(request *models.WorkflowSearchRequest) string {
+	if request.Filters == nil || request.Filters.DetectedLabels == nil {
+		return "0.0" // No DetectedLabels in query = no penalty
+	}
+
+	dl := request.Filters.DetectedLabels
+	penaltyCases := []string{}
+
+	// Only high-impact fields apply penalties (per scoring.ShouldApplyPenalty)
+	highImpactWeights := map[string]float64{
+		"git_ops_managed": 0.10,
+		"git_ops_tool":    0.10,
+	}
+
+	// GitOpsManaged penalty: Query wants GitOps but workflow is NOT GitOps
+	if dl.GitOpsManaged != nil && *dl.GitOpsManaged {
+		weight := highImpactWeights["git_ops_managed"]
+		// Penalty if workflow is NOT GitOps-managed (null or false)
+		penaltyCases = append(penaltyCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'git_ops_managed' IS NULL OR detected_labels->>'git_ops_managed' = 'false' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// GitOpsTool penalty: Query wants specific tool but workflow has different tool or no tool
+	if dl.GitOpsTool != nil {
+		weight := highImpactWeights["git_ops_tool"]
+		tool := sanitizeEnumValue(*dl.GitOpsTool, []string{"argocd", "flux"})
+		if tool != "" {
+			// Penalty if workflow has different tool or no tool
+			penaltyCases = append(penaltyCases,
+				fmt.Sprintf("CASE WHEN detected_labels->>'git_ops_tool' IS NULL OR (detected_labels->>'git_ops_tool' != '%s' AND detected_labels->>'git_ops_tool' != '') THEN %.2f ELSE 0.0 END", tool, weight))
+		}
+	}
+
+	if len(penaltyCases) == 0 {
+		return "0.0" // No penalties = 0.0
+	}
+
+	// Sum all penalty cases
+	return fmt.Sprintf("COALESCE((%s), 0.0)", strings.Join(penaltyCases, " + "))
+}
+
+// buildCustomLabelsBoostSQLWithWildcard generates SQL with wildcard weighting for CustomLabels.
+// V1.0: CustomLabels wildcard support (2025-12-11 user approval)
+// Authority: User confirmation 2025-12-11
+//
+// Wildcard Logic (for dynamic key-value pairs):
+//   - Exact match: Full boost (incident has "cost-constrained", workflow has ["cost-constrained"] → +0.05)
+//   - Wildcard match: Half boost (incident has "cost-constrained", workflow has ["*"] → +0.025)
+//   - No match: No boost (incident has "cost-constrained", workflow has ["no-restart"] → 0.0)
+//   - No filter: No boost (incident absent → 0.0)
+//
+// Weight: 0.05 per custom label key (up to 10 keys max = 0.50 total boost)
+func (r *WorkflowRepository) buildCustomLabelsBoostSQLWithWildcard(request *models.WorkflowSearchRequest) string {
+	if request.Filters == nil || len(request.Filters.CustomLabels) == 0 {
+		return "0.0" // No CustomLabels in query = no boost
+	}
+
+	boostCases := []string{}
+	const customLabelWeight = 0.05 // Weight per custom label key
+
+	// Iterate over incident custom labels (from SP Rego)
+	for key, incidentValues := range request.Filters.CustomLabels {
+		if len(incidentValues) == 0 {
+			continue
+		}
+
+		// For each incident value, generate matching SQL
+		for _, incidentValue := range incidentValues {
+			// Sanitize key and value for SQL injection prevention
+			safeKey := sanitizeJSONBKey(key)
+			safeValue := sanitizeSQLString(incidentValue)
+
+			// SQL pattern: Check workflow's custom_labels JSONB
+			//   - Exact match: custom_labels->>'key' ? 'value' → Full boost
+			//   - Wildcard match: custom_labels->>'key' ? '*' → Half boost
+			boostCase := fmt.Sprintf(`
+				CASE
+					WHEN custom_labels->'%s' @> '"%s"'::jsonb THEN %.2f
+					WHEN custom_labels->'%s' @> '"*"'::jsonb THEN %.2f
+					ELSE 0.0
+				END`,
+				safeKey, safeValue, customLabelWeight, // Exact match
+				safeKey, customLabelWeight/2) // Wildcard match
+
+			boostCases = append(boostCases, boostCase)
+		}
+	}
+
+	if len(boostCases) == 0 {
+		return "0.0"
+	}
+
+	// Sum all boost cases
+	return fmt.Sprintf("COALESCE((%s), 0.0)", strings.Join(boostCases, " + "))
+}
+
+// buildDetectedLabelsBoostSQLWithWildcard generates SQL with wildcard weighting support.
+// V1.0: Label-only scoring with wildcard differentiation
+// Authority: SQL_WILDCARD_WEIGHTING_IMPLEMENTATION.md
+//
+// Wildcard Logic (for string fields like gitOpsTool, serviceMesh):
+//   - Exact match: Full boost (gitOpsTool='argocd' + workflow='argocd' → +0.10)
+//   - Wildcard match: Half boost (gitOpsTool='*' + workflow='argocd' → +0.05)
+//   - No match: No boost (gitOpsTool='argocd' + workflow='flux' → 0.0)
+//   - No filter: No boost (gitOpsTool absent → 0.0)
+//
+// Example SQL output:
+//
+//	COALESCE(
+//	  CASE WHEN detected_labels->>'git_ops_managed' = 'true' THEN 0.10 ELSE 0.0 END +
+//	  CASE
+//	    WHEN detected_labels->>'git_ops_tool' = 'argocd' THEN 0.10  -- exact match
+//	    WHEN detected_labels->>'git_ops_tool' IS NOT NULL THEN 0.05  -- wildcard match
+//	    ELSE 0.0
+//	  END,
+//	  0.0
+//	)
+func (r *WorkflowRepository) buildDetectedLabelsBoostSQLWithWildcard(request *models.WorkflowSearchRequest) string {
+	if request.Filters == nil || request.Filters.DetectedLabels == nil {
+		return "0.0" // No DetectedLabels in query = no boost
+	}
+
+	dl := request.Filters.DetectedLabels
+	boostCases := []string{}
+
+	// Weights from scoring package (inline to avoid circular deps)
+	weights := map[string]float64{
+		"git_ops_managed":  0.10,
+		"git_ops_tool":     0.10,
+		"pdb_protected":    0.05,
+		"service_mesh":     0.05,
+		"network_isolated": 0.03,
+		"helm_managed":     0.02,
+		"stateful":         0.02,
+		"hpa_enabled":      0.02,
+	}
+
+	// GitOpsManaged (boolean - no wildcard)
+	if dl.GitOpsManaged != nil && *dl.GitOpsManaged {
+		weight := weights["git_ops_managed"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'git_ops_managed' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// GitOpsTool (string - wildcard support)
+	if dl.GitOpsTool != nil {
+		weight := weights["git_ops_tool"]
+		if *dl.GitOpsTool == "*" {
+			// Wildcard: Half boost if workflow has ANY git_ops_tool
+			boostCases = append(boostCases,
+				fmt.Sprintf("CASE WHEN detected_labels->>'git_ops_tool' IS NOT NULL AND detected_labels->>'git_ops_tool' != '' THEN %.2f ELSE 0.0 END", weight/2))
+		} else {
+			// Exact match: Full boost
+			tool := sanitizeEnumValue(*dl.GitOpsTool, []string{"argocd", "flux"})
+			if tool != "" {
+				boostCases = append(boostCases,
+					fmt.Sprintf("CASE WHEN detected_labels->>'git_ops_tool' = '%s' THEN %.2f ELSE 0.0 END", tool, weight))
+			}
+		}
+	}
+
+	// PDBProtected (boolean - no wildcard)
+	if dl.PDBProtected != nil && *dl.PDBProtected {
+		weight := weights["pdb_protected"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'pdb_protected' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// ServiceMesh (string - wildcard support)
+	if dl.ServiceMesh != nil {
+		weight := weights["service_mesh"]
+		if *dl.ServiceMesh == "*" {
+			// Wildcard: Half boost if workflow has ANY service_mesh
+			boostCases = append(boostCases,
+				fmt.Sprintf("CASE WHEN detected_labels->>'service_mesh' IS NOT NULL AND detected_labels->>'service_mesh' != '' THEN %.2f ELSE 0.0 END", weight/2))
+		} else {
+			// Exact match: Full boost
+			mesh := sanitizeEnumValue(*dl.ServiceMesh, []string{"istio", "linkerd"})
+			if mesh != "" {
+				boostCases = append(boostCases,
+					fmt.Sprintf("CASE WHEN detected_labels->>'service_mesh' = '%s' THEN %.2f ELSE 0.0 END", mesh, weight))
+			}
+		}
+	}
+
+	// NetworkIsolated (boolean - no wildcard)
+	if dl.NetworkIsolated != nil && *dl.NetworkIsolated {
+		weight := weights["network_isolated"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'network_isolated' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// HelmManaged (boolean - no wildcard)
+	if dl.HelmManaged != nil && *dl.HelmManaged {
+		weight := weights["helm_managed"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'helm_managed' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// Stateful (boolean - no wildcard)
+	if dl.Stateful != nil && *dl.Stateful {
+		weight := weights["stateful"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'stateful' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// HPAEnabled (boolean - no wildcard)
+	if dl.HPAEnabled != nil && *dl.HPAEnabled {
+		weight := weights["hpa_enabled"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'hpa_enabled' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	if len(boostCases) == 0 {
+		return "0.0" // No matching labels = no boost
+	}
+
+	// Sum all boost cases
+	return fmt.Sprintf("COALESCE((%s), 0.0)", strings.Join(boostCases, " + "))
 }
 
 // ========================================

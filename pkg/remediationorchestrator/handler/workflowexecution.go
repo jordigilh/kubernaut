@@ -38,7 +38,8 @@ import (
 
 // WorkflowExecutionHandler handles WE status changes for Remediation Orchestrator.
 // Reference: BR-ORCH-032 (skip handling), BR-ORCH-033 (duplicate tracking),
-//            BR-ORCH-036 (manual review notification), DD-WE-004 (exponential backoff)
+//
+//	BR-ORCH-036 (manual review notification), DD-WE-004 (exponential backoff)
 type WorkflowExecutionHandler struct {
 	client client.Client
 	scheme *runtime.Scheme
@@ -72,22 +73,54 @@ func (h *WorkflowExecutionHandler) HandleSkipped(
 	case "ResourceBusy":
 		// DUPLICATE: Another workflow running - requeue
 		logger.Info("WE skipped: ResourceBusy - tracking as duplicate, requeueing")
-		rr.Status.OverallPhase = "Skipped"
-		rr.Status.SkipReason = reason
-		if we.Status.SkipDetails.ConflictingWorkflow != nil {
-			rr.Status.DuplicateOf = we.Status.SkipDetails.ConflictingWorkflow.Name
+
+		// Update RR status using retry to preserve Gateway fields (DD-GATEWAY-011, BR-ORCH-038)
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Refetch to get latest resourceVersion
+			if err := h.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				return err
+			}
+
+			rr.Status.OverallPhase = remediationv1.PhaseSkipped
+			rr.Status.SkipReason = reason
+			if we.Status.SkipDetails.ConflictingWorkflow != nil {
+				rr.Status.DuplicateOf = we.Status.SkipDetails.ConflictingWorkflow.Name
+			}
+
+			return h.client.Status().Update(ctx, rr)
+		})
+		if err != nil {
+			logger.Error(err, "Failed to update RR status for ResourceBusy")
+			return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
 		}
+
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 
 	case "RecentlyRemediated":
 		// DUPLICATE: Cooldown active - requeue with fixed interval
 		// Per WE Team Response Q6: RO should NOT calculate backoff, let WE re-evaluate
 		logger.Info("WE skipped: RecentlyRemediated - tracking as duplicate, requeueing")
-		rr.Status.OverallPhase = "Skipped"
-		rr.Status.SkipReason = reason
-		if we.Status.SkipDetails.RecentRemediation != nil {
-			rr.Status.DuplicateOf = we.Status.SkipDetails.RecentRemediation.Name
+
+		// Update RR status using retry to preserve Gateway fields (DD-GATEWAY-011, BR-ORCH-038)
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Refetch to get latest resourceVersion
+			if err := h.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				return err
+			}
+
+			rr.Status.OverallPhase = remediationv1.PhaseSkipped
+			rr.Status.SkipReason = reason
+			if we.Status.SkipDetails.RecentRemediation != nil {
+				rr.Status.DuplicateOf = we.Status.SkipDetails.RecentRemediation.Name
+			}
+
+			return h.client.Status().Update(ctx, rr)
+		})
+		if err != nil {
+			logger.Error(err, "Failed to update RR status for RecentlyRemediated")
+			return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
 		}
+
 		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 
 	case "ExhaustedRetries":
@@ -123,7 +156,7 @@ func (h *WorkflowExecutionHandler) HandleFailed(
 
 	if we.Status.FailureDetails == nil {
 		logger.Error(nil, "WE Failed but FailureDetails is nil")
-		rr.Status.OverallPhase = "Failed"
+		rr.Status.OverallPhase = remediationv1.PhaseFailed
 		rr.Status.Message = "Workflow failed with unknown reason"
 		return ctrl.Result{}, nil
 	}
@@ -135,9 +168,23 @@ func (h *WorkflowExecutionHandler) HandleFailed(
 			"reason", we.Status.FailureDetails.Reason,
 		)
 
-		rr.Status.OverallPhase = "Failed"
-		rr.Status.RequiresManualReview = true
-		rr.Status.Message = we.Status.FailureDetails.NaturalLanguageSummary
+		// Update RR status using retry to preserve Gateway fields (DD-GATEWAY-011, BR-ORCH-038)
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Refetch to get latest resourceVersion
+			if err := h.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				return err
+			}
+
+			rr.Status.OverallPhase = "Failed"
+			rr.Status.RequiresManualReview = true
+			rr.Status.Message = we.Status.FailureDetails.NaturalLanguageSummary
+
+			return h.client.Status().Update(ctx, rr)
+		})
+		if err != nil {
+			logger.Error(err, "Failed to update RR status for execution failure")
+			return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
+		}
 
 		// TODO: Create execution failure notification
 		// This will be implemented in Day 7 (Escalation Manager)
@@ -153,9 +200,23 @@ func (h *WorkflowExecutionHandler) HandleFailed(
 		"reason", we.Status.FailureDetails.Reason,
 	)
 
-	rr.Status.OverallPhase = "Failed"
-	rr.Status.RequiresManualReview = false // Pre-execution failures are recoverable
-	rr.Status.Message = we.Status.FailureDetails.NaturalLanguageSummary
+	// Update RR status using retry to preserve Gateway fields (DD-GATEWAY-011, BR-ORCH-038)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Refetch to get latest resourceVersion
+		if err := h.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			return err
+		}
+
+		rr.Status.OverallPhase = remediationv1.PhaseFailed
+		rr.Status.RequiresManualReview = false // Pre-execution failures are recoverable
+		rr.Status.Message = we.Status.FailureDetails.NaturalLanguageSummary
+
+		return h.client.Status().Update(ctx, rr)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to update RR status for pre-execution failure")
+		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
+	}
 
 	// V1.0: No automatic recovery, just fail
 	// V1.1+: Will call evaluateRecoveryOptions here
@@ -174,12 +235,26 @@ func (h *WorkflowExecutionHandler) handleManualReviewRequired(
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// Update RR status - FAILED, not Skipped (per BR-ORCH-032 v1.1)
-	rr.Status.OverallPhase = "Failed"
-	rr.Status.SkipReason = skipReason
-	rr.Status.RequiresManualReview = true
-	rr.Status.DuplicateOf = "" // NOT a duplicate
-	rr.Status.Message = we.Status.SkipDetails.Message
+	// Update RR status using retry to preserve Gateway fields (DD-GATEWAY-011, BR-ORCH-038)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Refetch to get latest resourceVersion
+		if err := h.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			return err
+		}
+
+		// Update RR status - FAILED, not Skipped (per BR-ORCH-032 v1.1)
+		rr.Status.OverallPhase = remediationv1.PhaseFailed
+		rr.Status.SkipReason = skipReason
+		rr.Status.RequiresManualReview = true
+		rr.Status.DuplicateOf = "" // NOT a duplicate
+		rr.Status.Message = we.Status.SkipDetails.Message
+
+		return h.client.Status().Update(ctx, rr)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to update RR status for manual review")
+		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
+	}
 
 	logger.Info("Manual review required",
 		"skipReason", skipReason,
@@ -399,5 +474,3 @@ func (h *WorkflowExecutionHandler) buildManualReviewBody(
 		we.Status.ConsecutiveFailures,
 	)
 }
-
-

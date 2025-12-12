@@ -213,10 +213,10 @@ It("should handle nil RecoveryAnalysis gracefully", func() {
             RecoveryAnalysis: nil,  // ✅ Test nil case explicitly
         }, nil
     }
-    
+
     // Act
     result, err := handler.Handle(ctx, analysis)
-    
+
     // Assert: Verify nil handling behavior
     Expect(err).ToNot(HaveOccurred())
     Expect(analysis.Status.RecoveryStatus).To(BeNil())  // ✅ Assert nil result
@@ -234,9 +234,9 @@ It("should populate RecoveryStatus when present", func() {
             },
         }, nil
     }
-    
+
     result, err := handler.Handle(ctx, analysis)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(analysis.Status.RecoveryStatus).ToNot(BeNil())  // ✅ Assert populated
 })
@@ -274,7 +274,7 @@ BR-AI-080-083: Recovery flow observability completion
 
 Added Unit Tests (3):
 - should populate RecoveryStatus when isRecoveryAttempt=true
-- should NOT populate RecoveryStatus for initial incidents  
+- should NOT populate RecoveryStatus for initial incidents
 - should handle nil RecoveryAnalysis gracefully
 
 Added Integration Test (1):
@@ -466,7 +466,7 @@ func (h *InvestigatingHandler) populateRecoveryStatus(
         h.log.V(1).Info("HAPI did not return recovery_analysis")
         return
     }
-    
+
     recoveryAnalysis := resp.RecoveryAnalysis  // Extract inside
     // ... map fields
 }
@@ -674,14 +674,14 @@ go test -v -p 4 ./test/unit/aianalysis/... -run "populateRecoveryStatus"
 // Around line 80-100 in investigating.go (after existing HAPI call)
 func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
     // ... existing code ...
-    
+
     // Track duration (per crd-schema.md: InvestigationTime)
     startTime := time.Now()
-    
+
     // Call HAPI (using existing pattern from investigating.go:88)
     var resp *client.IncidentResponse  // ✅ CORRECT TYPE (not interface{}) - FIX #1
     var err error
-    
+
     // BR-AI-083: Route based on IsRecoveryAttempt
     if analysis.Spec.IsRecoveryAttempt {
         h.log.Info("Using recovery endpoint",
@@ -689,27 +689,27 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
         )
         recoveryReq := h.buildRecoveryRequest(analysis)
         resp, err = h.hgClient.InvestigateRecovery(ctx, recoveryReq)
-        
+
         // ✅ NEW: Populate RecoveryStatus from HAPI response
         if err == nil && resp != nil {
             h.populateRecoveryStatus(analysis, resp)  // ✅ Call new helper
         }
-        
+
     } else {
         req := h.buildRequest(analysis)
         resp, err = h.hgClient.Investigate(ctx, req)
         // RecoveryStatus remains nil for initial incidents
     }
-    
+
     investigationTime := time.Since(startTime).Milliseconds()
-    
+
     if err != nil {
         return h.handleError(ctx, analysis, err)
     }
-    
+
     // Set investigation time on successful response
     analysis.Status.InvestigationTime = investigationTime
-    
+
     // ... existing status population code ...
 }
 ```
@@ -733,15 +733,15 @@ func (h *InvestigatingHandler) populateRecoveryStatus(
         )
         return
     }
-    
+
     recoveryAnalysis := resp.RecoveryAnalysis
-    
+
     // Map HAPI RecoveryAnalysis to AIAnalysis RecoveryStatus
     analysis.Status.RecoveryStatus = &aianalysisv1.RecoveryStatus{
         StateChanged:      recoveryAnalysis.PreviousAttemptAssessment.StateChanged,
         CurrentSignalType: recoveryAnalysis.PreviousAttemptAssessment.CurrentSignalType,
     }
-    
+
     // Map PreviousAttemptAssessment if present
     if recoveryAnalysis.PreviousAttemptAssessment != nil {
         analysis.Status.RecoveryStatus.PreviousAttemptAssessment = &aianalysisv1.PreviousAttemptAssessment{
@@ -782,9 +782,9 @@ func (h *InvestigatingHandler) populateRecoveryStatus(
         metrics.RecoveryStatusSkippedTotal.Inc()  // ✅ Metric
         return
     }
-    
+
     recoveryAnalysis := resp.RecoveryAnalysis
-    
+
     // Enhanced logging with diagnostic context
     h.log.Info("Populating RecoveryStatus from HAPI response",
         "analysis", analysis.Name,
@@ -793,9 +793,9 @@ func (h *InvestigatingHandler) populateRecoveryStatus(
         "currentSignalType", recoveryAnalysis.PreviousAttemptAssessment.CurrentSignalType,
         "failureUnderstood", recoveryAnalysis.PreviousAttemptAssessment.FailureUnderstood,
     )
-    
+
     // ... existing mapping code ...
-    
+
     // Record metrics
     metrics.RecoveryStatusPopulatedTotal.WithLabelValues(
         strconv.FormatBool(analysis.Status.RecoveryStatus.PreviousAttemptAssessment.FailureUnderstood),
@@ -819,7 +819,7 @@ var (
         },
         []string{"failure_understood", "state_changed"},
     )
-    
+
     RecoveryStatusSkippedTotal = prometheus.NewCounter(
         prometheus.CounterOpts{
             Namespace: "aianalysis",
@@ -845,7 +845,7 @@ var _ = Describe("RecoveryStatus Metrics", func() {
     It("should increment recoveryStatusPopulated metric when RecoveryStatus populated", func() {
         // Arrange: Get baseline metric value
         before := testutil.GetCounterValue(metrics.RecoveryStatusPopulatedTotal.WithLabelValues("true", "true"))
-        
+
         // Mock HAPI response with recovery_analysis
         mockClient.InvestigateRecoveryFunc = func(...) (*client.IncidentResponse, error) {
             return &client.IncidentResponse{
@@ -857,30 +857,30 @@ var _ = Describe("RecoveryStatus Metrics", func() {
                 },
             }, nil
         }
-        
+
         // Act: Trigger reconciliation
         _, err := handler.Handle(ctx, analysis)
         Expect(err).ToNot(HaveOccurred())
-        
+
         // Assert: Metric incremented
         after := testutil.GetCounterValue(metrics.RecoveryStatusPopulatedTotal.WithLabelValues("true", "true"))
         Expect(after).To(Equal(before + 1))
     })
-    
+
     It("should increment recoveryStatusSkipped metric when recovery_analysis is nil", func() {
         // Arrange
         before := testutil.GetCounterValue(metrics.RecoveryStatusSkippedTotal)
-        
+
         mockClient.InvestigateRecoveryFunc = func(...) (*client.IncidentResponse, error) {
             return &client.IncidentResponse{
                 RecoveryAnalysis: nil,  // ✅ Test nil case
             }, nil
         }
-        
+
         // Act
         _, err := handler.Handle(ctx, analysis)
         Expect(err).ToNot(HaveOccurred())
-        
+
         // Assert
         after := testutil.GetCounterValue(metrics.RecoveryStatusSkippedTotal)
         Expect(after).To(Equal(before + 1))

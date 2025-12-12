@@ -256,7 +256,7 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 
 				// Then: Transition should succeed and status should be updated
 				Expect(err).ToNot(HaveOccurred())
-				Expect(rr.Status.OverallPhase).To(Equal("Processing"))
+				Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseProcessing))
 			})
 
 			It("should return error on invalid transition", func() {
@@ -270,6 +270,79 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 				// Then: Transition should fail with descriptive error
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("invalid phase transition"))
+			})
+		})
+
+		// ========================================
+		// Invalid State Handling
+		// Tests defensive programming for corrupted/invalid phase values
+		// Business Value: State machine integrity and corruption resilience
+		// ========================================
+		Context("when handling invalid or corrupted phase values", func() {
+			It("should handle unknown phase value gracefully", func() {
+				// Scenario: RR.Status.OverallPhase contains unknown value (corruption or version skew)
+				// Business Value: Resilient to status corruption, provides clear error
+				// Confidence: 95% - Defensive programming essential
+
+				// Given: RemediationRequest with unknown phase
+				rr := &remediationv1.RemediationRequest{}
+				rr.Status.OverallPhase = remediationv1.RemediationPhase("UnknownCorruptedPhase")
+
+				// When: We attempt to get current phase
+				current := manager.CurrentPhase(rr)
+
+				// Then: Should return the corrupted value (not crash)
+				Expect(current).To(Equal(phase.Phase("UnknownCorruptedPhase")),
+					"Unknown phases should be returned as-is for debugging")
+
+				// When: We validate the corrupted phase
+				err := phase.Validate(current)
+
+				// Then: Validation should fail with clear error
+				Expect(err).To(HaveOccurred(), "Unknown phases must fail validation")
+				Expect(err.Error()).To(ContainSubstring("invalid phase"),
+					"Error message must be clear for operators")
+			})
+
+			It("should prevent phase regression (e.g., Executing → Pending)", func() {
+				// Scenario: Attempt backward transition in state machine
+				// Business Value: Enforces state machine integrity, prevents logical errors
+				// Confidence: 90% - Prevents accidental state corruption
+
+				// Given: RemediationRequest in Executing phase (late stage)
+				rr := &remediationv1.RemediationRequest{}
+				rr.Status.OverallPhase = remediationv1.PhaseExecuting
+
+				// When: We attempt to regress to Pending (invalid backward transition)
+				err := manager.TransitionTo(rr, phase.Pending)
+
+				// Then: Transition must be rejected
+				Expect(err).To(HaveOccurred(), "Backward transitions must be prevented")
+				Expect(err.Error()).To(ContainSubstring("invalid phase transition"),
+					"Error must clearly indicate invalid transition")
+
+				// Verify: Phase remains unchanged
+				Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseExecuting),
+					"Phase must not change on invalid transition")
+			})
+
+			It("should validate that CanTransition rejects phase regression", func() {
+				// Scenario: Check state machine rules prevent all backward transitions
+				// Business Value: Validates state machine integrity rules
+				// Confidence: 95% - Core state machine validation
+
+				// When: We check various backward transitions
+				executingToPending := phase.CanTransition(phase.Executing, phase.Pending)
+				analyzingToProcessing := phase.CanTransition(phase.Analyzing, phase.Processing)
+				executingToAnalyzing := phase.CanTransition(phase.Executing, phase.Analyzing)
+
+				// Then: All backward transitions must be rejected
+				Expect(executingToPending).To(BeFalse(),
+					"Executing → Pending is invalid regression")
+				Expect(analyzingToProcessing).To(BeFalse(),
+					"Analyzing → Processing is invalid regression")
+				Expect(executingToAnalyzing).To(BeFalse(),
+					"Executing → Analyzing is invalid regression")
 			})
 		})
 	})
