@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -287,23 +288,24 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			deleteTestNamespace(namespace)
 		})
 
-		It("should handle RR with empty fingerprint gracefully (gateway bug)", func() {
-			// Scenario: Gateway sends RR with empty spec.signalFingerprint
-			// Business Outcome: RR processes normally, no blocking applied
-			// Confidence: 95% - Real Gateway data quality scenario
+		It("should handle RR with unique fingerprint (no prior failures)", func() {
+			// Scenario: RR with unique fingerprint (no blocking history)
+			// Business Outcome: RR processes normally, blocking logic doesn't interfere
+			// Confidence: 95% - Validates blocking logic only applies when appropriate
+			// NOTE: Empty fingerprint rejected by CRD validation, so testing unique FP instead
 
 			ctx := context.Background()
 
-			// Given: RemediationRequest with empty fingerprint (Gateway bug)
+			// Given: RemediationRequest with unique fingerprint (no prior failures)
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "empty-fp-rr",
+					Name:      "unique-fp-rr",
 					Namespace: namespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalName:        "test-empty-fp",
-					SignalFingerprint: "", // Empty fingerprint (Gateway bug)
+					SignalName:        "test-unique-fp",
+					SignalFingerprint: "f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9", // Unique fingerprint
 					Severity:          "critical",
 					SignalType:        "test",
 					TargetType:        "kubernetes",
@@ -320,8 +322,8 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// When: Creating RR
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			// Then: RR should process normally (no blocking without fingerprint match)
-			Eventually(func() string {
+			// Then: RR should not be blocked (unique fingerprint = no prior failures)
+			Consistently(func() string {
 				updated := &remediationv1.RemediationRequest{}
 				if err := k8sClient.Get(ctx, client.ObjectKey{
 					Name:      rr.Name,
@@ -330,23 +332,18 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 					return ""
 				}
 				return string(updated.Status.OverallPhase)
-			}, "10s", "100ms").ShouldNot(Equal("Blocked"),
-				"RR with empty fingerprint should not be blocked (no fingerprint match possible)")
+			}, "5s", "500ms").ShouldNot(Equal("Blocked"),
+				"RR with unique fingerprint should not be blocked (no failure history)")
 
-			// Verify: RR progresses to Processing (not stuck)
-			Eventually(func() string {
-				updated := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      rr.Name,
-					Namespace: rr.Namespace,
-				}, updated); err != nil {
-					return ""
+			// Verify: SignalProcessing is created (RR processes normally)
+			Eventually(func() int {
+				spList := &signalprocessingv1.SignalProcessingList{}
+				if err := k8sClient.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+					return 0
 				}
-				return string(updated.Status.OverallPhase)
-			}, "10s", "100ms").Should(Or(
-				Equal("Processing"),
-				Equal("Analyzing"),
-			), "RR with empty fingerprint must process normally (graceful data quality handling)")
+				return len(spList.Items)
+			}, "10s", "500ms").Should(Equal(1),
+				"RR with unique fingerprint must create SignalProcessing (blocking doesn't interfere)")
 		})
 
 		It("should isolate blocking by namespace (multi-tenant)", func() {

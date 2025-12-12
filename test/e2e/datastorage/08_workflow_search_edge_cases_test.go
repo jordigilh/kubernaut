@@ -230,8 +230,8 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			// Query audit_events table for workflow.catalog.search_completed event
 			Eventually(func() bool {
 				var count int
-				query := `SELECT COUNT(*) FROM audit_events 
-				          WHERE event_type = 'workflow.catalog.search_completed' 
+				query := `SELECT COUNT(*) FROM audit_events
+				          WHERE event_type = 'workflow.catalog.search_completed'
 				          AND event_outcome = 'success'`
 				err := db.QueryRow(query).Scan(&count)
 				return err == nil && count > 0

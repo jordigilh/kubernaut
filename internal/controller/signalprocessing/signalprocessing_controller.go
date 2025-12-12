@@ -818,10 +818,18 @@ func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1
 }
 
 // enrichPod enriches KubernetesContext with pod details.
+// BR-SP-001: Sets degraded mode if target resource not found
 func (r *SignalProcessingReconciler) enrichPod(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace, name string, logger logr.Logger) {
 	pod := &corev1.Pod{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, pod); err != nil {
-		logger.V(1).Info("Could not fetch pod", "name", name, "error", err)
+		if apierrors.IsNotFound(err) {
+			// BR-SP-001: Enter degraded mode when target resource not found
+			logger.Info("Target pod not found, entering degraded mode", "name", name)
+			k8sCtx.DegradedMode = true
+			k8sCtx.Confidence = 0.1 // Low confidence in degraded mode
+		} else {
+			logger.Error(err, "Failed to fetch pod", "name", name)
+		}
 		return
 	}
 
@@ -863,10 +871,17 @@ func (r *SignalProcessingReconciler) enrichPod(ctx context.Context, k8sCtx *sign
 }
 
 // enrichDeployment enriches KubernetesContext with deployment details.
+// BR-SP-001: Sets degraded mode if target resource not found
 func (r *SignalProcessingReconciler) enrichDeployment(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace, name string, logger logr.Logger) {
 	deploy := &appsv1.Deployment{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, deploy); err != nil {
-		logger.V(1).Info("Could not fetch deployment", "name", name, "error", err)
+		if apierrors.IsNotFound(err) {
+			logger.Info("Target deployment not found, entering degraded mode", "name", name)
+			k8sCtx.DegradedMode = true
+			k8sCtx.Confidence = 0.1
+		} else {
+			logger.Error(err, "Failed to fetch deployment", "name", name)
+		}
 		return
 	}
 
@@ -885,10 +900,17 @@ func (r *SignalProcessingReconciler) enrichDeployment(ctx context.Context, k8sCt
 }
 
 // enrichStatefulSet enriches KubernetesContext with statefulset details.
+// BR-SP-001: Sets degraded mode if target resource not found
 func (r *SignalProcessingReconciler) enrichStatefulSet(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace, name string, logger logr.Logger) {
 	ss := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, ss); err != nil {
-		logger.V(1).Info("Could not fetch statefulset", "name", name, "error", err)
+		if apierrors.IsNotFound(err) {
+			logger.Info("Target statefulset not found, entering degraded mode", "name", name)
+			k8sCtx.DegradedMode = true
+			k8sCtx.Confidence = 0.1
+		} else {
+			logger.Error(err, "Failed to fetch statefulset", "name", name)
+		}
 		return
 	}
 
@@ -907,10 +929,17 @@ func (r *SignalProcessingReconciler) enrichStatefulSet(ctx context.Context, k8sC
 }
 
 // enrichDaemonSet enriches KubernetesContext with daemonset details.
+// BR-SP-001: Sets degraded mode if target resource not found
 func (r *SignalProcessingReconciler) enrichDaemonSet(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace, name string, logger logr.Logger) {
 	ds := &appsv1.DaemonSet{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, ds); err != nil {
-		logger.V(1).Info("Could not fetch daemonset", "name", name, "error", err)
+		if apierrors.IsNotFound(err) {
+			logger.Info("Target daemonset not found, entering degraded mode", "name", name)
+			k8sCtx.DegradedMode = true
+			k8sCtx.Confidence = 0.1
+		} else {
+			logger.Error(err, "Failed to fetch daemonset", "name", name)
+		}
 		return
 	}
 

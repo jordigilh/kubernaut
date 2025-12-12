@@ -551,9 +551,13 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				return string(rr.Status.OverallPhase)
 			}, timeout, interval).Should(Equal("AwaitingApproval"))
 
-			By("Simulating operator error: Deleting RAR mid-approval")
+			By("Verifying RAR was created")
 			rar := &remediationv1.RemediationApprovalRequest{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)).To(Succeed())
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+			}, "10s", "500ms").Should(Succeed(), "RAR should exist before deletion test")
+
+			By("Simulating operator error: Deleting RAR mid-approval")
 			Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
 
 			// Trigger reconcile by updating RR (simulates watch event)

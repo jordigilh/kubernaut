@@ -19,7 +19,6 @@ package datastorage
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -60,16 +59,16 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 				// ARRANGE: Malformed event - missing event_type
 				malformedEvent := map[string]interface{}{
 					// "event_type": "gateway.signal.received", // MISSING (required)
-					"event_version":   "1.0",
-					"event_category":  "signal",
-					"event_action":    "received",
-					"event_outcome":   "success",
-					"actor_type":      "service",
-					"actor_id":        "gateway-service",
-					"resource_type":   "Signal",
-					"resource_id":     "sig-malformed-1",
-					"correlation_id":  "test-malformed-1",
-					"event_data":      map[string]interface{}{"test": "missing_event_type"},
+					"event_version":  "1.0",
+					"event_category": "signal",
+					"event_action":   "received",
+					"event_outcome":  "success",
+					"actor_type":     "service",
+					"actor_id":       "gateway-service",
+					"resource_type":  "Signal",
+					"resource_id":    "sig-malformed-1",
+					"correlation_id": "test-malformed-1",
+					"event_data":     map[string]interface{}{"test": "missing_event_type"},
 				}
 
 				payloadBytes, err := json.Marshal(malformedEvent)
@@ -278,9 +277,9 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 				// ASSERT: Should either accept (auto-wrap string as JSON) or reject with 400
 				// This tests actual behavior - either is acceptable
 				Expect(resp.StatusCode).To(SatisfyAny(
-					Equal(http.StatusBadRequest),  // Strict validation
-					Equal(http.StatusCreated),      // Lenient (auto-converts)
-					Equal(http.StatusAccepted),     // DLQ fallback
+					Equal(http.StatusBadRequest), // Strict validation
+					Equal(http.StatusCreated),    // Lenient (auto-converts)
+					Equal(http.StatusAccepted),   // DLQ fallback
 				))
 
 				if resp.StatusCode == http.StatusBadRequest {

@@ -188,9 +188,9 @@ var eventTypeCatalog = []eventTypeTestCase{
 		EventCategory: "enrichment",
 		EventAction:   "started",
 		SampleEventData: map[string]interface{}{
-			"signal_id":      "sp-001",
-			"enricher_type":  "k8s_context_enricher",
-			"input_labels":   []string{"severity:critical"},
+			"signal_id":       "sp-001",
+			"enricher_type":   "k8s_context_enricher",
+			"input_labels":    []string{"severity:critical"},
 			"expected_output": "k8s_metadata",
 		},
 		JSONBQueries: []jsonbQueryTest{
@@ -271,11 +271,11 @@ var eventTypeCatalog = []eventTypeTestCase{
 		EventCategory: "investigation",
 		EventAction:   "completed",
 		SampleEventData: map[string]interface{}{
-			"analysis_id":        "aa-001",
-			"rca_summary":        "Database connection pool exhausted due to query storm",
-			"confidence":         0.95,
-			"duration_ms":        2345,
-			"completion_tokens":  800,
+			"analysis_id":       "aa-001",
+			"rca_summary":       "Database connection pool exhausted due to query storm",
+			"confidence":        0.95,
+			"duration_ms":       2345,
+			"completion_tokens": 800,
 		},
 		JSONBQueries: []jsonbQueryTest{
 			{Field: "analysis_id", Operator: "->>", Value: "aa-001", ExpectedRows: 1},
@@ -304,11 +304,11 @@ var eventTypeCatalog = []eventTypeTestCase{
 		EventCategory: "approval",
 		EventAction:   "required",
 		SampleEventData: map[string]interface{}{
-			"analysis_id":           "aa-001",
-			"approval_reason":       "high_risk_action",
-			"risk_level":            "high",
-			"estimated_impact":      "service_restart",
-			"approval_request_id":   "ar-001",
+			"analysis_id":         "aa-001",
+			"approval_reason":     "high_risk_action",
+			"risk_level":          "high",
+			"estimated_impact":    "service_restart",
+			"approval_request_id": "ar-001",
 		},
 		JSONBQueries: []jsonbQueryTest{
 			{Field: "approval_request_id", Operator: "->>", Value: "ar-001", ExpectedRows: 1},
@@ -462,11 +462,11 @@ var eventTypeCatalog = []eventTypeTestCase{
 		EventCategory: "evaluation",
 		EventAction:   "completed",
 		SampleEventData: map[string]interface{}{
-			"evaluation_id":          "eval-001",
-			"effectiveness_score":    0.87,
-			"issue_resolved":         true,
-			"signal_count_before":    50,
-			"signal_count_after":     5,
+			"evaluation_id":       "eval-001",
+			"effectiveness_score": 0.87,
+			"issue_resolved":      true,
+			"signal_count_before": 50,
+			"signal_count_after":  5,
 		},
 		JSONBQueries: []jsonbQueryTest{
 			{Field: "evaluation_id", Operator: "->>", Value: "eval-001", ExpectedRows: 1},
