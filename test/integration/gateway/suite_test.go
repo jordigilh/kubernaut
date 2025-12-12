@@ -39,8 +39,6 @@ import (
 
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure" // Shared DS infrastructure (PostgreSQL + Redis + DS)
-
-	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver for shared infrastructure
 )
 
 // Suite-level resources (envtest migration)
