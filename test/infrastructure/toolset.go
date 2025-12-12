@@ -26,6 +26,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -85,7 +88,7 @@ func DeployToolsetTestServices(ctx context.Context, namespace, kubeconfigPath st
 
 	// 1. Create test namespace
 	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createNamespaceOnly(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -387,4 +390,38 @@ func waitForToolsetReady(namespace, kubeconfigPath string, writer io.Writer) err
 
 	fmt.Fprintln(writer, "   Dynamic Toolset controller ready")
 	return nil
+}
+
+// waitForPods waits for pods matching label selector to be ready
+// TODO: Move to shared infrastructure file (used by toolset)
+func waitForPods(namespace, labelSelector string, expectedCount, maxAttempts int, delay time.Duration, kubeconfigPath string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+	
+	ctx := context.Background()
+	for i := 0; i < maxAttempts; i++ {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: labelSelector,
+		})
+		if err == nil && len(pods.Items) >= expectedCount {
+			readyCount := 0
+			for _, pod := range pods.Items {
+				if pod.Status.Phase == corev1.PodRunning {
+					for _, condition := range pod.Status.Conditions {
+						if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+							readyCount++
+							break
+						}
+					}
+				}
+			}
+			if readyCount >= expectedCount {
+				return nil
+			}
+		}
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("pods not ready after %d attempts", maxAttempts)
 }

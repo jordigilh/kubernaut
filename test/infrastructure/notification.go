@@ -26,6 +26,12 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -174,13 +180,13 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 
 	// 1. Create test namespace
 	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createNamespaceOnly(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// 2. Create default namespace (E2E tests create NotificationRequests here)
 	fmt.Fprintf(writer, "📁 Creating default namespace (for E2E tests)...\n")
-	if err := createNamespaceOnly("default", kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace("default", kubeconfigPath, writer); err != nil {
 		// Ignore error if namespace already exists
 		if !strings.Contains(err.Error(), "AlreadyExists") {
 			return fmt.Errorf("failed to create default namespace: %w", err)
@@ -271,7 +277,7 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 // This enables real audit event persistence instead of mocks (BR-NOT-062, BR-NOT-063, BR-NOT-064)
 //
 // Steps:
-// 1. Deploy PostgreSQL with pgvector
+// 1. Deploy PostgreSQL (V1.0 label-only, no vector extension needed)
 // 2. Apply audit migrations using shared library
 // 3. Deploy Data Storage Service
 // 4. Wait for services ready
@@ -287,8 +293,8 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 	fmt.Fprintf(writer, "Deploying Audit Infrastructure in Namespace: %s\n", namespace)
 	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-	// 1. Deploy PostgreSQL with pgvector
-	fmt.Fprintf(writer, "🚀 Deploying PostgreSQL with pgvector...\n")
+	// 1. Deploy PostgreSQL (V1.0 label-only)
+	fmt.Fprintf(writer, "🚀 Deploying PostgreSQL...\n")
 	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
@@ -318,9 +324,9 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 		return fmt.Errorf("failed to load Data Storage image: %w", err)
 	}
 
-	// 5. Deploy Data Storage Service
-	fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
-	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	// 5. Deploy Data Storage Service (with Notification-specific NodePort 30090)
+	fmt.Fprintf(writer, "🚀 Deploying Data Storage Service (NodePort 30090)...\n")
+	if err := deployDataStorageServiceForNotification(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
 
@@ -563,4 +569,243 @@ func waitForNotificationControllerReady(ctx context.Context, namespace, kubeconf
 	}
 
 	return fmt.Errorf("timeout waiting for controller pod to become ready after %v", timeout)
+}
+
+// deployDataStorageServiceForNotification deploys Data Storage with NodePort 30090
+// Notification E2E tests use a different port (30090) than other services (30081)
+// per kind-notification-config.yaml extraPortMappings
+func deployDataStorageServiceForNotification(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// 1. Create ConfigMap for service configuration
+	configYAML := fmt.Sprintf(`service:
+  name: data-storage
+  metricsPort: 9090
+  logLevel: debug
+  shutdownTimeout: 30s
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: 30s
+  write_timeout: 30s
+database:
+  host: postgresql.%s.svc.cluster.local
+  port: 5432
+  name: action_history
+  user: slm_user
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 10m
+  secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+  usernameKey: "username"
+  passwordKey: "password"
+redis:
+  addr: redis.%s.svc.cluster.local:6379
+  db: 0
+  dlq_stream_name: dlq-stream
+  dlq_max_len: 1000
+  dlq_consumer_group: dlq-group
+  secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+  passwordKey: "password"
+logging:
+  level: debug
+  format: json`, namespace, namespace)
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage-config",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"config.yaml": configYAML,
+		},
+	}
+
+	_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, configMap, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Data Storage ConfigMap: %w", err)
+	}
+
+	// 2. Create Secret for database and Redis credentials
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage-secret",
+			Namespace: namespace,
+		},
+		StringData: map[string]string{
+			"db-secrets.yaml": `username: slm_user
+password: test_password`,
+			"redis-secrets.yaml": `password: ""`,
+		},
+	}
+
+	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Data Storage Secret: %w", err)
+	}
+
+	// 3. Create Service with NodePort 30090 (Notification-specific)
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "datastorage",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeNodePort,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+					NodePort:   30090, // Notification-specific: matches kind-notification-config.yaml
+					Protocol:   corev1.ProtocolTCP,
+				},
+				{
+					Name:       "metrics",
+					Port:       9090,
+					TargetPort: intstr.FromInt(9090),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{
+				"app": "datastorage",
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Data Storage Service: %w", err)
+	}
+
+	// 4. Create Deployment
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "datastorage",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "datastorage",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "datastorage",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "datastorage",
+							Image: "localhost/kubernaut-datastorage:e2e-test",
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "http",
+									ContainerPort: 8080,
+								},
+								{
+									Name:          "metrics",
+									ContainerPort: 9090,
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  "CONFIG_PATH",
+									Value: "/etc/datastorage/config.yaml",
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "config",
+									MountPath: "/etc/datastorage",
+									ReadOnly:  true,
+								},
+								{
+									Name:      "secrets",
+									MountPath: "/etc/datastorage/secrets",
+									ReadOnly:  true,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+									corev1.ResourceCPU:    resource.MustParse("250m"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+								},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health",
+										Port: intstr.FromInt(8080),
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health",
+										Port: intstr.FromInt(8080),
+									},
+								},
+								InitialDelaySeconds: 30,
+								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "config",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "datastorage-config",
+									},
+								},
+							},
+						},
+						{
+							Name: "secrets",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: "datastorage-secret",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Data Storage Deployment: %w", err)
+	}
+
+	fmt.Fprintf(writer, "   Data Storage Service deployed (NodePort 30090 → localhost:30090)\n")
+	return nil
 }
