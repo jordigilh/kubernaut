@@ -56,6 +56,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -128,13 +129,16 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create controller-runtime client
-		scheme := signalprocessingv1alpha1.AddToScheme
 		k8sClient, err = client.New(config, client.Options{})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(k8sClient).ToNot(BeNil())
 
 		// Register SignalProcessing scheme
-		err = scheme(k8sClient.Scheme())
+		err = signalprocessingv1alpha1.AddToScheme(k8sClient.Scheme())
+		Expect(err).ToNot(HaveOccurred())
+
+		// Register RemediationRequest scheme (parent of SignalProcessing)
+		err = remediationv1alpha1.AddToScheme(k8sClient.Scheme())
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create standard clientset for native K8s resources
