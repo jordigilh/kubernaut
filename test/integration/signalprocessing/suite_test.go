@@ -625,17 +625,29 @@ func createTestNetworkPolicy(namespace, name string) *networkingv1.NetworkPolicy
 }
 
 // createSignalProcessingCR creates a SignalProcessing CR for testing.
+// createSignalProcessingCR creates a SignalProcessing CR with proper parent RemediationRequest.
+// This follows production architecture: RO creates RR, RR creates SP.
+// Per architectural fix: ALL SP CRs MUST have parent RR for correlation_id.
 func createSignalProcessingCR(namespace, name string, signal signalprocessingv1alpha1.SignalData) *signalprocessingv1alpha1.SignalProcessing {
-	sp := &signalprocessingv1alpha1.SignalProcessing{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-			Signal: signal,
-		},
-	}
+	// 1. Create parent RemediationRequest (matches production architecture)
+	rr := CreateTestRemediationRequest(
+		name+"-rr",
+		namespace,
+		signal.Fingerprint,
+		signal.TargetResource,
+	)
+	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+	// 2. Create SignalProcessing with parent reference
+	sp := CreateTestSignalProcessingWithParent(
+		name,
+		namespace,
+		rr,
+		signal.Fingerprint,
+		signal.TargetResource,
+	)
 	Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+	
 	return sp
 }
 

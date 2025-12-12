@@ -43,7 +43,10 @@ services:
       - signalprocessing_test_network
 
   datastorage:
-    image: kubernaut/datastorage:latest
+    build:
+      context: ../../..
+      dockerfile: docker/datastorage-ubi9.Dockerfile
+    image: localhost/kubernaut-datastorage:e2e-test
     container_name: signalprocessing_datastorage_test
     environment:
       CONFIG_PATH: /etc/datastorage/config.yaml
