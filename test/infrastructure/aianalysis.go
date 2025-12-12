@@ -622,6 +622,8 @@ spec:
         env:
         - name: LLM_PROVIDER
           value: mock
+        - name: LLM_MODEL
+          value: mock://test-model
         - name: MOCK_LLM_ENABLED
           value: "true"
         - name: DATASTORAGE_URL
