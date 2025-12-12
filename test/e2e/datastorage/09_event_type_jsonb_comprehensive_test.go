@@ -18,11 +18,13 @@ package datastorage
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -551,7 +553,24 @@ var eventTypeCatalog = []eventTypeTestCase{
 // COMPREHENSIVE EVENT TYPE VALIDATION TESTS
 // ========================================
 
-var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("gap-1.1", "p0"), func() {
+var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("e2e", "gap-1.1", "p0"), Ordered, func() {
+	var (
+		db *sql.DB
+	)
+
+	BeforeAll(func() {
+		// Connect to PostgreSQL via NodePort for JSONB query validation
+		var err error
+		db, err = sql.Open("pgx", postgresURL)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(db.Ping()).To(Succeed())
+	})
+
+	AfterAll(func() {
+		if db != nil {
+			db.Close()
+		}
+	})
 
 	Describe("ADR-034 Event Type Catalog Coverage", func() {
 		It("should validate all 27 event types are documented", func() {
@@ -621,7 +640,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 
 					// ACT: POST audit event
 					resp, err := http.Post(
-						datastorageURL+"/api/v1/audit-events",
+						dataStorageURL+"/api/v1/audit-events",
 						"application/json",
 						bytes.NewReader(payloadBytes),
 					)

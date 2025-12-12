@@ -102,7 +102,7 @@ var _ = Describe("Operational Visibility (Priority 3)", func() {
 
 			elapsed := time.Since(startTime)
 			GinkgoWriter.Printf("✅ Initial reconcile completed in %v (baseline performance)\n", elapsed)
-			
+
 			// Baseline: Should create SP within 5s (relaxed from 5s full lifecycle)
 			Expect(elapsed).To(BeNumerically("<", 5*time.Second),
 				"Initial reconcile (RR → SP creation) should complete quickly")
@@ -300,9 +300,9 @@ var _ = Describe("Operational Visibility (Priority 3)", func() {
 						Namespace: namespace,
 					},
 					Spec: remediationv1.RemediationRequestSpec{
-					SignalName:        fmt.Sprintf("load-signal-%d", i),
-					SignalFingerprint: fmt.Sprintf("%064d", i), // Valid 64-char fingerprint
-					Severity:          "info",
+						SignalName:        fmt.Sprintf("load-signal-%d", i),
+						SignalFingerprint: fmt.Sprintf("%064d", i), // Valid 64-char fingerprint
+						Severity:          "info",
 						SignalType:        "test",
 						TargetType:        "kubernetes",
 						FiringTime:        now,

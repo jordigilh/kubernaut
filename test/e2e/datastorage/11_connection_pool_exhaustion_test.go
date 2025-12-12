@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -53,7 +54,7 @@ import (
 // TDD RED PHASE: Tests define contract, implementation will follow
 // ========================================
 
-var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), Serial, func() {
+var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("e2e", "gap-3.1", "p0"), Serial, Ordered, func() {
 
 	Describe("Burst Traffic Handling", func() {
 		Context("when 50 concurrent writes exceed max_open_conns (25)", func() {
@@ -74,7 +75,7 @@ var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), 
 					err        error
 				}, concurrentRequests)
 
-				testID := generateTestID()
+				testID := fmt.Sprintf("test-pool-%d", time.Now().UnixNano())
 				startTime := time.Now()
 
 				GinkgoWriter.Printf("🚀 Starting %d concurrent audit writes (pool size: %d)...\n",
@@ -91,7 +92,7 @@ var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), 
 
 						// Create unique audit event
 						auditEvent := &auditpkg.AuditEvent{
-							EventID:        generateTestUUID(),
+							EventID:        uuid.New(),
 							EventVersion:   "1.0",
 							EventTimestamp: time.Now().UTC(),
 							EventType:      "workflow.completed",
@@ -115,7 +116,7 @@ var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), 
 
 						// POST to audit events endpoint
 						resp, err := http.Post(
-							datastorageURL+"/api/v1/audit-events",
+							dataStorageURL+"/api/v1/audit-events",
 							"application/json",
 							bytes.NewReader(payloadBytes),
 						)
@@ -227,7 +228,7 @@ var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), 
 			// ARRANGE: Create burst (50 requests)
 			GinkgoWriter.Println("🚀 Creating burst traffic...")
 			var wg sync.WaitGroup
-			testID := generateTestID()
+			testID := fmt.Sprintf("test-pool-%d", time.Now().UnixNano())
 
 			for i := 0; i < 50; i++ {
 				wg.Add(1)
@@ -236,7 +237,7 @@ var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), 
 					defer GinkgoRecover()
 
 					auditEvent := &auditpkg.AuditEvent{
-						EventID:        generateTestUUID(),
+						EventID:        uuid.New(),
 						EventVersion:   "1.0",
 						EventTimestamp: time.Now().UTC(),
 						EventType:      "workflow.completed",
@@ -253,7 +254,7 @@ var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), 
 
 					payloadBytes, _ := json.Marshal(auditEvent)
 					resp, err := http.Post(
-						datastorageURL+"/api/v1/audit-events",
+						dataStorageURL+"/api/v1/audit-events",
 						"application/json",
 						bytes.NewReader(payloadBytes),
 					)
@@ -272,7 +273,7 @@ var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), 
 			// ACT: Send normal request after burst
 			GinkgoWriter.Println("🔍 Sending normal request after burst...")
 			normalEvent := &auditpkg.AuditEvent{
-				EventID:        generateTestUUID(),
+				EventID:        uuid.New(),
 				EventVersion:   "1.0",
 				EventTimestamp: time.Now().UTC(),
 				EventType:      "workflow.completed",
@@ -292,7 +293,7 @@ var _ = Describe("GAP 3.1: Connection Pool Exhaustion", Label("gap-3.1", "p0"), 
 
 			normalStart := time.Now()
 			resp, err := http.Post(
-				datastorageURL+"/api/v1/audit-events",
+				dataStorageURL+"/api/v1/audit-events",
 				"application/json",
 				bytes.NewReader(payloadBytes),
 			)

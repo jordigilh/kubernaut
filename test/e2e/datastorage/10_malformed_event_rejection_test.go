@@ -18,9 +18,11 @@ package datastorage
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -50,7 +52,24 @@ import (
 // TDD RED PHASE: Tests define contract, implementation already exists
 // ========================================
 
-var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2", "p0"), func() {
+var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "gap-1.2", "p0"), Ordered, func() {
+	var (
+		db *sql.DB
+	)
+
+	BeforeAll(func() {
+		// Connect to PostgreSQL via NodePort for validation queries
+		var err error
+		db, err = sql.Open("pgx", postgresURL)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(db.Ping()).To(Succeed())
+	})
+
+	AfterAll(func() {
+		if db != nil {
+			db.Close()
+		}
+	})
 
 	Describe("POST /api/v1/audit-events - Validation", func() {
 
@@ -76,7 +95,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 
 				// ACT: POST malformed event
 				resp, err := http.Post(
-					datastorageURL+"/api/v1/audit-events",
+					dataStorageURL+"/api/v1/audit-events",
 					"application/json",
 					bytes.NewReader(payloadBytes),
 				)
@@ -129,7 +148,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 
 				// ACT
 				resp, err := http.Post(
-					datastorageURL+"/api/v1/audit-events",
+					dataStorageURL+"/api/v1/audit-events",
 					"application/json",
 					bytes.NewReader(payloadBytes),
 				)
@@ -172,7 +191,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 
 				// ACT
 				resp, err := http.Post(
-					datastorageURL+"/api/v1/audit-events",
+					dataStorageURL+"/api/v1/audit-events",
 					"application/json",
 					bytes.NewReader(payloadBytes),
 				)
@@ -220,7 +239,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 
 				// ACT
 				resp, err := http.Post(
-					datastorageURL+"/api/v1/audit-events",
+					dataStorageURL+"/api/v1/audit-events",
 					"application/json",
 					bytes.NewReader(payloadBytes),
 				)
@@ -267,7 +286,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 
 				// ACT
 				resp, err := http.Post(
-					datastorageURL+"/api/v1/audit-events",
+					dataStorageURL+"/api/v1/audit-events",
 					"application/json",
 					bytes.NewReader(payloadBytes),
 				)
@@ -315,7 +334,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 
 				// ACT
 				resp, err := http.Post(
-					datastorageURL+"/api/v1/audit-events",
+					dataStorageURL+"/api/v1/audit-events",
 					"application/json",
 					bytes.NewReader(payloadBytes),
 				)
@@ -365,7 +384,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 			Expect(err).ToNot(HaveOccurred())
 
 			resp, err := http.Post(
-				datastorageURL+"/api/v1/audit-events",
+				dataStorageURL+"/api/v1/audit-events",
 				"application/json",
 				bytes.NewReader(payloadBytes),
 			)
@@ -401,7 +420,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 
 			// ACT
 			resp, err := http.Post(
-				datastorageURL+"/api/v1/audit-events",
+				dataStorageURL+"/api/v1/audit-events",
 				"application/json",
 				bytes.NewReader(payloadBytes),
 			)

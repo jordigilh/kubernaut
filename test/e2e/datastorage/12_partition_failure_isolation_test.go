@@ -18,10 +18,13 @@ package datastorage
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -62,7 +65,24 @@ import (
 // - Actual implementation requires infrastructure enhancements
 // ========================================
 
-var _ = Describe("GAP 3.2: Partition Failure Isolation", Label("gap-3.2", "p0"), Serial, func() {
+var _ = Describe("GAP 3.2: Partition Failure Isolation", Label("e2e", "gap-3.2", "p0"), Serial, Ordered, func() {
+	var (
+		db *sql.DB
+	)
+
+	BeforeAll(func() {
+		// Connect to PostgreSQL via NodePort for partition manipulation
+		var err error
+		db, err = sql.Open("pgx", postgresURL)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(db.Ping()).To(Succeed())
+	})
+
+	AfterAll(func() {
+		if db != nil {
+			db.Close()
+		}
+	})
 
 	Describe("Partition-Specific Write Failures", func() {
 		Context("when one partition is unavailable", func() {
@@ -105,7 +125,7 @@ var _ = Describe("GAP 3.2: Partition Failure Isolation", Label("gap-3.2", "p0"),
 				// └── audit_events_2026_02 (February 2026)
 
 				december2025Event := &auditpkg.AuditEvent{
-					EventID:        generateTestUUID(),
+					EventID:        uuid.New(),
 					EventVersion:   "1.0",
 					EventTimestamp: time.Date(2025, 12, 15, 10, 0, 0, 0, time.UTC), // December 2025
 					EventType:      "workflow.completed",
@@ -121,7 +141,7 @@ var _ = Describe("GAP 3.2: Partition Failure Isolation", Label("gap-3.2", "p0"),
 				}
 
 				january2026Event := &auditpkg.AuditEvent{
-					EventID:        generateTestUUID(),
+					EventID:        uuid.New(),
 					EventVersion:   "1.0",
 					EventTimestamp: time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC), // January 2026
 					EventType:      "workflow.completed",
@@ -140,7 +160,7 @@ var _ = Describe("GAP 3.2: Partition Failure Isolation", Label("gap-3.2", "p0"),
 				GinkgoWriter.Println("📝 Writing to December 2025 partition (unavailable)...")
 				decPayload, _ := json.Marshal(december2025Event)
 				decResp, decErr := http.Post(
-					datastorageURL+"/api/v1/audit-events",
+					dataStorageURL+"/api/v1/audit-events",
 					"application/json",
 					bytes.NewReader(decPayload),
 				)
@@ -155,7 +175,7 @@ var _ = Describe("GAP 3.2: Partition Failure Isolation", Label("gap-3.2", "p0"),
 				GinkgoWriter.Println("📝 Writing to January 2026 partition (available)...")
 				janPayload, _ := json.Marshal(january2026Event)
 				janResp, janErr := http.Post(
-					datastorageURL+"/api/v1/audit-events",
+					dataStorageURL+"/api/v1/audit-events",
 					"application/json",
 					bytes.NewReader(janPayload),
 				)
