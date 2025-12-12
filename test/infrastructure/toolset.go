@@ -399,7 +399,7 @@ func waitForPods(namespace, labelSelector string, expectedCount, maxAttempts int
 	if err != nil {
 		return err
 	}
-	
+
 	ctx := context.Background()
 	for i := 0; i < maxAttempts; i++ {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
