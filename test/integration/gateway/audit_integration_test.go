@@ -302,7 +302,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 			By("4. Verify deduplication audit event content")
 			event := auditEvents[0]
-			Expect(event["event_type"]).To(Equal("signal.deduplicated"))
+			Expect(event["event_type"]).To(Equal("gateway.signal.deduplicated"))
 			Expect(event["event_outcome"]).To(Equal("success"))
 
 			eventData := event["event_data"].(map[string]interface{})
@@ -391,7 +391,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 			By("4. Verify storm audit event content")
 			event := auditEvents[0]
-			Expect(event["event_type"]).To(Equal("storm.detected"))
+			Expect(event["event_type"]).To(Equal("gateway.storm.detected"))
 			Expect(event["event_outcome"]).To(Equal("success"))
 
 			eventData := event["event_data"].(map[string]interface{})
