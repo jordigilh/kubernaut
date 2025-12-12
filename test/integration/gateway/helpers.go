@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -1124,8 +1125,9 @@ func createTestK8sClient(ctx context.Context) (*K8sTestClient, string) {
 // TDD REFACTOR: Extracted from SetupPriority1Test for better readability
 // DD-GATEWAY-012: Redis removed - Gateway is now Redis-free
 func createTestGatewayServer(ctx context.Context, k8sClient *K8sTestClient) *httptest.Server {
-	// Create a mock Data Storage URL for tests (will be replaced with real service)
-	dataStorageURL := "http://localhost:8080" // Mock/placeholder
+	// AIAnalysis Pattern: Use centralized Data Storage URL from environment
+	// DD-TEST-001: URL is set by SynchronizedBeforeSuite for all parallel processes
+	dataStorageURL := getDataStorageURL()
 
 	gatewayServer, err := StartTestGateway(ctx, k8sClient, dataStorageURL)
 	if err != nil {

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -152,6 +153,24 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	dataStorageURL := suiteDataStorage.URL()
 	suiteLogger.Info(fmt.Sprintf("   ✅ Data Storage started (URL: %s)", dataStorageURL))
 
+	// AIAnalysis Pattern: Log complete infrastructure summary for debugging
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	suiteLogger.Info("Gateway Integration Test Infrastructure")
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	suiteLogger.Info(fmt.Sprintf("  K8s API:        %s", k8sConfig.Host))
+	suiteLogger.Info(fmt.Sprintf("  PostgreSQL:     localhost:%d", suitePgClient.Port))
+	suiteLogger.Info(fmt.Sprintf("  DataStorage:    %s", dataStorageURL))
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	// Validate Data Storage health before proceeding
+	healthURL := dataStorageURL + "/healthz"
+	healthResp, err := http.Get(healthURL)
+	if err != nil || healthResp.StatusCode != http.StatusOK {
+		Fail(fmt.Sprintf("Data Storage health check failed at %s", healthURL))
+	}
+	healthResp.Body.Close()
+	suiteLogger.Info("✅ Data Storage is healthy")
+	
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Infrastructure Setup Complete - Ready for Parallel Tests")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
