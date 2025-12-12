@@ -293,16 +293,29 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				RawPayload:   json.RawMessage(`{}`),
 			}
 
-			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
+		rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
-			// BUSINESS OUTCOME: CRD has deduplication metadata
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.Deduplication.FirstOccurrence.Time).NotTo(BeZero(),
-				"Notification service can show: 'Issue first detected at 14:00 UTC'")
-			Expect(rr.Spec.Deduplication.LastOccurrence.Time).NotTo(BeZero(),
-				"Notification service can show: 'Last occurred at 14:10 UTC'")
-			Expect(rr.Spec.Deduplication.OccurrenceCount).To(Equal(1),
-				"Initial occurrence count = 1, incremented on subsequent alerts")
+		// BUSINESS OUTCOME: CRD structure is correct for deduplication
+		Expect(err).NotTo(HaveOccurred())
+		
+		// DD-GATEWAY-011: Deduplication metadata moved from spec to status
+		// CRD Creator responsibility: Create CRD with correct structure
+		// Gateway Server responsibility: Initialize Status.Deduplication after creation
+		// This unit test validates the CRD creator's scope only
+		
+		// Verify: CRD created successfully with required fields
+		Expect(rr.Spec.SignalFingerprint).NotTo(BeEmpty(),
+			"Fingerprint required for deduplication")
+		Expect(rr.Spec.SignalName).To(Equal("DiskSpaceRunningOut"))
+		Expect(rr.Namespace).To(Equal("production"))
+		
+		// Note: Status.Deduplication is initialized by Gateway server after CRD creation
+		// Integration tests in test/integration/gateway/dd_gateway_011_*.go verify
+		// the complete flow including status initialization
+		//
+		// Business capability verified at integration level:
+		// - PagerDuty on first alert: "🔔 New issue: Disk space running out"
+		// - PagerDuty on 5th alert: "🔁 Recurring: Disk space (seen 5 times in 10 min)"
 
 			// Business capability verified:
 			// PagerDuty on first alert: "🔔 New issue: Disk space running out"
