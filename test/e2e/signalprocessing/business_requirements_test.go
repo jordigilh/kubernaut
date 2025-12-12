@@ -59,7 +59,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -811,26 +813,70 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 
 	// BR-SP-090: Verify audit events are written to DataStorage
 	It("BR-SP-090: should write audit events to DataStorage when signal is processed", func() {
-		By("Creating a SignalProcessing CR")
+		By("Creating parent RemediationRequest (matches production architecture)")
 		fingerprint := "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+		targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+			Kind:      "Pod",
+			Name:      "audit-test-pod",
+			Namespace: testNs,
+		}
+		
+		// Create parent RemediationRequest (RO creates this in production)
+		rr := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-audit-test-rr",
+				Namespace: testNs,
+			},
+			Spec: remediationv1alpha1.RemediationRequestSpec{
+				SignalFingerprint: fingerprint,
+				SignalName:        "AuditTestSignal",
+				Severity:          "critical",
+				SignalType:        "prometheus",
+				SignalSource:      "prometheus-adapter",
+				TargetType:        "kubernetes",
+				TargetResource: remediationv1alpha1.ResourceIdentifier{
+					Kind:      targetResource.Kind,
+					Name:      targetResource.Name,
+					Namespace: targetResource.Namespace,
+				},
+				FiringTime:   metav1.Now(),
+				ReceivedTime: metav1.Now(),
+				Deduplication: sharedtypes.DeduplicationInfo{
+					IsDuplicate:     false,
+					FirstOccurrence: metav1.Now(),
+					LastOccurrence:  metav1.Now(),
+					OccurrenceCount: 1,
+				},
+				IsStorm: false,
+			},
+		}
+		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+		By("Creating SignalProcessing CR with RemediationRequestRef")
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-audit-test",
 				Namespace: testNs,
+				OwnerReferences: []metav1.OwnerReference{
+					*metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
+				},
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
+					APIVersion: remediationv1alpha1.GroupVersion.String(),
+					Kind:       "RemediationRequest",
+					Name:       rr.Name,
+					Namespace:  rr.Namespace,
+					UID:        string(rr.UID),
+				},
 				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint:  fingerprint,
-					Name:         "AuditTestSignal",
-					Severity:     "critical",
-					Type:         "prometheus",
-					TargetType:   "kubernetes",
-					ReceivedTime: metav1.Now(),
-					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "audit-test-pod",
-						Namespace: testNs,
-					},
+					Fingerprint:    fingerprint,
+					Name:           "AuditTestSignal",
+					Severity:       "critical",
+					Type:           "prometheus",
+					TargetType:     "kubernetes",
+					ReceivedTime:   metav1.Now(),
+					TargetResource: targetResource,
 				},
 			},
 		}
@@ -936,8 +982,8 @@ type AuditQueryResponse struct {
 }
 
 // queryAuditEvents queries DataStorage for all signalprocessing audit events
-// Note: E2E test doesn't use RemediationRequestRef, so CorrelationID is empty
-// We query all signalprocessing events and let the test filter by ResourceName
+// queryAuditEvents queries DataStorage API for audit events
+// Now uses proper RemediationRequestRef for correlation_id (architectural fix)
 func queryAuditEvents(fingerprint string) ([]AuditEvent, error) {
 	// DataStorage is accessible via NodePort 30081 in Kind cluster
 	// We use the host port mapping: localhost:30081 → NodePort 30081

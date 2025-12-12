@@ -77,6 +77,12 @@ func CreateSignalProcessingCluster(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("failed to install SignalProcessing CRD: %w", err)
 	}
 
+	// 2a. Install RemediationRequest CRD (parent of SignalProcessing)
+	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	if err := installRemediationRequestCRD(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
+	}
+
 	// 3. Create kubernaut-system namespace
 	fmt.Fprintln(writer, "📁 Creating kubernaut-system namespace...")
 	if err := createSignalProcessingNamespace(kubeconfigPath, writer); err != nil {
@@ -394,6 +400,48 @@ func installSignalProcessingCRD(kubeconfigPath string, writer io.Writer) error {
 		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("CRD not established after 30 seconds")
+}
+
+func installRemediationRequestCRD(kubeconfigPath string, writer io.Writer) error {
+	// Find CRD file
+	crdPaths := []string{
+		"config/crd/bases/remediation.kubernaut.ai_remediationrequests.yaml",
+		"../../../config/crd/bases/remediation.kubernaut.ai_remediationrequests.yaml",
+	}
+
+	var crdPath string
+	for _, p := range crdPaths {
+		if _, err := os.Stat(p); err == nil {
+			crdPath, _ = filepath.Abs(p)
+			break
+		}
+	}
+
+	if crdPath == "" {
+		return fmt.Errorf("RemediationRequest CRD not found")
+	}
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "-f", crdPath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
+	}
+
+	// Wait for CRD to be established
+	fmt.Fprintln(writer, "  Waiting for RemediationRequest CRD to be established...")
+	for i := 0; i < 30; i++ {
+		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "crd", "remediationrequests.remediation.kubernaut.ai")
+		if err := cmd.Run(); err == nil {
+			fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("RemediationRequest CRD not established after 30 seconds")
 }
 
 func createSignalProcessingNamespace(kubeconfigPath string, writer io.Writer) error {
