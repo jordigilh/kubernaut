@@ -238,6 +238,34 @@ Data Storage (Dependency):
 
 ---
 
+### **SignalProcessing Controller** (CRD)
+
+#### **Integration Tests** (`test/integration/signalprocessing/`)
+```yaml
+PostgreSQL:
+  Host Port: 15436
+  Container Port: 5432
+  Connection: localhost:15436
+  Purpose: Audit storage (BR-SP-090)
+
+Redis:
+  Host Port: 16382
+  Container Port: 6379
+  Connection: localhost:16382
+  Purpose: DataStorage DLQ
+
+Data Storage (Dependency):
+  Host Port: 18094
+  Container Port: 8080
+  Connection: http://localhost:18094
+  Purpose: Audit API (BR-SP-090)
+```
+
+**Infrastructure**: Programmatic podman-compose via `infrastructure.StartSignalProcessingIntegrationInfrastructure()`
+**Pattern**: SynchronizedBeforeSuite (Process 1 only) - supports parallel execution
+
+---
+
 ## Kind NodePort E2E Configuration (CRD Controllers)
 
 **IMPORTANT**: CRD controllers use Kind clusters with NodePort services for E2E tests.
@@ -403,8 +431,7 @@ extraPortMappings:
 **HolmesGPT API Dependencies** (in dedicated Kind cluster):
 | Dependency | Host Port | NodePort | Purpose |
 |------------|-----------|----------|---------|
-| PostgreSQL + pgvector | 5488 | 30488 | Workflow catalog storage |
-| Embedding Service | 8188 | 30288 | Vector embeddings for semantic search |
+| PostgreSQL | 5488 | 30488 | Workflow catalog storage (V1.0 label-only) |
 | Data Storage | 8089 | 30089 | Audit trail, workflow catalog API |
 | Redis | 6388 | 30388 | Data Storage DLQ |
 
@@ -540,8 +567,11 @@ var _ = SynchronizedBeforeSuite(
 | **Gateway** | N/A | 16380 | 18080 | Data Storage: 18091 |
 | **Effectiveness Monitor** | 15434 | N/A | 18100 | Data Storage: 18092 |
 | **Workflow Engine** | N/A | N/A | 18110 | Data Storage: 18093 |
+| **SignalProcessing (CRD)** | 15436 | 16382 | N/A | Data Storage: 18094 |
 
 ✅ **No Conflicts** - All services can run integration tests in parallel
+
+**Note**: RemediationOrchestrator uses 15435/16381 (undocumented, requires DD-TEST-001 update)
 
 ### **E2E Tests** (Can run simultaneously)
 
@@ -603,6 +633,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.4 | 2025-12-11 | AI Assistant | Added SignalProcessing integration test ports (PostgreSQL: 15436, Redis: 16382, DataStorage: 18094); documented programmatic infrastructure pattern; noted RO port gap (15435/16381) |
 | 1.3 | 2025-12-07 | AI Assistant | Added Health NodePort columns to E2E allocation table; AIAnalysis health ports (8184/30284) documented; expanded table with Metrics Host column for clarity |
 | 1.2 | 2025-12-06 | AI Assistant | Added HolmesGPT API Kind NodePort allocation (8088/30088/30188), added dependency ports for HAPI E2E (PostgreSQL+pgvector: 5488/30488, Embedding: 8188/30288, Data Storage: 8089/30089, Redis: 6388/30388) |
 | 1.1 | 2025-11-28 | AI Assistant | Added Kind NodePort allocations for E2E tests (CRD controllers), added all services including Signal Processing, Notification, AIAnalysis, Remediation Orchestrator, Remediation Execution, HolmesGPT API, Dynamic Toolset |
