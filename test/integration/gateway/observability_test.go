@@ -234,16 +234,18 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Storm detection requires: 2+ alerts within 1-second window with same alertname
 			// Use goroutines to send alerts concurrently (within storm window)
 
-			// Send multiple DIFFERENT alerts with SAME alertname to trigger storm detection
-			// Storm detection requires: same alertname, different resources (different fingerprints)
+			// Send SAME alert multiple times to trigger storm detection
+			// Storm detection requires: same fingerprint (deduplication) with occurrence count >= storm threshold
+			// Per DD-GATEWAY-011: Storm threshold is reached when occurrenceCount >= stormThreshold
 			// Use unique alertname per test run to avoid conflicts in parallel execution
 			processID := GinkgoParallelProcess()
 			uniqueID := time.Now().UnixNano()
 			alertName := fmt.Sprintf("StormTest-p%d-%d", processID, uniqueID)
+			podName := fmt.Sprintf("storm-pod-p%d-%d", processID, uniqueID)
 
-			// Send 12 different alerts with same alertname, staggered to ensure they hit within storm window
-			// Storm threshold is 10 alerts/minute, so 12 alerts within window should trigger storm detection
-			// Stagger by 50ms each to ensure alerts arrive within the 1-second storm detection window
+			// Send 12 IDENTICAL alerts (same fingerprint) staggered to ensure they hit within storm window
+			// Storm threshold is 5 by default, so 12 occurrences should trigger storm detection
+			// Stagger by 50ms each to ensure alerts arrive within the storm detection window
 			var wg sync.WaitGroup
 			for i := 0; i < 12; i++ {
 				wg.Add(1)
@@ -252,7 +254,7 @@ var _ = Describe("Observability Integration Tests", func() {
 					defer GinkgoRecover()
 
 					// Stagger alerts by 50ms to ensure they trigger storm detection
-					// Storm threshold is 10 alerts/minute, so 12 alerts in 600ms should trigger
+					// Storm threshold is 5, so 12 identical alerts should definitely trigger
 					time.Sleep(time.Duration(index*50) * time.Millisecond)
 
 					payload := GeneratePrometheusAlert(PrometheusAlertOptions{
@@ -261,7 +263,7 @@ var _ = Describe("Observability Integration Tests", func() {
 						Severity:  "critical",
 						Resource: ResourceIdentifier{
 							Kind: "Pod",
-							Name: fmt.Sprintf("storm-pod-%d-%d", uniqueID, index), // DIFFERENT pod for each alert
+							Name: podName, // SAME pod for all alerts (same fingerprint)
 						},
 					})
 					resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)

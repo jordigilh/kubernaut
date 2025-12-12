@@ -478,7 +478,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			By("2. Set CRD state to Cancelled")
 			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
-			crd.Status.OverallPhase = "Cancelled"
+			crd.Status.OverallPhase = remediationv1alpha1.PhaseCancelled
 			err = testClient.Client.Status().Update(ctx, crd)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -551,7 +551,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			By("2. Set CRD state to unknown value")
 			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
-			crd.Status.OverallPhase = "UnknownPhase" // Not in final state whitelist
+			crd.Status.OverallPhase = remediationv1alpha1.RemediationPhase("UnknownPhase") // Not in final state whitelist
 			err = testClient.Client.Status().Update(ctx, crd)
 			Expect(err).ToNot(HaveOccurred())
 
