@@ -154,9 +154,11 @@ func SetupDataStorageTestServer(ctx context.Context, pgClient *PostgresTestClien
 	configYAML := fmt.Sprintf(`
 service:
   name: data-storage
-  port: 8080
   metricsPort: 9090
   logLevel: debug
+server:
+  port: 8080
+  host: "0.0.0.0"
 database:
   host: %s
   port: %d
