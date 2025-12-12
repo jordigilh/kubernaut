@@ -149,6 +149,8 @@ func SetupDataStorageTestServer(ctx context.Context, pgClient *PostgresTestClien
 	GinkgoWriter.Printf("  📁 Created config directory: %s\n", configDir)
 
 	// Create config.yaml with secrets file reference (ADR-030 Section 6)
+	// Note: Redis config is required even though Gateway doesn't use Redis (DD-GATEWAY-012)
+	// Data Storage service requires Redis config per ADR-030 Section 6
 	configYAML := fmt.Sprintf(`
 service:
   name: data-storage
@@ -164,6 +166,11 @@ database:
   max_open_conns: 25
   secretsFile: "/app/secrets/db-secrets.yaml"
   usernameKey: "username"
+  passwordKey: "password"
+redis:
+  addr: "localhost:6379"
+  db: 0
+  secretsFile: "/app/secrets/redis-secrets.yaml"
   passwordKey: "password"
 logging:
   level: debug
@@ -183,14 +190,23 @@ logging:
 	}
 	GinkgoWriter.Printf("  ✅ Created db-secrets.yaml\n")
 
+	// Create redis-secrets.yaml (ADR-030 Section 6) - empty password for test
+	redisSecretsYAML := `password: ""`
+	redisSecretsPath := filepath.Join(configDir, "redis-secrets.yaml")
+	if err := os.WriteFile(redisSecretsPath, []byte(redisSecretsYAML), 0644); err != nil {
+		Fail(fmt.Sprintf("Failed to write redis-secrets.yaml: %v", err))
+	}
+	GinkgoWriter.Printf("  ✅ Created redis-secrets.yaml\n")
+
 	// Start Data Storage container with PostgreSQL connection and config/secrets mounts
 	// Uses the same PostgreSQL container that integration tests set up
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", containerName,
 		"-p", fmt.Sprintf("%d:8080", dsPort),
 		"-e", "CONFIG_PATH=/app/config.yaml",
-		"-v", fmt.Sprintf("%s:/app/config.yaml:ro", configPath),         // Mount config file
-		"-v", fmt.Sprintf("%s:/app/secrets/db-secrets.yaml:ro", dbSecretsPath), // Mount secrets file
+		"-v", fmt.Sprintf("%s:/app/config.yaml:ro", configPath),                      // Mount config file
+		"-v", fmt.Sprintf("%s:/app/secrets/db-secrets.yaml:ro", dbSecretsPath),       // Mount DB secrets
+		"-v", fmt.Sprintf("%s:/app/secrets/redis-secrets.yaml:ro", redisSecretsPath), // Mount Redis secrets
 		"--memory", "256m",
 		"localhost/kubernaut-datastorage:e2e-test",
 	)
