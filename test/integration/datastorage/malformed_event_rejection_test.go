@@ -342,7 +342,8 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 	Describe("Malformed Event NOT Persisted", func() {
 		It("should NOT persist malformed events to database", func() {
 			// ARRANGE: Get current event count
-			countBefore, err := countAuditEvents()
+			var countBefore int
+			err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_events").Scan(&countBefore)
 			Expect(err).ToNot(HaveOccurred())
 
 			// ACT: POST malformed event
@@ -375,7 +376,8 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
 			// ASSERT: Event count unchanged (NOT persisted)
-			countAfter, err := countAuditEvents()
+			var countAfter int
+			err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_events").Scan(&countAfter)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(countAfter).To(Equal(countBefore),
@@ -434,11 +436,3 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("gap-1.2
 		})
 	})
 })
-
-// Helper function to count audit events in database
-func countAuditEvents() (int, error) {
-	var count int
-	query := "SELECT COUNT(*) FROM audit_events"
-	err := db.QueryRowContext(ctx, query).Scan(&count)
-	return count, err
-}

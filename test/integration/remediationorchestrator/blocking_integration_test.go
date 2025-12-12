@@ -368,9 +368,9 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 						Namespace: namespace,
 					},
 					Spec: remediationv1.RemediationRequestSpec{
-					SignalName:        "test-signal-a",
-					SignalFingerprint: sharedFP,
-					Severity:          "critical",
+						SignalName:        "test-signal-a",
+						SignalFingerprint: sharedFP,
+						Severity:          "critical",
 						SignalType:        "test",
 						TargetType:        "kubernetes",
 						FiringTime:        now,
@@ -381,17 +381,23 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 							Namespace: namespace,
 						},
 					},
-					Status: remediationv1.RemediationRequestStatus{
-						OverallPhase: remediationv1.PhaseFailed,
-						Outcome:      "TestFailure",
-						CompletedAt:  &metav1.Time{Time: time.Now().Add(-time.Duration(3-i) * time.Minute)}, // Stagger timestamps
-					},
 				}
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-				// Get the RR back to ensure UID is set
-				Expect(k8sClient.Get(ctx, client.ObjectKey{Name: rr.Name, Namespace: rr.Namespace}, rr)).To(Succeed())
-				// Now update status
-				Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+				
+				// Wait for reconciler to set initial status, then mark as failed
+				Eventually(func() error {
+					updated := &remediationv1.RemediationRequest{}
+					if err := k8sClient.Get(ctx, client.ObjectKey{Name: rr.Name, Namespace: rr.Namespace}, updated); err != nil {
+						return err
+					}
+					
+					// Set failed status
+					updated.Status.OverallPhase = remediationv1.PhaseFailed
+					updated.Status.Outcome = "TestFailure"
+					updated.Status.CompletedAt = &metav1.Time{Time: time.Now().Add(-time.Duration(3-i) * time.Minute)}
+					
+					return k8sClient.Status().Update(ctx, updated)
+				}, "10s", "500ms").Should(Succeed(), "Should mark RR as failed (with retry on conflict)")
 			}
 
 			// When: Creating new RR with same fingerprint in namespace A
