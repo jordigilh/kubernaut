@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,6 +39,7 @@ type DataStorageTestServer struct {
 	BaseURL      string
 	PostgresPort int
 	PgClient     *PostgresTestClient
+	ConfigDir    string // Temp directory for config files (needs cleanup)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -138,13 +141,45 @@ func SetupDataStorageTestServer(ctx context.Context, pgClient *PostgresTestClien
 	dsPort := findAvailablePort(50100, 60000)
 	GinkgoWriter.Printf("  📍 Allocated random port for Data Storage: %d\n", dsPort)
 
-	// Start Data Storage container with PostgreSQL connection
+	// Create config directory and files (RESPONSE_DS_CONFIG_FILE_MOUNT_FIX.md)
+	configDir, err := os.MkdirTemp("", "gateway-datastorage-config-*")
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to create config temp dir: %v", err))
+	}
+	GinkgoWriter.Printf("  📁 Created config directory: %s\n", configDir)
+
+	// Create config.yaml with minimal settings (no Redis for Gateway tests)
+	configYAML := fmt.Sprintf(`
+service:
+  name: data-storage
+  port: 8080
+  metricsPort: 9090
+  logLevel: debug
+database:
+  host: %s
+  port: %d
+  name: %s
+  user: %s
+  password: %s
+  ssl_mode: disable
+  max_open_conns: 25
+logging:
+  level: debug
+`, pgClient.Host, pgClient.Port, pgClient.Database, pgClient.User, pgClient.Password)
+
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		Fail(fmt.Sprintf("Failed to write config.yaml: %v", err))
+	}
+	GinkgoWriter.Printf("  ✅ Created config.yaml\n")
+
+	// Start Data Storage container with PostgreSQL connection and config mount
 	// Uses the same PostgreSQL container that integration tests set up
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", containerName,
 		"-p", fmt.Sprintf("%d:8080", dsPort),
-		"-e", fmt.Sprintf("DATABASE_URL=%s", pgClient.ConnectionString()),
 		"-e", "CONFIG_PATH=/app/config.yaml",
+		"-v", fmt.Sprintf("%s:/app/config.yaml:ro", configPath), // Mount config file
 		"--memory", "256m",
 		"localhost/kubernaut-datastorage:e2e-test",
 	)
@@ -199,44 +234,23 @@ func SetupDataStorageTestServer(ctx context.Context, pgClient *PostgresTestClien
 		status := strings.TrimSpace(string(statusOutput))
 
 		if status != "running" {
-			// Container crashed - fall back to mock
-			GinkgoWriter.Printf("  ⚠️  Data Storage container crashed (status: %s)\n", status)
+			// Container crashed - FAIL FAST (no mock fallback for integration tests)
+			GinkgoWriter.Printf("  ❌ Data Storage container crashed (status: %s)\n", status)
 			logsCmd := exec.Command("podman", "logs", containerName)
 			logs, _ := logsCmd.CombinedOutput()
-			GinkgoWriter.Printf("  ⚠️  Container logs:\n%s\n", string(logs))
-			GinkgoWriter.Printf("  ⚠️  FALLING BACK TO MOCK - Fix datastorage config for full validation\n")
+			GinkgoWriter.Printf("  ❌ Container logs:\n%s\n", string(logs))
 
 			// Clean up crashed container
 			exec.Command("podman", "stop", containerName).Run()
 			exec.Command("podman", "rm", containerName).Run()
 
-			// Create fallback mock server
-			mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/api/v1/audit/events/batch" && r.Method == http.MethodPost {
-					w.WriteHeader(http.StatusAccepted)
-					w.Write([]byte(`{"status":"accepted","count":1}`))
-					return
-				}
-				if r.URL.Path == "/api/v1/audit/events" && r.Method == http.MethodPost {
-					w.WriteHeader(http.StatusCreated)
-					w.Write([]byte(`{"status":"created","event_id":"test-123"}`))
-					return
-				}
-				if r.URL.Path == "/healthz" {
-					w.WriteHeader(http.StatusOK)
-					w.Write([]byte(`{"status":"ok"}`))
-					return
-				}
-				w.WriteHeader(http.StatusNotFound)
-			}))
-
-			GinkgoWriter.Printf("  ✅ Mock Data Storage service ready (URL: %s)\n", mockServer.URL)
-
-			return &DataStorageTestServer{
-				Server:   mockServer,
-				BaseURL:  mockServer.URL,
-				PgClient: pgClient,
-			}
+			// FAIL THE TEST - Integration tests MUST use real services
+			Fail(fmt.Sprintf("Data Storage container crashed. Integration tests require real services.\n"+
+				"See logs above for details. Common causes:\n"+
+				"  - Missing config file mount\n"+
+				"  - Database connection failed\n"+
+				"  - Port already in use\n"+
+				"Fix: Check test/infrastructure/datastorage.go for proper config setup"))
 		}
 
 		// Try health check
@@ -252,16 +266,28 @@ func SetupDataStorageTestServer(ctx context.Context, pgClient *PostgresTestClien
 	}
 
 	if !healthy {
-		Fail("Data Storage container running but health check failed after 30s")
+		// Health check failed - FAIL FAST (no mock fallback for integration tests)
+		logsCmd := exec.Command("podman", "logs", containerName)
+		logs, _ := logsCmd.CombinedOutput()
+		GinkgoWriter.Printf("  ❌ Data Storage health check timeout. Container logs:\n%s\n", string(logs))
+
+		// Clean up container
+		exec.Command("podman", "stop", containerName).Run()
+		exec.Command("podman", "rm", containerName).Run()
+
+		Fail(fmt.Sprintf("Data Storage service failed health check at %s after 30s.\n"+
+			"Integration tests require real services, not mocks.\n"+
+			"See logs above for details.", healthURL))
 	}
 
 	GinkgoWriter.Printf("  ✅ REAL Data Storage service ready (URL: %s)\n", dataStorageURL)
 
 	// Return real Data Storage server info (no httptest.Server needed)
 	return &DataStorageTestServer{
-		Server:   nil, // No mock server when using real container
-		BaseURL:  dataStorageURL,
-		PgClient: pgClient,
+		Server:    nil, // No mock server when using real container
+		BaseURL:   dataStorageURL,
+		PgClient:  pgClient,
+		ConfigDir: configDir, // For cleanup
 	}
 }
 
@@ -283,6 +309,15 @@ func (d *DataStorageTestServer) Cleanup() {
 		GinkgoWriter.Printf("  ⚠️  Failed to remove Data Storage container: %v\n", err)
 	}
 	GinkgoWriter.Printf("  ✅ Data Storage container stopped and removed\n")
+
+	// Clean up config directory
+	if d.ConfigDir != "" {
+		if err := os.RemoveAll(d.ConfigDir); err != nil {
+			GinkgoWriter.Printf("  ⚠️  Failed to remove config directory %s: %v\n", d.ConfigDir, err)
+		} else {
+			GinkgoWriter.Printf("  ✅ Config directory removed: %s\n", d.ConfigDir)
+		}
+	}
 }
 
 // URL returns the Data Storage service URL

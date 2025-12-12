@@ -18,6 +18,8 @@ package processing
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -97,11 +99,30 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 	// NO truncation - uses full 64-char SHA256 fingerprint
 	rrList := &remediationv1alpha1.RemediationRequestList{}
 
-	if err := c.client.List(ctx, rrList,
+	err := c.client.List(ctx, rrList,
 		client.InNamespace(namespace),
 		client.MatchingFields{"spec.signalFingerprint": fingerprint},
-	); err != nil {
-		return false, nil, err
+	)
+
+	// FALLBACK: If field selector not supported (e.g., in tests without field index),
+	// list all RRs in namespace and filter in-memory
+	// This is less efficient but ensures tests work without cached client setup
+	if err != nil && (strings.Contains(err.Error(), "field label not supported") || strings.Contains(err.Error(), "field selector")) {
+		// Fall back to listing all RRs and filtering in-memory
+		if err := c.client.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+			return false, nil, fmt.Errorf("deduplication check failed: %w", err)
+		}
+
+		// Filter by fingerprint in-memory
+		filteredItems := []remediationv1alpha1.RemediationRequest{}
+		for i := range rrList.Items {
+			if rrList.Items[i].Spec.SignalFingerprint == fingerprint {
+				filteredItems = append(filteredItems, rrList.Items[i])
+			}
+		}
+		rrList.Items = filteredItems
+	} else if err != nil {
+		return false, nil, fmt.Errorf("deduplication check failed: %w", err)
 	}
 
 	// Check each RR for non-terminal phase
@@ -121,25 +142,40 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 	return false, nil, nil
 }
 
-// IsTerminalPhase checks if a phase is terminal (allows new RR creation)
+// IsTerminalPhase checks if a RemediationRequest phase is terminal.
+// Terminal phases allow new RR creation for the same signal fingerprint.
 //
 // DD-GATEWAY-011 v1.3: Terminal phase classification
+// DD-GATEWAY-009: Cancelled state handling (allows retry)
 //
 // TERMINAL (allow new RR creation):
 // - Completed: Remediation succeeded
 // - Failed: Remediation failed (including after Blocked→Failed transition)
-// - Timeout: Remediation timed out
+// - TimedOut: Remediation timed out
+// - Skipped: Remediation was not needed (per BR-ORCH-032)
+// - Cancelled: Remediation was manually cancelled (per DD-GATEWAY-009, allows retry)
 //
 // NON-TERMINAL (deduplicate → update status):
-// - Pending, Processing, Analyzing, Approving, Executing, Recovering
+// - Pending, Processing, Analyzing, AwaitingApproval, Executing
 // - Blocked: RO holds for cooldown, Gateway updates dedup status (prevents RR flood)
 //
 // WHITELIST approach (safer than blacklist):
 // - Only explicitly terminal phases allow new RR
 // - ALL other phases (including Blocked and unknown future phases) are non-terminal
-func IsTerminalPhase(phase string) bool {
+//
+// Phase values per api/remediation/v1alpha1/remediationrequest_types.go:
+// - Terminal: Completed, Failed, TimedOut, Skipped, Cancelled
+// - Non-Terminal: Pending, Processing, Analyzing, AwaitingApproval, Executing, Blocked
+//
+// 🏛️ Compliance: BR-COMMON-001 (Phase Format), Viceversa Pattern (Cross-Service Consumption)
+// See: docs/handoff/TEAM_NOTIFICATION_GATEWAY_PHASE_COMPLIANCE.md
+func IsTerminalPhase(phase remediationv1alpha1.RemediationPhase) bool {
 	switch phase {
-	case "Completed", "Failed", "Timeout":
+	case remediationv1alpha1.PhaseCompleted,
+		remediationv1alpha1.PhaseFailed,
+		remediationv1alpha1.PhaseTimedOut,
+		remediationv1alpha1.PhaseSkipped,
+		remediationv1alpha1.PhaseCancelled:
 		return true
 	default:
 		return false

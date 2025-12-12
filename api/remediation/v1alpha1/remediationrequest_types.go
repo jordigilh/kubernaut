@@ -26,6 +26,65 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// ========================================
+// REMEDIATION PHASE CONSTANTS
+// ========================================
+
+// RemediationPhase represents the orchestration phase of a RemediationRequest.
+// These constants are exported for external consumers (e.g., Gateway) to enable
+// type-safe cross-service integration per the Viceversa Pattern.
+//
+// 🏛️ BR-COMMON-001: Capitalized phase values per Kubernetes API conventions.
+// 🏛️ Viceversa Pattern: Consumers use these constants for compile-time safety.
+//
+// Reference: docs/requirements/BR-COMMON-001-phase-value-format-standard.md
+// Reference: docs/handoff/RO_VICEVERSA_PATTERN_IMPLEMENTATION.md
+//
+// +kubebuilder:validation:Enum=Pending;Processing;Analyzing;AwaitingApproval;Executing;Blocked;Completed;Failed;TimedOut;Skipped
+type RemediationPhase string
+
+const (
+	// PhasePending is the initial state when RemediationRequest is created.
+	PhasePending RemediationPhase = "Pending"
+
+	// PhaseProcessing indicates SignalProcessing is enriching the signal.
+	PhaseProcessing RemediationPhase = "Processing"
+
+	// PhaseAnalyzing indicates AIAnalysis is determining remediation workflow.
+	PhaseAnalyzing RemediationPhase = "Analyzing"
+
+	// PhaseAwaitingApproval indicates human approval is required.
+	// Reference: BR-ORCH-001 (manual approval workflow)
+	PhaseAwaitingApproval RemediationPhase = "AwaitingApproval"
+
+	// PhaseExecuting indicates WorkflowExecution is running remediation.
+	PhaseExecuting RemediationPhase = "Executing"
+
+	// PhaseBlocked indicates remediation is in cooldown after consecutive failures.
+	// This is a NON-terminal phase - RO will transition to Failed after cooldown.
+	// Reference: BR-ORCH-042 (consecutive failure blocking)
+	PhaseBlocked RemediationPhase = "Blocked"
+
+	// PhaseCompleted is the terminal success state.
+	PhaseCompleted RemediationPhase = "Completed"
+
+	// PhaseFailed is the terminal failure state.
+	PhaseFailed RemediationPhase = "Failed"
+
+	// PhaseTimedOut is the terminal timeout state.
+	// Reference: BR-ORCH-027 (global timeout), BR-ORCH-028 (per-phase timeout)
+	PhaseTimedOut RemediationPhase = "TimedOut"
+
+	// PhaseSkipped is the terminal state when remediation was not needed.
+	// Reference: BR-ORCH-032 (resource lock deduplication)
+	PhaseSkipped RemediationPhase = "Skipped"
+
+	// PhaseCancelled is the terminal state when remediation was manually cancelled.
+	// Gateway treats this as terminal (allows new RR creation for retry)
+	// Reference: DD-GATEWAY-009 (state-based deduplication), BR-GATEWAY-183 (cancelled state handling)
+	PhaseCancelled RemediationPhase = "Cancelled"
+)
+
 // RemediationRequestSpec defines the desired state of RemediationRequest.
 type RemediationRequestSpec struct {
 	// ========================================
@@ -87,10 +146,13 @@ type RemediationRequestSpec struct {
 	// When Gateway received the signal
 	ReceivedTime metav1.Time `json:"receivedTime"`
 
-	// Deduplication Metadata
+	// Deduplication Metadata (DEPRECATED per DD-GATEWAY-011)
 	// Tracking information for duplicate signal suppression
 	// Uses shared type for API contract alignment with SignalProcessing CRD
-	Deduplication sharedtypes.DeduplicationInfo `json:"deduplication"`
+	// DD-GATEWAY-011: DEPRECATED - Moved to status.deduplication
+	// Gateway Team Fix (2025-12-12): Made optional to unblock Gateway integration tests
+	// RO Team: See docs/handoff/NOTICE_GW_CRD_SCHEMA_FIX_SPEC_DEDUPLICATION.md
+	Deduplication sharedtypes.DeduplicationInfo `json:"deduplication,omitempty"`
 
 	// Storm Detection
 	// True if this signal is part of a detected alert storm
@@ -207,11 +269,12 @@ type RemediationRequestStatus struct {
 	// ║  Remediation Orchestrator has exclusive write access           ║
 	// ╚════════════════════════════════════════════════════════════════╝
 
-	// Phase tracking for orchestration
-	// Valid values: "Pending", "Processing", "Analyzing", "AwaitingApproval", "Executing",
-	//               "Blocked" (non-terminal), "Completed", "Failed", "TimedOut", "Skipped"
+	// Phase tracking for orchestration.
+	// Uses typed RemediationPhase constants for type safety and cross-service integration.
+	//
+	// 🏛️ BR-COMMON-001: Capitalized phase values per Kubernetes API conventions.
 	// Reference: BR-ORCH-042 (Blocked phase for consecutive failure cooldown)
-	OverallPhase string `json:"overallPhase,omitempty"`
+	OverallPhase RemediationPhase `json:"overallPhase,omitempty"`
 
 	// Human-readable message describing current status
 	Message string `json:"message,omitempty"`
