@@ -17,7 +17,6 @@ import (
 var _ = Describe("Observability Integration Tests", func() {
 	var (
 		testServer    *httptest.Server
-		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		ctx           context.Context
 		cancel        context.CancelFunc
@@ -36,23 +35,17 @@ var _ = Describe("Observability Integration Tests", func() {
 			testCounter)
 
 		// Setup test clients
-		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
 
 		// Ensure unique test namespace exists
 		EnsureTestNamespace(ctx, k8sClient, testNamespace)
 
 		// Flush Redis to prevent state leakage
-		err := redisClient.Client.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should flush Redis")
 
 		// Verify Redis is clean (synchronous check - FlushDB is atomic)
-		keys, err := redisClient.Client.Keys(ctx, "*").Result()
-		Expect(err).ToNot(HaveOccurred(), "Should query Redis keys")
-		Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 
 		// Start test Gateway server
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Gateway server should start successfully")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should not be nil")
 
@@ -69,14 +62,12 @@ var _ = Describe("Observability Integration Tests", func() {
 			cancel()
 		}
 
-		// Reset Redis config after tests
-		if redisClient != nil {
-			redisClient.ResetRedisConfig(ctx)
-		}
+		// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// BR-101: Prometheus Metrics Endpoint
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("BR-101: Prometheus Metrics Endpoint", func() {
@@ -545,123 +536,14 @@ var _ = Describe("Observability Integration Tests", func() {
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// BR-105: Redis Operation Duration Metrics
+	// DD-GATEWAY-012: Redis Tests REMOVED
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-	Context("BR-105: Redis Operation Duration Metrics", func() {
-		It("should track Redis operation latency via gateway_redis_operation_duration_seconds", func() {
-			// BUSINESS OUTCOME: Operators can monitor Redis performance and detect bottlenecks
-			// BUSINESS SCENARIO: Redis becomes slow, operators detect via p95 latency spike
-
-			// Send alerts to trigger Redis operations
-			for i := 0; i < 5; i++ {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-					AlertName: fmt.Sprintf("RedisLatency-%d", i),
-					Namespace: testNamespace,
-					Severity:  "warning",
-					Resource: ResourceIdentifier{
-						Kind: "Pod",
-						Name: fmt.Sprintf("pod-%d", i),
-					},
-				})
-				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			}
-
-			// Wait for metrics to update using Eventually
-			Eventually(func() bool {
-				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-				if err != nil {
-					return false
-				}
-				_, exists := metrics["gateway_redis_operation_duration_seconds"]
-				return exists
-			}, "10s", "100ms").Should(BeTrue(), "Redis operation duration histogram should exist")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Operators can detect Redis performance degradation
-			// ✅ Query: histogram_quantile(0.95, gateway_redis_operation_duration_seconds{operation="set"}) > 0.05
-			// ✅ Redis bottleneck detection enabled
-		})
-
-		It("should include operation type labels in Redis duration metrics", func() {
-			// TDD RED: Test should fail - RedisOperationDuration metric has no values
-			// BUSINESS OUTCOME: Operators can identify slow Redis operations
-			// BUSINESS SCENARIO: Operator identifies that HGETALL is slow, tunes data structure
-
-			// Send alerts to trigger various Redis operations (get, set, expire, etc.)
-			for i := 0; i < 3; i++ {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-					AlertName: fmt.Sprintf("RedisOp-%d", i),
-					Namespace: testNamespace,
-					Severity:  "critical",
-					Resource: ResourceIdentifier{
-						Kind: "Node",
-						Name: fmt.Sprintf("node-%d", i),
-					},
-				})
-				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			}
-
-			// Wait for metrics to update using Eventually
-			var metrics PrometheusMetrics
-			Eventually(func() bool {
-				var err error
-				metrics, err = GetPrometheusMetrics(testServer.URL + "/metrics")
-				if err != nil {
-					return false
-				}
-				_, exists := metrics["gateway_redis_operation_duration_seconds_count"]
-				return exists
-			}, "10s", "100ms").Should(BeTrue(), "Redis operation duration count metric should exist")
-
-			// Histograms expose _count, _sum, and _bucket metrics
-			redisCountMetric, exists := metrics["gateway_redis_operation_duration_seconds_count"]
-			Expect(exists).To(BeTrue(), "Redis operation duration count metric should exist (verified)")
-
-			// Verify multiple operations tracked
-			Expect(len(redisCountMetric.Values)).To(BeNumerically(">=", 1),
-				"Should track Redis operations")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Operators can identify slow operation types
-			// ✅ Query: histogram_quantile(0.95, gateway_redis_operation_duration_seconds{operation="hgetall"})
-			// ✅ Per-operation performance tuning enabled
-		})
-	})
-
+	// BR-105: Redis Operation Duration Metrics - DELETED (Redis removed)
+	// BR-106: Redis Health Metrics - DELETED (Redis removed)
+	//
+	// Gateway is now Redis-free per DD-GATEWAY-012
+	// State management uses Kubernetes status fields (DD-GATEWAY-011)
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// BR-106: Redis Health Metrics
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-	Context("BR-106: Redis Health Metrics", func() {
-		It("should track Redis availability via gateway_redis_available gauge", func() {
-			// TDD RED: Test should fail - RedisAvailable gauge is 0 instead of 1
-			// BUSINESS OUTCOME: Operators can track Redis availability SLO (target: 99.9%)
-			// BUSINESS SCENARIO: Redis becomes unavailable, operators detect via metrics
-
-			// Poll for Redis availability metric using Eventually
-			// Health check runs every 5 seconds in production, faster in tests
-			Eventually(func() bool {
-				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-				if err != nil {
-					return false
-				}
-
-				available, exists := GetMetricValue(metrics, "gateway_redis_available", "")
-				return exists && available == 1.0
-			}, "10s", "500ms").Should(BeTrue(), "Redis should be available (1) after health check runs")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Operators can track Redis availability
-			// ✅ SLO query: avg_over_time(gateway_redis_available[30d]) > 0.999
-			// ✅ Availability SLO tracking enabled
-		})
-
-		// REMOVED: "should track Redis outage count via gateway_redis_outage_count"
-		// REMOVED: "should track cumulative outage duration via gateway_redis_outage_duration_seconds"
-		// REASON: Requires Redis failure simulation
-		// COVERAGE: Unit tests (failure_metrics_test.go) validate metrics recording logic
-	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// BR-107: Redis Pool Metrics

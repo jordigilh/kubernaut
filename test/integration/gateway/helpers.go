@@ -18,10 +18,8 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
-	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
-	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -43,7 +41,6 @@ var (
 	testNamespacesMutex sync.Mutex              // Thread-safe access
 )
 
-
 // RegisterTestNamespace adds a namespace to the suite-level cleanup list
 func RegisterTestNamespace(namespace string) {
 	testNamespacesMutex.Lock()
@@ -54,11 +51,6 @@ func RegisterTestNamespace(namespace string) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TEST INFRASTRUCTURE TYPES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// RedisTestClient wraps Redis client for integration tests
-type RedisTestClient struct {
-	Client *goredis.Client
-}
 
 // K8sTestClient wraps Kubernetes client for integration tests
 type K8sTestClient struct {
@@ -105,82 +97,6 @@ func DefaultTestServerOptions() *TestServerOptions {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// REDIS TEST CLIENT METHODS
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// SetupRedisTestClient creates a Redis client for integration tests
-// Uses the suite's Redis port if set (via SetSuiteRedisPort), otherwise tries default port
-// Integration tests use envtest + Podman Redis
-// Each parallel process uses a different Redis DB: DB 2 + processID (for test isolation)
-func SetupRedisTestClient(ctx context.Context) *RedisTestClient {
-	// Check if running in CI without Redis
-	if os.Getenv("SKIP_INTEGRATION_TESTS") == "true" {
-		return &RedisTestClient{Client: nil}
-	}
-
-	// Determine Redis address
-	// Priority 1: Suite-level Redis port (set by suite_test.go via SetSuiteRedisPort)
-	// Priority 2: Default localhost:6379
-	redisAddr := "localhost:6379"
-	if suiteRedisPortValue > 0 {
-		redisAddr = fmt.Sprintf("localhost:%d", suiteRedisPortValue)
-	}
-
-	// Each parallel process uses a different DB for test isolation
-	// DB 2 is the base, each process adds its ID
-	processID := GinkgoParallelProcess()
-	redisDB := 2 + processID
-
-	client := goredis.NewClient(&goredis.Options{
-		Addr:         redisAddr,
-		Password:     "",
-		DB:           redisDB,
-		PoolSize:     20,
-		MinIdleConns: 5,
-		MaxRetries:   3,
-		DialTimeout:  5 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-	})
-
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	_, err := client.Ping(pingCtx).Result()
-	if err == nil {
-		return &RedisTestClient{Client: client}
-	}
-
-	// If Redis is not available, fail fast with clear error
-	_ = client.Close()
-	return &RedisTestClient{Client: nil}
-}
-
-// CountFingerprints returns count of fingerprints in Redis for a namespace
-// v2.9: Updated to match actual Redis key pattern used by deduplication service
-func (r *RedisTestClient) CountFingerprints(ctx context.Context, namespace string) int {
-	if r.Client == nil {
-		return 0
-	}
-	// v2.9: Deduplication service uses "gateway:dedup:fingerprint:{fingerprint}" pattern
-	// We can't filter by namespace in the key, so we count all fingerprints
-	pattern := "gateway:dedup:fingerprint:*"
-	keys, err := r.Client.Keys(ctx, pattern).Result()
-	if err != nil {
-		return 0
-	}
-	return len(keys)
-}
-
-// Cleanup removes all test data from Redis
-func (r *RedisTestClient) Cleanup(ctx context.Context) {
-	if r.Client == nil {
-		return
-	}
-	r.Client.FlushDB(ctx)
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // KUBERNETES TEST CLIENT METHODS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -188,18 +104,9 @@ func (r *RedisTestClient) Cleanup(ctx context.Context) {
 // This allows SetupK8sTestClient to use envtest config instead of loading from file
 var suiteK8sConfig interface{} // *rest.Config but interface{} to avoid import cycles
 
-// suiteRedisPortValue holds the Redis port from suite_test.go
-// This allows SetupRedisTestClient to use the suite's Redis instead of hardcoded port
-var suiteRedisPortValue int
-
 // SetSuiteK8sConfig sets the K8s config for the test suite (called from suite_test.go)
 func SetSuiteK8sConfig(config interface{}) {
 	suiteK8sConfig = config
-}
-
-// SetSuiteRedisPort sets the Redis port for the test suite (called from suite_test.go)
-func SetSuiteRedisPort(port int) {
-	suiteRedisPortValue = port
 }
 
 // SetupK8sTestClient creates a Kubernetes client for integration tests
@@ -277,6 +184,27 @@ func (k *K8sTestClient) DeleteCRD(ctx context.Context, name, namespace string) e
 // GATEWAY SERVER LIFECYCLE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// getDataStorageURL returns the Data Storage URL for tests
+// DD-TEST-001: Reads from TEST_DATA_STORAGE_URL environment variable set by suite
+// Pattern: Follows AIAnalysis centralized configuration approach (Pattern 1)
+//
+// This function provides a single source of truth for Data Storage URL across all tests.
+// The URL is set by SynchronizedBeforeSuite and shared across all parallel test processes.
+//
+// Usage:
+//
+//	gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
+func getDataStorageURL() string {
+	envURL := os.Getenv("TEST_DATA_STORAGE_URL")
+	if envURL == "" {
+		// This should NEVER happen in suite execution
+		// Only for manual test debugging outside of Ginkgo
+		GinkgoWriter.Printf("⚠️  WARNING: TEST_DATA_STORAGE_URL not set, using fallback\n")
+		return "http://localhost:18090"
+	}
+	return envURL
+}
+
 // StartTestGateway creates a Gateway server for integration tests
 // Returns the Gateway server instance for creating test HTTP servers
 //
@@ -285,7 +213,7 @@ func (k *K8sTestClient) DeleteCRD(ctx context.Context, name, namespace string) e
 //
 // Example usage:
 //
-//	gatewayServer, err := StartTestGateway(ctx, k8sClient, dataStorageURL)
+//	gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 //	Expect(err).ToNot(HaveOccurred())
 //	testServer := httptest.NewServer(gatewayServer.Handler())
 //	defer testServer.Close()
@@ -293,6 +221,13 @@ func (k *K8sTestClient) DeleteCRD(ctx context.Context, name, namespace string) e
 //
 // DD-GATEWAY-004: Authentication removed - security now at network layer
 func StartTestGateway(ctx context.Context, k8sClient *K8sTestClient, dataStorageURL string) (*gateway.Server, error) {
+	// DD-GATEWAY-012: Fallback for hardcoded URLs (backwards compatibility)
+	// AIAnalysis Pattern: Prefer getDataStorageURL() over hardcoded values
+	if dataStorageURL == "http://localhost:18090" {
+		dataStorageURL = getDataStorageURL()
+		GinkgoWriter.Printf("⚠️  Replaced hardcoded URL with env URL: %s\n", dataStorageURL)
+	}
+
 	// Use production logger with console output to capture errors in test logs
 	logConfig := zap.NewProductionConfig()
 	logConfig.OutputPaths = []string{"stdout"}
@@ -362,9 +297,9 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 	}
 
 	logger.Info("Creating Gateway server for integration tests",
-		zap.Duration("deduplication_ttl", cfg.Processing.Deduplication.TTL),
 		zap.Int("storm_rate_threshold", cfg.Processing.Storm.RateThreshold),
 		// rate_limit removed (ADR-048) - delegated to proxy
+		// DD-GATEWAY-012: deduplication_ttl removed - using K8s status-based dedup
 	)
 
 	// Create isolated Prometheus registry for this test
@@ -373,9 +308,7 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 	registry := prometheus.NewRegistry()
 	metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-	// Initialize Redis availability gauge to 1 (available) for tests
-	// The monitorRedisHealth goroutine will update this if Redis becomes unavailable
-	metricsInstance.RedisAvailable.Set(1)
+	// DD-GATEWAY-012: Redis availability metric REMOVED - Gateway is now Redis-free
 
 	// TDD FIX: Use NewServerWithK8sClient to share K8s client with test
 	// This ensures Gateway and test use the same K8s API cache, preventing
@@ -561,120 +494,6 @@ func DeleteRemediationRequest(ctx context.Context, k8sClient *K8sTestClient, nam
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// REDIS SIMULATION METHODS (DO-REFACTOR)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// GetStormCount returns the storm counter from Redis for a namespace/alert
-// BR-GATEWAY-012: Storm detection validation
-func (r *RedisTestClient) GetStormCount(ctx context.Context, namespace, alertName string) int {
-	if r.Client == nil {
-		return 0
-	}
-	// Storm counter key format: storm:counter:[namespace]:[alertname]
-	// Must match pkg/gateway/processing/storm_detection.go:makeCounterKey
-	key := fmt.Sprintf("storm:counter:%s:%s", namespace, alertName)
-
-	count, err := r.Client.Get(ctx, key).Int()
-	if err != nil {
-		return 0
-	}
-	return count
-}
-
-// SimulateFailover simulates Redis cluster failover
-// Tests system resilience during Redis infrastructure changes
-func (r *RedisTestClient) SimulateFailover(ctx context.Context) {
-	if r.Client == nil {
-		return
-	}
-	// For single-instance Redis (test environment), simulate by:
-	// 1. Temporarily disconnecting client
-	// 2. Forcing a reconnection attempt
-
-	// Close existing connection to force reconnection
-	_ = r.Client.Close()
-
-	// Recreate client (simulates failover to new master)
-	r.Client = goredis.NewClient(&goredis.Options{
-		Addr: "localhost:6379",
-		DB:   2,
-	})
-}
-
-// TriggerMemoryPressure simulates Redis memory pressure/LRU eviction
-// Tests behavior when Redis starts evicting keys due to memory limits
-func (r *RedisTestClient) TriggerMemoryPressure(ctx context.Context) {
-	if r.Client == nil {
-		return
-	}
-	// Set a very low maxmemory limit to trigger LRU eviction
-	// This simulates production scenario where Redis hits memory limits
-
-	// Note: In real Redis cluster, this would trigger LRU eviction
-	// In test environment, we simulate by setting short TTLs
-	r.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-	r.Client.ConfigSet(ctx, "maxmemory", "1mb") // Force memory pressure
-}
-
-// ResetRedisConfig resets Redis to test-safe configuration
-// ⚠️ CRITICAL: Call this in AfterEach to prevent state pollution across tests
-//
-// Background: TriggerMemoryPressure() sets Redis maxmemory to 1MB to simulate
-// memory pressure scenarios. This change persists in Redis memory across test runs.
-// If not reset, ALL subsequent tests will hit OOM errors (cascade failure).
-//
-// Root Cause: CONFIG SET changes persist in Redis until:
-// 1. Explicitly reset (this function)
-// 2. Container restart (podman restart redis-gateway)
-// 3. Container recreate (podman stop + rm + start)
-//
-// Usage:
-//
-//	AfterEach(func() {
-//	    if redisClient != nil {
-//	        redisClient.ResetRedisConfig(ctx)
-//	        redisClient.Client.FlushDB(ctx)
-//	    }
-//	})
-func (r *RedisTestClient) ResetRedisConfig(ctx context.Context) {
-	if r.Client == nil {
-		return
-	}
-	// Reset to 2GB (matches container start command in scripts/start-redis-for-tests.sh)
-	r.Client.ConfigSet(ctx, "maxmemory", "2147483648")
-	r.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-}
-
-// SimulatePipelineFailure simulates Redis pipeline command failures
-// Tests recovery from partial pipeline execution failures
-func (r *RedisTestClient) SimulatePipelineFailure(ctx context.Context) {
-	if r.Client == nil {
-		return
-	}
-	// Simulate pipeline failure by corrupting Redis state
-	// This forces the next pipeline to fail mid-execution
-
-	// For integration tests, we simulate this by setting invalid keys
-	// that will cause type errors in subsequent pipeline commands
-	r.Client.Set(ctx, "corrupt:pipeline", "invalid_type", 1*time.Hour)
-}
-
-// SimulatePartialFailure simulates partial Redis write failure
-// Tests consistency when some Redis writes succeed and others fail
-func (r *RedisTestClient) SimulatePartialFailure(ctx context.Context) {
-	if r.Client == nil {
-		return
-	}
-	// Simulate partial failure by filling Redis to capacity
-	// Next write will fail while previous ones succeeded
-
-	// Fill Redis with dummy keys to trigger MAXMEMORY errors
-	for i := 0; i < 10000; i++ {
-		r.Client.Set(ctx, fmt.Sprintf("fill:key:%d", i), "dummy", 10*time.Second)
-	}
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // KUBERNETES SIMULATION METHODS (DO-REFACTOR)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -829,23 +648,6 @@ func WaitForCRDCount(ctx context.Context, k8sClient *K8sTestClient, namespace st
 	for time.Since(start) < maxWait {
 		crds := ListRemediationRequests(ctx, k8sClient, namespace)
 		if len(crds) >= target {
-			return true
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return false
-}
-
-// WaitForRedisFingerprintCount waits for Redis fingerprint count
-// Used to verify asynchronous deduplication writes
-func WaitForRedisFingerprintCount(ctx context.Context, redisClient *RedisTestClient, namespace string, target int, maxWait time.Duration) bool {
-	if redisClient == nil || redisClient.Client == nil {
-		return false
-	}
-	start := time.Now()
-	for time.Since(start) < maxWait {
-		count := redisClient.CountFingerprints(ctx, namespace)
-		if count >= target {
 			return true
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -1295,29 +1097,13 @@ func GetMetricSum(metrics PrometheusMetrics, name string) float64 {
 
 // Priority1TestContext holds common test infrastructure for Priority 1 integration tests
 // Refactored from duplicate BeforeEach/AfterEach blocks across test files
+// DD-GATEWAY-012: Redis removed - Gateway is now Redis-free
 type Priority1TestContext struct {
 	Ctx           context.Context
 	Cancel        context.CancelFunc
 	TestServer    *httptest.Server
-	RedisClient   *RedisTestClient
 	K8sClient     *K8sTestClient
 	TestNamespace string // TDD FIX: Unique namespace per test
-}
-
-// createTestRedisClient sets up Redis client and flushes state
-// TDD REFACTOR: Extracted from SetupPriority1Test for better readability
-func createTestRedisClient(ctx context.Context) *RedisTestClient {
-	redisClient := SetupRedisTestClient(ctx)
-
-	// Clean Redis state for test isolation
-	if redisClient != nil && redisClient.Client != nil {
-		err := redisClient.Client.FlushDB(ctx).Err()
-		if err != nil {
-			panic(fmt.Sprintf("Failed to flush Redis: %v", err))
-		}
-	}
-
-	return redisClient
 }
 
 // createTestK8sClient sets up K8s client and unique test namespace
@@ -1336,9 +1122,8 @@ func createTestK8sClient(ctx context.Context) (*K8sTestClient, string) {
 
 // createTestGatewayServer starts Gateway server and wraps it in httptest.Server
 // TDD REFACTOR: Extracted from SetupPriority1Test for better readability
-// DD-GATEWAY-012: Redis DEPRECATED - parameter kept for backward compatibility during migration
-func createTestGatewayServer(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) *httptest.Server {
-	// DD-GATEWAY-012: Redis is no longer used by Gateway
+// DD-GATEWAY-012: Redis removed - Gateway is now Redis-free
+func createTestGatewayServer(ctx context.Context, k8sClient *K8sTestClient) *httptest.Server {
 	// Create a mock Data Storage URL for tests (will be replaced with real service)
 	dataStorageURL := "http://localhost:8080" // Mock/placeholder
 
@@ -1350,27 +1135,26 @@ func createTestGatewayServer(ctx context.Context, redisClient *RedisTestClient, 
 	return httptest.NewServer(gatewayServer.Handler())
 }
 
-// SetupPriority1Test creates common test infrastructure (Redis, K8s, Gateway, unique test namespace)
+// SetupPriority1Test creates common test infrastructure (K8s, Gateway, unique test namespace)
 // TDD REFACTOR: Simplified by extracting helper methods
 // Refactored from duplicate BeforeEach blocks in:
 // - priority1_concurrent_operations_test.go
 // - priority1_adapter_patterns_test.go
 // - priority1_error_propagation_test.go
 //
+// DD-GATEWAY-012: Redis removed - Gateway is now Redis-free
 // TDD FIX: Creates unique namespace per test to prevent CRD conflicts
 func SetupPriority1Test() *Priority1TestContext {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 
 	// TDD REFACTOR: Use extracted helper methods for clarity
-	redisClient := createTestRedisClient(ctx)
 	k8sClient, uniqueNamespace := createTestK8sClient(ctx)
-	testServer := createTestGatewayServer(ctx, redisClient, k8sClient)
+	testServer := createTestGatewayServer(ctx, k8sClient)
 
 	return &Priority1TestContext{
 		Ctx:           ctx,
 		Cancel:        cancel,
 		TestServer:    testServer,
-		RedisClient:   redisClient,
 		K8sClient:     k8sClient,
 		TestNamespace: uniqueNamespace,
 	}
@@ -1379,6 +1163,7 @@ func SetupPriority1Test() *Priority1TestContext {
 // Cleanup tears down all test infrastructure
 // Refactored from duplicate AfterEach blocks
 // REFACTORED: Proper error handling (TDD REFACTOR phase)
+// DD-GATEWAY-012: Redis removed - Gateway is now Redis-free
 func (tc *Priority1TestContext) Cleanup() {
 	// TDD FIX: Close HTTP server first to stop accepting new requests
 	if tc.TestServer != nil {
@@ -1397,18 +1182,6 @@ func (tc *Priority1TestContext) Cleanup() {
 		RegisterTestNamespace(tc.TestNamespace)
 	}
 
-	// Cleanup Redis (log errors but don't fail)
-	if tc.RedisClient != nil && tc.RedisClient.Client != nil {
-		err := tc.RedisClient.Client.FlushDB(tc.Ctx).Err()
-		if err != nil {
-			fmt.Printf("Warning: Failed to flush Redis during cleanup: %v\n", err)
-		}
-	}
-
-	// Cleanup clients
-	if tc.RedisClient != nil {
-		tc.RedisClient.Cleanup(tc.Ctx)
-	}
 	// NOTE: K8s client cleanup removed - handled by AfterSuite to allow namespace batch deletion
 
 	// Cancel context

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,7 +66,6 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		server            *httptest.Server
 		gatewayURL        string
 		testClient        *K8sTestClient
-		redisClient       *RedisTestClient
 		dataStorageURL    string
 		prometheusPayload []byte
 	)
@@ -76,15 +76,17 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 	BeforeEach(func() {
 		ctx = context.Background()
 		testClient = SetupK8sTestClient(ctx)
-		redisClient = SetupRedisTestClient(ctx)
 
-		// Data Storage URL from podman-compose (port 18090)
-		// Per TESTING_GUIDELINES.md: Integration tests use REAL infrastructure
-		dataStorageURL = "http://localhost:18090"
+		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
+		// Per DD-TEST-001: All parallel processes share same Data Storage instance
+		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
+		if dataStorageURL == "" {
+			dataStorageURL = "http://localhost:18090" // Fallback for manual testing
+		}
 
 		// MANDATORY: Verify Data Storage is running
 		// Per TESTING_GUIDELINES.md: Tests MUST FAIL if infrastructure unavailable
-		healthResp, err := http.Get(dataStorageURL + "/health")
+		healthResp, err := http.Get(dataStorageURL + "/healthz")
 		if err != nil {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage not available at %s\n"+
@@ -108,7 +110,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		RegisterTestNamespace(sharedNamespace)
 
 		// Start test Gateway
-		gatewayServer, err := StartTestGateway(ctx, redisClient, testClient)
+		// DD-GATEWAY-012: Redis removed, Gateway now connects to Data Storage for audit
+		gatewayServer, err := StartTestGateway(ctx, testClient, dataStorageURL)
 		Expect(err).ToNot(HaveOccurred())
 		server = httptest.NewServer(gatewayServer.Handler())
 		gatewayURL = server.URL
@@ -256,7 +259,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				if c == nil {
 					return ""
 				}
-				return c.Status.OverallPhase
+				return string(c.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
 			By("2. Send duplicate alert (triggers deduplication)")
@@ -341,7 +344,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				if c == nil {
 					return ""
 				}
-				return c.Status.OverallPhase
+				return string(c.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
 			By("2. Send 10 duplicate alerts (trigger storm detection)")

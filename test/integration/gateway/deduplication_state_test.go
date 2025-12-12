@@ -61,7 +61,6 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		server            *httptest.Server
 		gatewayURL        string
 		testClient        *K8sTestClient
-		redisClient       *RedisTestClient
 		prometheusPayload []byte
 	)
 
@@ -72,14 +71,13 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		// Per-spec setup for parallel execution
 		ctx = context.Background()
 		testClient = SetupK8sTestClient(ctx)
-		redisClient = SetupRedisTestClient(ctx)
 
 		// Ensure shared namespace exists (idempotent, thread-safe)
 		EnsureTestNamespace(ctx, testClient, sharedNamespace)
 		RegisterTestNamespace(sharedNamespace)
 
 		// Per-spec Gateway instance (thread-safe: each parallel spec gets own HTTP server)
-		gatewayServer, err := StartTestGateway(ctx, redisClient, testClient)
+		gatewayServer, err := StartTestGateway(ctx, testClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred())
 		server = httptest.NewServer(gatewayServer.Handler())
 		gatewayURL = server.URL
@@ -114,10 +112,6 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 		// Clean up Redis state to prevent storm detection and deduplication interference
 		By("Flushing Redis database")
-		if redisClient != nil && redisClient.Client != nil {
-			_ = redisClient.Client.FlushDB(ctx).Err()
-		}
-
 		// Namespace cleanup happens in AfterSuite (batch deletion)
 	})
 
@@ -167,7 +161,9 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			By("2. Verify CRD was created")
 			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
 			Expect(crd).ToNot(BeNil(), "CRD should exist")
-			Expect(crd.Spec.Deduplication.OccurrenceCount).To(Equal(1), "Initial occurrence count should be 1")
+			// DD-GATEWAY-011: Check status.deduplication (not spec)
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "status.deduplication should be initialized")
+			Expect(crd.Status.Deduplication.OccurrenceCount).To(Equal(int32(1)), "Initial occurrence count should be 1")
 
 			By("3. Set CRD state to Pending (simulate processing)")
 			crd.Status.OverallPhase = "Pending"
@@ -180,7 +176,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				if updatedCRD == nil {
 					return ""
 				}
-				return updatedCRD.Status.OverallPhase
+				return string(updatedCRD.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
 			By("4. Send duplicate alert")
@@ -201,17 +197,22 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 					return false
 				}
 
-				// Check occurrence count
-				if updatedCRD.Spec.Deduplication.OccurrenceCount != 2 {
+				// DD-GATEWAY-011: Check status.deduplication (not spec)
+				if updatedCRD.Status.Deduplication == nil {
 					return false
 				}
 
-				// Capture FirstOccurrence for comparison
-				firstSeen = updatedCRD.Spec.Deduplication.FirstOccurrence.Time
-				lastOccurrence := updatedCRD.Spec.Deduplication.LastOccurrence.Time
+				// Check occurrence count
+				if updatedCRD.Status.Deduplication.OccurrenceCount != 2 {
+					return false
+				}
 
-				// LastOccurrence should be >= FirstOccurrence (allow same millisecond for fast systems)
-				return !lastOccurrence.Before(firstSeen)
+				// Capture FirstSeenAt for comparison
+				firstSeen = updatedCRD.Status.Deduplication.FirstSeenAt.Time
+				lastSeen := updatedCRD.Status.Deduplication.LastSeenAt.Time
+
+				// LastSeenAt should be >= FirstSeenAt (allow same millisecond for fast systems)
+				return !lastSeen.Before(firstSeen)
 			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Occurrence count should be 2 and LastOccurrence should be >= FirstOccurrence")
 		})
@@ -273,7 +274,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				if updatedCRD == nil {
 					return ""
 				}
-				return updatedCRD.Status.OverallPhase
+				return string(updatedCRD.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Processing"))
 
 			By("3. Send duplicate alert")
@@ -281,13 +282,17 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert should return 202 Accepted")
 
 			By("4. Verify occurrence count was incremented")
-			Eventually(func() int {
+			Eventually(func() int32 {
 				updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				if updatedCRD == nil {
 					return 0
 				}
-				return updatedCRD.Spec.Deduplication.OccurrenceCount
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal(2), "Occurrence count should be incremented")
+				// DD-GATEWAY-011: Check status.deduplication (not spec)
+				if updatedCRD.Status.Deduplication == nil {
+					return 0
+				}
+				return updatedCRD.Status.Deduplication.OccurrenceCount
+			}, 5*time.Second, 500*time.Millisecond).Should(Equal(int32(2)), "Occurrence count should be incremented")
 		})
 	})
 
@@ -349,7 +354,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				if updatedCRD == nil {
 					return ""
 				}
-				return updatedCRD.Status.OverallPhase
+				return string(updatedCRD.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
 				"CRD status should be updated to Completed")
 
@@ -421,7 +426,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				if updatedCRD == nil {
 					return ""
 				}
-				return updatedCRD.Status.OverallPhase
+				return string(updatedCRD.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Failed"))
 
 			By("3. Send alert again (should trigger retry)")
@@ -483,7 +488,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				if updatedCRD == nil {
 					return ""
 				}
-				return updatedCRD.Status.OverallPhase
+				return string(updatedCRD.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Cancelled"))
 
 			By("3. Send alert again (should trigger retry)")
@@ -556,7 +561,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				if updatedCRD == nil {
 					return ""
 				}
-				return updatedCRD.Status.OverallPhase
+				return string(updatedCRD.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("UnknownPhase"))
 
 			By("3. Send alert again (should treat as DUPLICATE due to conservative fail-safe)")
@@ -571,13 +576,17 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			Expect(response2.Duplicate).To(BeTrue())
 
 			By("4. Verify occurrence count was incremented")
-			Eventually(func() int {
+			Eventually(func() int32 {
 				updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				if updatedCRD == nil {
 					return 0
 				}
-				return updatedCRD.Spec.Deduplication.OccurrenceCount
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal(2),
+				// DD-GATEWAY-011: Check status.deduplication (not spec)
+				if updatedCRD.Status.Deduplication == nil {
+					return 0
+				}
+				return updatedCRD.Status.Deduplication.OccurrenceCount
+			}, 5*time.Second, 500*time.Millisecond).Should(Equal(int32(2)),
 				"Unknown state should increment occurrence count (treated as in-progress)")
 		})
 	})
@@ -625,7 +634,9 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			By("2. Verify CRD was created")
 			crd := getCRDByName(ctx, testClient, sharedNamespace, response.RemediationRequestName)
 			Expect(crd).ToNot(BeNil())
-			Expect(crd.Spec.Deduplication.OccurrenceCount).To(Equal(1), "Initial occurrence count should be 1")
+			// DD-GATEWAY-011: Check status.deduplication (not spec)
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "status.deduplication should be initialized")
+			Expect(crd.Status.Deduplication.OccurrenceCount).To(Equal(int32(1)), "Initial occurrence count should be 1")
 		})
 	})
 

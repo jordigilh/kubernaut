@@ -46,7 +46,6 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 	var (
 		testNamespace string
 		k8sClient     *K8sTestClient
-		redisClient   *RedisTestClient
 		testServer    *httptest.Server
 		ctx           context.Context
 	)
@@ -58,11 +57,9 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for error handling tests")
 
-		redisClient = SetupRedisTestClient(ctx)
-		Expect(redisClient).ToNot(BeNil(), "Redis client required for error handling tests")
 
 		// Create Gateway server for testing
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Failed to start Gateway server")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should be created")
 
@@ -80,15 +77,10 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		Expect(k8sClient.Client.Create(ctx, ns)).To(Succeed())
 
 		// Clear Redis
-		Expect(redisClient.Client.FlushDB(ctx).Err()).To(Succeed())
 	})
 
 	AfterEach(func() {
 		// Reset Redis config to prevent OOM cascade failures
-		if redisClient != nil && redisClient.Client != nil {
-			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
-			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-		}
 
 		// Cleanup test server
 		if testServer != nil {

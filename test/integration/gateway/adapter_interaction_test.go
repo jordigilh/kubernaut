@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +29,7 @@ import (
 //
 // Defense-in-Depth: These integration tests complement unit tests
 // - Unit: Test adapter validation logic (pure business logic)
-// - Integration: Test adapter with real Redis/K8s infrastructure
+// - Integration: Test adapter with real K8s infrastructure (DD-GATEWAY-012: Redis removed)
 // - E2E: Test complete workflows across multiple services
 
 var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tests", func() {
@@ -37,7 +38,6 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 		cancel        context.CancelFunc
 		testServer    *httptest.Server
 		gatewayServer *gateway.Server
-		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		testNamespace string
 		testCounter   int
@@ -53,27 +53,25 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 			GinkgoRandomSeed(),
 			testCounter)
 
-		// Setup test infrastructure
-		redisClient = SetupRedisTestClient(ctx)
-		Expect(redisClient).ToNot(BeNil(), "Redis client required")
-		Expect(redisClient.Client).ToNot(BeNil(), "Redis connection required")
+	// Setup test infrastructure
+	k8sClient = SetupK8sTestClient(ctx)
+	Expect(k8sClient).ToNot(BeNil(), "K8s client required")
 
-		k8sClient = SetupK8sTestClient(ctx)
-		Expect(k8sClient).ToNot(BeNil(), "K8s client required")
-
-		// Clean Redis state
-		err := redisClient.Client.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should flush Redis")
-
-		// Ensure test namespace exists
+	// Ensure test namespace exists
 		EnsureTestNamespace(ctx, k8sClient, testNamespace)
 		RegisterTestNamespace(testNamespace)
 
-		// Start Gateway server
-		var startErr error
-		gatewayServer, startErr = StartTestGateway(ctx, redisClient, k8sClient)
-		Expect(startErr).ToNot(HaveOccurred(), "Gateway should start")
-		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should exist")
+	// Start Gateway server
+	// DD-GATEWAY-012: Redis removed, Gateway now K8s status-based
+	// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
+	dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
+	if dataStorageURL == "" {
+		dataStorageURL = "http://localhost:18090" // Fallback for manual testing
+	}
+	var startErr error
+	gatewayServer, startErr = StartTestGateway(ctx, k8sClient, dataStorageURL)
+	Expect(startErr).ToNot(HaveOccurred(), "Gateway should start")
+	Expect(gatewayServer).ToNot(BeNil(), "Gateway server should exist")
 
 		// Create HTTP test server
 		testServer = httptest.NewServer(gatewayServer.Handler())
@@ -113,15 +111,11 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
-			// BUSINESS VALIDATION 1: HTTP 201 Created (first alert, not duplicate)
-			Expect(resp.StatusCode).To(Equal(201), "First alert should return 201 Created")
+		// BUSINESS VALIDATION 1: HTTP 201 Created (first alert, not duplicate)
+		Expect(resp.StatusCode).To(Equal(201), "First alert should return 201 Created")
 
-			// STEP 2: Verify deduplication state in Redis
-			Eventually(func() int {
-				return redisClient.CountFingerprints(ctx, testNamespace)
-			}, "10s", "100ms").Should(Equal(1), "Should have 1 fingerprint in Redis")
-
-			// STEP 3: Verify CRD created in correct namespace
+		// STEP 2: Verify CRD created in correct namespace
+		// DD-GATEWAY-011: Deduplication now tracked in RR status, not Redis
 			var crd remediationv1alpha1.RemediationRequest
 			Eventually(func() error {
 				crdList := &remediationv1alpha1.RemediationRequestList{}

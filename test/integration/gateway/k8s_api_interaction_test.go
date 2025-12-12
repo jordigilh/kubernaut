@@ -35,7 +35,6 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 		cancel        context.CancelFunc
 		testServer    *httptest.Server
 		gatewayServer *gateway.Server
-		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		testNamespace string
 		testCounter   int
@@ -52,16 +51,11 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			testCounter)
 
 		// Setup test infrastructure
-		redisClient = SetupRedisTestClient(ctx)
-		Expect(redisClient).ToNot(BeNil(), "Redis client required")
-		Expect(redisClient.Client).ToNot(BeNil(), "Redis connection required")
 
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required")
 
 		// Clean Redis state
-		err := redisClient.Client.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should flush Redis")
 
 		// Ensure test namespace exists
 		EnsureTestNamespace(ctx, k8sClient, testNamespace)
@@ -69,7 +63,7 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 
 		// Start Gateway server
 		var startErr error
-		gatewayServer, startErr = StartTestGateway(ctx, redisClient, k8sClient)
+		gatewayServer, startErr = StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(startErr).ToNot(HaveOccurred(), "Gateway should start")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should exist")
 

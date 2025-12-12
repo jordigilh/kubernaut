@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -59,7 +60,6 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 		server            *httptest.Server
 		gatewayURL        string
 		testClient        *K8sTestClient
-		redisClient       *RedisTestClient
 		prometheusPayload []byte
 	)
 
@@ -70,14 +70,21 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 		// Per-spec setup for parallel execution
 		ctx = context.Background()
 		testClient = SetupK8sTestClient(ctx)
-		redisClient = SetupRedisTestClient(ctx)
 
 		// Ensure shared namespace exists (idempotent, thread-safe)
 		EnsureTestNamespace(ctx, testClient, sharedNamespace)
 		RegisterTestNamespace(sharedNamespace)
 
+		// DD-GATEWAY-012: Redis removed, Gateway now K8s status-based
+		// DD-AUDIT-003: Gateway connects to Data Storage for audit
+		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
+		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
+		if dataStorageURL == "" {
+			dataStorageURL = "http://localhost:18090" // Fallback for manual testing
+		}
+
 		// Per-spec Gateway instance (thread-safe: each parallel spec gets own HTTP server)
-		gatewayServer, err := StartTestGateway(ctx, redisClient, testClient)
+		gatewayServer, err := StartTestGateway(ctx, testClient, dataStorageURL)
 		Expect(err).ToNot(HaveOccurred())
 		server = httptest.NewServer(gatewayServer.Handler())
 		gatewayURL = server.URL
@@ -97,20 +104,16 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 				_ = testClient.Client.Delete(ctx, &crdList.Items[i])
 			}
 
-			Eventually(func() int {
-				list := &remediationv1alpha1.RemediationRequestList{}
-				_ = testClient.Client.List(ctx, list, client.InNamespace(sharedNamespace))
-				return len(list.Items)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
-				"All CRDs should be deleted before next test")
-		}
+		Eventually(func() int {
+			list := &remediationv1alpha1.RemediationRequestList{}
+			_ = testClient.Client.List(ctx, list, client.InNamespace(sharedNamespace))
+			return len(list.Items)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
+			"All CRDs should be deleted before next test")
+	}
 
-		// Clean up Redis state
-		By("Flushing Redis database")
-		if redisClient != nil && redisClient.Client != nil {
-			_ = redisClient.Client.FlushDB(ctx).Err()
-		}
-	})
+	// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
+})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// TEST: StatusUpdater Wiring Verification
@@ -172,7 +175,7 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 				if updatedCRD == nil {
 					return ""
 				}
-				return updatedCRD.Status.OverallPhase
+				return string(updatedCRD.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
 			By("4. Send duplicate alert (triggers processDuplicateSignal → statusUpdater)")
@@ -254,7 +257,7 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 				if c == nil {
 					return ""
 				}
-				return c.Status.OverallPhase
+				return string(c.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
 			By("3. Same alert fires again (pod still crash-looping)")
@@ -346,7 +349,7 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 				if c == nil {
 					return ""
 				}
-				return c.Status.OverallPhase
+				return string(c.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
 			By("3. Same alert fires 9 more times (storm pattern)")

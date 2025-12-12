@@ -15,26 +15,20 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 	var (
 		ctx         context.Context
 		testServer  *httptest.Server
-		redisClient *RedisTestClient
 		k8sClient   *K8sTestClient
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
 
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 		testServer = httptest.NewServer(gatewayServer.Handler())
 	})
 
 	AfterEach(func() {
-		// Reset Redis config to prevent OOM cascade failures
-		if redisClient != nil && redisClient.Client != nil {
-			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
-			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-		}
+		// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 
 		if testServer != nil {
 			testServer.Close()

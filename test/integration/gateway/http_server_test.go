@@ -38,7 +38,6 @@ func (sr *slowReader) Read(p []byte) (n int, err error) {
 var _ = Describe("HTTP Server Integration Tests", func() {
 	var (
 		testServer    *httptest.Server
-		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		ctx           context.Context
 		cancel        context.CancelFunc
@@ -57,23 +56,15 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			testCounter)
 
 		// Setup test clients
-		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
 
-		// Ensure unique test namespace exists
-		EnsureTestNamespace(ctx, k8sClient, testNamespace)
+	// Ensure unique test namespace exists
+	EnsureTestNamespace(ctx, k8sClient, testNamespace)
 
-		// Flush Redis to prevent state leakage
-		err := redisClient.Client.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should flush Redis")
+	// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 
-		// Verify Redis is empty
-		keys, err := redisClient.Client.Keys(ctx, "*").Result()
-		Expect(err).ToNot(HaveOccurred(), "Should query Redis keys")
-		Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
-
-		// Start test Gateway server
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+	// Start test Gateway server
+		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Gateway server should start successfully")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should not be nil")
 
@@ -91,9 +82,6 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 		}
 
 		// Reset Redis config after tests that might modify it
-		if redisClient != nil {
-			redisClient.ResetRedisConfig(ctx)
-		}
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -164,7 +152,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			opts := DefaultTestServerOptions()
 			opts.ReadTimeout = 1 * time.Second // Very short timeout for testing
 
-			gatewayServer, err := StartTestGatewayWithOptions(ctx, redisClient, k8sClient, opts)
+			gatewayServer, err := StartTestGatewayWithOptions(ctx, k8sClient, getDataStorageURL(), opts)
 			Expect(err).ToNot(HaveOccurred(), "Gateway server should start")
 
 			// Create a custom test server with the short-timeout Gateway
@@ -252,7 +240,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			opts := DefaultTestServerOptions()
 			opts.WriteTimeout = 2 * time.Second
 
-			gatewayServer, err := StartTestGatewayWithOptions(ctx, redisClient, k8sClient, opts)
+			gatewayServer, err := StartTestGatewayWithOptions(ctx, k8sClient, getDataStorageURL(), opts)
 			Expect(err).ToNot(HaveOccurred(), "Gateway server should start with custom WriteTimeout")
 
 			// Create test server
@@ -324,7 +312,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			opts := DefaultTestServerOptions()
 			opts.IdleTimeout = 2 * time.Second
 
-			gatewayServer, err := StartTestGatewayWithOptions(ctx, redisClient, k8sClient, opts)
+			gatewayServer, err := StartTestGatewayWithOptions(ctx, k8sClient, getDataStorageURL(), opts)
 			Expect(err).ToNot(HaveOccurred(), "Gateway server should start with custom IdleTimeout")
 
 			// Create test server
@@ -395,7 +383,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 			// Create Gateway with custom options
 			opts := DefaultTestServerOptions()
-			gatewayServer, err := StartTestGatewayWithOptions(ctx, redisClient, k8sClient, opts)
+			gatewayServer, err := StartTestGatewayWithOptions(ctx, k8sClient, getDataStorageURL(), opts)
 			Expect(err).ToNot(HaveOccurred(), "Gateway server should start")
 
 			// Create test server
@@ -437,7 +425,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 			// Create Gateway
 			opts := DefaultTestServerOptions()
-			gatewayServer, err := StartTestGatewayWithOptions(ctx, redisClient, k8sClient, opts)
+			gatewayServer, err := StartTestGatewayWithOptions(ctx, k8sClient, getDataStorageURL(), opts)
 			Expect(err).ToNot(HaveOccurred(), "Gateway server should start")
 
 			// Create test server
@@ -484,7 +472,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 			// Create Gateway
 			opts := DefaultTestServerOptions()
-			gatewayServer, err := StartTestGatewayWithOptions(ctx, redisClient, k8sClient, opts)
+			gatewayServer, err := StartTestGatewayWithOptions(ctx, k8sClient, getDataStorageURL(), opts)
 			Expect(err).ToNot(HaveOccurred(), "Gateway server should start")
 
 			// Create test server

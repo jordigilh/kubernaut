@@ -53,7 +53,6 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		ctx           context.Context
 		gatewayServer *gateway.Server
 		testServer    *httptest.Server
-		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		logger        logr.Logger // DD-005: Use logr.Logger
 		testNamespace string      // Unique namespace per test
@@ -66,21 +65,13 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		_ = logger              // Suppress unused variable warning
 
 		// Setup test infrastructure using helpers
-		redisClient = SetupRedisTestClient(ctx)
-		Expect(redisClient).ToNot(BeNil(), "Redis client required for integration tests")
-		Expect(redisClient.Client).ToNot(BeNil(), "Redis connection required")
 
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for integration tests")
 
 		// Clean Redis before each test
-		err := redisClient.Client.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
 		// Verify Redis is actually empty (prevent state leakage between tests)
-		keys, err := redisClient.Client.Keys(ctx, "*").Result()
-		Expect(err).ToNot(HaveOccurred(), "Should query Redis keys")
-		Expect(keys).To(BeEmpty(), "Redis should be completely empty after FlushDB")
 
 		// Create unique production namespace for this test (prevents collisions)
 		// Use counter to ensure uniqueness even when tests run in same second
@@ -91,8 +82,10 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// Register namespace for suite-level cleanup
 		RegisterTestNamespace(testNamespace)
 
+		// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
 		// Create Gateway server using helper
-		gatewayServer, err = StartTestGateway(ctx, redisClient, k8sClient)
+		var err error
+		gatewayServer, err = StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should be created")
 
@@ -103,16 +96,11 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		logger.Info("Test setup complete",
 			"test_server_url", testServer.URL,
 			"test_namespace", testNamespace,
-			"redis_addr", redisClient.Client.Options().Addr,
 		)
 	})
 
 	AfterEach(func() {
-		// Reset Redis config to prevent OOM cascade failures
-		if redisClient != nil && redisClient.Client != nil {
-			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
-			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-		}
+		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
 		// NOTE: Namespace cleanup handled by suite-level AfterSuite (batch cleanup)
 		// This prevents "namespace is being terminated" errors from parallel test execution
@@ -120,9 +108,6 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// Cleanup
 		if testServer != nil {
 			testServer.Close()
-		}
-		if redisClient != nil && redisClient.Client != nil {
-			_ = redisClient.Client.FlushDB(ctx).Err()
 		}
 	})
 
@@ -171,12 +156,9 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
 			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
 
-			// BUSINESS OUTCOME 2: Fingerprint stored in Redis for deduplication
-			// Check Redis IMMEDIATELY after HTTP response (before 5-second TTL expires)
-			exists, err := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
-			Expect(err).NotTo(HaveOccurred(), "Redis query should succeed")
-			Expect(exists).To(Equal(int64(1)),
-				"Fingerprint must be stored in Redis to enable deduplication")
+			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: BUSINESS OUTCOME 2: Deduplication tracked in RR status
+			// Fingerprint-based deduplication validated in dd_gateway_011_status_deduplication_test.go
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
@@ -331,25 +313,26 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				resp.Body.Close()
 			}
 
-			// BUSINESS OUTCOME: Redis metadata tracks duplicate count
-			// Use Eventually because Redis writes are async
-			Eventually(func() int {
-				count, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "count").Int()
-				if err != nil {
+			// DD-GATEWAY-012: Redis metadata check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: BUSINESS OUTCOME: RR status.deduplication tracks duplicate count
+			// Verify duplicate count via K8s CRD status
+			Eventually(func() int32 {
+				// Get the first (and only) CRD
+				crds := ListRemediationRequests(ctx, k8sClient, testNamespace)
+				if len(crds) == 0 || crds[0].Status.Deduplication == nil {
 					return 0
 				}
-				return count
-			}, "2s", "100ms").Should(BeNumerically(">=", 5),
+				return crds[0].Status.Deduplication.OccurrenceCount
+			}, "5s", "100ms").Should(BeNumerically(">=", 5),
 				"Count shows alert fired 5 times (1 original + 4 duplicates)")
 
-			firstOccurrence, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "firstOccurrence").Result()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(firstOccurrence).NotTo(BeEmpty(),
+			// Verify timestamps in status.deduplication
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespace)
+			Expect(crds).To(HaveLen(1))
+			Expect(crds[0].Status.Deduplication).ToNot(BeNil())
+			Expect(crds[0].Status.Deduplication.FirstSeenAt).ToNot(BeNil(),
 				"First occurrence timestamp shows when issue started")
-
-			lastOccurrence, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "lastOccurrence").Result()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(lastOccurrence).NotTo(BeEmpty(),
+			Expect(crds[0].Status.Deduplication.LastSeenAt).ToNot(BeNil(),
 				"Last occurrence timestamp shows issue is ongoing")
 
 			// BUSINESS CAPABILITY VERIFIED:

@@ -39,7 +39,6 @@ import (
 var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - Integration Tests", func() {
 	var (
 		testServer    *httptest.Server
-		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		ctx           context.Context
 		cancel        context.CancelFunc
@@ -58,23 +57,15 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - Integration Tes
 			testCounter)
 
 		// Setup test clients
-		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
 
-		// Ensure unique test namespace exists
-		EnsureTestNamespace(ctx, k8sClient, testNamespace)
+	// Ensure unique test namespace exists
+	EnsureTestNamespace(ctx, k8sClient, testNamespace)
 
-		// Flush Redis to prevent state leakage
-		err := redisClient.Client.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should flush Redis")
+	// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 
-		// Verify Redis is empty
-		keys, err := redisClient.Client.Keys(ctx, "*").Result()
-		Expect(err).ToNot(HaveOccurred(), "Should query Redis keys")
-		Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
-
-		// Start test Gateway server
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+	// Start test Gateway server
+		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Gateway server should start successfully")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should not be nil")
 
@@ -92,9 +83,6 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - Integration Tes
 		}
 
 		// Reset Redis config after tests
-		if redisClient != nil {
-			redisClient.ResetRedisConfig(ctx)
-		}
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

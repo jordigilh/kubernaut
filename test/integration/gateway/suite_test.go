@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
+	// DD-GATEWAY-012: "github.com/jordigilh/kubernaut/test/infrastructure" removed - no Redis container needed
 )
 
 // Suite-level resources (envtest migration)
@@ -48,8 +48,8 @@ var (
 	testEnv          *envtest.Environment   // envtest environment (in-memory K8s)
 	suitePgClient    *PostgresTestClient    // PostgreSQL container
 	suiteDataStorage *DataStorageTestServer // Data Storage service
-	suiteRedisPort   int                    // Redis port for integration tests
 	k8sConfig        *rest.Config           // Kubernetes client config from envtest
+	// DD-GATEWAY-012: suiteRedisPort REMOVED - Gateway is now Redis-free
 )
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
@@ -69,10 +69,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	suiteLogger.Info("Creating test infrastructure...")
 	suiteLogger.Info("  • envtest (in-memory K8s API server)")
 	suiteLogger.Info("  • RemediationRequest CRD (cluster-wide)")
-	suiteLogger.Info("  • Redis container (Podman)")
 	suiteLogger.Info("  • PostgreSQL container (Podman)")
 	suiteLogger.Info("  • Data Storage service (httptest.Server)")
 	suiteLogger.Info("  • Parallel Execution: 4 concurrent processors")
+	suiteLogger.Info("  • DD-GATEWAY-012: Redis REMOVED - K8s-native deduplication")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	var err error
@@ -137,44 +137,46 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	suiteLogger.Info(fmt.Sprintf("   ✅ envtest started (K8s API: %s)", k8sConfig.Host))
 
-	// 2. Start Redis container
-	suiteLogger.Info("📦 Starting Redis container...")
-	_ = infrastructure.StopRedisContainer("gateway-redis-integration", GinkgoWriter)
-	time.Sleep(500 * time.Millisecond) // Wait for port to be released
+	// DD-GATEWAY-012: Redis container startup REMOVED - Gateway is now Redis-free
 
-	redisPort, err := infrastructure.StartRedisContainer("gateway-redis-integration", 16380, GinkgoWriter) // DD-TEST-001: Gateway integration Redis port
-	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests")
-	suiteRedisPort = redisPort
-	suiteLogger.Info(fmt.Sprintf("   ✅ Redis started (port: %d)", redisPort))
-
-	// 3. Start PostgreSQL container
+	// 2. Start PostgreSQL container
 	suiteLogger.Info("📦 Starting PostgreSQL container...")
 	suitePgClient = SetupPostgresTestClient(ctx)
 	Expect(suitePgClient).ToNot(BeNil(), "PostgreSQL container must start")
 	suiteLogger.Info(fmt.Sprintf("   ✅ PostgreSQL started (port: %d)", suitePgClient.Port))
 
-	// 4. Start Data Storage service
+	// 3. Start Data Storage service
 	suiteLogger.Info("📦 Starting Data Storage service...")
 	suiteDataStorage = SetupDataStorageTestServer(ctx, suitePgClient)
 	Expect(suiteDataStorage).ToNot(BeNil(), "Data Storage service must start")
-	suiteLogger.Info(fmt.Sprintf("   ✅ Data Storage started (URL: %s)", suiteDataStorage.Server.URL))
+	dataStorageURL := suiteDataStorage.URL()
+	suiteLogger.Info(fmt.Sprintf("   ✅ Data Storage started (URL: %s)", dataStorageURL))
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Infrastructure Setup Complete - Ready for Parallel Tests")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Return both kubeconfig and Redis port for other processes
-	// Format: kubeconfig_length(4 bytes) + kubeconfig + redis_port(string)
+	// DD-GATEWAY-012 + DD-TEST-001: Share Data Storage URL with all parallel processes
+	// Per DD-TEST-001: Return structured config (not just kubeconfig) for parallel process sharing
+	// Environment variables DON'T propagate between Ginkgo parallel processes
 	type SharedConfig struct {
-		KubeConfig []byte
-		RedisPort  int
+		Kubeconfig     []byte `json:"kubeconfig"`
+		DataStorageURL string `json:"data_storage_url"`
 	}
-	configData, err := json.Marshal(SharedConfig{
-		KubeConfig: testEnv.KubeConfig,
-		RedisPort:  redisPort,
-	})
-	Expect(err).ToNot(HaveOccurred(), "Should serialize shared config")
-	return configData
+	config := SharedConfig{
+		Kubeconfig:     testEnv.KubeConfig,
+		DataStorageURL: dataStorageURL,
+	}
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to marshal shared config: %v", err))
+	}
+
+	suiteLogger.Info("📦 Shared config prepared for parallel processes",
+		"data_storage_url", dataStorageURL,
+		"kubeconfig_size", len(testEnv.KubeConfig))
+
+	return configBytes
 
 }, func(data []byte) {
 	// This runs on ALL processes (including process 1) - initializes per-process state
@@ -187,31 +189,28 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ServiceName: "gateway-integration-test",
 	})
 
-	// Deserialize shared config (kubeconfig + Redis port)
+	// DD-GATEWAY-012 + DD-TEST-001: Unmarshal shared config from process 1
+	// Per DD-TEST-001: All parallel processes receive structured config
 	type SharedConfig struct {
-		KubeConfig []byte
-		RedisPort  int
+		Kubeconfig     []byte `json:"kubeconfig"`
+		DataStorageURL string `json:"data_storage_url"`
 	}
 	var sharedConfig SharedConfig
-	var err error
-	err = json.Unmarshal(data, &sharedConfig)
-	Expect(err).ToNot(HaveOccurred(), "Should deserialize shared config")
+	err := json.Unmarshal(data, &sharedConfig)
+	Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal shared config from process 1")
 
-	// Create rest.Config from kubeconfig bytes
-	k8sConfig, err = clientcmd.RESTConfigFromKubeConfig(sharedConfig.KubeConfig)
+	// Set Data Storage URL for this process (critical for parallel execution)
+	os.Setenv("TEST_DATA_STORAGE_URL", sharedConfig.DataStorageURL)
+
+	// Create Kubernetes client from shared kubeconfig
+	k8sConfig, err = clientcmd.RESTConfigFromKubeConfig(sharedConfig.Kubeconfig)
 	Expect(err).ToNot(HaveOccurred(), "Should create rest.Config from kubeconfig")
 
-	// Set Redis port for this process
-	suiteRedisPort = sharedConfig.RedisPort
-
-	suiteLogger.Info(fmt.Sprintf("Process %d initialized with K8s API: %s, Redis port: %d",
-		GinkgoParallelProcess(), k8sConfig.Host, suiteRedisPort))
+	suiteLogger.Info(fmt.Sprintf("Process %d initialized with K8s API: %s, Data Storage: %s",
+		GinkgoParallelProcess(), k8sConfig.Host, sharedConfig.DataStorageURL))
 
 	// Set the K8s config for helpers.go to use (instead of loading from file)
 	SetSuiteK8sConfig(k8sConfig)
-
-	// Set the Redis port for helpers.go to use (instead of hardcoded port)
-	SetSuiteRedisPort(suiteRedisPort)
 
 	// Initialize K8s client for this process (uses reconstructed k8sConfig via SetSuiteK8sConfig)
 	// Each process creates its own client.Client - clients are thread-safe and stateless
@@ -263,12 +262,7 @@ var _ = SynchronizedAfterSuite(func() {
 		suitePgClient.Cleanup(ctx)
 	}
 
-	// Stop Redis container
-	suiteLogger.Info("Stopping Redis container...")
-	err := infrastructure.StopRedisContainer("gateway-redis-integration", GinkgoWriter)
-	if err != nil {
-		suiteLogger.Info("Failed to stop Redis container", "error", err)
-	}
+	// DD-GATEWAY-012: Redis container cleanup REMOVED - Gateway is now Redis-free
 
 	// Stop envtest
 	if testEnv != nil {

@@ -274,22 +274,14 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				// Even for K8s API failure tests, we need these services
 				// Use miniredis or real Redis for testing
 				redisClient := SetupRedisTestClient(ctx)
-				if redisClient == nil || redisClient.Client == nil {
 					Skip("Redis not available - required for Gateway startup")
 				}
 
 				// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
-				err = redisClient.Client.FlushDB(ctx).Err()
-				Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
 				// Verify Redis is clean
-				keys, err := redisClient.Client.Keys(ctx, "*").Result()
 				Expect(err).ToNot(HaveOccurred())
-				Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 
-				dedupService := processing.NewDeduplicationService(redisClient.Client, 5*time.Second, logger)
-				stormDetector := processing.NewStormDetector(redisClient.Client, logger)
-				stormAggregator := processing.NewStormAggregator(redisClient.Client)
 
 				// DD-GATEWAY-004: K8s clientset no longer needed - authentication removed
 				// Phase 2 Fix: Create custom Prometheus registry per test to prevent
@@ -305,7 +297,6 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					dedupService,       // REQUIRED v2.9
 					stormDetector,      // REQUIRED v2.9
 					stormAggregator,    // REQUIRED v2.11
-					redisClient.Client, // REQUIRED v2.11 (rate limiting)
 					logger,
 					serverConfig,
 					metricsRegistry, // Phase 2 Fix: Custom registry per test for isolation

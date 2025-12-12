@@ -130,11 +130,12 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// Verify invalid fingerprint never entered deduplication system
 			// This is a BUSINESS outcome: data integrity maintained
 
-			// Check Redis: should have NO keys (invalid data rejected before storage)
-			keys, err := testCtx.RedisClient.Client.Keys(testCtx.Ctx, "gateway:dedup:*").Result()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(keys).To(BeEmpty(),
-				"Invalid fingerprint MUST NOT enter deduplication system (BR-008 data integrity)")
+			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: Deduplication validation now via K8s CRD check
+			// No CRD should be created for invalid data (HTTP 400 rejection)
+			crds := ListRemediationRequests(testCtx.Ctx, testCtx.K8sClient, testCtx.TestNamespace)
+			Expect(crds).To(BeEmpty(),
+				"Invalid fingerprint MUST NOT create CRD (BR-008 data integrity)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS VALUE ACHIEVED
@@ -213,13 +214,13 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// OPERATIONAL OUTCOME VALIDATION
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// Verify no processing overhead (no Redis keys, no K8s API calls)
+			// Verify no processing overhead (no CRDs created, no K8s API writes)
 
-			// Check Redis: should have NO keys (no processing occurred)
-			keys, err := testCtx.RedisClient.Client.Keys(testCtx.Ctx, "gateway:*").Result()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(keys).To(BeEmpty(),
-				"Empty payload MUST NOT trigger any processing (operational efficiency)")
+			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: Verify no CRDs created (empty payload rejected early)
+			crds := ListRemediationRequests(testCtx.Ctx, testCtx.K8sClient, testCtx.TestNamespace)
+			Expect(crds).To(BeEmpty(),
+				"Empty payload MUST NOT create CRD (operational efficiency)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS VALUE ACHIEVED

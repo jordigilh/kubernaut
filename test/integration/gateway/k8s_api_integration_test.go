@@ -36,7 +36,6 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		ctx                context.Context
 		cancel             context.CancelFunc
 		testServer         *httptest.Server
-		redisClient        *RedisTestClient
 		k8sClient          *K8sTestClient
 		testNamespaceProd  string
 		testNamespaceStage string
@@ -55,17 +54,12 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		testNamespaceStage = fmt.Sprintf("test-k8s-stage-%d-%d-%d", baseTimestamp, baseSeed, testCounter)
 		testNamespaceDev = fmt.Sprintf("test-k8s-dev-%d-%d-%d", baseTimestamp, baseSeed, testCounter)
 
-		// Setup test infrastructure
-		redisClient = SetupRedisTestClient(ctx)
-		k8sClient = SetupK8sTestClient(ctx)
+	// Setup test infrastructure
+	k8sClient = SetupK8sTestClient(ctx)
 
-		// Clean Redis state (safe - each process uses different Redis DB)
-		if redisClient != nil && redisClient.Client != nil {
-			err := redisClient.Client.FlushDB(ctx).Err()
-			Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
-		}
+	// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 
-		// Create test namespaces with environment labels for classification
+	// Create test namespaces with environment labels for classification
 		// This is required for environment-based priority assignment
 		testNamespaces := []struct {
 			name  string
@@ -98,17 +92,13 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		}
 
 		// Start Gateway server
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 		testServer = httptest.NewServer(gatewayServer.Handler())
 	})
 
 	AfterEach(func() {
 		// Reset Redis config to prevent OOM cascade failures
-		if redisClient != nil && redisClient.Client != nil {
-			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
-			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-		}
 
 		// CRITICAL FIX: Don't delete namespaces during parallel test execution
 		// Let Kind cluster deletion handle cleanup at the end of the test suite
@@ -124,7 +114,6 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		if testServer != nil {
 			testServer.Close()
 		}
-		redisClient.Cleanup(ctx)
 		k8sClient.Cleanup(ctx)
 		cancel()
 	})

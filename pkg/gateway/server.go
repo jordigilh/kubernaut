@@ -95,7 +95,9 @@ type Server struct {
 
 	// Core processing components
 	adapterRegistry *adapters.AdapterRegistry
-	crdUpdater      *processing.CRDUpdater // DD-GATEWAY-009: CRD updater for state-based deduplication
+	// DD-GATEWAY-011: CRDUpdater REMOVED - replaced by StatusUpdater
+	// Old: crdUpdater updated Spec.Deduplication (WRONG!)
+	// New: statusUpdater updates Status.Deduplication (CORRECT!)
 	// DD-GATEWAY-011 + DD-GATEWAY-012: Status-based deduplication and storm aggregation
 	// Redis DEPRECATED - all state now in K8s RR status
 	statusUpdater *processing.StatusUpdater                  // Updates RR status.deduplication and status.stormAggregation
@@ -284,8 +286,9 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		metricsInstance = metrics.NewMetrics()
 	}
 
-	// DD-GATEWAY-009: Initialize CRD updater for duplicate alert handling
-	crdUpdater := processing.NewCRDUpdater(k8sClient, logger)
+	// DD-GATEWAY-011: CRDUpdater REMOVED - replaced by StatusUpdater
+	// Old CRDUpdater updated Spec.Deduplication (incorrect per DD-GATEWAY-011)
+	// StatusUpdater now handles all status updates (status.deduplication, status.stormAggregation)
 
 	// DD-GATEWAY-012: Storm detection via Redis REMOVED
 	// Storm status now tracked via status.stormAggregation (occurrence count >= threshold)
@@ -328,7 +331,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// Create server (Redis-free)
 	server := &Server{
 		adapterRegistry: adapterRegistry,
-		crdUpdater:      crdUpdater,
+		// DD-GATEWAY-011: crdUpdater field removed (replaced by statusUpdater)
 		statusUpdater:   statusUpdater,
 		phaseChecker:    phaseChecker,
 		crdCreator:      crdCreator,
@@ -621,15 +624,13 @@ func (s *Server) handleProcessingError(
 
 	errMsg := err.Error()
 
-	// Redis unavailability → HTTP 503 Service Unavailable
-	if strings.Contains(errMsg, "redis unavailable") || strings.Contains(errMsg, "deduplication check failed") {
-		s.writeServiceUnavailableError(w, r, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30)
-		return
-	}
+	// DD-GATEWAY-012: Redis error handling REMOVED - Gateway is now Redis-free
+	// Deduplication check failures are now K8s API errors (phaseChecker uses K8s client)
 
 	// Kubernetes API errors → HTTP 500 Internal Server Error with details
 	if strings.Contains(errMsg, "kubernetes") || strings.Contains(errMsg, "k8s") ||
 		strings.Contains(errMsg, "failed to create RemediationRequest CRD") ||
+		strings.Contains(errMsg, "deduplication check failed") || // DD-GATEWAY-012: Now a K8s API error
 		strings.Contains(errMsg, "namespaces") {
 		s.writeInternalError(w, r, fmt.Sprintf("Kubernetes API error: %v", err))
 		return
@@ -1299,6 +1300,17 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 		logger.Error(err, "Failed to create RemediationRequest CRD",
 			"fingerprint", signal.Fingerprint)
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
+	}
+
+	// DD-GATEWAY-011: Initialize status.deduplication for NEW CRD
+	// Gateway owns status.deduplication per DD-GATEWAY-011
+	// Must initialize immediately after creation (OccurrenceCount=1, FirstSeenAt=now)
+	if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, rr); err != nil {
+		logger.Info("Failed to initialize deduplication status (DD-GATEWAY-011)",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"rr", rr.Name)
+		// Non-fatal: CRD exists, status update can be retried by RO or next duplicate
 	}
 
 	// DD-GATEWAY-011: Redis deduplication storage DEPRECATED

@@ -56,7 +56,6 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		ctx           context.Context
 		gatewayServer *gateway.Server
 		testServer    *httptest.Server
-		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		logger        *zap.Logger
 		// Unique namespace names per test run (avoids parallel test interference)
@@ -77,19 +76,15 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		devNamespace = fmt.Sprintf("dev-%s", uniqueSuffix)
 
 		// Setup test infrastructure using helpers
-		redisClient = SetupRedisTestClient(ctx)
-		Expect(redisClient).ToNot(BeNil(), "Redis client required for integration tests")
-		Expect(redisClient.Client).ToNot(BeNil(), "Redis connection required")
 
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for integration tests")
 
-		// Clean Redis for this DB only (each parallel process has its own DB)
-		err := redisClient.Client.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
+		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
 		// Create Gateway server using helper
-		gatewayServer, err = StartTestGateway(ctx, redisClient, k8sClient)
+		var err error
+		gatewayServer, err = StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should be created")
 
@@ -143,16 +138,11 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 		logger.Info("Test setup complete",
 			zap.String("test_server_url", testServer.URL),
-			zap.String("redis_addr", redisClient.Client.Options().Addr),
 		)
 	})
 
 	AfterEach(func() {
-		// Reset Redis config to prevent OOM cascade failures
-		if redisClient != nil && redisClient.Client != nil {
-			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
-			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-		}
+		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
 		// Cleanup all test namespaces
 		testNamespaces := []string{prodNamespace, stagingNamespace, devNamespace}
@@ -162,12 +152,10 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
 		}
 
-		// Cleanup test server and Redis
+		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
+		// Cleanup test server
 		if testServer != nil {
 			testServer.Close()
-		}
-		if redisClient != nil && redisClient.Client != nil {
-			_ = redisClient.Client.FlushDB(ctx).Err()
 		}
 	})
 
@@ -208,7 +196,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"First occurrence must create CRD (201 Created)")
 
-			// Parse response to get fingerprint (for Redis check before TTL expires)
+			// Parse response to get fingerprint
 			var response map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&response)
 			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
@@ -216,12 +204,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
 			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
 
-			// BUSINESS OUTCOME 2: Fingerprint stored in Redis for deduplication
-			// Check Redis IMMEDIATELY after HTTP response (before 5-second TTL expires)
-			exists, err := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
-			Expect(err).NotTo(HaveOccurred(), "Redis query should succeed")
-			Expect(exists).To(Equal(int64(1)),
-				"Fingerprint must be stored in Redis to enable deduplication")
+			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: Deduplication now verified via K8s CRD status (validated in other tests)
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes with correct business metadata
 			var crdList remediationv1alpha1.RemediationRequestList
@@ -359,11 +343,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			firstCRDName := crdList1.Items[0].Name
 
-			// Verify fingerprint stored in Redis (check immediately after HTTP response)
-			Eventually(func() int64 {
-				exists, _ := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
-				return exists
-			}, "2s", "100ms").Should(Equal(int64(1)), "Fingerprint must be in Redis after first alert")
+			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
 
 			// Second alert: Duplicate (within TTL)
 			resp2, err := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -381,11 +362,23 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			Expect(crdList2.Items[0].Name).To(Equal(firstCRDName),
 				"Same CRD name confirms no duplicate CRD created")
 
-			// BUSINESS OUTCOME 3: Redis metadata updated with duplicate count
-			count, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "count").Int()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(count).To(BeNumerically(">=", 2),
-				"Duplicate count must be tracked in Redis (at least 2)")
+			// DD-GATEWAY-012: Redis metadata check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: BUSINESS OUTCOME 3: Deduplication count tracked in RR status
+			Eventually(func() int32 {
+				var updatedCRD remediationv1alpha1.RemediationRequest
+				err := k8sClient.Client.Get(ctx, client.ObjectKey{
+					Name:      firstCRDName,
+					Namespace: prodNamespace,
+				}, &updatedCRD)
+				if err != nil {
+					return 0
+				}
+				if updatedCRD.Status.Deduplication == nil {
+					return 0
+				}
+				return updatedCRD.Status.Deduplication.OccurrenceCount
+			}, "5s", "100ms").Should(BeNumerically(">=", 2),
+				"Duplicate count must be tracked in RR status.deduplication (at least 2)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Fingerprint generation enables deduplication
