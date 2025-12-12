@@ -38,19 +38,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
-	// DD-GATEWAY-012: "github.com/jordigilh/kubernaut/test/infrastructure" removed - no Redis container needed
+	"github.com/jordigilh/kubernaut/test/infrastructure" // Shared DS infrastructure (PostgreSQL + Redis + DS)
 )
 
 // Suite-level resources (envtest migration)
 var (
-	suiteK8sClient   *K8sTestClient         // Shared K8s client for cleanup
-	suiteCtx         context.Context        // Suite context
-	suiteLogger      logr.Logger            // Suite logger (DD-005: logr.Logger)
-	testEnv          *envtest.Environment   // envtest environment (in-memory K8s)
-	suitePgClient    *PostgresTestClient    // PostgreSQL container
-	suiteDataStorage *DataStorageTestServer // Data Storage service
-	k8sConfig        *rest.Config           // Kubernetes client config from envtest
-	// DD-GATEWAY-012: suiteRedisPort REMOVED - Gateway is now Redis-free
+	suiteK8sClient        *K8sTestClient                      // Shared K8s client for cleanup
+	suiteCtx              context.Context                     // Suite context
+	suiteLogger           logr.Logger                         // Suite logger (DD-005: logr.Logger)
+	testEnv               *envtest.Environment                // envtest environment (in-memory K8s)
+	suiteDataStorageInfra *infrastructure.DataStorageInfrastructure // Shared DS infrastructure (PostgreSQL + Redis + DS)
+	k8sConfig             *rest.Config                        // Kubernetes client config from envtest
 )
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
@@ -70,10 +68,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	suiteLogger.Info("Creating test infrastructure...")
 	suiteLogger.Info("  • envtest (in-memory K8s API server)")
 	suiteLogger.Info("  • RemediationRequest CRD (cluster-wide)")
-	suiteLogger.Info("  • PostgreSQL container (Podman)")
-	suiteLogger.Info("  • Data Storage service (httptest.Server)")
+	suiteLogger.Info("  • Data Storage infrastructure (PostgreSQL + Redis + DS service)")
 	suiteLogger.Info("  • Parallel Execution: 4 concurrent processors")
-	suiteLogger.Info("  • DD-GATEWAY-012: Redis REMOVED - K8s-native deduplication")
+	suiteLogger.Info("  • Using shared infrastructure pattern (test/infrastructure/datastorage.go)")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	var err error
@@ -138,28 +135,37 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	suiteLogger.Info(fmt.Sprintf("   ✅ envtest started (K8s API: %s)", k8sConfig.Host))
 
-	// DD-GATEWAY-012: Redis container startup REMOVED - Gateway is now Redis-free
+	// 2. Start Data Storage infrastructure (PostgreSQL + Redis + DS)
+	//    Using shared infrastructure pattern (test/infrastructure/datastorage.go)
+	//    This handles PostgreSQL, Redis, migrations, and Data Storage service startup
+	suiteLogger.Info("📦 Starting Data Storage infrastructure (shared pattern)...")
 
-	// 2. Start PostgreSQL container
-	suiteLogger.Info("📦 Starting PostgreSQL container...")
-	suitePgClient = SetupPostgresTestClient(ctx)
-	Expect(suitePgClient).ToNot(BeNil(), "PostgreSQL container must start")
-	suiteLogger.Info(fmt.Sprintf("   ✅ PostgreSQL started (port: %d)", suitePgClient.Port))
+	// Use shared infrastructure with Gateway-specific config
+	dsInfra, err := infrastructure.StartDataStorageInfrastructure(&infrastructure.DataStorageConfig{
+		PostgresPort: "50001", // Gateway's PostgreSQL port
+		RedisPort:    "6379",  // Standard Redis port (DS requires it even though Gateway doesn't use it)
+		ServicePort:  "8080",  // Data Storage service port (using --network=host)
+		DBName:       "kubernaut_audit",
+		DBUser:       "kubernaut",
+		DBPassword:   "test_password",
+	}, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Data Storage infrastructure must start successfully")
+	Expect(dsInfra).ToNot(BeNil(), "Data Storage infrastructure must not be nil")
 
-	// 3. Start Data Storage service
-	suiteLogger.Info("📦 Starting Data Storage service...")
-	suiteDataStorage = SetupDataStorageTestServer(ctx, suitePgClient)
-	Expect(suiteDataStorage).ToNot(BeNil(), "Data Storage service must start")
-	dataStorageURL := suiteDataStorage.URL()
-	suiteLogger.Info(fmt.Sprintf("   ✅ Data Storage started (URL: %s)", dataStorageURL))
+	// Store infrastructure handle for cleanup
+	suiteDataStorageInfra = dsInfra
+	dataStorageURL := dsInfra.ServiceURL
+
+	suiteLogger.Info(fmt.Sprintf("   ✅ Data Storage infrastructure started (URL: %s)", dataStorageURL))
 
 	// AIAnalysis Pattern: Log complete infrastructure summary for debugging
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Gateway Integration Test Infrastructure")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info(fmt.Sprintf("  K8s API:        %s", k8sConfig.Host))
-	suiteLogger.Info(fmt.Sprintf("  PostgreSQL:     localhost:%d", suitePgClient.Port))
-	suiteLogger.Info(fmt.Sprintf("  DataStorage:    %s", dataStorageURL))
+	suiteLogger.Info(fmt.Sprintf("  DataStorage:    %s (shared infrastructure)", dataStorageURL))
+	suiteLogger.Info(fmt.Sprintf("  PostgreSQL:     %s", dsInfra.PostgresContainer))
+	suiteLogger.Info(fmt.Sprintf("  Redis:          %s", dsInfra.RedisContainer))
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Validate Data Storage health before proceeding
@@ -274,21 +280,11 @@ var _ = SynchronizedAfterSuite(func() {
 		fmt.Println("\n✅ No test namespaces created")
 	}
 
-	ctx := context.Background()
-
-	// Stop Data Storage service
-	if suiteDataStorage != nil {
-		suiteLogger.Info("Stopping Data Storage service...")
-		suiteDataStorage.Cleanup()
+	// Stop Data Storage infrastructure (PostgreSQL + Redis + DS)
+	if suiteDataStorageInfra != nil {
+		suiteLogger.Info("Stopping Data Storage infrastructure...")
+		suiteDataStorageInfra.Stop(GinkgoWriter)
 	}
-
-	// Stop PostgreSQL container
-	if suitePgClient != nil {
-		suiteLogger.Info("Stopping PostgreSQL container...")
-		suitePgClient.Cleanup(ctx)
-	}
-
-	// DD-GATEWAY-012: Redis container cleanup REMOVED - Gateway is now Redis-free
 
 	// Stop envtest
 	if testEnv != nil {
