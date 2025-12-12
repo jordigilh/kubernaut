@@ -1,7 +1,7 @@
 # TRIAGE: SignalProcessing 5 Failing Tests - Implementation Gap Analysis
 
-**Date**: 2025-12-12  
-**Time**: 10:30 AM  
+**Date**: 2025-12-12
+**Time**: 10:30 AM
 **Context**: After 12 hours of work, 23/28 tests passing (82%), investigating 5 failures
 
 ---
@@ -262,14 +262,14 @@ Test might be:
 - **Day 10**: Wire components into controller (⚠️ **INCOMPLETE**)
 
 **What Got Wired** (earlier in our session):
-✅ EnvironmentClassifier  
-✅ PriorityEngine  
-✅ BusinessClassifier  
+✅ EnvironmentClassifier
+✅ PriorityEngine
+✅ BusinessClassifier
 
 **What's Still Missing**:
-❌ rego.Engine (CustomLabels)  
-❌ ownerchain.Builder (using inline version instead)  
-❌ detection.LabelDetector (using inline version instead)  
+❌ rego.Engine (CustomLabels)
+❌ ownerchain.Builder (using inline version instead)
+❌ detection.LabelDetector (using inline version instead)
 
 ---
 
@@ -452,8 +452,8 @@ result := {
 
 Should I:
 
-**A**: Wire `ownerchain.Builder` AND `detection.LabelDetector` properly (use pkg implementations)  
-**B**: Fix inline controller methods (keep inline, just debug)  
+**A**: Wire `ownerchain.Builder` AND `detection.LabelDetector` properly (use pkg implementations)
+**B**: Fix inline controller methods (keep inline, just debug)
 **C**: Hybrid (wire proper Builder, keep inline detector)
 
 My recommendation: **Option A** - Wire proper implementations (matches Day 10 pattern)
@@ -464,8 +464,8 @@ My recommendation: **Option A** - Wire proper implementations (matches Day 10 pa
 
 Should integration tests:
 
-**A**: Create temp file (like environment.rego, priority.rego - current pattern)  
-**B**: Load from `deploy/signalprocessing/policies/labels.rego` (production config)  
+**A**: Create temp file (like environment.rego, priority.rego - current pattern)
+**B**: Load from `deploy/signalprocessing/policies/labels.rego` (production config)
 **C**: Use ConfigMap (matches production but more complex setup)
 
 My recommendation: **Option A** - Temp file for tests (matches current pattern)
@@ -476,8 +476,8 @@ My recommendation: **Option A** - Temp file for tests (matches current pattern)
 
 **No Rush Acknowledged** - Taking time to do this right
 
-**Estimated Total**: 4.5-6 hours  
-**With Breaks**: 6-8 hours (including debugging time)  
+**Estimated Total**: 4.5-6 hours
+**With Breaks**: 6-8 hours (including debugging time)
 **ETA**: Complete by 5-6 PM today
 
 ---

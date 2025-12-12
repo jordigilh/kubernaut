@@ -1,8 +1,8 @@
 # Gateway Data Storage Infrastructure Issue
 
-**Date**: 2025-12-12  
-**Team**: Gateway Service  
-**Priority**: 🟡 **MEDIUM** - Blocks integration tests but workaround available  
+**Date**: 2025-12-12
+**Team**: Gateway Service
+**Priority**: 🟡 **MEDIUM** - Blocks integration tests but workaround available
 **Status**: ⏸️ **BLOCKED** - Requires Redis or shared infrastructure refactor
 
 ---
@@ -18,7 +18,7 @@
 6. **PostgreSQL Connection** - ✅ **WORKING!** DS successfully connects to PostgreSQL
 
 ### ❌ **Current Blocker**:
-**Redis Dependency**  
+**Redis Dependency**
 ```
 ERROR: failed to connect to Redis: dial tcp [::1]:6379: connect: connection refused
 ```

@@ -1,8 +1,8 @@
 # Gateway Remaining 8 Test Failures - Root Cause Analysis
 
-**Date**: 2025-12-12 (Night)  
-**Status**: 🔴 **8/99 Tests Failing** (92% Pass Rate)  
-**Improvement**: ✅ Fixed 1 test (was 9 failing, now 8)  
+**Date**: 2025-12-12 (Night)
+**Status**: 🔴 **8/99 Tests Failing** (92% Pass Rate)
+**Improvement**: ✅ Fixed 1 test (was 9 failing, now 8)
 **Priority**: 🔴 HIGH - v1.0 Blocker
 
 ---
@@ -30,7 +30,7 @@
 #### **Test 1**: `audit_integration_test.go:197` - signal.received
 **Error**: `Timed out after 10.001s. Expected <int>: 0 to be >= <int>: 1`
 
-#### **Test 2**: `audit_integration_test.go:296` - signal.deduplicated  
+#### **Test 2**: `audit_integration_test.go:296` - signal.deduplicated
 #### **Test 3**: `audit_integration_test.go:383` - storm.detected
 
 **Common Root Cause**: Audit events not reaching Data Storage
@@ -39,7 +39,7 @@
 ```
 {"level":"error","ts":1765507586.479978,"logger":"audit-store","caller":"audit/store.go:364",
 "msg":"Failed to write audit batch","attempt":1,"batch_size":1,
-"error":"network error: Post \"http://localhost:8080/api/v1/audit/events/batch\": 
+"error":"network error: Post \"http://localhost:8080/api/v1/audit/events/batch\":
 dial tcp [::1]:8080: connect: connection refused"}
 ```
 
@@ -48,7 +48,7 @@ dial tcp [::1]:8080: connect: connection refused"}
 - ❌ Despite fixing `createTestGatewayServer()`, some code path is still using hardcoded URL
 - ⚠️  Tests expect audit events in Data Storage, but events are being dropped
 
-**Hypothesis**: 
+**Hypothesis**:
 The issue is that `StartTestGateway()` passes `dataStorageURL` correctly, but somewhere in the Gateway server initialization, the config is being overridden or not passed through to the audit store.
 
 **Fix Strategy**:
@@ -109,7 +109,7 @@ func IsTerminalPhase(phase remediationv1alpha1.RemediationPhase) bool {
 }
 ```
 
-**Issue**: 
+**Issue**:
 - ❌ `Cancelled` is NOT listed as terminal
 - ❌ Unknown states return `false` (not terminal)
 
@@ -136,7 +136,7 @@ func IsTerminalPhase(phase remediationv1alpha1.RemediationPhase) bool {
 
 **Evidence from Earlier Logs**:
 ```
-I1211 21:46:19.680094   75070 request.go:752] "Waited before sending request" 
+I1211 21:46:19.680094   75070 request.go:752] "Waited before sending request"
 delay="1.200354667s" reason="client-side throttling, not priority and fairness"
 ```
 
@@ -185,28 +185,28 @@ delay="1.200354667s" reason="client-side throttling, not priority and fairness"
 ## 🎯 **Fix Priority & Sequence**
 
 ### **Priority 1: Audit Integration** 🔴 CRITICAL
-**Why**: P0 compliance requirement, blocks 3 tests  
-**Fix Time**: 30-60 min  
+**Why**: P0 compliance requirement, blocks 3 tests
+**Fix Time**: 30-60 min
 **Impact**: High - audit trail is business critical
 
 ### **Priority 2: Concurrent Load** 🟡 HIGH
-**Why**: Quick fix, unblocks graceful shutdown testing  
-**Fix Time**: 30-60 min  
+**Why**: Quick fix, unblocks graceful shutdown testing
+**Fix Time**: 30-60 min
 **Impact**: Medium - performance validation
 
 ### **Priority 3: Phase State Handling** 🟡 MEDIUM
-**Why**: Edge case logic, needs design review  
-**Fix Time**: 1-2 hours  
+**Why**: Edge case logic, needs design review
+**Fix Time**: 1-2 hours
 **Impact**: Medium - edge case coverage
 
 ### **Priority 4: Storm Detection** 🟡 MEDIUM
-**Why**: Complex timing issue  
-**Fix Time**: 1-2 hours  
+**Why**: Complex timing issue
+**Fix Time**: 1-2 hours
 **Impact**: Low - feature test
 
 ### **Priority 5: Storm Metrics** 🟡 MEDIUM
-**Why**: Depends on storm detection fix  
-**Fix Time**: 1 hour  
+**Why**: Depends on storm detection fix
+**Fix Time**: 1 hour
 **Impact**: Low - observability validation
 
 ---
@@ -301,9 +301,9 @@ cat pkg/gateway/processing/phase_checker.go
 
 ---
 
-**Created**: 2025-12-12 ~10:15 PM  
-**Target**: Fix 5-8 tests by morning  
-**Confidence**: 85% (High confidence for audit/load, medium for others)  
+**Created**: 2025-12-12 ~10:15 PM
+**Target**: Fix 5-8 tests by morning
+**Confidence**: 85% (High confidence for audit/load, medium for others)
 **Next Update**: After Priority 1 fix (audit integration)
 
 

@@ -1,8 +1,8 @@
 # Shared DataStorage Service - Configuration Guide for All Teams
 
-**Date**: 2025-12-12  
-**Status**: ✅ **AUTHORITATIVE REFERENCE** - Use this for all DataStorage integrations  
-**Applies To**: Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator, SignalProcessing  
+**Date**: 2025-12-12
+**Status**: ✅ **AUTHORITATIVE REFERENCE** - Use this for all DataStorage integrations
+**Applies To**: Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator, SignalProcessing
 **Authority**: ADR-030 + `test/infrastructure/datastorage.go` (proven working)
 
 ---
@@ -492,7 +492,7 @@ func SetupWorkflowExecutionInfrastructure(ctx context.Context, namespace, kubeco
     err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, os.Stdout)
     err = deployRedisInNamespace(ctx, namespace, kubeconfigPath, os.Stdout)
     err = waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, os.Stdout)
-    
+
     // Then deploy DataStorage with ConfigMap pattern
     // ...
 }
@@ -510,10 +510,10 @@ func CreateAIAnalysisCluster(clusterName, kubeconfigPath string) error {
     // Use shared functions for PostgreSQL + Redis
     err := infrastructure.DeployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
     err = infrastructure.DeployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
-    
+
     // Deploy DataStorage with ConfigMap (ADR-030)
     deployDataStorage(clusterName, kubeconfigPath, writer)
-    
+
     // Wait with explicit checks
     waitForAIAnalysisInfraReady(ctx, namespace, kubeconfigPath, writer)
 }
@@ -722,7 +722,7 @@ Using this guide, you should achieve:
 
 ---
 
-**Document Status**: ✅ **AUTHORITATIVE** - All patterns proven working in AIAnalysis E2E  
-**Last Updated**: 2025-12-12  
-**Maintained By**: Infrastructure team  
+**Document Status**: ✅ **AUTHORITATIVE** - All patterns proven working in AIAnalysis E2E
+**Last Updated**: 2025-12-12
+**Maintained By**: Infrastructure team
 **Questions**: Check validation checklist, then ask in #infrastructure channel

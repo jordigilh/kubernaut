@@ -1,7 +1,7 @@
 # STATUS: SignalProcessing Classifier Wiring - In Progress
 
 **Date**: 2025-12-12 08:10 AM
-**Service**: SignalProcessing  
+**Service**: SignalProcessing
 **Status**: 🟡 **PARTIALLY COMPLETE** - Wiring done, Rego schema mismatch found
 
 ---
@@ -161,7 +161,7 @@ Duration: 417 seconds (TIMEOUT at 7 minutes)
 ### **Immediate** (15 minutes):
 1. Remove `classified_at` / `assigned_at` from all 3 Rego policies
 2. Add `ClassifiedAt = metav1.Now()` to environment classifier
-3. Add `AssignedAt = metav1.Now()` to priority engine  
+3. Add `AssignedAt = metav1.Now()` to priority engine
 4. Add `ClassifiedAt = metav1.Now()` to business classifier (if used)
 
 ### **Then** (5 minutes):
@@ -219,7 +219,7 @@ return &BusinessClassification{
 
 ## 💡 **WHY THIS WORKS**
 
-**Rego Role**: Evaluate policy logic (environment, priority, business unit)  
+**Rego Role**: Evaluate policy logic (environment, priority, business unit)
 **Go Role**: Handle Kubernetes-specific types (`metav1.Time`)
 
 **Separation of Concerns**:
