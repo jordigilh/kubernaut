@@ -217,8 +217,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			gatewayData, ok := eventData["gateway"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "event_data.gateway should exist")
 
-			Expect(gatewayData["signal_type"]).To(Equal("prometheus"),
-				"signal_type should be 'prometheus'")
+		Expect(gatewayData["signal_type"]).To(Equal("prometheus-alert"),
+			"signal_type should be 'prometheus-alert' per PrometheusAdapter.GetSourceType()")
 			Expect(gatewayData["alert_name"]).To(Equal("AuditTestAlert"),
 				"alert_name should match")
 			Expect(gatewayData["namespace"]).To(Equal(sharedNamespace),
