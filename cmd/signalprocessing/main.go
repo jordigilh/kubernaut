@@ -166,47 +166,54 @@ func main() {
 	setupLog.Info("audit client configured successfully")
 
 	// ========================================
-	// REGO-BASED CLASSIFIERS SETUP
+	// REGO-BASED CLASSIFIERS SETUP (OPTIONAL)
 	// ========================================
 	// BR-SP-051-053: Environment classification
 	// BR-SP-070-072: Priority assignment
 	// BR-SP-002: Business unit classification
+	//
+	// NOTE: These are OPTIONAL - controller falls back to ConfigMap/hardcoded logic if policies not found
+	// Production deployments should mount Rego policies at /etc/signalprocessing/policies/
 	
 	ctx := ctrl.SetupSignalHandler()
 	
-	envClassifier, err := classifier.NewEnvironmentClassifier(
+	var envClassifier *classifier.EnvironmentClassifier
+	var priorityEngine *classifier.PriorityEngine
+	var businessClassifier *classifier.BusinessClassifier
+	
+	envClassifier, err = classifier.NewEnvironmentClassifier(
 		ctx,
 		"/etc/signalprocessing/policies/environment.rego",
 		mgr.GetClient(),
 		ctrl.Log.WithName("classifier.environment"),
 	)
 	if err != nil {
-		setupLog.Error(err, "failed to create environment classifier")
-		os.Exit(1)
+		setupLog.Info("environment classifier not configured, will use ConfigMap fallback", "error", err.Error())
+	} else {
+		setupLog.Info("environment classifier configured successfully")
 	}
-	setupLog.Info("environment classifier configured")
 
-	priorityEngine, err := classifier.NewPriorityEngine(
+	priorityEngine, err = classifier.NewPriorityEngine(
 		ctx,
 		"/etc/signalprocessing/policies/priority.rego",
 		ctrl.Log.WithName("classifier.priority"),
 	)
 	if err != nil {
-		setupLog.Error(err, "failed to create priority engine")
-		os.Exit(1)
+		setupLog.Info("priority engine not configured, will use severity fallback", "error", err.Error())
+	} else {
+		setupLog.Info("priority engine configured successfully")
 	}
-	setupLog.Info("priority engine configured")
 
-	businessClassifier, err := classifier.NewBusinessClassifier(
+	businessClassifier, err = classifier.NewBusinessClassifier(
 		ctx,
 		"/etc/signalprocessing/policies/business.rego",
 		ctrl.Log.WithName("classifier.business"),
 	)
 	if err != nil {
-		setupLog.Error(err, "failed to create business classifier")
-		os.Exit(1)
+		setupLog.Info("business classifier not configured, will use namespace labels", "error", err.Error())
+	} else {
+		setupLog.Info("business classifier configured successfully")
 	}
-	setupLog.Info("business classifier configured")
 
 	// ========================================
 	// ENRICHMENT COMPONENTS SETUP
