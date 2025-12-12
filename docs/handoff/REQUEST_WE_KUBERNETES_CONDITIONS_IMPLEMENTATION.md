@@ -1,11 +1,11 @@
 # REQUEST: WorkflowExecution - Kubernetes Conditions Implementation
 
 **Date**: 2025-12-11
-**Version**: 1.0
+**Version**: 1.1 (Responded)
 **From**: AIAnalysis Team
 **To**: WorkflowExecution Team
-**Status**: ⏳ **PENDING RESPONSE**
-**Priority**: MEDIUM
+**Status**: ✅ **APPROVED - IMPLEMENTATION PLANNED**
+**Priority**: HIGH
 
 ---
 
@@ -17,35 +17,84 @@
 
 ---
 
-## 🟡 **Current Gap**
+## 🟡 **Current Gap (Updated Assessment)**
 
 ### WorkflowExecution Status
 
 | Aspect | Current | Required | Gap |
 |--------|---------|----------|-----|
-| **Conditions Field** | ❌ Not in CRD schema | ✅ `Conditions []metav1.Condition` | 🟡 Missing |
+| **Conditions Field** | ✅ Present in CRD schema (line 173-174) | ✅ `Conditions []metav1.Condition` | ✅ Complete |
 | **Conditions Infrastructure** | ❌ No `conditions.go` | ✅ Helper functions | 🟡 Missing |
 | **Handler Integration** | ❌ No conditions set | ✅ Set in phase handlers | 🟡 Missing |
 | **Test Coverage** | ❌ No condition tests | ✅ Unit + integration tests | 🟡 Missing |
 
+**Key Finding**: The Conditions field already exists in the CRD schema but is not being populated! This is HIGH PRIORITY to fix.
+
 ---
 
-## 🎯 **Recommended Conditions for WorkflowExecution**
+## ✅ **VALIDATION: Conditions Aligned with Authoritative Specs**
 
-Based on your Tekton pipeline execution flow:
+### **Authoritative Sources Reviewed**
+
+| Source | Version | Key Findings |
+|--------|---------|--------------|
+| `api/workflowexecution/v1alpha1/workflowexecution_types.go` | v4.0 | Phases: Pending, Running, Completed, Failed, Skipped (lines 101-356) |
+| `BR-WE-005` | P0 | Audit events MUST be emitted for lifecycle transitions (lines 171-191) |
+| `DD-CONTRACT-001` | v1.4 | Conditions field present in schema (line 173-174) |
+| `DD-WE-004` | Approved | Exponential backoff for pre-execution failures |
+| `DD-WE-001/003` | Approved | Resource locking prevents parallel execution |
+| `DD-AUDIT-003` | Approved | WorkflowExecution is P0 for audit traces |
+
+### **Validation Matrix**
+
+| Proposed Condition | Phase Alignment | BR/DD Support | Status |
+|-------------------|-----------------|---------------|--------|
+| TektonPipelineCreated | Pending → Running | ✅ Implicit in phase transitions | ✅ Valid |
+| TektonPipelineRunning | Running | ✅ Maps to PhaseRunning (line 346) | ✅ Valid |
+| TektonPipelineComplete | Completed/Failed | ✅ Maps to PhaseCompleted/PhaseFailed (lines 348-351) | ✅ Valid |
+| AuditRecorded | All phases | ✅ BR-WE-005 (P0 requirement, lines 171-191) | ✅ Valid |
+| **ResourceLocked** (NEW) | Skipped | ✅ DD-WE-001/003 + PhaseSkipped (line 355) | ✅ Valid |
+
+### **Critical Finding: Missing Condition Type**
+
+**Gap Identified**: The CRD schema defines `PhaseSkipped` (line 355) for resource locking, but the original proposal didn't include a dedicated condition for this.
+
+**Correction**: Add `ResourceLocked` as a 5th condition (approved in WE team response).
+
+---
+
+## 🎯 **Validated Conditions for WorkflowExecution**
+
+Based on authoritative specs and CRD schema:
 
 ### **Condition 1: TektonPipelineCreated**
 
 **Type**: `TektonPipelineCreated`
-**When**: After Tekton PipelineRun created
+**Phase Alignment**: Pending → Running transition
+**Authoritative Source**: CRD schema Phase validation (line 103)
 **Success Reason**: `PipelineCreated`
 **Failure Reason**: `PipelineCreationFailed`
 
-**Example**:
-```
+**When Set**:
+- ✅ **True**: After successful `tektonClient.Create(ctx, pipelineRun)`
+- ❌ **False**: Quota exceeded, RBAC errors, image pull failures
+
+**Example Success**:
+```yaml
+Type: TektonPipelineCreated
 Status: True
 Reason: PipelineCreated
-Message: Tekton PipelineRun workflow-exec-123 created successfully
+Message: PipelineRun workflow-exec-abc123 created in kubernaut-workflows namespace
+LastTransitionTime: 2025-12-11T10:15:00Z
+```
+
+**Example Failure**:
+```yaml
+Type: TektonPipelineCreated
+Status: False
+Reason: QuotaExceeded
+Message: Failed to create PipelineRun: pods "workflow-exec-123" is forbidden: exceeded quota
+LastTransitionTime: 2025-12-11T10:15:00Z
 ```
 
 ---
@@ -53,15 +102,22 @@ Message: Tekton PipelineRun workflow-exec-123 created successfully
 ### **Condition 2: TektonPipelineRunning**
 
 **Type**: `TektonPipelineRunning`
-**When**: Pipeline execution started
+**Phase Alignment**: PhaseRunning (line 346)
+**Authoritative Source**: PipelineRun status sync
 **Success Reason**: `PipelineStarted`
 **Failure Reason**: `PipelineFailedToStart`
 
+**When Set**:
+- ✅ **True**: PipelineRun.Status.Conditions[Succeeded].Reason == "Running"
+- ❌ **False**: Pipeline stuck in pending (node pressure, image pull, etc.)
+
 **Example**:
-```
+```yaml
+Type: TektonPipelineRunning
 Status: True
 Reason: PipelineStarted
-Message: Tekton PipelineRun workflow-exec-123 is executing
+Message: Pipeline executing task 2 of 5 (apply-memory-increase)
+LastTransitionTime: 2025-12-11T10:16:00Z
 ```
 
 ---
@@ -69,15 +125,30 @@ Message: Tekton PipelineRun workflow-exec-123 is executing
 ### **Condition 3: TektonPipelineComplete**
 
 **Type**: `TektonPipelineComplete`
-**When**: Pipeline finished (success or failure)
+**Phase Alignment**: PhaseCompleted OR PhaseFailed (lines 348-351)
+**Authoritative Source**: PipelineRun completion status
 **Success Reason**: `PipelineSucceeded`
-**Failure Reason**: `PipelineFailed`, `PipelineTimeout`
+**Failure Reasons**: Maps to CRD FailureReason constants (lines 385-410):
+- `TaskFailed` - Task execution failure (line 406)
+- `DeadlineExceeded` - Timeout (line 390)
+- `OOMKilled` - Out of memory (line 387)
 
-**Example**:
-```
+**Example Success**:
+```yaml
+Type: TektonPipelineComplete
 Status: True
 Reason: PipelineSucceeded
-Message: Tekton PipelineRun completed successfully (exit code: 0)
+Message: All 5 tasks completed successfully in 45s
+LastTransitionTime: 2025-12-11T10:17:00Z
+```
+
+**Example Failure**:
+```yaml
+Type: TektonPipelineComplete
+Status: False
+Reason: TaskFailed
+Message: Task apply-memory-increase failed: kubectl apply failed with exit code 1
+LastTransitionTime: 2025-12-11T10:17:00Z
 ```
 
 ---
@@ -85,16 +156,110 @@ Message: Tekton PipelineRun completed successfully (exit code: 0)
 ### **Condition 4: AuditRecorded**
 
 **Type**: `AuditRecorded`
-**When**: Audit event sent to DataStorage
+**Phase Alignment**: All phases (cross-cutting concern)
+**Authoritative Source**: BR-WE-005 (P0 requirement, lines 171-191)
 **Success Reason**: `AuditSucceeded`
 **Failure Reason**: `AuditFailed`
 
+**When Set**:
+- ✅ **True**: `r.AuditStore.StoreAudit(ctx, event)` succeeds
+- ❌ **False**: Data Storage unavailable, network error
+
+**Events Tracked** (per BR-WE-005):
+- `workflowexecution.workflow.started`
+- `workflowexecution.workflow.completed`
+- `workflowexecution.workflow.failed`
+- `workflowexecution.workflow.skipped`
+
 **Example**:
-```
+```yaml
+Type: AuditRecorded
 Status: True
 Reason: AuditSucceeded
-Message: Workflow execution audit event recorded to DataStorage
+Message: Audit event workflowexecution.workflow.completed recorded to DataStorage
+LastTransitionTime: 2025-12-11T10:17:05Z
 ```
+
+---
+
+### **Condition 5: ResourceLocked (NEW)**
+
+**Type**: `ResourceLocked`
+**Phase Alignment**: PhaseSkipped (line 355)
+**Authoritative Source**: DD-WE-001/003 + SkipDetails schema (lines 177-227)
+**Success Reason**: `TargetResourceBusy`, `RecentlyRemediated`
+**Failure Reason**: N/A (lock check succeeded, execution skipped by design)
+
+**When Set**:
+- ✅ **True**: Lock detected, Phase set to Skipped
+- Reason maps to SkipReason constants (lines 360-382):
+  - `SkipReasonParallelExecution` (line 364)
+  - `SkipReasonCooldownActive` (line 368)
+
+**Example**:
+```yaml
+Type: ResourceLocked
+Status: True
+Reason: TargetResourceBusy
+Message: Another workflow (workflow-exec-xyz789) is currently executing on target deployment/payment-service
+LastTransitionTime: 2025-12-11T10:15:00Z
+```
+
+---
+
+## ✅ **Validation Summary**
+
+### **Conditions Fully Aligned with Authoritative Specs**
+
+All 5 proposed conditions are validated against:
+
+| Validation Criteria | Status | Evidence |
+|---------------------|--------|----------|
+| **CRD Phase Alignment** | ✅ Complete | All 5 phases covered (Pending, Running, Completed, Failed, Skipped) |
+| **Business Requirements** | ✅ Complete | BR-WE-005 audit requirement satisfied |
+| **Design Decisions** | ✅ Complete | DD-WE-001/003 (locking), DD-WE-004 (backoff) |
+| **Failure Reason Constants** | ✅ Complete | Maps to CRD FailureReason enum (lines 385-410) |
+| **Skip Reason Constants** | ✅ Complete | Maps to SkipReason enum (lines 360-382) |
+| **Contract Compliance** | ✅ Complete | DD-CONTRACT-001 v1.4 - Conditions field present |
+
+### **Coverage Analysis**
+
+```
+WorkflowExecution Lifecycle → Condition Mapping
+
+1. WFE Created
+   ↓
+2. Check Resource Lock → [ResourceLocked condition]
+   ├─ Locked → Phase: Skipped, exit
+   └─ Available → Continue
+       ↓
+3. Create PipelineRun → [TektonPipelineCreated condition]
+   ↓
+4. PipelineRun Starts → [TektonPipelineRunning condition]
+   ↓
+5. PipelineRun Completes → [TektonPipelineComplete condition]
+   ↓
+6. Emit Audit Event → [AuditRecorded condition]
+   ↓
+7. WFE Complete
+
+✅ Full lifecycle coverage with 5 conditions
+✅ All phases represented
+✅ Cross-cutting concerns (audit) tracked
+```
+
+### **Kubernetes API Conventions Compliance**
+
+Per [Kubernetes API Conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties):
+
+| Convention | Compliance | Notes |
+|------------|------------|-------|
+| `type` field | ✅ | Unique identifier for condition |
+| `status` field | ✅ | True/False/Unknown |
+| `reason` field | ✅ | CamelCase, machine-readable |
+| `message` field | ✅ | Human-readable details |
+| `lastTransitionTime` | ✅ | metav1.Time automatic |
+| Positive polarity | ✅ | Conditions express desired state |
 
 ---
 
@@ -241,40 +406,172 @@ Please respond by updating the section below:
 
 ## 📝 **WorkflowExecution Team Response**
 
-**Date**: _[FILL IN]_
-**Status**: ⏳ **PENDING**
-**Responded By**: _[TEAM MEMBER NAME]_
+**Date**: 2025-12-11
+**Status**: ✅ **APPROVED - HIGH PRIORITY**
+**Responded By**: WorkflowExecution Team
 
 ### **Decision**
 
-- [ ] ✅ **APPROVED** - Will implement Conditions
+- [x] ✅ **APPROVED** - Will implement Conditions
 - [ ] ⏸️ **DEFERRED** - Will defer to V1.1/V2.0 (provide reason)
 - [ ] ❌ **DECLINED** - Will not implement (provide reason)
 
-### **Implementation Plan** (if approved)
+### **Current State Analysis**
 
-**Target Version**: _[e.g., V1.1, V2.0]_
-**Target Date**: _[YYYY-MM-DD]_
-**Estimated Effort**: _[hours]_
+**Good News**: CRD schema ALREADY HAS Conditions field!
 
-**Conditions to Implement**:
-- [ ] TektonPipelineCreated
-- [ ] TektonPipelineRunning
-- [ ] TektonPipelineComplete
-- [ ] AuditRecorded
-- [ ] Other: _[specify if adding more]_
+```go
+// From api/workflowexecution/v1alpha1/workflowexecution_types.go:173-174
+// Conditions provide detailed status information
+// +optional
+Conditions []metav1.Condition `json:"conditions,omitempty"`
+```
+
+**Gap Analysis**:
+
+| Component | Status | Action Needed |
+|-----------|--------|---------------|
+| CRD Schema Field | ✅ Present (line 173-174) | None |
+| `conditions.go` Infrastructure | ❌ Missing | Create |
+| Helper Functions | ❌ Missing | Implement |
+| Controller Integration | ❌ Not setting conditions | Integrate |
+| Unit Tests | ❌ Missing | Add |
+| Integration Tests | ❌ Missing | Add |
+
+**Priority Justification**: HIGH - Schema field exists but is unused. This creates:
+- **User Confusion**: Field visible in CRD but always empty
+- **Observability Gap**: Operators can't see Tekton pipeline state via `kubectl describe`
+- **Contract Incompleteness**: RemediationOrchestrator expects rich status (DD-CONTRACT-001)
+
+### **Implementation Plan** (Approved)
+
+**Target Version**: V4.2 (Current Sprint)
+**Target Date**: 2025-12-13 (2 days)
+**Estimated Effort**: 4-5 hours
+
+**Conditions to Implement** (Post-Validation):
+- [x] TektonPipelineCreated
+- [x] TektonPipelineRunning
+- [x] TektonPipelineComplete
+- [x] AuditRecorded
+- [x] ResourceLocked (**ADDED after validation** - PhaseSkipped requires dedicated condition per CRD schema line 355)
 
 **Implementation Approach**:
-_[Brief description]_
+
+#### **Phase 1: Infrastructure** (1.5 hours)
+
+Create `pkg/workflowexecution/conditions.go`:
+- Copy structure from `pkg/aianalysis/conditions.go`
+- Define 4 condition types as constants
+- Implement helper functions:
+  - `SetTektonPipelineCreated()`
+  - `SetTektonPipelineRunning()`
+  - `SetTektonPipelineComplete()`
+  - `SetAuditRecorded()`
+  - `GetCondition()`
+  - `IsConditionTrue()`
+
+#### **Phase 2: Controller Integration** (2 hours)
+
+Update `internal/controller/workflowexecution/workflowexecution_controller.go`:
+
+1. **After PipelineRun created** (Reconcile, after CreatePipelineRun):
+```go
+workflowexecution.SetTektonPipelineCreated(wfe, true,
+    workflowexecution.ReasonPipelineCreated,
+    fmt.Sprintf("PipelineRun %s created", pr.Name))
+```
+
+2. **When syncing PipelineRun status** (SyncPipelineRunStatus):
+```go
+if pr.Status.IsRunning() {
+    workflowexecution.SetTektonPipelineRunning(wfe, true,
+        workflowexecution.ReasonPipelineStarted,
+        "Pipeline execution in progress")
+}
+
+if pr.Status.IsCompleted() {
+    if pr.Status.IsSuccessful() {
+        workflowexecution.SetTektonPipelineComplete(wfe, true,
+            workflowexecution.ReasonPipelineSucceeded,
+            "Pipeline completed successfully")
+    } else {
+        workflowexecution.SetTektonPipelineComplete(wfe, false,
+            workflowexecution.ReasonPipelineFailed,
+            fmt.Sprintf("Pipeline failed: %s", failureReason))
+    }
+}
+```
+
+3. **After audit event** (emitAudit):
+```go
+if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
+    workflowexecution.SetAuditRecorded(wfe, false,
+        workflowexecution.ReasonAuditFailed, err.Error())
+} else {
+    workflowexecution.SetAuditRecorded(wfe, true,
+        workflowexecution.ReasonAuditSucceeded, "Audit event recorded")
+}
+```
+
+#### **Phase 3: Testing** (1-1.5 hours)
+
+1. **Unit Tests**: `test/unit/workflowexecution/conditions_test.go`
+   - Test each helper function
+   - Test condition transitions
+   - Validate reason/message population
+
+2. **Integration Tests**: Add to existing integration tests
+   - Verify conditions set during reconciliation
+   - Validate condition history (transitions)
+   - Test failure scenarios
+
+#### **Phase 4: Validation** (30 min)
+
+- Run `make generate` to regenerate CRDs
+- Run full test suite
+- Manual validation: `kubectl describe workflowexecution`
+
+### **Success Criteria**
+
+1. ✅ All 4 conditions implemented and documented
+2. ✅ Conditions visible in `kubectl describe workflowexecution`
+3. ✅ Unit test coverage for conditions infrastructure
+4. ✅ Integration tests verify conditions during reconciliation
+5. ✅ No breaking changes to existing status fields
 
 ### **Questions or Concerns**
 
-_[Any questions or concerns]_
+**Q1**: Should we add `ResourceLocked` condition for when Phase=Skipped due to resource locking?
+
+**A1**: YES - Good idea. This would help operators understand why a workflow was skipped. Add as 5th condition:
+- Type: `ResourceLocked`
+- Reason: `TargetResourceBusy` / `RecentlyRemediated`
+- Message: Details from SkipDetails
+
+**Q2**: Should conditions be backfilled for existing WorkflowExecutions?
+
+**A2**: NO - Conditions will be populated going forward. Existing WFEs will have empty conditions array (not breaking).
+
+### **Dependencies**
+
+- None - All infrastructure exists in AIAnalysis for reference
+- No external API changes required
+
+### **Rollout Plan**
+
+1. Implement and test in development
+2. Deploy to staging for validation
+3. Monitor first 10-20 executions for condition accuracy
+4. Production rollout (non-breaking - additive field)
 
 ---
 
-**Document Status**: ⏳ Awaiting WorkflowExecution Team Response
+**Document Status**: ✅ APPROVED - Implementation Plan Documented
 **Created**: 2025-12-11
+**Responded**: 2025-12-11
 **From**: AIAnalysis Team
+**Responded By**: WorkflowExecution Team
+**Target**: V4.2 (2025-12-13)
 **File**: `docs/handoff/REQUEST_WE_KUBERNETES_CONDITIONS_IMPLEMENTATION.md`
 

@@ -11,7 +11,7 @@
 
 ### **ORIGINAL TRIAGE WAS WRONG** ❌
 
-**I thought**: Controller missing Rego/ConfigMap evaluation implementation  
+**I thought**: Controller missing Rego/ConfigMap evaluation implementation
 **REALITY**: **Implementation EXISTS, controller just not using it!** ✅
 
 ---
@@ -112,8 +112,8 @@ import "github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 
 ### **Option A: Wire Existing Classifiers** ⭐ **RECOMMENDED**
 
-**Effort**: 2-3 hours (NOT 6-8 hours!)  
-**Impact**: Fixes ~19 of 23 failures  
+**Effort**: 2-3 hours (NOT 6-8 hours!)
+**Impact**: Fixes ~19 of 23 failures
 **Complexity**: LOW (just wiring, not implementing)
 
 ### **Changes Required**:
@@ -131,7 +131,7 @@ type SignalProcessingReconciler struct {
     client.Client
     Scheme      *runtime.Scheme
     AuditClient *audit.AuditClient
-    
+
     // ADD these fields:
     EnvClassifier      *classifier.EnvironmentClassifier
     PriorityEngine     *classifier.PriorityEngine
@@ -151,7 +151,7 @@ func (r *SignalProcessingReconciler) classifyEnvironment(...) *EnvironmentClassi
         }
         // Log error and fall through to hardcoded fallback
     }
-    
+
     // Keep existing hardcoded logic as fallback
     return &EnvironmentClassification{Environment: "unknown", ...}
 }
@@ -165,7 +165,7 @@ func (r *SignalProcessingReconciler) assignPriority(...) *PriorityAssignment {
         }
         // Log error and fall through to hardcoded fallback
     }
-    
+
     // Keep existing hardcoded logic as fallback
     return &PriorityAssignment{Priority: "P2", ...}
 }
@@ -216,7 +216,7 @@ Expect(err).ToNot(HaveOccurred())
 
 Tests expect policies in ConfigMap, but for integration tests we can use files:
 
-**Option 1**: Mount test ConfigMaps with Rego policies (proper)  
+**Option 1**: Mount test ConfigMaps with Rego policies (proper)
 **Option 2**: Use temporary files with policy content (quick)
 
 ```go

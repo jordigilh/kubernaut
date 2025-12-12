@@ -161,7 +161,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	suiteLogger.Info(fmt.Sprintf("  PostgreSQL:     localhost:%d", suitePgClient.Port))
 	suiteLogger.Info(fmt.Sprintf("  DataStorage:    %s", dataStorageURL))
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	
+
 	// Validate Data Storage health before proceeding
 	healthURL := dataStorageURL + "/healthz"
 	healthResp, err := http.Get(healthURL)
@@ -170,7 +170,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}
 	healthResp.Body.Close()
 	suiteLogger.Info("✅ Data Storage is healthy")
-	
+
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Infrastructure Setup Complete - Ready for Parallel Tests")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -224,6 +224,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Create Kubernetes client from shared kubeconfig
 	k8sConfig, err = clientcmd.RESTConfigFromKubeConfig(sharedConfig.Kubeconfig)
 	Expect(err).ToNot(HaveOccurred(), "Should create rest.Config from kubeconfig")
+
+	// CRITICAL FIX: Reapply rate limiter settings for parallel processes
+	// These settings are NOT serialized in kubeconfig bytes, so must be reapplied
+	// envtest is in-memory, no need to throttle concurrent requests
+	k8sConfig.RateLimiter = nil // Disable rate limiter completely
+	k8sConfig.QPS = 1000        // High QPS (used if RateLimiter is not nil)
+	k8sConfig.Burst = 2000      // High burst (used if RateLimiter is not nil)
 
 	suiteLogger.Info(fmt.Sprintf("Process %d initialized with K8s API: %s, Data Storage: %s",
 		GinkgoParallelProcess(), k8sConfig.Host, sharedConfig.DataStorageURL))

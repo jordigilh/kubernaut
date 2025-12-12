@@ -198,7 +198,7 @@ Expect(final.Status.EnvironmentClassification.Environment).To(Equal("staging"))
 **Implementation Path** (REFACTOR Phase):
 1. Add Rego policy loader (reads environment.rego from ConfigMap)
 2. Add Rego evaluator to `classifyEnvironment()` method
-3. Add Rego evaluator to `assignPriority()` method  
+3. Add Rego evaluator to `assignPriority()` method
 4. Add Rego evaluator to `classifyBusiness()` method (for CustomLabels)
 5. Add ConfigMap watcher for hot-reload (BR-SP-072)
 
@@ -215,8 +215,8 @@ If full Rego implementation is too large for now:
 - Parse it manually for specific patterns (`startswith(namespace, "staging")`)
 - Skip full Rego evaluation initially
 
-**Effort**: 2-3 hours  
-**Impact**: Fixes ~10 tests (environment classification only)  
+**Effort**: 2-3 hours
+**Impact**: Fixes ~10 tests (environment classification only)
 **Trade-off**: Not the "proper" Rego evaluation, but unblocks tests
 
 ---
@@ -225,8 +225,8 @@ If full Rego implementation is too large for now:
 
 Which option should I proceed with?
 
-**A**: Implement full Rego/ConfigMap evaluation (6-8 hours, REFACTOR phase, production-ready)  
-**B**: Implement ConfigMap reading only (2-3 hours, quick win, partial solution)  
+**A**: Implement full Rego/ConfigMap evaluation (6-8 hours, REFACTOR phase, production-ready)
+**B**: Implement ConfigMap reading only (2-3 hours, quick win, partial solution)
 **C**: Something else?
 
 **Current Progress**:

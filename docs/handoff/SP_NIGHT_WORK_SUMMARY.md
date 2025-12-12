@@ -10,7 +10,7 @@
 
 ### **1. Infrastructure Modernization** ✅
 - Created `/test/infrastructure/signalprocessing.go` with programmatic functions
-- Created `podman-compose.signalprocessing.test.yml` 
+- Created `podman-compose.signalprocessing.test.yml`
 - Migrated `suite_test.go` to `SynchronizedBeforeSuite` (parallel-safe)
 - Removed obsolete `helpers_infrastructure.go`
 - Created DataStorage config files (config.yaml, db-secrets.yaml, redis-secrets.yaml)
@@ -45,12 +45,12 @@
 
 ## 📊 **CURRENT TEST RESULTS**
 
-**Last Run**: 2025-12-11 22:01  
+**Last Run**: 2025-12-11 22:01
 **Command**: `ginkgo -v --timeout=7m ./test/integration/signalprocessing/`
 
 ```
 ✅ 43 Passed
-❌ 21 Failed  
+❌ 21 Failed
 ⏭️  7 Skipped
 ━━━━━━━━━━━━
    71 Total
@@ -85,7 +85,7 @@ Root Cause: ConfigMap not loaded / Rego policy not executing
 ## ❌ **21 FAILING TESTS - CATEGORIZED**
 
 ### **Category 1: Component Integration Tests** (7 failures)
-**File**: `component_integration_test.go`  
+**File**: `component_integration_test.go`
 **Pattern**: These DON'T create SignalProcessing CRs - they test components directly
 
 | Test | Likely Issue |
@@ -99,7 +99,7 @@ Root Cause: ConfigMap not loaded / Rego policy not executing
 | BR-SP-101: detect HPA | HPA query logic |
 
 ### **Category 2: Reconciler Integration Tests** (7 failures)
-**File**: `reconciler_integration_test.go`  
+**File**: `reconciler_integration_test.go`
 **Pattern**: These ALREADY have parent RR - business logic failures
 
 | Test | Likely Issue |
@@ -113,7 +113,7 @@ Root Cause: ConfigMap not loaded / Rego policy not executing
 | BR-SP-102: multiple keys from Rego | **Rego policy handling** |
 
 ### **Category 3: Hot-Reload Integration Tests** (3 failures)
-**File**: `hot_reloader_test.go`  
+**File**: `hot_reloader_test.go`
 **Pattern**: ConfigMap watch/reload functionality
 
 | Test | Likely Issue |
@@ -123,7 +123,7 @@ Root Cause: ConfigMap not loaded / Rego policy not executing
 | BR-SP-072: retain old policy when invalid | **Policy validation/rollback** |
 
 ### **Category 4: Rego Integration Tests** (4 failures)
-**File**: `rego_integration_test.go`  
+**File**: `rego_integration_test.go`
 **Pattern**: Rego policy loading and execution
 
 | Test | Likely Issue |
@@ -138,7 +138,7 @@ Root Cause: ConfigMap not loaded / Rego policy not executing
 ## 🎯 **PRIMARY ROOT CAUSES**
 
 ### **Issue 1: ConfigMap Not Loaded** (affects 10+ tests)
-**Symptom**: Tests expecting ConfigMap-based classification get "unknown"  
+**Symptom**: Tests expecting ConfigMap-based classification get "unknown"
 **Likely Cause**:
 - ConfigMap not created in test setup
 - ConfigMap created in wrong namespace
@@ -147,7 +147,7 @@ Root Cause: ConfigMap not loaded / Rego policy not executing
 **Affected Tests**: All BR-SP-052, BR-SP-072, BR-SP-102 tests
 
 ### **Issue 2: Rego Policy Not Loaded** (affects 7+ tests)
-**Symptom**: Rego-based features return empty/default values  
+**Symptom**: Rego-based features return empty/default values
 **Likely Cause**:
 - Rego policy ConfigMap not mounted/available
 - Policy evaluator not initialized correctly
@@ -156,7 +156,7 @@ Root Cause: ConfigMap not loaded / Rego policy not executing
 **Affected Tests**: All BR-SP-070, BR-SP-102, BR-SP-104, DD-WORKFLOW-001 tests
 
 ### **Issue 3: Test Resource Setup** (affects 4+ tests)
-**Symptom**: Tests expecting K8s resources (Pods, HPAs) fail to find them  
+**Symptom**: Tests expecting K8s resources (Pods, HPAs) fail to find them
 **Likely Cause**:
 - Resources not created in test setup (Pod, HPA, etc.)
 - Resources created in wrong namespace

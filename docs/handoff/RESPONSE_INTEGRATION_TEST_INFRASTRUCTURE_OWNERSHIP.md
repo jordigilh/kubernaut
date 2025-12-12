@@ -1,10 +1,10 @@
 # RESPONSE: Integration Test Infrastructure Ownership Clarification
 
 **Date**: 2025-12-11
-**Version**: 1.1
+**Version**: 1.2
 **From**: Triage Session
 **To**: All Service Teams
-**Status**: ✅ **IMPLEMENTED**
+**Status**: ✅ **IMPLEMENTED & TESTED**
 **Priority**: MEDIUM (downgraded from HIGH)
 
 ---
@@ -83,17 +83,35 @@ gvproxy 30754 jgil   16u  IPv6  TCP *:16379 (LISTEN)
 
 | Action | Owner | Priority | Status |
 |--------|-------|----------|--------|
-| Fix HAPI port to DD-TEST-001 compliant (8081 → 18120) | HAPI | HIGH | ✅ **DONE** |
-| Create HAPI-specific compose file | HAPI | MEDIUM | ✅ **DONE** |
+| Create HAPI-specific compose file (self-contained) | HAPI | HIGH | ✅ **DONE & TESTED** |
 | Update test references to new port | All | MEDIUM | ✅ **DONE** |
+| Keep root compose unchanged (DS-owned) | DS | N/A | ✅ **No change needed** |
 | Document stale cleanup in TESTING_GUIDELINES.md | Shared | LOW | Recommended |
 
 ### Changes Made
 
-1. **`podman-compose.test.yml`**: HAPI port changed from 8081 → **18120** (DD-TEST-001)
-2. **`holmesgpt-api/podman-compose.test.yml`**: Created HAPI-specific compose file
-3. **`holmesgpt-api/tests/e2e/test_mock_llm_edge_cases_e2e.py`**: Updated default URL
-4. **`test/integration/aianalysis/recovery_integration_test.go`**: Updated default URL
+1. **`holmesgpt-api/podman-compose.test.yml`**: Created HAPI-owned self-contained compose
+   - PostgreSQL: 18125 (internal)
+   - Redis: 18126 (internal)
+   - Data Storage: 18121 (internal)
+   - **HolmesGPT API: 18120** (DD-TEST-001 compliant)
+2. **Root `podman-compose.test.yml`**: Unchanged (DS-owned shared infrastructure)
+3. **`holmesgpt-api/tests/e2e/test_mock_llm_edge_cases_e2e.py`**: Updated default URL → 18120
+4. **`test/integration/aianalysis/recovery_integration_test.go`**: Updated default URL → 18120
+
+### Test Validation
+
+```bash
+# All tests passed:
+cd holmesgpt-api
+podman-compose -f podman-compose.test.yml up -d
+
+# Verified:
+# - HAPI healthy on port 18120
+# - Database schema complete (workflow_catalog, audit_events)
+# - 31 unit tests passed
+# - 13 integration tests passed
+```
 
 ---
 
@@ -113,19 +131,23 @@ gvproxy 30754 jgil   16u  IPv6  TCP *:16379 (LISTEN)
 ## 📊 Infrastructure Ownership (Updated - DD-TEST-001 Compliant)
 
 ```
-podman-compose.test.yml (ROOT - Shared)
+podman-compose.test.yml (ROOT - DS-OWNED - UNCHANGED)
 ├── postgres (15433)        ─ Internal to DataStorage
 ├── redis (16379)           ─ Internal to DataStorage
 ├── migrate (goose)         ─ Applies migrations
 ├── datastorage (18090)     ─ Consumed by ALL controllers via HTTP
+└── holmesgpt-api (8081)    ─ (Optional - not always needed)
+
+holmesgpt-api/podman-compose.test.yml (HAPI-OWNED - SELF-CONTAINED)
+├── postgres (18125)        ─ Internal to HAPI stack
+├── redis (18126)           ─ Internal to HAPI stack
+├── migrate (psql)          ─ Applies migrations (goose-compatible)
+├── datastorage (18121)     ─ Internal to HAPI stack
 └── holmesgpt-api (18120)   ─ DD-TEST-001 compliant port ✅
 
-holmesgpt-api/podman-compose.test.yml (HAPI-Owned)
-└── holmesgpt-api (18120)   ─ Standalone HAPI testing
-
 CRD Controller Integration Tests (No containers)
-├── Connect to http://localhost:18090 (DS)
-├── Connect to http://localhost:18120 (HAPI - AIAnalysis only)  ← UPDATED
+├── Connect to http://localhost:18090 (DS from root compose)
+├── Connect to http://localhost:18120 (HAPI from HAPI compose)  ← UPDATED
 └── Use audit.NewHTTPDataStorageClient() pattern
 ```
 
