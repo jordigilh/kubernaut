@@ -142,15 +142,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	//    This handles PostgreSQL, Redis, migrations, and Data Storage service startup
 	suiteLogger.Info("📦 Starting Data Storage infrastructure (shared pattern)...")
 
-	// Use shared infrastructure with Gateway-specific config
-	dsInfra, err := infrastructure.StartDataStorageInfrastructure(&infrastructure.DataStorageConfig{
-		PostgresPort: "50001", // Gateway's PostgreSQL port
-		RedisPort:    "6379",  // Standard Redis port (DS requires it even though Gateway doesn't use it)
-		ServicePort:  "8080",  // Data Storage service port (using --network=host)
-		DBName:       "kubernaut_audit",
-		DBUser:       "kubernaut",
-		DBPassword:   "test_password",
-	}, GinkgoWriter)
+	// Use shared infrastructure with default config (migrations expect slm_user)
+	// Note: Using defaults to match migration scripts expectations
+	dsInfra, err := infrastructure.StartDataStorageInfrastructure(nil, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Data Storage infrastructure must start successfully")
 	Expect(dsInfra).ToNot(BeNil(), "Data Storage infrastructure must not be nil")
 
