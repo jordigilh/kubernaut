@@ -788,6 +788,7 @@ func createSignalProcessingCR(namespace, name string, signal signalprocessingv1a
 		name+"-rr",
 		namespace,
 		signal.Fingerprint,
+		signal.Severity, // Use severity from signal data
 		signal.TargetResource,
 	)
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())

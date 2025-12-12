@@ -116,7 +116,7 @@ func GenerateConcurrentFingerprint(baseSeed string, index int) string {
 //   - targetResource: Target resource identifier (Pod, Deployment, etc.)
 //
 // Returns: *remediationv1.RemediationRequest with minimal required fields
-func CreateTestRemediationRequest(name, namespace, fingerprint string, targetResource signalprocessingv1alpha1.ResourceIdentifier) *remediationv1.RemediationRequest {
+func CreateTestRemediationRequest(name, namespace, fingerprint, severity string, targetResource signalprocessingv1alpha1.ResourceIdentifier) *remediationv1.RemediationRequest {
 	return &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -129,7 +129,7 @@ func CreateTestRemediationRequest(name, namespace, fingerprint string, targetRes
 			// Core signal identification (REQUIRED per BR-ORCH-025)
 			SignalFingerprint: fingerprint,
 			SignalName:        "TestSignal",
-			Severity:          "warning",
+			Severity:          severity,
 			SignalType:        "prometheus",
 			SignalSource:      "test-adapter",
 			TargetType:        "kubernetes",

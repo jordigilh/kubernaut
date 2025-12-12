@@ -92,7 +92,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Namespace: ns,
 			}
 			rrName := "test-signal-hp-01-rr"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-01"], targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-01"], "critical", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with parent RR")
@@ -138,7 +138,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Namespace: ns,
 			}
 			rrName := "test-signal-hp-02-rr"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-02"], targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-02"], "warning", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with parent RR")
@@ -271,7 +271,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-05", ns, ValidTestFingerprints["reconciler-05"], targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-05", ns, ValidTestFingerprints["reconciler-05"], "warning", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -308,7 +308,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "payment-processor",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-06", ns, ValidTestFingerprints["reconciler-06"], targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-06", ns, ValidTestFingerprints["reconciler-06"], "warning", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -381,7 +381,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "ownerchain-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-07", ns, ValidTestFingerprints["reconciler-07"], targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-07", ns, ValidTestFingerprints["reconciler-07"], "warning", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -474,7 +474,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "hpa-deployment",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-09", ns, ValidTestFingerprints["reconciler-09"], targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-09", ns, ValidTestFingerprints["reconciler-09"], "warning", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -527,7 +527,7 @@ labels["team"] := ["platform"] if {
 				Name:      "test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-10", ns, ValidTestFingerprints["reconciler-10"], targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-10", ns, ValidTestFingerprints["reconciler-10"], "warning", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -611,7 +611,7 @@ labels["team"] := ["platform"] if {
 				Name:      "non-existent-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-ec-02", ns, ValidTestFingerprints["edge-case-02"], targetResource)
+			rr := CreateTestRemediationRequest("test-rr-ec-02", ns, ValidTestFingerprints["edge-case-02"], "warning", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef for non-existent pod")
@@ -935,7 +935,7 @@ labels["cost-center"] := ["engineering"] if { true }
 				Name:      "test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-ec-08", ns, ValidTestFingerprints["edge-case-08"], targetResource)
+			rr := CreateTestRemediationRequest("test-rr-ec-08", ns, ValidTestFingerprints["edge-case-08"], "warning", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
