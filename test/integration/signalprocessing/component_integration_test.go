@@ -58,9 +58,10 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
-var _ = Describe("SignalProcessing Component Integration", Label("pending-v2"), func() {
-	Skip("Component integration tests validate internal component APIs - behavior is validated through reconciler integration tests which test the full controller flow")
-	
+// Component integration tests validate internal component APIs.
+// Behavior is validated through reconciler integration tests which test the full controller flow.
+// Marked as Pending for V1.0 - can be re-enabled post-V1.0 if needed.
+var _ = PDescribe("SignalProcessing Component Integration", Label("pending-v2"), func() {
 	// ========================================
 	// K8sEnricher COMPONENT TESTS (7 tests)
 	// ========================================

@@ -54,9 +54,9 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
-var _ = Describe("SignalProcessing Hot-Reload Integration", Label("pending-v2"), func() {
-	Skip("BR-SP-072 hot-reload is post-V1.0 feature - requires ConfigMap watching implementation")
-	
+// BR-SP-072 hot-reload is a post-V1.0 feature requiring ConfigMap watching implementation.
+// Marked as Pending for V1.0 - will be implemented in V1.1+.
+var _ = PDescribe("SignalProcessing Hot-Reload Integration", Label("pending-v2"), func() {
 	// ========================================
 	// FILE WATCH TEST (1 test)
 	// ========================================

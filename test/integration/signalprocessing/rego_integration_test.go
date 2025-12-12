@@ -59,9 +59,10 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
-var _ = Describe("SignalProcessing Rego Integration", Label("pending-v2"), func() {
-	Skip("Rego integration tests validate implementation details (ConfigMap vs temp files) - behavior is tested through reconciler tests")
-	
+// Rego integration tests validate implementation details (ConfigMap vs temp files).
+// Behavior is tested through reconciler tests.
+// Marked as Pending for V1.0 - can be re-enabled when ConfigMap mounting is implemented.
+var _ = PDescribe("SignalProcessing Rego Integration", Label("pending-v2"), func() {
 	// ========================================
 	// POLICY LOAD TESTS (3 tests)
 	// ========================================
