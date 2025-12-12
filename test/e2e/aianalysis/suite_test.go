@@ -79,73 +79,103 @@ var (
 	anyTestFailed bool
 )
 
-var _ = BeforeSuite(func() {
-	// Initialize context
-	ctx, cancel = context.WithCancel(context.Background())
+var _ = SynchronizedBeforeSuite(
+	// This runs on process 1 only - create cluster once
+	func() []byte {
+		// Initialize logger for process 1
+		logger = kubelog.NewLogger(kubelog.Options{
+			Development: true,
+			Level:       0,
+			ServiceName: "aianalysis-e2e-test",
+		})
 
-	// Initialize logger
-	logger = kubelog.NewLogger(kubelog.Options{
-		Development: true,
-		Level:       0,
-		ServiceName: "aianalysis-e2e-test",
-	})
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("AIAnalysis E2E Test Suite - Setup (Process 1)")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Setting up KIND cluster with full dependency chain:")
+		logger.Info("  • PostgreSQL + Redis (Data Storage dependencies)")
+		logger.Info("  • Data Storage (audit trails)")
+		logger.Info("  • HolmesGPT-API (AI analysis with mock LLM)")
+		logger.Info("  • AIAnalysis controller")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Initialize failure tracking
-	anyTestFailed = false
+		// Set cluster configuration
+		clusterName = "aianalysis-e2e"
+		homeDir, err := os.UserHomeDir()
+		Expect(err).ToNot(HaveOccurred())
+		kubeconfigPath = fmt.Sprintf("%s/.kube/aianalysis-e2e-config", homeDir)
 
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("AIAnalysis E2E Test Suite - Setup")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Setting up KIND cluster with full dependency chain:")
-	logger.Info("  • PostgreSQL + Redis (Data Storage dependencies)")
-	logger.Info("  • Data Storage (audit trails)")
-	logger.Info("  • HolmesGPT-API (AI analysis with mock LLM)")
-	logger.Info("  • AIAnalysis controller")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		// Create KIND cluster with full dependency chain (ONCE for all processes)
+		logger.Info("Creating Kind cluster (this runs once)...")
+		err = infrastructure.CreateAIAnalysisCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
 
-	// Set cluster configuration
-	clusterName = "aianalysis-e2e"
-	homeDir, err := os.UserHomeDir()
-	Expect(err).ToNot(HaveOccurred())
-	kubeconfigPath = fmt.Sprintf("%s/.kube/aianalysis-e2e-config", homeDir)
+		logger.Info("✅ Cluster created successfully")
+		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
+		logger.Info("  • Process 1 will now share kubeconfig with other processes")
 
-	// Create KIND cluster with full dependency chain
-	err = infrastructure.CreateAIAnalysisCluster(clusterName, kubeconfigPath, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred())
+		// Return kubeconfig path to all processes
+		return []byte(kubeconfigPath)
+	},
+	// This runs on ALL processes - connect to the cluster created by process 1
+	func(data []byte) {
+		kubeconfigPath = string(data)
 
-	// Set KUBECONFIG environment variable
-	err = os.Setenv("KUBECONFIG", kubeconfigPath)
-	Expect(err).ToNot(HaveOccurred())
+		// Initialize context
+		ctx, cancel = context.WithCancel(context.Background())
 
-	// Register AIAnalysis scheme
-	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).ToNot(HaveOccurred())
+		// Initialize logger for this process
+		logger = kubelog.NewLogger(kubelog.Options{
+			Development: true,
+			Level:       0,
+			ServiceName: fmt.Sprintf("aianalysis-e2e-test-p%d", GinkgoParallelProcess()),
+		})
 
-	// Create Kubernetes client
-	cfg, err := config.GetConfig()
-	Expect(err).ToNot(HaveOccurred())
+		// Initialize failure tracking
+		anyTestFailed = false
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).ToNot(HaveOccurred())
+		logger.Info(fmt.Sprintf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+		logger.Info(fmt.Sprintf("AIAnalysis E2E Test Suite - Setup (Process %d)", GinkgoParallelProcess()))
+		logger.Info(fmt.Sprintf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+		logger.Info(fmt.Sprintf("Connecting to cluster created by process 1"))
+		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 
-	// Set service URLs (per DD-TEST-001 port allocation)
-	// AIAnalysis ports: API=8084/30084, Metrics=9184/30184, Health=8184/30284
-	healthURL = "http://localhost:8184"   // AIAnalysis health via NodePort 30284
-	metricsURL = "http://localhost:9184"  // AIAnalysis metrics via NodePort 30184
+		// Set cluster name
+		clusterName = "aianalysis-e2e"
 
-	// Wait for all services to be ready
-	logger.Info("Waiting for services to be ready...")
-	Eventually(func() bool {
-		return checkServicesReady()
-	}, 3*time.Minute, 5*time.Second).Should(BeTrue())
+		// Set KUBECONFIG environment variable
+		err := os.Setenv("KUBECONFIG", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred())
 
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("✅ AIAnalysis E2E cluster ready!")
-	logger.Info(fmt.Sprintf("  • Health: %s/healthz", healthURL))
-	logger.Info(fmt.Sprintf("  • Metrics: %s/metrics", metricsURL))
-	logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-})
+		// Register AIAnalysis scheme
+		err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create Kubernetes client
+		cfg, err := config.GetConfig()
+		Expect(err).ToNot(HaveOccurred())
+
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Set service URLs (per DD-TEST-001 port allocation)
+		// AIAnalysis ports: API=8084/30084, Metrics=9184/30184, Health=8184/30284
+		healthURL = "http://localhost:8184"  // AIAnalysis health via NodePort 30284
+		metricsURL = "http://localhost:9184" // AIAnalysis metrics via NodePort 30184
+
+		// Wait for all services to be ready
+		logger.Info("Waiting for services to be ready...")
+		Eventually(func() bool {
+			return checkServicesReady()
+		}, 3*time.Minute, 5*time.Second).Should(BeTrue())
+
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info(fmt.Sprintf("✅ Process %d ready!", GinkgoParallelProcess()))
+		logger.Info(fmt.Sprintf("  • Health: %s/healthz", healthURL))
+		logger.Info(fmt.Sprintf("  • Metrics: %s/metrics", metricsURL))
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	},
+)
 
 // Track test failures for cluster cleanup decision
 var _ = ReportAfterEach(func(report SpecReport) {
@@ -154,52 +184,83 @@ var _ = ReportAfterEach(func(report SpecReport) {
 	}
 })
 
-var _ = AfterSuite(func() {
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("AIAnalysis E2E Test Suite - Teardown")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	// Check if any test failed - preserve cluster for debugging
-	if anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true" {
-		logger.Info("⚠️  Test FAILED - Keeping cluster alive for debugging")
-		logger.Info("To debug:")
-		logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
-		logger.Info("  kubectl get aianalyses -A")
-		logger.Info("  kubectl logs -n kubernaut-system deployment/aianalysis-controller")
-		logger.Info("To cleanup manually:")
-		logger.Info(fmt.Sprintf("  kind delete cluster --name %s", clusterName))
+var _ = SynchronizedAfterSuite(
+	// This runs on ALL processes - cleanup context
+	func() {
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		return
-	}
+		logger.Info(fmt.Sprintf("Process %d - Cleaning up", GinkgoParallelProcess()))
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// All tests passed - cleanup cluster
-	logger.Info("✅ All tests passed - cleaning up cluster...")
-	err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, GinkgoWriter)
-	if err != nil {
-		logger.Error(err, "Failed to delete cluster")
-	}
+		// Cancel context for this process
+		if cancel != nil {
+			cancel()
+		}
+	},
+	// This runs on process 1 only - delete cluster
+	func() {
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("AIAnalysis E2E Test Suite - Teardown (Process 1)")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Cancel context
-	if cancel != nil {
-		cancel()
-	}
+		// Check if any test failed - preserve cluster for debugging
+		if anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != "" {
+			logger.Info("⚠️  Keeping cluster alive for debugging")
+			logger.Info("Reason:")
+			if anyTestFailed {
+				logger.Info("  • At least one test failed")
+			}
+			if os.Getenv("SKIP_CLEANUP") == "true" {
+				logger.Info("  • SKIP_CLEANUP=true")
+			}
+			if os.Getenv("KEEP_CLUSTER") != "" {
+				logger.Info("  • KEEP_CLUSTER set")
+			}
+			logger.Info("")
+			logger.Info("To debug:")
+			logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
+			logger.Info("  kubectl get aianalyses -A")
+			logger.Info("  kubectl logs -n kubernaut-system deployment/aianalysis-controller")
+			logger.Info("")
+			logger.Info("To cleanup manually:")
+			logger.Info(fmt.Sprintf("  kind delete cluster --name %s", clusterName))
+			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			return
+		}
 
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Cluster Teardown Complete")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-})
+		// All tests passed - cleanup cluster
+		logger.Info("✅ All tests passed - cleaning up cluster...")
+		err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		if err != nil {
+			logger.Error(err, "Failed to delete cluster")
+		}
+
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Cluster Teardown Complete")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	},
+)
 
 // checkServicesReady checks if all required services are healthy
 func checkServicesReady() bool {
-	// Check AIAnalysis controller health
-	// This will be implemented to check actual health endpoints
-	// For now, just check if pods are running
+	// Check AIAnalysis controller health endpoint
+	healthResp, err := http.Get(healthURL + "/healthz")
+	if err != nil || healthResp.StatusCode != 200 {
+		return false
+	}
+	defer healthResp.Body.Close()
+
+	// Check metrics endpoint
+	metricsResp, err := http.Get(metricsURL + "/metrics")
+	if err != nil || metricsResp.StatusCode != 200 {
+		return false
+	}
+	defer metricsResp.Body.Close()
+
 	return true
 }
 
 // randomSuffix generates a unique suffix for test resource names
+// Uses nanosecond precision to avoid collisions in parallel test execution
 func randomSuffix() string {
-	return time.Now().Format("20060102150405")
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
-
-
