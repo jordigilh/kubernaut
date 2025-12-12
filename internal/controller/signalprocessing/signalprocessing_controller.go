@@ -56,14 +56,22 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 )
 
 // SignalProcessingReconciler reconciles a SignalProcessing object.
 // Per IMPLEMENTATION_PLAN_V1.31.md - E2E GREEN Phase + BR-SP-090 Audit
+// Day 10 Integration: Wired with Rego-based classifiers from pkg/signalprocessing/classifier
 type SignalProcessingReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	AuditClient *audit.AuditClient // BR-SP-090: Categorization Audit Trail
+	
+	// Day 4-6 Classifiers (Rego-based, per IMPLEMENTATION_PLAN_V1.31.md)
+	// These are OPTIONAL - controller falls back to hardcoded logic if nil
+	EnvClassifier      *classifier.EnvironmentClassifier // BR-SP-051, BR-SP-052, BR-SP-053
+	PriorityEngine     *classifier.PriorityEngine        // BR-SP-070, BR-SP-071, BR-SP-072
+	BusinessClassifier *classifier.BusinessClassifier    // BR-SP-002, BR-SP-080, BR-SP-081
 }
 
 // +kubebuilder:rbac:groups=signalprocessing.kubernaut.ai,resources=signalprocessings,verbs=get;list;watch;create;update;patch;delete
@@ -277,10 +285,10 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	k8sCtx := sp.Status.KubernetesContext
 
 	// 1. Environment Classification (BR-SP-051-053)
-	envClass := r.classifyEnvironment(k8sCtx, signal, logger)
+	envClass := r.classifyEnvironment(ctx, k8sCtx, signal, logger)
 
 	// 2. Priority Assignment (BR-SP-070-072)
-	priorityAssignment := r.assignPriority(envClass, signal, logger)
+	priorityAssignment := r.assignPriority(ctx, k8sCtx, envClass, signal, logger)
 
 	// Transition to categorizing with retry on conflict (BR-ORCH-038 pattern)
 	updateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -617,7 +625,18 @@ func (r *SignalProcessingReconciler) buildRecoveryContext(ctx context.Context, s
 // BR-SP-051: Primary from namespace labels
 // BR-SP-052: ConfigMap fallback (not implemented in basic version)
 // BR-SP-053: Default to "unknown"
-func (r *SignalProcessingReconciler) classifyEnvironment(k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData, logger logr.Logger) *signalprocessingv1alpha1.EnvironmentClassification {
+func (r *SignalProcessingReconciler) classifyEnvironment(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData, logger logr.Logger) *signalprocessingv1alpha1.EnvironmentClassification {
+	// Day 10 Integration: Use Rego-based classifier if available (IMPLEMENTATION_PLAN_V1.31.md)
+	if r.EnvClassifier != nil {
+		result, err := r.EnvClassifier.Classify(ctx, k8sCtx, signal)
+		if err == nil {
+			return result
+		}
+		// Log error and fall through to hardcoded fallback
+		logger.Error(err, "EnvClassifier failed, using hardcoded fallback")
+	}
+
+	// Hardcoded fallback (for tests without classifier or classifier errors)
 	result := &signalprocessingv1alpha1.EnvironmentClassification{
 		Environment:  "unknown",
 		Confidence:   0.0,
@@ -651,7 +670,18 @@ func (r *SignalProcessingReconciler) classifyEnvironment(k8sCtx *signalprocessin
 // assignPriority determines the priority based on environment and severity.
 // BR-SP-070: Rego-based assignment (simplified version)
 // BR-SP-071: Severity-based fallback
-func (r *SignalProcessingReconciler) assignPriority(envClass *signalprocessingv1alpha1.EnvironmentClassification, signal *signalprocessingv1alpha1.SignalData, logger logr.Logger) *signalprocessingv1alpha1.PriorityAssignment {
+func (r *SignalProcessingReconciler) assignPriority(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, signal *signalprocessingv1alpha1.SignalData, logger logr.Logger) *signalprocessingv1alpha1.PriorityAssignment {
+	// Day 10 Integration: Use Rego-based priority engine if available (IMPLEMENTATION_PLAN_V1.31.md)
+	if r.PriorityEngine != nil {
+		result, err := r.PriorityEngine.Assign(ctx, k8sCtx, envClass, signal)
+		if err == nil {
+			return result
+		}
+		// Log error and fall through to hardcoded fallback
+		logger.Error(err, "PriorityEngine failed, using hardcoded fallback")
+	}
+
+	// Hardcoded fallback (for tests without priority engine or engine errors)
 	result := &signalprocessingv1alpha1.PriorityAssignment{
 		Priority:   "P2",
 		Confidence: 0.9,
