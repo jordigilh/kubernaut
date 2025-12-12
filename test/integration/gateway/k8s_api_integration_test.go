@@ -230,34 +230,43 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(crds).To(HaveLen(0))
 		})
 
-		It("should handle K8s API temporary failures with retry", func() {
-			// BR-GATEWAY-018: K8s API resilience with retry
-			// BUSINESS OUTCOME: Transient failures don't lose alerts
+	It("should create CRD successfully under normal K8s API conditions", func() {
+		// BR-GATEWAY-018: K8s API integration reliability
+		// BUSINESS OUTCOME: Alerts are reliably converted to CRDs for remediation
+		//
+		// NOTE: K8s API retry behavior testing requires infrastructure refactoring:
+		// - SimulateTemporaryFailure is a no-op with real K8s client (envtest)
+		// - Actual retry behavior is tested via:
+		//   1. Unit tests with fake client (error injection)
+		//   2. Chaos engineering tests (real API outages)
+		// This test validates the happy path: CRD creation under normal conditions
 
-			// Simulate K8s API unavailability
-			k8sClient.SimulateTemporaryFailure(ctx, 3*time.Second)
-
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "RetryTest",
-				Namespace: testNamespaceProd,
-			})
-
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-
-			// BUSINESS OUTCOME: Request may fail initially but retries succeed
-			// Either succeeds immediately (201) or fails and retries (500 → 201)
-			// Use Eventually to handle both cases without hardcoded sleep
-			if resp.StatusCode == 500 {
-				GinkgoWriter.Printf("Initial request returned 500, waiting for retry...\n")
-			}
-
-			// Eventually, CRD should be created (handles both immediate success and retry scenarios)
-			Eventually(func() int {
-				count := len(ListRemediationRequests(ctx, k8sClient, testNamespaceProd))
-				GinkgoWriter.Printf("CRD count: %d (waiting for 1)\n", count)
-				return count
-			}, "15s", "1s").Should(Equal(1), "CRD should be created after retry")
+		payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: "K8sAPITest",
+			Namespace: testNamespaceProd,
 		})
+
+		resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+
+		// BUSINESS OUTCOME: Alert successfully processed
+		Expect(resp.StatusCode).To(Equal(201), "Signal should be processed successfully")
+
+		// Verify: CRD was created in correct namespace
+		Eventually(func() int {
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
+			if len(crds) > 0 {
+				GinkgoWriter.Printf("✅ CRD found: %s in namespace %s\n", crds[0].Name, crds[0].Namespace)
+			} else {
+				GinkgoWriter.Printf("⏳ Waiting for CRD in namespace %s...\n", testNamespaceProd)
+			}
+			return len(crds)
+		}, "5s", "500ms").Should(Equal(1), "CRD should be created successfully")
+
+		// Verify: CRD has correct properties
+		crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
+		Expect(crds[0].Spec.SignalName).To(Equal("K8sAPITest"))
+		Expect(crds[0].Namespace).To(Equal(testNamespaceProd))
+	})
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
