@@ -588,6 +588,16 @@ def generate_mock_recovery_response(request_data: Dict[str, Any]) -> Dict[str, A
         "remediation_id": remediation_id,
         "can_recover": True,  # Required field - mock always returns recoverable
         "analysis_confidence": scenario.confidence - 0.05,  # Required field
+        "strategies": [  # Required field - BR-HAPI-002
+            {
+                "action_type": f"recovery_{scenario.signal_type.lower()}_v1",
+                "confidence": scenario.confidence - 0.05,
+                "rationale": f"Mock recovery strategy after failed {previous_workflow_id} (BR-HAPI-212)",
+                "estimated_risk": "medium",
+                "prerequisites": ["verify_resource_state", "check_cluster_capacity"]
+            }
+        ],
+        "primary_recommendation": f"recovery_{scenario.signal_type.lower()}_v1",
         "analysis": f"""## Mock Recovery Analysis (BR-HAPI-212)
 
 This is a **deterministic mock response** for integration testing.
@@ -634,7 +644,8 @@ Workflow ID: `{recovery_workflow_id}`
             "MOCK_MODE: No LLM was called - response based on signal_type matching"
         ],
         "needs_human_review": False,
-        "human_review_reason": None
+        "human_review_reason": None,
+        "metadata": {}  # Required field - BR-HAPI-002
     }
 
     logger.info({
@@ -672,6 +683,8 @@ def _generate_not_reproducible_recovery_response(
         "remediation_id": remediation_id,
         "can_recover": False,  # Key difference: no recovery needed
         "analysis_confidence": 0.95,  # High confidence that issue resolved
+        "strategies": [],  # Empty - no recovery strategies needed (BR-HAPI-002)
+        "primary_recommendation": None,  # No recommendation - issue resolved
         "analysis": """## Mock Recovery Analysis - Signal Not Reproducible (BR-HAPI-212)
 
 This is a **deterministic mock response** simulating the edge case where
@@ -708,7 +721,8 @@ is now in a healthy state.
             "BR-HAPI-212: can_recover=false, issue self-resolved"
         ],
         "needs_human_review": False,  # No review needed - issue resolved
-        "human_review_reason": None
+        "human_review_reason": None,
+        "metadata": {}  # Required field - BR-HAPI-002
     }
 
 
@@ -729,6 +743,8 @@ def _generate_no_recovery_workflow_response(
         "remediation_id": remediation_id,
         "can_recover": True,  # Recovery might be possible...
         "analysis_confidence": 0.0,  # ...but we have no workflow
+        "strategies": [],  # Empty - no recovery strategies available (BR-HAPI-002)
+        "primary_recommendation": None,  # No recommendation - no workflows found
         "analysis": f"""## Mock Recovery Analysis - No Workflow Found (BR-HAPI-212)
 
 This is a **deterministic mock response** simulating the edge case where
@@ -764,7 +780,8 @@ matches the current state. Manual intervention required.
             "BR-HAPI-197: needs_human_review=true, reason=no_matching_workflows"
         ],
         "needs_human_review": True,
-        "human_review_reason": "no_matching_workflows"
+        "human_review_reason": "no_matching_workflows",
+        "metadata": {}  # Required field - BR-HAPI-002
     }
 
 
@@ -785,6 +802,23 @@ def _generate_low_confidence_recovery_response(
         "remediation_id": remediation_id,
         "can_recover": True,
         "analysis_confidence": 0.35,
+        "strategies": [  # Low confidence strategies - BR-HAPI-002
+            {
+                "action_type": "cautious_recovery_v1",
+                "confidence": 0.35,
+                "rationale": "Low confidence recovery - human review recommended (BR-HAPI-212)",
+                "estimated_risk": "high",
+                "prerequisites": ["verify_state", "backup_config", "human_approval"]
+            },
+            {
+                "action_type": "alternative_recovery_v1",
+                "confidence": 0.32,
+                "rationale": "Alternative approach with similar confidence",
+                "estimated_risk": "high",
+                "prerequisites": ["verify_state", "human_approval"]
+            }
+        ],
+        "primary_recommendation": "cautious_recovery_v1",
         "analysis": f"""## Mock Recovery Analysis - Low Confidence (BR-HAPI-212)
 
 This is a **deterministic mock response** simulating the edge case where
@@ -838,7 +872,8 @@ Recovery workflow tentatively selected but **human review required**.
             "BR-HAPI-197: needs_human_review=true, reason=low_confidence"
         ],
         "needs_human_review": True,
-        "human_review_reason": "low_confidence"
+        "human_review_reason": "low_confidence",
+        "metadata": {}  # Required field - BR-HAPI-002
     }
 
 

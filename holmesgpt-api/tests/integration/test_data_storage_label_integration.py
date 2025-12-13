@@ -615,11 +615,25 @@ class TestEdgeCaseBehavior:
 
         assert isinstance(workflows, list), "Minimal query should return valid list"
 
+
+class TestConnectionErrorHandling:
+    """
+    Error handling tests that don't require infrastructure.
+
+    These tests use intentionally invalid URLs to validate error handling.
+    BUSINESS OUTCOME: Connection failures are handled gracefully.
+
+    NOTE: No @pytest.mark.requires_data_storage marker - these tests
+    use fake URLs and don't need real infrastructure.
+    """
+
     def test_connection_failure_raises_meaningful_error(self):
         """
         BEHAVIOR: Connection failures should raise clear, actionable errors.
 
         BUSINESS OUTCOME: Operators understand what went wrong.
+
+        NOTE: Uses invalid URL - does NOT require infrastructure.
         """
         tool = SearchWorkflowCatalogTool(
             data_storage_url="http://invalid-host-12345:99999",

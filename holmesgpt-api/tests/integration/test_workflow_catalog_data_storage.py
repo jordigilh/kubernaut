@@ -338,12 +338,14 @@ class TestSemanticSearchBehavior:
 # INTEGRATION TEST SUITE 3: ERROR PROPAGATION (I3.1-I3.2)
 # =============================================================================
 
-@pytest.mark.requires_data_storage
-class TestErrorPropagation:
+class TestErrorPropagationWithoutInfrastructure:
     """
-    I3.x: Integration tests for error handling
+    I3.1: Error handling tests that don't require infrastructure.
 
-    These tests verify graceful error handling when Data Storage fails.
+    These tests use intentionally invalid URLs to validate error handling.
+    BUSINESS OUTCOME: Connection failures are handled gracefully.
+
+    NOTE: No @pytest.mark.requires_data_storage marker - uses fake URLs.
     """
 
     def test_data_storage_unavailable_returns_error_i3_1(self):
@@ -351,6 +353,8 @@ class TestErrorPropagation:
         I3.1: Connection refused returns clear ERROR status
 
         Integration Outcome: Tool returns ERROR, not exception
+
+        NOTE: Uses invalid URL - does NOT require infrastructure.
         """
         # ARRANGE - Tool pointing to invalid URL
         tool = SearchWorkflowCatalogTool(
@@ -376,6 +380,15 @@ class TestErrorPropagation:
         # Error message should be meaningful (any error message is acceptable)
         # Different HTTP libraries produce different error messages
         print(f"I3.1: Got error: {result.error}")
+
+
+@pytest.mark.requires_data_storage
+class TestErrorPropagationWithInfrastructure:
+    """
+    I3.2+: Error handling tests that require real infrastructure.
+
+    These tests verify timeout and error handling with real Data Storage service.
+    """
 
     def test_data_storage_timeout_behavior_i3_2(self, workflow_catalog_tool):
         """
