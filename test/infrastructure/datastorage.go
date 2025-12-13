@@ -801,7 +801,7 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 			}
 		}
 		return false
-	}, 60*time.Second, 2*time.Second).Should(BeTrue(), "PostgreSQL pod should be ready")
+	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "PostgreSQL pod should be ready")
 	fmt.Fprintf(writer, "   ✅ PostgreSQL pod ready\n")
 
 	// Wait for Redis pod to be ready
@@ -823,7 +823,7 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 			}
 		}
 		return false
-	}, 60*time.Second, 2*time.Second).Should(BeTrue(), "Redis pod should be ready")
+	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "Redis pod should be ready")
 	fmt.Fprintf(writer, "   ✅ Redis pod ready\n")
 
 	// Wait for Data Storage Service pod to be ready
@@ -845,7 +845,7 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 			}
 		}
 		return false
-	}, 60*time.Second, 2*time.Second).Should(BeTrue(), "Data Storage Service pod should be ready")
+	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "Data Storage Service pod should be ready")
 	fmt.Fprintf(writer, "   ✅ Data Storage Service pod ready\n")
 
 	return nil
