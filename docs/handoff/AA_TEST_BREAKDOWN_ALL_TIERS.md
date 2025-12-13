@@ -1,27 +1,34 @@
 # AIAnalysis Service - Complete Test Breakdown (All 3 Tiers)
 
-**Date**: 2025-12-12  
-**Service**: AIAnalysis (AA)  
-**Total Tests**: 183 tests across 3 tiers  
+**Date**: 2025-12-12
+**Service**: AIAnalysis (AA)
+**Total Tests**: 183 tests across 3 tiers
 **Status**: E2E tests in progress after HAPI config fix
 
 ---
 
 ## 📊 **Test Distribution Summary**
 
-| Tier | Test Count | % of Total | Status | Coverage Target |
-|------|-----------|------------|--------|-----------------|
-| **Unit Tests** | 110 | 60.1% | ✅ Passing | 70%+ (Target met) |
-| **Integration Tests** | 51 | 27.9% | ✅ Passing | <20% (Within range) |
-| **E2E Tests** | 22 | 12.0% | 🔄 In Progress | <10% (Within range) |
-| **TOTAL** | **183** | **100%** | 🔄 Mixed | Defense-in-depth ✅ |
+| Tier | Test Count | % of Total | Status | Coverage Target (Microservices) |
+|------|-----------|------------|--------|----------------------------------|
+| **Unit Tests** | 110 | 60.1% | ✅ Passing | 70%+ (⚠️ Below target) |
+| **Integration Tests** | 51 | 27.9% | ✅ Passing | >50% (⚠️ Below target) |
+| **E2E Tests** | 22 | 12.0% | 🔄 In Progress | 10-15% (✅ On target) |
+| **TOTAL** | **183** | **100%** | 🔄 Mixed | Defense-in-depth ⚠️ |
 
-**Defense-in-Depth Compliance**: ✅ **EXCELLENT**
-- Unit: 60.1% (target: 70%+ - slightly below but close)
-- Integration: 27.9% (target: <20% - needs reduction)
-- E2E: 12.0% (target: <10% - needs reduction)
+**Defense-in-Depth Compliance**: ⚠️ **NEEDS IMPROVEMENT**
+- Unit: 60.1% (target: 70%+ - **below target by ~10%**)
+- Integration: 27.9% (target: >50% for microservices - **below target by ~22%**)
+- E2E: 12.0% (target: 10-15% - **✅ on target**)
 
-**Recommendation**: Consider moving some integration tests to unit tier to improve pyramid shape.
+**Rationale for >50% Integration Target** (per [03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)):
+- CRD-based coordination with HolmesGPT-API and DataStorage
+- Watch-based status propagation (difficult to unit test)
+- Cross-service data flow validation (audit events, recovery context)
+- Owner reference and finalizer lifecycle management
+- Audit event emission during reconciliation (requires running controller)
+
+**Recommendation**: Add ~40 more integration tests to reach >50% target (~91 total integration tests).
 
 ---
 
@@ -152,7 +159,7 @@ services:
   - Redis (for DataStorage cache)
   - DataStorage API (real service)
   - HolmesGPT-API (mock mode)
-  
+
 # NO Kubernetes required (direct API calls)
 ```
 
@@ -182,7 +189,7 @@ make test-integration-aianalysis
 
 ### **Current E2E Status (After HAPI Fix)**
 
-**Before Fix**: 9/22 passing (41%)  
+**Before Fix**: 9/22 passing (41%)
 **After Fix**: 🔄 **Running now** (expected 20/22 passing, 91%)
 
 | Test Category | Count | Before Fix | Expected After | Blocker |
@@ -227,7 +234,7 @@ make test-integration-aianalysis
 
 **Infrastructure**: Kind cluster, AIAnalysis controller, metrics endpoints on port 9090
 
-**Remaining Issues**: 
+**Remaining Issues**:
 - Rego policy metrics (1 test) - minor implementation
 - Token tracking (1 test) - minor implementation
 
@@ -245,7 +252,7 @@ make test-integration-aianalysis
 | Multi-attempt recovery escalation | 🔄 → ✅ | BR-AI-083 | `/api/v1/recovery/analyze` |
 | Conditions population during recovery | 🔄 → ✅ | BR-ORCH-043 | `/api/v1/recovery/analyze` |
 
-**Fix Applied**: `MOCK_LLM_ENABLED` → `MOCK_LLM_MODE` in test infrastructure  
+**Fix Applied**: `MOCK_LLM_ENABLED` → `MOCK_LLM_MODE` in test infrastructure
 **Expected Result**: All 5 tests passing after E2E run completes
 
 ---
@@ -262,8 +269,8 @@ make test-integration-aianalysis
 | Data quality warnings | 🔄 → ✅ | BR-AI-051 | Initial + Recovery |
 | Recovery attempt escalation | 🔄 → ✅ | BR-AI-083 | Recovery endpoint |
 
-**Fix Applied**: `MOCK_LLM_ENABLED` → `MOCK_LLM_MODE` in test infrastructure  
-**Expected Result**: All 5 tests passing after E2E run completes  
+**Fix Applied**: `MOCK_LLM_ENABLED` → `MOCK_LLM_MODE` in test infrastructure
+**Expected Result**: All 5 tests passing after E2E run completes
 **Dependency**: Recovery flow tests must pass first
 
 ---
@@ -274,19 +281,19 @@ make test-integration-aianalysis
 Infrastructure Stack:
   Kubernetes: Kind cluster (aianalysis-e2e)
   Namespace: kubernaut-system
-  
+
   Services:
     - PostgreSQL (port 5432)
     - Redis (port 6379)
     - DataStorage API (port 8080)
-    - HolmesGPT-API (port 8080) 
+    - HolmesGPT-API (port 8080)
     - AIAnalysis Controller (port 8081 health, 9090 metrics, 8084 API)
-  
+
   Images:
     - localhost/kubernaut-datastorage:latest
     - localhost/kubernaut-holmesgpt-api:latest
     - localhost/kubernaut-aianalysis:latest
-  
+
   NodePorts:
     - Health: 30284 → localhost:8184
     - Metrics: 30184 → localhost:9184
@@ -380,8 +387,8 @@ Integration Tests: ✅ 51/51 passing (100%)
 E2E Tests:         🔄 Running (expected 20/22, 91%)
 ```
 
-**Currently Running**: E2E tests with HAPI config fix applied  
-**Commit**: 9b7baa0c - Changed `MOCK_LLM_ENABLED` → `MOCK_LLM_MODE`  
+**Currently Running**: E2E tests with HAPI config fix applied
+**Commit**: 9b7baa0c - Changed `MOCK_LLM_ENABLED` → `MOCK_LLM_MODE`
 **Expected Time**: ~10 minutes remaining
 
 ### **Expected After Current Run**
@@ -410,8 +417,8 @@ E2E Status: 20/22 passing (91%)
 
 ### **To Reach 100% E2E**
 
-**Effort**: 30-45 minutes  
-**Complexity**: Low  
+**Effort**: 30-45 minutes
+**Complexity**: Low
 **Blockers**: None
 
 ---
@@ -425,12 +432,12 @@ E2E Status: 20/22 passing (91%)
 | RemediationOrchestrator | 134 | 92 (69%) | 32 (24%) | 10 (7%) | ✅ Excellent |
 | WorkflowExecution | 145 | 105 (72%) | 28 (19%) | 12 (8%) | ✅ Excellent |
 
-**AIAnalysis Analysis**: 
-- Unit coverage slightly low (60% vs target 70%)
-- Integration coverage high (28% vs target <20%)
-- E2E coverage high (12% vs target <10%)
+**AIAnalysis Analysis**:
+- Unit coverage slightly low (60.1% vs target 70%+)
+- Integration coverage **too low** (27.9% vs target >50% for microservices)
+- E2E coverage on target (12.0% vs target 10-15%)
 
-**Recommendation**: Move 10-15 integration tests to unit tier to improve pyramid shape.
+**Recommendation**: Add more unit and integration tests, NOT move tests between tiers. AIAnalysis as a CRD controller requires extensive integration testing for cross-service coordination.
 
 ---
 
@@ -454,7 +461,7 @@ E2E Status: 20/22 passing (91%)
 
 ### **Current Status**
 - **Unit**: ✅ 100% passing
-- **Integration**: ✅ 100% passing  
+- **Integration**: ✅ 100% passing
 - **E2E**: 🔄 Expected 91% passing (20/22)
 
 ### **Business Value**
@@ -464,7 +471,7 @@ E2E Status: 20/22 passing (91%)
 
 ---
 
-**Date**: 2025-12-12  
-**Status**: 🔄 E2E tests running, expected 91% pass rate  
-**Next Action**: Verify E2E results, fix remaining 2 tests  
+**Date**: 2025-12-12
+**Status**: 🔄 E2E tests running, expected 91% pass rate
+**Next Action**: Verify E2E results, fix remaining 2 tests
 **ETA to 100%**: 30-45 minutes
