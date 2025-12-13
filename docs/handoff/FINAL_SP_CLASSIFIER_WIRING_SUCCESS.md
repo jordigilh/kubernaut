@@ -249,3 +249,7 @@ Making classifiers OPTIONAL (with fallback) prevented breaking existing tests.
 
 **Bottom Line**: Classifiers are now integrated into the controller, Rego evaluation is working, and test pass rate is stable. The remaining 26 failures are pre-existing business logic issues (test setup, ConfigMaps, CustomLabels) that can be addressed next. Excellent progress! 🎉
 
+
+
+
+

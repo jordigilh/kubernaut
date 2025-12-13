@@ -206,3 +206,7 @@ podman logs datastorage-service-test 2>&1 | tee /tmp/ds-startup-error.log
 **Risk**: **HIGH** - Without error logs, any fix is speculative and may not address real issue
 
 **Recommendation**: **CAPTURE LOGS FIRST**, then implement targeted fix based on actual error.
+
+
+
+

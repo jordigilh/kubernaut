@@ -257,3 +257,7 @@ This matches the implementation plan's design where Rego handles policy evaluati
 
 **User Decision**: Should I proceed with Option A (remove Rego timestamps, set in Go)? This is the cleanest solution and matches the implementation plan's design.
 
+
+
+
+

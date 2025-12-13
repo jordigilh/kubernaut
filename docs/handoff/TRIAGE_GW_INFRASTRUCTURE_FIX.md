@@ -30,16 +30,16 @@ var _ = SynchronizedBeforeSuite(func() []byte {
     // Start envtest
     testEnv = &envtest.Environment{...}
     k8sConfig, err = testEnv.Start()
-    
+
     // Start PostgreSQL (direct podman run)
     suitePgClient = SetupPostgresTestClient(ctx)
-    
+
     // Start Data Storage (direct podman run)
     suiteDataStorage = SetupDataStorageTestServer(ctx, suitePgClient)
-    
+
     // Set environment variable
     os.Setenv("TEST_DATA_STORAGE_URL", suiteDataStorage.URL())
-    
+
     // Share config via SharedConfig struct
     return configBytes
 }, func(data []byte) {
@@ -114,16 +114,16 @@ func StartTestGateway(ctx context.Context, k8sClient *K8sTestClient, dataStorage
     if dataStorageURL == "http://localhost:18090" {
         return nil, fmt.Errorf("REJECTED: hardcoded Data Storage URL passed to StartTestGateway. Use getDataStorageURL() instead")
     }
-    
+
     // Validate URL is from environment
     envURL := os.Getenv("TEST_DATA_STORAGE_URL")
     if envURL != "" && dataStorageURL != envURL {
         GinkgoWriter.Printf("⚠️  WARNING: Data Storage URL mismatch: passed=%s, env=%s\n", dataStorageURL, envURL)
     }
-    
+
     // Log for debugging
     GinkgoWriter.Printf("🔧 Starting Gateway with Data Storage URL: %s\n", dataStorageURL)
-    
+
     // Use production logger with console output to capture errors in test logs
     logConfig := zap.NewProductionConfig()
     logConfig.OutputPaths = []string{"stdout"}
@@ -171,9 +171,9 @@ gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 ```go
 var _ = SynchronizedBeforeSuite(func() []byte {
     // ... existing setup ...
-    
+
     dataStorageURL := suiteDataStorage.URL()
-    
+
     // AIAnalysis pattern: Log infrastructure for debugging
     fmt.Fprintf(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
     fmt.Fprintf(GinkgoWriter, "Gateway Integration Test Infrastructure\n")
@@ -182,7 +182,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
     fmt.Fprintf(GinkgoWriter, "  PostgreSQL:     localhost:%d\n", suitePgClient.Port)
     fmt.Fprintf(GinkgoWriter, "  DataStorage:    %s\n", dataStorageURL)
     fmt.Fprintf(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-    
+
     // Validate Data Storage is healthy
     healthURL := dataStorageURL + "/healthz"
     resp, err := http.Get(healthURL)
@@ -190,13 +190,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
         Fail(fmt.Sprintf("Data Storage health check failed at %s", healthURL))
     }
     resp.Body.Close()
-    
+
     fmt.Fprintf(GinkgoWriter, "✅ Data Storage is healthy\n")
-    
+
     // ... rest of setup ...
 }, func(data []byte) {
     // ... existing per-process setup ...
-    
+
     // Log per-process state for debugging
     suiteLogger.Info(fmt.Sprintf("Process %d initialized",
         GinkgoParallelProcess()),
@@ -259,5 +259,9 @@ This fix is successful when:
 **Status**: 🔧 IMPLEMENTATION IN PROGRESS
 **Pattern**: AIAnalysis centralized configuration approach
 **Target**: Fix 9 failing Gateway integration tests
+
+
+
+
 
 
