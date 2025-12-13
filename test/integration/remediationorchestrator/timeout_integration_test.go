@@ -71,20 +71,18 @@ var _ = Describe("BR-ORCH-027/028: Timeout Management", Label("integration", "ti
 
 			ctx := context.Background()
 
-			By("Creating RemediationRequest with CreationTimestamp 61 minutes ago")
+			By("Creating RemediationRequest")
 			rrName := fmt.Sprintf("rr-timeout-%d", time.Now().UnixNano())
 			now := metav1.Now()
-			pastTime := metav1.NewTime(time.Now().Add(-61 * time.Minute))
 
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:              rrName,
-					Namespace:         namespace,
-					CreationTimestamp: pastTime, // Simulate old RR
+					Name:      rrName,
+					Namespace: namespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "timeout-test-signal",
-					SignalFingerprint: "timeout1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+					SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 					Severity:          "critical",
 					SignalType:        "prometheus",
 					TargetType:        "kubernetes",
@@ -100,7 +98,40 @@ var _ = Describe("BR-ORCH-027/028: Timeout Management", Label("integration", "ti
 
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			By("Waiting for controller to detect global timeout")
+			By("Waiting for RR to be initialized by controller")
+			Eventually(func() *metav1.Time {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
+					return nil
+				}
+				return updated.Status.StartTime
+			}, timeout, interval).ShouldNot(BeNil(), "Controller should set status.StartTime")
+
+			By("Manually setting status.StartTime to 61 minutes ago (simulates old RR)")
+			pastTime := metav1.NewTime(time.Now().Add(-61 * time.Minute))
+			Eventually(func() error {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
+					return err
+				}
+				updated.Status.StartTime = &pastTime
+				return k8sClient.Status().Update(ctx, updated)
+			}, timeout, interval).Should(Succeed())
+
+			By("Triggering reconcile by adding annotation (forces controller to process)")
+			Eventually(func() error {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
+					return err
+				}
+				if updated.Annotations == nil {
+					updated.Annotations = make(map[string]string)
+				}
+				updated.Annotations["test.kubernaut.ai/trigger-reconcile"] = time.Now().String()
+				return k8sClient.Update(ctx, updated)
+			}, timeout, interval).Should(Succeed())
+
+			By("Waiting for controller to detect global timeout on next reconcile")
 			// Per TESTING_GUIDELINES.md: Use Eventually patterns for controller race conditions
 			Eventually(func() remediationv1.RemediationPhase {
 				updated := &remediationv1.RemediationRequest{}
@@ -117,8 +148,10 @@ var _ = Describe("BR-ORCH-027/028: Timeout Management", Label("integration", "ti
 
 			Expect(final.Status.TimeoutTime).ToNot(BeNil(),
 				"TimeoutTime must be set when RR transitions to TimedOut")
-			Expect(final.Status.TimeoutPhase).ToNot(BeEmpty(),
+			Expect(final.Status.TimeoutPhase).ToNot(BeNil(),
 				"TimeoutPhase must track which phase was active when timeout occurred")
+			Expect(*final.Status.TimeoutPhase).ToNot(BeEmpty(),
+				"TimeoutPhase value must not be empty string")
 
 			GinkgoWriter.Printf("✅ BR-ORCH-027: Global timeout enforced after 61 minutes\n")
 		})
@@ -132,20 +165,18 @@ var _ = Describe("BR-ORCH-027/028: Timeout Management", Label("integration", "ti
 
 			ctx := context.Background()
 
-			By("Creating RemediationRequest with CreationTimestamp 30 minutes ago")
+			By("Creating RemediationRequest")
 			rrName := fmt.Sprintf("rr-notimeout-%d", time.Now().UnixNano())
 			now := metav1.Now()
-			recentTime := metav1.NewTime(time.Now().Add(-30 * time.Minute))
 
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:              rrName,
-					Namespace:         namespace,
-					CreationTimestamp: recentTime,
+					Name:      rrName,
+					Namespace: namespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "notimeout-test-signal",
-					SignalFingerprint: "notimeout234567890abcdef1234567890abcdef1234567890abcdef12345678",
+					SignalFingerprint: "b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2",
 					Severity:          "warning",
 					SignalType:        "prometheus",
 					TargetType:        "kubernetes",
@@ -160,6 +191,26 @@ var _ = Describe("BR-ORCH-027/028: Timeout Management", Label("integration", "ti
 			}
 
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Waiting for RR to be initialized by controller")
+			Eventually(func() *metav1.Time {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
+					return nil
+				}
+				return updated.Status.StartTime
+			}, timeout, interval).ShouldNot(BeNil())
+
+			By("Manually setting status.StartTime to 30 minutes ago (within timeout)")
+			recentTime := metav1.NewTime(time.Now().Add(-30 * time.Minute))
+			Eventually(func() error {
+				updated := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
+					return err
+				}
+				updated.Status.StartTime = &recentTime
+				return k8sClient.Status().Update(ctx, updated)
+			}, timeout, interval).Should(Succeed())
 
 			By("Verifying RR progresses normally (NOT TimedOut)")
 			// RR should progress to Processing phase normally
@@ -272,18 +323,17 @@ var _ = Describe("BR-ORCH-027/028: Timeout Management", Label("integration", "ti
 			deleteTestNamespace(namespace)
 		})
 
-		PIt("should create NotificationRequest on global timeout (escalation)", func() {
-			// TDD RED Phase: PENDING - Requires notification creation logic in controller
-			//
-			// Scenario: RR times out after 61 minutes
-			// Business Outcome: NotificationRequest created with escalation type
-			// Confidence: 85% - Important for operational visibility
-			//
-			// DEFERRED: Requires notification creation in timeout handler
-			// Priority: P0 but depends on timeout detection (Test 1)
-			// Estimated Time: 1 hour after Test 1 passes
+	It("should create NotificationRequest on global timeout (escalation)", func() {
+		// TDD GREEN Phase: Tests 1-2 passed, now implementing notification creation
+		//
+		// Scenario: RR times out after 61 minutes
+		// Business Outcome: NotificationRequest created with escalation type
+		// Confidence: 90% - Important for operational visibility
+		//
+		// Prerequisites: Tests 1-2 passing (timeout detection working)
+		// Business Requirement: BR-ORCH-027 (Global Timeout Management)
 
-			ctx := context.Background()
+		ctx := context.Background()
 
 			By("Creating RemediationRequest that will timeout")
 			rrName := fmt.Sprintf("rr-timeout-notify-%d", time.Now().UnixNano())
@@ -335,3 +385,8 @@ var _ = Describe("BR-ORCH-027/028: Timeout Management", Label("integration", "ti
 		})
 	})
 })
+
+
+
+
+

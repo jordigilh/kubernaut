@@ -276,7 +276,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 		It("accepts all valid severities (critical, warning, info)", func() {
 			// BUSINESS OUTCOME: All severity levels supported for different urgency
 			// Critical → immediate remediation
-			// Warning → scheduled remediation  
+			// Warning → scheduled remediation
 			// Info → monitoring only
 			validSeverities := []string{"critical", "warning", "info"}
 
