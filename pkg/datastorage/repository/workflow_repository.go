@@ -537,7 +537,7 @@ func (r *WorkflowRepository) SearchByLabels(ctx context.Context, request *models
 			%s
 		) scored_workflows
 		WHERE final_score >= $%d
-		ORDER BY final_score DESC
+		ORDER BY final_score DESC, created_at DESC
 		LIMIT $%d
 	`, detectedLabelBoostSQL, customLabelBoostSQL, labelPenaltySQL,
 		detectedLabelBoostSQL, customLabelBoostSQL, labelPenaltySQL,

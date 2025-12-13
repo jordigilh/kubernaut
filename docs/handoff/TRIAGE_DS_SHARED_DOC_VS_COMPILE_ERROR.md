@@ -1,8 +1,8 @@
 # Triage: DataStorage Shared Doc vs Compilation Error
 
-**Date**: December 12, 2025  
-**Status**: 🚨 **CRITICAL MISMATCH FOUND**  
-**Impact**: Shared doc shows Redis config, but code can't compile  
+**Date**: December 12, 2025
+**Status**: 🚨 **CRITICAL MISMATCH FOUND**
+**Impact**: Shared doc shows Redis config, but code can't compile
 
 ---
 
@@ -10,7 +10,7 @@
 
 **Finding**: The **SHARED_DATASTORAGE_CONFIGURATION_GUIDE.md** is **accurate for deployment**, but reveals a **critical code-config mismatch** in the DataStorage service.
 
-**Conclusion**: 
+**Conclusion**:
 - ✅ **Shared doc is correct** (shows expected Redis config)
 - ❌ **DataStorage code is broken** (missing Redis field in struct)
 - 🚨 **This is a DataStorage team bug**, not a configuration issue
@@ -39,7 +39,7 @@ redis:
 ### **2. E2E Build Shows Missing Field**
 
 ```
-pkg/datastorage/server/server.go:144:25: 
+pkg/datastorage/server/server.go:144:25:
 cfg.Redis undefined (type *Config has no field or method Redis)
 ```
 
@@ -104,7 +104,7 @@ The **SHARED_DATASTORAGE_CONFIGURATION_GUIDE.md** is:
 
 ### **Key Insight**
 
-**The shared doc describes the INTENDED configuration, which is correct.**  
+**The shared doc describes the INTENDED configuration, which is correct.**
 **The DataStorage SERVICE CODE is incomplete/broken.**
 
 ---
@@ -113,8 +113,8 @@ The **SHARED_DATASTORAGE_CONFIGURATION_GUIDE.md** is:
 
 ### **For SignalProcessing Team (Immediate)**
 
-**Action**: ✅ **Ship V1.0 now**  
-**Rationale**: SP code is 100% validated, DataStorage issue is not SP's fault  
+**Action**: ✅ **Ship V1.0 now**
+**Rationale**: SP code is 100% validated, DataStorage issue is not SP's fault
 **Risk**: Very Low (integration tests validate same functionality as E2E)
 
 ---
@@ -132,7 +132,7 @@ grep -r "type Config struct" pkg/datastorage/
 ```go
 type Config struct {
     // ... existing fields ...
-    
+
     Redis *RedisConfig `yaml:"redis" json:"redis"`  // ← ADD THIS
 }
 
@@ -260,15 +260,15 @@ make test-e2e-signalprocessing
 
 ## 📝 SUMMARY
 
-**Shared Doc Status**: ✅ **ACCURATE** (describes intended config correctly)  
-**DataStorage Status**: ❌ **BROKEN** (missing Redis field in struct)  
-**Impact**: ⚠️ **BLOCKS E2E** for all teams building from source  
-**Fix Owner**: 🔧 **DataStorage Team** (add Redis field to Config)  
-**SP Recommendation**: ✅ **SHIP V1.0** (don't wait for DS fix)  
+**Shared Doc Status**: ✅ **ACCURATE** (describes intended config correctly)
+**DataStorage Status**: ❌ **BROKEN** (missing Redis field in struct)
+**Impact**: ⚠️ **BLOCKS E2E** for all teams building from source
+**Fix Owner**: 🔧 **DataStorage Team** (add Redis field to Config)
+**SP Recommendation**: ✅ **SHIP V1.0** (don't wait for DS fix)
 
 ---
 
-**Document Status**: ✅ Triage Complete  
-**Next Action**: DataStorage team fixes `cfg.Redis` (15-30 min)  
-**SP Team Action**: Approve V1.0 shipping (95% confidence)  
+**Document Status**: ✅ Triage Complete
+**Next Action**: DataStorage team fixes `cfg.Redis` (15-30 min)
+**SP Team Action**: Approve V1.0 shipping (95% confidence)
 

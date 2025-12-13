@@ -820,7 +820,7 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 			Name:      "audit-test-pod",
 			Namespace: testNs,
 		}
-		
+
 		// Create parent RemediationRequest (RO creates this in production)
 		rr := &remediationv1alpha1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{

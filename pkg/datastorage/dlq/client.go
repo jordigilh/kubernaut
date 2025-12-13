@@ -52,6 +52,7 @@ import (
 type Client struct {
 	redisClient *redis.Client
 	logger      logr.Logger
+	maxLen      int64 // Maximum DLQ stream length (for capacity monitoring - Gap 3.3)
 }
 
 // AuditMessage represents a message in the DLQ.
@@ -83,13 +84,18 @@ type DLQMessage struct {
 }
 
 // NewClient creates a new DLQ client.
-func NewClient(redisClient *redis.Client, logger logr.Logger) (*Client, error) {
+// maxLen parameter enables capacity monitoring (Gap 3.3: DLQ Near-Capacity Warning)
+func NewClient(redisClient *redis.Client, logger logr.Logger, maxLen int64) (*Client, error) {
 	if redisClient == nil {
 		return nil, fmt.Errorf("redis client cannot be nil")
+	}
+	if maxLen <= 0 {
+		maxLen = 10000 // Default max length if not specified
 	}
 	return &Client{
 		redisClient: redisClient,
 		logger:      logger,
+		maxLen:      maxLen,
 	}, nil
 }
 
@@ -121,8 +127,8 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	streamKey := "audit:dlq:notifications"
 	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey,
-		MaxLen: 10000, // Cap at 10,000 messages (FIFO eviction)
-		ID:     "*",   // Auto-generate timestamp-based ID
+		MaxLen: c.maxLen, // Use configured max length (Gap 3.3)
+		ID:     "*",      // Auto-generate timestamp-based ID
 		Values: map[string]interface{}{
 			"message": string(messageJSON),
 		},
@@ -130,6 +136,34 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 
 	if err != nil {
 		return fmt.Errorf("failed to enqueue to DLQ: %w", err)
+	}
+
+	// Gap 3.3: DLQ Near-Capacity Early Warning
+	// Check DLQ depth and log warnings at capacity thresholds
+	depth, depthErr := c.GetDLQDepth(ctx, "notifications")
+	if depthErr == nil && c.maxLen > 0 {
+		capacityRatio := float64(depth) / float64(c.maxLen)
+
+		// Log warnings at increasing severity levels
+		if capacityRatio >= 0.95 {
+			c.logger.Error(nil, "DLQ OVERFLOW IMMINENT - immediate action required",
+				"depth", depth,
+				"max", c.maxLen,
+				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+				"stream", streamKey)
+		} else if capacityRatio >= 0.90 {
+			c.logger.Error(nil, "DLQ CRITICAL capacity - urgent action needed",
+				"depth", depth,
+				"max", c.maxLen,
+				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+				"stream", streamKey)
+		} else if capacityRatio >= 0.80 {
+			c.logger.Info("DLQ approaching capacity - monitoring recommended",
+				"depth", depth,
+				"max", c.maxLen,
+				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+				"stream", streamKey)
+		}
 	}
 
 	c.logger.Info("Audit record added to DLQ",
@@ -169,8 +203,8 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 	streamKey := "audit:dlq:events" // Unique stream key for generic audit events
 	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey,
-		MaxLen: 10000, // Cap at 10,000 messages (FIFO eviction)
-		ID:     "*",   // Auto-generate timestamp-based ID
+		MaxLen: c.maxLen, // Use configured max length (Gap 3.3)
+		ID:     "*",      // Auto-generate timestamp-based ID
 		Values: map[string]interface{}{
 			"message": string(messageJSON),
 		},
@@ -178,6 +212,40 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 
 	if err != nil {
 		return fmt.Errorf("failed to add audit event to DLQ: %w", err)
+	}
+
+	// Gap 3.3: DLQ Near-Capacity Early Warning
+	// Check DLQ depth and log warnings at capacity thresholds
+	depth, depthErr := c.GetDLQDepth(ctx, "events")
+	if depthErr == nil && c.maxLen > 0 {
+		capacityRatio := float64(depth) / float64(c.maxLen)
+
+		// Log warnings at increasing severity levels
+		if capacityRatio >= 0.95 {
+			c.logger.Error(nil, "DLQ OVERFLOW IMMINENT - immediate action required",
+				"depth", depth,
+				"max", c.maxLen,
+				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+				"stream", streamKey)
+			// TODO: Metric - datastorage_dlq_overflow_imminent{stream="events"} = 1
+		} else if capacityRatio >= 0.90 {
+			c.logger.Error(nil, "DLQ CRITICAL capacity - urgent action needed",
+				"depth", depth,
+				"max", c.maxLen,
+				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+				"stream", streamKey)
+			// TODO: Metric - datastorage_dlq_near_full{stream="events"} = 1
+		} else if capacityRatio >= 0.80 {
+			c.logger.Info("DLQ approaching capacity - monitoring recommended",
+				"depth", depth,
+				"max", c.maxLen,
+				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+				"stream", streamKey)
+			// TODO: Metric - datastorage_dlq_warning{stream="events"} = 1
+		}
+		// TODO: Always track capacity ratio metric:
+		// datastorage_dlq_depth_ratio{stream="events"} = capacityRatio
+		// datastorage_dlq_depth{stream="events"} = depth
 	}
 
 	c.logger.Info("Audit event added to DLQ",

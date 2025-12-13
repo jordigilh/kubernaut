@@ -530,23 +530,128 @@ class SearchWorkflowCatalogTool(Tool):
                 params=params
             )
 
-    def _build_filters_from_query(self, query: str, additional_filters: Dict) -> Dict[str, Any]:
+    def _extract_component_from_rca(self, rca_resource: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract component (pod/deployment/node) from RCA resource.
+
+        Business Requirement: BR-HAPI-250 (Workflow Catalog Search Tool)
+        Design Decision: DD-WORKFLOW-001 v1.6 (component is mandatory)
+
+        Args:
+            rca_resource: RCA resource with kind field
+
+        Returns:
+            Component type from RCA resource kind, or None if not available
+        """
+        if not rca_resource:
+            return None
+
+        # Extract kind from RCA resource
+        kind = rca_resource.get("kind", "").lower()
+        if not kind:
+            return None
+
+        # Map Kubernetes kinds to component labels
+        kind_mapping = {
+            "pod": "pod",
+            "deployment": "deployment",
+            "replicaset": "deployment",  # ReplicaSets are managed by Deployments
+            "statefulset": "statefulset",
+            "daemonset": "daemonset",
+            "node": "node",
+            "service": "service",
+            "persistentvolumeclaim": "pvc",
+            "persistentvolume": "pv",
+        }
+
+        return kind_mapping.get(kind, kind)
+
+    def _extract_environment_from_rca(self, rca_resource: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract environment from RCA resource namespace.
+
+        Business Requirement: BR-HAPI-250 (Workflow Catalog Search Tool)
+        Design Decision: DD-WORKFLOW-001 v1.6 (environment is mandatory)
+
+        Args:
+            rca_resource: RCA resource with namespace field
+
+        Returns:
+            Environment inferred from namespace, or None if not available
+        """
+        if not rca_resource:
+            return None
+
+        namespace = rca_resource.get("namespace", "").lower()
+        if not namespace:
+            return None
+
+        # Heuristic mapping (customers should use custom_labels for precise control)
+        if "prod" in namespace or "production" in namespace:
+            return "production"
+        elif "stag" in namespace or "staging" in namespace:
+            return "staging"
+        elif "dev" in namespace or "development" in namespace:
+            return "development"
+        elif "test" in namespace:
+            return "test"
+
+        return None  # Will default to "*" wildcard in caller
+
+    def _map_severity_to_priority(self, severity: str) -> str:
+        """
+        Map severity level to priority level.
+
+        Business Requirement: BR-HAPI-250 (Workflow Catalog Search Tool)
+        Design Decision: DD-WORKFLOW-001 v1.6 (priority is mandatory)
+
+        Args:
+            severity: critical/high/medium/low
+
+        Returns:
+            Priority level: P0/P1/P2/P3
+        """
+        severity_to_priority = {
+            "critical": "P0",
+            "high": "P1",
+            "medium": "P2",
+            "low": "P3",
+        }
+        return severity_to_priority.get(severity.lower(), "P2")  # Default to P2
+
+    def _build_filters_from_query(
+        self, query: str, rca_resource: Dict[str, Any], additional_filters: Dict
+    ) -> Dict[str, Any]:
         """
         Transform LLM query into WorkflowSearchFilters format
 
         Business Requirement: BR-STORAGE-013
-        Design Decision: DD-LLM-001 - MCP Workflow Search Parameter Taxonomy
+        Design Decisions:
+            - DD-LLM-001 - MCP Workflow Search Parameter Taxonomy
+            - DD-WORKFLOW-001 v1.6 - 5 Mandatory Labels
 
         Args:
             query: Structured query '<signal_type> <severity> [keywords]' (per DD-LLM-001)
+            rca_resource: RCA resource for component/environment extraction
             additional_filters: Additional filters from LLM (optional labels)
 
         Returns:
-            WorkflowSearchFilters dict with signal-type and severity (mandatory)
+            WorkflowSearchFilters dict with 5 mandatory fields:
+            - signal_type (REQUIRED)
+            - severity (REQUIRED)
+            - component (REQUIRED)
+            - environment (REQUIRED)
+            - priority (REQUIRED)
 
         Example:
-            Input: "OOMKilled critical"
-            Output: {"signal-type": "OOMKilled", "severity": "critical"}
+            Input: "OOMKilled critical", rca_resource={kind: "Pod", namespace: "production"}
+            Output: {
+                "signal_type": "OOMKilled",
+                "severity": "critical",
+                "component": "pod",
+                "environment": "production",
+                "priority": "P0"
+            }
         """
         # Parse structured query per DD-LLM-001
         # Extract signal_type and severity from query string
@@ -570,21 +675,27 @@ class SearchWorkflowCatalogTool(Tool):
                 severity = sev
                 break
 
-        # Build filters (DD-STORAGE-008 format)
+        # Build filters with 5 MANDATORY fields (DD-WORKFLOW-001 v1.6)
         filters = {
-            "signal-type": signal_type,
-            "severity": severity
+            "signal_type": signal_type,
+            "severity": severity,
+            # NEW: 3 additional mandatory fields with smart defaults
+            "component": self._extract_component_from_rca(rca_resource) or "*",  # Wildcard if unknown
+            "environment": self._extract_environment_from_rca(rca_resource) or "*",  # Wildcard if unknown
+            "priority": self._map_severity_to_priority(severity),  # Map severity → priority
         }
 
         # Merge additional filters (optional labels per DD-WORKFLOW-004)
+        # These can override the smart defaults above
         if additional_filters:
             # Map from LLM filter names to API field names
             filter_mapping = {
                 "resource_management": "resource-management",
                 "gitops_tool": "gitops-tool",
                 "environment": "environment",
+                "component": "component",  # Allow LLM to override default
                 "business_category": "business-category",
-                "priority": "priority",
+                "priority": "priority",  # Allow LLM to override default
                 "risk_tolerance": "risk-tolerance"
             }
 
@@ -636,7 +747,8 @@ class SearchWorkflowCatalogTool(Tool):
         """
         try:
             # Build request per DD-STORAGE-008
-            search_filters = self._build_filters_from_query(query, filters)
+            # DD-WORKFLOW-001 v1.6: Now includes 5 mandatory fields (signal_type, severity, component, environment, priority)
+            search_filters = self._build_filters_from_query(query, rca_resource, filters)
 
             # DD-HAPI-001: Auto-append custom_labels to filters (invisible to LLM)
             # Custom labels are passed through from the original request context

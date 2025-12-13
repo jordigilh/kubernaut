@@ -1,9 +1,9 @@
 # NOTICE: Mandatory Test Resource Naming Pattern for Parallel Execution
 
-**Date**: 2025-12-11  
-**Type**: 🚨 **CRITICAL** - Affects ALL Test Suites  
-**Action Required**: ✅ **YES** - Update your tests  
-**Deadline**: Next sprint  
+**Date**: 2025-12-11
+**Type**: 🚨 **CRITICAL** - Affects ALL Test Suites
+**Action Required**: ✅ **YES** - Update your tests
+**Deadline**: Next sprint
 **Severity**: **HIGH** - Flaky tests block CI/CD
 
 ---
@@ -380,16 +380,16 @@ Update this section as services migrate:
 2. Replace `randomSuffix()` with `testutil.UniqueTestName()`
 3. Verify tests pass with `-procs=4`
 
-**Time investment**: ~30 minutes per service  
+**Time investment**: ~30 minutes per service
 **Payoff**: Reliable tests, faster CI/CD, happier developers
 
 **Questions?** Ask in `#kubernaut-testing`!
 
 ---
 
-**Issued by**: Testing Team  
-**Date**: 2025-12-11  
-**Priority**: 🚨 **HIGH**  
+**Issued by**: Testing Team
+**Date**: 2025-12-11
+**Priority**: 🚨 **HIGH**
 **Action Required**: ✅ **YES**
 
 **Status**: 🔔 **ACTIVE NOTICE** - Please acknowledge receipt in `#kubernaut-testing`

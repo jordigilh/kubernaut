@@ -24,12 +24,12 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"github.com/go-logr/logr"
-	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
@@ -44,8 +44,9 @@ func TestDLQClient(t *testing.T) {
 // ========================================
 // DEAD LETTER QUEUE CLIENT UNIT TESTS (DD-009)
 // 📋 Business Requirements:
-//    - BR-STORAGE-017: DLQ Fallback on Database Unavailability
-//    - BR-AUDIT-001: Complete Audit Trail (no data loss)
+//   - BR-STORAGE-017: DLQ Fallback on Database Unavailability
+//   - BR-AUDIT-001: Complete Audit Trail (no data loss)
+//
 // 📋 Testing Principle: Behavior + Correctness
 // ========================================
 var _ = Describe("DD-009: Dead Letter Queue Client", func() {
@@ -73,7 +74,7 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 
 		// Create DLQ client
-		dlqClient, err = dlq.NewClient(redisClient, logger)
+		dlqClient, err = dlq.NewClient(redisClient, logger, 10000)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(dlqClient).ToNot(BeNil())
 	})
@@ -302,7 +303,7 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 	Context("NewClient - Constructor Validation", func() {
 		It("should create DLQ client with valid parameters", func() {
 			// ACT: Create new client
-			client, err := dlq.NewClient(redisClient, logger)
+			client, err := dlq.NewClient(redisClient, logger, 10000)
 
 			// ASSERT: Should succeed
 			Expect(err).ToNot(HaveOccurred())
@@ -311,7 +312,7 @@ var _ = Describe("DD-009: Dead Letter Queue Client", func() {
 
 		It("should return error when Redis client is nil", func() {
 			// ACT: Create client with nil Redis client
-			client, err := dlq.NewClient(nil, logger)
+			client, err := dlq.NewClient(nil, logger, 10000)
 
 			// ASSERT: Should fail
 			Expect(err).To(HaveOccurred())

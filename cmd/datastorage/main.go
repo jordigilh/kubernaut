@@ -117,7 +117,9 @@ func main() {
 		WriteTimeout: cfg.Server.GetWriteTimeout(),
 	}
 
-	srv, err := server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, serverCfg)
+	// Gap 3.3: Pass DLQ max length for capacity monitoring
+	dlqMaxLen := int64(cfg.Redis.DLQMaxLen)
+	srv, err := server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, serverCfg, dlqMaxLen)
 	if err != nil {
 		logger.Error(err, "Failed to create server")
 		os.Exit(1)

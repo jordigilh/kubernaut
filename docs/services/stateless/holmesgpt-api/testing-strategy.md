@@ -61,6 +61,88 @@ def client(mock_llm_server):
 
 ---
 
+## 🔧 **Mock Mode Configuration (BR-HAPI-212)**
+
+### **Environment Variable - CRITICAL**
+
+**Correct Variable Name:** `MOCK_LLM_MODE` (NOT `MOCK_LLM_ENABLED`)
+
+**Code Reference:** `src/mock_responses.py:42-51`
+```python
+def is_mock_mode_enabled() -> bool:
+    return os.getenv("MOCK_LLM_MODE", "").lower() == "true"
+```
+
+### **Common Configuration Mistake**
+
+```yaml
+# ❌ WRONG - This will NOT activate mock mode
+env:
+- name: MOCK_LLM_ENABLED      # Wrong variable name
+  value: "true"
+# Result: Mock mode NOT activated → attempts real LLM → 500 error
+
+# ✅ CORRECT - This activates mock mode
+env:
+- name: MOCK_LLM_MODE         # Checked in src/mock_responses.py
+  value: "true"
+# Result: Mock mode activated → deterministic responses → 200 OK
+```
+
+### **Troubleshooting Mock Mode**
+
+**Symptom:** Getting "LLM_MODEL environment variable required" error in tests
+
+**Check 1:** Verify environment variable name
+```bash
+# In your test infrastructure
+echo $MOCK_LLM_MODE  # Should show: true
+echo $MOCK_LLM_ENABLED  # Wrong variable - delete this
+```
+
+**Check 2:** Verify mock mode is detected
+```bash
+# Check HAPI logs
+kubectl logs deployment/holmesgpt-api | grep "mock_mode"
+# Should show: "event": "mock_mode_active"
+```
+
+**Check 3:** Test both endpoints
+```bash
+# Test incident endpoint (should work)
+curl -X POST http://holmesgpt-api:8080/api/v1/incident/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"incident_id":"test","signal_type":"OOMKilled"}'
+
+# Test recovery endpoint (should also work)
+curl -X POST http://holmesgpt-api:8080/api/v1/recovery/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"incident_id":"test","is_recovery_attempt":true,"attempt_number":1}'
+
+# Both should return 200 OK with mock responses
+```
+
+### **When Mock Mode is Active**
+
+**Behavior:**
+- ✅ Early return in both `incident.py` and `recovery.py`
+- ✅ No LLM configuration validation performed
+- ✅ No HolmesGPT SDK initialization needed
+- ✅ Deterministic responses based on signal_type
+- ✅ Fast response times (< 100ms)
+
+**What's NOT Required:**
+- ❌ LLM_MODEL
+- ❌ LLM_PROVIDER
+- ❌ LLM_ENDPOINT
+- ❌ LLM_API_KEY
+- ❌ Real LLM service
+
+**What's STILL Required:**
+- ✅ DATASTORAGE_URL (for workflow catalog search)
+
+---
+
 ## ✅ Approved Integration Test Strategy
 
 **Classification**: 🟡 **FAKE CLIENT** (Start) → **ENVTEST** (If Needed)

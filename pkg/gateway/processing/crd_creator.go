@@ -588,47 +588,6 @@ func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remedia
 	}
 }
 
-// CreateStormCRD creates a new RemediationRequest CRD for storm aggregation
-//
-// Parameters:
-// - signal: The first signal that triggered storm detection
-// - windowID: Storm window ID for tracking aggregated resources
-//
-// Returns the created CRD or error
-func (c *CRDCreator) CreateStormCRD(ctx context.Context, signal *types.NormalizedSignal, windowID string) (*remediationv1alpha1.RemediationRequest, error) {
-	// Create base CRD (environment/priority classification removed - SP owns these)
-	rr, err := c.CreateRemediationRequest(ctx, signal)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create storm CRD: %w", err)
-	}
-
-	// Storm aggregation metadata is stored in Redis, not in CRD spec
-	// The windowID is used to track aggregated resources in Redis
-	// This keeps CRD size minimal and avoids etcd size limits
-
-	return rr, nil
-}
-
-// UpdateStormCRD updates an existing storm CRD with new alert count
-//
-// Parameters:
-// - crd: The existing storm CRD to update
-// - alertCount: New total alert count
-//
-// # Returns error if update fails
-//
-// Note: Storm aggregation metadata (alert count, resources) is stored in Redis,
-// not in the CRD spec. This method is a no-op for now, as updates happen in Redis.
-// The CRD itself remains unchanged to avoid etcd size limits.
-func (c *CRDCreator) UpdateStormCRD(ctx context.Context, crd *remediationv1alpha1.RemediationRequest, alertCount int) error {
-	// Storm aggregation metadata is stored in Redis, not CRD spec
-	// This keeps CRD size minimal and avoids etcd size limits
-	// The alert count is tracked in Redis using the storm window ID
-
-	// No CRD update needed - metadata is in Redis
-	return nil
-}
-
 // truncateLabelValues truncates label values to comply with K8s 63 character limit
 // K8s label values must be <= 63 characters
 // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set

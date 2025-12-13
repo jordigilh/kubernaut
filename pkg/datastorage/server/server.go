@@ -93,12 +93,14 @@ const (
 // - redisAddr: Redis address for DLQ (format: "localhost:6379")
 // - logger: Structured logger
 // - cfg: Server configuration
+// - dlqMaxLen: Maximum DLQ stream length for capacity monitoring (Gap 3.3)
 func NewServer(
 	dbConnStr string,
 	redisAddr string,
 	redisPassword string,
 	logger logr.Logger,
 	cfg *Config,
+	dlqMaxLen int64,
 ) (*Server, error) {
 	// Connect to PostgreSQL using pgx driver (DD-010)
 	db, err := sql.Open("pgx", dbConnStr)
@@ -140,7 +142,11 @@ func NewServer(
 	// Create audit write dependencies (BR-STORAGE-001 to BR-STORAGE-020)
 	logger.V(1).Info("Creating audit write dependencies...")
 	repo := repository.NewNotificationAuditRepository(db, logger)
-	dlqClient, err := dlq.NewClient(redisClient, logger)
+	// Gap 3.3: Use passed DLQ max length for capacity monitoring
+	if dlqMaxLen <= 0 {
+		dlqMaxLen = 10000 // Default if not configured
+	}
+	dlqClient, err := dlq.NewClient(redisClient, logger, dlqMaxLen)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create DLQ client: %w", err)
 	}

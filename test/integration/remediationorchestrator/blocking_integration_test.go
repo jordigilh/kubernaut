@@ -209,6 +209,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			rr := createRemediationRequestWithFingerprint(ns, "rr-expired", fingerprint)
 
 			// Set to Blocked with BlockedUntil in the past (already expired)
+			var pastTime metav1.Time
 			Eventually(func() error {
 				rrGet := &remediationv1.RemediationRequest{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrGet); err != nil {
@@ -216,7 +217,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				}
 
 				// Set expiry 5 minutes in the past
-				pastTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
+				pastTime = metav1.NewTime(time.Now().Add(-5 * time.Minute))
 				reason := "consecutive_failures_exceeded"
 
 				rrGet.Status.OverallPhase = remediationv1.PhaseBlocked
@@ -226,13 +227,19 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				return k8sClient.Status().Update(ctx, rrGet)
 			}, timeout, interval).Should(Succeed())
 
-			// Verify BlockedUntil is in the past
-			rrFinal := &remediationv1.RemediationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(rrFinal.Status.BlockedUntil).ToNot(BeNil())
-			Expect(time.Now().After(rrFinal.Status.BlockedUntil.Time)).To(BeTrue(),
-				"BlockedUntil should be in the past (expired)")
+			// Verify the past time we set is indeed in the past (validates test setup)
+			Expect(time.Now().After(pastTime.Time)).To(BeTrue(),
+				"Test setup: BlockedUntil should be in the past")
+
+			// Controller should detect expiry and transition to Failed (BR-ORCH-042.3)
+			Eventually(func() remediationv1.RemediationPhase {
+				rrFinal := &remediationv1.RemediationRequest{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal); err != nil {
+					return ""
+				}
+				return rrFinal.Status.OverallPhase
+			}, timeout, interval).Should(Equal(remediationv1.PhaseFailed),
+				"RR with expired BlockedUntil should transition to Failed (cooldown expiry)")
 		})
 
 		It("should allow manual blocks without BlockedUntil (nil = no auto-expiry)", func() {

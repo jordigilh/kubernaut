@@ -68,17 +68,16 @@ type ClientImpl struct {
 // BR-STORAGE-006: Client initialization
 // BR-STORAGE-012: Vector similarity search with PostgreSQL 16+ and pgvector 0.5.1+ validation
 func NewClient(ctx context.Context, db *sql.DB, logger logr.Logger) (Client, error) {
-	// CRITICAL: Validate PostgreSQL 16+ and pgvector 0.5.1+ support
-	// This ensures HNSW index compatibility before any operations
+	// V1.0: HNSW validation removed (embeddings removed, label-only search)
+	// Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md
 	versionValidator := schema.NewVersionValidator(db, logger)
 
-	// Step 1: Validate HNSW support (PostgreSQL 16+ and pgvector 0.5.1+)
-	if err := versionValidator.ValidateHNSWSupport(ctx); err != nil {
-		return nil, fmt.Errorf("HNSW validation failed: %w. "+
-			"Please upgrade to PostgreSQL 16+ and pgvector 0.5.1+ for vector similarity search support", err)
+	// Validate PostgreSQL version (minimum requirements for JSONB, etc.)
+	if err := versionValidator.ValidatePostgreSQLVersion(ctx); err != nil {
+		return nil, fmt.Errorf("PostgreSQL version validation failed: %w", err)
 	}
 
-	// Step 2: Validate memory configuration (warns if suboptimal, but doesn't block)
+	// Validate memory configuration (warns if suboptimal, but doesn't block)
 	if err := versionValidator.ValidateMemoryConfiguration(ctx); err != nil {
 		// Log error but continue - memory validation is non-blocking
 		logger.Info("memory configuration validation failed",

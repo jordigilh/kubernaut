@@ -1,19 +1,19 @@
 # Triage: HAPI Response - Environment Variable Name Mismatch
 
-**Date**: 2025-12-12  
-**Status**: ✅ **ROOT CAUSE IDENTIFIED** - Simple 1-line fix  
-**Impact**: Will fix 11/13 failing E2E tests (85% of failures)  
+**Date**: 2025-12-12
+**Status**: ✅ **ROOT CAUSE IDENTIFIED** - Simple 1-line fix
+**Impact**: Will fix 11/13 failing E2E tests (85% of failures)
 **Time Required**: 5 minutes to fix + 5 minutes to validate
 
 ---
 
 ## 🎯 **TL;DR**
 
-**Problem**: Environment variable name mismatch  
-**What We Set**: `MOCK_LLM_ENABLED=true`  
-**What HAPI Expects**: `MOCK_LLM_MODE=true`  
+**Problem**: Environment variable name mismatch
+**What We Set**: `MOCK_LLM_ENABLED=true`
+**What HAPI Expects**: `MOCK_LLM_MODE=true`
 
-**Fix**: Change 1 line in `test/infrastructure/aianalysis.go`  
+**Fix**: Change 1 line in `test/infrastructure/aianalysis.go`
 **Result**: 20/22 E2E tests passing (up from 9/22)
 
 ---
@@ -29,8 +29,8 @@ def is_mock_mode_enabled() -> bool:
     return os.getenv("MOCK_LLM_MODE", "").lower() == "true"  # ← Checks MOCK_LLM_MODE
 ```
 
-**We provide:** `MOCK_LLM_ENABLED`  
-**HAPI checks:** `MOCK_LLM_MODE`  
+**We provide:** `MOCK_LLM_ENABLED`
+**HAPI checks:** `MOCK_LLM_MODE`
 **Result:** Mock mode never activates → Falls back to real LLM path → 500 errors
 
 ### **Why Incident Endpoint Works**
@@ -87,12 +87,12 @@ def is_mock_mode_enabled() -> bool:
 
 ### **Features Unblocked**
 
-✅ BR-AI-080: Recovery attempt support  
-✅ BR-AI-081: Previous execution context handling  
-✅ BR-AI-082: Recovery endpoint routing verification  
-✅ BR-AI-083: Multi-attempt recovery escalation  
-✅ Full 4-phase reconciliation cycle tests  
-✅ Production incident approval flow tests  
+✅ BR-AI-080: Recovery attempt support
+✅ BR-AI-081: Previous execution context handling
+✅ BR-AI-082: Recovery endpoint routing verification
+✅ BR-AI-083: Multi-attempt recovery escalation
+✅ Full 4-phase reconciliation cycle tests
+✅ Production incident approval flow tests
 
 **Business Value**: Restores 50% of AIAnalysis core functionality
 
@@ -253,7 +253,7 @@ Based on previous test output pattern:
 ```
 [ ] 1. Edit test/infrastructure/aianalysis.go (2 min)
        Change: MOCK_LLM_ENABLED → MOCK_LLM_MODE
-       
+
 [ ] 2. Delete cluster: kind delete cluster --name aianalysis-e2e (30 sec)
 
 [ ] 3. Rebuild images: make docker-build-* (2 min)
@@ -299,17 +299,17 @@ Based on previous test output pattern:
 
 ## 🎉 **Bottom Line**
 
-**Status**: ✅ **READY TO FIX**  
-**Complexity**: Simple (1-line change)  
-**Confidence**: 95% (HAPI team validated with source code)  
-**Impact**: High (+50% test coverage, restores 50% business value)  
+**Status**: ✅ **READY TO FIX**
+**Complexity**: Simple (1-line change)
+**Confidence**: 95% (HAPI team validated with source code)
+**Impact**: High (+50% test coverage, restores 50% business value)
 **Time**: 15 minutes total
 
 **Recommendation**: Apply fix immediately, expect 20/22 tests to pass.
 
 ---
 
-**Date**: 2025-12-12  
-**Next Action**: Change `MOCK_LLM_ENABLED` → `MOCK_LLM_MODE` in `test/infrastructure/aianalysis.go`  
-**Expected Outcome**: 20/22 E2E tests passing (91%)  
+**Date**: 2025-12-12
+**Next Action**: Change `MOCK_LLM_ENABLED` → `MOCK_LLM_MODE` in `test/infrastructure/aianalysis.go`
+**Expected Outcome**: 20/22 E2E tests passing (91%)
 **Remaining Work**: Fix final 2 tests for 100% coverage

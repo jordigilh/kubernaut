@@ -191,6 +191,30 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		eventOutcome, _ = payload["outcome"].(string)
 	}
 
+	// Validate event_outcome enum (Gap 1.2: Malformed Event Rejection)
+	// Valid values: success, failure, pending
+	validOutcomes := map[string]bool{
+		"success": true,
+		"failure": true,
+		"pending": true,
+	}
+	if !validOutcomes[eventOutcome] {
+		s.logger.Info("Invalid event_outcome value",
+			"event_outcome", eventOutcome,
+			"valid_values", []string{"success", "failure", "pending"})
+
+		// Record validation failure metric
+		if s.metrics != nil && s.metrics.ValidationFailures != nil {
+			s.metrics.ValidationFailures.WithLabelValues("event_outcome", "invalid_enum_value").Inc()
+		}
+
+		writeRFC7807Error(w, validation.NewValidationErrorProblem(
+			"audit_event",
+			map[string]string{"event_outcome": fmt.Sprintf("must be one of: success, failure, pending (got: %s)", eventOutcome)},
+		))
+		return
+	}
+
 	correlationID, _ := payload["correlation_id"].(string)
 	eventTimestampStr, _ := payload["event_timestamp"].(string)
 

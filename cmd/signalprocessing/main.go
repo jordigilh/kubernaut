@@ -174,13 +174,13 @@ func main() {
 	//
 	// NOTE: These are OPTIONAL - controller falls back to ConfigMap/hardcoded logic if policies not found
 	// Production deployments should mount Rego policies at /etc/signalprocessing/policies/
-	
+
 	ctx := ctrl.SetupSignalHandler()
-	
+
 	var envClassifier *classifier.EnvironmentClassifier
 	var priorityEngine *classifier.PriorityEngine
 	var businessClassifier *classifier.BusinessClassifier
-	
+
 	envClassifier, err = classifier.NewEnvironmentClassifier(
 		ctx,
 		"/etc/signalprocessing/policies/environment.rego",

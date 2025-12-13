@@ -464,7 +464,7 @@ var _ = SynchronizedBeforeSuite(
 		// Create repository and DLQ client instances
 		GinkgoWriter.Printf("🏗️  [Process %d] Creating repository and DLQ client...\n", processNum)
 		repo = repository.NewNotificationAuditRepository(db.DB, logger) // Use db.DB to get *sql.DB from sqlx
-		dlqClient, err = dlq.NewClient(redisClient, logger)
+		dlqClient, err = dlq.NewClient(redisClient, logger, 10000)      // Gap 3.3: Pass max length for capacity monitoring
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests in schema: %s\n", processNum, schemaName)

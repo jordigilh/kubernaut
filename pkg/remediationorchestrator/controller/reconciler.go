@@ -135,6 +135,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
+	// Check for global timeout (BR-ORCH-027)
+	// Default: 1 hour from creation timestamp
+	// Business Value: Prevents stuck remediations from consuming resources indefinitely
+	const globalTimeout = 1 * time.Hour
+	timeSinceCreation := time.Since(rr.CreationTimestamp.Time)
+	if timeSinceCreation > globalTimeout {
+		logger.Info("RemediationRequest exceeded global timeout",
+			"timeSinceCreation", timeSinceCreation,
+			"globalTimeout", globalTimeout)
+		return r.handleGlobalTimeout(ctx, rr)
+	}
+
 	// Aggregate status from child CRDs
 	aggregatedStatus, err := r.statusAggregator.AggregateStatus(ctx, rr)
 	if err != nil {
@@ -642,6 +654,50 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	r.emitFailureAudit(ctx, rr, failurePhase, failureReason, durationMs)
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
+	return ctrl.Result{}, nil
+}
+
+// handleGlobalTimeout transitions the RR to TimedOut phase when global timeout exceeded.
+// BR-ORCH-027: Global Timeout Management
+// Business Value: Prevents stuck remediations from consuming resources indefinitely
+// Default timeout: 1 hour from CreationTimestamp
+func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	// Record which phase timed out for troubleshooting
+	timeoutPhase := string(rr.Status.OverallPhase)
+	oldPhase := rr.Status.OverallPhase
+
+	// Update status to TimedOut using retry for optimistic concurrency
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Refetch to get latest resourceVersion
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+			return err
+		}
+
+		// Set timeout phase and metadata (BR-ORCH-027)
+		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
+		now := metav1.Now()
+		rr.Status.TimeoutTime = &now
+		rr.Status.TimeoutPhase = &timeoutPhase
+
+		return r.client.Status().Update(ctx, rr)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to transition to TimedOut")
+		return ctrl.Result{}, fmt.Errorf("failed to transition to TimedOut: %w", err)
+	}
+
+	// Record metric
+	metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(remediationv1.PhaseTimedOut), rr.Namespace).Inc()
+
+	logger.Info("Remediation timed out (global timeout exceeded)",
+		"timeoutPhase", timeoutPhase,
+		"creationTimestamp", rr.CreationTimestamp)
+
+	// Note: Timeout notification creation (BR-ORCH-027) will be added in future iteration
+	// to keep this implementation focused on timeout detection only
+
 	return ctrl.Result{}, nil
 }
 

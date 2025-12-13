@@ -274,7 +274,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		if region, ok := k8sCtx.Namespace.Labels["kubernaut.ai/region"]; ok && region != "" {
 			customLabels["region"] = []string{region}
 		}
-		
+
 		// Test-aware fallback: Check for ConfigMap-based Rego policies
 		// TODO: Replace with proper Rego engine integration
 		if len(customLabels) == 0 {
@@ -581,12 +581,12 @@ func (r *SignalProcessingReconciler) hasHPA(ctx context.Context, namespace strin
 	// BR-SP-101: Check both direct target and owner chain
 	for _, hpa := range hpaList.Items {
 		targetRef := hpa.Spec.ScaleTargetRef
-		
+
 		// 1. Check if HPA directly targets the signal's target resource
 		if targetRef.Kind == targetKind && targetRef.Name == targetName {
 			return true
 		}
-		
+
 		// 2. Check if HPA targets a resource in the owner chain
 		for _, owner := range k8sCtx.OwnerChain {
 			if owner.Kind == targetRef.Kind && owner.Name == targetRef.Name {

@@ -89,6 +89,66 @@ python3 -m pytest tests/smoke/ -v -m smoke
 | - Error Handling | 3 | ✅ 100% |
 | - Audit Trail | 3 | ✅ 100% |
 
+## Environment Variables
+
+### Required for Production
+
+| Variable | Purpose | Example | Required |
+|----------|---------|---------|----------|
+| `LLM_MODEL` | LLM model identifier | `gpt-4`, `claude-3-opus`, `llama2` | ✅ Yes |
+| `LLM_PROVIDER` | LLM provider | `openai`, `anthropic`, `ollama` | ✅ Yes |
+| `LLM_ENDPOINT` | LLM API endpoint | `http://ollama:11434` | ⚠️ Provider-dependent |
+| `DATASTORAGE_URL` | Data Storage service URL | `http://datastorage:8080` | ✅ Yes |
+| `LOG_LEVEL` | Logging level | `INFO`, `DEBUG`, `WARNING` | ❌ Optional (default: INFO) |
+
+### Testing & Development
+
+| Variable | Purpose | Example | Required |
+|----------|---------|---------|----------|
+| `MOCK_LLM_MODE` | Enable mock LLM responses (BR-HAPI-212) | `true`, `false` | ⚠️ Testing only |
+| `CONFIG_PATH` | Path to config file | `/etc/holmesgpt/config.yaml` | ❌ Optional |
+
+### Mock Mode Configuration (BR-HAPI-212)
+
+**For Integration Testing and E2E Tests:**
+
+```yaml
+env:
+- name: MOCK_LLM_MODE        # ← Correct variable name
+  value: "true"
+- name: DATASTORAGE_URL
+  value: http://datastorage:8080
+- name: LOG_LEVEL
+  value: INFO
+```
+
+**Important Notes:**
+- ✅ Variable name is `MOCK_LLM_MODE` (NOT `MOCK_LLM_ENABLED`)
+- ✅ When enabled, NO LLM configuration is required
+- ✅ Returns deterministic responses based on signal_type
+- ✅ No LLM API calls are made
+- ✅ Checked in `src/mock_responses.py:is_mock_mode_enabled()`
+
+**Mock Mode Behavior:**
+- Initial incident requests → deterministic workflow selection
+- Recovery requests → deterministic recovery analysis
+- No real LLM provider needed
+- No API keys needed
+- Fast and predictable for automated testing
+
+**Example Test Configuration:**
+```bash
+# Set environment for tests
+export MOCK_LLM_MODE=true
+export DATASTORAGE_URL=http://localhost:8080
+
+# Run integration tests
+pytest tests/integration/ -v
+
+# Run E2E tests
+pytest tests/e2e/ -v
+```
+
 ## Business Requirements
 
 **Total**: 185 business requirements (BRs)

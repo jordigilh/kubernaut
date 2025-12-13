@@ -344,24 +344,77 @@ resp, err := holmesGPTClient.Investigate(ctx, investigationReq)
 
 ### Environment Variables
 
-```bash
-# LLM Configuration
-LLM_PROVIDER=openai              # openai, anthropic, local
-LLM_MODEL=gpt-4                  # Model name
-LLM_API_KEY=sk-...               # API key (if required)
+#### **Production Environment Variables**
 
-# Toolset Configuration
+```bash
+# LLM Configuration (REQUIRED)
+LLM_PROVIDER=openai              # openai, anthropic, ollama, vertex_ai
+LLM_MODEL=gpt-4                  # Model name
+LLM_ENDPOINT=<endpoint>          # LLM API endpoint (provider-dependent)
+LLM_API_KEY=sk-...               # API key (if required by provider)
+
+# Data Storage Service (REQUIRED)
+DATASTORAGE_URL=http://datastorage:8080  # Workflow catalog and audit storage
+
+# Toolset Configuration (OPTIONAL)
 CONFIG_MAP_PATH=/etc/holmesgpt-api/toolsets/
 CONFIG_POLL_INTERVAL=60          # Seconds
 
-# Kubernetes Configuration
+# Kubernetes Configuration (OPTIONAL - auto-detected in-cluster)
 IN_CLUSTER=true                  # Use in-cluster config
 KUBECONFIG=/path/to/kubeconfig   # If IN_CLUSTER=false
 
-# Service Configuration
+# Service Configuration (OPTIONAL)
 SERVICE_PORT=8080
 METRICS_PORT=9090
 LOG_LEVEL=info
+```
+
+#### **Testing Environment Variables (BR-HAPI-212)**
+
+```bash
+# Mock Mode for Integration Testing
+# IMPORTANT: Variable name is MOCK_LLM_MODE (NOT MOCK_LLM_ENABLED)
+MOCK_LLM_MODE=true               # Enable deterministic mock responses
+
+# When MOCK_LLM_MODE=true:
+# - NO LLM configuration required (LLM_PROVIDER, LLM_MODEL, etc.)
+# - Returns deterministic responses based on signal_type
+# - No real LLM API calls made
+# - No API keys needed
+# - Fast and predictable for automated testing
+
+# Data Storage still required (for workflow catalog)
+DATASTORAGE_URL=http://datastorage:8080
+```
+
+#### **Mock Mode Behavior**
+
+**Code Reference:** `src/mock_responses.py:is_mock_mode_enabled()`
+
+**When `MOCK_LLM_MODE=true`:**
+- ✅ `/api/v1/incident/analyze` → deterministic workflow selection
+- ✅ `/api/v1/recovery/analyze` → deterministic recovery analysis
+- ✅ `/api/v1/postexec/analyze` → deterministic effectiveness assessment
+- ✅ Responses vary by signal_type (OOMKilled, CrashLoopBackOff, etc.)
+- ✅ No LLM provider configuration needed
+- ✅ Suitable for CI/CD pipelines
+
+**Use Cases:**
+- Integration testing (other services calling HAPI)
+- E2E testing (full workflow validation)
+- CI/CD pipelines (fast, deterministic, no API costs)
+- Development (no LLM API keys required)
+
+**Example Test Configuration:**
+```yaml
+env:
+- name: MOCK_LLM_MODE         # ← Correct variable name
+  value: "true"
+- name: DATASTORAGE_URL
+  value: http://datastorage:8080
+- name: LOG_LEVEL
+  value: INFO
 ```
 
 ---
