@@ -181,4 +181,3 @@ func (c *WorkflowExecutionCreator) buildExecutionConfig(rr *remediationv1.Remedi
 	// Return nil to use WorkflowExecution controller defaults
 	return nil
 }
-

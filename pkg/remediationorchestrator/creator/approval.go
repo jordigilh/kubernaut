@@ -207,4 +207,3 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		},
 	}
 }
-

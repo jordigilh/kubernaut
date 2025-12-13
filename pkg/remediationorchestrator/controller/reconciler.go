@@ -39,9 +39,11 @@ import (
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -136,15 +138,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Check for global timeout (BR-ORCH-027)
-	// Default: 1 hour from creation timestamp
+	// Default: 1 hour from remediation start time
 	// Business Value: Prevents stuck remediations from consuming resources indefinitely
+	// Note: Uses status.StartTime (not CreationTimestamp) as StartTime is explicitly set by controller
 	const globalTimeout = 1 * time.Hour
-	timeSinceCreation := time.Since(rr.CreationTimestamp.Time)
-	if timeSinceCreation > globalTimeout {
-		logger.Info("RemediationRequest exceeded global timeout",
-			"timeSinceCreation", timeSinceCreation,
-			"globalTimeout", globalTimeout)
-		return r.handleGlobalTimeout(ctx, rr)
+	if rr.Status.StartTime != nil {
+		timeSinceStart := time.Since(rr.Status.StartTime.Time)
+		if timeSinceStart > globalTimeout {
+			logger.Info("RemediationRequest exceeded global timeout",
+				"timeSinceStart", timeSinceStart,
+				"globalTimeout", globalTimeout,
+				"startTime", rr.Status.StartTime.Time)
+			return r.handleGlobalTimeout(ctx, rr)
+		}
 	}
 
 	// Aggregate status from child CRDs
@@ -695,8 +701,82 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		"timeoutPhase", timeoutPhase,
 		"creationTimestamp", rr.CreationTimestamp)
 
-	// Note: Timeout notification creation (BR-ORCH-027) will be added in future iteration
-	// to keep this implementation focused on timeout detection only
+	// ========================================
+	// CREATE TIMEOUT NOTIFICATION (BR-ORCH-027)
+	// Business Value: Operators notified for manual intervention
+	// ========================================
+
+	// Create notification for timeout escalation
+	notificationName := fmt.Sprintf("timeout-%s", rr.Name)
+	nr := &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      notificationName,
+			Namespace: rr.Namespace,
+			Labels: map[string]string{
+				"kubernaut.ai/remediation-request": rr.Name,
+				"kubernaut.ai/notification-type":   "timeout",
+				"kubernaut.ai/severity":            rr.Spec.Severity,
+				"kubernaut.ai/component":           "remediation-orchestrator",
+			},
+		},
+		Spec: notificationv1.NotificationRequestSpec{
+			Type:     notificationv1.NotificationTypeEscalation,
+			Priority: notificationv1.NotificationPriorityCritical,
+			Subject:  fmt.Sprintf("Remediation Timeout: %s", rr.Spec.SignalName),
+			Body: fmt.Sprintf(`Remediation request has exceeded the global timeout and requires manual intervention.
+
+**Signal**: %s
+**Timeout Phase**: %s
+**Timeout Duration**: 1 hour
+**Started**: %v
+**Timed Out**: %v
+
+The remediation was in %s phase when it timed out. Please investigate why the remediation did not complete within the expected timeframe.`,
+				rr.Spec.SignalName,
+				timeoutPhase,
+				rr.Status.StartTime.Format(time.RFC3339),
+				rr.Status.TimeoutTime.Format(time.RFC3339),
+				timeoutPhase,
+			),
+			Channels: []notificationv1.Channel{
+				notificationv1.ChannelSlack,
+				notificationv1.ChannelEmail,
+			},
+			Metadata: map[string]string{
+				"remediationRequest": rr.Name,
+				"timeoutPhase":       timeoutPhase,
+				"severity":           rr.Spec.Severity,
+				"targetResource":     fmt.Sprintf("%s/%s", rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
+			},
+		},
+	}
+
+	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference on timeout notification")
+		// Continue without notification - timeout transition is primary goal
+		return ctrl.Result{}, nil
+	}
+
+	// Set owner reference for cascade deletion (BR-ORCH-031)
+	if err := controllerutil.SetControllerReference(rr, nr, r.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference on timeout notification")
+		// Log error but don't fail timeout transition - timeout is primary goal
+		return ctrl.Result{}, nil
+	}
+
+	// Create notification (non-blocking - timeout transition is primary goal)
+	if err := r.client.Create(ctx, nr); err != nil {
+		logger.Error(err, "Failed to create timeout notification",
+			"notificationName", notificationName)
+		// Don't return error - timeout transition succeeded, notification is best-effort
+		return ctrl.Result{}, nil
+	}
+
+	logger.Info("Created timeout notification",
+		"notificationName", notificationName,
+		"priority", nr.Spec.Priority,
+		"timeoutPhase", timeoutPhase)
 
 	return ctrl.Result{}, nil
 }

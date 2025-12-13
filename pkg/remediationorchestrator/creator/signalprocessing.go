@@ -144,4 +144,3 @@ func (c *SignalProcessingCreator) buildTargetResource(rr *remediationv1.Remediat
 		Namespace: rr.Spec.TargetResource.Namespace,
 	}
 }
-

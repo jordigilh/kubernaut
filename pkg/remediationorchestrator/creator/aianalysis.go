@@ -197,4 +197,3 @@ func (c *AIAnalysisCreator) buildEnrichmentResults(sp *signalprocessingv1.Signal
 
 	return results
 }
-
