@@ -1,10 +1,64 @@
 # Session Handoff: AIAnalysis Service - E2E Infrastructure & HAPI Integration
 
-**Date**: 2025-12-12  
-**Session Duration**: ~4 hours  
-**Service**: AIAnalysis (AA)  
-**Branch**: feature/remaining-services-implementation  
+**Date**: 2025-12-12
+**Session Duration**: ~4 hours
+**Service**: AIAnalysis (AA)
+**Branch**: feature/remaining-services-implementation
 **Status**: ⚠️ **E2E Tests Blocked by Infrastructure Timeout**
+
+---
+
+## 🚀 **QUICK START - New Team Onboarding**
+
+### **1. Get Context (15 minutes)**
+```bash
+# Read these 3 documents in order:
+1. This handoff document (you're here!)
+2. docs/handoff/AA_TEST_BREAKDOWN_ALL_TIERS.md
+3. docs/handoff/RESPONSE_HAPI_RECOVERY_ENDPOINT_CONFIG_FIX.md
+```
+
+### **2. Setup Environment (10 minutes)**
+```bash
+# Clone and checkout
+git checkout feature/remaining-services-implementation
+git pull origin feature/remaining-services-implementation
+
+# Verify you have latest commits (should see 983a1c13 or later)
+git log --oneline -5
+
+# Install dependencies
+go mod download
+```
+
+### **3. Verify Unit & Integration Tests (5 minutes)**
+```bash
+# These should be 100% passing
+make test-unit-aianalysis         # Expected: 110/110 passing
+make test-integration-aianalysis   # Expected: 51/51 passing
+```
+
+### **4. Your First Task: Unblock E2E Tests (30 minutes)**
+```bash
+# Option 1: Pre-build images (RECOMMENDED)
+make docker-build-holmesgpt-api
+make docker-build-datastorage
+make docker-build-aianalysis
+make test-e2e-aianalysis
+
+# Option 2: Increase timeout
+make test-e2e-aianalysis TIMEOUT=30m
+```
+
+**Expected Result**: 20/22 E2E tests passing (91%)
+
+### **5. Success Criteria for Day 1**
+- [ ] All unit tests passing (110/110)
+- [ ] All integration tests passing (51/51)
+- [ ] E2E tests complete without timeout
+- [ ] 20+ E2E tests passing (target: 20/22)
+- [ ] Understand the HAPI fix that was applied
+- [ ] Know where to find test files and infrastructure code
 
 ---
 
@@ -33,6 +87,80 @@ This session focused on resolving AIAnalysis E2E test failures through cross-tea
 | Run E2E tests after fix | ❌ **Blocked** | Infrastructure timeout (image build) |
 | Document test distribution | ✅ Complete | 183 tests: 110 unit, 51 integration, 22 E2E |
 | Create cross-team documentation | ✅ Complete | HAPI issue + triage docs created |
+
+---
+
+## 🏗️ **AIAnalysis Service Architecture Context**
+
+### **What is AIAnalysis?**
+AIAnalysis is a Kubernetes CRD controller that:
+1. **Receives alerts** from SignalProcessing
+2. **Analyzes incidents** using HolmesGPT-API (AI/LLM)
+3. **Determines recovery actions** (BR-AI-080 to BR-AI-083)
+4. **Triggers workflow execution** via WorkflowExecution CRD
+5. **Tracks audit events** via DataStorage service
+
+### **Service Dependencies**
+
+```
+┌─────────────────┐
+│ SignalProcessing│ → Creates AIAnalysis CRDs
+└────────┬────────┘
+         │
+         ▼
+    ┌────────────┐
+    │ AIAnalysis │ (This Service)
+    │ Controller │
+    └─────┬──────┘
+          │
+          ├─► HolmesGPT-API (AI analysis)
+          ├─► DataStorage (audit events)
+          ├─► Rego Engine (priority/category)
+          └─► WorkflowExecution (remediation)
+```
+
+### **Key Business Requirements**
+- **BR-AI-010**: Production incident handling
+- **BR-AI-050**: HAPI initial incident analysis
+- **BR-AI-080**: Recovery attempt support
+- **BR-AI-081**: Previous execution context
+- **BR-AI-082**: Recovery endpoint routing
+- **BR-AI-083**: Multi-attempt escalation
+- **BR-ORCH-032**: Health endpoints
+- **BR-ORCH-040**: Metrics endpoints
+
+### **Code Organization**
+
+```
+kubernaut/
+├── api/aianalysis/v1alpha1/        # CRD definitions
+│   └── aianalysis_types.go          # RecoveryStatus, conditions
+├── internal/controller/aianalysis/  # Controller logic
+│   └── aianalysis_controller.go     # Main reconciler
+├── pkg/aianalysis/                  # Business logic
+│   ├── handlers/                    # Phase handlers
+│   │   ├── investigating.go         # BR-AI-050, BR-AI-080
+│   │   └── analyzing.go             # BR-AI-040
+│   └── clients/                     # External service clients
+│       ├── holmesgpt_client.go      # HAPI integration
+│       └── audit_client.go          # DataStorage integration
+├── test/
+│   ├── unit/aianalysis/             # 110 tests (60.1%)
+│   ├── integration/aianalysis/      # 51 tests (27.9%)
+│   └── e2e/aianalysis/              # 22 tests (12.0%)
+└── test/infrastructure/
+    └── aianalysis.go                # E2E cluster setup (HAPI fix here!)
+```
+
+### **Critical Files for New Team**
+
+| File | Purpose | Recent Changes |
+|------|---------|----------------|
+| `test/infrastructure/aianalysis.go:627` | E2E HAPI config | **FIXED**: `MOCK_LLM_MODE` env var |
+| `pkg/aianalysis/handlers/investigating.go` | Recovery logic | Lines 664-705: `populateRecoveryStatus` |
+| `api/aianalysis/v1alpha1/aianalysis_types.go` | CRD definition | RecoveryStatus structure |
+| `test/e2e/aianalysis/04_recovery_flow_test.go` | Recovery E2E tests | Expected to pass after HAPI fix |
+| `test/e2e/aianalysis/suite_test.go` | E2E infrastructure | Timeout issue here |
 
 ---
 
@@ -139,7 +267,7 @@ This session focused on resolving AIAnalysis E2E test failures through cross-tea
 
 **Fixed**: Incorrect integration test target documentation
 
-**Error**: Previously stated integration tests should be **<20%** of total  
+**Error**: Previously stated integration tests should be **<20%** of total
 **Correct**: Integration tests should be **>50%** for CRD controllers/microservices
 
 **Authoritative Sources**:
@@ -160,16 +288,16 @@ This session focused on resolving AIAnalysis E2E test failures through cross-tea
 
 ### **4. E2E Test Execution Attempt** ❌ **Blocked**
 
-**Commit**: `9b7baa0c` (HAPI fix applied)  
-**Cluster**: aianalysis-e2e (deleted and recreated)  
-**Command**: `make test-e2e-aianalysis`  
+**Commit**: `9b7baa0c` (HAPI fix applied)
+**Cluster**: aianalysis-e2e (deleted and recreated)
+**Command**: `make test-e2e-aianalysis`
 **Result**: ⚠️ **TIMEOUT** (20 minutes) during infrastructure setup
 
 #### **Failure Analysis**
 
-**Phase**: `SynchronizedBeforeSuite` (infrastructure deployment)  
-**Stuck on**: HolmesGPT-API image build  
-**Duration**: >18 minutes (timeout at 20 minutes)  
+**Phase**: `SynchronizedBeforeSuite` (infrastructure deployment)
+**Stuck on**: HolmesGPT-API image build
+**Duration**: >18 minutes (timeout at 20 minutes)
 **Step**: Building container image with UBI9 base
 
 **From logs**:
@@ -269,6 +397,139 @@ git log --oneline --since="2025-12-12" --author="AI"
 
 ---
 
+## 📖 **Development Workflow Reference**
+
+### **Daily Development Commands**
+
+```bash
+# Build the service
+make build-aianalysis
+
+# Run unit tests (fast: <10 seconds)
+make test-unit-aianalysis
+
+# Run integration tests (medium: 2-5 minutes, needs podman-compose)
+podman-compose -f podman-compose.test.yml up -d  # Start infrastructure
+make test-integration-aianalysis
+podman-compose -f podman-compose.test.yml down -v  # Clean up
+
+# Run E2E tests (slow: 10-15 minutes, needs Kind)
+make test-e2e-aianalysis
+
+# Run specific test file
+go test ./test/unit/aianalysis/investigating_handler_test.go -v
+
+# Run specific test case
+go test ./test/unit/aianalysis -v -run "TestRecoveryStatus"
+
+# Build Docker images
+make docker-build-aianalysis
+
+# Check linter
+make lint-aianalysis
+```
+
+### **Common Debugging Steps**
+
+**Problem**: E2E tests timeout
+```bash
+# Solution 1: Pre-build images
+make docker-build-holmesgpt-api
+make docker-build-datastorage
+make docker-build-aianalysis
+make test-e2e-aianalysis
+
+# Solution 2: Check image cache
+podman images | grep kubernaut
+
+# Solution 3: Clean podman cache
+podman system prune -a -f
+```
+
+**Problem**: HolmesGPT-API returns 500 errors
+```bash
+# Check environment variables in test infrastructure
+grep -A 5 "MOCK_LLM" test/infrastructure/aianalysis.go
+
+# Should see: MOCK_LLM_MODE (not MOCK_LLM_ENABLED)
+
+# Manual test of HAPI endpoint
+kubectl port-forward -n kubernaut-system svc/holmesgpt-api 8080:8080
+curl -X POST http://localhost:8080/api/v1/recovery/analyze -d '{"incident_id":"test"}'
+```
+
+**Problem**: Integration tests fail to find DataStorage
+```bash
+# Start infrastructure services
+podman-compose -f podman-compose.test.yml up -d
+
+# Verify services are running
+podman-compose -f podman-compose.test.yml ps
+
+# Check health endpoints
+curl http://localhost:8080/health  # DataStorage
+curl http://localhost:8081/health  # HolmesGPT-API
+```
+
+### **Test File Locations & Purpose**
+
+**Unit Tests** (`test/unit/aianalysis/`):
+- `investigating_handler_test.go` → RecoveryStatus logic (BR-AI-080 to BR-AI-083)
+- `analyzing_handler_test.go` → Analysis phase, Rego evaluation
+- `holmesgpt_client_test.go` → HAPI client wrapper
+- `audit_client_test.go` → DataStorage audit events
+
+**Integration Tests** (`test/integration/aianalysis/`):
+- `holmesgpt_integration_test.go` → HAPI API with mock mode
+- `recovery_integration_test.go` → Recovery flow end-to-end
+- `audit_integration_test.go` → DataStorage persistence
+- `rego_integration_test.go` → OPA policy engine
+
+**E2E Tests** (`test/e2e/aianalysis/`):
+- `01_health_endpoints_test.go` → Controller health/readiness
+- `02_metrics_test.go` → Prometheus metrics
+- `03_full_flow_test.go` → Complete incident-to-remediation
+- `04_recovery_flow_test.go` → Recovery attempts (HAPI fix affects these!)
+
+---
+
+## 🧭 **Previous Session Context**
+
+### **What Was Done Before This Session**
+
+This session built on extensive previous work:
+
+1. **RecoveryStatus Implementation** (Already Complete)
+   - `populateRecoveryStatus` function exists (lines 664-705 in `investigating.go`)
+   - 29 unit tests validating RecoveryStatus population
+   - 8 integration tests for recovery flow
+   - Metrics tracking for recovery attempts
+
+2. **E2E Infrastructure Fixes** (8 fixes applied)
+   - PostgreSQL/Redis shared deployment functions
+   - DataStorage ConfigMap ADR-030 compliance
+   - Architecture detection for multi-platform builds
+   - Health/metrics endpoint readiness checks
+   - See: `docs/handoff/COMPLETE_AIANALYSIS_E2E_INFRASTRUCTURE_FIXES.md`
+
+3. **Previous E2E Status**
+   - Before this session: 9/22 tests passing (41%)
+   - Health/metrics tests: Working ✅
+   - Recovery tests: Failing due to HAPI 500 errors ❌
+   - This session fixed the HAPI issue
+
+### **Key Documents to Review**
+
+| Document | Purpose | When to Read |
+|----------|---------|--------------|
+| `AA_E2E_FINAL_STATUS_WHEN_YOU_RETURN.md` | Previous session status | First day |
+| `COMPLETE_AIANALYSIS_E2E_INFRASTRUCTURE_FIXES.md` | 8 infrastructure fixes | When debugging E2E |
+| `SHARED_DATASTORAGE_CONFIGURATION_GUIDE.md` | DataStorage patterns | When adding audit tests |
+| `RESPONSE_HAPI_RECOVERY_ENDPOINT_CONFIG_FIX.md` | HAPI fix details | Understanding recovery fix |
+| `AA_TEST_BREAKDOWN_ALL_TIERS.md` | Complete test inventory | Planning new tests |
+
+---
+
 ## 🚧 **Current Blockers & Issues**
 
 ### **CRITICAL: E2E Infrastructure Timeout** 🔴
@@ -293,7 +554,7 @@ git log --oneline --since="2025-12-12" --author="AI"
 // test/e2e/aianalysis/suite_test.go
 // Change: --timeout=20m to --timeout=30m
 ```
-**Pros**: Quick fix  
+**Pros**: Quick fix
 **Cons**: Doesn't solve root cause, CI will still be slow
 
 **Option B: Pre-build Images** (recommended)
@@ -304,7 +565,7 @@ make docker-build-datastorage    # Build once
 make docker-build-aianalysis     # Build once
 make test-e2e-aianalysis         # Use pre-built images
 ```
-**Pros**: Faster E2E runs, deterministic  
+**Pros**: Faster E2E runs, deterministic
 **Cons**: Requires CI pipeline changes
 
 **Option C: Optimize HolmesGPT-API Dockerfile** (long-term)
@@ -314,7 +575,7 @@ make test-e2e-aianalysis         # Use pre-built images
 # 2. Optimize Python dependency installation
 # 3. Consider using a pre-built base image with dependencies
 ```
-**Pros**: Solves root cause  
+**Pros**: Solves root cause
 **Cons**: Requires HAPI team collaboration
 
 **Recommendation**: Try Option A first (quick validation), then pursue Option B for CI.
@@ -419,7 +680,7 @@ Based on previous run, likely failures:
 
 **Lesson**: Always verify exact environment variable names expected by dependencies.
 
-**AIAnalysis used**: `MOCK_LLM_ENABLED=true`  
+**AIAnalysis used**: `MOCK_LLM_ENABLED=true`
 **HAPI expects**: `MOCK_LLM_MODE=true`
 
 **Prevention**: Create environment variable standards document or centralized config.
@@ -436,7 +697,7 @@ Based on previous run, likely failures:
 - Cross-service data flow
 - Owner reference lifecycle
 
-**AIAnalysis current**: 27.9% integration (below target)  
+**AIAnalysis current**: 27.9% integration (below target)
 **Recommendation**: Add ~40 more integration tests
 
 ---
@@ -491,6 +752,46 @@ Based on previous run, likely failures:
 - `test/infrastructure/aianalysis.go:627` - HAPI env var fix location
 - `test/e2e/aianalysis/suite_test.go` - E2E test suite
 - `holmesgpt-api/src/mock_responses.py:42` - HAPI mock mode check
+
+---
+
+## 👥 **Team Contacts & Resources**
+
+### **For Help With...**
+
+| Topic | Who/Where | Notes |
+|-------|-----------|-------|
+| **HAPI Integration** | HAPI Team | See `docs/handoff/RESPONSE_HAPI_RECOVERY_ENDPOINT_CONFIG_FIX.md` |
+| **DataStorage Config** | DataStorage Team | See `docs/handoff/SHARED_DATASTORAGE_CONFIGURATION_GUIDE.md` |
+| **E2E Infrastructure** | This codebase | See `test/infrastructure/aianalysis.go` |
+| **Testing Strategy** | Docs | See `.cursor/rules/03-testing-strategy.mdc` |
+| **Business Requirements** | Docs | See `docs/requirements/BR-AI-*.md` |
+| **Recovery Status** | This session | Lines 664-705 in `investigating.go` |
+
+### **Slack Channels** (if applicable)
+- #aianalysis-dev
+- #holmesgpt-api
+- #datastorage
+- #kubernaut-testing
+
+### **Documentation Locations**
+
+```
+docs/
+├── handoff/                          # Session handoffs (read these first!)
+│   ├── SESSION_HANDOFF_AIANALYSIS_2025-12-12.md  # This document
+│   ├── AA_TEST_BREAKDOWN_ALL_TIERS.md
+│   ├── RESPONSE_HAPI_RECOVERY_ENDPOINT_CONFIG_FIX.md
+│   └── COMPLETE_AIANALYSIS_E2E_INFRASTRUCTURE_FIXES.md
+├── services/crd-controllers/02-aianalysis/  # Service docs
+│   ├── README.md
+│   ├── IMPLEMENTATION_PLAN_RECOVERYSTATUS.md
+│   └── TRIAGE_RECOVERYSTATUS_COMPREHENSIVE.md
+├── requirements/                     # Business requirements
+│   └── BR-AI-*.md
+└── development/business-requirements/
+    └── TESTING_GUIDELINES.md         # Testing standards
+```
 
 ---
 
@@ -569,39 +870,106 @@ Based on previous run, likely failures:
 
 ## 🔄 **Handoff Checklist**
 
-### **For Next Engineer**
+### **Day 1 - Onboarding (2-3 hours)**
 
-- [ ] Read this handoff document completely
-- [ ] Review HAPI response document (`RESPONSE_HAPI_RECOVERY_ENDPOINT_CONFIG_FIX.md`)
-- [ ] Check current branch: `feature/remaining-services-implementation`
-- [ ] Verify latest commit: `182edf71` (or later)
-- [ ] Understand E2E timeout issue (HolmesGPT-API image build)
-- [ ] Review test breakdown document (`AA_TEST_BREAKDOWN_ALL_TIERS.md`)
-- [ ] Check if any new commits from user/other sessions
-- [ ] Run unit + integration tests first (should be 100% passing)
-- [ ] Try E2E with increased timeout or pre-built images
+**Morning**:
+- [ ] Read this handoff document (30 min)
+- [ ] Read `AA_TEST_BREAKDOWN_ALL_TIERS.md` (15 min)
+- [ ] Read `RESPONSE_HAPI_RECOVERY_ENDPOINT_CONFIG_FIX.md` (15 min)
+- [ ] Checkout branch: `feature/remaining-services-implementation`
+- [ ] Verify latest commit: `983a1c13` or later
+- [ ] Run `make test-unit-aianalysis` → expect 110/110 passing (5 min)
+- [ ] Run `make test-integration-aianalysis` → expect 51/51 passing (5 min)
+
+**Afternoon**:
+- [ ] Review code: `test/infrastructure/aianalysis.go:627` (HAPI fix location)
+- [ ] Review code: `pkg/aianalysis/handlers/investigating.go:664-705` (RecoveryStatus)
+- [ ] Pre-build images (10 min):
+  - [ ] `make docker-build-holmesgpt-api`
+  - [ ] `make docker-build-datastorage`
+  - [ ] `make docker-build-aianalysis`
+- [ ] Run E2E tests: `make test-e2e-aianalysis` (15 min)
+- [ ] Expected: 20/22 passing (91%)
+- [ ] Document actual results vs expected
+
+**End of Day 1**:
+- [ ] Create summary: What passed? What failed? Why?
+- [ ] Identify next steps based on actual E2E results
+- [ ] Ask questions if stuck (see Team Contacts section)
+
+### **Day 2 - Fix Remaining Issues**
+
+- [ ] Address remaining E2E failures (likely 2 tests)
+- [ ] Create plan to reach 70% unit coverage (~20 more tests)
+- [ ] Create plan to reach >50% integration coverage (~40 more tests)
+- [ ] Review and understand business requirements (BR-AI-080 to BR-AI-083)
+
+### **Week 1 - Complete E2E Coverage**
+
+- [ ] Achieve 22/22 E2E tests passing (100%)
+- [ ] Add 10-15 unit tests (towards 70% target)
+- [ ] Add 10-15 integration tests (towards >50% target)
+- [ ] Document any new patterns or issues discovered
+- [ ] Create handoff for Week 2 priorities
 
 ### **Ready to Start?**
 
-**First Command**:
+**Complete First Day Commands**:
 ```bash
-# Option 1: Try with increased timeout
-make test-e2e-aianalysis TIMEOUT=30m
+# 1. Get the code
+git checkout feature/remaining-services-implementation
+git pull origin feature/remaining-services-implementation
 
-# Option 2: Pre-build images first (recommended)
+# 2. Verify environment
+go version  # Should be 1.24+
+podman --version  # Should be available
+kind --version  # Should be available
+
+# 3. Quick validation (5 minutes)
+make test-unit-aianalysis           # Expect: 110/110 ✅
+make test-integration-aianalysis    # Expect: 51/51 ✅
+
+# 4. Pre-build images (10 minutes - RECOMMENDED)
 make docker-build-holmesgpt-api
 make docker-build-datastorage
 make docker-build-aianalysis
+
+# 5. Run E2E tests (15 minutes)
 make test-e2e-aianalysis
+
+# 6. Expected outcome
+# - Test run completes (no timeout)
+# - 20/22 tests passing (91%)
+# - 2 tests failing (minor issues to fix)
 ```
 
-**Expected Outcome**: 20/22 tests passing (91%), possibly 22/22 (100%)
+**If E2E still times out**:
+```bash
+# Fallback: Increase timeout
+make test-e2e-aianalysis TIMEOUT=30m
+```
+
+**After E2E run**:
+```bash
+# Document results in a new file
+cat > docs/handoff/AA_E2E_RESULTS_$(date +%Y-%m-%d).md << EOF
+# AIAnalysis E2E Results - $(date +%Y-%m-%d)
+
+## Test Results
+- Total: X/22 passing
+- Passing: [list test names]
+- Failing: [list test names with errors]
+
+## Next Steps
+[Your analysis and plan]
+EOF
+```
 
 ---
 
-**Status**: ✅ **READY FOR HANDOFF**  
-**Created**: 2025-12-12  
-**Author**: AI Assistant  
-**Branch**: feature/remaining-services-implementation  
-**Commits**: 6 new commits this session  
+**Status**: ✅ **READY FOR HANDOFF**
+**Created**: 2025-12-12
+**Author**: AI Assistant
+**Branch**: feature/remaining-services-implementation
+**Commits**: 6 new commits this session
 **Next Action**: Unblock E2E tests, validate HAPI fix, fix remaining 2 tests
