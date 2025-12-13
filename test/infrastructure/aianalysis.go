@@ -624,7 +624,7 @@ spec:
           value: mock
         - name: LLM_MODEL
           value: mock://test-model
-        - name: MOCK_LLM_ENABLED
+        - name: MOCK_LLM_MODE
           value: "true"
         - name: DATASTORAGE_URL
           value: http://datastorage:8080
