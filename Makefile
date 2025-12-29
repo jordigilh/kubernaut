@@ -116,11 +116,6 @@ test-integration-%: ## Run integration tests for specified service (e.g., make t
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@if [ -f test/integration/$*/setup-infrastructure.sh ]; then \
-		echo "🚀 Setting up infrastructure..."; \
-		cd test/integration/$* && ./setup-infrastructure.sh; \
-		echo "✅ Infrastructure ready"; \
-	fi
 	@ginkgo -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) ./test/integration/$*/...
 
 # E2E Tests
@@ -269,7 +264,7 @@ test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API inte
 	cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1; \
 	echo "✅ Client generated successfully"; \
 	echo ""; \
-	echo "🧪 Step 2: Run integration tests..."; \
+	echo "🧪 Step 2: Run integration tests (hybrid parallel/serial strategy)..."; \
 	export HAPI_INTEGRATION_PORT=18120 && \
 	export DS_INTEGRATION_PORT=18098 && \
 	export PG_INTEGRATION_PORT=15439 && \
@@ -277,8 +272,13 @@ test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API inte
 	export HAPI_URL="http://localhost:18120" && \
 	export DATA_STORAGE_URL="http://localhost:18098" && \
 	export MOCK_LLM_MODE=true && \
-	python3 -m pytest tests/integration/ -v --tb=short; \
-	TEST_RESULT=$$?; \
+	echo "   Phase 2a: Running parallel-safe tests with 4 workers..." && \
+	python3 -m pytest tests/integration/ -n 4 -v -m "not serial" --tb=short; \
+	PARALLEL_RESULT=$$?; \
+	echo "   Phase 2b: Running stateful tests sequentially..." && \
+	python3 -m pytest tests/integration/ -v -m "serial" --tb=short; \
+	SERIAL_RESULT=$$?; \
+	TEST_RESULT=$$((PARALLEL_RESULT + SERIAL_RESULT)); \
 	echo ""; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
 	echo "🧹 Cleanup Phase..."; \
@@ -290,10 +290,22 @@ test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API inte
 	podman network rm holmesgptapi_test-network 2>/dev/null || true; \
 	echo "✅ Cleanup complete"; \
 	echo ""; \
+	echo "📊 Test Results Summary:"; \
+	if [ $$PARALLEL_RESULT -eq 0 ]; then \
+		echo "   ✅ Parallel tests: PASSED"; \
+	else \
+		echo "   ❌ Parallel tests: FAILED (exit code: $$PARALLEL_RESULT)"; \
+	fi; \
+	if [ $$SERIAL_RESULT -eq 0 ]; then \
+		echo "   ✅ Serial tests: PASSED"; \
+	else \
+		echo "   ❌ Serial tests: FAILED (exit code: $$SERIAL_RESULT)"; \
+	fi; \
+	echo ""; \
 	if [ $$TEST_RESULT -eq 0 ]; then \
 		echo "✅ All HAPI integration tests passed"; \
 	else \
-		echo "❌ Some HAPI integration tests failed (exit code: $$TEST_RESULT)"; \
+		echo "❌ Some HAPI integration tests failed (combined exit code: $$TEST_RESULT)"; \
 		exit $$TEST_RESULT; \
 	fi
 
