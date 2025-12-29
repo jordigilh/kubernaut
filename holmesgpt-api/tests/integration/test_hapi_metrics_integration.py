@@ -179,7 +179,7 @@ class TestHTTPRequestMetrics:
         requests_before = parse_metric_value(
             metrics_before,
             "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/incident/analyze"}
+            {"method": "POST", "endpoint": "/api/v1/incident/analyze", "status": "200"}
         )
 
         # ACT: Trigger business operation (incident analysis)
@@ -201,7 +201,7 @@ class TestHTTPRequestMetrics:
         requests_after = parse_metric_value(
             metrics_after,
             "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/incident/analyze"}
+            {"method": "POST", "endpoint": "/api/v1/incident/analyze", "status": "200"}
         )
         assert requests_after > requests_before, \
             f"http_requests_total should increment (before: {requests_before}, after: {requests_after})"
@@ -221,7 +221,7 @@ class TestHTTPRequestMetrics:
         requests_before = parse_metric_value(
             metrics_before,
             "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/recovery/analyze"}
+            {"method": "POST", "endpoint": "/api/v1/recovery/analyze", "status": "200"}
         )
 
         # ACT: Trigger recovery analysis
@@ -239,7 +239,7 @@ class TestHTTPRequestMetrics:
         requests_after = parse_metric_value(
             metrics_after,
             "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/recovery/analyze"}
+            {"method": "POST", "endpoint": "/api/v1/recovery/analyze", "status": "200"}
         )
 
         assert requests_after > requests_before, \
@@ -308,10 +308,10 @@ class TestLLMMetrics:
         metrics_after = get_metrics(hapi_base_url)
 
         # LLM request duration should be present
-        # (Metric name may vary: llm_request_duration_seconds, llm_latency_seconds, etc.)
+        # (Metric name may vary: llm_request_duration_seconds, llm_call_duration_seconds, llm_latency_seconds, etc.)
         llm_metrics_found = any(
             metric in metrics_after
-            for metric in ["llm_request_duration", "llm_latency", "llm_time"]
+            for metric in ["llm_request_duration", "llm_call_duration", "llm_latency", "llm_time"]
         )
 
         assert llm_metrics_found, \
@@ -340,7 +340,7 @@ class TestLLMMetrics:
         # Verify LLM metrics exist (any LLM-related metric)
         llm_metrics_found = any(
             metric in metrics_after
-            for metric in ["llm_request_duration", "llm_latency", "llm_time"]
+            for metric in ["llm_request_duration", "llm_call_duration", "llm_latency", "llm_time"]
         )
 
         assert llm_metrics_found, \
@@ -368,7 +368,7 @@ class TestMetricsAggregation:
         requests_before = parse_metric_value(
             metrics_before,
             "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/incident/analyze"}
+            {"method": "POST", "endpoint": "/api/v1/incident/analyze", "status": "200"}
         )
 
         # ACT: Make multiple requests
@@ -387,7 +387,7 @@ class TestMetricsAggregation:
         requests_after = parse_metric_value(
             metrics_after,
             "http_requests_total",
-            {"method": "POST", "endpoint": "/api/v1/incident/analyze"}
+            {"method": "POST", "endpoint": "/api/v1/incident/analyze", "status": "200"}
         )
 
         expected_increment = num_requests
