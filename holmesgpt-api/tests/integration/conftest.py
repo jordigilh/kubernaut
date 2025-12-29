@@ -158,6 +158,53 @@ def integration_infrastructure():
     }
 
 
+@pytest.fixture(scope="function")
+def worker_id(request):
+    """
+    Get unique worker ID for parallel test execution.
+
+    When running with pytest-xdist (-n flag), this returns a unique worker ID (gw0, gw1, etc.).
+    When running sequentially, returns "master".
+
+    This enables test isolation by creating unique test data per worker.
+
+    Usage:
+        def test_something(worker_id):
+            unique_id = f"test-{worker_id}-{int(time.time())}"
+            # Use unique_id for database records, API calls, etc.
+
+    Returns:
+        str: Worker ID (e.g., "gw0", "gw1", "master")
+    """
+    if hasattr(request.config, 'workerinput'):
+        return request.config.workerinput['workerid']
+    return "master"
+
+
+@pytest.fixture(scope="function")
+def unique_test_id(worker_id, request):
+    """
+    Generate a unique test ID for isolation in parallel execution.
+
+    Format: {test_name}_{worker_id}_{timestamp}
+
+    This ensures tests running in parallel don't conflict with each other
+    when creating database records, API requests, etc.
+
+    Usage:
+        def test_workflow_search(unique_test_id):
+            incident_id = f"inc-{unique_test_id}"
+            # Use incident_id in requests
+
+    Returns:
+        str: Unique test identifier
+    """
+    import time
+    test_name = request.node.name
+    timestamp = int(time.time() * 1000)  # Millisecond precision
+    return f"{test_name}_{worker_id}_{timestamp}"
+
+
 # ========================================
 # HELPER FUNCTIONS
 # ========================================
