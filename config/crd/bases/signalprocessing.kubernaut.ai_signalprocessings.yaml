@@ -1,0 +1,662 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: signalprocessings.signalprocessing.kubernaut.ai
+spec:
+  group: signalprocessing.kubernaut.ai
+  names:
+    kind: SignalProcessing
+    listKind: SignalProcessingList
+    plural: signalprocessings
+    singular: signalprocessing
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SignalProcessing is the Schema for the signalprocessings API.
+          DD-SIGNAL-PROCESSING-001: Renamed from RemediationProcessing per ADR-015
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              SignalProcessingSpec defines the desired state of SignalProcessing.
+              Phase 1 Enhancement: Self-contained CRD pattern - contains all data from RemediationRequest
+              No external CRD reads required during reconciliation (performance, reliability, isolation)
+            properties:
+              deduplication:
+                description: |-
+                  ========================================
+                  DEDUPLICATION (From RemediationRequest)
+                  ========================================
+                  Deduplication and correlation context
+                properties:
+                  correlationID:
+                    description: Optional correlation ID for grouping related signals
+                    type: string
+                  firstOccurrence:
+                    description: Timestamp when this signal fingerprint was first
+                      seen
+                    format: date-time
+                    type: string
+                  lastOccurrence:
+                    description: Timestamp when this signal fingerprint was last seen
+                    format: date-time
+                    type: string
+                  occurrenceCount:
+                    description: Total count of occurrences of this signal
+                    type: integer
+                required:
+                - firstOccurrence
+                - lastOccurrence
+                - occurrenceCount
+                type: object
+              enrichmentConfig:
+                description: |-
+                  ========================================
+                  CONFIGURATION (Processor-Specific)
+                  ========================================
+                  Optional enrichment configuration specific to this processing
+                properties:
+                  enableClusterState:
+                    description: Enable cluster state enrichment (Kubernetes API queries)
+                    type: boolean
+                  enableHistorical:
+                    description: Enable historical enrichment (vector DB/time-series
+                      queries)
+                    type: boolean
+                  enableMetrics:
+                    description: Enable metrics enrichment (Prometheus/monitoring
+                      queries)
+                    type: boolean
+                type: object
+              environment:
+                description: |-
+                  ========================================
+                  SIGNAL CLASSIFICATION (From RemediationRequest)
+                  ========================================
+                  Environment: "prod", "staging", "dev"
+                enum:
+                - prod
+                - staging
+                - dev
+                type: string
+              firingTime:
+                description: |-
+                  ========================================
+                  TIMESTAMPS (From RemediationRequest)
+                  ========================================
+                  When the signal first started firing (from upstream source)
+                format: date-time
+                type: string
+              isStorm:
+                description: |-
+                  ========================================
+                  STORM DETECTION (From RemediationRequest)
+                  ========================================
+                  True if this signal is part of a detected alert storm
+                type: boolean
+              originalPayload:
+                description: Complete original webhook payload for debugging and audit
+                format: byte
+                type: string
+              priority:
+                description: Priority assigned by Gateway (P0=critical, P1=high, P2=normal)
+                enum:
+                - P0
+                - P1
+                - P2
+                pattern: ^P[0-2]$
+                type: string
+              providerData:
+                description: |-
+                  ========================================
+                  PROVIDER DATA (From RemediationRequest)
+                  ========================================
+                  Provider-specific fields in raw JSON format
+                  Controllers parse this based on targetType/signalType if needed
+                format: byte
+                type: string
+              receivedTime:
+                description: When Gateway received the signal
+                format: date-time
+                type: string
+              remediationRequestRef:
+                description: |-
+                  ========================================
+                  PARENT REFERENCE (Audit/Lineage Only)
+                  ========================================
+                  Reference to parent RemediationRequest CRD for audit trail and lineage
+                  SignalProcessor does NOT read RemediationRequest - all data is self-contained
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              severity:
+                description: 'Severity level: "critical", "warning", "info"'
+                enum:
+                - critical
+                - warning
+                - info
+                type: string
+              signalAnnotations:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Signal annotations extracted from provider-specific data
+                  For Prometheus: alert.Annotations (e.g., {"summary": "Memory usage above 90%"})
+                type: object
+              signalFingerprint:
+                description: |-
+                  ========================================
+                  SIGNAL IDENTIFICATION (From RemediationRequest)
+                  ========================================
+                  Core signal identity copied from RemediationRequest
+                  Unique fingerprint for deduplication (SHA256 of signal key fields)
+                maxLength: 64
+                pattern: ^[a-f0-9]{64}$
+                type: string
+              signalLabels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  ========================================
+                  SIGNAL METADATA (From RemediationRequest)
+                  ========================================
+                  Signal labels extracted from provider-specific data
+                  For Prometheus: alert.Labels (e.g., {"alertname": "HighMemory", "namespace": "prod"})
+                type: object
+              signalName:
+                description: Human-readable signal name (e.g., "HighMemoryUsage",
+                  "CrashLoopBackOff")
+                maxLength: 253
+                type: string
+              signalSource:
+                description: Adapter that ingested the signal (e.g., "prometheus-adapter",
+                  "k8s-event-adapter")
+                maxLength: 63
+                type: string
+              signalType:
+                description: 'Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch",
+                  etc.'
+                type: string
+              stormAlertCount:
+                description: Number of alerts in the storm
+                type: integer
+              targetResource:
+                description: |-
+                  ========================================
+                  TARGET RESOURCE (From RemediationRequest)
+                  ========================================
+                  Target resource identification (extracted from providerData by RemediationOrchestrator)
+                properties:
+                  kind:
+                    description: Resource kind (e.g., "Pod", "Deployment", "StatefulSet")
+                    type: string
+                  name:
+                    description: Resource name
+                    type: string
+                  namespace:
+                    description: Resource namespace
+                    type: string
+                required:
+                - kind
+                - name
+                - namespace
+                type: object
+              targetType:
+                description: 'Target system type: "kubernetes", "aws", "azure", "gcp",
+                  "datadog"'
+                enum:
+                - kubernetes
+                - aws
+                - azure
+                - gcp
+                - datadog
+                type: string
+            required:
+            - deduplication
+            - environment
+            - priority
+            - receivedTime
+            - remediationRequestRef
+            - severity
+            - signalFingerprint
+            - signalName
+            - signalType
+            - targetResource
+            - targetType
+            type: object
+          status:
+            description: |-
+              SignalProcessingStatus defines the observed state of SignalProcessing.
+              DD-CONTRACT-002: Structured types replace unstructured ContextData map[string]string
+            properties:
+              completedAt:
+                format: date-time
+                type: string
+              enrichmentResults:
+                description: |-
+                  Structured enrichment results (DD-CONTRACT-002)
+                  Replaces ContextData map[string]string anti-pattern
+                properties:
+                  customLabels:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    description: |-
+                      CustomLabels: Subdomain-based custom labels from Rego policies
+                      Format: <subdomain>.kubernaut.io/<key>[:<value>] → map[subdomain][]values
+                      Key = subdomain (filter dimension in Data Storage)
+                      Value = list of extracted labels (boolean keys or "key=value" pairs)
+                      Boolean: empty/"true" → key only; "false" → omitted
+                      Key-value: other values → "key=value" string
+                      Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+                      Reference: HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md
+                    type: object
+                  detectedLabels:
+                    description: |-
+                      Auto-detected cluster characteristics - NO CONFIG NEEDED
+                      SignalProcessing auto-detects these from K8s resources
+                      Flow: SignalProcessing → AIAnalysis → HolmesGPT-API → LLM prompt + MCP workflow filter
+                    properties:
+                      gitOpsManaged:
+                        description: |-
+                          ========================================
+                          GITOPS MANAGEMENT
+                          ========================================
+                          True if namespace/deployment is managed by GitOps controller
+                          Detection: ArgoCD annotations, Flux labels
+                        type: boolean
+                      gitOpsTool:
+                        description: GitOps tool managing this resource
+                        enum:
+                        - argocd
+                        - flux
+                        - ""
+                        type: string
+                      helmManaged:
+                        description: True if managed by Helm (has helm.sh/chart label)
+                        type: boolean
+                      hpaEnabled:
+                        description: True if HorizontalPodAutoscaler targets this
+                          workload
+                        type: boolean
+                      networkIsolated:
+                        description: |-
+                          ========================================
+                          SECURITY POSTURE
+                          ========================================
+                          True if NetworkPolicy exists in namespace
+                        type: boolean
+                      pdbProtected:
+                        description: |-
+                          ========================================
+                          WORKLOAD PROTECTION
+                          ========================================
+                          True if PodDisruptionBudget exists for this workload
+                        type: boolean
+                      podSecurityLevel:
+                        description: Pod Security Standard level from namespace label
+                        enum:
+                        - privileged
+                        - baseline
+                        - restricted
+                        - ""
+                        type: string
+                      serviceMesh:
+                        description: Service mesh if detected (from sidecar or namespace
+                          labels)
+                        enum:
+                        - istio
+                        - linkerd
+                        - ""
+                        type: string
+                      stateful:
+                        description: |-
+                          ========================================
+                          WORKLOAD CHARACTERISTICS
+                          ========================================
+                          True if StatefulSet or has PVCs attached
+                        type: boolean
+                    required:
+                    - gitOpsManaged
+                    - helmManaged
+                    - hpaEnabled
+                    - networkIsolated
+                    - pdbProtected
+                    - stateful
+                    type: object
+                  enrichmentQuality:
+                    description: |-
+                      Overall enrichment quality score (0.0-1.0)
+                      1.0 = all enrichments successful, 0.0 = all failed
+                      CONSUMER: Remediation Orchestrator (RO) - NOT for LLM/HolmesGPT
+                      PURPOSE: RO uses this to detect degraded mode (< 0.8) and notify operators
+                    type: number
+                  kubernetesContext:
+                    description: Kubernetes resource context (from cluster API queries)
+                    properties:
+                      deploymentDetails:
+                        description: Deployment/workload context
+                        properties:
+                          availableReplicas:
+                            format: int32
+                            type: integer
+                          labels:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          name:
+                            type: string
+                          readyReplicas:
+                            format: int32
+                            type: integer
+                          replicas:
+                            format: int32
+                            type: integer
+                          strategy:
+                            type: string
+                        required:
+                        - availableReplicas
+                        - name
+                        - readyReplicas
+                        - replicas
+                        - strategy
+                        type: object
+                      namespace:
+                        description: Namespace information
+                        type: string
+                      namespaceLabels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      nodeDetails:
+                        description: Node context
+                        properties:
+                          allocatable:
+                            description: ResourceList contains resource quantities
+                            properties:
+                              cpu:
+                                type: string
+                              memory:
+                                type: string
+                            required:
+                            - cpu
+                            - memory
+                            type: object
+                          capacity:
+                            description: ResourceList contains resource quantities
+                            properties:
+                              cpu:
+                                type: string
+                              memory:
+                                type: string
+                            required:
+                            - cpu
+                            - memory
+                            type: object
+                          conditions:
+                            items:
+                              description: NodeCondition contains node condition status
+                              properties:
+                                status:
+                                  type: string
+                                type:
+                                  type: string
+                              required:
+                              - status
+                              - type
+                              type: object
+                            type: array
+                          labels:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          name:
+                            type: string
+                        required:
+                        - allocatable
+                        - capacity
+                        - name
+                        type: object
+                      podDetails:
+                        description: Pod context
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          containers:
+                            items:
+                              description: ContainerStatus contains container-level
+                                status
+                              properties:
+                                image:
+                                  type: string
+                                name:
+                                  type: string
+                                ready:
+                                  type: boolean
+                                restartCount:
+                                  format: int32
+                                  type: integer
+                                state:
+                                  type: string
+                              required:
+                              - image
+                              - name
+                              - ready
+                              - restartCount
+                              - state
+                              type: object
+                            type: array
+                          creationTimestamp:
+                            type: string
+                          labels:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          name:
+                            type: string
+                          phase:
+                            type: string
+                          restartCount:
+                            format: int32
+                            type: integer
+                        required:
+                        - creationTimestamp
+                        - name
+                        - phase
+                        - restartCount
+                        type: object
+                      relatedConfigMaps:
+                        items:
+                          description: ConfigMapSummary contains ConfigMap targeting
+                            information
+                          properties:
+                            keys:
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              type: string
+                          required:
+                          - keys
+                          - name
+                          type: object
+                        type: array
+                      relatedIngresses:
+                        items:
+                          description: IngressSummary contains ingress targeting information
+                          properties:
+                            hosts:
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              type: string
+                            rules:
+                              items:
+                                description: IngressRule contains ingress rule configuration
+                                properties:
+                                  host:
+                                    type: string
+                                  path:
+                                    type: string
+                                required:
+                                - host
+                                - path
+                                type: object
+                              type: array
+                          required:
+                          - hosts
+                          - name
+                          type: object
+                        type: array
+                      relatedServices:
+                        description: Related resources (targeting data only)
+                        items:
+                          description: ServiceSummary contains service targeting information
+                          properties:
+                            clusterIP:
+                              type: string
+                            name:
+                              type: string
+                            ports:
+                              items:
+                                description: ServicePort contains service port configuration
+                                properties:
+                                  name:
+                                    type: string
+                                  port:
+                                    format: int32
+                                    type: integer
+                                  protocol:
+                                    type: string
+                                  targetPort:
+                                    type: string
+                                required:
+                                - name
+                                - port
+                                - protocol
+                                - targetPort
+                                type: object
+                              type: array
+                            type:
+                              type: string
+                          required:
+                          - clusterIP
+                          - name
+                          - type
+                          type: object
+                        type: array
+                    required:
+                    - namespace
+                    type: object
+                  ownerChain:
+                    description: |-
+                      OwnerChain: K8s ownership traversal from signal source resource
+                      DD-WORKFLOW-001 v1.7: Used by HolmesGPT-API for 100% safe DetectedLabels validation
+                      SignalProcessing traverses metadata.ownerReferences to build this chain
+                      Example: Pod → ReplicaSet → Deployment
+                      Empty chain = orphan resource (no owners)
+                      HolmesGPT-API uses this to validate DetectedLabels applicability when RCA
+                      identifies a different resource than the original signal source
+                    items:
+                      description: "OwnerChainEntry represents a single entry in the
+                        K8s ownership chain\nDD-WORKFLOW-001 v1.7: SignalProcessing
+                        traverses ownerReferences to build this\nExample chain for
+                        a Pod owned by Deployment:\n\n\t[0]: {Namespace: \"prod\",
+                        Kind: \"ReplicaSet\", Name: \"api-7d8f9c6b5\"}\n\t[1]: {Namespace:
+                        \"prod\", Kind: \"Deployment\", Name: \"api\"}"
+                      properties:
+                        kind:
+                          description: Kind of the owner resource (e.g., ReplicaSet,
+                            Deployment, StatefulSet, DaemonSet)
+                          type: string
+                        name:
+                          description: Name of the owner resource
+                          type: string
+                        namespace:
+                          description: Namespace of the owner resource (empty for
+                            cluster-scoped resources like Node)
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
+                type: object
+              phase:
+                description: 'Phase tracking: "pending", "enriching", "completed",
+                  "failed"'
+                type: string
+              startTime:
+                description: Timestamps
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -26,6 +26,12 @@
 -- - Lifecycle fields (status, metrics) CAN be updated
 -- - To change content, create a new version
 --
+-- IMMUTABILITY (DD-WORKFLOW-012):
+-- - PRIMARY KEY (workflow_id, version) enforces immutability
+-- - Content fields (description, content, labels, embedding) CANNOT be updated
+-- - Lifecycle fields (status, metrics) CAN be updated
+-- - To change content, create a new version
+--
 -- ========================================
 
 -- Create remediation_workflow_catalog table

@@ -282,6 +282,20 @@ def create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
                 elif isinstance(dl, DetectedLabels):
                     detected_labels = dl
 
+    # DetectedLabels from enrichment_results (DD-RECOVERY-003)
+    enrichment_results = request_data.get('enrichment_results', {})
+    detected_labels = {}
+    if enrichment_results:
+        # Handle both dict and EnrichmentResults model
+        if hasattr(enrichment_results, 'detectedLabels'):
+            dl = enrichment_results.detectedLabels
+            if dl:
+                detected_labels = dl.model_dump() if hasattr(dl, 'model_dump') else dl.dict() if hasattr(dl, 'dict') else dl
+        elif isinstance(enrichment_results, dict):
+            dl = enrichment_results.get('detectedLabels', {})
+            if dl:
+                detected_labels = dl.model_dump() if hasattr(dl, 'model_dump') else dl.dict() if hasattr(dl, 'dict') else dl
+
     # Generate contextual descriptions
     priority_desc = PRIORITY_DESCRIPTIONS.get(priority, f"{priority} - Standard priority").format(business_category=business_category)
     risk_desc = RISK_GUIDANCE.get(risk_tolerance, f"{risk_tolerance} risk tolerance")

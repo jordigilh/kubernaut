@@ -111,6 +111,64 @@ class PreviousExecution(BaseModel):
     )
 
 
+# ========================================
+# RECOVERY CONTEXT MODELS (DD-RECOVERY-002, DD-RECOVERY-003)
+# ========================================
+
+class OriginalRCA(BaseModel):
+    """Summary of the original root cause analysis from initial AIAnalysis"""
+    summary: str = Field(..., description="Brief RCA summary from initial investigation")
+    signal_type: str = Field(..., description="Signal type determined by original RCA (e.g., 'OOMKilled')")
+    severity: str = Field(..., description="Severity determined by original RCA")
+    contributing_factors: List[str] = Field(default_factory=list, description="Factors that contributed to the issue")
+
+
+class SelectedWorkflowSummary(BaseModel):
+    """Summary of the workflow that was executed and failed"""
+    workflow_id: str = Field(..., description="Workflow identifier that was executed")
+    version: str = Field(..., description="Workflow version")
+    container_image: str = Field(..., description="Container image used for execution")
+    parameters: Dict[str, str] = Field(default_factory=dict, description="Parameters passed to workflow")
+    rationale: str = Field(..., description="Why this workflow was originally selected")
+
+
+class ExecutionFailure(BaseModel):
+    """
+    Structured failure information using Kubernetes reason codes.
+
+    CRITICAL: The 'reason' field uses canonical Kubernetes reason codes as the API contract.
+    This is NOT natural language - it's a structured enum-like value.
+
+    Valid reason codes include:
+    - Resource: OOMKilled, InsufficientCPU, InsufficientMemory, Evicted
+    - Scheduling: FailedScheduling, Unschedulable
+    - Image: ImagePullBackOff, ErrImagePull, InvalidImageName
+    - Execution: DeadlineExceeded, BackoffLimitExceeded, Error
+    - Permission: Unauthorized, Forbidden
+    - Volume: FailedMount, FailedAttachVolume
+    - Node: NodeNotReady, NodeUnreachable
+    - Network: NetworkNotReady
+    """
+    failed_step_index: int = Field(..., ge=0, description="0-indexed step that failed")
+    failed_step_name: str = Field(..., description="Name of the failed step")
+    reason: str = Field(
+        ...,
+        description="Kubernetes reason code (e.g., 'OOMKilled', 'DeadlineExceeded'). NOT natural language."
+    )
+    message: str = Field(..., description="Human-readable error message (for logging/debugging)")
+    exit_code: Optional[int] = Field(None, description="Exit code if applicable")
+    failed_at: str = Field(..., description="ISO timestamp of failure")
+    execution_time: str = Field(..., description="Duration before failure (e.g., '2m34s')")
+
+
+class PreviousExecution(BaseModel):
+    """Complete context about the previous execution attempt that failed"""
+    workflow_execution_ref: str = Field(..., description="Name of failed WorkflowExecution CRD")
+    original_rca: OriginalRCA = Field(..., description="RCA from initial AIAnalysis")
+    selected_workflow: SelectedWorkflowSummary = Field(..., description="Workflow that was executed")
+    failure: ExecutionFailure = Field(..., description="Structured failure details")
+
+
 class RecoveryRequest(BaseModel):
     """
     Request model for recovery analysis endpoint

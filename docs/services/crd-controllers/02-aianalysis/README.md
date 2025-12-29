@@ -29,6 +29,18 @@
 
 ---
 
+## 📋 Changelog
+
+| Version | Date | Changes | Reference |
+|---------|------|---------|-----------|
+| v2.3 | 2025-11-30 | **V1.0 COMPLETE**: All spec files updated (finalizers, metrics, database, checklist); Legacy implementation plans archived | This session |
+| v2.2 | 2025-11-30 | **FIXED**: Port allocation (8081 health, 8084 host per DD-TEST-001); BR count 31→31; Added TESTING_GUIDELINES reference | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) |
+| v2.0 | 2025-11-30 | **REGENERATED**: Complete spec from Go types; V1.0 scope clarifications; DetectedLabels, CustomLabels, OwnerChain; Recovery flow with PreviousExecutions slice | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) |
+| v1.1 | 2025-10-20 | Added V1.0 approval notification integration | [ADR-018](../../../architecture/decisions/ADR-018-approval-notification-integration.md) |
+| v1.0 | 2025-10-15 | Initial design specification | - |
+
+---
+
 ## 🗂️ Documentation Index
 
 | Document | Purpose | Status |

@@ -551,6 +551,28 @@ func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 // - WHICH resource to remediate (kubectl target)
 // - WHERE to remediate (namespace, cluster)
 // - Additional context for decision-making
+// buildTargetResource constructs the ResourceIdentifier from NormalizedSignal.Resource
+// This is used by SignalProcessing for context enrichment and RO for workflow routing.
+// TargetResource is REQUIRED - Gateway MUST always populate this field.
+// For signals without explicit resource info, returns ResourceIdentifier with Kind="Unknown".
+func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remediationv1alpha1.ResourceIdentifier {
+	// TargetResource is required - provide defaults if no resource info available
+	kind := signal.Resource.Kind
+	name := signal.Resource.Name
+	if kind == "" {
+		kind = "Unknown"
+	}
+	if name == "" {
+		name = "unknown"
+	}
+
+	return remediationv1alpha1.ResourceIdentifier{
+		Kind:      kind,
+		Name:      name,
+		Namespace: signal.Resource.Namespace,
+	}
+}
+
 func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 	// Construct provider-specific data structure
 	// NOTE: Resource info is NOT included here - it's in spec.TargetResource

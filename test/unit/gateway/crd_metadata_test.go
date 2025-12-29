@@ -17,6 +17,7 @@ limitations under the License.
 package gateway
 
 import (
+	"github.com/go-logr/logr"
 	"context"
 	"encoding/json"
 	"time"
