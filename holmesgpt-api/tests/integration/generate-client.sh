@@ -54,8 +54,20 @@ ${CONTAINER_RUNTIME} run --rm \
     openapitools/openapi-generator-cli:latest generate \
     -i /local/api/openapi.json \
     -g python \
-    -o /local/tests/clients/holmesgpt_api_client \
+    -o /local/tests/clients/holmesgpt_api_client_tmp \
     --additional-properties=packageName=holmesgpt_api_client,projectName=holmesgpt-api-client
+
+# Move the generated package to the correct location
+# openapi-generator creates: output_dir/holmesgpt_api_client/
+# We want: tests/clients/holmesgpt_api_client/
+if [ -d "${PROJECT_ROOT}/tests/clients/holmesgpt_api_client_tmp/holmesgpt_api_client" ]; then
+    mv "${PROJECT_ROOT}/tests/clients/holmesgpt_api_client_tmp/holmesgpt_api_client" "${CLIENT_OUTPUT}"
+    rm -rf "${PROJECT_ROOT}/tests/clients/holmesgpt_api_client_tmp"
+else
+    echo "❌ Error: Generated package structure unexpected"
+    ls -la "${PROJECT_ROOT}/tests/clients/holmesgpt_api_client_tmp/" || true
+    exit 1
+fi
 
 # Fix permissions (docker may create files as root)
 if [ -d "${CLIENT_OUTPUT}" ]; then
