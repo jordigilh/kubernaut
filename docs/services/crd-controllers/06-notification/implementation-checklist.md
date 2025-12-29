@@ -1,9 +1,9 @@
 # Notification Service - Implementation Checklist
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
-**Service Type**: Stateless HTTP API Service
-**Status**: ⚠️ NEEDS IMPLEMENTATION
+**Version**: 1.5
+**Last Updated**: December 7, 2025
+**Service Type**: CRD Controller
+**Status**: ✅ PRODUCTION-READY + Day 13 ✅ + BR-NOT-067 ✅ + Day 14 (DD-005) ✅ + Day 15 ✅
 
 ---
 
@@ -302,7 +302,149 @@ test/e2e/notification/            ✅ E2E tests (10%)
 | **DO-GREEN** | 2-3 days | Minimal implementation + integration |
 | **DO-REFACTOR** | 2-3 days | Sophisticated enhancements |
 | **CHECK** | 1 day | Comprehensive validation |
-| **TOTAL** | **8-10 days** | Production-ready service |
+| **Day 13: Enhancements** | 4 hours | Skip-reason routing (BR-NOT-065) ✅ |
+| **Day 14: DD-005 Compliance** | 1.5 hours | Metrics naming standardization ✅ |
+| **Day 15: BR-HAPI-200** | ~1 hour | Investigation-outcome routing ✅ |
+| **TOTAL** | **8-10 days + 6.5h** | Production-ready service + enhancements |
+
+---
+
+## 📋 **Day 13: BR-NOT-065 Skip-Reason Enhancement**
+
+**Duration**: 4 hours
+**Status**: ✅ COMPLETE (2025-12-06)
+**Reference**: [DAY-13-ENHANCEMENT-BR-NOT-065-SKIP-REASON.md](./implementation/DAY-13-ENHANCEMENT-BR-NOT-065-SKIP-REASON.md)
+
+### **Scope**
+
+Add `kubernaut.ai/skip-reason` routing label support per DD-WE-004 v1.1:
+
+| Skip Reason | Severity | Routing Target |
+|-------------|----------|----------------|
+| `PreviousExecutionFailed` | CRITICAL | PagerDuty |
+| `ExhaustedRetries` | HIGH | Slack #ops |
+| `ResourceBusy` | LOW | Console |
+| `RecentlyRemediated` | LOW | Console |
+
+### **Tasks**
+
+- [x] Add skip-reason routing tests (9 unit test cases) ✅
+- [x] Add skip-reason routing integration tests (8 test cases) ✅
+- [x] Create example routing configuration ✅
+- [x] Create skip-reason runbook ✅
+- [x] Update API specification (v2.1) ✅
+- [x] Update cross-team document (DD-WE-004 v1.5) ✅
+- [x] Controller integration (routing resolution) ✅
+
+### **Files**
+
+| File | Action |
+|------|--------|
+| `test/unit/notification/routing_config_test.go` | Add skip-reason tests |
+| `config/notification/routing-config-skip-reason-example.yaml` | Create |
+| `docs/services/crd-controllers/06-notification/runbooks/SKIP_REASON_ROUTING.md` | Create |
+| `docs/services/crd-controllers/06-notification/api-specification.md` | Update to v2.1 |
+| `docs/handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md` | Update to v1.5 |
+
+---
+
+## 📋 **Day 14: DD-005 Metrics Compliance**
+
+**Duration**: 1.5 hours
+**Status**: ✅ COMPLETE (2025-12-07)
+**Reference**: [NOTICE_DD005_METRICS_NAMING_COMPLIANCE.md](../../../../docs/handoff/NOTICE_DD005_METRICS_NAMING_COMPLIANCE.md)
+
+### **Scope**
+
+Rename notification metrics to follow DD-005 naming convention:
+- Component-level granularity: `notification_<component>_<action>_<unit>`
+- Counters end with `_total`
+- Histograms end with `_seconds` or `_bytes`
+- **Gauges have NO suffix** (per DD-005 line 122)
+
+### **Tasks**
+
+- [x] Update `internal/controller/notification/metrics.go` (6 metrics renamed) ✅
+- [x] Update `pkg/notification/metrics/metrics.go` (6 metrics renamed) ✅
+- [x] Update `test/e2e/notification/04_metrics_validation_test.go` ✅
+- [x] Run all tests to verify no breakage (315 tests passing) ✅
+- [x] Prometheus alert rules: None currently defined
+- [x] Grafana dashboards: None currently defined
+
+### **Metrics Renamed**
+
+| Old Name | DD-005 Compliant | Type |
+|----------|------------------|------|
+| `notification_failure_rate` | `notification_delivery_failure_ratio` | Gauge |
+| `notification_stuck_duration_seconds` | `notification_delivery_stuck_duration_seconds` | Histogram |
+| `notification_deliveries_total` | `notification_delivery_requests_total` | Counter |
+| `notification_phase` | `notification_reconciler_phase` | Gauge |
+| `notification_retry_count` | `notification_delivery_retries` | Histogram |
+| `notification_slack_retry_count` | `notification_slack_retries_total` | Counter |
+| `notification_requests_total` | `notification_reconciler_requests_total` | Counter |
+| `notification_retry_count_total` | `notification_delivery_retries_total` | Counter |
+| `notification_circuit_breaker_state` | `notification_channel_circuit_breaker_state` | Gauge |
+| `notification_reconciliation_duration_seconds` | `notification_reconciler_duration_seconds` | Histogram |
+| `notification_reconciliation_errors_total` | `notification_reconciler_errors_total` | Counter |
+| `notification_active_total` | `notification_reconciler_active` | Gauge (no _total!) |
+
+**Already Compliant** (no changes needed):
+- `notification_delivery_duration_seconds` (Histogram)
+- `notification_delivery_attempts_total` (Counter)
+- `notification_slack_backoff_duration_seconds` (Histogram)
+- `notification_sanitization_redactions_total` (Counter)
+- `notification_channel_health_score` (Gauge)
+
+---
+
+## 📋 **Day 15: BR-HAPI-200 Investigation-Outcome Routing**
+
+**Duration**: ~1 hour
+**Status**: ✅ COMPLETE (2025-12-07)
+**Reference**: [NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md](../../../../docs/handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md)
+
+### **Context**
+
+BR-HAPI-200 introduces investigation outcomes from HolmesGPT-API that require routing support:
+- RO creates `InvestigationInconclusive` notifications in V1.0
+- Notification service must route based on `kubernaut.ai/investigation-outcome` label
+
+### **Investigation Outcomes**
+
+| Outcome | Scenario | Routing | Rationale |
+|---------|----------|---------|-----------|
+| `resolved` | Problem self-resolved | **Skip notification** | No action needed - prevent alert fatigue |
+| `inconclusive` | LLM cannot determine root cause | Slack #ops | Human review required |
+| `workflow-selected` | Normal workflow execution | Default routing | Standard flow |
+
+### **Tasks**
+
+- [x] Add `LabelInvestigationOutcome` constant to `pkg/notification/routing/labels.go` ✅
+- [x] Add investigation outcome value constants ✅
+- [x] Add 7 unit tests for investigation-outcome routing ✅
+- [x] Update example routing configuration ✅
+- [x] Run all test tiers (205 unit + 105 integration passing) ✅
+- [x] Commit changes ✅
+
+### **Files to Modify**
+
+| File | Action |
+|------|--------|
+| `pkg/notification/routing/labels.go` | Add constants |
+| `test/unit/notification/routing_config_test.go` | Add tests |
+| `config/samples/notification_routing_config.yaml` | Add example |
+
+### **Estimated Timeline**
+
+| Task | Duration |
+|------|----------|
+| Add label constants | 10 min |
+| Add unit tests (TDD RED) | 20 min |
+| Verify tests pass (GREEN) | 5 min |
+| Update routing config example | 10 min |
+| Run all test tiers | 10 min |
+| Commit | 5 min |
+| **Total** | **~1 hour** |
 
 ---
 
@@ -334,6 +476,6 @@ test/e2e/notification/            ✅ E2E tests (10%)
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 6, 2025
-**Status**: ✅ Complete Specification
+**Last Updated**: December 7, 2025
+**Status**: ✅ **V1.0 COMPLETE** (All Days: 1-15 ✅)
 

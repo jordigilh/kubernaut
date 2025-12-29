@@ -17,22 +17,28 @@ limitations under the License.
 package datastorage
 
 import (
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
+// ========================================
+// INPUT SANITIZATION UNIT TESTS
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("BR-STORAGE-011: Input Sanitization", func() {
 	var validator *validation.Validator
 
 	BeforeEach(func() {
-		logger, _ := zap.NewDevelopment()
+		logger := kubelog.NewLogger(kubelog.DevelopmentOptions())
 		validator = validation.NewValidator(logger)
 	})
 
 	// ⭐ TABLE-DRIVEN: Sanitization test cases
+	// BEHAVIOR: Sanitizer removes XSS attack vectors from input
+	// CORRECTNESS: Script tags, iframes, onerror handlers are removed
 	DescribeTable("should sanitize malicious input",
 		func(input string, shouldContainMalicious bool, description string) {
 			result := validator.SanitizeString(input)

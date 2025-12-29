@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package repository
 
 import (
@@ -6,7 +22,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -26,7 +42,7 @@ import (
 //
 // Business Requirements:
 // - BR-STORAGE-031-01: Incident-type success rate aggregation
-// - BR-STORAGE-031-02: Playbook success rate aggregation
+// - BR-STORAGE-031-02: Workflow success rate aggregation
 // - BR-STORAGE-031-04: AI execution mode tracking
 // - BR-STORAGE-031-05: Multi-dimensional success rate aggregation
 //
@@ -35,11 +51,11 @@ import (
 // ActionTraceRepository handles PostgreSQL operations for resource_action_traces table (ADR-033)
 type ActionTraceRepository struct {
 	db     *sql.DB
-	logger *zap.Logger
+	logger logr.Logger
 }
 
 // NewActionTraceRepository creates a new repository instance for action traces
-func NewActionTraceRepository(db *sql.DB, logger *zap.Logger) *ActionTraceRepository {
+func NewActionTraceRepository(db *sql.DB, logger logr.Logger) *ActionTraceRepository {
 	return &ActionTraceRepository{
 		db:     db,
 		logger: logger,
@@ -51,17 +67,17 @@ func NewActionTraceRepository(db *sql.DB, logger *zap.Logger) *ActionTraceReposi
 // ========================================
 
 // GetSuccessRateByIncidentType calculates success rate for a specific incident type
-// This is the PRIMARY dimension for AI learning - tracks which playbooks work for specific problems
+// This is the PRIMARY dimension for AI learning - tracks which workflows work for specific problems
 func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	ctx context.Context,
 	incidentType string,
 	duration time.Duration,
 	minSamples int,
 ) (*models.IncidentTypeSuccessRateResponse, error) {
-	r.logger.Debug("GetSuccessRateByIncidentType called",
-		zap.String("incident_type", incidentType),
-		zap.Duration("duration", duration),
-		zap.Int("min_samples", minSamples))
+	r.logger.V(1).Info("GetSuccessRateByIncidentType called",
+		"incident_type", incidentType,
+		"duration", duration,
+		"min_samples", minSamples)
 
 	// Calculate time threshold
 	sinceTime := time.Now().Add(-duration)
@@ -109,9 +125,7 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	}
 
 	if err != nil {
-		r.logger.Error("failed to query incident-type success rate",
-			zap.String("incident_type", incidentType),
-			zap.Error(err))
+		r.logger.Error(err, "failed to query incident-type success rate", "incident_type", incidentType)
 		return nil, fmt.Errorf("failed to query incident-type success rate: %w", err)
 	}
 
@@ -134,13 +148,13 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 		MinSamplesMet:        minSamplesMet,
 	}
 
-	// Query playbook breakdown (only if we have data)
+	// Query workflow breakdown (only if we have data)
 	if totalExecutions > 0 {
-		workflowBreakdown, err := r.getPlaybookBreakdownForIncidentType(ctx, incidentType, sinceTime)
+		workflowBreakdown, err := r.getWorkflowBreakdownForIncidentType(ctx, incidentType, sinceTime)
 		if err != nil {
-			r.logger.Warn("failed to get playbook breakdown",
-				zap.String("incident_type", incidentType),
-				zap.Error(err))
+			r.logger.Info("failed to get workflow breakdown",
+				"incident_type", incidentType,
+				"error", err)
 			// Don't fail the entire request for breakdown query failure
 			workflowBreakdown = []models.WorkflowBreakdownItem{}
 		}
@@ -149,9 +163,9 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 		// Query AI execution mode stats
 		aiStats, err := r.getAIExecutionModeForIncidentType(ctx, incidentType, sinceTime)
 		if err != nil {
-			r.logger.Warn("failed to get AI execution mode stats",
-				zap.String("incident_type", incidentType),
-				zap.Error(err))
+			r.logger.Info("failed to get AI execution mode stats",
+				"incident_type", incidentType,
+				"error", err)
 			// Don't fail for AI stats query failure
 		} else {
 			response.AIExecutionMode = aiStats
@@ -159,52 +173,52 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	}
 
 	r.logger.Info("incident-type success rate calculated",
-		zap.String("incident_type", incidentType),
-		zap.Int("total_executions", totalExecutions),
-		zap.Float64("success_rate", successRate),
-		zap.String("confidence", confidence))
+		"incident_type", incidentType,
+		"total_executions", totalExecutions,
+		"success_rate", successRate,
+		"confidence", confidence)
 
 	return response, nil
 }
 
-// getPlaybookBreakdownForIncidentType retrieves playbook breakdown for an incident type
-func (r *ActionTraceRepository) getPlaybookBreakdownForIncidentType(
+// getWorkflowBreakdownForIncidentType retrieves workflow breakdown for an incident type
+func (r *ActionTraceRepository) getWorkflowBreakdownForIncidentType(
 	ctx context.Context,
 	incidentType string,
 	sinceTime time.Time,
 ) ([]models.WorkflowBreakdownItem, error) {
 	query := `
 		SELECT
-			playbook_id,
-			playbook_version,
+			workflow_id,
+			workflow_version,
 			COUNT(*) as executions,
 			CAST(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) as success_rate
 		FROM resource_action_traces
 		WHERE incident_type = $1
 			AND action_timestamp >= $2
-			AND playbook_id IS NOT NULL
-			AND playbook_id != ''
-		GROUP BY playbook_id, playbook_version
+			AND workflow_id IS NOT NULL
+			AND workflow_id != ''
+		GROUP BY workflow_id, workflow_version
 		ORDER BY executions DESC
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, incidentType, sinceTime)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query playbook breakdown: %w", err)
+		return nil, fmt.Errorf("failed to query workflow breakdown: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	var breakdown []models.WorkflowBreakdownItem
 	for rows.Next() {
 		var item models.WorkflowBreakdownItem
-		if err := rows.Scan(&item.PlaybookID, &item.PlaybookVersion, &item.Executions, &item.SuccessRate); err != nil {
-			return nil, fmt.Errorf("failed to scan playbook breakdown row: %w", err)
+		if err := rows.Scan(&item.WorkflowID, &item.WorkflowVersion, &item.Executions, &item.SuccessRate); err != nil {
+			return nil, fmt.Errorf("failed to scan workflow breakdown row: %w", err)
 		}
 		breakdown = append(breakdown, item)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("playbook breakdown rows error: %w", err)
+		return nil, fmt.Errorf("workflow breakdown rows error: %w", err)
 	}
 
 	return breakdown, nil
@@ -218,8 +232,8 @@ func (r *ActionTraceRepository) getAIExecutionModeForIncidentType(
 ) (*models.AIExecutionModeStats, error) {
 	query := `
 		SELECT
-			COUNT(CASE WHEN ai_selected_playbook = true THEN 1 END) as catalog_selected,
-			COUNT(CASE WHEN ai_chained_playbooks = true THEN 1 END) as chained,
+			COUNT(CASE WHEN ai_selected_workflow = true THEN 1 END) as catalog_selected,
+			COUNT(CASE WHEN ai_chained_workflows = true THEN 1 END) as chained,
 			COUNT(CASE WHEN ai_manual_escalation = true THEN 1 END) as manual_escalation
 		FROM resource_action_traces
 		WHERE incident_type = $1
@@ -241,52 +255,52 @@ func (r *ActionTraceRepository) getAIExecutionModeForIncidentType(
 }
 
 // ========================================
-// BR-STORAGE-031-02: Playbook Success Rate
+// BR-STORAGE-031-02: Workflow Success Rate
 // ========================================
 
-// GetSuccessRateByWorkflow calculates success rate for a specific playbook
-// This is the SECONDARY dimension - tracks which playbooks are most effective overall
+// GetSuccessRateByWorkflow calculates success rate for a specific workflow
+// This is the SECONDARY dimension - tracks which workflows are most effective overall
 func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 	ctx context.Context,
-	playbookID string,
-	playbookVersion string,
+	workflowID string,
+	workflowVersion string,
 	duration time.Duration,
 	minSamples int,
 ) (*models.WorkflowSuccessRateResponse, error) {
-	r.logger.Debug("GetSuccessRateByWorkflow called",
-		zap.String("playbook_id", playbookID),
-		zap.String("playbook_version", playbookVersion),
-		zap.Duration("duration", duration),
-		zap.Int("min_samples", minSamples))
+	r.logger.V(1).Info("GetSuccessRateByWorkflow called",
+		"workflow_id", workflowID,
+		"workflow_version", workflowVersion,
+		"duration", duration,
+		"min_samples", minSamples)
 
 	sinceTime := time.Now().Add(-duration)
 
 	// Main aggregation query
 	query := `
 		SELECT
-			playbook_id,
-			playbook_version,
+			workflow_id,
+			workflow_version,
 			COUNT(*) as total_executions,
 			SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as successful_executions,
 			SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed_executions
 		FROM resource_action_traces
-		WHERE playbook_id = $1
-			AND playbook_version = $2
+		WHERE workflow_id = $1
+			AND workflow_version = $2
 			AND action_timestamp >= $3
-		GROUP BY playbook_id, playbook_version
+		GROUP BY workflow_id, workflow_version
 	`
 
 	var (
-		returnedPlaybookID      string
-		returnedPlaybookVersion string
+		returnedWorkflowID      string
+		returnedWorkflowVersion string
 		totalExecutions         int
 		successfulExecutions    int
 		failedExecutions        int
 	)
 
-	err := r.db.QueryRowContext(ctx, query, playbookID, playbookVersion, sinceTime).Scan(
-		&returnedPlaybookID,
-		&returnedPlaybookVersion,
+	err := r.db.QueryRowContext(ctx, query, workflowID, workflowVersion, sinceTime).Scan(
+		&returnedWorkflowID,
+		&returnedWorkflowVersion,
 		&totalExecutions,
 		&successfulExecutions,
 		&failedExecutions,
@@ -295,8 +309,8 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 	if err == sql.ErrNoRows {
 		// No data found
 		return &models.WorkflowSuccessRateResponse{
-			PlaybookID:              playbookID,
-			PlaybookVersion:         playbookVersion,
+			WorkflowID:              workflowID,
+			WorkflowVersion:         workflowVersion,
 			TimeRange:               formatDuration(duration),
 			TotalExecutions:         0,
 			SuccessfulExecutions:    0,
@@ -309,11 +323,11 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 	}
 
 	if err != nil {
-		r.logger.Error("failed to query playbook success rate",
-			zap.String("playbook_id", playbookID),
-			zap.String("playbook_version", playbookVersion),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to query playbook success rate: %w", err)
+		r.logger.Error(err, "failed to query workflow success rate",
+			"workflow_id", workflowID,
+			"workflow_version", workflowVersion,
+			"error", err)
+		return nil, fmt.Errorf("failed to query workflow success rate: %w", err)
 	}
 
 	// Calculate success rate using helper
@@ -325,8 +339,8 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 
 	// Build response
 	response := &models.WorkflowSuccessRateResponse{
-		PlaybookID:           playbookID,
-		PlaybookVersion:      playbookVersion,
+		WorkflowID:           workflowID,
+		WorkflowVersion:      workflowVersion,
 		TimeRange:            formatDuration(duration),
 		TotalExecutions:      totalExecutions,
 		SuccessfulExecutions: successfulExecutions,
@@ -338,41 +352,41 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 
 	// Query incident type breakdown (only if we have data)
 	if totalExecutions > 0 {
-		incidentBreakdown, err := r.getIncidentTypeBreakdownForPlaybook(ctx, playbookID, playbookVersion, sinceTime)
+		incidentBreakdown, err := r.getIncidentTypeBreakdownForWorkflow(ctx, workflowID, workflowVersion, sinceTime)
 		if err != nil {
-			r.logger.Warn("failed to get incident type breakdown",
-				zap.String("playbook_id", playbookID),
-				zap.Error(err))
+			r.logger.Info("failed to get incident type breakdown",
+				"workflow_id", workflowID,
+				"error", err)
 			incidentBreakdown = []models.IncidentTypeBreakdownItem{}
 		}
 		response.BreakdownByIncidentType = incidentBreakdown
 
 		// Query AI execution mode stats
-		aiStats, err := r.getAIExecutionModeForPlaybook(ctx, playbookID, playbookVersion, sinceTime)
+		aiStats, err := r.getAIExecutionModeForWorkflow(ctx, workflowID, workflowVersion, sinceTime)
 		if err != nil {
-			r.logger.Warn("failed to get AI execution mode stats",
-				zap.String("playbook_id", playbookID),
-				zap.Error(err))
+			r.logger.Info("failed to get AI execution mode stats",
+				"workflow_id", workflowID,
+				"error", err)
 		} else {
 			response.AIExecutionMode = aiStats
 		}
 	}
 
-	r.logger.Info("playbook success rate calculated",
-		zap.String("playbook_id", playbookID),
-		zap.String("playbook_version", playbookVersion),
-		zap.Int("total_executions", totalExecutions),
-		zap.Float64("success_rate", successRate),
-		zap.String("confidence", confidence))
+	r.logger.Info("workflow success rate calculated",
+		"workflow_id", workflowID,
+		"workflow_version", workflowVersion,
+		"total_executions", totalExecutions,
+		"success_rate", successRate,
+		"confidence", confidence)
 
 	return response, nil
 }
 
-// getIncidentTypeBreakdownForPlaybook retrieves incident type breakdown for a playbook
-func (r *ActionTraceRepository) getIncidentTypeBreakdownForPlaybook(
+// getIncidentTypeBreakdownForWorkflow retrieves incident type breakdown for a workflow
+func (r *ActionTraceRepository) getIncidentTypeBreakdownForWorkflow(
 	ctx context.Context,
-	playbookID string,
-	playbookVersion string,
+	workflowID string,
+	workflowVersion string,
 	sinceTime time.Time,
 ) ([]models.IncidentTypeBreakdownItem, error) {
 	query := `
@@ -381,8 +395,8 @@ func (r *ActionTraceRepository) getIncidentTypeBreakdownForPlaybook(
 			COUNT(*) as executions,
 			CAST(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) as success_rate
 		FROM resource_action_traces
-		WHERE playbook_id = $1
-			AND playbook_version = $2
+		WHERE workflow_id = $1
+			AND workflow_version = $2
 			AND action_timestamp >= $3
 			AND incident_type IS NOT NULL
 			AND incident_type != ''
@@ -390,7 +404,7 @@ func (r *ActionTraceRepository) getIncidentTypeBreakdownForPlaybook(
 		ORDER BY executions DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, playbookID, playbookVersion, sinceTime)
+	rows, err := r.db.QueryContext(ctx, query, workflowID, workflowVersion, sinceTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query incident type breakdown: %w", err)
 	}
@@ -412,26 +426,26 @@ func (r *ActionTraceRepository) getIncidentTypeBreakdownForPlaybook(
 	return breakdown, nil
 }
 
-// getAIExecutionModeForPlaybook retrieves AI execution mode statistics for a playbook
-func (r *ActionTraceRepository) getAIExecutionModeForPlaybook(
+// getAIExecutionModeForWorkflow retrieves AI execution mode statistics for a workflow
+func (r *ActionTraceRepository) getAIExecutionModeForWorkflow(
 	ctx context.Context,
-	playbookID string,
-	playbookVersion string,
+	workflowID string,
+	workflowVersion string,
 	sinceTime time.Time,
 ) (*models.AIExecutionModeStats, error) {
 	query := `
 		SELECT
-			COUNT(CASE WHEN ai_selected_playbook = true THEN 1 END) as catalog_selected,
-			COUNT(CASE WHEN ai_chained_playbooks = true THEN 1 END) as chained,
+			COUNT(CASE WHEN ai_selected_workflow = true THEN 1 END) as catalog_selected,
+			COUNT(CASE WHEN ai_chained_workflows = true THEN 1 END) as chained,
 			COUNT(CASE WHEN ai_manual_escalation = true THEN 1 END) as manual_escalation
 		FROM resource_action_traces
-		WHERE playbook_id = $1
-			AND playbook_version = $2
+		WHERE workflow_id = $1
+			AND workflow_version = $2
 			AND action_timestamp >= $3
 	`
 
 	var stats models.AIExecutionModeStats
-	err := r.db.QueryRowContext(ctx, query, playbookID, playbookVersion, sinceTime).Scan(
+	err := r.db.QueryRowContext(ctx, query, workflowID, workflowVersion, sinceTime).Scan(
 		&stats.CatalogSelected,
 		&stats.Chained,
 		&stats.ManualEscalation,
@@ -532,24 +546,24 @@ func parseTimeRange(timeRange string) (time.Duration, error) {
 // GetSuccessRateMultiDimensional calculates success rate across multiple dimensions
 //
 // BR-STORAGE-031-05: Multi-Dimensional Success Rate API
-// ADR-033: Remediation Playbook Catalog - Multi-dimensional tracking
+// ADR-033: Remediation Workflow Catalog - Multi-dimensional tracking
 //
-// Supports any combination of: incident_type, playbook_id + playbook_version, action_type
+// Supports any combination of: incident_type, workflow_id + workflow_version, action_type
 func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 	ctx context.Context,
 	query *models.MultiDimensionalQuery,
 ) (*models.MultiDimensionalSuccessRateResponse, error) {
-	r.logger.Debug("GetSuccessRateMultiDimensional called",
-		zap.String("incident_type", query.IncidentType),
-		zap.String("playbook_id", query.PlaybookID),
-		zap.String("playbook_version", query.PlaybookVersion),
-		zap.String("action_type", query.ActionType),
-		zap.String("time_range", query.TimeRange),
-		zap.Int("min_samples", query.MinSamples))
+	r.logger.V(1).Info("GetSuccessRateMultiDimensional called",
+		"incident_type", query.IncidentType,
+		"workflow_id", query.WorkflowID,
+		"workflow_version", query.WorkflowVersion,
+		"action_type", query.ActionType,
+		"time_range", query.TimeRange,
+		"min_samples", query.MinSamples)
 
-	// Validation: playbook_version requires playbook_id
-	if query.PlaybookVersion != "" && query.PlaybookID == "" {
-		return nil, fmt.Errorf("playbook_version requires playbook_id to be specified")
+	// Validation: workflow_version requires workflow_id
+	if query.WorkflowVersion != "" && query.WorkflowID == "" {
+		return nil, fmt.Errorf("workflow_version requires workflow_id to be specified")
 	}
 
 	// Parse time range
@@ -572,14 +586,14 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 		argIndex++
 	}
 
-	if query.PlaybookID != "" {
-		whereClauses = append(whereClauses, fmt.Sprintf("playbook_id = $%d", argIndex))
-		args = append(args, query.PlaybookID)
+	if query.WorkflowID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("workflow_id = $%d", argIndex))
+		args = append(args, query.WorkflowID)
 		argIndex++
 
-		if query.PlaybookVersion != "" {
-			whereClauses = append(whereClauses, fmt.Sprintf("playbook_version = $%d", argIndex))
-			args = append(args, query.PlaybookVersion)
+		if query.WorkflowVersion != "" {
+			whereClauses = append(whereClauses, fmt.Sprintf("workflow_version = $%d", argIndex))
+			args = append(args, query.WorkflowVersion)
 			argIndex++
 		}
 	}
@@ -626,8 +640,8 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 		return &models.MultiDimensionalSuccessRateResponse{
 			Dimensions: models.QueryDimensions{
 				IncidentType:    query.IncidentType,
-				PlaybookID:      query.PlaybookID,
-				PlaybookVersion: query.PlaybookVersion,
+				WorkflowID:      query.WorkflowID,
+				WorkflowVersion: query.WorkflowVersion,
 				ActionType:      query.ActionType,
 			},
 			TimeRange:            query.TimeRange,
@@ -653,8 +667,8 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 	response := &models.MultiDimensionalSuccessRateResponse{
 		Dimensions: models.QueryDimensions{
 			IncidentType:    query.IncidentType,
-			PlaybookID:      query.PlaybookID,
-			PlaybookVersion: query.PlaybookVersion,
+			WorkflowID:      query.WorkflowID,
+			WorkflowVersion: query.WorkflowVersion,
 			ActionType:      query.ActionType,
 		},
 		TimeRange:            query.TimeRange,
@@ -666,11 +680,11 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 		MinSamplesMet:        minSamplesMet,
 	}
 
-	r.logger.Debug("GetSuccessRateMultiDimensional result",
-		zap.Int("total_executions", totalExecutions),
-		zap.Int("successful_executions", successfulExecutions),
-		zap.Float64("success_rate", successRate),
-		zap.String("confidence", confidence))
+	r.logger.V(1).Info("GetSuccessRateMultiDimensional result",
+		"total_executions", totalExecutions,
+		"successful_executions", successfulExecutions,
+		"success_rate", successRate,
+		"confidence", confidence)
 
 	return response, nil
 }

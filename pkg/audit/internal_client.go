@@ -19,7 +19,10 @@ package audit
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	"time"
 )
 
@@ -85,7 +88,7 @@ func NewInternalAuditClient(db *sql.DB) DataStorageClient {
 //   - Single transaction: All events inserted in one transaction
 //   - Rollback on error: Transaction rolled back if any insert fails
 //   - Context cancellation: Respects context cancellation
-func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*AuditEvent) error {
+func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*dsgen.AuditEventRequest) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -114,26 +117,58 @@ func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*AuditEve
 
 	// Insert each event
 	for _, event := range events {
+		// Generate event_id
+		eventID := uuid.New().String()
+
 		// Calculate event_date from event_timestamp for partitioning
 		eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
 
-		_, err := stmt.ExecContext(ctx,
-			event.EventID,
-			event.EventVersion,
-			event.EventTimestamp,
-			eventDate, // event_date for partitioning
-			event.EventType,
-			event.EventCategory, // ADR-034 column name
-			event.EventAction,   // ADR-034 column name
-			event.EventOutcome,  // ADR-034 column name
-			event.ActorType,
-			event.ActorID,
-			event.ResourceType,
-			event.ResourceID,
-			event.CorrelationID,
-			event.EventData,
-			event.RetentionDays,
-			event.IsSensitive,
+		// Marshal event_data to JSON
+		eventDataJSON, err := json.Marshal(event.EventData)
+		if err != nil {
+			return fmt.Errorf("failed to marshal event_data: %w", err)
+		}
+
+		// Extract optional pointer fields (use empty string if nil)
+		actorType := ""
+		if event.ActorType != nil {
+			actorType = *event.ActorType
+		}
+		actorID := ""
+		if event.ActorId != nil {
+			actorID = *event.ActorId
+		}
+		resourceType := ""
+		if event.ResourceType != nil {
+			resourceType = *event.ResourceType
+		}
+		resourceID := ""
+		if event.ResourceId != nil {
+			resourceID = *event.ResourceId
+		}
+
+		// DD-AUDIT-002 V2.0: Hardcoded defaults (OpenAPI spec doesn't have these fields)
+		// Option C (Hybrid): InternalAuditClient only, no spec/schema changes needed
+		const defaultRetentionDays = 90
+		const defaultIsSensitive = false
+
+		_, err = stmt.ExecContext(ctx,
+			eventID,                    // event_id (generated UUID)
+			event.Version,              // version (OpenAPI field)
+			event.EventTimestamp,       // event_timestamp
+			eventDate,                  // event_date for partitioning
+			event.EventType,            // event_type
+			event.EventCategory,        // event_category (ADR-034)
+			event.EventAction,          // event_action (ADR-034)
+			string(event.EventOutcome), // event_outcome (ADR-034, enum)
+			actorType,                  // actor_type (optional)
+			actorID,                    // actor_id (optional)
+			resourceType,               // resource_type (optional)
+			resourceID,                 // resource_id (optional)
+			event.CorrelationId,        // correlation_id (OpenAPI field)
+			eventDataJSON,              // event_data (JSONB)
+			defaultRetentionDays,       // retention_days (hardcoded default)
+			defaultIsSensitive,         // is_sensitive (hardcoded default)
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert audit event: %w", err)

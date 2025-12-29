@@ -1,15 +1,35 @@
 ## Observability & Logging
 
+**Version**: 3.1.0
+**Last Updated**: 2025-12-02
+**CRD API Group**: `kubernaut.ai/v1alpha1`
+**Health/Ready Port**: 8081 (per [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md))
+**Status**: ✅ Updated for Tekton Architecture
+
+---
+
+## Changelog
+
+### Version 3.1.0 (2025-12-02)
+- ✅ **Updated**: Code examples for Tekton PipelineRun patterns
+
+### Version 3.0.0 (2025-12-02)
+- ✅ **Updated**: API group from `.io` to `.ai`
+- ✅ **Updated**: Health port from 8080 to 8081
+- ✅ **Updated**: LeaderElectionID to `kubernaut.ai`
+
+---
+
 ### Structured Logging Patterns
 
 **Log Levels**:
 
 | Level | Purpose | Examples |
 |-------|---------|----------|
-| **ERROR** | Unrecoverable errors, requires intervention | Step execution failure, child CRD creation failure |
-| **WARN** | Recoverable errors, degraded mode | Step timeout (will retry), dependency resolution conflict |
-| **INFO** | Normal operations, state transitions | Step start/complete, phase transitions, workflow completion |
-| **DEBUG** | Detailed flow for troubleshooting | Dependency graph resolution, child CRD status polling |
+| **ERROR** | Unrecoverable errors, requires intervention | PipelineRun creation failure, resource lock conflict |
+| **WARN** | Recoverable errors, degraded mode | PipelineRun timeout (will retry), target resource busy |
+| **INFO** | Normal operations, state transitions | PipelineRun created, phase transitions, workflow completion |
+| **DEBUG** | Detailed flow for troubleshooting | Resource lock check, PipelineRun status polling |
 
 **Structured Logging Implementation**:
 
@@ -21,7 +41,7 @@ import (
     "time"
 
     workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
-    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1"
+    tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 
     "github.com/go-logr/logr"
     "k8s.io/apimachinery/pkg/runtime"
@@ -42,35 +62,35 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
         "correlationID", extractCorrelationID(ctx),
     )
 
-    var we workflowexecutionv1.WorkflowExecution
-    if err := r.Get(ctx, req.NamespacedName, &we); err != nil {
+    var wfe workflowexecutionv1.WorkflowExecution
+    if err := r.Get(ctx, req.NamespacedName, &wfe); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
     // Log phase transitions
-    oldPhase := we.Status.Phase
+    oldPhase := wfe.Status.Phase
     log.Info("Reconciling WorkflowExecution",
-        "phase", we.Status.Phase,
-        "totalSteps", len(we.Spec.WorkflowDefinition.Steps),
-        "completedSteps", countCompletedSteps(we.Status.StepStatuses),
+        "phase", wfe.Status.Phase,
+        "workflowId", wfe.Spec.WorkflowRef.WorkflowID,
+        "targetResource", wfe.Spec.TargetResource,
     )
 
     // Execute reconciliation logic with structured logging
-    result, err := r.reconcilePhase(ctx, &we, log)
+    result, err := r.reconcilePhase(ctx, &wfe, log)
 
     // Log phase change
-    if we.Status.Phase != oldPhase {
+    if wfe.Status.Phase != oldPhase {
         log.Info("Phase transition",
             "from", oldPhase,
-            "to", we.Status.Phase,
-            "duration", time.Since(we.Status.StartTime.Time),
+            "to", wfe.Status.Phase,
+            "duration", time.Since(wfe.Status.StartTime.Time),
         )
     }
 
     if err != nil {
         log.Error(err, "Reconciliation failed",
-            "phase", we.Status.Phase,
-            "failedStep", we.Status.CurrentStepName,
+            "phase", wfe.Status.Phase,
+            "workflowId", wfe.Spec.WorkflowRef.WorkflowID,
         )
         return result, err
     }
@@ -78,185 +98,84 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
     return result, nil
 }
 
-func (r *WorkflowExecutionReconciler) orchestrateSteps(
+func (r *WorkflowExecutionReconciler) createPipelineRun(
     ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
+    wfe *workflowexecutionv1.WorkflowExecution,
     log logr.Logger,
 ) error {
-    log.V(1).Info("Starting step orchestration",
-        "totalSteps", len(we.Spec.WorkflowDefinition.Steps),
-        "parallelCapable", hasParallelSteps(we.Spec.WorkflowDefinition),
+    log.Info("Creating Tekton PipelineRun",
+        "workflowId", wfe.Spec.WorkflowRef.WorkflowID,
+        "containerImage", wfe.Spec.WorkflowRef.ContainerImage,
+        "targetResource", wfe.Spec.TargetResource,
     )
 
-    // Resolve step dependencies
+    // Create PipelineRun using bundle resolver
+    pipelineRun := r.buildPipelineRun(wfe)
+
     start := time.Now()
-    dependencyGraph := r.buildDependencyGraph(we.Spec.WorkflowDefinition.Steps)
-    log.V(1).Info("Dependency graph resolved",
-        "duration", time.Since(start),
-        "independentSteps", countIndependentSteps(dependencyGraph),
-    )
-
-    // Execute ready steps (no pending dependencies)
-    readySteps := r.getReadySteps(we, dependencyGraph)
-    log.Info("Executing ready steps",
-        "stepCount", len(readySteps),
-        "parallel", len(readySteps) > 1,
-    )
-
-    for _, stepName := range readySteps {
-        if err := r.executeStep(ctx, we, stepName, log); err != nil {
-            log.Error(err, "Step execution failed",
-                "stepName", stepName,
-                "action", we.Spec.WorkflowDefinition.Steps[stepName].Action,
-            )
-            return err
-        }
-    }
-
-    log.Info("Step orchestration completed",
-        "executedSteps", len(readySteps),
-        "totalDuration", time.Since(start),
-    )
-
-    return nil
-}
-
-func (r *WorkflowExecutionReconciler) executeStep(
-    ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
-    stepName string,
-    log logr.Logger,
-) error {
-    step := we.Spec.WorkflowDefinition.Steps[stepName]
-    stepLog := log.WithValues("stepName", stepName, "action", step.Action)
-
-    stepLog.Info("Executing workflow step",
-        "dependencies", step.Dependencies,
-        "timeout", step.Timeout,
-    )
-
-    // Create KubernetesExecution CRD for step
-    start := time.Now()
-    ke, err := r.createKubernetesExecution(ctx, we, step)
-    if err != nil {
-        stepLog.Error(err, "Failed to create KubernetesExecution CRD")
+    if err := r.Create(ctx, pipelineRun); err != nil {
+        log.Error(err, "Failed to create PipelineRun")
         return err
     }
 
-    stepLog.V(1).Info("KubernetesExecution CRD created",
-        "kubernetesexecution", ke.Name,
+    log.Info("PipelineRun created successfully",
+        "pipelineRun", pipelineRun.Name,
         "creationDuration", time.Since(start),
     )
 
-    // Update step status
-    we.Status.StepStatuses[stepName] = workflowexecutionv1.StepStatus{
-        Name:      stepName,
-        Status:    "Running",
-        StartTime: metav1.Now(),
-    }
-    if err := r.Status().Update(ctx, we); err != nil {
-        stepLog.Error(err, "Failed to update step status")
-        return err
-    }
-
-    stepLog.Info("Workflow step started",
-        "kubernetesexecution", ke.Name,
-    )
-
     return nil
 }
 
-func (r *WorkflowExecutionReconciler) watchStepCompletion(
+func (r *WorkflowExecutionReconciler) watchPipelineRunStatus(
     ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
-    stepName string,
+    wfe *workflowexecutionv1.WorkflowExecution,
     log logr.Logger,
 ) error {
-    stepLog := log.WithValues("stepName", stepName)
+    pipelineRunName := wfe.Name
+    log = log.WithValues("pipelineRun", pipelineRunName)
 
-    // Get KubernetesExecution CRD for this step
-    keName := fmt.Sprintf("%s-%s", we.Name, stepName)
-    var ke kubernetesexecutionv1.KubernetesExecution
+    var pr tektonv1.PipelineRun
     if err := r.Get(ctx, client.ObjectKey{
-        Name:      keName,
-        Namespace: we.Namespace,
-    }, &ke); err != nil {
-        stepLog.Error(err, "Failed to get KubernetesExecution status")
+        Name:      pipelineRunName,
+        Namespace: wfe.Namespace,
+    }, &pr); err != nil {
+        log.Error(err, "Failed to get PipelineRun status")
         return err
     }
 
-    stepLog.V(2).Info("Polling step status",
-        "keStatus", ke.Status.Phase,
-        "duration", time.Since(ke.Status.StartTime.Time),
-    )
-
-    // Check if step completed
-    if ke.Status.Phase == "Completed" {
-        duration := time.Since(we.Status.StepStatuses[stepName].StartTime.Time)
-        stepLog.Info("Workflow step completed",
-            "duration", duration,
-            "result", ke.Status.Result,
-        )
-
-        // Update step status
-        we.Status.StepStatuses[stepName] = workflowexecutionv1.StepStatus{
-            Name:         stepName,
-            Status:       "Completed",
-            StartTime:    we.Status.StepStatuses[stepName].StartTime,
-            CompleteTime: metav1.Now(),
-            Result:       ke.Status.Result,
+    // Log status based on conditions
+    for _, condition := range pr.Status.Conditions {
+        if condition.Type == "Succeeded" {
+            switch condition.Status {
+            case "True":
+                log.Info("PipelineRun completed successfully",
+                    "duration", pr.Status.CompletionTime.Sub(pr.Status.StartTime.Time),
+                )
+            case "False":
+                log.Error(nil, "PipelineRun failed",
+                    "reason", condition.Reason,
+                    "message", condition.Message,
+                )
+            default:
+                log.V(1).Info("PipelineRun still running",
+                    "status", condition.Status,
+                    "reason", condition.Reason,
+                )
+            }
         }
-        if err := r.Status().Update(ctx, we); err != nil {
-            stepLog.Error(err, "Failed to update completed step status")
-            return err
-        }
-    } else if ke.Status.Phase == "Failed" {
-        duration := time.Since(we.Status.StepStatuses[stepName].StartTime.Time)
-        stepLog.Error(nil, "Workflow step failed",
-            "duration", duration,
-            "errorMessage", ke.Status.ErrorMessage,
-        )
-
-        // Update step status
-        we.Status.StepStatuses[stepName] = workflowexecutionv1.StepStatus{
-            Name:         stepName,
-            Status:       "Failed",
-            StartTime:    we.Status.StepStatuses[stepName].StartTime,
-            CompleteTime: metav1.Now(),
-            ErrorMessage: ke.Status.ErrorMessage,
-        }
-        if err := r.Status().Update(ctx, we); err != nil {
-            stepLog.Error(err, "Failed to update failed step status")
-            return err
-        }
-
-        return fmt.Errorf("step execution failed: %s", ke.Status.ErrorMessage)
     }
 
     return nil
-}
-
-// Debug logging for troubleshooting
-func (r *WorkflowExecutionReconciler) debugLogDependencyGraph(
-    log logr.Logger,
-    graph map[string][]string,
-) {
-    log.V(2).Info("Dependency graph details",
-        "totalNodes", len(graph),
-        "graph", fmt.Sprintf("%+v", graph),
-    )
 }
 ```
 
 **Log Correlation Example**:
 ```
-INFO    Reconciling WorkflowExecution    {"workflowexecution": "default/workflow-xyz", "correlationID": "abc-123-def", "phase": "executing", "totalSteps": 5, "completedSteps": 2}
-INFO    Starting step orchestration      {"workflowexecution": "default/workflow-xyz", "correlationID": "abc-123-def", "totalSteps": 5, "parallelCapable": true}
-DEBUG   Dependency graph resolved        {"workflowexecution": "default/workflow-xyz", "correlationID": "abc-123-def", "duration": "5ms", "independentSteps": 2}
-INFO    Executing ready steps            {"workflowexecution": "default/workflow-xyz", "correlationID": "abc-123-def", "stepCount": 2, "parallel": true}
-INFO    Executing workflow step          {"workflowexecution": "default/workflow-xyz", "correlationID": "abc-123-def", "stepName": "restart-pod", "action": "restart-pod", "dependencies": [], "timeout": "5m"}
-INFO    Workflow step started            {"workflowexecution": "default/workflow-xyz", "correlationID": "abc-123-def", "stepName": "restart-pod", "kubernetesexecution": "workflow-xyz-restart-pod"}
-INFO    Workflow step completed          {"workflowexecution": "default/workflow-xyz", "correlationID": "abc-123-def", "stepName": "restart-pod", "duration": "2.3s", "result": "success"}
+INFO    Reconciling WorkflowExecution    {"workflowexecution": "default/wfe-xyz", "correlationID": "abc-123-def", "phase": "Pending", "workflowId": "increase-memory-conservative", "targetResource": "production/deployment/payment-service"}
+INFO    Creating Tekton PipelineRun      {"workflowexecution": "default/wfe-xyz", "correlationID": "abc-123-def", "workflowId": "increase-memory-conservative", "containerImage": "ghcr.io/kubernaut/workflows/increase-memory@sha256:abc123"}
+INFO    PipelineRun created successfully {"workflowexecution": "default/wfe-xyz", "correlationID": "abc-123-def", "pipelineRun": "wfe-xyz", "creationDuration": "45ms"}
+INFO    Phase transition                 {"workflowexecution": "default/wfe-xyz", "correlationID": "abc-123-def", "from": "Pending", "to": "Running"}
+INFO    PipelineRun completed successfully {"workflowexecution": "default/wfe-xyz", "correlationID": "abc-123-def", "pipelineRun": "wfe-xyz", "duration": "2m15s"}
 ```
 
 ---
@@ -290,8 +209,8 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
     )
     defer span.End()
 
-    var we workflowexecutionv1.WorkflowExecution
-    if err := r.Get(ctx, req.NamespacedName, &we); err != nil {
+    var wfe workflowexecutionv1.WorkflowExecution
+    if err := r.Get(ctx, req.NamespacedName, &wfe); err != nil {
         span.RecordError(err)
         span.SetStatus(codes.Error, "Failed to get WorkflowExecution")
         return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -299,13 +218,13 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
     // Add CRD attributes to span
     span.SetAttributes(
-        attribute.Int("workflow.totalSteps", len(we.Spec.WorkflowDefinition.Steps)),
-        attribute.Int("workflow.completedSteps", countCompletedSteps(we.Status.StepStatuses)),
-        attribute.String("phase", we.Status.Phase),
+        attribute.String("workflow.id", wfe.Spec.WorkflowRef.WorkflowID),
+        attribute.String("target.resource", wfe.Spec.TargetResource),
+        attribute.String("phase", string(wfe.Status.Phase)),
     )
 
     // Execute reconciliation with tracing
-    result, err := r.reconcilePhase(ctx, &we)
+    result, err := r.reconcilePhase(ctx, &wfe)
 
     if err != nil {
         span.RecordError(err)
@@ -317,107 +236,28 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
     return result, err
 }
 
-func (r *WorkflowExecutionReconciler) orchestrateSteps(
+func (r *WorkflowExecutionReconciler) createPipelineRunWithTracing(
     ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
+    wfe *workflowexecutionv1.WorkflowExecution,
 ) error {
-    ctx, span := tracer.Start(ctx, "WorkflowExecution.OrchestrateSteps",
+    ctx, span := tracer.Start(ctx, "WorkflowExecution.CreatePipelineRun",
         trace.WithAttributes(
-            attribute.Int("steps.total", len(we.Spec.WorkflowDefinition.Steps)),
+            attribute.String("workflow.id", wfe.Spec.WorkflowRef.WorkflowID),
+            attribute.String("container.image", wfe.Spec.WorkflowRef.ContainerImage),
         ),
     )
     defer span.End()
 
-    // Build dependency graph
-    dependencyGraph := r.buildDependencyGraph(we.Spec.WorkflowDefinition.Steps)
-    span.SetAttributes(
-        attribute.Int("steps.independent", countIndependentSteps(dependencyGraph)),
-    )
-
-    // Execute ready steps with individual spans
-    readySteps := r.getReadySteps(we, dependencyGraph)
-    span.SetAttributes(
-        attribute.Int("steps.ready", len(readySteps)),
-        attribute.Bool("execution.parallel", len(readySteps) > 1),
-    )
-
-    for _, stepName := range readySteps {
-        if err := r.executeStepWithTracing(ctx, we, stepName); err != nil {
-            span.RecordError(err)
-            return err
-        }
-    }
-
-    return nil
-}
-
-func (r *WorkflowExecutionReconciler) executeStepWithTracing(
-    ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
-    stepName string,
-) error {
-    step := we.Spec.WorkflowDefinition.Steps[stepName]
-
-    ctx, span := tracer.Start(ctx, "WorkflowExecution.ExecuteStep",
-        trace.WithAttributes(
-            attribute.String("step.name", stepName),
-            attribute.String("step.action", step.Action),
-            attribute.StringSlice("step.dependencies", step.Dependencies),
-        ),
-    )
-    defer span.End()
-
-    // Create KubernetesExecution CRD
-    ke, err := r.createKubernetesExecution(ctx, we, step)
-    if err != nil {
-        span.RecordError(err)
-        return err
-    }
-
-    // 🚨 CRITICAL: Sanitize step parameters before adding to trace
-    sanitizedParams := sanitizeWorkflowPayload(step.Parameters.String())
-
-    span.SetAttributes(
-        attribute.String("kubernetesexecution.name", ke.Name),
-        attribute.String("step.parameters", sanitizedParams),  // Sanitized version only
-    )
-
-    return nil
-}
-
-func (r *WorkflowExecutionReconciler) watchStepCompletionWithTracing(
-    ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
-    stepName string,
-) error {
-    ctx, span := tracer.Start(ctx, "WorkflowExecution.WatchStepCompletion",
-        trace.WithAttributes(
-            attribute.String("step.name", stepName),
-        ),
-    )
-    defer span.End()
-
-    // Get KubernetesExecution status
-    keName := fmt.Sprintf("%s-%s", we.Name, stepName)
-    var ke kubernetesexecutionv1.KubernetesExecution
-    if err := r.Get(ctx, client.ObjectKey{
-        Name:      keName,
-        Namespace: we.Namespace,
-    }, &ke); err != nil {
+    // Create PipelineRun
+    pr := r.buildPipelineRun(wfe)
+    if err := r.Create(ctx, pr); err != nil {
         span.RecordError(err)
         return err
     }
 
     span.SetAttributes(
-        attribute.String("kubernetesexecution.status", ke.Status.Phase),
-        attribute.Duration("step.duration", time.Since(ke.Status.StartTime.Time)),
+        attribute.String("pipelinerun.name", pr.Name),
     )
-
-    if ke.Status.Phase == "Completed" {
-        span.SetStatus(codes.Ok, "Step completed successfully")
-    } else if ke.Status.Phase == "Failed" {
-        span.SetStatus(codes.Error, ke.Status.ErrorMessage)
-    }
 
     return nil
 }
@@ -426,17 +266,14 @@ func (r *WorkflowExecutionReconciler) watchStepCompletionWithTracing(
 **Trace Visualization** (Jaeger):
 ```
 Trace ID: abc-123-def-456
-Span: WorkflowExecution.Reconcile (3.5s)
-  ├─ Span: WorkflowExecution.OrchestrateSteps (3.2s)
-  │   ├─ Span: WorkflowExecution.ExecuteStep [step-1] (1.2s)
-  │   │   └─ Span: KubernetesExecution.CreateCRD (50ms)
-  │   ├─ Span: WorkflowExecution.ExecuteStep [step-2] (1.2s) [parallel]
-  │   │   └─ Span: KubernetesExecution.CreateCRD (45ms)
-  │   ├─ Span: WorkflowExecution.WatchStepCompletion [step-1] (500ms)
-  │   ├─ Span: WorkflowExecution.WatchStepCompletion [step-2] (600ms)
-  │   └─ Span: WorkflowExecution.ExecuteStep [step-3] (800ms) [depends on 1,2]
-  │       └─ Span: KubernetesExecution.CreateCRD (40ms)
-  └─ Span: WorkflowExecution.UpdateStatus (300ms)
+Span: WorkflowExecution.Reconcile (2.5s)
+  ├─ Span: WorkflowExecution.CheckResourceLock (15ms)
+  ├─ Span: WorkflowExecution.CreatePipelineRun (50ms)
+  ├─ Span: WorkflowExecution.WatchPipelineRunStatus (2.3s)
+  │   ├─ Poll: PipelineRun status check (100ms)
+  │   ├─ Poll: PipelineRun status check (100ms)
+  │   └─ Poll: PipelineRun completed (50ms)
+  └─ Span: WorkflowExecution.UpdateStatus (50ms)
 ```
 
 ---
@@ -465,49 +302,50 @@ func extractCorrelationID(ctx context.Context) string {
     return uuid.New().String()
 }
 
-// Add correlation ID to child CRD annotations
-func (r *WorkflowExecutionReconciler) createKubernetesExecution(
-    ctx context.Context,
-    we *workflowexecutionv1.WorkflowExecution,
-    step *workflowexecutionv1.WorkflowStep,
-) (*kubernetesexecutionv1.KubernetesExecution, error) {
-    correlationID := extractCorrelationID(ctx)
+// Add correlation ID to PipelineRun labels for tracing
+func (r *WorkflowExecutionReconciler) buildPipelineRun(
+    wfe *workflowexecutionv1.WorkflowExecution,
+) *tektonv1.PipelineRun {
+    correlationID := wfe.Labels["kubernaut.ai/correlation-id"]
 
-    ke := &kubernetesexecutionv1.KubernetesExecution{
+    return &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-%s", we.Name, step.Name),
-            Namespace: we.Namespace,
-            Annotations: map[string]string{
-                "correlationID": correlationID,  // Propagate to child CRD
+            Name:      wfe.Name,
+            Namespace: wfe.Namespace,
+            Labels: map[string]string{
+                "kubernaut.ai/correlation-id":     correlationID,
+                "kubernaut.ai/workflow-execution": wfe.Name,
+                "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
             },
             OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(we, workflowexecutionv1.GroupVersion.WithKind("WorkflowExecution")),
+                *metav1.NewControllerRef(wfe, workflowexecutionv1.GroupVersion.WithKind("WorkflowExecution")),
             },
         },
-        Spec: kubernetesexecutionv1.KubernetesExecutionSpec{
-            Action:     step.Action,
-            Parameters: step.Parameters,
+        Spec: tektonv1.PipelineRunSpec{
+            PipelineRef: &tektonv1.PipelineRef{
+                ResolverRef: tektonv1.ResolverRef{
+                    Resolver: "bundles",
+                    Params: []tektonv1.Param{
+                        {Name: "bundle", Value: tektonv1.ParamValue{StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
+                        {Name: "name", Value: tektonv1.ParamValue{StringVal: "workflow"}},
+                    },
+                },
+            },
+            Params: r.buildParams(wfe),
         },
     }
-
-    if err := r.Create(ctx, ke); err != nil {
-        return nil, err
-    }
-
-    return ke, nil
 }
 ```
 
 **Correlation Flow**:
 ```
 RemediationRequest (correlationID: abc-123)
-    ↓ (creates WorkflowExecution with correlationID in annotation)
+    ↓ (creates WorkflowExecution with correlationID in label)
 WorkflowExecution Controller (correlationID: abc-123)
-    ↓ (creates KubernetesExecution with correlationID in annotation)
-KubernetesExecution Controller (correlationID: abc-123)
-    ↓ (creates Kubernetes Job with correlationID in label)
-Kubernetes Job (correlationID: abc-123)
-    ↓ (logs with correlationID: abc-123)
+    ↓ (creates PipelineRun with correlationID in label)
+Tekton PipelineRun (correlationID: abc-123)
+    ↓ (TaskRuns inherit labels)
+Tekton TaskRuns (correlationID: abc-123)
 ```
 
 **Query Logs by Correlation ID**:
@@ -599,16 +437,13 @@ func parseLogLevel(level string) zapcore.Level {
 kubectl set env deployment/workflowexecution-controller -n kubernaut-system LOG_LEVEL=debug
 
 # View debug logs for specific WorkflowExecution
-kubectl logs -n kubernaut-system deployment/workflowexecution-controller --tail=1000 | grep "workflow-xyz"
+kubectl logs -n kubernaut-system deployment/workflowexecution-controller --tail=1000 | grep "wfe-xyz"
 
-# View step execution logs
-kubectl logs -n kubernaut-system deployment/workflowexecution-controller --tail=1000 | grep "Executing workflow step"
+# View PipelineRun creation logs
+kubectl logs -n kubernaut-system deployment/workflowexecution-controller --tail=1000 | grep "Creating Tekton PipelineRun"
 
-# View dependency graph resolution (V(2) logs)
-kubectl logs -n kubernaut-system deployment/workflowexecution-controller --tail=1000 | grep "Dependency graph"
-
-# View parallel step execution
-kubectl logs -n kubernaut-system deployment/workflowexecution-controller --tail=1000 | grep "parallel.*true"
+# View resource lock check logs
+kubectl logs -n kubernaut-system deployment/workflowexecution-controller --tail=1000 | grep "Resource lock"
 ```
 
 ---
@@ -618,7 +453,7 @@ kubectl logs -n kubernaut-system deployment/workflowexecution-controller --tail=
 ### Port Configuration
 
 - **Port 9090**: Metrics endpoint
-- **Port 8080**: Health probes (follows kube-apiserver pattern)
+- **Port 8081**: Health probes (per [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md))
 - **Endpoint**: `/metrics`
 - **Format**: Prometheus text format
 - **Authentication**: Kubernetes TokenReviewer API (validates ServiceAccount tokens)
@@ -679,13 +514,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8080  # Health check endpoint (follows kube-apiserver pattern)
+            port: 8081  # Health check endpoint (DD-TEST-001)
           initialDelaySeconds: 15
           periodSeconds: 20
         readinessProbe:
           httpGet:
             path: /readyz
-            port: 8080
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
 ---
@@ -743,7 +578,7 @@ func main() {
     var enableLeaderElection bool
 
     flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
-    flag.StringVar(&probeAddr, "health-probe-bind-address", ":8080", "The address the probe endpoint binds to.")
+    flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
     flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 
     // Zap logger options with controller-runtime integration (Split Strategy)
@@ -761,9 +596,9 @@ func main() {
         Metrics: server.Options{
             BindAddress: metricsAddr,  // Port 9090 for metrics
         },
-        HealthProbeBindAddress: probeAddr,  // Port 8080 for health checks
+        HealthProbeBindAddress: probeAddr,  // Port 8081 for health checks
         LeaderElection:         enableLeaderElection,
-        LeaderElectionID:       "workflow-execution.kubernaut.io",
+        LeaderElectionID:       "kubernaut.ai",
     })
     if err != nil {
         setupLog.Error(err, "unable to start manager")
@@ -799,7 +634,7 @@ func main() {
 
 **Key Configuration Points**:
 - ✅ Metrics on port 9090 (standard for all CRD controllers)
-- ✅ Health checks on port 8080 (follows kube-apiserver pattern)
+- ✅ Health checks on port 8081 (per [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md))
 - ✅ TokenReviewer authentication for secure Prometheus scraping
 - ✅ ServiceMonitor for automatic discovery by Prometheus Operator
 

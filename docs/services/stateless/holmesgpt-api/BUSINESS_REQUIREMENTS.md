@@ -4,7 +4,7 @@
 **Service Type**: Stateless HTTP API (Python)
 **Version**: v3.0 (Minimal Internal Service)
 **Last Updated**: November 8, 2025
-**Status**: Production-Ready (with 2 pending enhancements)
+**Status**: ✅ Production-Ready (V1.0 Complete)
 
 ---
 
@@ -45,22 +45,36 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### 📊 Summary
 
-**Total Business Requirements**: 47 essential BRs (140 deferred BRs for v2.0)
-**Categories**: 7
+**Total Business Requirements**: 52 essential BRs (139 deferred BRs for v2.0)
+**Categories**: 8
 **Priority Breakdown**:
-- P0 (Critical): 44 BRs (core business logic + graceful shutdown)
-- P1 (High): 3 BRs (RFC 7807 + enhancements)
+- P0 (Critical): 46 BRs (core business logic + graceful shutdown + recovery context + LLM sanitization)
+- P1 (High): 6 BRs (RFC 7807 + hot-reload + mock mode + enhancements)
 
 **Implementation Status**:
-- ✅ Implemented: 47 BRs (100%)
-- ⏸️ Pending: 0 BRs
+- ✅ Implemented: 52 BRs (100% of V1.0 scope)
+- ⏸️ V1.1 Deferred: BR-HAPI-POSTEXEC-* (endpoint not exposed per DD-017)
+- BR-HAPI-192 (Recovery Context Consumption): ✅ Complete
+- BR-HAPI-199 (ConfigMap Hot-Reload): ✅ Complete
+- BR-HAPI-200 (Investigation Inconclusive): ✅ Complete
+- BR-HAPI-211 (LLM Input Sanitization): ✅ **Complete** (Dec 10, 2025) - 46 unit tests
+- BR-HAPI-212 (Mock LLM Mode): ✅ **Complete** (Dec 10, 2025) - 24 unit tests
 
-**Test Coverage**:
-- Unit: 111 test specs (7 RFC 7807 tests added, 100% passing, 95% confidence)
-- Integration: 5 test scenarios (SDK, Context API, Real LLM, RFC 7807, Graceful Shutdown)
-- E2E: Not yet implemented (planned for v2.0)
+**Test Coverage** (Updated Dec 10, 2025):
+- Unit: 590+ tests (100% passing)
+- Integration: 84 tests (100% passing)
+- E2E: 53 tests (100% passing, runs against mock LLM)
+- Mock Mode: 24 tests (100% passing)
+- **Total: 750+ tests**
 
-**Deferred BRs**: 140 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
+**V1.0 Endpoint Availability**:
+| Endpoint | Status |
+|----------|--------|
+| `/api/v1/incident/analyze` | ✅ Available |
+| `/api/v1/recovery/analyze` | ✅ Available |
+| `/api/v1/postexec/analyze` | ⏸️ V1.1 (DD-017) |
+
+**Deferred BRs**: 139 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
 
 ---
 
@@ -181,6 +195,8 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### Category 3: Post-Execution Analysis (BR-HAPI-POSTEXEC-001 to 005)
 
+> ⏸️ **V1.1 DEFERRED**: Per [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md), the `/postexec/analyze` endpoint is deferred to V1.1. The Effectiveness Monitor service (the only consumer) is not available in V1.0. Implementation exists but endpoint is not exposed.
+
 #### BR-HAPI-POSTEXEC-001: Post-Execution Effectiveness Analysis
 
 **Description**: The HolmesGPT API Service MUST analyze the effectiveness of executed remediation actions by comparing pre-execution and post-execution cluster state, providing success metrics and improvement recommendations.
@@ -207,9 +223,9 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 **Test Coverage**:
 - Unit: `test_postexec.py:24` (24 test scenarios)
 - Integration: `test_sdk_integration.py` (post-execution analysis)
-- E2E: Deferred to v2.0
+- E2E: ⏸️ Skipped in V1.0 (DD-017)
 
-**Implementation Status**: ✅ Implemented (100%)
+**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0
 
 **Related BRs**: BR-HAPI-RECOVERY-001 (Recovery Analysis), BR-HAPI-001 (Investigation)
 
@@ -225,7 +241,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 **Priority**: P0 (CRITICAL)
 
-**Implementation Status**: ✅ Implemented (100%)
+**Implementation Status**: ⏸️ **V1.1** - Logic implemented, endpoint not exposed in V1.0 (DD-017)
 
 **Related BRs**: BR-HAPI-POSTEXEC-001 (Core Post-Execution Analysis)
 
@@ -477,7 +493,9 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
-- **Total**: 104 test specs (100% passing)
+- **Total**: 492 test specs (377 unit + 71 integration + 40 E2E + 4 smoke) - 100% passing
+
+> **Note**: Test count updated December 2025 after multiple feature additions.
 - **Coverage**: 95% confidence
 - **Files**:
   - `test_recovery.py`: 27 tests (Recovery strategy analysis)
@@ -546,7 +564,144 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-## 📋 Deferred BRs (140 BRs for v2.0)
+### BR-HAPI-199: ConfigMap Hot-Reload (V1.0)
+**Status**: ✅ **Complete**
+**Priority**: P1 (HIGH)
+**Implementation Time**: ~9 hours
+**Design Reference**: [DD-HAPI-004: ConfigMap Hot-Reload](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md)
+
+**Description**: The HolmesGPT API Service MUST support hot-reload of configuration from mounted ConfigMap without pod restart.
+
+**Hot-Reloadable Fields**:
+| Field | Business Use Case |
+|-------|-------------------|
+| `llm.model` | Cost/quality switching |
+| `llm.provider` | Provider failover |
+| `llm.endpoint` | Endpoint switching |
+| `llm.max_retries` | Retry tuning |
+| `llm.timeout_seconds` | Timeout adjustment |
+| `llm.temperature` | Response tuning |
+| `toolsets.*` | Feature toggles |
+| `log_level` | Debug enablement |
+
+**Acceptance Criteria**:
+- [x] Service reloads config from ConfigMap within 90 seconds
+- [x] Invalid config gracefully degrades (keeps previous)
+- [x] Configuration hash logged on reload for audit
+- [x] Metrics exposed for reload count and errors
+
+**Implementation** (December 7, 2025):
+- `FileWatcher` class with `watchdog` library for file system monitoring
+- `ConfigManager` class for thread-safe config access
+- Prometheus metrics: `hapi_config_reload_total`, `hapi_config_reload_errors_total`, `hapi_config_last_reload_timestamp_seconds`
+- Graceful degradation on invalid config
+- Integration with `main.py` startup
+
+**Full Specification**: [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md)
+
+---
+
+### BR-HAPI-211: LLM Input Sanitization (V1.0)
+**Status**: ✅ **IMPLEMENTED** (December 10, 2025)
+**Priority**: P0 (CRITICAL)
+**Implementation Time**: ~5 hours (actual)
+**Design Reference**: [DD-HAPI-005: LLM Input Sanitization](../../../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md)
+
+**Description**: The HolmesGPT API Service MUST sanitize ALL data sent to external LLM providers to prevent credential leakage.
+
+**Business Justification**:
+- External LLM providers (OpenAI, Anthropic) receive prompts and tool results
+- This data may contain credentials from logs, error messages, or workflow parameters
+- Without sanitization, credentials leak to external services
+
+**Sanitization Scope**:
+
+| Data Flow | Risk Level | Mitigation |
+|-----------|------------|------------|
+| Initial prompts (`error_message`, `description`) | 🔴 HIGH | `sanitize_for_llm()` before prompt construction |
+| Tool results (`kubectl logs`, `kubectl get`) | 🔴 HIGH | Wrap `Tool.invoke()` to sanitize results |
+| Error messages from tool execution | 🟡 MEDIUM | Sanitize `StructuredToolResult.error` field |
+
+**Implementation**:
+- `src/sanitization/llm_sanitizer.py` - Core sanitizer with 28 regex patterns
+- `src/sanitization/__init__.py` - Public API (`sanitize_for_llm`, `sanitize_with_fallback`)
+- `src/extensions/llm_config.py` - `_wrap_tool_results_with_sanitization()` tool wrapper
+- `src/extensions/incident.py` - Prompt sanitization before LLM call
+- `src/extensions/recovery.py` - Prompt sanitization before LLM call
+
+**Sanitization Patterns** (DD-005 Compliant, 28 rules):
+- Passwords (JSON, URL, plain text, *_password variants)
+- API keys (`api_key=`, `OPENAI_API_KEY=`, `sk-*` OpenAI keys)
+- Tokens (`Bearer`, JWT, GitHub PATs `ghp_*`, `gho_*`)
+- Database URLs (PostgreSQL, MySQL, MongoDB, Redis)
+- AWS credentials (access keys `AKIA*`, secret keys)
+- Private keys (PEM format, RSA, EC)
+- Kubernetes Secret data (base64)
+- Certificates (PEM format)
+- Authorization headers
+
+**Acceptance Criteria**:
+- [x] Design decision documented (DD-HAPI-005)
+- [x] Business requirement specified (BR-HAPI-211)
+- [x] `src/sanitization/llm_sanitizer.py` implemented (28 patterns)
+- [x] Tool.invoke() wrapper implemented in `llm_config.py`
+- [x] Prompt sanitization in `incident.py` and `recovery.py`
+- [x] **46 unit tests** validating all patterns (exceeds 15+ requirement)
+- [x] Data type handling (str, dict, list, None)
+- [x] Fallback sanitization for regex errors
+
+**Security Guarantees**:
+| Guarantee | Verification |
+|-----------|--------------|
+| No passwords leak to LLM | 46 unit tests + pattern coverage |
+| No API keys leak to LLM | 46 unit tests + pattern coverage |
+| No DB credentials leak to LLM | 46 unit tests + URL parsing |
+| No K8s secrets leak to LLM | 46 unit tests + base64 detection |
+
+**Test Coverage**:
+- Unit: `tests/unit/test_llm_sanitizer.py` (46 tests, 100% passing)
+
+**Full Specification**: [BR-HAPI-211](../../../requirements/BR-HAPI-211-llm-input-sanitization.md)
+
+---
+
+### BR-HAPI-212: Mock LLM Mode for Integration Testing (V1.0)
+**Status**: ✅ **IMPLEMENTED** (December 10, 2025)
+**Priority**: P1 (HIGH)
+**Implementation Time**: ~3 hours
+**Design Reference**: [RESPONSE_HAPI_MOCK_LLM_MODE.md](../../../../handoff/RESPONSE_HAPI_MOCK_LLM_MODE.md)
+
+**Description**: The HolmesGPT API Service MUST provide a mock LLM mode for integration testing, allowing consumer services (AIAnalysis, etc.) to run tests without:
+- LLM API costs
+- Non-deterministic responses
+- API key requirements in CI/CD
+
+**Business Justification**:
+- AIAnalysis team requested mock mode for integration testing (REQUEST_HAPI_MOCK_LLM_MODE.md)
+- CI/CD pipelines should not require LLM API keys
+- Deterministic responses enable reliable assertions in tests
+
+**Implementation**:
+- **Environment Variable**: `MOCK_LLM_MODE=true`
+- **Mock Response Generator**: `src/mock_responses.py`
+- **Signal Type Mapping**: 6 pre-defined scenarios (OOMKilled, CrashLoopBackOff, NodeNotReady, ImagePullBackOff, Evicted, FailedScheduling)
+- **Endpoints Supported**: `/incident/analyze`, `/recovery/analyze`
+
+**Acceptance Criteria**:
+- [x] `MOCK_LLM_MODE=true` environment variable enables mock mode
+- [x] Mock responses are schema-compliant (pass IncidentResponse/RecoveryResponse validation)
+- [x] Mock responses are deterministic based on input `signal_type`
+- [x] Request validation still runs (catches invalid requests)
+- [x] No LLM API calls made when mock mode enabled
+- [x] Works with both `/incident/analyze` and `/recovery/analyze` endpoints
+- [x] 24+ unit tests validating mock mode behavior
+
+**Test Coverage**:
+- Unit: `tests/unit/test_mock_mode.py` (24 tests)
+
+---
+
+## 📋 Deferred BRs (139 BRs for v2.0)
 
 The following 140 BRs are deferred to v2.0 and only needed if the service becomes externally exposed:
 
@@ -573,14 +728,14 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 
 ---
 
-### Advanced Configuration (BR-HAPI-146 to 165) - 20 BRs
-- Dynamic configuration reloading
+### Advanced Configuration (BR-HAPI-146 to 165) - 19 BRs (1 moved to V1.0)
+- ~~Dynamic configuration reloading~~ → **Moved to V1.0 as BR-HAPI-199**
 - Feature flags
 - A/B testing configuration
 - Multi-environment config
 - Configuration validation
 
-**Reason for Deferral**: Minimal config sufficient for internal service
+**Reason for Deferral**: Advanced config features not needed for internal service (basic hot-reload in V1.0)
 
 ---
 
@@ -618,17 +773,21 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 
 ## 🔗 Related Documentation
 
-- [IMPLEMENTATION_PLAN_V3.0.md](./IMPLEMENTATION_PLAN_V3.0.md) - Complete implementation plan
+- [IMPLEMENTATION_PLAN_V3.0.md](./implementation/IMPLEMENTATION_PLAN_V3.0.md) - Complete implementation plan
 - [api-specification.md](./api-specification.md) - API specification with examples
 - [overview.md](./overview.md) - Service architecture and design decisions
 - [DD-HOLMESGPT-012](../../../architecture/decisions/DD-HOLMESGPT-012-Minimal-Internal-Service-Architecture.md) - Minimal service architecture decision
+- [DD-HAPI-004](../../../architecture/decisions/DD-HAPI-004-configmap-hotreload.md) - ConfigMap hot-reload (V1.0)
+- [DD-HAPI-005](../../../architecture/decisions/DD-HAPI-005-llm-input-sanitization.md) - LLM Input Sanitization (V1.0) 📋
 - [DD-004](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md) - RFC 7807 error responses
 - [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) - Graceful shutdown pattern
+- [BR-HAPI-199](../../../requirements/BR-HAPI-199-configmap-hot-reload.md) - Hot-reload business requirements
+- [BR-HAPI-211](../../../requirements/BR-HAPI-211-llm-input-sanitization.md) - LLM Input Sanitization 📋
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: November 8, 2025
+**Document Version**: 1.3
+**Last Updated**: December 9, 2025
 **Maintained By**: Kubernaut Architecture Team
-**Status**: Production-Ready (with 2 pending enhancements)
+**Status**: 📋 V1.0 In Progress (50 BRs implemented, 1 planned)
 

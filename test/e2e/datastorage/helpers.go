@@ -19,6 +19,7 @@ package datastorage
 import (
 	"context"
 	"fmt"
+	"net"
 	"os/exec"
 	"time"
 
@@ -74,8 +75,16 @@ func portForwardService(ctx context.Context, namespace, serviceName, kubeconfigP
 		return nil, fmt.Errorf("failed to start port-forward for %s/%s: %w", namespace, serviceName, err)
 	}
 
-	// Wait a bit for port-forward to establish
-	time.Sleep(2 * time.Second)
+	// Per TESTING_GUIDELINES.md: Use Eventually() to verify port-forward is ready
+	Eventually(func() bool {
+		// Test port is accessible
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", localPort), 500*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		conn.Close()
+		return true
+	}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Port-forward should be established")
 
 	GinkgoWriter.Printf("✅ Port-forward started: %s/%s %d:%d\n", namespace, serviceName, localPort, remotePort)
 

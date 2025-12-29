@@ -4,8 +4,8 @@
 **Service Type**: CRD Controller
 **CRD**: NotificationRequest
 **Controller**: NotificationRequestReconciler
-**Version**: 1.0
-**Last Updated**: November 8, 2025
+**Version**: v1.5.0
+**Last Updated**: December 11, 2025
 **Status**: Production-Ready
 
 ---
@@ -46,16 +46,20 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ### 📊 Summary
 
-**Total Business Requirements**: 12
-**Categories**: 8
+**Total Business Requirements**: 18
+**Categories**: 9
 **Priority Breakdown**:
-- P0 (Critical): 8 BRs (BR-NOT-050, 051, 052, 053, 054, 055, 058, 060, 061)
-- P1 (High): 4 BRs (BR-NOT-056, 057, 059)
+- P0 (Critical): 10 BRs (BR-NOT-050, 051, 052, 053, 054, 055, 058, 060, 061, 065)
+- P1 (High): 8 BRs (BR-NOT-056, 057, 059, 066, 067, 068, 069)
+
+**Implementation Status**:
+- Implemented: 17 BRs (94%)
+- Approved for Kubernaut V1.0: 1 BR (BR-NOT-069)
 
 **Test Coverage**:
 - Unit: 82 test specs (95% confidence)
 - Integration: 21 test scenarios (90% confidence)
-- E2E: Not yet implemented (planned for v1.1)
+- E2E: 4 test files (100% passing)
 
 ---
 
@@ -461,6 +465,190 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ---
 
+### Category 9: Channel Routing (V1.0)
+
+#### BR-NOT-065: Channel Routing Based on Labels
+
+**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification labels (type, environment, severity, namespace, skip-reason) using configurable routing rules. CRD creators (e.g., RemediationOrchestrator) do NOT need to specify Recipients or Channels - routing rules determine these based on labels.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Different notification types require different delivery channels. Approval requests may need PagerDuty for immediate attention, while completion notifications may only need Slack. Label-based routing enables flexible, configurable channel selection without code changes.
+
+**Implementation**:
+- Routing based on notification labels: `type`, `environment`, `severity`, `namespace`, `skip-reason`
+- Configurable routing rules in ConfigMap
+- First matching rule wins (ordered evaluation)
+- Default fallback channel if no rules match
+
+**Supported Routing Labels** (all use `kubernaut.ai/` domain):
+
+| Label Key | Purpose | Example Values |
+|-----------|---------|----------------|
+| `kubernaut.ai/notification-type` | Notification type routing | `escalation`, `approval_required`, `completed`, `failed` |
+| `kubernaut.ai/severity` | Severity-based routing | `critical`, `high`, `medium`, `low` |
+| `kubernaut.ai/environment` | Environment-based routing | `production`, `staging`, `development`, `test` |
+| `kubernaut.ai/priority` | Priority-based routing | `P0`, `P1`, `P2`, `P3` |
+| `kubernaut.ai/namespace` | Namespace-based routing | Kubernetes namespace name |
+| `kubernaut.ai/component` | Source component routing | `remediation-orchestrator`, `workflow-execution` |
+| `kubernaut.ai/remediation-request` | Correlation routing | RemediationRequest CRD name |
+| `kubernaut.ai/skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` |
+
+**Skip Reason Routing** (Added per DD-WE-004 v1.1):
+
+| Skip Reason | Recommended Severity | Routing Target | Rationale |
+|-------------|---------------------|----------------|-----------|
+| `PreviousExecutionFailed` | `critical` | PagerDuty | Cluster state unknown - immediate action required |
+| `ExhaustedRetries` | `high` | Slack | Infrastructure issues - team awareness required |
+| `ResourceBusy` | `low` | Bulk (BR-ORCH-034) | Temporary - auto-resolves |
+| `RecentlyRemediated` | `low` | Bulk (BR-ORCH-034) | Temporary - auto-resolves |
+
+**Mandatory Labels for CRD Creators** (REQUIRED):
+
+CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels when creating NotificationRequest CRDs:
+
+| Label | Requirement | Source | Rationale |
+|-------|-------------|--------|-----------|
+| `kubernaut.ai/notification-type` | **MANDATORY** | CRD creator | Required for type-based routing |
+| `kubernaut.ai/severity` | **MANDATORY** | CRD creator | Required for severity-based routing |
+| `kubernaut.ai/environment` | **MANDATORY** | RemediationRequest | Required for environment-based routing |
+| `kubernaut.ai/skip-reason` | **CONDITIONAL** | WorkflowExecution (when skipped) | Required for skip-reason routing |
+| `kubernaut.ai/remediation-request` | **MANDATORY** | RemediationRequest name | Required for correlation |
+| `kubernaut.ai/component` | **MANDATORY** | Source controller name | Required for source tracking |
+
+**Cross-Team Enforcement**: Per DD-WE-004 Q8, RO confirmed they will set all routing labels explicitly.
+
+**Acceptance Criteria**:
+- ✅ Notifications routed based on label matching
+- ✅ Multiple routing rules supported with priority ordering
+- ✅ Default fallback channel configured
+- ✅ Routing decision logged for audit
+- ✅ Skip-reason label supported for WFE failure routing (DD-WE-004)
+- ✅ Missing mandatory labels logged as warning
+
+**Test Coverage**:
+- Unit: Label matching and routing decision logic (37 tests)
+- Integration: Multi-rule routing with various label combinations
+- E2E: End-to-end routing validation
+
+**Related BRs**: BR-NOT-066 (Config Format), BR-NOT-067 (Hot-Reload)
+**Related DDs**: DD-NOTIFICATION-001 (Alertmanager Routing Reuse), DD-WE-004 (Exponential Backoff)
+**Cross-Team**: NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md (Q7, Q8)
+
+---
+
+#### BR-NOT-066: Alertmanager-Compatible Configuration Format
+
+**Description**: The Notification Service MUST support Alertmanager-compatible routing configuration format, enabling SREs to use familiar syntax for channel selection rules.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Alertmanager's routing configuration is the industry standard for Kubernetes notification routing. Using the same format reduces learning curve and enables reuse of existing configurations. Per DD-NOTIFICATION-001, we reuse Alertmanager's routing library directly.
+
+**Implementation**:
+- Configuration format matches Alertmanager `route` and `receivers` structure
+- Import `github.com/prometheus/alertmanager/config` for parsing
+- Import `github.com/prometheus/alertmanager/dispatch` for routing logic
+- Zero custom routing implementation - reuse battle-tested Alertmanager code
+
+**Acceptance Criteria**:
+- ✅ Alertmanager config format parsed correctly
+- ✅ Matchers support: exact match (`=`), regex (`=~`), negative (`!=`)
+- ✅ Receivers with Slack, PagerDuty, Email, Webhook configs
+- ✅ Config validation on load
+
+**Test Coverage**:
+- Unit: Config parsing and validation
+- Integration: Routing with Alertmanager-style config
+- E2E: End-to-end delivery with complex routing rules
+
+**Related BRs**: BR-NOT-065 (Channel Routing)
+**Related DDs**: DD-NOTIFICATION-001 (Alertmanager Routing Reuse)
+
+---
+
+#### BR-NOT-067: Routing Configuration Hot-Reload
+
+**Description**: The Notification Service MUST reload routing configuration without restart when the ConfigMap changes, enabling dynamic routing updates without service disruption.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Production routing changes should not require controller restart. Hot-reload enables immediate configuration updates and reduces operational risk.
+
+**Implementation** (✅ COMPLETE):
+- Watch ConfigMap `notification-routing-config` in `kubernaut-notifications` namespace via controller-runtime
+- Rebuild routing table on ConfigMap create/update/delete events
+- Thread-safe Router with RWMutex protects in-flight notifications
+- New notifications use updated config immediately after reload
+- Before/after diff logged on configuration changes
+
+**Acceptance Criteria**:
+- ✅ ConfigMap changes detected immediately (controller-runtime watch)
+- ✅ Routing table updated without restart via `Router.LoadConfig()`
+- ✅ In-flight notifications not affected (RWMutex protection)
+- ✅ Config reload logged with before/after diff (`GetConfigSummary()`)
+
+**Files Modified**:
+- `pkg/notification/routing/router.go` - Thread-safe Router with hot-reload support
+- `internal/controller/notification/notificationrequest_controller.go` - ConfigMap watch integration
+
+**Test Coverage**:
+- Unit: 10 tests for Router config parsing, reload, and thread safety
+- Integration: ConfigMap update triggers reload (via controller-runtime)
+- E2E: Dynamic routing change validation
+
+**Related BRs**: BR-NOT-065 (Channel Routing), BR-NOT-066 (Config Format)
+
+---
+
+#### BR-NOT-068: Multi-Channel Fanout
+
+**Description**: The Notification Service MUST support delivering a single notification to multiple channels simultaneously when routing rules specify multiple receivers.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Critical notifications may need to reach operators via multiple channels (e.g., both PagerDuty and Slack) for redundancy and visibility.
+
+**Implementation**:
+- Routing rules can specify multiple receivers via `continue: true` (Alertmanager pattern)
+- Parallel delivery to all matched channels
+- Partial success: CRD status tracks per-channel delivery status
+- All channels attempted even if some fail
+
+**Acceptance Criteria**:
+- ✅ Single notification delivered to multiple channels
+- ✅ Per-channel delivery status tracked
+- ✅ Partial success handled (some channels succeed, some fail)
+- ✅ All channels attempted in parallel
+
+**Test Coverage**:
+- Unit: Multi-receiver routing logic
+- Integration: Fanout delivery with mixed success/failure
+- E2E: End-to-end multi-channel delivery
+
+**Related BRs**: BR-NOT-065 (Channel Routing), BR-NOT-055 (Graceful Degradation)
+
+---
+
+#### BR-NOT-069: Routing Rule Visibility via Kubernetes Conditions
+
+**Full Specification**: [BR-NOT-069-routing-rule-visibility-conditions.md](../../../requirements/BR-NOT-069-routing-rule-visibility-conditions.md)
+
+**Description**: The Notification Service MUST expose routing rule resolution status via Kubernetes Conditions, enabling operators to debug label-based channel routing without accessing controller logs.
+
+**Priority**: P1 (HIGH)
+
+**Key Features**:
+- `RoutingResolved` condition shows matched rule name and channels
+- Visible via `kubectl describe` (no log access needed)
+- Fallback detection when no rules match
+
+**Implementation Status**: ✅ Approved (V1.1 - Q1 2026)
+
+**Related BRs**: BR-NOT-065 (Channel Routing), BR-NOT-066 (Config Format), BR-NOT-067 (Hot-Reload)
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
@@ -483,10 +671,10 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 - **Planned**: Real Slack webhook delivery, end-to-end lifecycle validation
 
 ### BR Coverage
-- **Total BRs**: 9
-- **Unit Test Coverage**: 100% (9/9 BRs)
-- **Integration Test Coverage**: 100% (9/9 BRs)
-- **Overall Coverage**: 100%
+- **Total BRs**: 18 (BR-NOT-050 through BR-NOT-069)
+- **Unit Test Coverage**: 94% (17/18 BRs) - BR-NOT-069 pending implementation
+- **Integration Test Coverage**: 94% (17/18 BRs) - BR-NOT-069 pending implementation
+- **Overall Coverage**: 94% (17/18 implemented, 1 approved for Kubernaut V1.0)
 
 ---
 
@@ -503,6 +691,20 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ## 📝 Version History
 
+### Version 1.5.0 (2025-12-11)
+- Added BR-NOT-069: Routing Rule Visibility via Kubernetes Conditions
+- 18 business requirements total (17 implemented, 1 approved for Kubernaut V1.0)
+- Response to AIAnalysis team Conditions implementation request
+- RoutingResolved condition approved, ChannelReachable deferred
+- Target: December 2025 (before Kubernaut V1.0 release)
+
+### Version 1.4.0 (2025-12-07)
+- Updated documentation to reflect actual implementation status
+- 17 business requirements implemented (added BR-NOT-065 to BR-NOT-068)
+- Channel routing with hot-reload (DD-WE-004 integration)
+- 100% BR coverage (unit + integration + E2E tests)
+- 35 test files (12 unit + 18 integration + 4 E2E)
+
 ### Version 1.0 (2025-10-12)
 - Initial production-ready release
 - 9 business requirements implemented
@@ -511,8 +713,8 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: November 8, 2025
+**Document Version**: v1.5.0
+**Last Updated**: December 11, 2025
 **Maintained By**: Kubernaut Architecture Team
-**Status**: Production-Ready
+**Status**: Production-Ready (18 BRs: 17 implemented, 1 approved for V1.1)
 

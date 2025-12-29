@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 )
 
 // AuditEventsQueryBuilder constructs SQL queries for the audit_events table
@@ -38,27 +38,25 @@ type AuditEventsQueryBuilder struct {
 	until         *time.Time
 	limit         int
 	offset        int
-	logger        *zap.Logger
+	logger        logr.Logger
 }
 
 // AuditEventsBuilderOption is a functional option for configuring AuditEventsQueryBuilder
 type AuditEventsBuilderOption func(*AuditEventsQueryBuilder)
 
 // WithAuditEventsLogger sets a custom logger for the audit events query builder
-func WithAuditEventsLogger(logger *zap.Logger) AuditEventsBuilderOption {
+func WithAuditEventsLogger(logger logr.Logger) AuditEventsBuilderOption {
 	return func(b *AuditEventsQueryBuilder) {
-		if logger != nil {
-			b.logger = logger
-		}
+		b.logger = logger
 	}
 }
 
 // NewAuditEventsQueryBuilder creates a new query builder for audit_events table
 func NewAuditEventsQueryBuilder(opts ...AuditEventsBuilderOption) *AuditEventsQueryBuilder {
 	b := &AuditEventsQueryBuilder{
-		limit:  100,          // Default limit
-		offset: 0,            // Default offset
-		logger: zap.NewNop(), // Noop logger by default
+		limit:  100,            // Default limit
+		offset: 0,              // Default offset
+		logger: logr.Discard(), // Discard logger by default
 	}
 
 	// Apply options
@@ -148,37 +146,37 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 	// BR-STORAGE-023: Validate pagination parameters
 	if b.limit < 1 || b.limit > 1000 {
 		err := fmt.Errorf("pagination validation failed: limit must be between 1 and 1000, got %d (BR-STORAGE-023)", b.limit)
-		b.logger.Warn("Query build failed",
-			zap.Int("limit", b.limit),
-			zap.String("error", "invalid_limit"),
+		b.logger.Info("Query build failed",
+			"limit", b.limit,
+			"error", "invalid_limit",
 		)
 		return "", nil, err
 	}
 	if b.offset < 0 {
 		err := fmt.Errorf("pagination validation failed: offset must be non-negative, got %d (BR-STORAGE-023)", b.offset)
-		b.logger.Warn("Query build failed",
-			zap.Int("offset", b.offset),
-			zap.String("error", "invalid_offset"),
+		b.logger.Info("Query build failed",
+			"offset", b.offset,
+			"error", "invalid_offset",
 		)
 		return "", nil, err
 	}
 
 	// Log query construction
-	b.logger.Debug("Building audit_events SQL query",
-		zap.Any("correlation_id", b.correlationID),
-		zap.Any("event_type", b.eventType),
-		zap.Any("event_category", b.eventCategory),
-		zap.Any("event_outcome", b.eventOutcome),
-		zap.Any("severity", b.severity),
-		zap.Any("since", b.since),
-		zap.Any("until", b.until),
-		zap.Int("limit", b.limit),
-		zap.Int("offset", b.offset),
+	b.logger.V(1).Info("Building audit_events SQL query",
+		"correlation_id", b.correlationID,
+		"event_type", b.eventType,
+		"event_category", b.eventCategory,
+		"event_outcome", b.eventOutcome,
+		"severity", b.severity,
+		"since", b.since,
+		"until", b.until,
+		"limit", b.limit,
+		"offset", b.offset,
 	)
 
 	// Base query (ADR-034 column names)
-	sql := "SELECT event_id, event_type, event_category, correlation_id, event_timestamp, event_outcome, severity, " +
-		"resource_type, resource_id, actor_type, actor_id, parent_event_id, event_data, event_date " +
+	sql := "SELECT event_id, event_version, event_type, event_category, event_action, correlation_id, event_timestamp, event_outcome, severity, " +
+		"resource_type, resource_id, actor_type, actor_id, parent_event_id, event_data, event_date, namespace, cluster_name " +
 		"FROM audit_events WHERE 1=1"
 
 	// Count active filters
@@ -229,11 +227,11 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 	sql += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
 	args = append(args, b.limit, b.offset)
 
-	b.logger.Debug("SQL query built successfully",
-		zap.Int("filter_count", len(args)-2), // Exclude limit and offset
-		zap.Int("arg_count", len(args)),
-		zap.Int("limit", b.limit),
-		zap.Int("offset", b.offset),
+	b.logger.V(1).Info("SQL query built successfully",
+		"filter_count", len(args)-2, // Exclude limit and offset
+		"arg_count", len(args),
+		"limit", b.limit,
+		"offset", b.offset,
 	)
 
 	return sql, args, nil
@@ -243,7 +241,7 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 // Returns the total count of matching records for pagination metadata
 func (b *AuditEventsQueryBuilder) BuildCount() (string, []interface{}, error) {
 	// Validate filters (but not pagination)
-	b.logger.Debug("Building audit_events COUNT query")
+	b.logger.V(1).Info("Building audit_events COUNT query")
 
 	// Base query
 	sql := "SELECT COUNT(*) FROM audit_events WHERE 1=1"
@@ -289,8 +287,8 @@ func (b *AuditEventsQueryBuilder) BuildCount() (string, []interface{}, error) {
 		// argIndex++ // Last filter, no need to increment
 	}
 
-	b.logger.Debug("COUNT query built successfully",
-		zap.Int("filter_count", len(args)),
+	b.logger.V(1).Info("COUNT query built successfully",
+		"filter_count", len(args),
 	)
 
 	return sql, args, nil

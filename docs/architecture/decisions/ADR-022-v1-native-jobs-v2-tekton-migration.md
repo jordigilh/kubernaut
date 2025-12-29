@@ -523,7 +523,7 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 ### **V1 GitOps Workflow Example: 4-Step PR Creation**
 
 ```yaml
-apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: WorkflowExecution
 metadata:
   name: create-gitops-pr-oom-fix

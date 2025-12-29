@@ -23,13 +23,20 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// +kubebuilder:validation:Enum=escalation;simple;status-update
+// +kubebuilder:validation:Enum=escalation;simple;status-update;approval;manual-review
 type NotificationType string
 
 const (
 	NotificationTypeEscalation   NotificationType = "escalation"
 	NotificationTypeSimple       NotificationType = "simple"
 	NotificationTypeStatusUpdate NotificationType = "status-update"
+	// NotificationTypeApproval is used for approval request notifications (BR-ORCH-001)
+	// Added Dec 2025 per RO team request for explicit approval workflow support
+	NotificationTypeApproval NotificationType = "approval"
+	// NotificationTypeManualReview is used for manual intervention required notifications (BR-ORCH-036)
+	// Added Dec 2025 for ExhaustedRetries/PreviousExecutionFailed scenarios requiring operator action
+	// Distinct from 'escalation' to enable label-based routing rules (BR-NOT-065)
+	NotificationTypeManualReview NotificationType = "manual-review"
 )
 
 // +kubebuilder:validation:Enum=critical;high;medium;low
@@ -42,7 +49,7 @@ const (
 	NotificationPriorityLow      NotificationPriority = "low"
 )
 
-// +kubebuilder:validation:Enum=email;slack;teams;sms;webhook;console
+// +kubebuilder:validation:Enum=email;slack;teams;sms;webhook;console;file;log
 type Channel string
 
 const (
@@ -52,14 +59,17 @@ const (
 	ChannelSMS     Channel = "sms"
 	ChannelWebhook Channel = "webhook"
 	ChannelConsole Channel = "console"
+	ChannelFile    Channel = "file" // File-based delivery for audit trails and compliance
+	ChannelLog     Channel = "log"  // Structured JSON logs to stdout for observability
 )
 
-// +kubebuilder:validation:Enum=Pending;Sending;Sent;PartiallySent;Failed
+// +kubebuilder:validation:Enum=Pending;Sending;Retrying;Sent;PartiallySent;Failed
 type NotificationPhase string
 
 const (
 	NotificationPhasePending       NotificationPhase = "Pending"
 	NotificationPhaseSending       NotificationPhase = "Sending"
+	NotificationPhaseRetrying      NotificationPhase = "Retrying"      // Partial failure with retries remaining (non-terminal)
 	NotificationPhaseSent          NotificationPhase = "Sent"
 	NotificationPhasePartiallySent NotificationPhase = "PartiallySent"
 	NotificationPhaseFailed        NotificationPhase = "Failed"
@@ -117,6 +127,24 @@ type RetryPolicy struct {
 	MaxBackoffSeconds int `json:"maxBackoffSeconds,omitempty"`
 }
 
+// FileDeliveryConfig defines file-based delivery configuration
+// Used when ChannelFile is specified in Channels array
+// Enables audit trails and compliance logging (BR-NOT-034)
+type FileDeliveryConfig struct {
+	// Output directory for notification files
+	// Required when ChannelFile is specified
+	// Directory must exist and be writable by the controller
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	OutputDirectory string `json:"outputDirectory"`
+
+	// File format (json, yaml)
+	// +kubebuilder:default=json
+	// +kubebuilder:validation:Enum=json;yaml
+	// +optional
+	Format string `json:"format,omitempty"`
+}
+
 // ActionLink represents an external service action link
 type ActionLink struct {
 	// Service name (github, grafana, prometheus, kubernetes-dashboard, etc.)
@@ -130,6 +158,19 @@ type ActionLink struct {
 }
 
 // NotificationRequestSpec defines the desired state of NotificationRequest
+//
+// DD-NOT-005: Spec Immutability
+// ALL spec fields are immutable after CRD creation. Users cannot update
+// notification content once created. To change a notification, delete
+// and recreate the CRD.
+//
+// Rationale: Notifications are immutable events, not mutable resources.
+// This prevents race conditions, simplifies controller logic, and provides
+// perfect audit trail.
+//
+// Cancellation: Delete the NotificationRequest CRD to cancel delivery.
+//
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (DD-NOT-005)"
 type NotificationRequestSpec struct {
 	// Type of notification (escalation, simple, status-update)
 	// +kubebuilder:validation:Required
@@ -140,10 +181,12 @@ type NotificationRequestSpec struct {
 	// +kubebuilder:default=medium
 	Priority NotificationPriority `json:"priority"`
 
-	// List of recipients for this notification
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinItems=1
-	Recipients []Recipient `json:"recipients"`
+	// List of recipients for this notification.
+	// Optional: If not specified, Notification Service routing rules (BR-NOT-065)
+	// will determine recipients based on CRD labels (type, severity, environment, namespace).
+	// If specified, these recipients are used in addition to routing rule matches.
+	// +optional
+	Recipients []Recipient `json:"recipients,omitempty"`
 
 	// Subject line for notification
 	// +kubebuilder:validation:Required
@@ -156,10 +199,12 @@ type NotificationRequestSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Body string `json:"body"`
 
-	// Delivery channels to use
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinItems=1
-	Channels []Channel `json:"channels"`
+	// Delivery channels to use.
+	// Optional: If not specified, Notification Service routing rules (BR-NOT-065)
+	// will determine channels based on CRD labels (type, severity, environment, namespace).
+	// If specified, these channels are used in addition to routing rule matches.
+	// +optional
+	Channels []Channel `json:"channels,omitempty"`
 
 	// Metadata for context (key-value pairs)
 	// Examples: remediationRequestName, cluster, namespace, severity, alertName
@@ -173,6 +218,13 @@ type NotificationRequestSpec struct {
 	// Retry policy for delivery
 	// +optional
 	RetryPolicy *RetryPolicy `json:"retryPolicy,omitempty"`
+
+	// File delivery configuration
+	// Required when ChannelFile is specified in Channels array
+	// Specifies output directory and format for file-based notifications
+	// Used for audit trails and compliance logging (BR-NOT-034)
+	// +optional
+	FileDeliveryConfig *FileDeliveryConfig `json:"fileDeliveryConfig,omitempty"`
 
 	// Retention period in days after completion
 	// +kubebuilder:default=7

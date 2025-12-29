@@ -89,7 +89,7 @@ Ensure all CRDs are installed before deploying controllers:
 ```bash
 # Install CRDs
 kubectl apply -f config/crd/bases/remediationprocessing.kubernaut.ai_remediationprocessings.yaml
-kubectl apply -f config/crd/bases/workflowexecution.kubernaut.ai_workflowexecutions.yaml
+kubectl apply -f config/crd/bases/kubernaut.ai_workflowexecutions.yaml
 kubectl apply -f config/crd/bases/kubernetesexecution.kubernaut.ai_kubernetesexecutions.yaml
 
 # Verify CRDs
@@ -729,13 +729,13 @@ rules:
   resources: ["remediationprocessings/finalizers"]
   verbs: ["update"]
 
-- apiGroups: ["workflowexecution.kubernaut.ai"]
+- apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["workflowexecution.kubernaut.ai"]
+- apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions/status"]
   verbs: ["get", "update", "patch"]
-- apiGroups: ["workflowexecution.kubernaut.ai"]
+- apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions/finalizers"]
   verbs: ["update"]
 

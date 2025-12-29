@@ -20,14 +20,16 @@ type RFC7807Error struct {
 
 // Error type URI constants
 // BR-041: RFC 7807 error format
+// DD-004 v1.1: Updated from /errors/ to /problems/ (Dec 19, 2025)
 // These URIs identify the problem type and can link to documentation
 const (
-	ErrorTypeValidationError      = "https://kubernaut.io/errors/validation-error"
-	ErrorTypeUnsupportedMediaType = "https://kubernaut.io/errors/unsupported-media-type"
-	ErrorTypeMethodNotAllowed     = "https://kubernaut.io/errors/method-not-allowed"
-	ErrorTypeInternalError        = "https://kubernaut.io/errors/internal-error"
-	ErrorTypeServiceUnavailable   = "https://kubernaut.io/errors/service-unavailable"
-	ErrorTypeUnknown              = "https://kubernaut.io/errors/unknown"
+	ErrorTypeValidationError      = "https://kubernaut.ai/problems/validation-error"
+	ErrorTypeUnsupportedMediaType = "https://kubernaut.ai/problems/unsupported-media-type"
+	ErrorTypeMethodNotAllowed     = "https://kubernaut.ai/problems/method-not-allowed"
+	ErrorTypeInternalError        = "https://kubernaut.ai/problems/internal-error"
+	ErrorTypeServiceUnavailable   = "https://kubernaut.ai/problems/service-unavailable"
+	ErrorTypeTooManyRequests      = "https://kubernaut.ai/problems/too-many-requests"
+	ErrorTypeUnknown              = "https://kubernaut.ai/problems/unknown"
 )
 
 // Error title constants
@@ -38,5 +40,6 @@ const (
 	TitleMethodNotAllowed     = "Method Not Allowed"
 	TitleInternalServerError  = "Internal Server Error"
 	TitleServiceUnavailable   = "Service Unavailable"
+	TitleTooManyRequests      = "Too Many Requests"
 	TitleUnknown              = "Error"
 )

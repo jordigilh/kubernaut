@@ -1,13 +1,92 @@
 # [Service Name] - Implementation Plan Template
 
 **Filename Convention**: `IMPLEMENTATION_PLAN_V<semantic_version>.md` (e.g., `IMPLEMENTATION_PLAN_V1.3.md`)
-**Version**: v2.1 - COMPREHENSIVE PRODUCTION-READY STANDARD + MULTI-LANGUAGE SUPPORT
-**Last Updated**: 2025-11-23
+**Version**: v3.1 - V1.0 MANDATORY MATURITY CHECKLIST
+**Last Updated**: 2025-12-19
 **Timeline**: [X] days (11-12 days typical)
-**Status**: ✅ Production-Ready Template (98% Confidence Standard)
+**Status**: 📋 DRAFT | ⏳ IN REVIEW | ✅ VALIDATED - Ready for Implementation
 **Quality Level**: Matches Data Storage v4.1 and Notification V3.0 standards
 
 **Change Log**:
+- **v3.1** (2025-12-19): 🎯 **V1.0 MANDATORY MATURITY CHECKLIST**
+  - ✅ **V1.0 Maturity Checklist Section**: Mandatory features for CRD controllers and stateless services ⭐ NEW
+  - ✅ **Test Requirements Integration**: Links to TESTING_GUIDELINES.md maturity testing requirements ⭐ NEW
+  - ✅ **Test Plan Template Reference**: Standardized test plan for maturity validation ⭐ NEW
+  - ✅ **Living Document Pattern**: Guidance for maintaining requirements as new ADRs/DDs are created ⭐ NEW
+  - 📏 **Template size**: ~8,300 lines (growth for maturity checklist)
+  - 📏 **Source**: V1_0_SERVICE_MATURITY_TRIAGE learnings (December 2025 maturity audit)
+- **v3.0** (2025-12-01): 🎯 **CROSS-TEAM VALIDATION + CRD API GROUP STANDARD**
+  - ✅ **Cross-Team Validation Section**: New section for multi-team dependency sign-off ⭐ NEW
+  - ✅ **HANDOFF/RESPONSE Pattern**: Documentation for cross-team validation records ⭐ NEW
+  - ✅ **Pre-Implementation Validation Gate**: Formal checklist before Day 1 ⭐ NEW
+  - ✅ **CRD API Group Standard**: DD-CRD-001 unified `.ai` domain for CRD controllers ⭐ NEW
+  - ✅ **Industry Best Practices Table**: Reusable format for architectural justification ⭐ NEW
+  - ✅ **Risk Mitigation Status Tracking**: Links risks to specific days with status tracking ⭐ NEW
+  - ✅ **Port Allocation Consolidated Table**: Enhanced DD-TEST-001 compliance format ⭐ NEW
+  - 📏 **Template size**: ~7,600 lines (growth for cross-team validation patterns)
+  - 📏 **Source**: SignalProcessing IMPLEMENTATION_PLAN_V1.16 learnings (100% validation confidence)
+- **v2.9** (2025-11-30): 🎯 **CODE EXAMPLE DD-005 COMPLIANCE**
+  - ✅ **Shared Library Extraction Examples**: Updated to use `logr.Logger` (per DD-005 v2.0)
+  - ✅ **Redis Cache Example**: Changed from `*zap.Logger` to `logr.Logger` in "After" section
+  - ✅ **Logging Syntax**: Updated to use key-value pairs (not zap helpers)
+  - ✅ **DD-005 Reference**: Added explicit reference to authoritative document
+  - 📏 **Template size**: ~7,400 lines (no growth, code example fixes only)
+- **v2.8** (2025-11-28): 🎯 **UNIFIED LOGGING FRAMEWORK (DD-005 v2.0)**
+  - ✅ **Logging Framework Decision Matrix**: Added comprehensive section for `logr.Logger` usage
+  - ✅ **Implementation Patterns**: Stateless services use `zapr.NewLogger()`, CRD controllers use native `ctrl.Log`
+  - ✅ **Shared Library Standard**: All `pkg/*` libraries MUST accept `logr.Logger` (not `*zap.Logger`)
+  - ✅ **Forbidden Patterns**: Documented anti-patterns to avoid
+  - 📏 **Template size**: ~7,400 lines (growth for logging framework guidance)
+- **v2.7** (2025-11-28): 🎯 **SCOPE ANNOTATIONS + TEST HELPERS + OPENAPI PRE-PHASE**
+  - ✅ **Scope Annotations**: All new sections clearly marked as COMMON, STATELESS, or CRD CONTROLLER
+  - ✅ **OpenAPI Pre-Phase Step** (Day 1): Update OpenAPI spec before implementation (STATELESS)
+  - ✅ **E2E Test Helper Patterns**: Reusable CRUD helpers for HTTP services (STATELESS)
+  - ✅ **CRD Controller E2E Helper Patterns**: Reusable K8s client helpers (CRD CONTROLLER)
+  - ✅ **Async Timing Example**: Added DD-3 example for sync vs async decisions (COMMON)
+  - ✅ **CRD Controller Decision Examples**: Added reconciliation trigger and finalizer decisions (CRD CONTROLLER)
+  - 📏 **Template size**: ~7,300 lines (growth for test helpers and scope clarity)
+- **v2.6** (2025-11-28): 🎯 **PRE-IMPLEMENTATION DESIGN DECISIONS + API PATTERNS**
+  - ✅ **Pre-Implementation Design Decisions Section**: Template for documenting ambiguous requirements before Day 1
+  - ✅ **API Design Patterns Section**: DD-API-001 (HTTP header vs JSON body pattern)
+  - ✅ **ADR/DD Validation Script Updated**: Added DD-API-001 to validation
+  - ✅ **Checklist Updated**: Added API design standards checklist item
+  - 📏 **Template size**: ~7,100 lines (growth for design decision guidance)
+- **v2.5** (2025-11-28): 🎯 **DOCUMENT STRUCTURE FIX + PRE-IMPLEMENTATION CHECKLIST**
+  - ✅ **8 Sections Fixed**: Changed from `##` to `###` to nest under respective days
+  - ✅ **Error Handling Philosophy**: Now nested under Days 2-6 (Day 6 EOD deliverable)
+  - ✅ **Production Runbooks**: Now nested under Day 12
+  - ✅ **Edge Case Categories**: Now nested under Days 9-10
+  - ✅ **Metrics Validation**: Now nested under Day 7
+  - ✅ **Lessons Learned, Technical Debt, Team Handoff**: Now nested under Day 12
+  - ✅ **Blockers Section**: Now at `###` level for consistency
+  - ✅ **TOC Updated**: Shows proper day-to-template relationship
+  - ✅ **NEW: Pre-Implementation ADR/DD Validation Checklist**: Bash script + sign-off for ADR/DD validation
+  - 📏 **Impact**: Developers see templates in context, validate docs before Day 1
+- **v2.4** (2025-11-28): 🎯 **COMPREHENSIVE ADR/DD REFERENCE INTEGRATION**
+  - ✅ **Prerequisites Expanded**: Added DD-004, DD-005, DD-013, DD-014, ADR-015, ADR-032, ADR-034, DD-AUDIT-003
+  - ✅ **New Reference Matrix**: Which ADRs/DDs apply to which service type (HTTP, CRD, Audit)
+  - ✅ **Universal Standards Section**: DD-004 (RFC 7807), DD-005 (Observability), DD-013 (K8s Client), DD-014 (Version Logging), ADR-015 (Signal naming)
+  - ✅ **Audit Standards**: DD-AUDIT-003 (audit requirements), ADR-032 (data access isolation), ADR-034 (audit table design)
+  - ✅ **CRD Standards**: ADR-004 (fake K8s client), DD-006 (controller scaffolding), DD-007 (graceful shutdown)
+  - ✅ **Testing Standards**: DD-TEST-001 (port allocation), ADR-038 (async audit)
+  - 📏 **Template size**: ~6,900 lines (growth for ADR/DD reference matrix)
+- **v2.3** (2025-11-28): 🎯 **E2E NODEPORT INFRASTRUCTURE** - Eliminate port-forward instability
+  - ✅ **Kind NodePort Pattern**: Complete E2E test setup using NodePort (no kubectl port-forward)
+  - ✅ **DD-TEST-001 Reference**: Authoritative port allocation for all services
+  - ✅ **Kind Config Template**: `extraPortMappings` configuration for concurrent E2E execution
+  - ✅ **Service NodePort Config**: NodePort service YAML patterns
+  - ✅ **Test Suite Pattern**: SynchronizedBeforeSuite with NodePort URL (no port-forward)
+  - ✅ **Port Allocation Table**: Quick reference for all services (Gateway, Signal Processing, etc.)
+  - 📏 **Template size**: ~6,200 lines (growth for E2E infrastructure guidance)
+- **v2.2** (2025-11-28): 🎯 **TESTING METHODOLOGY** - Standard order + parallel execution
+  - ✅ **Testing Order Alignment**: Standard Unit → Integration → E2E methodology (removed "Integration-First")
+  - ✅ **Parallel Test Execution**: **4 concurrent processes** standard for all test tiers
+  - ✅ **Parallel Execution Section**: Complete configuration with `go test -p 4` and `ginkgo -procs=4`
+  - ✅ **Test Isolation Patterns**: Unique namespace per test for parallel safety
+  - ✅ **Parallel Anti-Patterns**: Common mistakes to avoid (hardcoded namespaces, shared state)
+  - ✅ **Makefile Targets Updated**: All test targets now include `-p 4` flag
+  - ✅ **Quick Reference Updated**: Methodology and parallel execution standards added
+  - 📏 **Template size**: ~6,000 lines (minor growth for parallel execution guidance)
 - **v2.1** (2025-11-23): 🎯 **ENHANCEMENTS** - Multi-language and deployment pattern support
   - ✅ **Python Service Adaptation** (~200 lines, complete Python patterns)
   - ✅ **Sidecar Deployment Pattern** (~150 lines, Kubernetes examples)
@@ -37,11 +116,63 @@
 
 **Use this template for**: All Kubernaut stateless services and CRD controllers
 **Based on**: Gateway Service + Dynamic Toolset + Notification Controller (proven success)
-**Methodology**: APDC-TDD with Integration-First Testing
+**Methodology**: APDC-TDD with Defense-in-Depth Testing (Unit → Integration → E2E)
+**Parallel Execution**: **4 concurrent processes** for all test tiers (standard)
 **Success Rate**:
 - Gateway: 95% test coverage, 100% BR coverage, 98% confidence
 - Notification: 97.2% BR coverage, 95% test coverage, 98% confidence
 **Quality Standard**: V3.0 - Production-ready with comprehensive examples
+
+---
+
+## 📑 **Table of Contents**
+
+| Section | Line | Purpose |
+|---------|------|---------|
+| [Quick Reference](#-quick-reference) | ~36 | Template overview and success metrics |
+| [Naming Convention](#-naming-convention) | ~48 | File naming patterns and anti-patterns |
+| [Document Purpose](#document-purpose) | ~175 | Template history and key improvements |
+| [Prerequisites Checklist](#prerequisites-checklist) | ~209 | Pre-Day 1 requirements |
+| [V1.0 Maturity Checklist](#-v10-mandatory-maturity-checklist--v31-new---scope-by-service-type) | ~378 | Mandatory maturity features ⭐ V3.1 |
+| [Cross-Team Validation](#-cross-team-validation--v30-new---scope-common-all-services) | ~520 | Multi-team dependency sign-off ⭐ V3.0 |
+| [Integration Test Environment Decision](#-integration-test-environment-decision-v13-) | ~430 | KIND/envtest/Podman/Mocks decision tree |
+| [Risk Assessment Matrix](#️-risk-assessment-matrix--v28-new---scope-common-all-services) | ~760 | Risk identification and mitigation |
+|    └─ [Risk Mitigation Status Tracking](#risk-mitigation-status-tracking--v30-new) | ~795 | Day-linked risk tracking ⭐ V3.0 |
+| [Timeline Overview](#timeline-overview) | ~535 | Phase breakdown (11-12 days) |
+| **Day-by-Day Breakdown** | | |
+| ├─ [Day 1: Foundation](#day-1-foundation-8h) | ~551 | Types, interfaces, K8s client |
+| ├─ [Days 2-6: Core Implementation](#days-2-6-core-implementation-5-days-8h-each) | ~614 | Business logic components |
+|    └─ [Error Handling Philosophy](#-error-handling-philosophy-template--v20) | ~894 | Day 6 EOD deliverable |
+| ├─ [Day 7: Server + API + Metrics](#day-7-server--api--metrics-8h) | ~1223 | Integration, metrics (10+) |
+|    └─ [Metrics Validation Commands](#-metrics-validation-commands-template-day-7) | ~4194 | Day 7 validation |
+| ├─ [Day 8: Unit Tests](#day-8-unit-tests-8h) | ~1586 | All component unit tests (parallel: 4 procs) |
+| ├─ [Days 9-10: Testing](#day-9-unit-tests-part-2-8h) | ~2476 | Integration + E2E (parallel: 4 procs) |
+|    └─ [Edge Case Categories](#-edge-case-categories-template-days-9-10) | ~4162 | Days 9-10 test coverage |
+| ├─ [Day 11: Documentation](#day-11-comprehensive-documentation-8h--v20-enhanced) | ~2855 | README, design decisions |
+| └─ [Day 12: Production Readiness](#day-12-check-phase--production-readiness--v20-comprehensive-8h) | ~3365 | Checklist, handoff |
+|    ├─ [Production Runbooks](#-production-runbooks-template-day-12-deliverable) | ~4095 | Day 12 deliverable |
+|    ├─ [Lessons Learned](#-lessons-learned-template-day-12) | ~4241 | Day 12 deliverable |
+|    ├─ [Technical Debt](#-technical-debt-template-day-12) | ~4271 | Day 12 deliverable |
+|    └─ [Team Handoff Notes](#-team-handoff-notes-template-day-12) | ~4291 | Day 12 deliverable |
+| [Critical Checkpoints](#critical-checkpoints-from-gateway-learnings) | ~3718 | 5 gateway learnings |
+| [Documentation Standards](#documentation-standards) | ~3747 | Daily status docs, DD format |
+| [Testing Strategy](#testing-strategy) | ~3810 | Test distribution, table-driven patterns |
+| [Performance Targets](#performance-targets) | ~3991 | Latency, throughput metrics |
+| [Common Pitfalls](#common-pitfalls-to-avoid) | ~4008 | Do's and don'ts |
+| [Success Criteria](#success-criteria) | ~4032 | Completion checklist |
+| [Makefile Targets](#makefile-targets) | ~4056 | Development commands |
+| **Appendices** | | |
+| ├─ [Appendix A: EOD Templates](#-appendix-a-complete-eod-documentation-templates--v20) | ~4106 | Days 1, 4, 7 templates |
+| ├─ [Appendix B: CRD Controller](#-appendix-b-crd-controller-variant--v20) | ~4501 | Reconciliation patterns |
+|    └─ [CRD API Group Standard](#-crd-api-group-standard--v30-new) | ~4510 | DD-CRD-001 unified `.ai` domain ⭐ V3.0 |
+| └─ [Appendix C: Confidence Assessment](#-appendix-c-confidence-assessment-methodology--v20) | ~4846 | Evidence-based calculation |
+| **Language/Deployment Patterns** | | |
+| ├─ [Python Service Adaptation](#-python-service-adaptation) | ~5225 | Python-specific patterns |
+| ├─ [Sidecar Deployment Pattern](#-sidecar-deployment-pattern) | ~5350 | K8s sidecar examples |
+| ├─ [Shared Library Extraction](#-shared-library-extraction) | ~5505 | ROI analysis, Redis example |
+| └─ [Multi-Language Services](#-multi-language-services) | ~5671 | Go+Python structure |
+| [Enhanced Error Handling](#-enhanced-error-handling-philosophy) | ~5820 | Graceful degradation |
+| [Version History](#version-history) | ~5988 | Template changelog |
 
 ---
 
@@ -203,6 +334,11 @@ This template incorporates lessons learned from:
 - Integration test decision tree (KIND/envtest/Podman/Mocks)
 - Error handling philosophy (complete template) ⭐ **v2.0 NEW**
 - CRD controller patterns (reconciliation, status updates) ⭐ **v2.0 NEW**
+- HTTP header vs JSON body pattern (DD-API-001) ⭐ **v2.6 NEW**
+- Pre-implementation design decisions section ⭐ **v2.6 NEW**
+- OpenAPI pre-phase step for stateless services ⭐ **v2.7 NEW**
+- E2E test helper patterns (STATELESS + CRD CONTROLLER) ⭐ **v2.7 NEW**
+- Scope annotations (COMMON, STATELESS, CRD CONTROLLER) ⭐ **v2.7 NEW**
 
 ---
 
@@ -211,11 +347,31 @@ This template incorporates lessons learned from:
 Before starting Day 1, ensure:
 - [ ] Service specifications complete (overview, API spec, implementation docs)
 - [ ] Business requirements documented (BR-[CATEGORY]-XXX format)
-- [ ] Architecture decisions approved
+- [ ] Architecture decisions approved:
+  - **Universal Standards (ALL services)**:
+    - [ ] DD-004: RFC 7807 Error Responses (**MANDATORY** for HTTP APIs)
+    - [ ] DD-005: Observability Standards (**MANDATORY** - metrics/logging)
+    - [ ] DD-007: Kubernetes-Aware Graceful Shutdown (**MANDATORY**)
+    - [ ] DD-014: Binary Version Logging (**MANDATORY** - production troubleshooting)
+    - [ ] ADR-015: Alert-to-Signal Naming Migration (**MANDATORY** - use "Signal" terminology)
+  - **K8s-Aware Services**:
+    - [ ] DD-013: K8s Client Initialization Standard (shared `pkg/k8sutil`)
+  - **CRD Controllers**:
+    - [ ] DD-006: Controller Scaffolding (templates and patterns)
+    - [ ] ADR-004: Fake K8s Client (**MANDATORY** for unit tests)
+  - **Audit-Required Services** (check DD-AUDIT-003):
+    - [ ] DD-AUDIT-003: Service Audit Trace Requirements (determines if audit needed)
+    - [ ] ADR-032: Data Access Layer Isolation (**MANDATORY** - use Data Storage API)
+    - [ ] ADR-034: Unified Audit Table Design (audit schema)
+    - [ ] ADR-038: Async Buffered Audit Ingestion (fire-and-forget pattern)
+  - **Testing**:
+    - [ ] DD-TEST-001: Port Allocation Strategy (**MANDATORY** for E2E tests)
+  - [ ] Service-specific DDs documented
 - [ ] Dependencies identified
 - [ ] Success criteria defined
 - [ ] **Integration test environment determined** (see decision tree below)
 - [ ] **Required test infrastructure available** (KIND/envtest/Podman/none)
+- [ ] **E2E NodePort allocation reserved** (see [DD-TEST-001](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md))
 - [ ] **V2.0 Template sections reviewed**: ⭐ **NEW**
   - [ ] Error Handling Philosophy Template (Section after Day 6)
   - [ ] BR Coverage Matrix Methodology (Day 9 Enhanced)
@@ -224,6 +380,416 @@ Before starting Day 1, ensure:
   - [ ] Complete Integration Test Examples (Day 8 Enhanced)
   - [ ] Phase 4 Documentation Templates (Days 10-12 Enhanced)
   - [ ] Confidence Assessment Methodology (Day 12 Enhanced)
+- [ ] **Cross-team dependencies validated** (see Cross-Team Validation section below) ⭐ V3.0 NEW
+- [ ] **V1.0 Maturity Requirements validated** (see V1.0 Mandatory Maturity Checklist below) ⭐ V3.1 NEW
+
+---
+
+## ✅ **V1.0 Mandatory Maturity Checklist** ⭐ V3.1 NEW - **SCOPE: BY SERVICE TYPE**
+
+**Purpose**: Ensure all services meet V1.0 production-readiness standards.
+
+**Reference**: [V1_0_SERVICE_MATURITY_TRIAGE_DEC_19_2025.md](../handoff/V1_0_SERVICE_MATURITY_TRIAGE_DEC_19_2025.md)
+**Testing Requirements**: [TESTING_GUIDELINES.md](../development/business-requirements/TESTING_GUIDELINES.md)
+**Test Plan Template**: [V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md](../development/testing/V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
+
+> ⚠️ **MANDATORY**: A service is NOT considered V1.0 ready until ALL applicable checkboxes are ✅.
+> This checklist is a **living document** - triage new ADRs/DDs for additional requirements.
+
+---
+
+### 📋 **CRD Controller Maturity Checklist**
+
+**Applies to**: SignalProcessing, WorkflowExecution, AIAnalysis, Notification, RemediationOrchestrator
+
+#### Core Infrastructure (P0 - Blockers)
+
+| Feature | Requirement | Test Requirement |
+|---------|-------------|------------------|
+| **Metrics wired to controller** | Controller struct has `Metrics` field | Integration: Verify metric values after operations |
+| **Metrics registered with CR** | Uses `metrics.Registry.MustRegister()` in `init()` | E2E: Verify `/metrics` endpoint accessible |
+| **EventRecorder** | Controller struct has `Recorder record.EventRecorder` | E2E: Verify events emitted via `kubectl describe` |
+| **Graceful shutdown (DD-007)** | Flushes audit/state before exit | Integration: Verify flush called on SIGTERM |
+| **Audit integration (DD-AUDIT-003)** | Uses `pkg/audit` store | Integration: Verify all audit traces via OpenAPI client |
+
+#### Observability (P1 - High Priority)
+
+| Feature | Requirement | Test Requirement |
+|---------|-------------|------------------|
+| **Predicates (event filtering)** | Uses `predicate.GenerationChangedPredicate{}` | Unit: Verify predicate applied |
+| **Logger field** | Struct has `Log logr.Logger` | N/A (code review) |
+| **Healthz probes** | Manager exposes healthz/readyz | E2E: Verify probe endpoints |
+| **Config validation (ADR-030)** | Config validated at startup | Unit: Verify validation errors |
+
+#### Implementation Checklist
+
+```markdown
+## V1.0 Maturity Checklist - [Service Name]
+
+### P0 - Blockers (MUST pass before V1.0)
+- [ ] **Metrics wired to controller**
+  - [ ] `Metrics *metrics.Metrics` field in reconciler struct
+  - [ ] Metrics recorded in reconciliation phases
+  - [ ] Integration test: Verify metric values after reconciliation
+- [ ] **Metrics registered with controller-runtime**
+  - [ ] `metrics.Registry.MustRegister()` in `init()` function
+  - [ ] E2E test: Verify `/metrics` endpoint returns expected metrics
+- [ ] **EventRecorder**
+  - [ ] `Recorder record.EventRecorder` field in reconciler struct
+  - [ ] `mgr.GetEventRecorderFor("service-controller")` in main.go
+  - [ ] Events emitted on phase transitions and errors
+  - [ ] E2E test: Verify `kubectl describe <crd>` shows events
+- [ ] **Graceful shutdown (DD-007)**
+  - [ ] Audit store `.Close()` called before exit
+  - [ ] Integration test: Verify flush on SIGTERM
+- [ ] **Audit integration (DD-AUDIT-003)**
+  - [ ] All required audit traces emitted
+  - [ ] Integration test: Each trace verified via OpenAPI audit client
+  - [ ] E2E test: Audit client wired to main controller
+
+### P1 - High Priority (SHOULD pass before V1.0)
+- [ ] **Predicates**
+  - [ ] `WithEventFilter(predicate.GenerationChangedPredicate{})` in SetupWithManager
+  - [ ] Unit test: Verify predicate filtering
+- [ ] **Logger field**
+  - [ ] `Log logr.Logger` field in reconciler struct (code review)
+- [ ] **Healthz probes**
+  - [ ] Manager exposes `/healthz` and `/readyz`
+  - [ ] E2E test: Verify probe endpoints return 200
+
+### P2 - Medium Priority (CAN defer to V1.1)
+- [ ] **Config validation (ADR-030)**
+  - [ ] Config validated at startup with clear error messages
+  - [ ] Unit test: Verify validation errors for invalid config
+```
+
+---
+
+### 📋 **Stateless Service (HTTP API) Maturity Checklist**
+
+**Applies to**: Gateway, DataStorage, HolmesGPT-API
+
+#### Core Infrastructure (P0 - Blockers)
+
+| Feature | Requirement | Test Requirement |
+|---------|-------------|------------------|
+| **Prometheus metrics** | `/metrics` endpoint exposed | Integration: Verify metric values |
+| **Health endpoints** | `/health` or `/healthz` endpoint | E2E: Verify 200 response |
+| **Graceful shutdown (DD-007)** | Handles SIGTERM, flushes state | Integration: Verify shutdown sequence |
+| **RFC 7807 errors (DD-004)** | All errors use RFC 7807 format | Integration: Verify error response format |
+| **Audit integration (if required)** | Uses `pkg/audit` or Python equivalent | Integration: Verify traces via OpenAPI |
+
+#### Observability (P1 - High Priority)
+
+| Feature | Requirement | Test Requirement |
+|---------|-------------|------------------|
+| **Request logging** | All requests logged with correlation ID | Integration: Verify log output |
+| **OpenAPI spec** | Spec matches implementation | Integration: Contract testing |
+| **Config validation (ADR-030)** | Config validated at startup | Unit: Verify validation errors |
+
+#### Implementation Checklist
+
+```markdown
+## V1.0 Maturity Checklist - [Service Name]
+
+### P0 - Blockers (MUST pass before V1.0)
+- [ ] **Prometheus metrics**
+  - [ ] `/metrics` endpoint exposed
+  - [ ] Business metrics registered (request count, latency, etc.)
+  - [ ] Integration test: Verify metric values after operations
+  - [ ] E2E test: Verify `/metrics` endpoint accessible
+- [ ] **Health endpoints**
+  - [ ] `/health` or `/healthz` endpoint implemented
+  - [ ] E2E test: Verify 200 response
+- [ ] **Graceful shutdown (DD-007)**
+  - [ ] SIGTERM handler implemented
+  - [ ] Connections drained before exit
+  - [ ] Integration test: Verify shutdown sequence
+- [ ] **RFC 7807 errors (DD-004)**
+  - [ ] All error responses use RFC 7807 format
+  - [ ] Integration test: Verify error response structure
+- [ ] **Audit integration (if applicable)**
+  - [ ] All required audit traces emitted
+  - [ ] Integration test: Each trace verified via OpenAPI audit client
+
+### P1 - High Priority (SHOULD pass before V1.0)
+- [ ] **Request logging**
+  - [ ] All requests logged with method, path, status, duration
+  - [ ] Correlation ID propagated
+- [ ] **OpenAPI spec**
+  - [ ] Spec matches implementation
+  - [ ] Integration test: Contract validation
+- [ ] **Config validation (ADR-030)**
+  - [ ] Config validated at startup
+  - [ ] Unit test: Verify validation errors
+```
+
+---
+
+### 🔄 **Living Document Notice**
+
+> **This checklist is a living document.** When new ADRs or DDs are created that affect service maturity requirements:
+>
+> 1. **Triage** the ADR/DD for impact on this checklist
+> 2. **Add** new requirements to the appropriate section
+> 3. **Update** the version and changelog
+> 4. **Notify** all service teams via handoff document
+>
+> **Last Updated**: 2025-12-19 (V3.1)
+> **Next Review**: When any new ADR/DD is created
+
+---
+
+## 🤝 **Cross-Team Validation** ⭐ V3.0 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**Purpose**: Formally validate all cross-team dependencies before starting implementation.
+
+### **When to Use This Section**
+
+Use cross-team validation when your service:
+- Consumes data from another service (e.g., CRD status fields)
+- Produces data consumed by another service (e.g., API responses)
+- Has shared type definitions (e.g., `EnrichmentResults`)
+- Requires coordination on naming conventions, field paths, or schemas
+
+### **Cross-Team Validation Status Template**
+
+> **Validation Status**: 📋 DRAFT | ⏳ IN REVIEW | ✅ VALIDATED
+>
+> | Team | Validation Topic | Status | Record |
+> |------|-----------------|--------|--------|
+> | [Team Name] | [What needs validation] | ⬜ Pending | - |
+> | [Team Name] | [What needs validation] | ⏳ In Review | [HANDOFF_REQUEST_*.md] |
+> | [Team Name] | [What needs validation] | ✅ Complete | [RESPONSE_*.md] |
+
+### **HANDOFF/RESPONSE Pattern**
+
+For cross-team validations, use the HANDOFF/RESPONSE document pattern:
+
+**File Naming Convention**:
+- `HANDOFF_REQUEST_[TOPIC].md` - Request sent to another team
+- `RESPONSE_[TOPIC].md` - Response received from that team
+
+**Validation Workflow**:
+1. **Create** `HANDOFF_REQUEST_*.md` with questions, proposals, or validation needs
+2. **Send** to dependent team for review
+3. **Team responds** in `RESPONSE_*.md` (or updates the handoff inline)
+4. **Update status** from ⬜ Pending → ✅ Complete when confirmed
+5. **Plan status** changes to ✅ VALIDATED when ALL dependencies are complete
+
+**Example**:
+```
+Service: Signal Processing
+├── HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md    ← Sent to AI Analysis team
+├── HANDOFF_REQUEST_GATEWAY_LABEL_PASSTHROUGH.md ← Sent to Gateway team
+├── RESPONSE_CUSTOM_LABELS_VALIDATION.md        ← From HolmesGPT-API team
+└── RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md       ← From Gateway team
+```
+
+### **Pre-Implementation Validation Gate**
+
+> **🚨 BLOCKING REQUIREMENT**: Do NOT start Day 1 until ALL cross-team validations are ✅ Complete.
+
+**Validation Checklist**:
+- [ ] All upstream data contracts validated (data you CONSUME)
+- [ ] All downstream data contracts validated (data you PRODUCE)
+- [ ] Shared type definitions aligned across teams
+- [ ] Naming conventions agreed (snake_case vs camelCase, kebab-case for K8s)
+- [ ] Field paths confirmed (e.g., `spec.analysisRequest.signalContext.enrichmentResults`)
+- [ ] Integration points documented with examples
+
+**Confidence Impact**:
+- Without validation: Maximum 85% confidence (integration risk)
+- With validation: 100% confidence achievable (contracts verified)
+
+### 📋 **Pre-Implementation ADR/DD Validation Checklist** ⭐ V2.5 NEW
+
+> **MANDATORY**: Before starting Day 1, validate ALL referenced ADRs/DDs exist and have been read.
+
+**Run this validation script to confirm all referenced documents exist**:
+
+```bash
+#!/bin/bash
+# Pre-Implementation ADR/DD Validation
+# Run from repository root before starting implementation
+
+echo "🔍 Validating ADR/DD references..."
+
+# Universal Standards (ALL services)
+UNIVERSAL=(
+  "DD-004-RFC7807-ERROR-RESPONSES.md"
+  "DD-005-OBSERVABILITY-STANDARDS.md"
+  "DD-007-kubernetes-aware-graceful-shutdown.md"
+  "DD-014-binary-version-logging-standard.md"
+  "ADR-015-alert-to-signal-naming-migration.md"
+)
+
+# CRD Controller Standards (if CRD controller)
+CRD_CONTROLLER=(
+  "DD-006-controller-scaffolding-strategy.md"
+  "DD-013-kubernetes-client-initialization-standard.md"
+  "DD-CRD-001-api-group-domain-selection.md"
+  "ADR-004-fake-kubernetes-client.md"
+)
+
+# Audit Standards (if P0/P1 audit service per DD-AUDIT-003)
+AUDIT=(
+  "DD-AUDIT-003-service-audit-trace-requirements.md"
+  "ADR-032-data-access-layer-isolation.md"
+  "ADR-034-unified-audit-table-design.md"
+  "ADR-038-async-buffered-audit-ingestion.md"
+)
+
+# API Design Standards (ALL HTTP services)
+API_DESIGN=(
+  "DD-API-001-http-header-vs-json-body-pattern.md"
+)
+
+# Testing Standards (ALL services)
+TESTING=(
+  "DD-TEST-001-port-allocation-strategy.md"
+)
+
+ERRORS=0
+for doc in "${UNIVERSAL[@]}" "${CRD_CONTROLLER[@]}" "${AUDIT[@]}" "${API_DESIGN[@]}" "${TESTING[@]}"; do
+  if [ -f "docs/architecture/decisions/$doc" ]; then
+    echo "✅ $doc"
+  else
+    echo "❌ MISSING: $doc"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
+if [ $ERRORS -gt 0 ]; then
+  echo ""
+  echo "❌ $ERRORS documents missing. Fix before starting implementation."
+  exit 1
+else
+  echo ""
+  echo "✅ All ADR/DD references validated. Ready to start Day 1."
+fi
+```
+
+**Checklist (mark after reading each document)**:
+
+- [ ] **Universal Standards READ**:
+  - [ ] DD-004: Understood RFC 7807 error format
+  - [ ] DD-005: Understood metrics naming and logging format
+  - [ ] DD-007: Understood 4-step graceful shutdown
+  - [ ] DD-014: Understood version logging requirements
+  - [ ] ADR-015: Understood "Signal" terminology mandate
+
+- [ ] **CRD Controller Standards READ** (if CRD controller):
+  - [ ] DD-006: Reviewed controller scaffolding templates
+  - [ ] DD-013: Reviewed K8s client initialization pattern
+  - [ ] ADR-004: Understood fake client mandate for unit tests
+
+- [ ] **Audit Standards READ** (if audit-required):
+  - [ ] DD-AUDIT-003: Confirmed service audit tier (P0/P1/P2/none)
+  - [ ] ADR-032: Understood Data Storage API requirement
+  - [ ] ADR-034: Reviewed audit event schema
+  - [ ] ADR-038: Understood fire-and-forget pattern
+
+- [ ] **API Design Standards READ** (if HTTP service):
+  - [ ] DD-API-001: Understood HTTP header vs JSON body pattern
+    - Business data → JSON body (audit trail, proxy safety)
+    - Infrastructure data → HTTP headers (X-Request-ID, X-Correlation-ID)
+
+- [ ] **Testing Standards READ**:
+  - [ ] DD-TEST-001: Reviewed port allocation for this service
+
+**Sign-off**:
+```
+I have read and understood all applicable ADRs/DDs for this service.
+Developer: _________________ Date: ___________
+```
+
+---
+
+## 📝 Logging Framework Decision Matrix (DD-005 v2.0) ⭐ V2.8 NEW
+
+**Authority**: [DD-005-OBSERVABILITY-STANDARDS.md](../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md) v2.0
+
+### Unified Logging Interface
+
+**MANDATORY**: All Kubernaut services use `logr.Logger` as the unified logging interface.
+
+| Service Type | Primary Logger | How to Create | Shared Library Interface |
+|--------------|----------------|---------------|--------------------------|
+| **Stateless HTTP Services** (Gateway, Data Storage, Context API) | `logr.Logger` | `zapr.NewLogger(zapLogger)` | `logr.Logger` |
+| **CRD Controllers** (Signal Processing, Notification, Workflow Execution) | `logr.Logger` | `ctrl.Log.WithName("component")` | `logr.Logger` |
+| **Shared Libraries** (`pkg/*`) | N/A (accepts) | Passed by caller | `logr.Logger` |
+
+### Implementation Patterns
+
+#### Stateless HTTP Services
+
+```go
+import (
+    "github.com/go-logr/logr"
+    "github.com/go-logr/zapr"
+    "go.uber.org/zap"
+)
+
+func main() {
+    // Create zap logger (for performance)
+    zapLogger, _ := zap.NewProduction()
+    defer zapLogger.Sync()
+
+    // Convert to logr interface (for consistency)
+    logger := zapr.NewLogger(zapLogger)
+
+    // Pass to shared libraries
+    auditStore, _ := audit.NewBufferedStore(client, config, "gateway", logger.WithName("audit"))
+    server := gateway.NewServer(cfg, logger)
+}
+```
+
+#### CRD Controllers
+
+```go
+import (
+    "github.com/go-logr/logr"
+    ctrl "sigs.k8s.io/controller-runtime"
+)
+
+func main() {
+    // Use native logr from controller-runtime (no adapter needed)
+    logger := ctrl.Log.WithName("notification-controller")
+
+    // Pass to shared libraries
+    auditStore, _ := audit.NewBufferedStore(client, config, "notification", logger.WithName("audit"))
+}
+```
+
+### Logging Syntax (logr)
+
+```go
+// INFO level (V=0, always shown)
+logger.Info("Signal received", "source", "prometheus", "fingerprint", fp)
+
+// DEBUG level (V=1, shown when verbosity >= 1)
+logger.V(1).Info("Parsing signal payload", "fingerprint", fp)
+
+// ERROR level (error as first argument)
+logger.Error(err, "Failed to create CRD", "request_id", requestID)
+
+// Named sub-logger
+auditLogger := logger.WithName("audit")
+```
+
+### ❌ FORBIDDEN Patterns
+
+```go
+// ❌ WRONG: Using *zap.Logger directly in shared libraries
+func NewBufferedStore(..., logger *zap.Logger) // FORBIDDEN
+
+// ❌ WRONG: Using zap.String() helpers with logr
+logger.Info("Message", zap.String("key", "value")) // FORBIDDEN
+
+// ❌ WRONG: Creating separate zap logger in CRD controllers
+zapLogger, _ := zap.NewProduction() // FORBIDDEN in CRD controllers
+```
 
 ---
 
@@ -346,9 +912,339 @@ Once determined, update all instances of `[TEST_ENVIRONMENT]` in this plan with 
 
 ---
 
+## 🎯 **Pre-Implementation Design Decisions** ⭐ V2.6 NEW
+
+**BLOCKING**: Before starting Day 1, document decisions for ambiguous requirements.
+
+### **Purpose**
+Prevent implementation delays by resolving design ambiguities upfront. This section captures decisions that would otherwise cause mid-implementation confusion.
+
+### **When to Use**
+- API behavior has multiple valid interpretations
+- Immutability/mutability constraints are unclear
+- Delete behavior (hard vs soft) is not specified
+- Timing behavior (sync vs async) is not specified
+- External system constraints affect design
+
+### **Template**
+
+```markdown
+## 🎯 **Approved Design Decisions** - [Date]
+
+### **DD-1: [Decision Name]**
+
+| Question | [The ambiguous question] |
+|----------|--------------------------|
+| **Decision** | **Option [X]**: [Chosen option] |
+| **Rationale** | [Why this option was chosen] |
+| **Implementation** | [How this affects implementation] |
+
+### **DD-2: [Decision Name]**
+...
+```
+
+### **Example: Workflow CRUD Decisions** - **SCOPE: STATELESS HTTP SERVICES**
+
+```markdown
+### **DD-1: Workflow Immutability (PUT Behavior)**
+
+| Question | Should PUT /api/v1/workflows/{id} update existing versions? |
+|----------|-------------------------------------------------------------|
+| **Decision** | **Option C**: PUT is NOT allowed. Immutability enforced. |
+| **Rationale** | DD-WORKFLOW-012 mandates immutability. Updates = new version via POST. |
+| **Implementation** | PUT returns 405 Method Not Allowed. |
+
+### **DD-2: Delete Behavior**
+
+| Question | Should DELETE remove workflows or disable them? |
+|----------|------------------------------------------------|
+| **Decision** | **Option C**: Use disabled_at mechanism (preserve audit trail). |
+| **Rationale** | Preserves audit trail, aligns with immutability. |
+| **Implementation** | DELETE sets disabled_at=NOW(), disabled_by, disabled_reason. |
+
+### **DD-3: Expensive Operation Timing (Sync vs Async)**
+
+| Question | Should [expensive operation, e.g., embedding generation] be synchronous or asynchronous? |
+|----------|------------------------------------------------------------------------------------------|
+| **Decision** | **Option A**: Synchronous for V1.0 (accept ~2-3s latency). |
+| **Rationale** | Correctness over performance. Async introduces race conditions where newly created resources aren't immediately available. |
+| **Implementation** | POST blocks until operation completes. Async deferred to V1.1 if needed. |
+```
+
+### **Example: CRD Controller Decisions** - **SCOPE: CRD CONTROLLERS**
+
+```markdown
+### **DD-1: Reconciliation Trigger Strategy**
+
+| Question | Should reconciliation be triggered by all field changes or specific fields only? |
+|----------|----------------------------------------------------------------------------------|
+| **Decision** | **Option B**: Specific fields only (spec changes, not status). |
+| **Rationale** | Prevents reconciliation loops from status updates. |
+| **Implementation** | Use `GenerationChangedPredicate` in controller builder. |
+
+### **DD-2: Finalizer Strategy**
+
+| Question | Should the controller use finalizers for cleanup? |
+|----------|--------------------------------------------------|
+| **Decision** | **Option A**: Yes, use finalizers for external resource cleanup. |
+| **Rationale** | Ensures external resources (e.g., Redis keys) are cleaned up on CRD deletion. |
+| **Implementation** | Add finalizer in reconcile, remove after cleanup in delete handler. |
+```
+
+### **Pre-Implementation Checklist** - **SCOPE: COMMON (ALL SERVICES)**
+
+Before starting Day 1:
+- [ ] All ambiguous requirements have documented decisions
+- [ ] Each decision has clear rationale
+- [ ] Implementation impact is documented
+- [ ] Decisions are approved by stakeholder
+
+---
+
+## ⚠️ **Risk Assessment Matrix** ⭐ V2.8 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**Purpose**: Identify and mitigate risks before implementation begins.
+
+### **Risk Assessment Template**
+
+| Risk | Probability | Impact | Mitigation | Owner |
+|------|-------------|--------|------------|-------|
+| [Risk 1: e.g., External API dependency unavailable] | Medium | High | Circuit breaker + graceful degradation | Dev |
+| [Risk 2: e.g., Database schema migration failure] | Low | Critical | Rollback script + staging validation | Dev |
+| [Risk 3: e.g., Performance regression] | Medium | Medium | Benchmark tests + performance budget | Dev |
+
+### **Risk Categories**
+
+| Category | Examples | Standard Mitigations |
+|----------|----------|---------------------|
+| **External Dependencies** | API unavailability, rate limiting | Circuit breaker, retry, graceful degradation |
+| **Data Integrity** | Schema migration, data corruption | Rollback scripts, staging validation, backups |
+| **Performance** | Latency regression, memory leaks | Benchmarks, load tests, performance budgets |
+| **Security** | Auth bypass, data exposure | Security review, penetration testing |
+| **Operational** | Deployment failure, config drift | Rollback plan, canary deployment |
+
+### **Risk Severity Matrix**
+
+| Probability ↓ / Impact → | Low | Medium | High | Critical |
+|---------------------------|-----|--------|------|----------|
+| **High** | Monitor | Mitigate | Mitigate | Block |
+| **Medium** | Accept | Monitor | Mitigate | Mitigate |
+| **Low** | Accept | Accept | Monitor | Mitigate |
+
+**Actions**:
+- **Block**: Cannot proceed until risk is eliminated
+- **Mitigate**: Must have mitigation plan before proceeding
+- **Monitor**: Proceed with monitoring plan
+- **Accept**: Proceed with documented acceptance
+
+### **Risk Mitigation Status Tracking** ⭐ V3.0 NEW
+
+**Purpose**: Link identified risks to specific implementation days and track mitigation status.
+
+| Risk # | Action Required | Day | Status |
+|--------|-----------------|-----|--------|
+| 1 | [Specific mitigation implementation] | Day X | ⬜ Pending |
+| 2 | [Specific mitigation implementation] | Day Y | ⬜ Pending |
+| 3 | [Specific mitigation implementation] | Day Z | ⬜ Pending |
+
+**Status Legend**:
+- ⬜ Pending: Not yet implemented
+- 🔄 In Progress: Currently being addressed
+- ✅ Complete: Mitigation implemented and tested
+- ❌ Blocked: Cannot proceed (escalate)
+
+**Example** (from Signal Processing):
+| Risk # | Action Required | Day | Status |
+|--------|-----------------|-----|--------|
+| 1 | Implement `buildDegradedContext()` for K8s API failures | Day 3 | ⬜ Pending |
+| 2 | Add Rego timeout (100ms) and fallback matrix | Day 5 | ⬜ Pending |
+| 3 | Use `audit.NewBufferedStore()` with retry | Day 8 | ⬜ Pending |
+
+**Validation**: Update status to ✅ Complete when mitigation is implemented AND tested.
+
+---
+
+## 📋 **Files Affected Section** ⭐ V2.8 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**Purpose**: Document all files that will be created, modified, or deleted during implementation.
+
+### **Files Affected Template**
+
+#### **New Files** (to be created)
+| File | Purpose | Day |
+|------|---------|-----|
+| `pkg/[service]/types.go` | Core types and interfaces | Day 1 |
+| `pkg/[service]/[component].go` | [Component] implementation | Day 2-3 |
+| `test/unit/[service]/[component]_test.go` | Unit tests | Day 8 |
+| `test/integration/[service]/[feature]_test.go` | Integration tests | Day 9 |
+| `test/e2e/[service]/[workflow]_test.go` | E2E tests | Day 10 |
+
+#### **Modified Files** (existing files to update)
+| File | Changes | Day |
+|------|---------|-----|
+| `cmd/[service]/main.go` | Add new component initialization | Day 7 |
+| `pkg/[service]/server.go` | Register new handlers | Day 7 |
+| `config/[service]/config.yaml` | Add new configuration options | Day 1 |
+
+#### **Deleted Files** (obsolete files to remove)
+| File | Reason | Day |
+|------|--------|-----|
+| `pkg/[service]/deprecated_*.go` | Replaced by new implementation | Day 6 |
+
+**Validation**: Run `git status` at end of each day to verify file changes match plan.
+
+---
+
+## 🔄 **Enhancement Application Checklist** ⭐ V2.8 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**Purpose**: Track which patterns and enhancements have been applied to which implementation days.
+
+### **Enhancement Tracking Template**
+
+| Enhancement | Applied To | Status | Notes |
+|-------------|------------|--------|-------|
+| **Error Handling Philosophy** | Days 2-6 | ⬜ Pending | Apply error categories A-E |
+| **Service-Specific Error Categories** | Day 6 EOD | ⬜ Pending | Document 5 error categories |
+| **Retry with Exponential Backoff** | Day 3 | ⬜ Pending | External API calls |
+| **Circuit Breaker Pattern** | Day 4 | ⬜ Pending | External dependencies |
+| **Graceful Degradation** | Day 5 | ⬜ Pending | Cache fallback |
+| **Metrics Cardinality Audit** | Day 7 | ⬜ Pending | Per DD-005 |
+| **Integration Test Anti-Flaky** | Day 9 | ⬜ Pending | Eventually() pattern |
+| **Production Runbooks** | Day 12 | ⬜ Pending | 2-3 runbooks |
+
+### **Day-by-Day Enhancement Application**
+
+**Day 2** (Core Logic Start):
+- [ ] Apply error classification for primary component (Category A, D)
+
+**Day 3** (External Dependencies):
+- [ ] Implement retry with exponential backoff (Category B)
+- [ ] Add auth error handling (Category C)
+
+**Day 4** (Status Management):
+- [ ] Add optimistic locking for status updates (Category D)
+
+**Day 5** (Resilience):
+- [ ] Add graceful degradation for failures (Category E)
+
+**Day 6** (Error Handling EOD):
+- [ ] Document all 5 error categories in Error Handling Philosophy
+
+**Day 7** (Metrics):
+- [ ] Complete Metrics Cardinality Audit per DD-005
+
+**Day 8-9** (Testing):
+- [ ] Apply anti-flaky patterns (Eventually(), 30s timeout)
+- [ ] Test all edge case categories
+
+**Day 12** (Production Readiness):
+- [ ] Create 2-3 production runbooks
+- [ ] Add Prometheus metrics for runbook automation
+
+---
+
+## 📋 **API Design Patterns** ⭐ V2.6 NEW
+
+### **DD-API-001: HTTP Header vs JSON Body Pattern**
+
+**PRINCIPLE**: Business data goes in JSON body; infrastructure data goes in HTTP headers.
+
+| Data Type | Transport | Examples |
+|-----------|-----------|----------|
+| **Business Logic** | JSON Body | `reason`, `workflow_id`, `event_type`, `resource_id` |
+| **Infrastructure** | HTTP Headers | `X-Request-ID`, `X-Correlation-ID`, `X-Trace-ID` |
+| **Security** | HTTP Headers | `Authorization`, `X-API-Key` |
+
+**Rationale**:
+1. **Audit Trail Integrity**: JSON body preserved through proxies; headers can be stripped
+2. **Consistency**: All mutations use JSON body
+3. **SDK Generation**: OpenAPI generators handle JSON body automatically
+4. **Logging**: Request body logged as single unit
+
+**Example - Correct Pattern**:
+```bash
+# ✅ Business data in JSON body
+curl -X DELETE http://api/v1/workflows/wf-123 \
+  -H "Content-Type: application/json" \
+  -H "X-Request-ID: req-456" \           # Infrastructure - OK in header
+  -H "X-Correlation-ID: corr-789" \      # Infrastructure - OK in header
+  -d '{
+    "reason": "Deprecated - replaced by v2"  # Business data - MUST be in body
+  }'
+```
+
+**Example - Incorrect Pattern**:
+```bash
+# ❌ Business data in HTTP header
+curl -X DELETE http://api/v1/workflows/wf-123 \
+  -H "X-Disable-Reason: Deprecated"  # Business data - should be in body
+```
+
+**Cross-Reference**: [DD-API-001](../../architecture/decisions/DD-API-001-http-header-vs-json-body-pattern.md)
+
+---
+
 ## Day-by-Day Breakdown
 
 ### Day 1: Foundation (8h)
+
+#### **Pre-Phase: OpenAPI Spec Update** (30 min) ⭐ V2.6 NEW - **SCOPE: STATELESS HTTP SERVICES**
+
+> **APPLIES TO**: Stateless HTTP services only. Skip for CRD controllers.
+
+Before implementing handlers, update OpenAPI spec with new endpoints:
+
+**File**: `docs/services/stateless/[service]/openapi/v1.yaml`
+
+**Checklist**:
+- [ ] Define request schemas (JSON body per DD-API-001)
+- [ ] Define response schemas (success + error)
+- [ ] Document error responses (RFC 7807 per DD-004)
+- [ ] Validate business data is in JSON body (not headers)
+- [ ] Add examples for each endpoint
+
+**Example OpenAPI Snippet**:
+```yaml
+paths:
+  /api/v1/[resources]:
+    post:
+      summary: Create a new [resource]
+      operationId: create[Resource]
+      tags: [[Resource] Management]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Create[Resource]Request'
+      responses:
+        '201':
+          description: [Resource] created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/[Resource]Response'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: [Resource] already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+```
+
+**Benefits**:
+- Documents API contract before implementation
+- Enables client SDK generation for tests
+- Validates request/response schemas early
+- Ensures DD-API-001 compliance (business data in body)
+
+---
 
 #### ANALYSIS Phase (1h)
 **Search existing patterns:**
@@ -372,12 +1268,105 @@ grep -r "relevant patterns" pkg/ cmd/ --include="*.go"
 **Integration points:**
 - Main app: `cmd/[service]/main.go`
 - Business logic: `pkg/[service]/`
-- Tests: `test/unit/[service]/`, `test/integration/[service]/`
+- Tests: `test/unit/[service]/`, `test/integration/[service]/`, `test/e2e/[service]/`
 
 **Success criteria:**
 - [Performance metric 1] (target: X)
 - [Performance metric 2] (target: Y)
 - [Functional requirement] verified
+
+---
+
+### **Test Scenarios by Component** (Define Upfront per TDD)
+
+> **IMPORTANT**: Define concrete test scenarios BEFORE implementation. This aligns with TDD - know what you're testing before writing code.
+
+#### **[Component 1]** (`test/unit/[service]/[component1]_test.go`)
+
+**Happy Path (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| C1-HP-01 | [Primary success case] | [Valid input description] | [Expected result] |
+| C1-HP-02 | [Secondary success case] | [Valid input description] | [Expected result] |
+| C1-HP-03 | [Variation success case] | [Valid input description] | [Expected result] |
+
+**Edge Cases (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| C1-EC-01 | [Boundary condition] | [Edge input] | [Expected handling] |
+| C1-EC-02 | [Empty/nil handling] | Empty/nil value | [Graceful handling, no panic] |
+| C1-EC-03 | [Maximum size handling] | Max size input | [Handles within limits] |
+| C1-EC-04 | [Concurrent access] | Parallel requests | [Thread-safe operation] |
+
+**Error Handling (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| C1-ER-01 | [External dependency failure] | Valid input, dependency down | [Error with appropriate code] |
+| C1-ER-02 | [Timeout scenario] | Valid input, slow response | [Timeout error, no hang] |
+| C1-ER-03 | [Validation failure] | Invalid input | [Validation error returned] |
+| C1-ER-04 | [Context cancellation] | Valid input, context cancelled | [Returns context.Canceled] |
+
+---
+
+#### **[Component 2]** (`test/unit/[service]/[component2]_test.go`)
+
+**Happy Path (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| C2-HP-01 | [Primary success case] | [Valid input] | [Expected result] |
+
+**Edge Cases (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| C2-EC-01 | [Boundary condition] | [Edge input] | [Expected handling] |
+
+**Error Handling (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| C2-ER-01 | [Failure scenario] | [Problem input] | [Error handling] |
+
+---
+
+#### **[Reconciler/Controller]** (`test/unit/[service]/reconciler_test.go`) - FOR CRD CONTROLLERS
+
+**Happy Path (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| R-HP-01 | Full happy path | Valid CR | Status=Completed, all fields populated |
+| R-HP-02 | Phase transition Pending→Processing | New CR | Status.Phase="Processing" |
+| R-HP-03 | Phase transition Processing→Complete | Processed CR | Status.Phase="Completed" |
+| R-HP-04 | Finalizer lifecycle | New CR, then delete | Finalizer added, then removed after cleanup |
+
+**Edge Cases (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| R-EC-01 | CR deleted during processing | CR deleted mid-reconcile | Graceful termination |
+| R-EC-02 | Already completed CR | CR with Status=Completed | No-op, no requeue |
+| R-EC-03 | Concurrent reconciles | Same CR reconciled twice | Only one succeeds (optimistic locking) |
+
+**Error Handling (X tests)**:
+| ID | Scenario | Input | Expected Outcome |
+|----|----------|-------|------------------|
+| R-ER-01 | K8s API unavailable | CR, API server down | Requeue with exponential backoff |
+| R-ER-02 | Component failure | CR, internal error | Status=Failed, error in conditions |
+| R-ER-03 | Status update conflict | CR, concurrent update | Retries with fresh version |
+
+---
+
+**Test Count Summary Template**:
+
+| Component | Happy Path | Edge Cases | Error Handling | **Total** |
+|-----------|------------|------------|----------------|-----------|
+| [Component1] | X | X | X | **X** |
+| [Component2] | X | X | X | **X** |
+| [Component3] | X | X | X | **X** |
+| [Reconciler] | X | X | X | **X** |
+| **Total** | **X** | **X** | **X** | **X** |
+
+> **Note**: Realistic test counts based on existing services:
+> - Gateway: 275 unit, 143 integration tests
+> - Data Storage: 392 unit, 160 integration tests
+> - CRD Controller (medium complexity): 100-150 unit, 50-80 integration tests
 
 #### DO-DISCOVERY (6h)
 **Create package structure:**
@@ -511,7 +1500,7 @@ var _ = Describe("BR-[CATEGORY]-XXX: [Component Name]", func() {
 
 ---
 
-## 📖 Error Handling Philosophy Template ⭐ V2.0
+### 📖 Error Handling Philosophy Template ⭐ V2.0 + V2.8 ENHANCED
 
 **⚠️ MANDATORY**: Create this document at end of Day 6 to establish consistent error handling across all components.
 
@@ -554,6 +1543,73 @@ All errors fall into three categories:
 - **Examples**: Missing required fields, invalid formats, out-of-range values
 - **Strategy**: Return validation error immediately, do not retry
 - **Max Retries**: 0 (no retry)
+
+---
+
+## 🏷️ **Service-Specific Error Categories** ⭐ V2.8 NEW
+
+> **MANDATORY**: Define 5 error categories (A-E) specific to your service. These categories map to the generic classification above but provide service-specific context.
+
+### **Category Template** (Customize for your service)
+
+#### **Category A: [Resource] Not Found**
+- **When**: [Describe when this error occurs]
+- **Action**: Log deletion, remove from retry queue
+- **Recovery**: Normal (no action needed)
+- **Example**: CRD deleted during reconciliation
+
+#### **Category B: [External API] Errors** (Retry with Backoff)
+- **When**: [External service] timeout, rate limiting, 5xx errors
+- **Action**: Exponential backoff (30s → 60s → 120s → 240s → 480s)
+- **Recovery**: Automatic retry up to 5 attempts, then mark as failed
+- **Example**: Slack webhook timeout, Data Storage API unavailable
+
+#### **Category C: [Authentication/Authorization] Errors** (User Error)
+- **When**: 401/403 auth errors, invalid credentials
+- **Action**: Mark as failed immediately, create event
+- **Recovery**: Manual (fix configuration)
+- **Example**: Invalid API key, expired token
+
+#### **Category D: [Status/State] Update Conflicts**
+- **When**: Multiple processes updating same resource simultaneously
+- **Action**: Retry with optimistic locking
+- **Recovery**: Automatic (retry status update)
+- **Example**: CRD status update conflict, database row lock
+
+#### **Category E: [Data Processing] Failures**
+- **When**: Data transformation error, malformed input
+- **Action**: Log error, apply graceful degradation
+- **Recovery**: Automatic (degraded operation)
+- **Example**: Redaction logic error, JSON parsing failure
+
+### **Service-Specific Examples**
+
+**Notification Controller**:
+| Category | Specific Error | Action |
+|----------|----------------|--------|
+| A | NotificationRequest deleted | Log, remove from queue |
+| B | Slack API 5xx | Retry with backoff |
+| C | Invalid Slack webhook | Fail immediately |
+| D | Status update conflict | Retry with optimistic locking |
+| E | Sanitization failure | Send with "[REDACTED]" placeholder |
+
+**Gateway Service**:
+| Category | Specific Error | Action |
+|----------|----------------|--------|
+| A | Signal already processed | Skip (idempotent) |
+| B | K8s API 503 | Retry with backoff |
+| C | Invalid webhook signature | Reject immediately |
+| D | Redis write conflict | Retry |
+| E | Payload parsing failure | Return 400 Bad Request |
+
+**Data Storage Service**:
+| Category | Specific Error | Action |
+|----------|----------------|--------|
+| A | Workflow not found | Return 404 |
+| B | PostgreSQL connection timeout | Retry with backoff |
+| C | Invalid API token | Return 401 |
+| D | Row lock timeout | Retry transaction |
+| E | Embedding generation failure | Return 500 with details |
 
 ---
 
@@ -1177,7 +2233,7 @@ var _ = Describe("BR-XXX-XXX: Metrics Recording", func() {
 ---
 
 **Validation Checklist**:
-- [ ] 10+ metrics defined
+- [ ] Metrics defined for each business-critical operation (not a fixed count - driven by business value)
 - [ ] Metrics registered with promauto (automatic registration)
 - [ ] Labels used for dimension breakdown (operation, status, error_type)
 - [ ] Histograms for duration/latency (with appropriate buckets)
@@ -1187,6 +2243,123 @@ var _ = Describe("BR-XXX-XXX: Metrics Recording", func() {
 - [ ] Metrics endpoint exposed (`:9090/metrics`)
 - [ ] Metrics tested with prometheus/testutil
 - [ ] ServiceMonitor created (Kubernetes Prometheus Operator)
+- [ ] Cardinality audit completed (see Metrics Cardinality Audit section below)
+
+---
+
+### 📊 **Metrics Cardinality Audit** ⭐ V2.8 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**⚠️ MANDATORY**: Audit all Prometheus metrics for high-cardinality label combinations per DD-005.
+
+**Purpose**: Prevent Prometheus memory explosion from unbounded label values.
+
+**Target**: Keep total unique metric combinations < 10,000 per service (per DD-005 § 3.1)
+
+**File**: `docs/services/[service-type]/[service-name]/METRICS_CARDINALITY_AUDIT.md`
+
+#### **Cardinality Audit Template**
+
+```markdown
+# [Service Name] Metrics Cardinality Audit
+
+**Date**: YYYY-MM-DD
+**Status**: ✅ SAFE | ⚠️ MITIGATED | ❌ RISK
+**Design Decision**: DD-005 § 3.1 - Metrics Cardinality Management
+
+---
+
+## 📊 **Metrics Inventory**
+
+### **[Category 1] Metrics**
+
+| Metric | Labels | Cardinality | Status |
+|--------|--------|-------------|--------|
+| `[service]_[metric1]_total` | `operation`, `status` | **Low** (N×M) | ✅ SAFE |
+| `[service]_[metric2]_seconds` | `operation` | **Low** (N) | ✅ SAFE |
+
+**Analysis**:
+- `operation`: Fixed set ([list values]) → **N values**
+- `status`: Fixed set ("success", "error") → **2 values**
+- **Total combinations**: N × 2 = **X unique metrics** ✅
+
+---
+
+### **HTTP Metrics** ⚠️ **HIGHEST RISK**
+
+| Metric | Labels | Cardinality | Status |
+|--------|--------|-------------|--------|
+| `[service]_http_requests_total` | `method`, `path`, `status` | **Medium** | ✅ **MITIGATED** |
+
+**Risk Analysis BEFORE Mitigation**:
+- `method`: Fixed set ("GET", "POST", "PUT", "DELETE") → **4 values**
+- `path`: **UNBOUNDED** (could include query params or IDs) → **∞ values** ❌
+- `status`: Fixed set (HTTP status codes) → **~20 values**
+- **Worst case**: 4 × ∞ × 20 = **UNBOUNDED** ❌ **CARDINALITY EXPLOSION RISK**
+
+**Mitigation Applied**:
+- Path normalization: `/api/v1/resources/123` → `/api/v1/resources/{id}`
+- Query parameter stripping: `/api/v1/search?q=foo` → `/api/v1/search`
+
+**After Mitigation**:
+- `path`: Fixed set (normalized endpoints) → **~10 values**
+- **Total combinations**: 4 × 10 × 20 = **800 unique metrics** ✅
+
+---
+
+## 🛡️ **Cardinality Protection Patterns**
+
+### **Pattern 1: Path Normalization** (HTTP Services)
+
+**File**: `pkg/[service]/server/path_normalizer.go`
+
+**Implementation**:
+- Remove query parameters before recording metric
+- Replace UUIDs with `{id}` placeholder
+- Replace numeric IDs with `{id}` placeholder
+
+**Example**: `/api/v1/resources/123?page=2` → `/api/v1/resources/{id}`
+
+### **Pattern 2: Label Value Allowlist**
+
+**Implementation**:
+- Define fixed set of allowed label values
+- Bucket unknown values as "other"
+- Never use user input directly as label values
+
+**Example**: Only allow `create`, `read`, `update`, `delete` operations; anything else → `other`
+
+---
+
+## 📈 **Total Cardinality Summary**
+
+| Category | Metrics | Max Cardinality | Status |
+|----------|---------|-----------------|--------|
+| Operations | 3 | 50 | ✅ |
+| HTTP | 2 | 800 | ✅ |
+| Cache | 2 | 6 | ✅ |
+| Database | 2 | 20 | ✅ |
+| **TOTAL** | **9** | **~900** | ✅ **ACCEPTABLE** |
+
+**Cardinality Thresholds** (per DD-005):
+- **< 1,000**: ✅ Excellent - no concerns
+- **1,000 - 5,000**: ⚠️ Acceptable - monitor growth
+- **5,000 - 10,000**: ⚠️ Warning - review and optimize
+- **> 10,000**: ❌ Critical - must reduce before production
+
+**Note**: Most well-designed services should have < 1,000 unique metric combinations. The 10,000 limit in DD-005 is a hard ceiling, not a target.
+
+---
+
+## ✅ **Audit Checklist**
+
+- [ ] All metrics inventoried
+- [ ] Label values are bounded (no user input, no IDs)
+- [ ] Path normalization implemented (HTTP services)
+- [ ] Total cardinality < 1,000 (ideal) or < 5,000 (acceptable)
+- [ ] High-risk metrics (HTTP, user-facing) mitigated
+```
+
+---
 
 #### Main Application Integration (2h)
 - Component wiring in main.go
@@ -1203,11 +2376,12 @@ var _ = Describe("BR-XXX-XXX: Metrics Recording", func() {
 
 ---
 
-### Day 8: Integration-First Testing ⭐ (8h)
+### Day 8: Unit Tests (8h)
 
-**CRITICAL CHANGE FROM TRADITIONAL TDD**: Integration tests BEFORE unit tests
+**Standard Methodology**: Unit tests first, validating component logic in isolation.
+**Parallel Execution**: 4 concurrent processes (`ginkgo -p -procs=4` or `go test -p 4`)
 
-#### Morning: 5 Critical Integration Tests (4h) ⭐
+#### All Component Unit Tests (8h)
 
 **Test Infrastructure Setup**: Choose based on your `[TEST_ENVIRONMENT]` decision ⭐ **v1.3**
 
@@ -2364,13 +3538,280 @@ Before releasing:
 - Failure recovery
 
 #### E2E Test Setup (2h)
-- Kind cluster setup
-- Service deployment
-- Dependencies deployment
+
+**Reference**: [DD-TEST-001: Port Allocation Strategy](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) (AUTHORITATIVE)
+
+**⚠️ MANDATORY**: Use Kind NodePort instead of kubectl port-forward for E2E tests.
+
+**Why NodePort?**
+| Aspect | Port-Forward | NodePort |
+|--------|--------------|----------|
+| **Stability** | Crashes under concurrent load | 100% stable |
+| **Performance** | Slow (proxy overhead) | Fast (direct connection) |
+| **Parallelism** | Limited to ~4 processes | Unlimited (all CPUs) |
+| **Evidence** | Gateway: 17% failure rate at 12 procs | Gateway: 0% failure rate, 6.4x speedup |
+
+**Step 1: Create Kind Config** (`test/infrastructure/kind-[service]-config.yaml`)
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  # Service API (if HTTP endpoints) - use port from DD-TEST-001
+  - containerPort: {{NODEPORT}}     # e.g., 30082 for Signal Processing
+    hostPort: {{HOST_PORT}}         # e.g., 8082
+    protocol: TCP
+  # Metrics endpoint (always needed for controllers)
+  - containerPort: {{METRICS_NODEPORT}}  # e.g., 30182
+    hostPort: {{METRICS_HOST_PORT}}      # e.g., 9182
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+- role: worker
+```
+
+**Step 2: Configure Service as NodePort** (`test/e2e/[service]/deployment.yaml`)
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: [service]-service
+spec:
+  type: NodePort  # ← MANDATORY: NodePort, NOT ClusterIP
+  selector:
+    app: [service]
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    nodePort: {{METRICS_NODEPORT}}  # From DD-TEST-001
+```
+
+**Step 3: Test Suite Uses NodePort Directly** (NO port-forward)
+```go
+// SynchronizedBeforeSuite - NodePort pattern (Gateway reference)
+var _ = SynchronizedBeforeSuite(
+    func() []byte {
+        // Process 1: Create Kind cluster and deploy service (ONCE)
+        err := infrastructure.CreateCluster(clusterName, kubeconfigPath, GinkgoWriter)
+        Expect(err).ToNot(HaveOccurred())
+
+        err = infrastructure.DeployService(ctx, namespace, kubeconfigPath, GinkgoWriter)
+        Expect(err).ToNot(HaveOccurred())
+
+        return []byte(kubeconfigPath)
+    },
+    func(data []byte) {
+        // ALL processes: Use NodePort directly (no port-forward)
+        kubeconfigPath = string(data)
+
+        // NodePort URL - same for all parallel processes
+        serviceURL = "http://localhost:{{HOST_PORT}}"     // From DD-TEST-001
+        metricsURL = "http://localhost:{{METRICS_HOST_PORT}}/metrics"
+
+        // Wait for service readiness via NodePort
+        Eventually(func() error {
+            resp, err := http.Get(metricsURL)
+            if err != nil {
+                return err
+            }
+            defer resp.Body.Close()
+            return nil
+        }, 60*time.Second, 2*time.Second).Should(Succeed())
+    },
+)
+```
+
+**Port Allocation Consolidated Reference** ⭐ V3.0 ENHANCED (from DD-TEST-001):
+
+| Service | Internal Health | Internal Metrics | Host Port | NodePort | Metrics NodePort |
+|---------|-----------------|------------------|-----------|----------|------------------|
+| Gateway | 8081 | 9090 | 8080 | 30080 | 30090 |
+| Data Storage | 8081 | 9090 | 8081 | 30081 | 30181 |
+| Signal Processing | 8081 | 9090 | 8082 | 30082 | 30182 |
+| AI Analysis | 8081 | 9090 | 8083 | 30083 | 30183 |
+| Notification | 8081 | 9090 | 8086 | 30086 | 30186 |
+| Remediation Orchestrator | 8081 | 9090 | 8087 | 30087 | 30187 |
+
+**Port Type Definitions**:
+- **Internal Health**: Pod-internal health/readiness probes (`:8081/health`, `:8081/ready`)
+- **Internal Metrics**: Pod-internal Prometheus metrics (`:9090/metrics`)
+- **Host Port**: Docker/Podman host mapping for integration tests
+- **NodePort**: Kind cluster NodePort for E2E tests (no port-forward needed)
+- **Metrics NodePort**: Prometheus scraping in Kind cluster
+
+**Full table and rationale**: See [DD-TEST-001](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md)
+
+---
+
+#### **E2E Test Helper Patterns** ⭐ V2.6 NEW - **SCOPE: STATELESS HTTP SERVICES**
+
+> **APPLIES TO**: Stateless HTTP services with CRUD operations. CRD controllers use K8s client helpers instead.
+
+Create reusable test helpers for API operations to reduce E2E test duplication and ensure consistent API usage.
+
+**File**: `test/e2e/[service]/[service]_helpers.go`
+
+```go
+package [service]
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+// CreateTestResource creates a resource via REST API
+// Returns response for assertion (caller checks status code)
+func CreateTestResource(httpClient *http.Client, baseURL string, resource map[string]interface{}) (*http.Response, error) {
+    body, err := json.Marshal(resource)
+    if err != nil {
+        return nil, fmt.Errorf("failed to marshal resource: %w", err)
+    }
+    return httpClient.Post(baseURL+"/api/v1/[resources]", "application/json", bytes.NewBuffer(body))
+}
+
+// GetTestResource retrieves a resource by ID
+func GetTestResource(httpClient *http.Client, baseURL, resourceID string) (*http.Response, error) {
+    return httpClient.Get(fmt.Sprintf("%s/api/v1/[resources]/%s", baseURL, resourceID))
+}
+
+// DeleteTestResource disables/deletes a resource
+// Reason is passed in JSON body per DD-API-001 (not HTTP header)
+func DeleteTestResource(httpClient *http.Client, baseURL, resourceID, reason string) (*http.Response, error) {
+    body, _ := json.Marshal(map[string]string{"reason": reason})
+    req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v1/[resources]/%s", baseURL, resourceID), bytes.NewBuffer(body))
+    if err != nil {
+        return nil, err
+    }
+    req.Header.Set("Content-Type", "application/json")
+    return httpClient.Do(req)
+}
+
+// SearchTestResources searches resources with filters
+func SearchTestResources(httpClient *http.Client, baseURL string, filters map[string]interface{}) (*http.Response, error) {
+    body, err := json.Marshal(filters)
+    if err != nil {
+        return nil, fmt.Errorf("failed to marshal filters: %w", err)
+    }
+    return httpClient.Post(baseURL+"/api/v1/[resources]/search", "application/json", bytes.NewBuffer(body))
+}
+
+// WaitForResourceReady waits until a resource reaches expected state
+func WaitForResourceReady(httpClient *http.Client, baseURL, resourceID string, timeout time.Duration) error {
+    return Eventually(func() error {
+        resp, err := GetTestResource(httpClient, baseURL, resourceID)
+        if err != nil {
+            return err
+        }
+        defer resp.Body.Close()
+        if resp.StatusCode != http.StatusOK {
+            return fmt.Errorf("resource not ready: status %d", resp.StatusCode)
+        }
+        return nil
+    }, timeout, 2*time.Second).Should(Succeed())
+}
+```
+
+**Benefits**:
+- **Consistency**: All tests use same API patterns
+- **DD-API-001 Compliance**: Helpers enforce JSON body for business data
+- **Maintainability**: API changes require updating one file
+- **Readability**: Tests focus on assertions, not HTTP mechanics
+
+**Usage in E2E Tests**:
+```go
+var _ = Describe("Resource E2E", func() {
+    It("should create and retrieve resource", func() {
+        // Create
+        resp, err := CreateTestResource(httpClient, serviceURL, map[string]interface{}{
+            "id": "test-001",
+            "name": "Test Resource",
+        })
+        Expect(err).ToNot(HaveOccurred())
+        Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+
+        // Retrieve
+        resp, err = GetTestResource(httpClient, serviceURL, "test-001")
+        Expect(err).ToNot(HaveOccurred())
+        Expect(resp.StatusCode).To(Equal(http.StatusOK))
+    })
+})
+```
+
+---
+
+#### **CRD Controller E2E Helper Patterns** ⭐ V2.6 NEW - **SCOPE: CRD CONTROLLERS**
+
+> **APPLIES TO**: CRD controllers. Uses K8s client instead of HTTP client.
+
+**File**: `test/e2e/[controller]/[controller]_helpers.go`
+
+```go
+package [controller]
+
+import (
+    "context"
+    "fmt"
+    "time"
+
+    . "github.com/onsi/gomega"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+
+    [group]v1 "[module]/api/[group]/v1"
+)
+
+// CreateTestCR creates a CR for testing
+func CreateTestCR(ctx context.Context, k8sClient client.Client, namespace, name string, spec [group]v1.[Resource]Spec) (*[group]v1.[Resource], error) {
+    cr := &[group]v1.[Resource]{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      name,
+            Namespace: namespace,
+        },
+        Spec: spec,
+    }
+    err := k8sClient.Create(ctx, cr)
+    return cr, err
+}
+
+// WaitForCRStatus waits until CR reaches expected status phase
+func WaitForCRStatus(ctx context.Context, k8sClient client.Client, namespace, name string, expectedPhase string, timeout time.Duration) error {
+    return Eventually(func() string {
+        cr := &[group]v1.[Resource]{}
+        err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cr)
+        if err != nil {
+            return ""
+        }
+        return cr.Status.Phase
+    }, timeout, 2*time.Second).Should(Equal(expectedPhase))
+}
+
+// DeleteTestCR deletes a CR and waits for cleanup
+func DeleteTestCR(ctx context.Context, k8sClient client.Client, namespace, name string) error {
+    cr := &[group]v1.[Resource]{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      name,
+            Namespace: namespace,
+        },
+    }
+    return k8sClient.Delete(ctx, cr)
+}
+```
+
+---
 
 #### E2E Test Execution (2h)
 - Complete workflow tests
 - Real environment validation
+- Parallel execution with 4 processes (`ginkgo -p -procs=4`)
 
 ---
 
@@ -2426,21 +3867,114 @@ make test-[service]
 
 ## Configuration
 
-### Required Environment Variables
+### Controller Manager Options (CLI flags - NOT configurable in YAML)
+
+> **IMPORTANT**: These are hardcoded or set via CLI flags for safety reasons.
+> Reference: [DD-TEST-001](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) for port allocation.
+
+| Option | Default | Description | Rationale |
+|--------|---------|-------------|-----------|
+| `metrics-bind-address` | `:9090` | Prometheus metrics endpoint | Standard port for all services |
+| `health-probe-bind-address` | `:8081` | Liveness/readiness probes | Standard health port |
+| `leader-elect` | `true` (production) | Leader election for HA | **Always enabled** in production to prevent split-brain |
+| `leader-election-id` | `[service].kubernaut.ai` | Unique leader election ID | Must be unique per controller (see [DD-CRD-001](../architecture/decisions/DD-CRD-001-api-group-domain-selection.md)) |
+
+```go
+// pkg/[service]/config/controller.go
+package config
+
+// ControllerConfig holds controller-manager options (CLI flags, not YAML).
+// These are NOT exposed in config.yaml for safety reasons.
+type ControllerConfig struct {
+    // MetricsAddr is the address for Prometheus metrics endpoint.
+    // Default: ":9090" - hardcoded, not configurable.
+    MetricsAddr string
+
+    // HealthProbeAddr is the address for health probe endpoint.
+    // Default: ":8081" - hardcoded, not configurable.
+    HealthProbeAddr string
+
+    // LeaderElection is ALWAYS enabled for CRD controllers in production.
+    // This prevents split-brain scenarios. Not configurable.
+    LeaderElection bool
+
+    // LeaderElectionID uniquely identifies this controller for leader election.
+    LeaderElectionID string
+}
+
+// DefaultControllerConfig returns safe defaults for CRD controllers.
+func DefaultControllerConfig() ControllerConfig {
+    return ControllerConfig{
+        MetricsAddr:      ":9090",
+        HealthProbeAddr:  ":8081",
+        LeaderElection:   true, // ALWAYS true in production
+        LeaderElectionID: "[service].kubernaut.ai", // DD-CRD-001: Use .ai domain
+    }
+}
+```
+
+### Business Configuration (config.yaml)
+
+> **IMPORTANT**: Only business logic configuration goes in YAML. Controller infrastructure is hardcoded.
+
 \`\`\`yaml
-# config/development.yaml example
+# config/[service].yaml example
 [service]:
-  setting1: "value1"  # [Description of what this controls]
-  setting2: 30        # [Default: 30, range: 10-300]
-  setting3: true      # [Enable/disable specific feature]
+  # Business-specific settings
+  setting1: "value1"      # [Description of what this controls]
+  setting2: 30            # [Default: 30, range: 10-300]
+
+  # External dependencies
+  dependencies:
+    data_storage_url: "http://data-storage.kubernaut-system.svc.cluster.local:8080"
+    timeout: 5s
+
+  # Audit configuration (per ADR-038)
+  audit:
+    buffer_size: 1000     # In-memory buffer size for fire-and-forget writes
+    flush_interval: 5s    # Background flush interval
 \`\`\`
+
+```go
+// pkg/[service]/config/config.go
+package config
+
+import "time"
+
+// Config holds business configuration for the service.
+// Note: Controller infrastructure (ports, leader election) is NOT here.
+type Config struct {
+    // Business-specific settings
+    Setting1 string `yaml:"setting1" validate:"required"`
+    Setting2 int    `yaml:"setting2" validate:"min=10,max=300"`
+
+    // Dependencies
+    Dependencies DependencyConfig `yaml:"dependencies" validate:"required"`
+
+    // Audit (per ADR-038 - fire-and-forget pattern)
+    Audit AuditConfig `yaml:"audit" validate:"required"`
+}
+
+type DependencyConfig struct {
+    DataStorageURL string        `yaml:"data_storage_url" validate:"required,url"`
+    Timeout        time.Duration `yaml:"timeout" validate:"required"`
+}
+
+type AuditConfig struct {
+    BufferSize    int           `yaml:"buffer_size" validate:"min=100,max=10000"`
+    FlushInterval time.Duration `yaml:"flush_interval" validate:"required"`
+}
+```
 
 ### Configuration Options
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `setting1` | string | required | [What it does] |
 | `setting2` | int | 30 | [Valid range and impact] |
-| `setting3` | bool | true | [When to enable/disable] |
+| `dependencies.data_storage_url` | string | required | Data Storage Service URL |
+| `dependencies.timeout` | duration | 5s | HTTP client timeout |
+| `audit.buffer_size` | int | 1000 | Fire-and-forget buffer size (ADR-038) |
+| `audit.flush_interval` | duration | 5s | Background flush interval |
 
 ## API Reference (for HTTP services)
 
@@ -2863,7 +4397,7 @@ go test -v ./test/unit/[service]/ -ginkgo.focus="specific test"
 ## 2. Operational Validation (Weight: 25%)
 
 ### 2.1 Observability - Metrics
-- [ ] **10+ Prometheus metrics** defined and exported
+- [ ] **Business-critical Prometheus metrics** defined and exported (count driven by business value, not arbitrary threshold)
   - **File**: `pkg/[service]/metrics/metrics.go`
   - **Endpoint**: `:9090/metrics`
   - **Evidence**: `curl localhost:9090/metrics | grep [service]_ | wc -l` returns 10+
@@ -2890,7 +4424,7 @@ go test -v ./test/unit/[service]/ -ginkgo.focus="specific test"
 ### 2.3 Observability - Health Checks
 - [ ] **Liveness probe** - Returns 200 when process is alive
   - **Endpoint**: `GET /healthz`
-  - **Test**: `curl localhost:8080/healthz` returns 200
+  - **Test**: `curl localhost:8081/healthz` returns 200 (health probe port per DD-TEST-001)
   - **Score**: X/3
 
 - [ ] **Readiness probe** - Returns 200 when ready to serve traffic
@@ -2971,7 +4505,7 @@ go test -v ./test/unit/[service]/ -ginkgo.focus="specific test"
 
 - [ ] **Service manifest** (if applicable)
   - **File**: `deploy/manifests/[service]-service.yaml`
-  - **Evidence**: Service exposes ports for HTTP (8080) and metrics (9090)
+  - **Evidence**: Service exposes ports for health (8081) and metrics (9090). API port (8080) if HTTP service.
   - **Score**: X/3
 
 ### 5.2 Probes Configuration
@@ -3076,6 +4610,330 @@ go test -v ./test/unit/[service]/ -ginkgo.focus="specific test"
 **Monitoring Dashboard**: [Link to Grafana/Prometheus dashboard]
 ```
 
+---
+
+### 🔄 **Rollback Plan Template** ⭐ V2.8 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**Purpose**: Document rollback procedures for significant feature implementations.
+
+**File**: `docs/services/[service]/implementation/ROLLBACK_PLAN.md`
+
+```markdown
+# Rollback Plan - [Feature Name]
+
+**Date**: YYYY-MM-DD
+**Feature**: [Feature being implemented]
+**Rollback Window**: 24 hours post-deployment
+
+---
+
+## 🚨 **Rollback Triggers**
+
+| Trigger | Threshold | Action |
+|---------|-----------|--------|
+| Error rate spike | >5% increase from baseline | Initiate rollback |
+| Latency degradation | P99 >2x baseline | Investigate, consider rollback |
+| Critical functionality broken | Any | Immediate rollback |
+| Data corruption detected | Any | Immediate rollback + incident |
+
+---
+
+## 📋 **Rollback Procedure**
+
+### **Step 1: Verify Rollback Need** (5 min)
+- [ ] Confirm issue is related to new deployment
+- [ ] Check metrics dashboard for anomalies
+- [ ] Review recent logs for errors
+- [ ] Notify on-call team
+
+### **Step 2: Execute Rollback** (10 min)
+
+**For Kubernetes Deployments**:
+\`\`\`bash
+# Option A: Rollback to previous revision
+kubectl rollout undo deployment/[service] -n [namespace]
+
+# Option B: Rollback to specific revision
+kubectl rollout undo deployment/[service] -n [namespace] --to-revision=X
+
+# Verify rollback
+kubectl rollout status deployment/[service] -n [namespace]
+\`\`\`
+
+**For Database Migrations**:
+\`\`\`bash
+# Run down migration
+goose -dir migrations postgres "$DATABASE_URL" down
+
+# Verify schema
+psql "$DATABASE_URL" -c "\d [table_name]"
+\`\`\`
+
+### **Step 3: Verify Rollback Success** (15 min)
+- [ ] Pods running previous version
+- [ ] Error rate returned to baseline
+- [ ] Health checks passing
+- [ ] Critical functionality working
+
+### **Step 4: Post-Rollback Actions**
+- [ ] Create incident report
+- [ ] Notify stakeholders
+- [ ] Schedule root cause analysis
+- [ ] Plan fix and re-deployment
+
+---
+
+## 🛡️ **Rollback Safeguards**
+
+| Safeguard | Implementation |
+|-----------|----------------|
+| **Feature flags** | Disable feature without rollback |
+| **Canary deployment** | Rollback only affected pods |
+| **Database versioning** | Goose migrations with down scripts |
+| **Configuration rollback** | ConfigMap revision history |
+
+---
+
+## 📊 **Rollback Metrics**
+
+Track these metrics during rollback:
+- `deployment_rollback_total` - Number of rollbacks
+- `deployment_rollback_duration_seconds` - Time to complete rollback
+- `service_availability_during_rollback` - Uptime during rollback
+```
+
+---
+
+### 🔧 **Critical Issues Resolved Section** ⭐ V2.8 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**Purpose**: Document critical issues encountered during implementation and their resolutions for future reference.
+
+**File**: `docs/services/[service]/implementation/CRITICAL_ISSUES_RESOLVED.md`
+
+```markdown
+# Critical Issues Resolved - [Service Name]
+
+**Date**: YYYY-MM-DD
+**Implementation Phase**: Day X
+
+---
+
+## 🔧 **Issue Summary**
+
+| Issue # | Title | Severity | Resolution Time | Status |
+|---------|-------|----------|-----------------|--------|
+| 1 | [Issue title] | Critical | Xh | ✅ Resolved |
+| 2 | [Issue title] | High | Xh | ✅ Resolved |
+
+---
+
+## 📋 **Issue Details**
+
+### **Issue #1: [Issue Title]**
+
+**Severity**: Critical | High | Medium
+**Time to Resolve**: X hours
+**Impact**: [What was broken/blocked]
+
+**Problem**:
+[Describe the problem in detail]
+
+**Error Message**:
+\`\`\`
+[Paste actual error message]
+\`\`\`
+
+**Root Cause**:
+[Explain why this happened]
+
+**Solution**:
+[Describe the fix applied]
+
+**Lesson Learned**:
+> **[Key takeaway for future implementations]**
+
+**Prevention**:
+- [ ] Add to pre-implementation checklist
+- [ ] Create automated check
+- [ ] Update documentation
+
+---
+
+### **Issue #2: [Architecture Mismatch Example]**
+
+**Severity**: Critical
+**Time to Resolve**: 2 hours
+**Impact**: Service completely non-functional
+
+**Problem**:
+Segmentation fault (SIGSEGV) during network operations on arm64 (M1 Mac).
+
+**Error Message**:
+\`\`\`
+runtime: unexpected return pc for netpoll_epoll.go
+fatal error: unknown caller pc
+\`\`\`
+
+**Root Cause**:
+Dockerfile hardcoded `ARG GOARCH=amd64`, but running on arm64 architecture.
+
+**Solution**:
+Rebuilt image with `--build-arg GOARCH=arm64` or use multi-arch build.
+
+**Lesson Learned**:
+> **Never hardcode GOARCH in Dockerfiles for multi-arch support. Use `--platform` flag or multi-arch manifests.**
+
+**Prevention**:
+- [x] Added to ADR-027 (Multi-Architecture Build Strategy)
+- [x] CI/CD builds both amd64 and arm64
+
+---
+
+### **Issue #3: [Security Context Example]**
+
+**Severity**: High
+**Time to Resolve**: 30 minutes
+**Impact**: Pod failed to start
+
+**Problem**:
+Kubernetes couldn't verify non-root user.
+
+**Error Message**:
+\`\`\`
+container has runAsNonRoot and image has non-numeric user (context-api-user),
+cannot verify user is non-root
+\`\`\`
+
+**Root Cause**:
+Used string username instead of numeric UID in security context.
+
+**Solution**:
+Added `runAsUser: 1001` to security context.
+
+**Lesson Learned**:
+> **Always specify numeric UIDs when `runAsNonRoot: true`**
+
+**Prevention**:
+- [x] Added to deployment checklist
+- [x] Updated Dockerfile template
+```
+
+---
+
+### 📋 **Pre-Day Validation Checklist** ⭐ V2.8 NEW - **SCOPE: COMMON (ALL SERVICES)**
+
+**Purpose**: Formal validation checkpoint before milestone days (Day 7, Day 10, Day 12).
+
+**File**: `docs/services/[service]/implementation/PRE_DAY_X_VALIDATION.md`
+
+```markdown
+# Pre-Day [X] Validation Results
+
+**Date**: YYYY-MM-DD
+**Validator**: [Name]
+**Status**: ✅ READY | ⚠️ ISSUES | ❌ BLOCKED
+
+---
+
+## 🎯 **Executive Summary**
+
+**Overall Confidence**: XX% (Target: 99%)
+
+| Category | Items Validated | Passed | Status |
+|----------|----------------|--------|--------|
+| **Mandatory Test Compliance** | X files | X | ✅/❌ |
+| **Test Suite** | X tests | X | ✅/❌ |
+| **Business Requirements** | X BRs | X | ✅/❌ |
+| **Performance** | X areas | X | ✅/❌ |
+| **Security** | X areas | X | ✅/❌ |
+| **Documentation** | X docs | X | ✅/❌ |
+| **TOTAL** | **X items** | **X** | ✅/❌ |
+
+**Gap Analysis**: X% confidence gap is due to:
+- [List any gaps and their impact]
+
+**Ready for Day [X]**: ✅ YES | ❌ NO
+
+---
+
+## ✅ **Validation Phases**
+
+### **Phase 1: Test Suite Execution**
+
+**All Tests Passing**: X/X (100%)
+- **Unit Tests**: X/X passing
+- **Integration Tests**: X/X passing
+- **E2E Tests**: X/X passing (if applicable)
+
+**Evidence**:
+\`\`\`
+[Paste test output summary]
+\`\`\`
+
+---
+
+### **Phase 2: Mandatory Compliance**
+
+**Ginkgo/Gomega Compliance**: ✅ 100%
+- [ ] All test files use Ginkgo framework
+- [ ] DescribeTable pattern used where appropriate
+- [ ] No standard Go `testing.T` tests
+
+**Refactoring Completed**:
+| File | Before | After | Lines Saved |
+|------|--------|-------|-------------|
+| `[file]_test.go` | Go table-driven | Ginkgo DescribeTable | X lines |
+
+---
+
+### **Phase 3: Business Requirement Coverage**
+
+**BR Coverage**: X/X BRs (100%)
+
+| BR | Description | Unit | Integration | E2E | Status |
+|----|-------------|------|-------------|-----|--------|
+| BR-XXX-001 | [Description] | ✅ | ✅ | ✅ | ✅ 100% |
+| BR-XXX-002 | [Description] | ✅ | ⬜ | ⬜ | ⚠️ 50% |
+
+---
+
+### **Phase 4: Performance Validation**
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| P99 Latency | <100ms | Xms | ✅/❌ |
+| Throughput | >1000 RPS | X RPS | ✅/❌ |
+| Memory Usage | <256MB | XMB | ✅/❌ |
+
+---
+
+### **Phase 5: Security Validation**
+
+- [ ] Authentication working
+- [ ] Authorization rules enforced
+- [ ] Input validation complete
+- [ ] No sensitive data in logs
+
+---
+
+## 🚨 **Blocking Issues**
+
+| Issue | Severity | Resolution Required | Owner |
+|-------|----------|---------------------|-------|
+| [None] | - | - | - |
+
+---
+
+## ✅ **Sign-off**
+
+**Validation Complete**: ✅ YES
+**Ready for Day [X]**: ✅ YES
+
+**Validator**: _________________ Date: ___________
+```
+
+---
+
 #### File Organization (1h) ⭐
 **File**: `implementation/FILE_ORGANIZATION_PLAN.md`
 
@@ -3179,7 +5037,7 @@ For each common issue:
 ✅ **Phase 2 (Days 4-7)**: Business logic implementation
 - [N] core components implemented
 - Error handling with exponential backoff retry
-- 10+ Prometheus metrics integrated
+- Business-critical Prometheus metrics integrated
 - Health checks and graceful shutdown
 
 ✅ **Phase 3 (Days 8-10)**: Testing
@@ -3354,8 +5212,8 @@ kubectl apply -f deploy/manifests/[service]-deployment.yaml
 
 # Verify
 kubectl rollout status deployment/[service] -n kubernaut
-curl http://[service]:8080/healthz  # Should return 200
-curl http://[service]:9090/metrics  # Should show Prometheus metrics
+curl http://[service]:8081/healthz  # Health probe port (per DD-TEST-001)
+curl http://[service]:9090/metrics  # Prometheus metrics port
 \`\`\`
 
 ### Configuration
@@ -3363,9 +5221,12 @@ curl http://[service]:9090/metrics  # Should show Prometheus metrics
 - `CONFIG_FILE`: Path to configuration YAML (default: `/etc/[service]/config.yaml`)
 - `LOG_LEVEL`: Logging level (default: `info`, options: `debug`, `info`, `warn`, `error`)
 
-**Optional Environment Variables**:
-- `METRICS_PORT`: Prometheus metrics port (default: `9090`)
-- `SERVER_PORT`: HTTP server port (default: `8080`)
+**Fixed Ports (NOT configurable)**:
+> Per [DD-TEST-001](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md), ports are standardized and hardcoded.
+
+- `METRICS_PORT`: `:9090` (Prometheus metrics - hardcoded)
+- `HEALTH_PROBE_PORT`: `:8081` (Liveness/readiness probes - hardcoded)
+- `SERVER_PORT`: `:8080` (HTTP API - only for stateless HTTP services)
 
 ---
 
@@ -3397,8 +5258,11 @@ curl http://[service]:9090/metrics  # Should show Prometheus metrics
 **Log Location**: stdout (captured by Kubernetes)
 
 ### Health Checks
-- **Liveness**: `GET :8080/healthz` - Returns 200 if process is alive
-- **Readiness**: `GET :8080/readyz` - Returns 200 if ready to serve traffic, 503 if unhealthy
+> **Reference**: [DD-TEST-001](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) for port allocation.
+
+- **Liveness**: `GET :8081/healthz` - Returns 200 if process is alive
+- **Readiness**: `GET :8081/readyz` - Returns 200 if ready to serve traffic, 503 if unhealthy
+- **Metrics**: `GET :9090/metrics` - Prometheus metrics endpoint
 
 ---
 
@@ -3515,12 +5379,256 @@ kubectl rollout restart deployment/[service]
 
 ---
 
+### 📚 **Production Runbooks Template** (Day 12 Deliverable)
+
+> **Location**: `docs/services/[service]/runbooks/`
+> **Reference**: Notification Controller v3.2 patterns
+
+### **Runbook Template: [Issue Type]**
+
+```markdown
+# Runbook: [Issue Name]
+
+**Trigger**: [What condition triggers this runbook]
+**Severity**: P1 | P2 | P3 | P4
+**SLA**: [Resolution time target]
+
+## Symptoms
+- [Observable symptom 1]
+- [Observable symptom 2]
+- Metric: `[service]_[metric]` above/below threshold
+
+## Investigation Steps
+
+### Step 1: Verify the Issue
+\`\`\`bash
+# Check metric/logs
+kubectl logs -l app=[service]-controller -n kubernaut-system --since=10m | grep -i "error\|fail"
+curl -s localhost:9090/metrics | grep [service]_
+\`\`\`
+
+### Step 2: Identify Root Cause
+\`\`\`bash
+# Specific diagnostic commands
+kubectl get [resources] -A -o json | jq '[filter]'
+\`\`\`
+
+### Step 3: Resolution Options
+**Option A: [Quick fix]**
+\`\`\`bash
+# Commands for quick fix
+\`\`\`
+
+**Option B: [If Option A fails]**
+\`\`\`bash
+# Alternative commands
+\`\`\`
+
+## Resolution Verification
+\`\`\`bash
+# Verify issue is resolved
+watch -n 5 'kubectl get [resources] -A | grep [filter]'
+\`\`\`
+
+## Escalation
+- If unresolved after [X] minutes → Contact [Team/Person]
+- If data loss suspected → [Escalation procedure]
+
+## Prevention
+- [How to prevent recurrence]
+- [Monitoring improvements]
+```
+
+### **Required Runbooks for CRD Controllers**
+1. **High Failure Rate** (>10% reconciliation failures)
+2. **Stuck Resources** (>5min in non-terminal phase)
+3. **Policy/Configuration Errors** (user misconfiguration)
+
+---
+
+### 🎯 **Edge Case Categories Template** (Days 9-10)
+
+> **Purpose**: Ensure comprehensive edge case testing
+> **Reference**: Notification Controller v3.2 patterns
+
+| Category | Description | Test Pattern |
+|----------|-------------|--------------|
+| **Configuration Changes** | Config updated during operation | Start operation, update config, verify behavior |
+| **Rate Limiting** | External service rate limits | Mock 429 responses, verify backoff |
+| **Large Payloads** | Data exceeds normal size | Create large input, verify no OOM |
+| **Concurrent Operations** | Race conditions | Parallel requests, verify consistency |
+| **Partial Failures** | Some operations succeed, others fail | Mock partial success, verify graceful degradation |
+| **Context Cancellation** | Request cancelled mid-operation | Cancel context, verify cleanup |
+
+### **Edge Case Test Pattern**
+```go
+var _ = Describe("Edge Cases", func() {
+    Context("when [edge case condition]", func() {
+        BeforeEach(func() {
+            // Setup edge case scenario
+        })
+
+        It("should [expected behavior]", func() {
+            // Trigger edge case
+            // Verify expected outcome
+        })
+    })
+})
+```
+
+---
+
+### 📊 **Metrics Validation Commands Template** (Day 7)
+
+```bash
+# Start service locally (for validation)
+go run ./cmd/[service]/main.go \
+    --metrics-bind-address=:9090 \
+    --health-probe-bind-address=:8081
+
+# Verify metrics endpoint
+curl -s localhost:9090/metrics | grep [service]_
+
+# Expected metrics (customize per service):
+# [service]_operations_total{status="success",operation="..."} 0
+# [service]_operation_duration_seconds_bucket{operation="...",le="1"} 0
+# [service]_errors_total{error_type="..."} 0
+
+# Verify health endpoints
+curl -s localhost:8081/healthz  # Should return 200
+curl -s localhost:8081/readyz   # Should return 200
+
+# Create test resource (for CRD controllers)
+kubectl apply -f config/samples/[service]_v1alpha1_[resource].yaml
+
+# Verify metrics increment
+watch -n 1 'curl -s localhost:9090/metrics | grep [service]_operations_total'
+```
+
+---
+
+### 🚧 **Blockers Section Template**
+
+> **Purpose**: Track blocking issues during implementation
+> **Update**: During daily standups and EOD documentation
+
+| ID | Description | Status | Owner | Created | Resolved | Notes |
+|----|-------------|--------|-------|---------|----------|-------|
+| B-001 | [Description] | 🔴 Blocked | [Name] | [Date] | - | [Details] |
+| B-002 | [Description] | 🟡 In Progress | [Name] | [Date] | - | [Details] |
+| B-003 | [Description] | ✅ Resolved | [Name] | [Date] | [Date] | [Resolution] |
+
+**Status Legend**:
+- 🔴 **Blocked**: Actively blocking progress
+- 🟡 **In Progress**: Being worked on
+- ✅ **Resolved**: No longer blocking
+
+---
+
+### 📝 **Lessons Learned Template** (Day 12)
+
+> **Purpose**: Capture insights for future implementations
+> **Location**: Include in handoff summary or separate document
+
+### **What Worked Well**
+1. [Approach/decision that worked]
+   - **Evidence**: [How we know it worked]
+   - **Recommendation**: [Should we continue/expand this?]
+
+2. [Another success]
+   - **Evidence**: [...]
+   - **Recommendation**: [...]
+
+### **Technical Wins**
+1. [Technical achievement]
+   - **Impact**: [Quantifiable impact if possible]
+
+### **Challenges Overcome**
+1. [Challenge faced]
+   - **Solution**: [How we solved it]
+   - **Lesson**: [What we learned]
+
+### **What Would We Do Differently**
+1. [Change we would make]
+   - **Reason**: [Why this would be better]
+   - **Impact**: [Expected improvement]
+
+---
+
+### 🔧 **Technical Debt Template** (Day 12)
+
+> **Purpose**: Track known issues for future resolution
+> **Location**: Include in handoff summary
+
+### **Minor Issues (Non-Blocking)**
+| Issue | Impact | Estimated Effort | Priority |
+|-------|--------|------------------|----------|
+| [Description] | [Impact] | [Hours/Days] | P3 |
+
+### **Future Enhancements (Post-V1)**
+| Enhancement | Business Value | Estimated Effort | Target Version |
+|-------------|---------------|------------------|----------------|
+| [Feature] | [Value] | [Effort] | V1.1 |
+
+### **Known Limitations**
+1. **[Limitation]**: [Description and workaround if any]
+
+---
+
+### 🤝 **Team Handoff Notes Template** (Day 12)
+
+### **Key Files to Review**
+| File | Purpose | Priority |
+|------|---------|----------|
+| `cmd/[service]/main.go` | Entry point, signal handling | High |
+| `internal/controller/[service]/reconciler.go` | Main business logic | High |
+| `pkg/[service]/types.go` | Core type definitions | Medium |
+| `docs/.../ERROR_HANDLING_PHILOSOPHY.md` | Error handling guide | Medium |
+
+### **Running Locally**
+```bash
+# Terminal 1: Start dependencies (if any)
+[commands for dependencies]
+
+# Terminal 2: Start service
+make run-[service]
+
+# Terminal 3: Test
+[commands for testing]
+
+# Terminal 4: Watch logs/metrics
+[commands for observability]
+```
+
+### **Debugging Tips**
+```bash
+# Common debugging commands
+kubectl logs -l app=[service]-controller -n kubernaut-system --tail=100
+
+# Force re-reconciliation (CRD controllers)
+kubectl annotate [resource] <name> force-reconcile=$(date +%s) --overwrite
+
+# Check leader election
+kubectl get lease [service]-controller-leader -n kubernaut-system -o yaml
+
+# Profile memory/CPU
+kubectl top pod -l app=[service]-controller -n kubernaut-system
+```
+
+### **Common Issues and Solutions**
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| [Issue 1] | [Symptom] | [Solution] |
+| [Issue 2] | [Symptom] | [Solution] |
+
+---
+
 ## Critical Checkpoints (From Gateway Learnings)
 
-### ✅ Checkpoint 1: Integration-First Testing (Day 8)
-**Why**: Catches architectural issues 2 days earlier
-**Action**: Write 5 integration tests before unit tests
-**Evidence**: Gateway caught function signature mismatches early
+### ✅ Checkpoint 1: Parallel Test Execution (Days 8-10)
+**Why**: 4x faster feedback with 4 concurrent processes
+**Action**: Run all tests with `-p 4` or `-procs=4`, ensure test isolation
+**Evidence**: Gateway test suite runs in 25% of original time with parallel execution
 
 ### ✅ Checkpoint 2: Schema Validation (Day 7 EOD)
 **Why**: Prevents test failures from schema mismatches
@@ -3609,36 +5717,236 @@ kubectl rollout restart deployment/[service]
 
 ## Testing Strategy
 
-### Test Distribution (From Gateway Success)
+### Defense-in-Depth Testing Approach
 
-| Type | Coverage | Purpose |
-|------|----------|---------|
-| **Unit** | 70%+ | Component logic, edge cases |
-| **Integration** | >50% | Component interactions, real dependencies |
-| **E2E** | <10% | Complete workflows, production-like |
+**Reference**: [03-testing-strategy.mdc](.cursor/rules/03-testing-strategy.mdc) (AUTHORITATIVE)
 
-### Integration-First Order ⭐
+Kubernaut implements a **defense-in-depth testing strategy** with **90% overall confidence**.
 
-**Traditional (DON'T DO THIS)**:
+**Standard Methodology**: Unit → Integration → E2E
+
+### Test Distribution (From Gateway/Data Storage Success)
+
+| Type | Coverage | Purpose | Mock Strategy |
+|------|----------|---------|---------------|
+| **Unit** | 70%+ of BRs | Component logic, edge cases | Mock external deps ONLY (K8s API, DB, LLM) |
+| **Integration** | >50% of BRs | CRD coordination, real K8s API | Real components + envtest/KIND |
+| **E2E** | <10% of BRs | Complete workflows, production-like | Minimal mocking |
+
+### Mock Strategy Decision Matrix (AUTHORITATIVE)
+
+**Core Principle**: Mock ONLY external dependencies. Use REAL business logic.
+
+| Component Type | Unit Tests | Integration | E2E | Justification |
+|----------------|------------|-------------|-----|---------------|
+| **External AI APIs** (HolmesGPT, OpenAI) | MOCK | MOCK (CI) | REAL | External service |
+| **Kubernetes API** | **FAKE CLIENT** ⚠️ | REAL (envtest) | REAL | See K8s mandate below |
+| **Database** | MOCK | REAL | REAL | External infrastructure |
+| **Business Logic Components** | **REAL** | REAL | REAL | Core business value |
+| **Internal Services** | REAL | REAL | REAL | Business logic |
+
+### ⚠️ K8s Client Mandate (MANDATORY)
+
+**AUTHORITATIVE**: All K8s interaction MUST use approved interfaces:
+
+| Test Tier | MANDATORY Interface | Package |
+|-----------|---------------------|---------|
+| **Unit Tests** | **Fake K8s Client** | `sigs.k8s.io/controller-runtime/pkg/client/fake` |
+| **Integration** | Real K8s API (envtest/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
+| **E2E** | Real K8s API (OCP/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
+
+**❌ FORBIDDEN**: Custom `MockK8sClient` implementations
+**✅ APPROVED**: `fake.NewClientBuilder()` for all unit tests
+
+**Reference**: [ADR-004: Fake Kubernetes Client](docs/architecture/decisions/ADR-004-fake-kubernetes-client.md)
+
+### Business vs Unit Test Decision
+
+**Reference**: [TESTING_GUIDELINES.md](docs/development/business-requirements/TESTING_GUIDELINES.md)
+
 ```
-Days 7-8: Unit tests (40+ tests)
-Days 9-10: Integration tests (12+ tests)
+📝 QUESTION: What are you trying to validate?
+
+├─ 💼 "Does it solve the business problem?"
+│  └─► BUSINESS REQUIREMENT TEST (maps to BR-XXX-XXX)
+│
+└─ 🔧 "Does the code work correctly?"
+   └─► UNIT TEST (component behavior, edge cases)
 ```
 
-**Integration-First (DO THIS)** ✅:
+| Test Purpose | Test Type | Example |
+|--------------|-----------|---------|
+| User-facing functionality | Business Requirement | "Should reduce alert noise by 80%" |
+| Performance SLA compliance | Business Requirement | "Should complete within 30s" |
+| Function behavior | Unit Test | "Should detect circular dependencies" |
+| Error handling | Unit Test | "Should return error for invalid input" |
+
+### ⚠️ Edge Case Testing Requirements (MANDATORY)
+
+**Reference**: Gateway and Data Storage services have 96+ unit test files including dedicated edge case files.
+
+**Required Edge Case Test Files** (create for each component):
 ```
-Day 8 Morning: 5 critical integration tests
-Day 8 Afternoon: Unit tests - Component Group 1
-Day 9 Morning: Unit tests - Component Group 2
-Day 9 Afternoon: Unit tests - Component Group 3
-Day 10: Advanced integration + E2E tests
+test/unit/[service]/
+├── [component]_test.go           # Happy path tests
+├── [component]_edge_cases_test.go # Edge cases (MANDATORY)
+└── [component]_errors_test.go     # Error handling
 ```
 
-**Why This Works Better**:
-- Validates architecture before details
-- Catches integration issues early (cheaper to fix)
-- Provides confidence for unit test details
-- Follows TDD spirit (prove it works, then refine)
+**Edge Case Categories (per Gateway patterns)**:
+
+| Category | Examples | Test Strategy |
+|----------|----------|---------------|
+| **Empty/Nil Values** | Empty string, nil pointer, zero value | Graceful error with actionable message |
+| **Boundary Values** | Min, max, just-over-limit | Validate boundary enforcement |
+| **Invalid Input** | Malformed data, wrong types | Clear validation errors |
+| **Collision Handling** | Same fingerprint, duplicate keys | Document expected behavior |
+| **Concurrent Access** | Race conditions, mutex contention | Use `sync.WaitGroup`, parallel entries |
+| **Infrastructure Failures** | Redis down, K8s API timeout, DB connection lost | Graceful degradation |
+| **Partial Data** | Some fields missing, incomplete responses | Handle partial enrichment |
+| **State Transitions** | Invalid phase transitions, stuck states | Reject invalid, recover stuck |
+
+**Example from Gateway** (`edge_cases_test.go`):
+```go
+var _ = Describe("BR-001, BR-008: Edge Case Handling", func() {
+    Context("Fingerprint Validation Edge Cases", func() {
+        It("should reject empty fingerprint with clear error message", func() {
+            // BUSINESS OUTCOME: Clear validation error for operators
+            // WHY: Empty fingerprint would break deduplication
+            signal := &types.NormalizedSignal{
+                Fingerprint: "", // Edge case: empty fingerprint
+                AlertName:   "TestAlert",
+            }
+            err := adapter.Validate(signal)
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring("fingerprint"))
+        })
+    })
+})
+```
+
+**Signal Processing Edge Cases (Required)**:
+
+| Component | Edge Cases to Test |
+|-----------|-------------------|
+| **K8s Enricher** | Namespace not found, Pod terminating, Node NotReady, Owner chain broken, API timeout, RBAC forbidden, Partial enrichment |
+| **Environment Classifier** | Missing namespace labels, Conflicting labels, Rego policy syntax error, Policy timeout, Unknown environment |
+| **Priority Engine** | Unknown environment, Invalid severity, Confidence below threshold, Override conflicts |
+| **Business Classifier** | Multi-label conflicts, Zero confidence, Unknown category, Rego evaluation failure |
+| **Audit Client** | Buffer overflow, Data Storage timeout, Fire-and-forget failure, Malformed event |
+| **Reconciler** | Invalid phase transition, Stuck in phase, Finalizer cleanup failure, Requeue exhaustion |
+
+**Minimum Edge Case Tests per Component**: 8-12 dedicated edge case scenarios
+
+### 📊 Realistic Test Counts (From Production Services)
+
+**Reference**: Actual test counts from Gateway and Data Storage services (verified 2025-11-28)
+
+| Service | Unit Tests | Integration Tests | Total |
+|---------|------------|-------------------|-------|
+| **Gateway** | **275** | **143** | 418 |
+| **Data Storage** | **392** | **160** | 552 |
+| **Notification** | ~50 | ~30 | ~80 |
+
+**Expected Test Counts for New Services**:
+
+| Service Type | Unit Tests | Integration Tests | E2E Tests |
+|--------------|------------|-------------------|-----------|
+| **CRD Controller** (simple) | 80-120 | 40-60 | 5-10 |
+| **CRD Controller** (complex) | 150-250 | 80-120 | 10-20 |
+| **Stateless Service** (simple) | 100-150 | 50-80 | 5-10 |
+| **Stateless Service** (complex) | 250-400 | 100-160 | 15-25 |
+
+**Signal Processing Expected** (CRD Controller, medium complexity):
+- Unit Tests: **100-150** (not 10)
+- Integration Tests: **50-80** (not 5)
+- E2E Tests: **5-10**
+
+**Test Distribution by Component**:
+
+| Component | Happy Path | Edge Cases | Error Handling | Total |
+|-----------|------------|------------|----------------|-------|
+| K8s Enricher | 5-8 | 12-15 | 8-10 | 25-33 |
+| Environment Classifier | 5-8 | 10-12 | 6-8 | 21-28 |
+| Priority Engine | 5-8 | 10-12 | 6-8 | 21-28 |
+| Business Classifier | 5-8 | 8-10 | 5-7 | 18-25 |
+| Audit Client | 3-5 | 6-8 | 5-7 | 14-20 |
+| Reconciler | 8-12 | 10-15 | 8-12 | 26-39 |
+| **Total** | 31-49 | 56-72 | 38-52 | **125-173** |
+
+### Standard Test Order (Unit → Integration → E2E) ✅
+
+**MANDATORY**: Follow standard testing methodology in this order:
+
+```
+Day 8: Unit tests - all components (100-150 tests)
+Day 9: Integration tests - CRD reconciliation with envtest (50-80 tests)
+Day 10: E2E tests - full workflow validation (5-10 tests)
+```
+
+**Why This Order**:
+- Unit tests validate component logic in isolation (fastest feedback)
+- Integration tests validate component interactions with real K8s API
+- E2E tests validate complete business workflows
+- Follows defense-in-depth testing approach
+
+### ⚡ Parallel Test Execution (MANDATORY)
+
+**Standard**: **4 concurrent processes** for all test tiers.
+
+**Configuration**:
+```bash
+# Unit tests - parallel by default
+go test -v -p 4 ./test/unit/[service]/...
+
+# Integration tests - parallel with shared envtest
+go test -v -p 4 ./test/integration/[service]/...
+
+# E2E tests - parallel with isolated namespaces
+go test -v -p 4 ./test/e2e/[service]/...
+
+# Ginkgo parallel execution
+ginkgo -p -procs=4 ./test/unit/[service]/...
+ginkgo -p -procs=4 ./test/integration/[service]/...
+ginkgo -p -procs=4 ./test/e2e/[service]/...
+```
+
+**Parallel Test Requirements**:
+| Tier | Isolation Strategy | Shared Resources | Port Allocation |
+|------|-------------------|------------------|-----------------|
+| **Unit** | No shared state between tests | Mock clients | N/A |
+| **Integration** | Unique namespace per test | Shared envtest API server | Per DD-TEST-001 |
+| **E2E** | Unique namespace per test | Shared cluster | Per DD-TEST-001 |
+
+**Test Isolation Patterns**:
+```go
+// Integration/E2E: Generate unique namespace per test
+var _ = Describe("Component", func() {
+    var testNamespace string
+
+    BeforeEach(func() {
+        // Unique namespace enables parallel execution
+        testNamespace = fmt.Sprintf("test-%s", uuid.New().String()[:8])
+        Expect(k8sClient.Create(ctx, &corev1.Namespace{
+            ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+        })).To(Succeed())
+    })
+
+    AfterEach(func() {
+        // Cleanup after test
+        Expect(k8sClient.Delete(ctx, &corev1.Namespace{
+            ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+        })).To(Succeed())
+    })
+})
+```
+
+**⚠️ Parallel Test Anti-Patterns** (AVOID):
+- ❌ Hardcoded namespace names (`test-namespace`)
+- ❌ Shared mutable state between tests
+- ❌ Fixed port numbers without DD-TEST-001 allocation
+- ❌ Tests that depend on execution order
+- ❌ Global variables modified during tests
 
 ### Table-Driven Testing Pattern ⭐ (RECOMMENDED)
 
@@ -3765,6 +6073,38 @@ DescribeTable("should handle error conditions",
 - 73 tests consolidated from 77, 38% less code
 - All tests passing with 100% coverage maintained
 
+### ⚠️ CRD Types Testing Guidance (Anti-Pattern Alert)
+
+**DO NOT create `types_test.go` for CRD struct field validation.** This is a null-testing anti-pattern.
+
+**Why Not?**
+| Concern | Who Handles It | Not Your Test |
+|---------|----------------|---------------|
+| Field exists | **Go compiler** | Compile-time error if missing |
+| Field type correct | **Go compiler** | Type mismatch = compilation failure |
+| Required vs Optional | **OpenAPI schema + kubebuilder** | API validation at apply time |
+| Default values | **kubebuilder `+kubebuilder:default`** | CRD webhook validation |
+| Phase transitions | **Controller business logic** | Controller tests cover this |
+
+**Anti-Pattern Example** (DON'T DO THIS):
+```go
+// ❌ ZERO business value - testing Go compiler and own test setup
+sp := &SignalProcessing{}
+Expect(sp.Spec.Signal).To(BeZero())     // Proves nothing
+Expect(sp.Status.Phase).To(BeEmpty())   // Go already guarantees this
+Expect(sp.Status.Context).To(BeNil())   // Null-testing anti-pattern
+```
+
+**Where CRD Behavior IS Tested**:
+| Test Type | Location | Tests |
+|-----------|----------|-------|
+| Controller unit tests | `test/unit/[service]/` | Phase transitions, enrichment logic |
+| Integration tests | `test/integration/[service]/` | Full reconciliation with envtest |
+| E2E tests | `test/e2e/` | Cross-service CRD workflows |
+| Schema validation | `config/crd/` | OpenAPI validation at apply time |
+
+**Reference**: Signal Processing implementation learned this from Gateway patterns.
+
 ### Test Naming Convention
 
 ```go
@@ -3858,23 +6198,41 @@ Define service-specific targets:
 Create consistent development commands:
 
 ```makefile
-# Testing
+# Testing (with parallel execution - 4 concurrent processes standard)
 .PHONY: test-unit-[service]
 test-unit-[service]:
-	go test -v ./test/unit/[service]/...
+	go test -v -p 4 ./test/unit/[service]/...
 
 .PHONY: test-integration-[service]
 test-integration-[service]:
-	go test -v ./test/integration/[service]/...
+	go test -v -p 4 ./test/integration/[service]/...
 
 .PHONY: test-e2e-[service]
 test-e2e-[service]:
-	go test -v ./test/e2e/[service]/...
+	go test -v -p 4 ./test/e2e/[service]/...
+
+# Testing with Ginkgo (preferred - parallel with 4 procs)
+.PHONY: test-unit-ginkgo-[service]
+test-unit-ginkgo-[service]:
+	ginkgo -p -procs=4 -v ./test/unit/[service]/...
+
+.PHONY: test-integration-ginkgo-[service]
+test-integration-ginkgo-[service]:
+	ginkgo -p -procs=4 -v ./test/integration/[service]/...
+
+.PHONY: test-e2e-ginkgo-[service]
+test-e2e-ginkgo-[service]:
+	ginkgo -p -procs=4 -v ./test/e2e/[service]/...
+
+# All tests with parallel execution
+.PHONY: test-all-[service]
+test-all-[service]:
+	ginkgo -p -procs=4 -v ./test/unit/[service]/... ./test/integration/[service]/... ./test/e2e/[service]/...
 
 # Coverage
 .PHONY: test-coverage-[service]
 test-coverage-[service]:
-	go test -cover -coverprofile=coverage.out ./pkg/[service]/...
+	go test -cover -coverprofile=coverage.out -p 4 ./pkg/[service]/...
 	go tool cover -html=coverage.out
 
 # Build
@@ -4172,8 +6530,8 @@ deploy-kind-[service]:
 - [x] HTTP server struct created
 - [x] Route registration complete
 - [x] Middleware stack implemented
-- [x] Health endpoints functional (`/health`, `/ready`)
-- **Port**: 8080 (API/health), 9090 (metrics)
+- [x] Health endpoints functional (`/healthz`, `/readyz`)
+- **Ports**: 8080 (API - HTTP services only), 8081 (health probes), 9090 (metrics)
 
 ### Main Application Wiring
 - [x] All components wired in `main.go`
@@ -4182,7 +6540,7 @@ deploy-kind-[service]:
 - [x] Manager setup (for CRD controllers)
 
 ### Metrics Implementation
-- [x] 10+ Prometheus metrics defined
+- [x] Business-critical Prometheus metrics defined
 - [x] Metric recording in business logic
 - [x] Metrics endpoint exposed (`:9090/metrics`)
 - **Metrics Count**: [X] metrics (target: 10+) ✅
@@ -4251,15 +6609,17 @@ deploy-kind-[service]:
 
 ## 🚧 Remaining Work (Days 8-12)
 
-### Day 8: Integration-First Testing
-- [ ] 5 critical integration tests
-- [ ] Unit tests Part 1
+### Day 8: Unit Tests (Parallel: 4 procs)
+- [ ] All component unit tests (`ginkgo -p -procs=4`)
+- [ ] Table-driven tests for similar scenarios
+- [ ] Edge case coverage
 
-### Day 9: Unit Tests Part 2 + BR Coverage
-- [ ] Unit tests completion
+### Day 9: Integration Tests (Parallel: 4 procs)
+- [ ] CRD reconciliation tests with envtest
 - [ ] BR Coverage Matrix
+- [ ] Test isolation (unique namespace per test)
 
-### Day 10: E2E Tests
+### Day 10: E2E Tests (Parallel: 4 procs)
 - [ ] E2E test scenarios
 - [ ] Production environment setup
 
@@ -4277,7 +6637,7 @@ deploy-kind-[service]:
 **Evidence**:
 - All components implemented with passing unit tests
 - Server integration complete and functional
-- 10+ Prometheus metrics implemented and tested
+- Business-critical Prometheus metrics implemented and tested
 - Health checks operational
 - Error handling philosophy documented
 - Test infrastructure validated
@@ -4303,11 +6663,68 @@ deploy-kind-[service]:
 **When to Use**: If your service is a CRD controller (5 out of 12 V1 services are CRD controllers)
 
 **CRD Controllers in V1**:
-- RemediationProcessor
+- SignalProcessing (renamed from RemediationProcessor)
 - AIAnalysis
 - WorkflowExecution
 - KubernetesExecutor
 - RemediationOrchestrator
+
+---
+
+### 🔷 **CRD API Group Standard** ⭐ V3.0 NEW
+
+**Reference**: [DD-CRD-001: API Group Domain Selection](../../architecture/decisions/DD-CRD-001-api-group-domain-selection.md)
+
+All Kubernaut CRDs use the **`.ai` domain** for AIOps branding:
+
+```yaml
+apiVersion: [servicename].kubernaut.ai/v1alpha1
+kind: [ServiceName]
+```
+
+**Decision Rationale** (per DD-CRD-001):
+1. **K8sGPT Precedent**: AI K8s projects use `.ai` (e.g., `core.k8sgpt.ai`)
+2. **Brand Alignment**: AIOps is the core value proposition - domain reflects this
+3. **Differentiation**: Stands out from traditional infrastructure tooling (`.io`)
+4. **Industry Trend**: AI-native platforms increasingly adopt `.ai`
+
+**Note**: Label keys still use `kubernaut.io/` prefix (K8s label convention, not CRD API group).
+
+#### **Industry Best Practices Analysis**
+
+| Project | API Group Strategy | Pattern |
+|---------|-------------------|---------|
+| **Tekton** | `tekton.dev/v1` | ✅ Unified - all CRDs under single domain |
+| **Istio** | `istio.io/v1` | ✅ Unified - network, security, config all under `istio.io` |
+| **Cert-Manager** | `cert-manager.io/v1` | ✅ Unified - certificates, issuers, challenges |
+| **ArgoCD** | `argoproj.io/v1alpha1` | ✅ Unified - applications, projects, rollouts |
+| **Crossplane** | `crossplane.io/v1` | ✅ Unified - compositions, providers |
+| **Knative** | Multiple: `serving.knative.dev`, `eventing.knative.dev` | ⚠️ Split by domain |
+
+**Conclusion**: 5/6 major CNCF projects use unified API groups. Splitting is only justified when:
+- Projects have **distinct product lines** (Knative Serving vs Eventing)
+- Projects have **independent release cycles**
+- Projects may be **deployed separately**
+
+Kubernaut's CRD controllers are **tightly coupled** in a single remediation workflow, making unified grouping the correct choice.
+
+#### **CRD Inventory (Unified API Group)**
+
+| CRD | API Group | Purpose |
+|-----|-----------|---------|
+| SignalProcessing | `signalprocessing.kubernaut.ai/v1alpha1` | Context enrichment, classification |
+| AIAnalysis | `kubernaut.ai/v1alpha1` | HolmesGPT RCA + workflow selection |
+| WorkflowExecution | `kubernaut.ai/v1alpha1` | Ansible/K8s workflow execution |
+| RemediationRequest | `remediation.kubernaut.ai/v1alpha1` | User-facing remediation entry point |
+
+#### **RBAC Template for CRD Controllers**
+
+```yaml
+# kubebuilder markers for CRD controller
+//+kubebuilder:rbac:groups=[servicename].kubernaut.ai,resources=[resources],verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=[servicename].kubernaut.ai,resources=[resources]/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=[servicename].kubernaut.ai,resources=[resources]/finalizers,verbs=update
+```
 
 ---
 
@@ -5336,9 +7753,10 @@ func (c *Client) GenerateEmbedding(ctx context.Context, text string) ([]float32,
 **Before** (duplicated in Gateway, Data Storage, Signal Processing):
 ```go
 // pkg/gateway/cache/redis.go (duplicated)
+// ❌ LEGACY: Uses *zap.Logger directly (violates DD-005 v2.0)
 type RedisCache struct {
     client    *redis.Client
-    logger    *zap.Logger
+    logger    *zap.Logger  // ❌ DD-005 violation
     connected atomic.Bool
     connCheckMu sync.Mutex
 }
@@ -5351,19 +7769,25 @@ func (c *RedisCache) ensureConnection(ctx context.Context) error {
 }
 ```
 
-**After** (shared library):
+**After** (shared library - DD-005 v2.0 compliant):
 ```go
 // pkg/cache/redis/client.go (shared)
+// DD-005 v2.0: Uses logr.Logger (unified interface for all Kubernaut services)
 package redis
+
+import "github.com/go-logr/logr"
 
 type Client struct {
     client      *redis.Client
-    logger      *zap.Logger
+    logger      logr.Logger  // ✅ DD-005 v2.0: logr.Logger (not *zap.Logger)
     connected   atomic.Bool
     connCheckMu sync.Mutex
 }
 
-func NewClient(opts *redis.Options, logger *zap.Logger) *Client {
+// NewClient creates a Redis client.
+// DD-005 v2.0: Accept logr.Logger from caller (stateless services pass zapr.NewLogger(),
+// CRD controllers pass ctrl.Log)
+func NewClient(opts *redis.Options, logger logr.Logger) *Client {
     return &Client{
         client: redis.NewClient(opts),
         logger: logger,
@@ -5390,7 +7814,7 @@ func (c *Client) EnsureConnection(ctx context.Context) error {
     }
 
     c.connected.Store(true)
-    c.logger.Info("Redis connection established")
+    c.logger.Info("Redis connection established") // ✅ DD-005: logr syntax
     return nil
 }
 ```
@@ -5775,13 +8199,91 @@ logger.Debug("Cache hit",
 
 ---
 
-**Template Status**: ✅ **Production-Ready** (V2.1)
+**Template Status**: ✅ **Production-Ready** (V2.5)
 **Quality Standard**: Matches Notification V3.0 and Data Storage v4.1 standards + Multi-language support
 **Success Rate**:
 - Gateway: 95% test coverage, 100% BR coverage, 98% confidence
 - Notification: 97.2% BR coverage, 95% test coverage, 98% confidence
 - Data Storage (Go+Python): 100% test pass rate, hybrid architecture
 **Estimated Effort Savings**: 3-5 days per service (comprehensive guidance prevents rework)
+
+---
+
+## 📚 ADR/DD Reference Matrix (v2.4)
+
+This section provides a comprehensive reference of all ADRs and DDs that should be considered when implementing a new service.
+
+### Quick Reference: Which Documents Apply?
+
+| Service Type | MANDATORY | RECOMMENDED | OPTIONAL |
+|--------------|-----------|-------------|----------|
+| **HTTP Service** | DD-004, DD-005, DD-007, DD-014, ADR-015 | DD-013 | - |
+| **CRD Controller** | DD-005, DD-006, DD-007, DD-014, ADR-004, ADR-015 | DD-013 | - |
+| **Audit-Required** | ADR-032, ADR-034, ADR-038, DD-AUDIT-003 | - | DD-009 (V2) |
+| **All Services (E2E)** | DD-TEST-001 | - | - |
+
+### Universal Standards (ALL Services)
+
+| Document | Purpose | Applicability |
+|----------|---------|---------------|
+| [DD-004: RFC 7807 Error Responses](../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md) | Standardized error format for HTTP APIs | **MANDATORY** for HTTP services |
+| [DD-005: Observability Standards](../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md) | Metrics naming, logging format, tracing | **MANDATORY** for all services |
+| [DD-007: Graceful Shutdown](../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md) | 4-step shutdown for zero request failures | **MANDATORY** for all services |
+| [DD-014: Binary Version Logging](../../architecture/decisions/DD-014-binary-version-logging-standard.md) | Version info at startup for troubleshooting | **MANDATORY** for all services |
+| [ADR-015: Signal Naming](../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) | Use "Signal" terminology (not "Alert") | **MANDATORY** for all new code |
+
+### Kubernetes-Aware Services
+
+| Document | Purpose | Applicability |
+|----------|---------|---------------|
+| [DD-013: K8s Client Initialization](../../architecture/decisions/DD-013-kubernetes-client-initialization-standard.md) | Shared `pkg/k8sutil` for K8s client creation | **RECOMMENDED** for K8s-aware services |
+
+### CRD Controller Standards
+
+| Document | Purpose | Applicability |
+|----------|---------|---------------|
+| [DD-006: Controller Scaffolding](../../architecture/decisions/DD-006-controller-scaffolding-strategy.md) | Templates for `cmd/`, config, metrics | **MANDATORY** for CRD controllers |
+| [ADR-004: Fake K8s Client](../../architecture/decisions/ADR-004-fake-kubernetes-client.md) | Use `fake.NewClientBuilder()` for unit tests | **MANDATORY** for unit tests |
+
+### Audit Standards
+
+| Document | Purpose | Applicability |
+|----------|---------|---------------|
+| [DD-AUDIT-003: Service Audit Requirements](../../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md) | Which services MUST generate audit traces | **CHECK FIRST** - determines if audit needed |
+| [ADR-032: Data Access Layer Isolation](../../architecture/decisions/ADR-032-data-access-layer-isolation.md) | All audit writes via Data Storage REST API | **MANDATORY** for audit services |
+| [ADR-034: Unified Audit Table Design](../../architecture/decisions/ADR-034-unified-audit-table-design.md) | Audit table schema and event format | **MANDATORY** for audit services |
+| [ADR-038: Async Buffered Audit Ingestion](../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md) | Fire-and-forget audit pattern | **MANDATORY** for audit services |
+| [DD-009: Audit Write Error Recovery](../../architecture/decisions/DD-009-audit-write-error-recovery.md) | DLQ pattern for audit failures | **V2 ONLY** - deferred for V1 |
+
+### Testing Standards
+
+| Document | Purpose | Applicability |
+|----------|---------|---------------|
+| [DD-TEST-001: Port Allocation](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) | Unique ports per service, NodePort for E2E | **MANDATORY** for E2E tests |
+
+### Service-Specific Documents (NOT in Template)
+
+The following document categories are **service-specific** and should NOT be referenced in the generic template:
+- `DD-GATEWAY-*` - Gateway service only
+- `DD-WORKFLOW-*` / `DD-PLAYBOOK-*` - Workflow/Playbook services only
+- `DD-HOLMESGPT-*` - HolmesGPT API only
+- `DD-STORAGE-*` - Data Storage service only
+- `DD-EMBEDDING-*` - Embedding service only
+- `DD-LLM-*` - LLM/AI services only
+- `DD-AIANALYSIS-*` - AIAnalysis controller only
+- `DD-ORCHESTRATOR-*` - Remediation Orchestrator only
+- `DD-TOOLSET-*` - Dynamic Toolset only
+- `DD-EFFECTIVENESS-*` - Effectiveness Monitor only
+
+### How to Use This Matrix
+
+1. **Before Day 0**: Identify your service type (HTTP, CRD, Audit)
+2. **Prerequisites Checklist**: Mark all MANDATORY documents as reviewed
+3. **Day 1-2**: Reference DD-006 (CRD) or DD-004/DD-005 (HTTP) for scaffolding
+4. **Day 3-4**: Reference DD-007 for shutdown, DD-014 for version logging
+5. **Day 5-6**: Reference ADR-032/ADR-038 for audit integration (if P0/P1 audit service)
+6. **Day 8-10**: Reference DD-TEST-001 for test port allocation
+7. **Day 12**: Reference all documents in Production Readiness Report
 
 ---
 

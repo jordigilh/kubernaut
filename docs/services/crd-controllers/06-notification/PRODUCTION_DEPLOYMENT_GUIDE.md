@@ -40,7 +40,7 @@
 
 ```bash
 # Install NotificationRequest CRD
-kubectl apply -f config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+kubectl apply -f config/crd/bases/kubernaut.ai_notificationrequests.yaml
 
 # Verify CRD installation
 kubectl get crds | grep notificationrequest
@@ -49,7 +49,7 @@ kubectl api-resources | grep notification
 
 **Expected Output**:
 ```
-notificationrequests.notification.kubernaut.ai     2025-10-12T10:00:00Z
+notificationrequests.kubernaut.ai     2025-10-12T10:00:00Z
 ```
 
 ---
@@ -226,7 +226,7 @@ curl http://localhost:8080/metrics | grep notification_
 ```bash
 # Create test notification
 cat > test-notification.yaml <<EOF
-apiVersion: notification.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: NotificationRequest
 metadata:
   name: test-notification
@@ -272,7 +272,7 @@ status:
 ```bash
 # Create test notification with Slack
 cat > test-notification-slack.yaml <<EOF
-apiVersion: notification.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: NotificationRequest
 metadata:
   name: test-notification-slack
@@ -520,7 +520,7 @@ spec:
 
 ```bash
 # 1. Update CRD (if changed)
-kubectl apply -f config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+kubectl apply -f config/crd/bases/kubernaut.ai_notificationrequests.yaml
 
 # 2. Update controller image
 kubectl set image deployment/notification-controller \
@@ -557,7 +557,7 @@ kubectl delete -f deploy/notification/01-rbac.yaml
 kubectl delete -f deploy/notification/00-namespace.yaml
 
 # Delete CRD (WARNING: This deletes ALL NotificationRequests)
-kubectl delete -f config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+kubectl delete -f config/crd/bases/kubernaut.ai_notificationrequests.yaml
 ```
 
 ### **Remove Secrets**

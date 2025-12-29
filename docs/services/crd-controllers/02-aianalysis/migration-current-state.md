@@ -164,7 +164,8 @@ func main() {
     var metricsAddr string
     var enableLeaderElection bool
 
-    flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "Metrics endpoint")
+    flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "Metrics endpoint")  // DD-TEST-001
+    flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Health probes")  // DD-TEST-001
     flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election")
     flag.Parse()
 

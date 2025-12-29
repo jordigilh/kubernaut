@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -13,6 +29,14 @@ import (
 // 	RunSpecs(t, "...")
 // }
 
+// ========================================
+// NOTIFICATION AUDIT MODEL UNIT TESTS
+// 📋 Business Requirements:
+//   - BR-STORAGE-001: Notification Audit Schema (migration 010)
+//   - BR-NOTIFICATION-001: Track Notification Delivery Attempts
+//
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("NotificationAudit Model", func() {
 	var audit *models.NotificationAudit
 
@@ -36,6 +60,8 @@ var _ = Describe("NotificationAudit Model", func() {
 	})
 
 	Context("Model Structure", func() {
+		// BEHAVIOR: NotificationAudit model exposes all required fields
+		// CORRECTNESS: All fields are correctly typed and accessible
 		It("should have all required fields", func() {
 			Expect(audit.ID).To(Equal(int64(1)))
 			Expect(audit.RemediationID).To(Equal("test-remediation-1"))

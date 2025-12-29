@@ -202,7 +202,7 @@ kubectl get notificationrequest <notification-name> -n <namespace> -o yaml
 2. **Update upstream services to include remediationRequestName**:
 ```yaml
 # Example: Remediation Orchestrator creating NotificationRequest
-apiVersion: notification.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: NotificationRequest
 metadata:
   name: escalation-timeout-123

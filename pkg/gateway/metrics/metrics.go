@@ -23,117 +23,72 @@ import (
 
 // Gateway Service Prometheus Metrics
 //
-// Day 9 Phase 6B Option C1: Centralized metrics with custom registry support
 // This package defines all metrics for the Gateway service, following the
 // specifications in docs/services/stateless/gateway-service/metrics-slos.md
 //
-// Metrics are organized into categories:
-// 1. Signal ingestion (received, deduplicated, storms) - multi-source (Prometheus, K8s Events, etc.)
-// 2. CRD creation (success, failures)
-// 3. Performance (HTTP request duration, Redis operation duration)
-// 4. Deduplication (cache hits/misses, deduplication rate)
-// 5. HTTP observability (in-flight requests, request counts)
-// 6. Redis health (availability, outages)
+// Metrics aligned with business requirements:
+// 1. Signal ingestion (received, deduplicated) - BR-GATEWAY-066, BR-GATEWAY-069
+// 2. CRD creation (success, failures) - BR-GATEWAY-068
+// 3. Performance (HTTP request duration) - BR-GATEWAY-067, BR-GATEWAY-079
+// 4. Deduplication (cache hits, deduplication rate) - BR-GATEWAY-069
 //
-// Metrics struct provides custom registry support for test isolation.
+// DD-005 V3.0 Compliance: All metric names defined as exported constants
+// for type safety and test/production parity.
+
+// Metric name constants (DD-005 V3.0 Section 1.1 - MANDATORY)
+// These constants ensure tests use correct metric names and prevent typos.
+const (
+	// MetricNameSignalsReceivedTotal tracks total signals received by source and severity
+	MetricNameSignalsReceivedTotal = "gateway_signals_received_total"
+
+	// MetricNameSignalsDeduplicatedTotal tracks signals deduplicated by fingerprint
+	MetricNameSignalsDeduplicatedTotal = "gateway_signals_deduplicated_total"
+
+	// MetricNameCRDsCreatedTotal tracks successful CRD creations
+	MetricNameCRDsCreatedTotal = "gateway_crds_created_total"
+
+	// MetricNameCRDCreationErrorsTotal tracks CRD creation failures by error type
+	MetricNameCRDCreationErrorsTotal = "gateway_crd_creation_errors_total"
+
+	// MetricNameHTTPRequestDuration tracks HTTP request latency (P50/P95/P99 SLO)
+	MetricNameHTTPRequestDuration = "gateway_http_request_duration_seconds"
+
+	// MetricNameDeduplicationCacheHitsTotal tracks deduplication cache hits
+	MetricNameDeduplicationCacheHitsTotal = "gateway_deduplication_cache_hits_total"
+
+	// MetricNameDeduplicationRate tracks current deduplication percentage
+	MetricNameDeduplicationRate = "gateway_deduplication_rate"
+)
 
 // Metrics holds all Gateway service Prometheus metrics
-// Day 9 Phase 6B Option C1: Centralized metrics structure
+// Specification-driven design: Only metrics defined in metrics-slos.md are implemented
 type Metrics struct {
-	// Signal Ingestion Metrics (BR-GATEWAY-001: Multi-source signal processing)
+	// Signal Ingestion Metrics (BR-GATEWAY-066: Metrics endpoint)
 	// Note: Field names kept as "Alerts*" for backward compatibility, but metric names use "signals_"
-	AlertsReceivedTotal      *prometheus.CounterVec // gateway_signals_received_total
-	AlertsDeduplicatedTotal  *prometheus.CounterVec // gateway_signals_deduplicated_total
-	AlertStormsDetectedTotal *prometheus.CounterVec // gateway_signal_storms_detected_total
+	AlertsReceivedTotal     *prometheus.CounterVec // gateway_signals_received_total
+	AlertsDeduplicatedTotal *prometheus.CounterVec // gateway_signals_deduplicated_total
 
-	// CRD Creation Metrics
-	CRDsCreatedTotal  *prometheus.CounterVec
-	CRDCreationErrors *prometheus.CounterVec
+	// CRD Creation Metrics (BR-GATEWAY-068: CRD creation metrics)
+	CRDsCreatedTotal  *prometheus.CounterVec // gateway_crds_created_total
+	CRDCreationErrors *prometheus.CounterVec // gateway_crd_creation_errors_total
 
-	// K8s API Retry Metrics (BR-GATEWAY-114: Retry observability)
-	RetryAttemptsTotal  *prometheus.CounterVec   // Total retry attempts by error type
-	RetryDuration       *prometheus.HistogramVec // Retry duration by error type
-	RetryExhaustedTotal *prometheus.CounterVec   // Retries exhausted by error type
-	RetrySuccessTotal   *prometheus.CounterVec   // Successful retries by error type and attempt number
+	// Performance Metrics (BR-GATEWAY-067: HTTP request metrics, BR-GATEWAY-079: Performance metrics)
+	HTTPRequestDuration *prometheus.HistogramVec // gateway_http_request_duration_seconds
 
-	// Internal: Registry for custom metrics exposure
+	// Deduplication Metrics (BR-GATEWAY-069: Deduplication metrics)
+	DeduplicationCacheHitsTotal prometheus.Counter // gateway_deduplication_cache_hits_total
+	DeduplicationRate           prometheus.Gauge   // gateway_deduplication_rate
+
+	// Internal: Registry for custom metrics exposure (test isolation)
 	registry prometheus.Gatherer // Used by /metrics endpoint to expose custom registry metrics
-
-	// Performance Metrics
-	HTTPRequestDuration    *prometheus.HistogramVec
-	RedisOperationDuration *prometheus.HistogramVec
-
-	// Deduplication Metrics
-	DeduplicationCacheHitsTotal   prometheus.Counter
-	DeduplicationCacheMissesTotal prometheus.Counter
-	DeduplicationRate             prometheus.Gauge
-	DeduplicationPoolSize         prometheus.Gauge
-	DeduplicationPoolMaxSize      prometheus.Gauge
-
-	// HTTP Observability Metrics (Day 9 Phase 4)
-	HTTPRequestsInFlight prometheus.Gauge
-	HTTPRequestsTotal    *prometheus.CounterVec
-
-	// Redis Health Metrics (Day 9 Phase 4)
-	RedisAvailable      prometheus.Gauge
-	RedisOutageDuration prometheus.Counter
-	RedisOutageCount    prometheus.Counter
-
-	// Redis Pool Metrics (Day 9 Phase 4)
-	RedisPoolHits     prometheus.Gauge
-	RedisPoolMisses   prometheus.Gauge
-	RedisPoolTimeouts prometheus.Gauge
-	RedisPoolTotal    prometheus.Gauge
-	RedisPoolIdle     prometheus.Gauge
-	RedisPoolStale    prometheus.Gauge
-
-	// Redis Pool Metrics - Test-Compatible Names (Pre-Day 10 Unit Test Validation)
-	RedisPoolConnectionsTotal  prometheus.Gauge
-	RedisPoolConnectionsIdle   prometheus.Gauge
-	RedisPoolConnectionsActive prometheus.Gauge
-	RedisPoolHitsTotal         prometheus.Counter
-	RedisPoolMissesTotal       prometheus.Counter
-	RedisPoolTimeoutsTotal     prometheus.Counter
-
-	// Rate Limiting Metrics
-	RateLimitExceededTotal          *prometheus.CounterVec
-	RateLimitingDroppedSignalsTotal *prometheus.CounterVec // Alias for consistency
-
-	// Additional Handler Metrics
-	SignalsReceived             *prometheus.CounterVec
-	SignalsFailed               *prometheus.CounterVec
-	SignalsProcessed            *prometheus.CounterVec
-	RedisOperationErrors        *prometheus.CounterVec
-	RequestsRejectedTotal       *prometheus.CounterVec
-	DuplicateCRDsPreventedTotal prometheus.Counter
-	DuplicatePreventionActive   prometheus.Gauge
-	DuplicateSignals            *prometheus.CounterVec
-	Consecutive503Responses     *prometheus.GaugeVec
-	StormProtectionActive       prometheus.Gauge
-	CRDsCreated                 *prometheus.CounterVec
-
-	// DD-GATEWAY-008: Storm Buffering & Aggregation Metrics (6 essential metrics)
-	// Business value and operational visibility for buffered first-alert aggregation
-
-	// Business Value Metrics (BR-GATEWAY-016, BR-GATEWAY-008)
-	StormCostSavingsPercent prometheus.Gauge         // Cost savings from aggregation (0-100%)
-	StormAggregationRatio   prometheus.Gauge         // Alerts aggregated / total alerts (0.0-1.0)
-	StormWindowDuration     *prometheus.HistogramVec // Actual window durations (seconds)
-
-	// Operational Metrics (BR-GATEWAY-011)
-	NamespaceBufferUtilization *prometheus.GaugeVec   // Buffer utilization per namespace (0.0-1.0)
-	NamespaceBufferBlocking    *prometheus.CounterVec // Namespace capacity blocking events
-	StormBufferOverflow        *prometheus.CounterVec // Buffer overflow events
 }
 
 // NewMetrics creates a new Metrics instance with the default global Prometheus registry
-// Day 9 Phase 6B Option C1: Factory function for default registry
 func NewMetrics() *Metrics {
 	return NewMetricsWithRegistry(prometheus.DefaultRegisterer)
 }
 
 // NewMetricsWithRegistry creates a new Metrics instance with a custom Prometheus registry
-// Day 9 Phase 6B Option C1: Factory function for custom registry (test isolation)
 //
 // This allows integration tests to use isolated registries, preventing metric collisions
 // when running multiple Gateway instances in parallel tests.
@@ -148,370 +103,64 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		gatherer = prometheus.DefaultGatherer
 	}
 
-	// Create rate limit metric first (used as alias)
-	rateLimitExceeded := factory.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "gateway_rate_limit_exceeded_total",
-			Help: "Total rate limit violations by source IP",
-		},
-		[]string{"source_ip"},
-	)
-
 	return &Metrics{
 		// Store registry for /metrics endpoint
 		registry: gatherer,
-		// Signal Ingestion Metrics (BR-GATEWAY-001: Multi-source signal processing)
+
+		// Signal Ingestion Metrics (BR-GATEWAY-066: Prometheus metrics endpoint)
 		AlertsReceivedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_signals_received_total",
-				Help: "Total signals received by source, severity, and environment (Prometheus alerts, K8s events, etc.)",
+				Name: MetricNameSignalsReceivedTotal, // DD-005 V3.0: Pattern B,
+				Help: "Total signals received by source type and severity (Prometheus alerts, K8s events, etc.)",
 			},
-			[]string{"source", "severity", "environment"},
+			[]string{"source_type", "severity"},
 		),
 		AlertsDeduplicatedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_signals_deduplicated_total",
+				Name: MetricNameSignalsDeduplicatedTotal, // DD-005 V3.0: Pattern B,
 				Help: "Total signals deduplicated (duplicate fingerprint detected)",
 			},
-			[]string{"signal_name", "environment"},
-		),
-		AlertStormsDetectedTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_signal_storms_detected_total",
-				Help: "Total signal storms detected by type (rate-based or pattern-based)",
-			},
-			[]string{"storm_type", "signal_name"},
+			[]string{"signal_name"},
 		),
 
-		// CRD Creation Metrics
+		// CRD Creation Metrics (BR-GATEWAY-068: CRD creation metrics)
 		CRDsCreatedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_crds_created_total",
-				Help: "Total RemediationRequest CRDs created by environment and priority",
+				Name: MetricNameCRDsCreatedTotal, // DD-005 V3.0: Pattern B,
+				Help: "Total RemediationRequest CRDs created by source type and creation status",
 			},
-			[]string{"environment", "priority"},
+			[]string{"source_type", "status"},
 		),
 		CRDCreationErrors: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_crd_creation_errors_total",
+				Name: MetricNameCRDCreationErrorsTotal, // DD-005 V3.0: Pattern B,
 				Help: "Total CRD creation errors by error type",
 			},
 			[]string{"error_type"},
 		),
 
-		// K8s API Retry Metrics (BR-GATEWAY-114: Retry observability)
-		RetryAttemptsTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_retry_attempts_total",
-				Help: "Total K8s API retry attempts by error type and HTTP status code",
-			},
-			[]string{"error_type", "status_code"},
-		),
-		RetryDuration: factory.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "gateway_retry_duration_seconds",
-				Help:    "Duration of retry attempts (including backoff) by error type",
-				Buckets: prometheus.ExponentialBuckets(0.1, 2, 8), // 100ms to ~25s
-			},
-			[]string{"error_type"},
-		),
-		RetryExhaustedTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_retry_exhausted_total",
-				Help: "Total retries exhausted (max attempts reached) by error type and HTTP status code",
-			},
-			[]string{"error_type", "status_code"},
-		),
-		RetrySuccessTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_retry_success_total",
-				Help: "Total successful retries by error type and attempt number",
-			},
-			[]string{"error_type", "attempt"},
-		),
-
-		// Performance Metrics
+		// Performance Metrics (BR-GATEWAY-067: HTTP metrics, BR-GATEWAY-079: Performance metrics)
 		HTTPRequestDuration: factory.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "gateway_http_request_duration_seconds",
+				Name: MetricNameHTTPRequestDuration, // DD-005 V3.0: Pattern B,
 				Help:    "HTTP request duration in seconds (includes full pipeline)",
-				Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s
+				Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s for P50/P95/P99 SLO
 			},
 			[]string{"endpoint", "method", "status"},
 		),
-		RedisOperationDuration: factory.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "gateway_redis_operation_duration_seconds",
-				Help:    "Redis operation duration in seconds",
-				Buckets: prometheus.ExponentialBuckets(0.0001, 2, 10), // 0.1ms to ~100ms
-			},
-			[]string{"operation"},
-		),
 
-		// Deduplication Metrics
+		// Deduplication Metrics (BR-GATEWAY-069: Deduplication metrics)
 		DeduplicationCacheHitsTotal: factory.NewCounter(
 			prometheus.CounterOpts{
-				Name: "gateway_deduplication_cache_hits_total",
-				Help: "Total deduplication cache hits (duplicate fingerprint found in Redis)",
-			},
-		),
-		DeduplicationCacheMissesTotal: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: "gateway_deduplication_cache_misses_total",
-				Help: "Total deduplication cache misses (new fingerprint, not in Redis)",
+				Name: MetricNameDeduplicationCacheHitsTotal, // DD-005 V3.0: Pattern B,
+				Help: "Total deduplication cache hits (duplicate fingerprint found)",
 			},
 		),
 		DeduplicationRate: factory.NewGauge(
 			prometheus.GaugeOpts{
-				Name: "gateway_deduplication_rate",
-				Help: "Current deduplication rate (percentage of alerts deduplicated)",
+				Name: MetricNameDeduplicationRate, // DD-005 V3.0: Pattern B,
+				Help: "Current deduplication rate (percentage of signals deduplicated)",
 			},
-		),
-		DeduplicationPoolSize: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_deduplication_pool_size",
-				Help: "Current Redis connection pool size for deduplication",
-			},
-		),
-		DeduplicationPoolMaxSize: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_deduplication_pool_max_size",
-				Help: "Maximum Redis connection pool size for deduplication",
-			},
-		),
-
-		// HTTP Observability Metrics (Day 9 Phase 4)
-		HTTPRequestsInFlight: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_http_requests_in_flight",
-				Help: "Current number of HTTP requests being processed",
-			},
-		),
-		HTTPRequestsTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_http_requests_total",
-				Help: "Total HTTP requests by method, path, and status code",
-			},
-			[]string{"method", "path", "status"},
-		),
-
-		// Redis Health Metrics (Day 9 Phase 4)
-		RedisAvailable: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_available",
-				Help: "Redis availability status (1 = available, 0 = unavailable)",
-			},
-		),
-		RedisOutageDuration: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: "gateway_redis_outage_duration_seconds_total",
-				Help: "Total cumulative Redis outage duration in seconds",
-			},
-		),
-		RedisOutageCount: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: "gateway_redis_outage_count_total",
-				Help: "Total number of Redis outage events",
-			},
-		),
-
-		// Redis Pool Metrics (Day 9 Phase 4)
-		RedisPoolHits: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_hits",
-				Help: "Number of times a free connection was found in the pool",
-			},
-		),
-		RedisPoolMisses: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_misses",
-				Help: "Number of times a free connection was NOT found in the pool",
-			},
-		),
-		RedisPoolTimeouts: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_timeouts",
-				Help: "Number of times a wait timeout occurred when getting a connection",
-			},
-		),
-		RedisPoolTotal: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_total_connections",
-				Help: "Total number of connections in the pool",
-			},
-		),
-		RedisPoolIdle: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_idle_connections",
-				Help: "Number of idle connections in the pool",
-			},
-		),
-		RedisPoolStale: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_stale_connections",
-				Help: "Number of stale connections removed from the pool",
-			},
-		),
-
-		// Redis Pool Metrics - Test-Compatible Names (Pre-Day 10 Unit Test Validation)
-		RedisPoolConnectionsTotal: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_connections_total",
-				Help: "Total number of connections in the Redis pool (test-compatible name)",
-			},
-		),
-		RedisPoolConnectionsIdle: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_connections_idle",
-				Help: "Number of idle connections in the Redis pool (test-compatible name)",
-			},
-		),
-		RedisPoolConnectionsActive: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_redis_pool_connections_active",
-				Help: "Number of active connections in the Redis pool (test-compatible name)",
-			},
-		),
-		RedisPoolHitsTotal: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: "gateway_redis_pool_hits_total",
-				Help: "Total number of times a free connection was found in the pool (test-compatible name)",
-			},
-		),
-		RedisPoolMissesTotal: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: "gateway_redis_pool_misses_total",
-				Help: "Total number of times a free connection was NOT found in the pool (test-compatible name)",
-			},
-		),
-		RedisPoolTimeoutsTotal: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: "gateway_redis_pool_timeouts_total",
-				Help: "Total number of times a wait timeout occurred when getting a connection (test-compatible name)",
-			},
-		),
-
-		// Rate Limiting Metrics
-		RateLimitExceededTotal:          rateLimitExceeded,
-		RateLimitingDroppedSignalsTotal: rateLimitExceeded, // Alias for consistency
-
-		// Additional Handler Metrics
-		SignalsReceived: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_signals_received_by_adapter_total",
-				Help: "Total signals received by adapter type (prometheus, kubernetes-event, etc.)",
-			},
-			[]string{"adapter"},
-		),
-		SignalsFailed: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_signals_failed_total",
-				Help: "Total signals that failed processing",
-			},
-			[]string{"reason"},
-		),
-		RedisOperationErrors: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_redis_operation_errors_total",
-				Help: "Total Redis operation errors",
-			},
-			[]string{"operation"},
-		),
-		RequestsRejectedTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_requests_rejected_total",
-				Help: "Total requests rejected",
-			},
-			[]string{"reason"},
-		),
-		DuplicateCRDsPreventedTotal: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: "gateway_duplicate_crds_prevented_total",
-				Help: "Total duplicate CRDs prevented by deduplication",
-			},
-		),
-		DuplicatePreventionActive: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_duplicate_prevention_active",
-				Help: "Whether duplicate prevention is active (1 = active, 0 = inactive)",
-			},
-		),
-		DuplicateSignals: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_duplicate_signals_total",
-				Help: "Total duplicate signals detected",
-			},
-			[]string{"namespace"},
-		),
-		Consecutive503Responses: factory.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "gateway_consecutive_503_responses",
-				Help: "Consecutive 503 responses per namespace (Redis outage tracking)",
-			},
-			[]string{"namespace"},
-		),
-		SignalsProcessed: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_signals_processed_total",
-				Help: "Total signals successfully processed",
-			},
-			[]string{"environment"},
-		),
-		StormProtectionActive: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_storm_protection_active",
-				Help: "Whether storm protection is active (1 = active, 0 = inactive)",
-			},
-		),
-		CRDsCreated: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_crds_created_by_type_total",
-				Help: "Total CRDs created by type",
-			},
-			[]string{"type"},
-		),
-
-		// DD-GATEWAY-008: Storm Buffering & Aggregation Metrics (6 essential)
-		StormCostSavingsPercent: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_storm_cost_savings_percent",
-				Help: "Cost savings percentage from storm aggregation (0-100) - BR-GATEWAY-016",
-			},
-		),
-		StormAggregationRatio: factory.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "gateway_storm_aggregation_ratio",
-				Help: "Ratio of alerts aggregated to total alerts received (0.0-1.0, higher=better) - BR-GATEWAY-008",
-			},
-		),
-		StormWindowDuration: factory.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "gateway_storm_window_duration_seconds",
-				Help:    "Histogram of actual storm window durations in seconds - BR-GATEWAY-008",
-				Buckets: []float64{10, 30, 60, 120, 180, 300}, // 10s, 30s, 1m, 2m, 3m, 5m
-			},
-			[]string{"namespace", "alert_name"},
-		),
-		NamespaceBufferUtilization: factory.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "gateway_namespace_buffer_utilization",
-				Help: "Buffer utilization per namespace (0.0-1.0) - BR-GATEWAY-011",
-			},
-			[]string{"namespace"},
-		),
-		NamespaceBufferBlocking: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_namespace_buffer_blocking_total",
-				Help: "Total namespace buffer capacity blocking events - BR-GATEWAY-011",
-			},
-			[]string{"namespace"},
-		),
-		StormBufferOverflow: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "gateway_storm_buffer_overflow_total",
-				Help: "Total storm buffer overflow events (capacity reached) - BR-GATEWAY-011",
-			},
-			[]string{"namespace"},
 		),
 	}
 }

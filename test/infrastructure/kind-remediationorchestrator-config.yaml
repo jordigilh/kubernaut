@@ -1,0 +1,72 @@
+# Kind Cluster Configuration for RemediationOrchestrator E2E Tests
+# Reference: DD-TEST-001 Port Allocation Strategy
+#
+# Port Allocation (from DD-TEST-001):
+#   Host Port (API): 8083
+#   Host Port (Metrics): 9183
+#   NodePort (API): 30083
+#   NodePort (Metrics): 30183
+#   Health Port: 8081 (in-cluster)
+#   Metrics Port: 9093 (in-cluster)
+#
+# Kubeconfig Convention (per TESTING_GUIDELINES.md):
+#   Pattern: ~/.kube/{service}-e2e-config
+#   Path: ~/.kube/remediationorchestrator-e2e-config
+#   Cluster Name: remediationorchestrator-e2e
+#
+# Usage:
+#   kind create cluster \
+#     --name remediationorchestrator-e2e \
+#     --config test/infrastructure/kind-remediationorchestrator-config.yaml \
+#     --kubeconfig ~/.kube/remediationorchestrator-e2e-config
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  # Expose RemediationOrchestrator Controller ports via NodePort to host machine
+  # This eliminates kubectl port-forward instability for E2E tests
+  extraPortMappings:
+  # DataStorage API Port (for audit event queries in E2E tests)
+  - containerPort: 30081
+    hostPort: 8081
+    protocol: TCP
+  # API Port (if needed in future)
+  - containerPort: 30083
+    hostPort: 8083
+    protocol: TCP
+  # Metrics Port (for Prometheus scraping in E2E tests)
+  - containerPort: 30183
+    hostPort: 9183
+    protocol: TCP
+  # Health Port (for readiness checks)
+  - containerPort: 30284
+    hostPort: 8183
+    protocol: TCP
+  # Extra mounts for coverage data collection (DD-TEST-007)
+  extraMounts:
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
+  # Increase API server rate limits for parallel integration testing
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel operations
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        kube-api-qps: "100"
+        kube-api-burst: "200"
+- role: worker
+  extraMounts:
+  # Mount coverage directory from host to Kind node for E2E coverage collection
+  # Per DD-TEST-007: E2E Coverage Capture Standard
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
+

@@ -26,6 +26,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -85,7 +88,7 @@ func DeployToolsetTestServices(ctx context.Context, namespace, kubeconfigPath st
 
 	// 1. Create test namespace
 	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createNamespaceOnly(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -226,6 +229,40 @@ func DeleteToolsetCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 	return nil
 }
 
+// CleanupTestNamespace deletes a test namespace and all resources
+// This is called in AfterEach for each test
+func CleanupTestNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintf(writer, "🧹 Cleaning up namespace %s...\n", namespace)
+
+	cmd := exec.Command("kubectl", "delete", "namespace", namespace,
+		"--kubeconfig", kubeconfigPath,
+		"--wait=true",
+		"--timeout=60s")
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete namespace: %w", err)
+	}
+
+	fmt.Fprintf(writer, "✅ Namespace %s deleted\n", namespace)
+	return nil
+}
+
+// RunCommand executes a shell command and returns output
+// Used for one-off kubectl commands in tests
+func RunCommand(command, kubeconfigPath string) (string, error) {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("command failed: %w", err)
+	}
+
+	return string(output), nil
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // INTERNAL HELPER FUNCTIONS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -300,6 +337,8 @@ func buildToolsetImage(writer io.Writer) error {
 	}
 
 	buildCmd := exec.Command("podman", "build",
+		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
+		
 		"-t", "localhost/kubernaut-dynamic-toolsets:e2e-test",
 		"-f", "docker/dynamic-toolset-ubi9.Dockerfile",
 		".",
@@ -387,4 +426,38 @@ func waitForToolsetReady(namespace, kubeconfigPath string, writer io.Writer) err
 
 	fmt.Fprintln(writer, "   Dynamic Toolset controller ready")
 	return nil
+}
+
+// waitForPods waits for pods matching label selector to be ready
+// TODO: Move to shared infrastructure file (used by toolset)
+func waitForPods(namespace, labelSelector string, expectedCount, maxAttempts int, delay time.Duration, kubeconfigPath string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	for i := 0; i < maxAttempts; i++ {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: labelSelector,
+		})
+		if err == nil && len(pods.Items) >= expectedCount {
+			readyCount := 0
+			for _, pod := range pods.Items {
+				if pod.Status.Phase == corev1.PodRunning {
+					for _, condition := range pod.Status.Conditions {
+						if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+							readyCount++
+							break
+						}
+					}
+				}
+			}
+			if readyCount >= expectedCount {
+				return nil
+			}
+		}
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("pods not ready after %d attempts", maxAttempts)
 }

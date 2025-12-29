@@ -1,0 +1,35 @@
+# HolmesGPT API Service - Slim Dependencies (For E2E Testing)
+#
+# This is a reduced dependency set that excludes heavy cloud provider SDKs
+# Used for E2E tests where we mock LLM responses
+#
+# IMPORTANT: HolmesGPT has a dependency specification issue:
+#   - Requires: supabase = "^2.5" (allows any 2.x)
+#   - Requires: postgrest = "0.16.8" (locked for bug workaround)
+#   - But supabase 2.9+ requires postgrest>=0.17 (conflict!)
+#
+# Solution: We constrain supabase to compatible version range.
+
+# Constrain supabase to version compatible with HolmesGPT's postgrest pin
+supabase>=2.5,<2.8  # Compatible with postgrest 0.16.8
+postgrest==0.16.8   # Match HolmesGPT's pin exactly
+httpx<0.28,>=0.24   # Supabase stack requires <0.28
+
+# HolmesGPT SDK (from local copy)
+../dependencies/holmesgpt/
+
+# Additional service-specific dependencies
+aiohttp>=3.9.1
+aiodns>=3.1.1
+prometheus-client>=0.19.0
+python-json-logger>=2.0.7
+PyYAML>=6.0
+watchdog>=3.0.0,<4.0.0
+
+# LLM Provider SDKs (needed by litellm in HolmesGPT SDK)
+# Vertex AI (Google Cloud) - required by litellm even if not actively used
+google-cloud-aiplatform>=1.38  # Required for litellm Vertex AI integration
+
+# NOTE: This is the same as requirements.txt but with optimized Dockerfile
+# The size savings come from Dockerfile optimizations, not removed dependencies
+

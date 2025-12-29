@@ -481,7 +481,7 @@ Describe("Integration Test 1: NotificationRequest Lifecycle (Pending → Sent)",
 **Content**:
 1. **Kubebuilder Markers Explained** (100 lines)
    ```go
-   //+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests,verbs=get;list;watch
+   //+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests,verbs=get;list;watch
    // Explanation: Generates RBAC manifests for controller permissions
    ```
 
@@ -546,7 +546,7 @@ Describe("Integration Test 1: NotificationRequest Lifecycle (Pending → Sent)",
 
 8. **Finalizer Implementation** (80 lines)
    ```go
-   const notificationFinalizer = "notification.kubernaut.ai/finalizer"
+   const notificationFinalizer = "kubernaut.ai/finalizer"
 
    // Add finalizer on creation
    if !controllerutil.ContainsFinalizer(notification, notificationFinalizer) {

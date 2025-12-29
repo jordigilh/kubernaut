@@ -155,7 +155,7 @@ This document provides comprehensive examples of multi-step workflows in Kuberna
 ### **WorkflowExecution CRD (Generated)**
 
 ```yaml
-apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: WorkflowExecution
 metadata:
   name: aianalysis-oomkill-12345-workflow

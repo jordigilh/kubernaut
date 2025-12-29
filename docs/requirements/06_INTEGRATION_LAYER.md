@@ -725,4 +725,44 @@ The Integration Layer provides comprehensive connectivity and communication capa
 
 ---
 
+## 15. SignalProcessing CRD Controller (V1.0)
+
+> **Note**: The SignalProcessing CRD Controller replaces the legacy Remediation Processor for Kubernetes-native signal processing. For detailed requirements, see the authoritative source below.
+
+### 15.1 Authoritative Requirements Source
+
+**Document**: [SignalProcessing BUSINESS_REQUIREMENTS.md](../services/crd-controllers/01-signalprocessing/BUSINESS_REQUIREMENTS.md)
+
+### 15.2 Requirement Summary
+
+| Category | Range | Count | Description |
+|----------|-------|-------|-------------|
+| Core Enrichment | BR-SP-001 to BR-SP-012 | 5 | K8s context, classification, recovery |
+| Environment Classification | BR-SP-051 to BR-SP-053 | 3 | Namespace-based detection |
+| Priority Assignment | BR-SP-070 to BR-SP-072 | 3 | Rego-based priority engine |
+| Business Classification | BR-SP-080 to BR-SP-081 | 2 | Confidence scoring |
+| Audit & Observability | BR-SP-090 | 1 | Audit trail |
+| Label Detection | BR-SP-100 to BR-SP-104 | 5 | DD-WORKFLOW-001 v2.2 schema |
+
+**Total**: 19 business requirements (P0: 7, P1: 9, P2: 3)
+
+### 15.3 Key Changes from Legacy Processor
+
+| Aspect | Legacy Processor | SignalProcessing CRD |
+|--------|------------------|---------------------|
+| Architecture | In-memory processing | Kubernetes CRD + Controller |
+| State | Ephemeral | Persistent (CRD status) |
+| Recovery | Manual retry | K8s reconciliation loop |
+| Labels | None | DD-WORKFLOW-001 v2.2 (8 detected + custom) |
+| Audit | Optional | Mandatory (BR-SP-090) |
+
+### 15.4 Migration Path
+
+The SignalProcessing CRD Controller will coexist with the legacy Remediation Processor during V1.0:
+- Gateway creates SignalProcessing CRD instead of calling processor directly
+- Remediation Orchestrator reads from SignalProcessing CRD status
+- Legacy processor paths deprecated after V1.1
+
+---
+
 *This document serves as the definitive specification for business requirements of Kubernaut's Integration Layer. All implementation and testing should align with these requirements to ensure reliable, secure, and efficient integration with external systems and notification delivery.*

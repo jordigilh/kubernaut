@@ -1,0 +1,43 @@
+# DataStorage configuration for HolmesGPT-API integration tests
+# Per ADR-030: Service must not guess config file location
+#
+# This file is mounted into DataStorage container at /etc/datastorage/config.yaml
+# and referenced via CONFIG_PATH environment variable
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: "30s"
+  write_timeout: "30s"
+
+logging:
+  level: "debug"  # Debug level for integration tests
+  format: "json"
+
+database:
+  # PostgreSQL runs in same network, accessible by container name
+  host: "holmesgptapi_postgres_1"
+  port: 5432
+  name: "action_history"
+  user: "slm_user"
+  ssl_mode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: "5m"
+  conn_max_idle_time: "10m"
+  # ADR-030 Section 6: Secrets loaded from mounted files
+  secretsFile: "/etc/datastorage-secrets/database-credentials.yaml"
+  passwordKey: "password"
+
+redis:
+  # Redis runs in same network, accessible by container name
+  addr: "holmesgptapi_redis_1:6379"
+  db: 0
+  # DD-009: Redis used for Dead Letter Queue (DLQ) fallback
+  dlq_stream_name: "audit:dlq:notification"
+  dlq_max_len: 10000
+  dlq_consumer_group: "datastorage-dlq-consumers"
+  # ADR-030 Section 6: Secrets loaded from mounted files
+  secretsFile: "/etc/datastorage-secrets/redis-credentials.yaml"
+  passwordKey: "password"
+

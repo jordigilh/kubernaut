@@ -1,0 +1,134 @@
+# Gateway Integration Test Infrastructure
+# Port Allocation per DD-TEST-001: Port Allocation Strategy
+#
+# Service Ports (Gateway-specific):
+#   PostgreSQL:       15437 → 5432 (DataStorage backend)
+#   Redis:            16383 → 6379 (DataStorage DLQ)
+#   Data Storage API: 18091 → 8080 (Audit + State backend)
+#
+# These ports are dedicated to Gateway integration tests to prevent
+# collisions with other services running tests in parallel.
+#
+# Pattern: AIAnalysis Pattern (Programmatic podman-compose)
+# - Declarative infrastructure (this file)
+# - Programmatic lifecycle (test/infrastructure/gateway.go)
+# - Health checks for robust startup
+# - Parallel-safe with unique ports
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gateway_postgres_test
+    environment:
+      POSTGRES_USER: slm_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: action_history
+    ports:
+      - "15437:5432"  # Gateway integration test PostgreSQL port (DD-TEST-001)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slm_user -d action_history"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gateway_test_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: gateway_redis_test
+    ports:
+      - "16383:6379"  # Gateway integration test Redis port (DD-TEST-001)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - gateway_test_network
+
+  datastorage:
+    image: kubernaut/datastorage:latest
+    container_name: gateway_datastorage_test
+    # Build from local source for integration tests
+    build:
+      context: ../../../
+      dockerfile: cmd/datastorage/Dockerfile
+    environment:
+      CONFIG_PATH: /etc/datastorage/config.yaml
+      # Environment variables for backward compatibility
+      # (DataStorage prioritizes config.yaml per ADR-030)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: kubernaut
+      POSTGRES_PASSWORD: kubernaut-test-password
+      POSTGRES_DB: kubernaut
+      REDIS_ADDR: redis:6379
+      PORT: 8080
+    ports:
+      - "18091:8080"  # Gateway integration test DataStorage API port (DD-TEST-001)
+      - "19091:9090"  # DataStorage metrics port
+    volumes:
+      - ./config:/etc/datastorage:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - gateway_test_network
+
+  # Database migrations (runs once and exits)
+  # Uses postgres image with psql (avoids goose image pull issues)
+  # Extracts only "Up" section from goose-formatted migrations
+  migrate:
+    image: postgres:16-alpine
+    container_name: gateway_migrations
+    volumes:
+      - ../../../migrations:/migrations:ro
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: slm_user
+      PGPASSWORD: test_password
+      PGDATABASE: action_history
+    # Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
+    # Skip vector-dependent migrations (001-008) as pgvector removed for V1.0
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Waiting for PostgreSQL..."
+        until pg_isready -h postgres -U slm_user; do sleep 1; done
+        echo "Applying migrations (Up sections only, skipping 001-008 vector migrations)..."
+        find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
+          # Skip vector-dependent migrations (001-008)
+          if echo "$$f" | grep -qE '/00[1-8]_'; then
+            echo "Skipping vector migration: $$f"
+            continue
+          fi
+          echo "Applying $$f..."
+          sed -n '1,/^-- +goose Down/p' "$$f" | grep -v '^-- +goose Down' | psql
+        done
+        echo "Migrations complete!"
+    networks:
+      - gateway_test_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  gateway_test_network:
+    name: gateway_test_network
+    driver: bridge
+

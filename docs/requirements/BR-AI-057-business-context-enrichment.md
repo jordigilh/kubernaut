@@ -1,10 +1,10 @@
 # BR-AI-057: Business Context Enrichment for Recovery Analysis
 
-**Status**: Approved  
-**Version**: 1.0  
-**Created**: 2025-11-15  
-**Target Release**: v1.1  
-**Service**: AI Analysis Service  
+**Status**: Approved
+**Version**: 1.0
+**Created**: 2025-11-15
+**Target Release**: v1.1
+**Service**: AI Analysis Service
 **Related**: DD-HOLMESGPT-002, BR-HAPI-001, BR-PLAYBOOK-001
 
 ---
@@ -17,7 +17,7 @@ The AI Analysis Service SHALL enrich incident context with organizational busine
 
 ## Rationale
 
-**Problem**: 
+**Problem**:
 - Current recovery analysis lacks organizational business context
 - LLM recommendations are purely technical, ignoring business policies
 - Cost-sensitive namespaces need different remediation approaches than critical services
@@ -51,11 +51,11 @@ The AI Analysis Service SHALL provide the following business context fields to H
 
 | Field | Type | Source | Example Values |
 |-------|------|--------|----------------|
-| `business_category` | string | Namespace label: `kubernaut.io/business-category` | `cost-management`, `payment-service`, `analytics` |
-| `cost_sensitivity` | enum | Namespace label: `kubernaut.io/cost-sensitivity` | `HIGH`, `MEDIUM`, `LOW` |
+| `business_category` | string | Namespace label: `kubernaut.ai/business-category` | `cost-management`, `payment-service`, `analytics` |
+| `cost_sensitivity` | enum | Namespace label: `kubernaut.ai/cost-sensitivity` | `HIGH`, `MEDIUM`, `LOW` |
 | `approval_required_for` | array | Policy ConfigMap | `["resource_increases", "scaling_up", "node_changes"]` |
 | `preferred_approaches` | array | Policy ConfigMap | `["optimization", "scale_down", "resource_increase"]` |
-| `sla_tier` | enum | Namespace label: `kubernaut.io/sla-tier` | `CRITICAL`, `HIGH`, `STANDARD` |
+| `sla_tier` | enum | Namespace label: `kubernaut.ai/sla-tier` | `CRITICAL`, `HIGH`, `STANDARD` |
 
 ### FR-AI-057-003: Context Enrichment
 The AI Analysis Service SHALL enrich the recovery request context before sending to HolmesGPT API:
@@ -132,9 +132,9 @@ kind: Namespace
 metadata:
   name: cost-management
   labels:
-    kubernaut.io/business-category: "cost-management"
-    kubernaut.io/cost-sensitivity: "HIGH"
-    kubernaut.io/sla-tier: "STANDARD"
+    kubernaut.ai/business-category: "cost-management"
+    kubernaut.ai/cost-sensitivity: "HIGH"
+    kubernaut.ai/sla-tier: "STANDARD"
 ```
 
 **Implementation**:
@@ -175,7 +175,7 @@ data:
 
 ### AC-AI-057-001: Namespace Label Reading
 ```gherkin
-Given a namespace "cost-management" with label "kubernaut.io/business-category=cost-management"
+Given a namespace "cost-management" with label "kubernaut.ai/business-category=cost-management"
 When an incident occurs in that namespace
 Then the recovery request context SHALL include "business_category": "cost-management"
 ```
@@ -271,8 +271,8 @@ business_context_default_used_total{namespace}
 
 ---
 
-**Approval**: Required  
-**Approver**: Product Owner, Technical Lead  
+**Approval**: Required
+**Approver**: Product Owner, Technical Lead
 **Review Date**: 2025-11-15
 
 

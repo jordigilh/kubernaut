@@ -19,7 +19,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
@@ -29,9 +28,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -49,7 +48,7 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 		k8sClient     client.Client
@@ -57,7 +56,7 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "concurrent"))
+		testLogger = logger.WithValues("test", "concurrent")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -67,7 +66,7 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
 		testNamespace = fmt.Sprintf("concurrent-%d-%d", processID, time.Now().UnixNano())
-		testLogger.Info("Creating test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
 		ns := &corev1.Namespace{
@@ -76,7 +75,7 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 		k8sClient = getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
@@ -85,8 +84,8 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
+				"namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -142,12 +141,25 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 					alertName := sharedAlertName
 					podName := fmt.Sprintf("concurrent-pod-g%d-a%d", goroutineID, i)
 
-					payload := createConcurrentAlertPayload(alertName, testNamespace, podName)
-					resp, err := httpClient.Post(
-						gatewayURL+"/api/v1/signals/prometheus",
-						"application/json",
-						bytes.NewBuffer(payload),
-					)
+					payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+						AlertName: alertName,
+						Namespace: testNamespace,
+						PodName:   podName,
+						Severity:  "warning",
+						Annotations: map[string]string{
+							"summary":     fmt.Sprintf("Concurrent test: %s", alertName),
+							"description": "Testing concurrent alert handling",
+						},
+					})
+					resp, err := func() (*http.Response, error) {
+						req9, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+						if err != nil {
+							return nil, err
+						}
+						req9.Header.Set("Content-Type", "application/json")
+						req9.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+						return httpClient.Do(req9)
+					}()
 
 					if err != nil {
 						atomic.AddInt64(&errorCount, 1)
@@ -202,16 +214,16 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to create K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to create K8s client (unknown error)")
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			crdCount = len(crdList.Items)
@@ -255,27 +267,4 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 	})
 })
 
-// createConcurrentAlertPayload creates a unique alert payload for concurrent testing
-func createConcurrentAlertPayload(alertName, namespace, podName string) []byte {
-	payload := map[string]interface{}{
-		"alerts": []map[string]interface{}{
-			{
-				"status": "firing",
-				"labels": map[string]interface{}{
-					"alertname": alertName,
-					"severity":  "warning",
-					"namespace": namespace,
-					"pod":       podName,
-				},
-				"annotations": map[string]interface{}{
-					"summary":     fmt.Sprintf("Concurrent test: %s", alertName),
-					"description": "Testing concurrent alert handling",
-				},
-				"startsAt": time.Now().Format(time.RFC3339),
-			},
-		},
-	}
-
-	payloadBytes, _ := json.Marshal(payload)
-	return payloadBytes
-}
+// NOTE: Removed local createConcurrentAlertPayload() - now using shared createPrometheusWebhookPayload() from deduplication_helpers.go

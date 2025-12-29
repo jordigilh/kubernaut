@@ -27,13 +27,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 1: Happy Path - Complete Remediation Audit Trail (P0)
@@ -63,11 +62,10 @@ import (
 // - Complete infrastructure isolation
 // - No data pollution between tests
 
-var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", Label("e2e", "happy-path", "p0"), Ordered, func() {
+var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audit Trail (DD-AUDIT-003)", Label("e2e", "happy-path", "p0"), Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		httpClient    *http.Client
 		testNamespace string
 		serviceURL    string
@@ -76,51 +74,31 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 15*time.Minute)
-		testLogger = logger.With(zap.String("test", "happy-path"))
+		_, testCancel = context.WithTimeout(ctx, 15*time.Minute)
+		testLogger = logger.WithValues("test", "happy-path")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Scenario 1: Happy Path - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace for this test (parallel execution)
-		testNamespace = generateUniqueNamespace()
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
-
-		// Deploy PostgreSQL, Redis, and Data Storage Service
-		err := infrastructure.DeployDataStorageTestServices(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Set up port-forward to Data Storage Service
-		// For E2E tests, we'll use kubectl port-forward to access the service
-		localPort := 28090 + GinkgoParallelProcess() // DD-TEST-001: E2E port range (28090-28093)
-		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
-
-		// Start port-forward in background
-		portForwardCancel, err := portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Store cancel function for cleanup
-		DeferCleanup(func() {
-			if portForwardCancel != nil {
-				portForwardCancel()
-			}
-		})
-
-		testLogger.Info("Service URL configured", zap.String("url", serviceURL))
+		// Use shared deployment from SynchronizedBeforeSuite (no per-test deployment)
+		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
+		testNamespace = sharedNamespace
+		serviceURL = dataStorageURL
+		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
 		// Wait for Data Storage Service HTTP endpoint to be responsive
 		testLogger.Info("⏳ Waiting for Data Storage Service HTTP endpoint...")
 		Eventually(func() error {
 			resp, err := httpClient.Get(serviceURL + "/health")
 			if err != nil {
-				testLogger.Debug("Health check failed, retrying...", zap.Error(err))
+				testLogger.V(1).Info("Health check failed, retrying...", "error", err)
 				return err
 			}
 			defer func() {
 				if err := resp.Body.Close(); err != nil {
-					testLogger.Error("failed to close response body", zap.Error(err))
+					testLogger.Error(err, "failed to close response body")
 				}
 			}()
 			if resp.StatusCode != http.StatusOK {
@@ -130,20 +108,10 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Data Storage Service should be healthy")
 		testLogger.Info("✅ Data Storage Service is responsive")
 
-		// Connect to PostgreSQL for verification
-		testLogger.Info("🔌 Connecting to PostgreSQL for verification...")
-		// Port-forward to PostgreSQL
-		pgLocalPort := 25433 + GinkgoParallelProcess() // DD-TEST-001: E2E PostgreSQL port range (25433-25436)
-		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", kubeconfigPath, pgLocalPort, 5432)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			if pgPortForwardCancel != nil {
-				pgPortForwardCancel()
-			}
-		})
-
-		// Connect to PostgreSQL
-		connStr := fmt.Sprintf("host=localhost port=%d user=slm_user password=test_password dbname=action_history sslmode=disable", pgLocalPort)
+		// Connect to PostgreSQL for verification (using shared NodePort - no port-forward needed)
+		testLogger.Info("🔌 Connecting to PostgreSQL via NodePort...")
+		connStr := fmt.Sprintf("host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable") // Per DD-TEST-001
+		var err error
 		db, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -155,26 +123,21 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		// Generate unique correlation ID for this test
 		correlationID = fmt.Sprintf("remediation-%s", testNamespace)
 
-		testLogger.Info("✅ Test services ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test services ready", "namespace", testNamespace)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
 	AfterAll(func() {
-		testLogger.Info("🧹 Cleaning up test namespace...")
+		testLogger.Info("🧹 Cleaning up test resources...")
 		if db != nil {
 			if err := db.Close(); err != nil {
-			testLogger.Warn("failed to close database connection", zap.Error(err))
-		}
+				testLogger.Info("warning: failed to close database connection", "error", err)
+			}
 		}
 		if testCancel != nil {
 			testCancel()
 		}
-
-		// Cleanup namespace
-		err := infrastructure.CleanupDataStorageTestNamespace(testNamespace, kubeconfigPath, GinkgoWriter)
-		if err != nil {
-			testLogger.Warn("Failed to cleanup namespace", zap.Error(err))
-		}
+		// Note: Shared namespace is NOT cleaned up here - it's managed by SynchronizedAfterSuite
 	})
 
 	It("should create complete audit trail across all services", func() {
@@ -192,19 +155,19 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		gatewayEvent := map[string]interface{}{
 			"version":         "1.0",
-			"service":         "gateway",
+			"event_category":  "gateway",
+			"event_action":    "signal_processing",
 			"event_type":      "gateway.signal.received",
 			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
 			"correlation_id":  correlationID,
-			"outcome":         "success",
-			"operation":       "signal_processing",
+			"event_outcome":   "success",
 			"event_data":      gatewayEventData,
 		}
 
 		resp := postAuditEvent(httpClient, serviceURL, gatewayEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Gateway audit event created")
 
@@ -217,19 +180,19 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		aiEvent := map[string]interface{}{
 			"version":         "1.0",
-			"service":         "aianalysis",
-			"event_type":      "aianalysis.analysis.completed",
+			"event_category":  "analysis",
+			"event_action":    "rca_generation",
+			"event_type":      "analysis.analysis.completed",
 			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
 			"correlation_id":  correlationID,
-			"outcome":         "success",
-			"operation":       "rca_generation",
+			"event_outcome":   "success",
 			"event_data":      aiEventData,
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, aiEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "AIAnalysis audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ AIAnalysis audit event created")
 
@@ -242,19 +205,19 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		workflowEvent := map[string]interface{}{
 			"version":         "1.0",
-			"service":         "workflow",
+			"event_category":  "workflow",
+			"event_action":    "remediation_execution",
 			"event_type":      "workflow.workflow.completed",
 			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
 			"correlation_id":  correlationID,
-			"outcome":         "success",
-			"operation":       "remediation_execution",
+			"event_outcome":   "success",
 			"event_data":      workflowEventData,
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, workflowEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Workflow audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Workflow audit event created")
 
@@ -262,19 +225,19 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		testLogger.Info("🎯 Step 4: Orchestrator completes...")
 		orchestratorEvent := map[string]interface{}{
 			"version":         "1.0",
-			"service":         "orchestrator",
-			"event_type":      "orchestrator.remediation.completed",
+			"event_category":  "orchestration", // ADR-034 v1.2 valid category (was "orchestrator")
+			"event_action":    "orchestration",
+			"event_type":      "orchestration.remediation.completed", // Match category
 			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
 			"correlation_id":  correlationID,
-			"outcome":         "success",
-			"operation":       "orchestration",
+			"event_outcome":   "success",
 			"event_data":      map[string]interface{}{},
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, orchestratorEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Orchestrator audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Orchestrator audit event created")
 
@@ -282,19 +245,19 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		testLogger.Info("📊 Step 5: EffectivenessMonitor assesses...")
 		monitorEvent := map[string]interface{}{
 			"version":         "1.0",
-			"service":         "monitor",
-			"event_type":      "monitor.assessment.completed",
+			"event_category":  "analysis", // ADR-034 v1.2: effectiveness assessment = analysis category (was "monitor")
+			"event_action":    "effectiveness_assessment",
+			"event_type":      "analysis.assessment.completed", // Match category
 			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
 			"correlation_id":  correlationID,
-			"outcome":         "success",
-			"operation":       "effectiveness_assessment",
+			"event_outcome":   "success",
 			"event_data":      map[string]interface{}{},
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, monitorEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Monitor audit event should be created")
 		if err := resp.Body.Close(); err != nil {
-			testLogger.Error("failed to close response body", zap.Error(err))
+			testLogger.Error(err, "failed to close response body")
 		}
 		testLogger.Info("✅ Monitor audit event created")
 
@@ -306,8 +269,10 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 			WHERE correlation_id = $1
 		`, correlationID).Scan(&count)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(count).To(Equal(5), "Should have 5 audit events in database")
-		testLogger.Info("✅ All 5 audit events persisted to database")
+		// Self-auditing creates additional events (datastorage.audit.written)
+		// We expect at least 5 events (the ones we created), but may have more
+		Expect(count).To(BeNumerically(">=", 5), "Should have at least 5 audit events in database")
+		testLogger.Info("✅ All audit events persisted to database", "count", count)
 
 		// Verification: Query via REST API
 		testLogger.Info("🔍 Querying audit trail via REST API...")
@@ -327,8 +292,9 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		data, ok := queryResponse["data"].([]interface{})
 		Expect(ok).To(BeTrue(), "Response should have data array")
-		Expect(data).To(HaveLen(5), "Query API should return 5 events")
-		testLogger.Info("✅ Query API returned complete audit trail")
+		// Self-auditing creates additional events, so we expect at least 5
+		Expect(len(data)).To(BeNumerically(">=", 5), "Query API should return at least 5 events")
+		testLogger.Info("✅ Query API returned complete audit trail", "event_count", len(data))
 
 		// Verification: Chronological order (sort events first since API doesn't guarantee order)
 		testLogger.Info("🔍 Verifying chronological order...")
@@ -377,15 +343,15 @@ func postAuditEvent(client *http.Client, baseURL string, event map[string]interf
 
 	// Log response body if not 2xx status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-	bodyBytes, _ := io.ReadAll(resp.Body)
-	if err := resp.Body.Close(); err != nil {
-		// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-		_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
-	}
-	if _, err := fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes)); err != nil {
-		// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-		_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to write to GinkgoWriter: %v\n", err)
-	}
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		if err := resp.Body.Close(); err != nil {
+			// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
+			_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
+		}
+		if _, err := fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes)); err != nil {
+			// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
+			_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to write to GinkgoWriter: %v\n", err)
+		}
 		// Create new reader for the response body so tests can still read it
 		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}

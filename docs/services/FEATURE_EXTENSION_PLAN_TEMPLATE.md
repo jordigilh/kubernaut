@@ -1,7 +1,7 @@
 # [DD-XXX-YYY]: [Feature Name] - Implementation Plan
 
-**Version**: 1.3
-**Filename**: `[CONTEXT_PREFIX_]IMPLEMENTATION_PLAN[_FEATURE_SUFFIX]_V1.3.md`
+**Version**: 1.4
+**Filename**: `[CONTEXT_PREFIX_]IMPLEMENTATION_PLAN[_FEATURE_SUFFIX]_V1.4.md`
 **Status**: 📋 DRAFT
 **Design Decision**: [Link to DD-XXX-YYY]
 **Service**: [Service Name]
@@ -35,7 +35,8 @@
 | **v1.0** | YYYY-MM-DD | Initial template created | ⏸️ Superseded |
 | **v1.1** | 2025-11-21 | **CRITICAL**: Added explicit test file location requirements (`test/unit/`, `test/integration/`, `test/e2e/`). Added warnings against co-locating tests with source files. Clarified package naming conventions. | ⏸️ Superseded |
 | **v1.2** | 2025-11-22 | **CRITICAL**: Added 5 mandatory pitfalls from Audit Implementation lessons learned (DD-STORAGE-012). Includes: (1) Insufficient TDD Discipline, (2) Missing Integration Tests for New Endpoints, (3) Critical Infrastructure Without Unit Tests, (4) Late E2E Discovery (Testing Tier Inversion), (5) No Test Coverage Gates. Added enforcement checklists, automated coverage gates, and evidence from DD-IMPLEMENTATION-AUDIT-V1.0.md. | ⏸️ Superseded |
-| **v1.3** | 2025-11-23 | **ENHANCEMENTS**: Added filename version consistency rule, critical pitfalls summary at top, success metrics justification format, confidence calculation methodology, integration test environment decision section, operational sections checklist, and version bump checklist. | ✅ **CURRENT** |
+| **v1.3** | 2025-11-23 | **ENHANCEMENTS**: Added filename version consistency rule, critical pitfalls summary at top, success metrics justification format, confidence calculation methodology, integration test environment decision section, operational sections checklist, and version bump checklist. | ⏸️ Superseded |
+| **v1.4** | 2025-11-27 | **CORRECTION**: Removed incorrect exception "(unless testing a shared library in pkg/)" from test file location rules. ALL tests must be in `test/` directory - no exceptions for pkg/ libraries. | ✅ **CURRENT** |
 
 ---
 
@@ -167,7 +168,7 @@ Day [N] (Integration) → Days [N+1]-[N+M] (Testing) → Days [N+M+1]-[N+M+P] (P
 
 **❌ NEVER place tests**:
 - ❌ Co-located with source files (e.g., `internal/controller/[service]/[feature]_test.go`)
-- ❌ In `pkg/[package]/[feature]_test.go` (unless testing a shared library in pkg/)
+- ❌ In `pkg/[package]/[feature]_test.go`
 
 **Package Naming**: Tests use white-box testing (same package as code under test).
 
@@ -1163,8 +1164,8 @@ Overall Confidence = Σ(Component Confidence × Component Weight) / Σ(Component
 ---
 
 **Document Status**: 📋 **TEMPLATE**
-**Last Updated**: 2025-11-23
-**Version**: 1.3
+**Last Updated**: 2025-11-27
+**Version**: 1.4
 **Maintained By**: Development Team
 
 ---

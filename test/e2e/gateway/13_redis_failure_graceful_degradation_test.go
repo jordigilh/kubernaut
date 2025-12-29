@@ -22,11 +22,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,14 +39,14 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 	)
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute) // Longer timeout for Redis failure test
-		testLogger = logger.With(zap.String("test", "redis-failure"))
+		testLogger = logger.WithValues("test", "redis-failure")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -54,7 +55,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		testNamespace = GenerateUniqueNamespace("redis-fail")
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
+		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
@@ -62,8 +63,8 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		k8sClient := getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -80,8 +81,8 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testLogger.Info("Redis restoration check complete")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
+				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
@@ -93,7 +94,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
@@ -156,13 +157,17 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			}
 			payloadBytes, _ := json.Marshal(webhookPayload)
 
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payloadBytes),
-			)
+			resp, err := func() (*http.Response, error) {
+				req19, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payloadBytes))
+				if err != nil {
+					return nil, err
+				}
+				req19.Header.Set("Content-Type", "application/json")
+				req19.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req19)
+			}()
 			if err != nil {
-				testLogger.Debug(fmt.Sprintf("Alert %d failed", i+1), zap.Error(err))
+				testLogger.V(1).Info(fmt.Sprintf("Alert %d failed", i+1), "error", err)
 				continue
 			}
 			resp.Body.Close()
@@ -170,12 +175,13 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
 				preFailureSuccess++
 			}
-			time.Sleep(100 * time.Millisecond)
+			// Stagger requests to avoid overwhelming Gateway (50ms is sufficient for E2E)
+			time.Sleep(50 * time.Millisecond)
 		}
 
 		testLogger.Info("Pre-failure alerts sent",
-			zap.Int("total", preFailureAlerts),
-			zap.Int("success", preFailureSuccess))
+			"total", preFailureAlerts,
+			"success", preFailureSuccess)
 		Expect(preFailureSuccess).To(BeNumerically(">=", preFailureAlerts-1),
 			"Most alerts should succeed before Redis failure")
 
@@ -185,23 +191,34 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		// Find and delete Redis pod
 		redisPodList := &corev1.PodList{}
 		if err := k8sClient.List(testCtx, redisPodList, client.InNamespace(gatewayNamespace), client.MatchingLabels{"app": "redis"}); err != nil {
-			testLogger.Warn("Could not list Redis pods - Redis may not be deployed as a pod", zap.Error(err))
+			testLogger.Info("Could not list Redis pods - Redis may not be deployed as a pod", "error", err)
 		}
 
 		if len(redisPodList.Items) > 0 {
 			redisPod := &redisPodList.Items[0]
-			testLogger.Info("Deleting Redis pod to simulate failure", zap.String("pod", redisPod.Name))
+			testLogger.Info("Deleting Redis pod to simulate failure", "pod", redisPod.Name)
 			if err := k8sClient.Delete(testCtx, redisPod); err != nil {
-				testLogger.Warn("Could not delete Redis pod", zap.Error(err))
+				testLogger.Info("Could not delete Redis pod", "error", err)
 			} else {
 				testLogger.Info("✅ Redis pod deleted")
 			}
 		} else {
-			testLogger.Warn("No Redis pods found - testing graceful degradation behavior only")
+			testLogger.Info("No Redis pods found - testing graceful degradation behavior only")
 		}
 
-		// Wait a moment for Redis to become unavailable
-		time.Sleep(5 * time.Second)
+		// Wait for Redis to become unavailable using Eventually
+		// This is more reliable than a fixed sleep as Redis shutdown time can vary
+		Eventually(func() bool {
+			// Try to ping Redis - if it fails, Redis is unavailable
+			cmd := exec.CommandContext(testCtx, "kubectl", "exec",
+				"-n", gatewayNamespace,
+				"deploy/gateway",
+				"--kubeconfig", kubeconfigPath,
+				"--",
+				"redis-cli", "-h", "redis", "ping")
+			err := cmd.Run()
+			return err != nil // Redis is unavailable when ping fails
+		}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Redis should become unavailable after pod deletion")
 
 		testLogger.Info("Step 4: Send alerts during Redis unavailability")
 		const alertsDuringFailure = 3
@@ -228,13 +245,17 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 
 		successCount := 0
 		for i := 0; i < alertsDuringFailure; i++ {
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(failurePayloadBytes),
-			)
+			resp, err := func() (*http.Response, error) {
+				req20, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(failurePayloadBytes))
+				if err != nil {
+					return nil, err
+				}
+				req20.Header.Set("Content-Type", "application/json")
+				req20.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req20)
+			}()
 			if err != nil {
-				testLogger.Debug(fmt.Sprintf("Alert %d failed (expected during degradation)", i+1), zap.Error(err))
+				testLogger.V(1).Info(fmt.Sprintf("Alert %d failed (expected during degradation)", i+1), "error", err)
 				continue
 			}
 			defer resp.Body.Close()
@@ -245,15 +266,15 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 				successCount++
 				testLogger.Info(fmt.Sprintf("  Alert %d accepted (status %d)", i+1, resp.StatusCode))
 			} else {
-				testLogger.Debug(fmt.Sprintf("  Alert %d returned status %d", i+1, resp.StatusCode))
+				testLogger.V(1).Info(fmt.Sprintf("  Alert %d returned status %d", i+1, resp.StatusCode))
 			}
 
 			time.Sleep(500 * time.Millisecond)
 		}
 
 		testLogger.Info("Alerts during Redis failure",
-			zap.Int("sent", alertsDuringFailure),
-			zap.Int("accepted", successCount))
+			"sent", alertsDuringFailure,
+			"accepted", successCount)
 
 		testLogger.Info("Step 5: Verify Gateway health endpoint still responds")
 		// Gateway should remain responsive even with Redis down
@@ -299,19 +320,19 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			k8sClient := getKubernetesClientSafe()
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to get K8s client", zap.Error(err))
+					testLogger.V(1).Info("Failed to get K8s client", "error", err)
 				}
 				return -1
 			}
 			if err := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			return len(crdList.Items)
 		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
 			"At least one CRD should be created (BR-GATEWAY-101)")
 
-		testLogger.Info("✅ CRDs created", zap.Int("count", len(crdList.Items)))
+		testLogger.Info("✅ CRDs created", "count", len(crdList.Items))
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("✅ Test 13 PASSED: Redis Failure Graceful Degradation")

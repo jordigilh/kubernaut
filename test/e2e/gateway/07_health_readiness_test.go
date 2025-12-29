@@ -19,15 +19,14 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 )
 
 // Test 07: Health & Readiness Endpoints
@@ -41,19 +40,19 @@ import (
 var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Ordered, func() {
 	var (
 		testCancel context.CancelFunc
-		testLogger *zap.Logger
+		testLogger logr.Logger
 		httpClient *http.Client
 	)
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 3*time.Minute)
-		testLogger = logger.With(zap.String("test", "health-readiness"))
+		testLogger = logger.WithValues("test", "health-readiness")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018) - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 	})
 
 	AfterAll(func() {
@@ -94,7 +93,23 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 		testLogger.Info("")
 		testLogger.Info("Step 2: Test /ready endpoint")
 
-		readyResp, err := httpClient.Get(gatewayURL + "/ready")
+		// Use Eventually() to handle Gateway startup timing (may return 503 initially)
+		var readyResp *http.Response
+		Eventually(func() int {
+			var err error
+			readyResp, err = httpClient.Get(gatewayURL + "/ready")
+			if err != nil {
+				return 0
+			}
+			defer readyResp.Body.Close()
+			return readyResp.StatusCode
+		}, 30*time.Second, 2*time.Second).Should(Or(
+			Equal(http.StatusOK),
+			Equal(http.StatusNotFound), // Some services don't have /ready
+		), "Gateway /ready endpoint should be available")
+
+		// Re-fetch for body reading
+		readyResp, err = httpClient.Get(gatewayURL + "/ready")
 		if err == nil {
 			readyBody, _ := io.ReadAll(readyResp.Body)
 			readyResp.Body.Close()
@@ -142,29 +157,24 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 
 		// Send some alerts to create load
 		for i := 0; i < 5; i++ {
-			payload := map[string]interface{}{
-				"alerts": []map[string]interface{}{
-					{
-						"status": "firing",
-						"labels": map[string]interface{}{
-							"alertname": fmt.Sprintf("HealthTest-%d-%d", i, time.Now().UnixNano()),
-							"severity":  "info",
-							"namespace": "default",
-							"pod":       fmt.Sprintf("health-test-pod-%d", i),
-						},
-						"annotations": map[string]interface{}{
-							"summary": "Health test alert",
-						},
-						"startsAt": time.Now().Format(time.RFC3339),
-					},
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: fmt.Sprintf("HealthTest-%d-%d", i, time.Now().UnixNano()),
+				Namespace: "default",
+				PodName:   fmt.Sprintf("health-test-pod-%d", i),
+				Severity:  "info",
+				Annotations: map[string]string{
+					"summary": "Health test alert",
 				},
-			}
-			payloadBytes, _ := json.Marshal(payload)
-			alertResp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payloadBytes),
-			)
+			})
+			alertResp, err := func() (*http.Response, error) {
+				req10, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+				if err != nil {
+					return nil, err
+				}
+				req10.Header.Set("Content-Type", "application/json")
+				req10.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req10)
+			}()
 			if err == nil {
 				alertResp.Body.Close()
 			}

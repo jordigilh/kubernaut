@@ -8,6 +8,25 @@
 
 ---
 
+## ⚠️ **IMPORTANT: DD-API-001 Compliance (2025-12-18)**
+
+**All services MUST use the OpenAPI-based DataStorage client adapter.**
+
+**HTTPDataStorageClient has been DELETED** - use `OpenAPIClientAdapter` instead.
+
+**Required Usage**:
+```go
+// ✅ CORRECT: DD-API-001 compliant (type-safe, contract-validated)
+dsClient, err := audit.NewOpenAPIClientAdapter(url, 5*time.Second)
+if err != nil {
+    return fmt.Errorf("failed to create Data Storage client: %w", err)
+}
+```
+
+**See**: [DD-API-001 Documentation](../../docs/architecture/decisions/DD-API-001-openapi-client-mandatory-v1.md)
+
+---
+
 ## 📋 **Overview**
 
 This package provides a **shared library** for asynchronous buffered audit trace ingestion across all Kubernaut services.
@@ -57,17 +76,26 @@ This package provides a **shared library** for asynchronous buffered audit trace
 ```go
 import (
     "github.com/jordigilh/kubernaut/pkg/audit"
-    "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 ```
 
 ### **Step 2: Create an Audit Store**
 
 ```go
-// Create Data Storage client
-dsClient := client.NewDataStorageClient(config.DataStorageURL)
+// ✅ DD-API-001: Create OpenAPI client adapter for Data Storage
+// This provides type-safe API calls validated against OpenAPI spec
+//
+// Benefits:
+// - Type safety from OpenAPI spec
+// - Compile-time contract validation
+// - Breaking changes caught during development
+// - Same interface as deprecated HTTPDataStorageClient (drop-in replacement)
+dsClient, err := audit.NewOpenAPIClientAdapter("http://datastorage-service:8080", 5*time.Second)
+if err != nil {
+    return fmt.Errorf("failed to create DataStorage client: %w", err)
+}
 
-// Create buffered audit store
+// Create buffered audit store (same as before)
 auditStore, err := audit.NewBufferedStore(
     dsClient,
     audit.DefaultConfig(),
@@ -439,7 +467,7 @@ Integration tests should verify:
 ---
 
 **Maintained By**: Kubernaut Platform Team
-**Last Updated**: 2025-11-20
-**Version**: 1.0
+**Last Updated**: 2025-12-18 (HTTPDataStorageClient deleted, DD-API-001 compliance complete)
+**Version**: 2.0
 
 

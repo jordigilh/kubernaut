@@ -5,9 +5,49 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - notification.kubernaut.ai
+  - ""
   resources:
+  - configmaps
+  - namespaces
+  - nodes
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  - deployments
+  - replicasets
+  - statefulsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kubernaut.ai
+  resources:
+  - aianalyses
   - notificationrequests
+  - signalprocessings
+  - workflowexecutions
   verbs:
   - create
   - delete
@@ -17,16 +57,64 @@ rules:
   - update
   - watch
 - apiGroups:
-  - notification.kubernaut.ai
+  - kubernaut.ai
   resources:
+  - aianalyses/finalizers
   - notificationrequests/finalizers
+  - signalprocessings/finalizers
+  - workflowexecutions/finalizers
   verbs:
   - update
 - apiGroups:
-  - notification.kubernaut.ai
+  - kubernaut.ai
   resources:
+  - aianalyses/status
   - notificationrequests/status
+  - signalprocessings/status
+  - workflowexecutions/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - remediation.kubernaut.ai
+  resources:
+  - remediationrequests
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - tekton.dev
+  resources:
+  - pipelineruns
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - tekton.dev
+  resources:
+  - taskruns
+  verbs:
+  - get
+  - list
+  - watch

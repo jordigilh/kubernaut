@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -7,9 +23,10 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -34,7 +51,7 @@ import (
 //
 // Business Requirements:
 // - BR-STORAGE-031-01: Incident-type success rate aggregation
-// - BR-STORAGE-031-02: Playbook success rate aggregation
+// - BR-STORAGE-031-02: Workflow success rate aggregation
 // - BR-STORAGE-031-04: AI execution mode tracking
 // - BR-STORAGE-031-05: Multi-dimensional success rate aggregation
 //
@@ -45,7 +62,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 		mockDB  *sql.DB
 		sqlMock sqlmock.Sqlmock
 		repo    *repository.ActionTraceRepository
-		logger  *zap.Logger
+		logger  logr.Logger
 		ctx     context.Context
 	)
 
@@ -54,7 +71,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 		mockDB, sqlMock, err = sqlmock.New()
 		Expect(err).ToNot(HaveOccurred())
 
-		logger = zap.NewNop()
+		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 		ctx = context.Background()
 
 		// Create repository with mocked database
@@ -90,18 +107,18 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 					WithArgs(incidentType, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				// Mock playbook breakdown query
-				playbookRows := sqlmock.NewRows([]string{
-					"playbook_id", "playbook_version", "executions", "success_rate",
+				// Mock workflow breakdown query
+				workflowRows := sqlmock.NewRows([]string{
+					"workflow_id", "workflow_version", "executions", "success_rate",
 				}).AddRow(
 					"pod-oom-recovery", "v1.0", 60, 0.90,
 				).AddRow(
 					"memory-increase", "v2.0", 40, 0.78,
 				)
 
-				sqlMock.ExpectQuery(`SELECT playbook_id, playbook_version`).
+				sqlMock.ExpectQuery(`SELECT workflow_id, workflow_version`).
 					WithArgs(incidentType, sqlmock.AnyArg()).
-					WillReturnRows(playbookRows)
+					WillReturnRows(workflowRows)
 
 				// Mock AI execution mode query
 				aiRows := sqlmock.NewRows([]string{
@@ -110,7 +127,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 					92, 7, 1, // 92% catalog, 7% chained, 1% manual
 				)
 
-				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_playbook`).
+				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_workflow`).
 					WithArgs(incidentType, sqlmock.AnyArg()).
 					WillReturnRows(aiRows)
 
@@ -132,9 +149,9 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				Expect(result.MinSamplesMet).To(BeTrue())
 				Expect(result.Confidence).To(Equal("high")) // >100 samples
 
-				// CORRECTNESS: Playbook breakdown data is accurate
+				// CORRECTNESS: Workflow breakdown data is accurate
 				Expect(result.BreakdownByWorkflow).To(HaveLen(2))
-				Expect(result.BreakdownByWorkflow[0].PlaybookID).To(Equal("pod-oom-recovery"))
+				Expect(result.BreakdownByWorkflow[0].WorkflowID).To(Equal("pod-oom-recovery"))
 				Expect(result.BreakdownByWorkflow[0].Executions).To(Equal(60))
 				Expect(result.BreakdownByWorkflow[0].SuccessRate).To(BeNumerically("~", 0.90, 0.01))
 
@@ -167,10 +184,10 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 					WillReturnRows(rows)
 
 				// Mock empty breakdown queries
-				sqlMock.ExpectQuery(`SELECT playbook_id, playbook_version`).
-					WillReturnRows(sqlmock.NewRows([]string{"playbook_id", "playbook_version", "executions", "success_rate"}))
+				sqlMock.ExpectQuery(`SELECT workflow_id, workflow_version`).
+					WillReturnRows(sqlmock.NewRows([]string{"workflow_id", "workflow_version", "executions", "success_rate"}))
 
-				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_playbook`).
+				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_workflow`).
 					WillReturnRows(sqlmock.NewRows([]string{"catalog_selected", "chained", "manual_escalation"}).AddRow(0, 0, 0))
 
 				result, err := repo.GetSuccessRateByIncidentType(ctx, incidentType, duration, minSamples)
@@ -201,10 +218,10 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 					WithArgs(incidentType, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				sqlMock.ExpectQuery(`SELECT playbook_id, playbook_version`).
-					WillReturnRows(sqlmock.NewRows([]string{"playbook_id", "playbook_version", "executions", "success_rate"}))
+				sqlMock.ExpectQuery(`SELECT workflow_id, workflow_version`).
+					WillReturnRows(sqlmock.NewRows([]string{"workflow_id", "workflow_version", "executions", "success_rate"}))
 
-				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_playbook`).
+				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_workflow`).
 					WillReturnRows(sqlmock.NewRows([]string{"catalog_selected", "chained", "manual_escalation"}).AddRow(0, 0, 0))
 
 				result, err := repo.GetSuccessRateByIncidentType(ctx, incidentType, duration, minSamples)
@@ -239,10 +256,10 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 					WithArgs(incidentType, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				sqlMock.ExpectQuery(`SELECT playbook_id, playbook_version`).
-					WillReturnRows(sqlmock.NewRows([]string{"playbook_id", "playbook_version", "executions", "success_rate"}))
+				sqlMock.ExpectQuery(`SELECT workflow_id, workflow_version`).
+					WillReturnRows(sqlmock.NewRows([]string{"workflow_id", "workflow_version", "executions", "success_rate"}))
 
-				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_playbook`).
+				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_workflow`).
 					WillReturnRows(sqlmock.NewRows([]string{"catalog_selected", "chained", "manual_escalation"}).AddRow(0, 0, 0))
 
 				result, err := repo.GetSuccessRateByIncidentType(ctx, incidentType, duration, minSamples)
@@ -360,10 +377,10 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 					WithArgs(incidentType, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				sqlMock.ExpectQuery(`SELECT playbook_id, playbook_version`).
-					WillReturnRows(sqlmock.NewRows([]string{"playbook_id", "playbook_version", "executions", "success_rate"}))
+				sqlMock.ExpectQuery(`SELECT workflow_id, workflow_version`).
+					WillReturnRows(sqlmock.NewRows([]string{"workflow_id", "workflow_version", "executions", "success_rate"}))
 
-				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_playbook`).
+				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_workflow`).
 					WillReturnRows(sqlmock.NewRows([]string{"catalog_selected", "chained", "manual_escalation"}).AddRow(0, 0, 0))
 
 				result, err := repo.GetSuccessRateByIncidentType(ctx, incidentType, duration, minSamples)
@@ -379,29 +396,29 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 	})
 
 	// ========================================
-	// BR-STORAGE-031-02: Playbook Success Rate
+	// BR-STORAGE-031-02: Workflow Success Rate
 	// ========================================
 
 	Describe("GetSuccessRateByWorkflow", func() {
-		Context("when playbook has sufficient execution data", func() {
-			It("should calculate success rate correctly for disk-cleanup playbook", func() {
-				// BEHAVIOR: Method returns playbook success rate response
+		Context("when workflow has sufficient execution data", func() {
+			It("should calculate success rate correctly for disk-cleanup workflow", func() {
+				// BEHAVIOR: Method returns workflow success rate response
 				// CORRECTNESS: Success rate and breakdown data are mathematically accurate
 
-				playbookID := "disk-cleanup"
-				playbookVersion := "v2.0"
+				workflowID := "disk-cleanup"
+				workflowVersion := "v2.0"
 				duration := 7 * 24 * time.Hour
 				minSamples := 5
 
 				// Mock main query
 				rows := sqlmock.NewRows([]string{
-					"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions",
+					"workflow_id", "workflow_version", "total_executions", "successful_executions", "failed_executions",
 				}).AddRow(
 					"disk-cleanup", "v2.0", 120, 105, 15, // 87.5% success rate
 				)
 
-				sqlMock.ExpectQuery(`SELECT playbook_id, playbook_version, COUNT\(\*\) as total_executions`).
-					WithArgs(playbookID, playbookVersion, sqlmock.AnyArg()).
+				sqlMock.ExpectQuery(`SELECT workflow_id, workflow_version, COUNT\(\*\) as total_executions`).
+					WithArgs(workflowID, workflowVersion, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				// Mock incident type breakdown
@@ -414,7 +431,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				)
 
 				sqlMock.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as executions`).
-					WithArgs(playbookID, playbookVersion, sqlmock.AnyArg()).
+					WithArgs(workflowID, workflowVersion, sqlmock.AnyArg()).
 					WillReturnRows(incidentRows)
 
 				// Mock AI execution mode
@@ -424,17 +441,17 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 					110, 9, 1,
 				)
 
-				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_playbook`).
-					WithArgs(playbookID, playbookVersion, sqlmock.AnyArg()).
+				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_workflow`).
+					WithArgs(workflowID, workflowVersion, sqlmock.AnyArg()).
 					WillReturnRows(aiRows)
 
-				result, err := repo.GetSuccessRateByWorkflow(ctx, playbookID, playbookVersion, duration, minSamples)
+				result, err := repo.GetSuccessRateByWorkflow(ctx, workflowID, workflowVersion, duration, minSamples)
 
 				// BEHAVIOR: No errors, response structure correct
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).ToNot(BeNil())
-				Expect(result.PlaybookID).To(Equal("disk-cleanup"))
-				Expect(result.PlaybookVersion).To(Equal("v2.0"))
+				Expect(result.WorkflowID).To(Equal("disk-cleanup"))
+				Expect(result.WorkflowVersion).To(Equal("v2.0"))
 
 				// CORRECTNESS: Success rate is exact
 				Expect(result.TotalExecutions).To(Equal(120))
@@ -458,32 +475,32 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 			})
 		})
 
-		Context("when playbook has insufficient data", func() {
-			It("should handle playbook with only 2 executions", func() {
+		Context("when workflow has insufficient data", func() {
+			It("should handle workflow with only 2 executions", func() {
 				// CORRECTNESS: MinSamplesMet flag is accurate
 
-				playbookID := "experimental-playbook"
-				playbookVersion := "v0.1"
+				workflowID := "experimental-workflow"
+				workflowVersion := "v0.1"
 				duration := 7 * 24 * time.Hour
 				minSamples := 5
 
 				rows := sqlmock.NewRows([]string{
-					"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions",
+					"workflow_id", "workflow_version", "total_executions", "successful_executions", "failed_executions",
 				}).AddRow(
-					"experimental-playbook", "v0.1", 2, 2, 0,
+					"experimental-workflow", "v0.1", 2, 2, 0,
 				)
 
-				sqlMock.ExpectQuery(`SELECT playbook_id, playbook_version, COUNT\(\*\) as total_executions`).
-					WithArgs(playbookID, playbookVersion, sqlmock.AnyArg()).
+				sqlMock.ExpectQuery(`SELECT workflow_id, workflow_version, COUNT\(\*\) as total_executions`).
+					WithArgs(workflowID, workflowVersion, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				sqlMock.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as executions`).
 					WillReturnRows(sqlmock.NewRows([]string{"incident_type", "executions", "success_rate"}))
 
-				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_playbook`).
+				sqlMock.ExpectQuery(`SELECT COUNT\(CASE WHEN ai_selected_workflow`).
 					WillReturnRows(sqlmock.NewRows([]string{"catalog_selected", "chained", "manual_escalation"}).AddRow(0, 0, 0))
 
-				result, err := repo.GetSuccessRateByWorkflow(ctx, playbookID, playbookVersion, duration, minSamples)
+				result, err := repo.GetSuccessRateByWorkflow(ctx, workflowID, workflowVersion, duration, minSamples)
 
 				Expect(err).ToNot(HaveOccurred())
 
@@ -503,11 +520,11 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 	// ========================================
 	Describe("GetSuccessRateMultiDimensional", func() {
 		Context("with all three dimensions specified", func() {
-			It("should query by incident_type + playbook + action_type", func() {
+			It("should query by incident_type + workflow + action_type", func() {
 				// ARRANGE: Mock database response
 				incidentType := "pod-oom-killer"
-				playbookID := "pod-oom-recovery"
-				playbookVersion := "v1.2"
+				workflowID := "pod-oom-recovery"
+				workflowVersion := "v1.2"
 				actionType := "increase_memory"
 				minSamples := 5
 
@@ -518,14 +535,14 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				)
 
 				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
-					WithArgs(incidentType, playbookID, playbookVersion, actionType, sqlmock.AnyArg()).
+					WithArgs(incidentType, workflowID, workflowVersion, actionType, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				// ACT: Call repository method
 				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
 					IncidentType:    incidentType,
-					PlaybookID:      playbookID,
-					PlaybookVersion: playbookVersion,
+					WorkflowID:      workflowID,
+					WorkflowVersion: workflowVersion,
 					ActionType:      actionType,
 					TimeRange:       "7d",
 					MinSamples:      minSamples,
@@ -537,8 +554,8 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				// BEHAVIOR: Returns multi-dimensional result
 				Expect(result).ToNot(BeNil())
 				Expect(result.Dimensions.IncidentType).To(Equal(incidentType))
-				Expect(result.Dimensions.PlaybookID).To(Equal(playbookID))
-				Expect(result.Dimensions.PlaybookVersion).To(Equal(playbookVersion))
+				Expect(result.Dimensions.WorkflowID).To(Equal(workflowID))
+				Expect(result.Dimensions.WorkflowVersion).To(Equal(workflowVersion))
 				Expect(result.Dimensions.ActionType).To(Equal(actionType))
 
 				// CORRECTNESS: Exact count validation
@@ -557,12 +574,12 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 			})
 		})
 
-		Context("with partial dimensions (incident_type + playbook only)", func() {
-			It("should query by incident_type + playbook, aggregate across all action_types", func() {
+		Context("with partial dimensions (incident_type + workflow only)", func() {
+			It("should query by incident_type + workflow, aggregate across all action_types", func() {
 				// ARRANGE: Mock database response (aggregated across actions)
 				incidentType := "pod-oom-killer"
-				playbookID := "pod-oom-recovery"
-				playbookVersion := "v1.2"
+				workflowID := "pod-oom-recovery"
+				workflowVersion := "v1.2"
 				minSamples := 5
 
 				rows := sqlmock.NewRows([]string{
@@ -572,14 +589,14 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				)
 
 				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
-					WithArgs(incidentType, playbookID, playbookVersion, sqlmock.AnyArg()).
+					WithArgs(incidentType, workflowID, workflowVersion, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				// ACT: Call repository method (no action_type specified)
 				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
 					IncidentType:    incidentType,
-					PlaybookID:      playbookID,
-					PlaybookVersion: playbookVersion,
+					WorkflowID:      workflowID,
+					WorkflowVersion: workflowVersion,
 					TimeRange:       "7d",
 					MinSamples:      minSamples,
 				})
@@ -596,7 +613,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 
 				// BEHAVIOR: Dimensions reflect query
 				Expect(result.Dimensions.IncidentType).To(Equal(incidentType))
-				Expect(result.Dimensions.PlaybookID).To(Equal(playbookID))
+				Expect(result.Dimensions.WorkflowID).To(Equal(workflowID))
 				Expect(result.Dimensions.ActionType).To(BeEmpty())
 
 				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
@@ -604,7 +621,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 		})
 
 		Context("with only incident_type dimension", func() {
-			It("should query by incident_type only, aggregate across all playbooks and actions", func() {
+			It("should query by incident_type only, aggregate across all workflows and actions", func() {
 				// ARRANGE: Mock database response
 				incidentType := "pod-oom-killer"
 				minSamples := 5
@@ -631,10 +648,10 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 
 				// BEHAVIOR: Returns incident-type aggregation
 				Expect(result.Dimensions.IncidentType).To(Equal(incidentType))
-				Expect(result.Dimensions.PlaybookID).To(BeEmpty())
+				Expect(result.Dimensions.WorkflowID).To(BeEmpty())
 				Expect(result.Dimensions.ActionType).To(BeEmpty())
 
-				// CORRECTNESS: Aggregated across all playbooks and actions
+				// CORRECTNESS: Aggregated across all workflows and actions
 				Expect(result.TotalExecutions).To(Equal(150))
 				Expect(result.SuccessRate).To(BeNumerically("~", 90.0, 0.1))
 
@@ -649,7 +666,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 			It("should return zero results for non-existent dimension combination", func() {
 				// ARRANGE: Mock empty result
 				incidentType := "non-existent-incident"
-				playbookID := "non-existent-playbook"
+				workflowID := "non-existent-workflow"
 				minSamples := 5
 
 				rows := sqlmock.NewRows([]string{
@@ -659,13 +676,13 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				)
 
 				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
-					WithArgs(incidentType, playbookID, sqlmock.AnyArg()).
+					WithArgs(incidentType, workflowID, sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				// ACT: Call repository method
 				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
 					IncidentType: incidentType,
-					PlaybookID:   playbookID,
+					WorkflowID:   workflowID,
 					TimeRange:    "7d",
 					MinSamples:   minSamples,
 				})
@@ -688,18 +705,18 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
 			})
 
-			It("should handle playbook_version without playbook_id as validation error", func() {
+			It("should handle workflow_version without workflow_id as validation error", func() {
 				// ACT: Call repository method (invalid: version without ID)
 				_, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
 					IncidentType:    "pod-oom-killer",
-					PlaybookVersion: "v1.2", // Version without ID
+					WorkflowVersion: "v1.2", // Version without ID
 					TimeRange:       "7d",
 					MinSamples:      5,
 				})
 
 				// ASSERT: Returns validation error
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("playbook_version requires playbook_id"))
+				Expect(err.Error()).To(ContainSubstring("workflow_version requires workflow_id"))
 			})
 
 			It("should handle invalid time_range format", func() {

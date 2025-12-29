@@ -26,7 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-	"go.uber.org/zap"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
 // ========================================
@@ -47,61 +47,60 @@ import (
 
 func main() {
 	// Initialize logger first (before config loading for error reporting)
-	logger, err := zap.NewProduction()
-	if err != nil {
-		panic("failed to create logger: " + err.Error())
-	}
-	defer func() {
-		_ = logger.Sync() // Ignore sync errors on shutdown
-	}()
+	// DD-005 v2.0: Use pkg/log shared library with logr interface
+	logger := kubelog.NewLogger(kubelog.Options{
+		Development: os.Getenv("ENV") != "production",
+		Level:       0, // Info level
+		ServiceName: "datastorage",
+	})
+	defer kubelog.Sync(logger)
 
 	// ADR-030: Load configuration from YAML file (ConfigMap)
 	// CONFIG_PATH environment variable is MANDATORY
 	// Deployment/environment is responsible for setting this
 	cfgPath := os.Getenv("CONFIG_PATH")
 	if cfgPath == "" {
-		logger.Fatal("CONFIG_PATH environment variable required (ADR-030)",
-			zap.String("env_var", "CONFIG_PATH"),
-			zap.String("reason", "Service must not guess config file location - deployment controls this"),
-			zap.String("example_local", "export CONFIG_PATH=config/data-storage.yaml"),
-			zap.String("example_k8s", "Set in Deployment manifest"),
+		logger.Error(fmt.Errorf("CONFIG_PATH not set"), "CONFIG_PATH environment variable required (ADR-030)",
+			"env_var", "CONFIG_PATH",
+			"reason", "Service must not guess config file location - deployment controls this",
+			"example_local", "export CONFIG_PATH=config/data-storage.yaml",
+			"example_k8s", "Set in Deployment manifest",
 		)
+		os.Exit(1)
 	}
 
 	logger.Info("Loading configuration from YAML file (ADR-030)",
-		zap.String("config_path", cfgPath),
+		"config_path", cfgPath,
 	)
 
 	cfg, err := config.LoadFromFile(cfgPath)
 	if err != nil {
-		logger.Fatal("Failed to load configuration file (ADR-030)",
-			zap.Error(err),
-			zap.String("config_path", cfgPath),
+		logger.Error(err, "Failed to load configuration file (ADR-030)",
+			"config_path", cfgPath,
 		)
+		os.Exit(1)
 	}
 
 	// ADR-030 Section 6: Load secrets from mounted files
 	logger.Info("Loading secrets from mounted files (ADR-030 Section 6)")
 	if err := cfg.LoadSecrets(); err != nil {
-		logger.Fatal("Failed to load secrets (ADR-030 Section 6)",
-			zap.Error(err),
-		)
+		logger.Error(err, "Failed to load secrets (ADR-030 Section 6)")
+		os.Exit(1)
 	}
 
 	// Validate configuration (after secrets are loaded)
 	if err := cfg.Validate(); err != nil {
-		logger.Fatal("Invalid configuration (ADR-030)",
-			zap.Error(err),
-		)
+		logger.Error(err, "Invalid configuration (ADR-030)")
+		os.Exit(1)
 	}
 
 	logger.Info("Configuration loaded successfully (ADR-030)",
-		zap.String("service", "data-storage"),
-		zap.Int("port", cfg.Server.Port),
-		zap.String("database_host", cfg.Database.Host),
-		zap.Int("database_port", cfg.Database.Port),
-		zap.String("redis_addr", cfg.Redis.Addr),
-		zap.String("log_level", cfg.Logging.Level),
+		"service", "data-storage",
+		"port", cfg.Server.Port,
+		"database_host", cfg.Database.Host,
+		"database_port", cfg.Database.Port,
+		"redis_addr", cfg.Redis.Addr,
+		"log_level", cfg.Logging.Level,
 	)
 
 	// Context management for graceful shutdown
@@ -118,11 +117,12 @@ func main() {
 		WriteTimeout: cfg.Server.GetWriteTimeout(),
 	}
 
-	srv, err := server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, serverCfg)
+	// Gap 3.3: Pass DLQ max length for capacity monitoring
+	dlqMaxLen := int64(cfg.Redis.DLQMaxLen)
+	srv, err := server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, serverCfg, dlqMaxLen)
 	if err != nil {
-		logger.Fatal("Failed to create server",
-			zap.Error(err),
-		)
+		logger.Error(err, "Failed to create server")
+		os.Exit(1)
 	}
 
 	// DD-007: Graceful shutdown timeout (Kubernetes terminationGracePeriodSeconds)
@@ -135,9 +135,9 @@ func main() {
 	}
 
 	logger.Info("Starting Data Storage service (ADR-030 + DD-007)",
-		zap.Int("port", cfg.Server.Port),
-		zap.String("host", cfg.Server.Host),
-		zap.Duration("shutdown_timeout", shutdownTimeout),
+		"port", cfg.Server.Port,
+		"host", cfg.Server.Host,
+		"shutdown_timeout", shutdownTimeout,
 	)
 
 	// Start server in goroutine
@@ -145,7 +145,7 @@ func main() {
 	go func() {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 		logger.Info("HTTP server listening",
-			zap.String("addr", addr),
+			"addr", addr,
 		)
 		serverErrors <- srv.Start()
 	}()
@@ -156,12 +156,10 @@ func main() {
 
 	select {
 	case err := <-serverErrors:
-		logger.Error("Server error",
-			zap.Error(err),
-		)
+		logger.Error(err, "Server error")
 	case sig := <-sigChan:
 		logger.Info("Shutdown signal received (DD-007)",
-			zap.String("signal", sig.String()),
+			"signal", sig.String(),
 		)
 
 		// DD-007: Graceful shutdown (already implemented in server.Shutdown)
@@ -170,9 +168,7 @@ func main() {
 		defer shutdownCancel()
 
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Error("Graceful shutdown failed (DD-007)",
-				zap.Error(err),
-			)
+			logger.Error(err, "Graceful shutdown failed (DD-007)")
 		}
 	}
 

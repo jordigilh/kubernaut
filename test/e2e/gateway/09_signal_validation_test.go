@@ -25,9 +25,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 )
 
 // Test 09: Signal Validation & Rejection (BR-GATEWAY-003, BR-GATEWAY-043)
@@ -37,13 +37,13 @@ import (
 var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Ordered, func() {
 	var (
 		testCancel context.CancelFunc
-		testLogger *zap.Logger
+		testLogger logr.Logger
 		httpClient *http.Client
 	)
 
 	BeforeAll(func() {
 		_, testCancel = context.WithTimeout(ctx, 3*time.Minute)
-		testLogger = logger.With(zap.String("test", "signal-validation"))
+		testLogger = logger.WithValues("test", "signal-validation")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -68,11 +68,11 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		testLogger.Info("Step 1: Verify Gateway rejects invalid JSON syntax")
 
 		invalidJSON := []byte(`{"alerts": [{"status": "firing", INVALID}]}`)
-		resp1, err := httpClient.Post(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			bytes.NewBuffer(invalidJSON),
-		)
+		req1, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(invalidJSON))
+		Expect(err).ToNot(HaveOccurred())
+		req1.Header.Set("Content-Type", "application/json")
+		req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		resp1, err := httpClient.Do(req1)
 		Expect(err).ToNot(HaveOccurred())
 		body1, _ := io.ReadAll(resp1.Body)
 		resp1.Body.Close()
@@ -81,7 +81,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(resp1.StatusCode).To(Equal(http.StatusBadRequest),
 			"Invalid JSON syntax should return HTTP 400 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Invalid JSON rejected: HTTP %d", resp1.StatusCode))
-		testLogger.Debug(fmt.Sprintf("  Response body: %s", string(body1)))
+		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body1)))
 
 		// BEHAVIOR TEST: Gateway rejects empty payload
 		// CORRECTNESS: Returns HTTP 400 Bad Request
@@ -89,11 +89,11 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		testLogger.Info("Step 2: Verify Gateway rejects empty payload")
 
 		emptyPayload := []byte(`{}`)
-		resp2, err := httpClient.Post(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			bytes.NewBuffer(emptyPayload),
-		)
+		req2, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(emptyPayload))
+		Expect(err).ToNot(HaveOccurred())
+		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		resp2, err := httpClient.Do(req2)
 		Expect(err).ToNot(HaveOccurred())
 		body2, _ := io.ReadAll(resp2.Body)
 		resp2.Body.Close()
@@ -102,7 +102,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(resp2.StatusCode).To(Equal(http.StatusBadRequest),
 			"Empty payload should return HTTP 400 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Empty payload rejected: HTTP %d", resp2.StatusCode))
-		testLogger.Debug(fmt.Sprintf("  Response body: %s", string(body2)))
+		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body2)))
 
 		// BEHAVIOR TEST: Gateway rejects payload with empty alerts array
 		// CORRECTNESS: Returns HTTP 400 Bad Request
@@ -113,11 +113,11 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 			"alerts": []map[string]interface{}{},
 		}
 		emptyAlertsBytes, _ := json.Marshal(emptyAlerts)
-		resp3, err := httpClient.Post(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			bytes.NewBuffer(emptyAlertsBytes),
-		)
+		req3, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(emptyAlertsBytes))
+		Expect(err).ToNot(HaveOccurred())
+		req3.Header.Set("Content-Type", "application/json")
+		req3.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		resp3, err := httpClient.Do(req3)
 		Expect(err).ToNot(HaveOccurred())
 		body3, _ := io.ReadAll(resp3.Body)
 		resp3.Body.Close()
@@ -126,41 +126,34 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(resp3.StatusCode).To(Equal(http.StatusBadRequest),
 			"Empty alerts array should return HTTP 400 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Empty alerts array rejected: HTTP %d", resp3.StatusCode))
-		testLogger.Debug(fmt.Sprintf("  Response body: %s", string(body3)))
+		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body3)))
 
 		// BEHAVIOR TEST: Gateway accepts well-formed valid payload
 		// CORRECTNESS: Returns HTTP 201 (Created) or 202 (Accepted for buffering)
 		testLogger.Info("")
 		testLogger.Info("Step 4: Verify Gateway accepts valid payload")
 
-		validPayload := map[string]interface{}{
-			"alerts": []map[string]interface{}{
-				{
-					"status": "firing",
-					"labels": map[string]interface{}{
-						"alertname": fmt.Sprintf("ValidationTest-%d", time.Now().UnixNano()),
-						"severity":  "warning",
-						"namespace": "default",
-						"pod":       "validation-test-pod",
-					},
-					"annotations": map[string]interface{}{
-						"summary":     "Validation test alert",
-						"description": "Testing signal validation",
-					},
-					"startsAt": time.Now().Format(time.RFC3339),
-				},
+		validPayload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+			AlertName: fmt.Sprintf("ValidationTest-%d", time.Now().UnixNano()),
+			Namespace: "default",
+			PodName:   "validation-test-pod",
+			Severity:  "warning",
+			Annotations: map[string]string{
+				"summary":     "Validation test alert",
+				"description": "Testing signal validation",
 			},
-		}
-		validPayloadBytes, _ := json.Marshal(validPayload)
+		})
 
 		var resp4 *http.Response
 		Eventually(func() error {
 			var err error
-			resp4, err = httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(validPayloadBytes),
-			)
+			req4, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(validPayload))
+			if err != nil {
+				return err
+			}
+			req4.Header.Set("Content-Type", "application/json")
+			req4.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			resp4, err = httpClient.Do(req4)
 			return err
 		}, 10*time.Second, 1*time.Second).Should(Succeed())
 		body4, _ := io.ReadAll(resp4.Body)
@@ -170,7 +163,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(resp4.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 			"Valid payload should return HTTP 201 or 202 (BR-GATEWAY-003)")
 		testLogger.Info(fmt.Sprintf("  ✅ Valid payload accepted: HTTP %d", resp4.StatusCode))
-		testLogger.Debug(fmt.Sprintf("  Response body: %s", string(body4)))
+		testLogger.V(1).Info(fmt.Sprintf("  Response body: %s", string(body4)))
 
 		// BEHAVIOR TEST: Gateway differentiates between client and server errors
 		// CORRECTNESS: Malformed request = 4xx, not 5xx

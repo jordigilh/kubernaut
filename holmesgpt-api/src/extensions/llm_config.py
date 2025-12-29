@@ -18,6 +18,7 @@ limitations under the License.
 LLM Configuration Utilities
 
 Business Requirement: BR-HAPI-001 - Multi-provider LLM support
+Business Requirement: BR-HAPI-211 - LLM Input Sanitization
 Provides shared utilities for configuring LLM providers across different endpoints.
 
 Supported Providers:
@@ -25,6 +26,9 @@ Supported Providers:
 - OpenAI (remote, official API)
 - Claude/Anthropic (remote, official API)
 - Vertex AI (remote, Google Cloud)
+
+Security Features:
+- BR-HAPI-211: Tool result sanitization (credentials redacted before LLM sees them)
 """
 
 import os
@@ -32,12 +36,129 @@ import logging
 import tempfile
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from holmes.config import Config
 from holmes.core.toolset_manager import ToolsetManager
 
+# BR-HAPI-211: Import sanitization module for credential protection
+from src.sanitization import sanitize_for_llm
+
+# Import DetectedLabels for type hints
+from src.models.incident_models import DetectedLabels
+
 logger = logging.getLogger(__name__)
+
+
+def _wrap_tool_results_with_sanitization(tool_executor) -> None:
+    """
+    Wrap ALL Tool.invoke() methods with credential sanitization.
+
+    Business Requirement: BR-HAPI-211 - LLM Input Sanitization
+    Design Decision: DD-HAPI-005 - Comprehensive LLM Input Sanitization Layer
+
+    This function monkey-patches every tool in every toolset to sanitize
+    the StructuredToolResult.data and StructuredToolResult.error fields
+    before they're returned to the LLM.
+
+    CRITICAL: This is the primary defense against credential leakage.
+    Tool results (especially kubectl logs, kubectl get) may contain:
+    - Database passwords in application logs
+    - API keys in environment variables
+    - Tokens in error messages
+    - Secrets in ConfigMaps/events
+
+    NOTE: Some HolmesGPT SDK tools (e.g., YAMLTool) don't have an invoke() method.
+    We skip those gracefully and log a debug message.
+
+    Args:
+        tool_executor: HolmesGPT SDK tool executor with .toolsets list
+    """
+    sanitized_tools_count = 0
+    skipped_tools_count = 0
+
+    for toolset in tool_executor.toolsets:
+        toolset_name = getattr(toolset, 'name', 'unknown')
+
+        for tool in toolset.tools:
+            tool_name = getattr(tool, 'name', 'unknown')
+
+            # Check if tool has invoke method (some SDK tools like YAMLTool don't)
+            if not hasattr(tool, 'invoke') or not callable(getattr(tool, 'invoke', None)):
+                logger.debug({
+                    "event": "tool_sanitization_skipped",
+                    "br": "BR-HAPI-211",
+                    "toolset": toolset_name,
+                    "tool": tool_name,
+                    "reason": "no_invoke_method",
+                    "tool_type": type(tool).__name__,
+                })
+                skipped_tools_count += 1
+                continue
+
+            original_invoke = tool.invoke
+
+            def make_sanitized_invoke(orig_invoke, t_name, ts_name):
+                """Factory to capture original_invoke and tool names in closure."""
+                def sanitized_invoke(params, tool_number=None, user_approved=False):
+                    # Call original tool
+                    result = orig_invoke(params, tool_number, user_approved)
+
+                    # BR-HAPI-211: Sanitize data field (handles str, dict, list, None)
+                    if result is not None and hasattr(result, 'data') and result.data is not None:
+                        original_data = result.data
+                        result.data = sanitize_for_llm(result.data)
+
+                        # Log if sanitization modified content (for audit/debugging)
+                        if result.data != original_data:
+                            logger.debug({
+                                "event": "tool_result_sanitized",
+                                "br": "BR-HAPI-211",
+                                "toolset": ts_name,
+                                "tool": t_name,
+                                "data_type": type(original_data).__name__,
+                            })
+
+                    # BR-HAPI-211: Sanitize error message if present
+                    if result is not None and hasattr(result, 'error') and result.error:
+                        original_error = result.error
+                        result.error = sanitize_for_llm(result.error)
+
+                        if result.error != original_error:
+                            logger.debug({
+                                "event": "tool_error_sanitized",
+                                "br": "BR-HAPI-211",
+                                "toolset": ts_name,
+                                "tool": t_name,
+                            })
+
+                    return result
+                return sanitized_invoke
+
+            # Apply the sanitized wrapper
+            # NOTE: Pydantic models may be frozen, so we use object.__setattr__
+            try:
+                object.__setattr__(tool, 'invoke', make_sanitized_invoke(original_invoke, tool_name, toolset_name))
+                sanitized_tools_count += 1
+            except (TypeError, ValueError, AttributeError) as e:
+                # Some tool implementations may not allow attribute setting
+                logger.debug({
+                    "event": "tool_sanitization_skipped",
+                    "br": "BR-HAPI-211",
+                    "toolset": toolset_name,
+                    "tool": tool_name,
+                    "reason": "cannot_set_invoke",
+                    "error": str(e),
+                })
+                skipped_tools_count += 1
+
+    logger.info({
+        "event": "tool_sanitization_wrapped",
+        "br": "BR-HAPI-211",
+        "tools_wrapped": sanitized_tools_count,
+        "tools_skipped": skipped_tools_count,
+        "toolsets_count": len(tool_executor.toolsets),
+    })
 
 
 def format_model_name_for_litellm(
@@ -161,12 +282,21 @@ def get_model_config_for_sdk(app_config: Optional[Dict[str, Any]] = None) -> tup
 
 def register_workflow_catalog_toolset(
     config: Config,
-    app_config: Optional[Dict[str, Any]] = None
+    app_config: Optional[Dict[str, Any]] = None,
+    remediation_id: Optional[str] = None,
+    custom_labels: Optional[Dict[str, List[str]]] = None,
+    detected_labels: Optional[DetectedLabels] = None,
+    source_resource: Optional[Dict[str, str]] = None,
+    owner_chain: Optional[List[Dict[str, str]]] = None
 ) -> Config:
     """
     Register the workflow catalog toolset with HolmesGPT SDK Config.
 
     Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
+    Business Requirement: BR-AUDIT-001 - Unified audit trail (remediation_id)
+    Design Decision: DD-WORKFLOW-002 v2.2 - remediation_id mandatory
+    Design Decision: DD-HAPI-001 - Custom Labels Auto-Append Architecture
+    Design Decision: DD-WORKFLOW-001 v1.7 - DetectedLabels 100% safe validation
 
     CRITICAL: After extensive investigation, the HolmesGPT SDK does NOT support:
     1. Direct assignment of Toolset instances (causes '.get()' AttributeError during SDK's toolset loading)
@@ -179,6 +309,22 @@ def register_workflow_catalog_toolset(
     Args:
         config: HolmesGPT SDK Config instance (already initialized)
         app_config: Optional application configuration (for logging context)
+        remediation_id: Remediation request ID for audit correlation (DD-WORKFLOW-002 v2.2)
+                       MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY -
+                       do NOT use for RCA analysis or workflow matching.
+        custom_labels: Custom labels for auto-append (DD-HAPI-001)
+                      Format: map[string][]string (subdomain → list of values)
+                      Example: {"constraint": ["cost-constrained"], "team": ["name=payments"]}
+                      Auto-appended to all MCP workflow search calls - invisible to LLM.
+        detected_labels: Auto-detected labels for workflow matching (DD-WORKFLOW-001 v1.7)
+                        Format: {"gitOpsManaged": true, "gitOpsTool": "argocd", ...}
+                        Only included when relationship to RCA resource is PROVEN.
+        source_resource: Original signal's resource for DetectedLabels validation
+                        Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
+                        Compared against LLM's rca_resource.
+        owner_chain: K8s ownership chain from SignalProcessing enrichment
+                    Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "..."}, ...]
+                    Used for PROVEN relationship validation (100% safe).
 
     Returns:
         The same Config instance with workflow catalog registered via monkey-patch
@@ -186,11 +332,36 @@ def register_workflow_catalog_toolset(
     from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 
     # Create the workflow catalog toolset instance
-    workflow_toolset = WorkflowCatalogToolset(enabled=True)
+    # BR-AUDIT-001: Pass remediation_id for audit correlation
+    # DD-HAPI-001: Pass custom_labels for auto-append to workflow search
+    # DD-WORKFLOW-001 v1.7: Pass detected_labels with source_resource and owner_chain for 100% safe validation
+    workflow_toolset = WorkflowCatalogToolset(
+        enabled=True,
+        remediation_id=remediation_id,
+        custom_labels=custom_labels,
+        detected_labels=detected_labels,
+        source_resource=source_resource,
+        owner_chain=owner_chain
+    )
 
     # Initialize toolset manager if needed
     if not hasattr(config, 'toolset_manager') or config.toolset_manager is None:
         config.toolset_manager = ToolsetManager(toolsets=config.toolsets)
+
+    # BR-HAPI-250: DO NOT add toolset directly to toolsets dict!
+    # The SDK's _load_toolsets_from_config() iterates over toolsets dict
+    # and calls .get('type') on each value, expecting dicts not Toolset instances.
+    # Instead, we inject the toolset through monkey-patched methods below.
+    #
+    # WRONG (causes AttributeError: 'WorkflowCatalogToolset' has no attribute 'get'):
+    #   config.toolset_manager.toolsets["workflow/catalog"] = workflow_toolset
+    #
+    # CORRECT: Only inject through patched methods (see below)
+    logger.info(
+        f"BR-HAPI-250: WorkflowCatalogToolset created "
+        f"(enabled={workflow_toolset.enabled}, tools={len(workflow_toolset.tools)}). "
+        f"Will inject via monkey-patched methods."
+    )
 
     # BR-HAPI-250: Monkey-patch list_server_toolsets to inject workflow catalog
     # This is the only reliable way to add custom Python toolsets to the SDK
@@ -274,6 +445,10 @@ def register_workflow_catalog_toolset(
                 logger.debug(f"BR-HAPI-250 DEBUG: Tool executor AFTER injection:")
                 logger.debug(f"  - Total toolsets: {len(tool_executor.toolsets)}")
                 logger.debug(f"  - Last 5 toolsets: {[ts.name if hasattr(ts, 'name') else 'unknown' for ts in tool_executor.toolsets[-5:]]}")
+
+        # BR-HAPI-211: Wrap ALL tool invocations with credential sanitization
+        # This prevents credentials from leaking to external LLM providers
+        _wrap_tool_results_with_sanitization(tool_executor)
 
         return tool_executor
 

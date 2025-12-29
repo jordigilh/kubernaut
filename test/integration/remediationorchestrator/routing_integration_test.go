@@ -1,0 +1,220 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package remediationorchestrator
+
+import (
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+// ========================================
+// V1.0 Centralized Routing Integration Tests (Day 5)
+// DD-RO-002: Centralized Routing Responsibility
+// ========================================
+//
+// These tests validate RO's centralized routing logic with real Kubernetes API.
+// They verify that RO correctly blocks RemediationRequest creation based on:
+// - Workflow cooldown (RecentlyRemediated)
+// - Signal cooldown (DuplicateInProgress)
+// - Resource lock (ResourceBusy)
+//
+// Reference: V1.0_CENTRALIZED_ROUTING_IMPLEMENTATION_PLAN.md (Day 5, Task 3.2)
+//
+// Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
+// - Unit tests (70%+): Routing logic in pkg/remediationorchestrator/routing/
+// - Integration tests (>50%): RO routing + K8s API interaction (this file)
+// - E2E tests (10-15%): Full signal → remediation flow
+//
+// ========================================
+// Phase 1 Integration Test Pattern
+// ========================================
+// These tests follow Phase 1 integration strategy where:
+// - ONLY the RO controller runs (no child controllers: SP, AA, WE)
+// - Tests manually create and control child CRD phases
+// - This validates RO orchestration logic in isolation
+//
+// Reference: RO_PHASE1_INTEGRATION_STRATEGY_IMPLEMENTED_DEC_19_2025.md
+// Helper functions: createSignalProcessingCRD, createAIAnalysisCRD, createWorkflowExecutionCRD
+
+var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
+
+	// ========================================
+	// Test 2: Workflow Cooldown Prevents WE Creation
+	// Reference: V1.0 Plan Day 5, Scenario 2
+	// BR-RO-XXX: RecentlyRemediated blocking
+	// ========================================
+	Describe("Workflow Cooldown Blocking (RecentlyRemediated)", func() {
+
+	// Phase 2 test moved to E2E suite: test/e2e/remediationorchestrator/routing_cooldown_e2e_test.go
+
+
+		It("should allow RR when cooldown period has expired", func() {
+			// Create unique namespace for this test
+			ns := createTestNamespace("routing-cooldown-expired")
+			defer deleteTestNamespace(ns)
+
+			GinkgoWriter.Println("📋 This test validates cooldown expiry (requires time manipulation)")
+			GinkgoWriter.Println("⏭️ PENDING: Cooldown expiry test requires time manipulation")
+			Skip("Cooldown expiry test requires time manipulation or extended wait")
+		})
+	})
+
+	// ========================================
+	// Test 1: Signal Cooldown Prevents SP Creation
+	// Reference: V1.0 Plan Day 5, Scenario 1
+	// BR-GATEWAY-XXX: DuplicateInProgress blocking
+	// ========================================
+	Describe("Signal Cooldown Blocking (DuplicateInProgress)", func() {
+
+		It("should block duplicate RR when active RR exists with same fingerprint", func() {
+			// Create unique namespace for this test
+			ns := createTestNamespace("routing-signal-cooldown")
+			defer deleteTestNamespace(ns)
+
+			// ========================================
+			// SETUP: First RR is active (Pending/Processing/Analyzing/Executing)
+			// ========================================
+
+			GinkgoWriter.Println("📋 Creating first RemediationRequest (RR1) with specific fingerprint...")
+
+			// Use a specific fingerprint for this test
+			fingerprint := "c1d2e3f4a5b6c1d2e3f4a5b6c1d2e3f4a5b6c1d2e3f4a5b6c1d2e3f4a5b6c1d2"
+			rr1 := createRemediationRequestWithFingerprint(ns, "rr-signal-1", fingerprint)
+
+			// Wait for RR1 to be initialized (any non-empty phase)
+			GinkgoWriter.Println("⏳ Waiting for RR1 to be initialized...")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+				if err != nil {
+					return ""
+				}
+				return string(rr.Status.OverallPhase)
+			}, timeout, interval).ShouldNot(BeEmpty(), "RR1 should be initialized")
+
+			GinkgoWriter.Println("✅ RR1 is active and in progress")
+
+			// ========================================
+			// TEST: Second RR with SAME fingerprint should be blocked
+			// ========================================
+
+			GinkgoWriter.Println("")
+			GinkgoWriter.Println("📋 Creating second RemediationRequest (RR2) with SAME fingerprint - should be BLOCKED...")
+
+			// Create second RR with SAME fingerprint
+			rr2 := createRemediationRequestWithFingerprint(ns, "rr-signal-2", fingerprint)
+
+			// ========================================
+			// VERIFY: RR2 should transition to Blocked (NOT create SP)
+			// ========================================
+
+			GinkgoWriter.Println("⏳ Waiting for RR2 to transition to Blocked phase...")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr)
+				if err != nil {
+					return ""
+				}
+				return string(rr.Status.OverallPhase)
+			}, timeout, interval).Should(Equal("Blocked"), "RR2 should be blocked due to duplicate in progress")
+
+			// Verify BlockReason is DuplicateInProgress
+			GinkgoWriter.Println("✅ Verifying BlockReason is DuplicateInProgress...")
+			rr2Updated := &remediationv1.RemediationRequest{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr2Updated)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr2Updated.Status.BlockReason).To(Equal("DuplicateInProgress"),
+				"BlockReason should be DuplicateInProgress")
+			Expect(rr2Updated.Status.BlockMessage).To(ContainSubstring("Duplicate"),
+				"BlockMessage should mention duplicate")
+			Expect(rr2Updated.Status.DuplicateOf).To(Equal(rr1.Name),
+				"Should reference the original RR")
+
+			GinkgoWriter.Println("✅ RR2 blocked correctly with DuplicateInProgress")
+
+			// Verify NO SignalProcessing was created for RR2
+			GinkgoWriter.Println("✅ Verifying NO SignalProcessing created for blocked RR2...")
+			Consistently(func() bool {
+				sp := &signalprocessingv1.SignalProcessing{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      rr2.Name + "-sp",
+					Namespace: ns,
+				}, sp)
+				return apierrors.IsNotFound(err)
+			}, 5*time.Second, interval).Should(BeTrue(),
+				"SP should NOT exist for blocked RR2")
+
+			GinkgoWriter.Println("✅ TEST PASSED: Signal cooldown correctly prevented SP creation")
+		})
+
+		It("should allow RR when original RR completes (no longer active)", func() {
+			// Create unique namespace for this test
+			ns := createTestNamespace("routing-signal-after-complete")
+			defer deleteTestNamespace(ns)
+
+			// Use a specific fingerprint for this test
+			fingerprint := "d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2"
+
+			GinkgoWriter.Println("📋 Creating first RemediationRequest (RR1)...")
+			rr1 := createRemediationRequestWithFingerprint(ns, "rr-signal-complete-1", fingerprint)
+
+			// Simulate RR1 reaching terminal phase (Completed)
+			GinkgoWriter.Println("✅ Simulating RR1 completion...")
+			Eventually(func() error {
+				rr := &remediationv1.RemediationRequest{}
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+				if err != nil {
+					return err
+				}
+				rr.Status.OverallPhase = "Completed"
+				return k8sClient.Status().Update(ctx, rr)
+			}, timeout, interval).Should(Succeed())
+
+			GinkgoWriter.Println("✅ RR1 completed")
+
+			// Create second RR with SAME fingerprint (should NOT be blocked now)
+			GinkgoWriter.Println("📋 Creating second RemediationRequest (RR2) with same fingerprint...")
+			rr2 := createRemediationRequestWithFingerprint(ns, "rr-signal-complete-2", fingerprint)
+
+			// Verify RR2 is NOT blocked (should proceed to Pending/Processing)
+			GinkgoWriter.Println("⏳ Waiting for RR2 to proceed (not blocked)...")
+			Eventually(func() bool {
+				rr := &remediationv1.RemediationRequest{}
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr)
+				if err != nil {
+					return false
+				}
+				phase := string(rr.Status.OverallPhase)
+				// Should be Pending or Processing, NOT Blocked
+				return phase == "Pending" || phase == "Processing" || phase == "Analyzing"
+			}, timeout, interval).Should(BeTrue(), "RR2 should proceed (original RR is no longer active)")
+
+			GinkgoWriter.Println("✅ TEST PASSED: RR allowed after original completed")
+		})
+	})
+})
+
+// Note: Helper functions (createRemediationRequestWithFingerprint, simulateFailedPhase)
+// are defined in blocking_integration_test.go and shared across all integration tests.

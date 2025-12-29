@@ -29,9 +29,11 @@
 | **[Integration Points](./integration-points.md)** | Upstream/downstream services, external dependencies | ~3 | 🚧 **Placeholder (CRITICAL)** |
 | **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path, reusability analysis | ~65 | 🟡 Thin (needs expansion) |
 | **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~42 | 🚧 **Placeholder (CRITICAL)** |
+| **[CONDITIONS Implementation Plan](./implementation/IMPLEMENTATION_PLAN_CONDITIONS_V1.0.md)** | **V1.0 conditions infrastructure**, 5-7 hours, unit tests | ~1,200 | 🚧 **NEW V1.0** |
 
-**Total**: ~6,665 lines across 14 documents
+**Total**: ~6,925 lines across 15 documents
 **Status**: 🟡 78% Complete - 3 critical placeholder files need expansion (database, integration, checklist)
+**V1.0 NEW**: CONDITIONS implementation plan (references [DD-CRD-002](../../../architecture/decisions/DD-CRD-002-kubernetes-conditions-standard.md#kubernetesexecution-we-team) for specifications)
 
 ---
 
@@ -134,6 +136,7 @@
 | Decision | Choice | Rationale | Document |
 |----------|--------|-----------|----------|
 | **Execution Model** | Native Kubernetes Jobs | Resource/process isolation, standard K8s pattern | [Overview](./overview.md) |
+| **Conditions Infrastructure (V1.0)** | 3 conditions, 12 reasons | DD-CRD-002 compliance, V2 controller readiness | **[DD-CRD-002 § KubernetesExecution](../../../architecture/decisions/DD-CRD-002-kubernetes-conditions-standard.md#kubernetesexecution-we-team)** ⭐ **NEW** |
 | **Action Catalog** | Predefined 80% + Custom 20% | Balance safety with flexibility | [Predefined Actions](./predefined-actions.md) |
 | **RBAC Isolation** | Per-action ServiceAccount | Least privilege, audit trail | [Security Configuration](./security-configuration.md) |
 | **Rollback Strategy** | Separate rollback action | Explicit, auditable rollback | [Reconciliation Phases](./reconciliation-phases.md) |

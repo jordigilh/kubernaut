@@ -46,7 +46,6 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 	var (
 		testNamespace string
 		k8sClient     *K8sTestClient
-		redisClient   *RedisTestClient
 		testServer    *httptest.Server
 		ctx           context.Context
 	)
@@ -58,11 +57,8 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for error handling tests")
 
-		redisClient = SetupRedisTestClient(ctx)
-		Expect(redisClient).ToNot(BeNil(), "Redis client required for error handling tests")
-
 		// Create Gateway server for testing
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Failed to start Gateway server")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should be created")
 
@@ -80,15 +76,10 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		Expect(k8sClient.Client.Create(ctx, ns)).To(Succeed())
 
 		// Clear Redis
-		Expect(redisClient.Client.FlushDB(ctx).Err()).To(Succeed())
 	})
 
 	AfterEach(func() {
 		// Reset Redis config to prevent OOM cascade failures
-		if redisClient != nil && redisClient.Client != nil {
-			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
-			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-		}
 
 		// Cleanup test server
 		if testServer != nil {
@@ -122,6 +113,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			bytes.NewBufferString(malformedJSON))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
@@ -178,6 +170,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			bytes.NewBufferString(largePayload))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
@@ -221,6 +214,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			bytes.NewBufferString(invalidAlert))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
@@ -245,30 +239,9 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		// ✅ Operator can quickly identify and fix issue
 	})
 
-	It("returns 500 when Kubernetes API is unavailable (for retry)", func() {
-		// BUSINESS SCENARIO: K8s API down, Gateway can't create CRD
-		// Expected: 500 Internal Server Error (AlertManager retries)
-		//
-		// WHY THIS MATTERS: Transient K8s failures should retry
-		// Example: K8s API server restart → Brief downtime
-		// 500 error triggers AlertManager retry logic
-
-		Skip("Requires Kubernetes API failure simulation (complex infrastructure)")
-
-		// This test would:
-		// 1. Simulate K8s API unavailability (stop API server or network partition)
-		// 2. Send alert to Gateway
-		// 3. Verify 500 Internal Server Error returned
-		// 4. Restore K8s API
-		// 5. Verify AlertManager retry succeeds
-		//
-		// Implementation note: Requires control over K8s API server
-		//
-		// BUSINESS OUTCOME:
-		// ✅ Transient failures trigger retry
-		// ✅ AlertManager retry logic handles temporary issues
-		// ✅ No alerts lost due to brief downtime
-	})
+	// REMOVED: "returns 500 when Kubernetes API is unavailable (for retry)"
+	// REASON: Requires K8s API failure simulation
+	// COVERAGE: Unit tests (crd_creator_retry_test.go) validate retry logic with mock K8s client
 
 	It("handles namespace not found by using kubernaut-system namespace fallback", func() {
 		// BUSINESS SCENARIO: Alert references non-existent namespace
@@ -301,6 +274,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			bytes.NewBufferString(alertPayload))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
@@ -326,7 +300,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			// Filter for CRDs with the correct origin-namespace label to avoid picking up old CRDs
 			err2 := k8sClient.Client.List(context.Background(), rrList,
 				client.InNamespace("kubernaut-system"),
-				client.MatchingLabels{"kubernaut.io/origin-namespace": nonExistentNamespace})
+				client.MatchingLabels{"kubernaut.ai/origin-namespace": nonExistentNamespace})
 			if err2 == nil && len(rrList.Items) > 0 {
 				createdCRD = &rrList.Items[0]
 				return true
@@ -339,9 +313,9 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		Expect(createdCRD).ToNot(BeNil(), "CRD should be created")
 		Expect(createdCRD.Namespace).To(Equal("kubernaut-system"),
 			"CRD should be in kubernaut-system namespace")
-		Expect(createdCRD.Labels["kubernaut.io/cluster-scoped"]).To(Equal("true"),
+		Expect(createdCRD.Labels["kubernaut.ai/cluster-scoped"]).To(Equal("true"),
 			"CRD should have cluster-scoped label")
-		Expect(createdCRD.Labels["kubernaut.io/origin-namespace"]).To(Equal(nonExistentNamespace),
+		Expect(createdCRD.Labels["kubernaut.ai/origin-namespace"]).To(Equal(nonExistentNamespace),
 			"CRD should preserve origin namespace in label")
 
 		// BUSINESS OUTCOME VERIFIED:

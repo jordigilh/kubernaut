@@ -1,18 +1,29 @@
 # Gateway Service - CRD Integration
 
-**Version**: v1.0
-**Last Updated**: October 5, 2025
+**Version**: v1.1
+**Last Updated**: December 7, 2025
 **Status**: ✅ Design Complete
 
 ---
 
-## 📋 Authoritative CRD Schema
+## 📋 CRD Schema Ownership (ADR-049)
 
-**IMPORTANT**: Gateway Service is the **authoritative source** for `RemediationRequest` CRD schema.
+**IMPORTANT**: **Remediation Orchestrator (RO) owns the RemediationRequest CRD schema definition.**
 
-**Authoritative Schema**: See [`docs/architecture/CRD_SCHEMAS.md`](../../../architecture/CRD_SCHEMAS.md)
+Gateway Service **creates instances** of RemediationRequest but **imports types from RO**.
 
-All field definitions, types, and requirements in this document must match the authoritative schema exactly.
+**Authoritative Schema**: Owned by RO - see [`api/remediation/v1alpha1/`](../../../../api/remediation/v1alpha1/)
+**Reference**: [ADR-049](../../../architecture/decisions/ADR-049-remediationrequest-crd-ownership.md)
+
+### Ownership Model (DD-GATEWAY-011)
+
+| Aspect | Owner |
+|--------|-------|
+| **Schema Definition** | Remediation Orchestrator |
+| **Instance Creation** | Gateway Service |
+| **`status.deduplication`** | Gateway Service (exclusive write) |
+| **`status.stormAggregation`** | Gateway Service (exclusive write) |
+| **`status.overallPhase`** | Remediation Orchestrator |
 
 ---
 
@@ -226,7 +237,7 @@ func buildDatadogProviderData(signal *NormalizedSignal) json.RawMessage {
 ### Normal Alert CRD Example
 
 ```yaml
-apiVersion: remediation.kubernaut.io/v1
+apiVersion: remediation.kubernaut.ai/v1
 kind: RemediationRequest
 metadata:
   name: remediation-abc123
@@ -265,7 +276,7 @@ status:
 ### Storm Alert CRD Example
 
 ```yaml
-apiVersion: remediation.kubernaut.io/v1
+apiVersion: remediation.kubernaut.ai/v1
 kind: RemediationRequest
 metadata:
   name: remediation-storm-xyz

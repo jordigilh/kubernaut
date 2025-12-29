@@ -1,5 +1,5 @@
 # Multi-stage build for kubernetes executor service using Red Hat UBI9 Go toolset
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
 # Switch to root for package installation
 USER root
@@ -18,14 +18,13 @@ WORKDIR /opt/app-root/src
 # Copy go mod files
 COPY --chown=1001:0 go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
-
 # Copy source code
 COPY --chown=1001:0 . .
 
 # Build the kubernetes executor service binary
+# -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+	-mod=mod \
 	-ldflags='-w -s -extldflags "-static"' \
 	-a -installsuffix cgo \
 	-o executor-service \

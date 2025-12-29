@@ -1,0 +1,116 @@
+# ========================================
+# Notification Controller Configuration (ADR-030)
+# Authority: ADR-030 Configuration Management Standard
+# Source: docs/architecture/decisions/ADR-030-CONFIGURATION-MANAGEMENT.md
+# ========================================
+#
+# This ConfigMap contains the complete configuration for the Notification controller.
+# All functional configuration is defined here; secrets come from environment variables.
+#
+# ADR-030 Compliance:
+# - Three mandatory sections: controller, delivery, infrastructure
+# - YAML format with duration strings (30s, 5m, 1h)
+# - No secrets in ConfigMap (secrets in env vars via LoadFromEnv)
+# - Mounted at /etc/notification/ in deployment
+# - Referenced via CONFIG_PATH environment variable
+#
+# Related:
+# - BR-NOT-XXX: Notification business requirements
+# - DD-NOT-006: ChannelFile + ChannelLog production features
+# - ADR-032: Data Storage audit integration
+# ========================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-controller-config
+  namespace: notification-e2e
+data:
+  config.yaml: |
+    # ========================================
+    # CONTROLLER SECTION (MANDATORY - ADR-030)
+    # ========================================
+    # Controller runtime settings for Kubernetes controller
+    # These values control metrics, health probes, and leader election
+    controller:
+      # Prometheus metrics endpoint
+      metrics_addr: ":9186"
+
+      # Health and readiness probe endpoint
+      health_probe_addr: ":8081"
+
+      # Leader election (set to true for HA multi-replica deployments)
+      leader_election: false
+
+      # Leader election ID (must be unique per service)
+      leader_election_id: "notification.kubernaut.ai"
+
+    # ========================================
+    # DELIVERY SECTION (SERVICE-SPECIFIC)
+    # DD-NOT-006: Multi-channel delivery configuration
+    # ========================================
+    # Notification delivery channel configuration
+    # Supports: console, file, log, slack
+    delivery:
+      # Console delivery (stdout)
+      # Always enabled for development and debugging
+      console:
+        enabled: true
+
+      # File delivery (DD-NOT-006: Production feature)
+      # Writes notifications to JSON/YAML files for audit trails
+      # Used for compliance logging and persistent notification history
+      file:
+        output_dir: "/tmp/notifications"  # Directory for file output
+        format: "json"                     # File format: json, yaml, text
+        timeout: 5s                        # Write timeout
+
+      # Log delivery (DD-NOT-006: Production feature)
+      # Outputs notifications as structured JSON to stdout for observability
+      # Enables log aggregation (Loki, Elasticsearch) to parse and index
+      log:
+        enabled: true                      # Enable structured log delivery
+        format: "json"                     # Log format: json, text
+
+      # Slack delivery
+      # Webhook URL loaded from environment variable (SLACK_WEBHOOK_URL)
+      # via LoadFromEnv() - NOT in ConfigMap (secret)
+      slack:
+        timeout: 10s                       # HTTP timeout for webhook calls
+
+    # ========================================
+    # INFRASTRUCTURE SECTION (MANDATORY - ADR-030)
+    # ADR-032: Audit integration dependencies
+    # ========================================
+    # External service dependencies and endpoints
+    infrastructure:
+      # Data Storage service URL (REQUIRED by ADR-032 for audit)
+      # Used for audit event emission and persistent storage
+      # Format: http://{service}.{namespace}.svc.cluster.local:{port}
+      data_storage_url: "http://datastorage.notification-e2e.svc.cluster.local:8080"
+
+# ========================================
+# Deployment Integration (ADR-030 Pattern)
+# ========================================
+#
+# This ConfigMap is mounted in the deployment at /etc/notification/
+# and referenced via the CONFIG_PATH environment variable:
+#
+# env:
+# - name: CONFIG_PATH
+#   value: "/etc/notification/config.yaml"
+# args:
+# - "-config"
+# - "$(CONFIG_PATH)"  # Kubernetes substitutes with env var value
+#
+# volumeMounts:
+# - name: config
+#   mountPath: /etc/notification
+#   readOnly: true
+#
+# volumes:
+# - name: config
+#   configMap:
+#     name: notification-controller-config
+#
+# ========================================

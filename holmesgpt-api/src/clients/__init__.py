@@ -14,13 +14,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-"""
-External service clients for HolmesGPT API
-"""
-
-from src.clients.mcp_client import MCPClient
-
-__all__ = ["MCPClient"]
-
-
-
+"""Clients package for external service integrations"""

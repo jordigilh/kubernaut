@@ -1,22 +1,22 @@
-# Gateway Service - Implementation Plan v2.27
+# Gateway Service - Implementation Plan v2.28
 
-✅ **CATEGORIZATION MIGRATION** - Architectural Simplification (DD-CATEGORIZATION-001)
+✅ **CATEGORIZATION MIGRATION COMPLETE** - Classification Removed from Gateway (DD-CATEGORIZATION-001)
 
 **Service**: Gateway Service (Entry Point for All Signals)
 **Phase**: Phase 2, Service #1
-**Plan Version**: v2.27 (Categorization Migration to Signal Processing)
+**Plan Version**: v2.28 (Categorization Migration Complete)
 **Template Version**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.0
-**Plan Date**: November 11, 2025
-**Current Status**: 📋 V2.27 CATEGORIZATION MIGRATION PLANNED (Not Yet Implemented)
-**Business Requirements**: BR-GATEWAY-001 through BR-GATEWAY-115 (~55 BRs, 5 BRs deprecated)
-**Scope**: Prometheus AlertManager + Kubernetes Events + HTTP Server + Observability + Network-Level Security + E2E Edge Cases + K8s API Retry Logic + **Categorization Migration**
-**Confidence**: 95% ✅ **Architectural Decision Approved - Implementation Deferred to Signal Processing Development**
+**Plan Date**: December 6, 2025
+**Current Status**: ✅ **V2.28 CATEGORIZATION MIGRATION COMPLETE** (2025-12-06)
+**Business Requirements**: BR-GATEWAY-001 through BR-GATEWAY-115 (~50 BRs active, 5 BRs REMOVED)
+**Scope**: Prometheus AlertManager + Kubernetes Events + HTTP Server + Observability + Network-Level Security + E2E Edge Cases + K8s API Retry Logic + **Categorization Removed**
+**Confidence**: 95% ✅ **Implementation Complete - Classification Owned by Signal Processing**
 
 **Architecture**: Adapter-specific self-registered endpoints (DD-GATEWAY-001)
 **Security**: Network Policies + TLS + Rate Limiting + Security Headers + Log Sanitization + Timestamp Validation (DD-GATEWAY-004)
 **Optimization**: Lightweight metadata storage (DD-GATEWAY-004 Redis)
 **Resilience**: K8s API retry with exponential backoff (DD-GATEWAY-008)
-**Simplification**: Categorization moved to Signal Processing (DD-CATEGORIZATION-001) **NEW**
+**Simplification**: Categorization **REMOVED** from Gateway - now owned by Signal Processing (DD-CATEGORIZATION-001) ✅ **COMPLETE**
 
 ---
 
@@ -26,19 +26,22 @@
 |---------|------|---------|--------|
 | **v2.25** | Nov 7, 2025 | **K8s API Retry Logic**: Added comprehensive retry logic for transient K8s API errors (429 rate limiting, 503 service unavailable, timeouts). **Phased Implementation**: Phase 1 (Synchronous Retry with Exponential Backoff, 10h) + Phase 2 (Async Retry Queue, 12h incremental). **New BRs**: BR-GATEWAY-111 (Retry Configuration), BR-GATEWAY-112 (Error Classification), BR-GATEWAY-113 (Exponential Backoff), BR-GATEWAY-114 (Retry Metrics), BR-GATEWAY-115 (Async Retry Queue). | ⚠️ SUPERSEDED |
 | **v2.26** | Nov 7, 2025 | K8s API Retry Logic - Gap Resolution from Context API Lessons. Comprehensive analysis with phased approach, performance metrics, rollback plan. Confidence: 87%. | ⚠️ SUPERSEDED |
-| **v2.27** | Nov 11, 2025 | **Categorization Migration**: Deprecated 5 BRs (BR-GATEWAY-007, 014, 015, 016, 017) and moved categorization responsibility to Signal Processing Service. **Rationale**: DD-CATEGORIZATION-001 approved - consolidate all categorization (environment classification + priority assignment) into Signal Processing Service for context-driven categorization with full K8s context. **Gateway Changes**: Remove environment classification logic, remove priority assignment logic, set placeholder values (`environment: "pending"`, `priority: "pending"`) in RemediationRequest CRD. **Implementation Status**: NOT YET IMPLEMENTED - deferred until Signal Processing Service development begins. **Migration Target**: Signal Processing Service (BR-SP-051 to BR-SP-053 for environment, BR-SP-070 to BR-SP-072 for priority). **Confidence**: 95% (architectural decision approved, clear migration path). | ✅ **CURRENT** |
+| **v2.27** | Nov 11, 2025 | **Categorization Migration Planned**: Deprecated 5 BRs (BR-GATEWAY-007, 014, 015, 016, 017) and planned categorization responsibility move to Signal Processing Service. **DD-CATEGORIZATION-001 approved**. | ⚠️ SUPERSEDED |
+| **v2.28** | Dec 6, 2025 | **Categorization Migration COMPLETE**: Classification code **completely removed** from Gateway (not placeholder values). **Files Deleted**: `classification.go`, `priority.go`, `environment_classification_test.go`, `priority_classification_test.go`, Rego policy files. **CRD Changes**: `environment` and `priority` labels/fields no longer set by Gateway. **HTTP Response Changes**: `environment` and `priority` removed from response. **Config Changes**: `EnvironmentSettings` and `PrioritySettings` removed. **5 BRs REMOVED**: BR-GATEWAY-007, 014, 015, 016, 017. **Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md). **Confidence**: 95% (implementation verified). | ✅ **CURRENT** |
 
 ---
 
-## 🎯 **v2.27 Feature Overview: Categorization Migration**
+## 🎯 **v2.28 Feature Overview: Categorization Migration COMPLETE**
 
 ### **Architectural Decision**
 
 **Decision**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) - Gateway vs Signal Processing Categorization Split Assessment
 
-**Status**: ✅ **APPROVED** (November 11, 2025)
+**Status**: ✅ **IMPLEMENTED** (December 6, 2025)
 
-**Confidence**: 92% (based on industry best practices from Datadog, PagerDuty, Splunk, Google Cloud Operations)
+**Confidence**: 95% (implementation verified, code removed)
+
+**Implementation Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
 ---
 
@@ -67,11 +70,11 @@
 
 ### **Solution: Consolidate Categorization into Signal Processing**
 
-**Recommended Architecture** (DD-CATEGORIZATION-001):
+**Implemented Architecture** (DD-CATEGORIZATION-001) - **COMPLETE (2025-12-06)**:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Gateway Service (Fast Path: <50ms)                         │
+│ Gateway Service (Fast Path: <50ms) ✅ IMPLEMENTED          │
 │                                                              │
 │ Responsibilities:                                           │
 │ 1. Alert ingestion and normalization                       │
@@ -79,13 +82,14 @@
 │ 3. Storm detection (rate + pattern)                        │
 │ 4. RemediationRequest CRD creation                         │
 │                                                              │
-│ ❌ NO environment classification                            │
-│ ❌ NO priority assignment                                   │
-│ ❌ NO Rego policy evaluation                                │
+│ ❌ NO environment classification (CODE DELETED)            │
+│ ❌ NO priority assignment (CODE DELETED)                   │
+│ ❌ NO Rego policy evaluation (CODE DELETED)                │
 │                                                              │
-│ CRD Fields:                                                 │
-│   environment: "pending"  # Placeholder                     │
-│   priority: "pending"     # Placeholder                     │
+│ CRD Labels Set:                                             │
+│   kubernaut.ai/alert-name: <alertname>                      │
+│   kubernaut.ai/severity: <severity>                         │
+│   (environment/priority labels NOT set by Gateway)          │
 └─────────────────────────────────────────────────────────────┘
                           │
                           v
@@ -103,9 +107,9 @@
 │ ✅ Rich context available for sophisticated decisions      │
 │ ✅ Graceful degradation if K8s API unavailable             │
 │                                                              │
-│ CRD Fields:                                                 │
-│   environment: "production"  # Classified                   │
-│   priority: "P0"             # Assigned                     │
+│ CRD Labels/Fields Added:                                    │
+│   kubernaut.ai/environment: "production"  # Classified      │
+│   kubernaut.ai/priority: "P0"             # Assigned        │
 │   confidence: 0.95           # Classification confidence    │
 │   businessPriority: "P0"     # Business-aware priority      │
 │   slaRequirement: "5m"       # SLA metadata                 │
@@ -114,50 +118,60 @@
 
 ---
 
-### **Deprecated Business Requirements**
+### **Removed Business Requirements** ✅ **COMPLETE (2025-12-06)**
 
 | BR ID | Description | Status | Migration Target |
 |-------|-------------|--------|------------------|
-| **BR-GATEWAY-007** | Signal Priority Classification | ⚠️ **DEPRECATED** | Signal Processing (BR-SP-070 to BR-SP-072) |
-| **BR-GATEWAY-014** | Signal Enrichment (Environment Classification) | ⚠️ **DEPRECATED** | Signal Processing (BR-SP-051 to BR-SP-053) |
-| **BR-GATEWAY-015** | Environment Classification - Explicit Labels | ⚠️ **DEPRECATED** | Signal Processing (BR-SP-051) |
-| **BR-GATEWAY-016** | Environment Classification - Namespace Pattern | ⚠️ **DEPRECATED** | Signal Processing (BR-SP-052) |
-| **BR-GATEWAY-017** | Environment Classification - Fallback | ⚠️ **DEPRECATED** | Signal Processing (BR-SP-053) |
+| **BR-GATEWAY-007** | Signal Priority Classification | ❌ **REMOVED** (2025-12-06) | Signal Processing (BR-SP-070 to BR-SP-072) |
+| **BR-GATEWAY-014** | Signal Enrichment (Environment Classification) | ❌ **REMOVED** (2025-12-06) | Signal Processing (BR-SP-051 to BR-SP-053) |
+| **BR-GATEWAY-015** | Environment Classification - Explicit Labels | ❌ **REMOVED** (2025-12-06) | Signal Processing (BR-SP-051) |
+| **BR-GATEWAY-016** | Environment Classification - Namespace Pattern | ❌ **REMOVED** (2025-12-06) | Signal Processing (BR-SP-052) |
+| **BR-GATEWAY-017** | Environment Classification - Fallback | ❌ **REMOVED** (2025-12-06) | Signal Processing (BR-SP-053) |
 
-**Deprecation Details**:
-- **Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
-- **Tests**: Unit and integration tests (to be migrated to Signal Processing)
-- **Rego Policies**: Priority assignment Rego policies (to be migrated to Signal Processing)
+**Removal Details** (2025-12-06):
+- **Implementation Files DELETED**:
+  - ~~`pkg/gateway/processing/classification.go`~~ **DELETED**
+  - ~~`pkg/gateway/processing/priority.go`~~ **DELETED**
+  - ~~`config.app/gateway/policies/priority.rego`~~ **DELETED**
+- **Test Files DELETED**:
+  - ~~`test/unit/gateway/processing/environment_classification_test.go`~~ **DELETED**
+  - ~~`test/unit/gateway/priority_classification_test.go`~~ **DELETED**
+- **Config Structs DELETED**:
+  - ~~`EnvironmentSettings`~~ **DELETED** from `config.go`
+  - ~~`PrioritySettings`~~ **DELETED** from `config.go`
 - **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+- **Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
 ---
 
 ### **Implementation Status**
 
-**Current Status**: 📋 **NOT YET IMPLEMENTED**
+**Current Status**: ✅ **IMPLEMENTED** (December 6, 2025)
 
-**Rationale**: Implementation deferred until Signal Processing Service development begins. Gateway will continue to perform categorization until Signal Processing Service is ready to take over.
+**Implementation Summary**:
+- Gateway classification code **completely removed** (not placeholder values)
+- Signal Processing service now owns all environment/priority classification
+- Coordination completed via [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
-**Implementation Timeline** (from DD-CATEGORIZATION-001):
+**Completion Timeline**:
 
-#### **Phase 1: Signal Processing Enhancement** (Week 1)
-- Add Rego policy engine to Signal Processing Service
-- Migrate Gateway's Rego policies to Signal Processing
-- Enhance policies with K8s context inputs (replicas, quotas, node health)
-- Add business context inputs (SLA, criticality, historical failures)
-- **NEW BRs**: BR-SP-070 (Rego priority), BR-SP-071 (Fallback matrix), BR-SP-072 (Hot-reload)
+#### **Phase 1: Signal Processing Enhancement** ✅ **COMPLETE**
+- SP team completed Day 5 Priority Engine ahead of schedule (2025-12-06)
+- Rego policy engine operational in Signal Processing Service
+- Environment classification (BR-SP-051 to BR-SP-053) implemented
+- Priority assignment (BR-SP-070 to BR-SP-072) implemented
 
-#### **Phase 2: Gateway Simplification** (Week 2)
-- Remove environment classification from Gateway Service
-- Remove priority assignment from Gateway Service
-- Remove Rego policy engine from Gateway Service
-- Set placeholder values in RemediationRequest CRD: `environment: "pending"`, `priority: "pending"`
-- **DEPRECATE BRs**: BR-GATEWAY-007, BR-GATEWAY-014, BR-GATEWAY-015, BR-GATEWAY-016, BR-GATEWAY-017
+#### **Phase 2: Gateway Simplification** ✅ **COMPLETE** (2025-12-06)
+- ✅ Removed environment classification from Gateway Service
+- ✅ Removed priority assignment from Gateway Service
+- ✅ Removed Rego policy engine from Gateway Service
+- ✅ Removed `environment` and `priority` from CRD labels (not placeholder - completely removed)
+- ✅ Removed `environment` and `priority` from HTTP response
+- ✅ **REMOVED BRs**: BR-GATEWAY-007, BR-GATEWAY-014, BR-GATEWAY-015, BR-GATEWAY-016, BR-GATEWAY-017
 
-#### **Phase 3: Signal Processing Ownership** (Week 3)
-- Signal Processing reads `environment: "pending"` and `priority: "pending"`
-- Signal Processing performs classification after K8s enrichment
-- Signal Processing updates RemediationRequest CRD with classified values
+#### **Phase 3: Signal Processing Ownership** ✅ **IN PROGRESS**
+- Signal Processing adds `kubernaut.ai/environment` and `kubernaut.ai/priority` labels
+- Signal Processing updates CRD with classified values after K8s enrichment
 - Signal Processing emits metrics for classification confidence
 
 ---

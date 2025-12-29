@@ -1,0 +1,1164 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package signalprocessing implements the SignalProcessing CRD controller.
+// Per IMPLEMENTATION_PLAN_V1.31.md - E2E GREEN Phase + BR-SP-090 Audit
+//
+// Reconciliation Flow:
+//  1. Pending → Enriching: K8s context enrichment + owner chain + detected labels
+//  2. Enriching → Classifying: Environment + Priority classification
+//  3. Classifying → Categorizing: Business classification
+//  4. Categorizing → Completed: Final status update + audit event
+//
+// Business Requirements:
+//   - BR-SP-001: K8s Context Enrichment
+//   - BR-SP-051-053: Environment Classification
+//   - BR-SP-070-072: Priority Assignment
+//   - BR-SP-090: Categorization Audit Trail
+//   - BR-SP-100: Owner Chain Traversal
+//   - BR-SP-101: Detected Labels
+package signalprocessing
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/go-logr/logr"
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
+
+	// BR-SP-110: Kubernetes Conditions
+	spconditions "github.com/jordigilh/kubernaut/pkg/signalprocessing"
+)
+
+// SignalProcessingReconciler reconciles a SignalProcessing object.
+// Per IMPLEMENTATION_PLAN_V1.31.md - E2E GREEN Phase + BR-SP-090 Audit
+// Day 10 Integration: Wired with Rego-based classifiers from pkg/signalprocessing/classifier
+type SignalProcessingReconciler struct {
+	client.Client
+	Scheme      *runtime.Scheme
+	AuditClient *audit.AuditClient // BR-SP-090: Categorization Audit Trail
+
+	// V1.0 Maturity Requirements (per SERVICE_MATURITY_REQUIREMENTS.md)
+	Metrics  *metrics.Metrics     // DD-005: Observability - metrics wired to controller
+	Recorder record.EventRecorder // K8s best practice: EventRecorder for debugging
+
+	// ========================================
+	// STATUS MANAGER (DD-PERF-001)
+	// 📋 Design Decision: DD-PERF-001 | ✅ Atomic Status Updates Pattern
+	// See: docs/architecture/decisions/DD-PERF-001-atomic-status-updates-mandate.md
+	// ========================================
+	//
+	// StatusManager manages atomic status updates to reduce K8s API calls
+	// Consolidates multiple status field updates into single atomic operations
+	//
+	// BENEFITS:
+	// - 66-75% API call reduction (3-4 updates → 1 atomic update per reconcile)
+	// - Eliminates race conditions from sequential updates
+	// - Reduces etcd write load and watch events
+	//
+	// WIRED IN: cmd/signalprocessing/main.go
+	// USAGE: r.StatusManager.AtomicStatusUpdate(ctx, sp, func() { ... })
+	StatusManager *status.Manager
+
+	// Day 4-6 Classifiers (Rego-based, per IMPLEMENTATION_PLAN_V1.31.md)
+	// These are MANDATORY - fail loudly if nil or on error
+	EnvClassifier      EnvironmentClassifier          // BR-SP-051: Environment classification (interface for testability)
+	PriorityAssigner   PriorityAssigner               // BR-SP-070: Priority assignment (interface for testability)
+	BusinessClassifier *classifier.BusinessClassifier // BR-SP-002, BR-SP-080, BR-SP-081
+
+	// Day 7 Owner Chain Builder (per IMPLEMENTATION_PLAN_V1.31.md)
+	// This is OPTIONAL - controller falls back to inline implementation if nil
+	OwnerChainBuilder *ownerchain.Builder // BR-SP-100: Owner chain traversal
+
+	// Day 8-9 Enrichment Components (per IMPLEMENTATION_PLAN_V1.31.md)
+	// These are OPTIONAL - controller falls back to inline implementation if nil
+	RegoEngine    *rego.Engine             // BR-SP-102: CustomLabels Rego extraction
+	LabelDetector *detection.LabelDetector // BR-SP-101: DetectedLabels auto-detection
+
+	// K8sEnricher provides sophisticated Kubernetes context enrichment
+	// This is MANDATORY - fail loudly if nil or on error
+	K8sEnricher K8sEnricher // BR-SP-001: K8s context enrichment (interface for testability)
+}
+
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=signalprocessings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=signalprocessings/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=signalprocessings/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=remediation.kubernaut.ai,resources=remediationrequests,verbs=get;list;watch
+
+// Reconcile implements the reconciliation loop for SignalProcessing.
+func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.V(1).Info("Reconciling SignalProcessing", "name", req.Name, "namespace", req.Namespace)
+
+	// Fetch the SignalProcessing instance
+	sp := &signalprocessingv1alpha1.SignalProcessing{}
+	if err := r.Get(ctx, req.NamespacedName, sp); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Initialize status if needed
+	if sp.Status.Phase == "" {
+		// ========================================
+		// DD-PERF-001: ATOMIC STATUS UPDATE
+		// Initialize phase + timestamp in single API call
+		// ========================================
+		err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+			sp.Status.Phase = signalprocessingv1alpha1.PhasePending
+			sp.Status.StartTime = &metav1.Time{Time: time.Now()}
+			return nil
+		})
+		if err != nil {
+			logger.Error(err, "Failed to initialize status")
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Skip if already completed or failed
+	if sp.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
+		sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
+		return ctrl.Result{}, nil
+	}
+
+	// Process based on current phase
+	var result ctrl.Result
+	var err error
+
+	switch sp.Status.Phase {
+	case signalprocessingv1alpha1.PhasePending:
+		result, err = r.reconcilePending(ctx, sp, logger)
+	case signalprocessingv1alpha1.PhaseEnriching:
+		result, err = r.reconcileEnriching(ctx, sp, logger)
+	case signalprocessingv1alpha1.PhaseClassifying:
+		result, err = r.reconcileClassifying(ctx, sp, logger)
+	case signalprocessingv1alpha1.PhaseCategorizing:
+		result, err = r.reconcileCategorizing(ctx, sp, logger)
+	default:
+		// Unknown phase - transition to enriching (DD-PERF-001)
+		oldPhase := sp.Status.Phase
+		// ========================================
+		// DD-PERF-001: ATOMIC STATUS UPDATE
+		// Phase transition in single API call
+		// ========================================
+		err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+			sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Record phase transition audit event (BR-SP-090)
+		// ADR-032: Audit is MANDATORY - return error if not configured
+		if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseEnriching)); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// DD-SHARED-001: Handle transient errors with exponential backoff
+	// Transient errors get explicit backoff delays to prevent thundering herd
+	if err != nil && isTransientError(err) {
+		return r.handleTransientError(ctx, sp, err, logger)
+	}
+
+	// On success, reset consecutive failures
+	if err == nil && result.Requeue {
+		if resetErr := r.resetConsecutiveFailures(ctx, sp, logger); resetErr != nil {
+			logger.V(1).Info("Failed to reset consecutive failures (non-fatal)", "error", resetErr)
+		}
+	}
+
+	return result, err
+}
+
+// reconcilePending transitions from Pending to Enriching.
+func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
+	logger.V(1).Info("Processing Pending phase")
+
+	// DD-005: Track phase processing attempt
+	r.Metrics.IncrementProcessingTotal("pending", "attempt")
+
+	// ========================================
+	// DD-PERF-001: ATOMIC STATUS UPDATE
+	// Transition to Enriching in single API call
+	// ========================================
+	err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+		sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
+		return nil
+	})
+	if err != nil {
+		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("pending", "failure")
+		return ctrl.Result{}, err
+	}
+
+	// DD-005: Track phase processing success
+	r.Metrics.IncrementProcessingTotal("pending", "success")
+	return ctrl.Result{Requeue: true}, nil
+}
+
+// reconcileEnriching performs context enrichment based on the signal's target type.
+//
+// BR-SP-001: K8s Context Enrichment
+// BR-SP-100: Owner Chain Traversal
+// BR-SP-101: Detected Labels
+//
+// ========================================
+// V2.0 EXTENSIBILITY POINT: Multi-Provider Support
+// ========================================
+//
+// Currently, this function only supports Kubernetes enrichment (targetType: "kubernetes").
+// The CRD field `spec.signal.targetType` (enum: kubernetes|aws|azure|gcp|datadog) is already
+// present and validated, providing the routing discriminator for future multi-provider support.
+//
+// When Kubernaut evolves to a full-stack AIOps platform, extend this function with:
+//
+//	switch sp.Spec.Signal.TargetType {
+//	case "kubernetes":
+//	    return r.enrichKubernetesContext(ctx, sp, logger)  // Current implementation
+//	case "aws":
+//	    return r.enrichAWSContext(ctx, sp, logger)         // CloudWatch, CloudTrail, EC2, EKS
+//	case "azure":
+//	    return r.enrichAzureContext(ctx, sp, logger)       // Azure Monitor, Activity Log, AKS
+//	case "gcp":
+//	    return r.enrichGCPContext(ctx, sp, logger)         // Cloud Monitoring, GKE
+//	case "datadog":
+//	    return r.enrichDatadogContext(ctx, sp, logger)     // Datadog API context
+//	}
+//
+// Each provider enricher should:
+// 1. Call provider-specific APIs to gather context
+// 2. Populate the appropriate status fields (may require CRD status extension)
+// 3. Handle provider-specific error scenarios and degraded mode
+// 4. Set conditions with provider-specific reasons
+//
+// Related fields in spec.signal:
+// - targetType: The platform to enrich from (routing discriminator)
+// - type: Signal source (prometheus, kubernetes-event, aws-cloudwatch, etc.)
+// - source: Gateway adapter that ingested the signal
+//
+// See: docs/architecture/decisions/DD-SP-003-multi-provider-extensibility.md (TODO: create when V2.0 begins)
+// ========================================
+func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
+	logger.V(1).Info("Processing Enriching phase")
+
+	// DD-005: Track phase processing attempt
+	r.Metrics.IncrementProcessingTotal("enriching", "attempt")
+
+	// RF-SP-003: Track enrichment duration for audit metrics
+	enrichmentStart := time.Now()
+
+	signal := &sp.Spec.Signal
+
+	// V2.0 EXTENSIBILITY: Currently only "kubernetes" is implemented.
+	// When adding new providers, replace this block with a switch on signal.TargetType.
+	// For now, we proceed with Kubernetes enrichment regardless of targetType value.
+	// Gateway currently hardcodes targetType="kubernetes" (pkg/gateway/processing/crd_creator.go:376)
+
+	targetNs := signal.TargetResource.Namespace
+	targetKind := signal.TargetResource.Kind
+	targetName := signal.TargetResource.Name
+
+	// BR-SP-001: K8sEnricher is MANDATORY - fail loudly if not wired or fails
+	// No fallback path - enrichment failure should stop processing
+	if r.K8sEnricher == nil {
+		return ctrl.Result{}, fmt.Errorf("K8sEnricher is nil - this is a startup configuration error")
+	}
+
+	k8sCtx, err := r.K8sEnricher.Enrich(ctx, signal)
+	if err != nil {
+		logger.Error(err, "K8sEnricher failed", "targetKind", targetKind, "targetName", targetName)
+		// DD-005: Track enrichment failure
+		r.Metrics.IncrementProcessingTotal("enriching", "failure")
+		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
+		return ctrl.Result{}, fmt.Errorf("enrichment failed: %w", err)
+	}
+
+	// 4. Detect labels (BR-SP-101)
+	detectedLabels := r.detectLabels(ctx, k8sCtx, targetNs, targetKind, targetName, logger)
+	k8sCtx.DetectedLabels = detectedLabels
+
+	// 5. Custom labels (BR-SP-102) - Rego-based extraction
+	// Per IMPLEMENTATION_PLAN_V1.31.md Day 8: Use RegoEngine for CustomLabels
+	customLabels := make(map[string][]string)
+	if r.RegoEngine != nil {
+		// Build Rego input - simplified approach using map[string]interface{}
+		regoInput := &rego.RegoInput{
+			Kubernetes: r.buildRegoKubernetesContext(k8sCtx),
+			Signal: rego.SignalContext{
+				Type:     signal.Type,
+				Severity: signal.Severity,
+				Source:   signal.Source,
+			},
+		}
+
+		labels, err := r.RegoEngine.EvaluatePolicy(ctx, regoInput)
+		if err != nil {
+			logger.V(1).Info("Rego engine evaluation failed, using fallback", "error", err)
+		} else {
+			customLabels = labels
+		}
+	}
+
+	// Fallback: Extract from namespace labels if Rego Engine not available or failed
+	if len(customLabels) == 0 && k8sCtx.Namespace != nil {
+		// Extract team label from namespace labels (production)
+		if team, ok := k8sCtx.Namespace.Labels["kubernaut.ai/team"]; ok && team != "" {
+			customLabels["team"] = []string{team}
+		}
+		// Extract cost center label
+		if cost, ok := k8sCtx.Namespace.Labels["kubernaut.ai/cost-center"]; ok && cost != "" {
+			customLabels["cost"] = []string{cost}
+		}
+		// Extract region label
+		if region, ok := k8sCtx.Namespace.Labels["kubernaut.ai/region"]; ok && region != "" {
+			customLabels["region"] = []string{region}
+		}
+	}
+
+	if len(customLabels) > 0 {
+		k8sCtx.CustomLabels = customLabels
+	}
+
+	// 6. Build recovery context (BR-SP-003)
+	recoveryCtx, err := r.buildRecoveryContext(ctx, sp, logger)
+	if err != nil {
+		logger.Error(err, "Failed to build recovery context")
+		// Non-fatal - continue without recovery context
+	}
+
+	// BR-SP-110: Prepare enrichment condition (will be set inside atomic update)
+	var enrichmentReason, enrichmentMessage string
+	if k8sCtx.DegradedMode {
+		// Degraded mode - enrichment succeeded but with partial context
+		enrichmentReason = spconditions.ReasonDegradedMode
+		enrichmentMessage = fmt.Sprintf("Enrichment completed in degraded mode: %s %s/%s (K8s API unavailable)",
+			targetKind, targetNs, targetName)
+	} else {
+		enrichmentReason = ""
+		enrichmentMessage = fmt.Sprintf("K8s context enriched: %s %s/%s",
+			targetKind, targetNs, targetName)
+	}
+
+	// ========================================
+	// DD-PERF-001: ATOMIC STATUS UPDATE
+	// Consolidate: KubernetesContext + RecoveryContext + Phase + Conditions → 1 API call
+	// BEFORE: 4 separate fields in 1 update (but refetch+update pattern)
+	// AFTER: Atomic refetch → apply all → single Status().Update()
+	// ========================================
+	oldPhase := sp.Status.Phase
+	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+		// Apply enrichment updates after refetch
+		sp.Status.KubernetesContext = k8sCtx
+		sp.Status.RecoveryContext = recoveryCtx
+		sp.Status.Phase = signalprocessingv1alpha1.PhaseClassifying
+		// BR-SP-110: Set condition AFTER refetch to prevent wipe
+		spconditions.SetEnrichmentComplete(sp, true, enrichmentReason, enrichmentMessage)
+		return nil
+	})
+	if updateErr != nil {
+		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("enriching", "failure")
+		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
+		return ctrl.Result{}, updateErr
+	}
+
+	// Record enrichment completion audit event (BR-SP-090)
+	// ADR-032: Audit is MANDATORY - return error if not configured
+	// RF-SP-003: Track actual enrichment duration for audit metrics
+	enrichmentDuration := int(time.Since(enrichmentStart).Milliseconds())
+	if err := r.recordEnrichmentCompleteAudit(ctx, sp, k8sCtx, enrichmentDuration); err != nil {
+		// DD-005: Track phase processing failure (audit failure)
+		r.Metrics.IncrementProcessingTotal("enriching", "failure")
+		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
+		return ctrl.Result{}, err
+	}
+
+	// Record phase transition audit event (BR-SP-090)
+	// ADR-032: Audit is MANDATORY - return error if not configured
+	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseClassifying)); err != nil {
+		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("enriching", "failure")
+		return ctrl.Result{}, err
+	}
+
+	// DD-005: Track phase processing success and duration
+	r.Metrics.IncrementProcessingTotal("enriching", "success")
+	r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
+
+	return ctrl.Result{Requeue: true}, nil
+}
+
+// reconcileClassifying performs environment and priority classification.
+// BR-SP-051-053: Environment Classification
+// BR-SP-070-072: Priority Assignment
+func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
+	logger.V(1).Info("Processing Classifying phase")
+
+	// DD-005: Track phase processing attempt and duration
+	r.Metrics.IncrementProcessingTotal("classifying", "attempt")
+	classifyingStart := time.Now()
+
+	signal := &sp.Spec.Signal
+	k8sCtx := sp.Status.KubernetesContext
+
+	// 1. Environment Classification (BR-SP-051-053) - MANDATORY
+	envClass, err := r.classifyEnvironment(ctx, k8sCtx, signal, logger)
+	if err != nil {
+		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("classifying", "failure")
+		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+		return ctrl.Result{}, err
+	}
+
+	// 2. Priority Assignment (BR-SP-070-072) - MANDATORY
+	priorityAssignment, err := r.assignPriority(ctx, k8sCtx, envClass, signal, logger)
+	if err != nil {
+		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("classifying", "failure")
+		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+		return ctrl.Result{}, err
+	}
+
+	// BR-SP-110: Prepare classification condition message (will be set inside atomic update)
+	classificationMessage := fmt.Sprintf("Classified: environment=%s (source=%s), priority=%s (source=%s)",
+		envClass.Environment, envClass.Source,
+		priorityAssignment.Priority, priorityAssignment.Source)
+
+	// ========================================
+	// DD-PERF-001: ATOMIC STATUS UPDATE
+	// Consolidate: EnvironmentClassification + PriorityAssignment + Phase + Conditions → 1 API call
+	// ========================================
+	oldPhase := sp.Status.Phase
+	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+		// Apply classification updates after refetch
+		sp.Status.EnvironmentClassification = envClass
+		sp.Status.PriorityAssignment = priorityAssignment
+		sp.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
+		// BR-SP-110: Set condition AFTER refetch to prevent wipe
+		spconditions.SetClassificationComplete(sp, true, "", classificationMessage)
+		return nil
+	})
+	if updateErr != nil {
+		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("classifying", "failure")
+		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+		return ctrl.Result{}, updateErr
+	}
+
+	// Record phase transition audit event (BR-SP-090)
+	// ADR-032: Audit is MANDATORY - return error if not configured
+	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseCategorizing)); err != nil {
+		// DD-005: Track phase processing failure (audit failure)
+		r.Metrics.IncrementProcessingTotal("classifying", "failure")
+		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+		return ctrl.Result{}, err
+	}
+
+	// DD-005: Track phase processing success and duration
+	r.Metrics.IncrementProcessingTotal("classifying", "success")
+	r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+
+	return ctrl.Result{Requeue: true}, nil
+}
+
+// reconcileCategorizing performs business classification and completes processing.
+// BR-SP-080, BR-SP-081: Business Classification
+func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
+	logger.V(1).Info("Processing Categorizing phase")
+
+	// DD-005: Track phase processing attempt and duration
+	r.Metrics.IncrementProcessingTotal("categorizing", "attempt")
+	categorizingStart := time.Now()
+
+	k8sCtx := sp.Status.KubernetesContext
+	envClass := sp.Status.EnvironmentClassification
+	priorityAssignment := sp.Status.PriorityAssignment
+
+	// Business classification
+	bizClass := r.classifyBusiness(k8sCtx, envClass, logger)
+
+	// BR-SP-110: Prepare condition messages (will be set inside atomic update)
+	categorizationMessage := fmt.Sprintf("Categorized: businessUnit=%s, criticality=%s, sla=%s",
+		bizClass.BusinessUnit, bizClass.Criticality, bizClass.SLARequirement)
+
+	var duration float64
+	if sp.Status.StartTime != nil {
+		duration = time.Since(sp.Status.StartTime.Time).Seconds()
+	}
+	processingMessage := fmt.Sprintf("Signal processed successfully in %.2fs: %s %s alert ready for remediation",
+		duration, priorityAssignment.Priority, envClass.Environment)
+
+	// ========================================
+	// DD-PERF-001: ATOMIC STATUS UPDATE
+	// Consolidate: BusinessClassification + Phase + CompletionTime + 2 Conditions → 1 API call
+	// BEFORE: 5 status fields in 1 update (but refetch+update pattern)
+	// AFTER: Atomic refetch → apply all → single Status().Update()
+	// ========================================
+	oldPhase := sp.Status.Phase
+	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+		// Apply final updates after refetch
+		sp.Status.BusinessClassification = bizClass
+		sp.Status.Phase = signalprocessingv1alpha1.PhaseCompleted
+		now := metav1.Now()
+		sp.Status.CompletionTime = &now
+		// BR-SP-110: Set conditions AFTER refetch to prevent wipe
+		spconditions.SetCategorizationComplete(sp, true, "", categorizationMessage)
+		spconditions.SetProcessingComplete(sp, true, "", processingMessage)
+		return nil
+	})
+	if updateErr != nil {
+		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("categorizing", "failure")
+		r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
+		return ctrl.Result{}, updateErr
+	}
+
+	// Record phase transition audit event (BR-SP-090)
+	// ADR-032: Audit is MANDATORY - return error if not configured
+	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseCompleted)); err != nil {
+		// DD-005: Track phase processing failure (audit failure)
+		r.Metrics.IncrementProcessingTotal("categorizing", "failure")
+		r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
+		return ctrl.Result{}, err
+	}
+
+	// BR-SP-090: Record audit event on completion
+	// ADR-032: Audit is MANDATORY - not optional. AuditClient must be wired up.
+	// DD-PERF-001: After atomic update, sp object has all persisted status including BusinessClassification
+	if err := r.recordCompletionAudit(ctx, sp); err != nil {
+		// DD-005: Track phase processing failure (audit failure)
+		r.Metrics.IncrementProcessingTotal("categorizing", "failure")
+		r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
+		return ctrl.Result{}, err
+	}
+
+	// DD-005: Track phase processing success and duration
+	r.Metrics.IncrementProcessingTotal("categorizing", "success")
+	r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
+
+	// DD-005: Track overall signal processing completion
+	r.Metrics.IncrementProcessingTotal("completed", "success")
+	if sp.Status.StartTime != nil {
+		totalDuration := time.Since(sp.Status.StartTime.Time).Seconds()
+		r.Metrics.ObserveProcessingDuration("completed", totalDuration)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// detectLabels detects cluster characteristics using LabelDetector component.
+// BR-SP-101: Detected Labels Auto-Detection
+// Uses pkg/signalprocessing/detection.LabelDetector for mature detection logic.
+func (r *SignalProcessingReconciler) detectLabels(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace string, targetKind, targetName string, logger logr.Logger) *signalprocessingv1alpha1.DetectedLabels {
+	labels := &signalprocessingv1alpha1.DetectedLabels{}
+
+	// 1. IsProduction - from namespace labels (controller-specific logic)
+	if k8sCtx.Namespace != nil {
+		env := k8sCtx.Namespace.Labels["kubernaut.ai/environment"]
+		labels.IsProduction = (env == "production" || env == "prod")
+	}
+
+	// 2-8. Use LabelDetector component for all detections (BR-SP-101)
+	// LabelDetector provides: TTL caching, HPA owner chain support, comprehensive GitOps detection
+	if r.LabelDetector != nil {
+		// Convert to sharedtypes for LabelDetector
+		sharedK8sCtx := r.buildRegoKubernetesContextForDetection(k8sCtx, targetKind, targetName)
+
+		// Convert owner chain from signalprocessingv1alpha1 to sharedtypes
+		sharedOwnerChain := make([]sharedtypes.OwnerChainEntry, len(k8sCtx.OwnerChain))
+		for i, owner := range k8sCtx.OwnerChain {
+			sharedOwnerChain[i] = sharedtypes.OwnerChainEntry{
+				Namespace: owner.Namespace,
+				Kind:      owner.Kind,
+				Name:      owner.Name,
+			}
+		}
+
+		// Call LabelDetector (now handles GitOps via namespace annotations)
+		detectedLabels := r.LabelDetector.DetectLabels(ctx, sharedK8sCtx, sharedOwnerChain)
+		if detectedLabels != nil {
+			// Map sharedtypes.DetectedLabels to signalprocessingv1alpha1.DetectedLabels
+			// Note: CRD DetectedLabels is a subset of sharedtypes.DetectedLabels
+			labels.GitOpsManaged = detectedLabels.GitOpsManaged
+			// GitOpsTool not in CRD v1alpha1 - logged only
+			if detectedLabels.GitOpsTool != "" {
+				logger.V(2).Info("GitOps tool detected", "tool", detectedLabels.GitOpsTool)
+			}
+			labels.HasPDB = detectedLabels.PDBProtected
+			labels.HasHPA = detectedLabels.HPAEnabled
+			// Stateful not in CRD v1alpha1 - logged only
+			if detectedLabels.Stateful {
+				logger.V(2).Info("Stateful workload detected")
+			}
+			labels.HelmManaged = detectedLabels.HelmManaged
+			labels.NetworkIsolated = detectedLabels.NetworkIsolated
+			labels.ServiceMesh = detectedLabels.ServiceMesh != "" // Convert string to bool
+			// FailedDetections not in CRD v1alpha1 - logged only
+			if len(detectedLabels.FailedDetections) > 0 {
+				logger.Info("Some label detections failed", "failedDetections", detectedLabels.FailedDetections)
+			}
+		}
+	} else {
+		// Fallback to inline detection if LabelDetector not available (should not happen in production)
+		logger.V(1).Info("LabelDetector not available, using inline detection fallback")
+		labels.GitOpsManaged = r.detectGitOpsFromNamespace(k8sCtx)
+		labels.HelmManaged = r.detectHelmFallback(ctx, k8sCtx, namespace)
+		labels.HasPDB = r.hasPDB(ctx, namespace, k8sCtx, logger)
+		labels.HasHPA = r.hasHPA(ctx, namespace, targetKind, targetName, k8sCtx, logger)
+		labels.NetworkIsolated = r.hasNetworkPolicy(ctx, namespace, logger)
+		labels.ServiceMesh = r.detectServiceMeshFallback(k8sCtx)
+	}
+
+	return labels
+}
+
+// detectGitOpsFromNamespace detects GitOps management from namespace annotations.
+// BR-SP-101: GitOps detection from namespace annotations (not in LabelDetector).
+// Note: LabelDetector checks labels, but namespace-level GitOps uses annotations.
+func (r *SignalProcessingReconciler) detectGitOpsFromNamespace(k8sCtx *signalprocessingv1alpha1.KubernetesContext) bool {
+	if k8sCtx.Namespace != nil {
+		annos := k8sCtx.Namespace.Annotations
+		if annos != nil {
+			if _, ok := annos["argocd.argoproj.io/managed"]; ok {
+				return true
+			}
+			if _, ok := annos["fluxcd.io/sync-status"]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// detectHelmFallback is fallback Helm detection (used only if LabelDetector unavailable).
+func (r *SignalProcessingReconciler) detectHelmFallback(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace string) bool {
+	for _, owner := range k8sCtx.OwnerChain {
+		if owner.Kind == "Deployment" {
+			deploy := &appsv1.Deployment{}
+			if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: owner.Name}, deploy); err == nil {
+				if _, ok := deploy.Labels["helm.sh/chart"]; ok {
+					return true
+				}
+				if managedBy, ok := deploy.Labels["app.kubernetes.io/managed-by"]; ok && managedBy == "Helm" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// detectServiceMeshFallback is fallback service mesh detection (used only if LabelDetector unavailable).
+func (r *SignalProcessingReconciler) detectServiceMeshFallback(k8sCtx *signalprocessingv1alpha1.KubernetesContext) bool {
+	if k8sCtx.Pod != nil && k8sCtx.Pod.Annotations != nil {
+		// Istio
+		if _, ok := k8sCtx.Pod.Annotations["sidecar.istio.io/status"]; ok {
+			return true
+		}
+		// Linkerd
+		if _, ok := k8sCtx.Pod.Annotations["linkerd.io/proxy-version"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// hasPDB checks if any PDB applies to the target resource.
+func (r *SignalProcessingReconciler) hasPDB(ctx context.Context, namespace string, k8sCtx *signalprocessingv1alpha1.KubernetesContext, logger logr.Logger) bool {
+	pdbList := &policyv1.PodDisruptionBudgetList{}
+	if err := r.List(ctx, pdbList, client.InNamespace(namespace)); err != nil {
+		logger.V(1).Info("Failed to list PDBs", "error", err)
+		return false
+	}
+
+	// Get pod labels to match against PDB selectors
+	var podLabels map[string]string
+	if k8sCtx.Pod != nil {
+		podLabels = k8sCtx.Pod.Labels
+	}
+
+	if podLabels == nil {
+		return false
+	}
+
+	for _, pdb := range pdbList.Items {
+		if pdb.Spec.Selector == nil {
+			continue
+		}
+		selector, err := metav1.LabelSelectorAsSelector(pdb.Spec.Selector)
+		if err != nil {
+			continue
+		}
+		if selector.Matches(labels.Set(podLabels)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasHPA checks if any HPA targets resources in the owner chain.
+func (r *SignalProcessingReconciler) hasHPA(ctx context.Context, namespace string, targetKind, targetName string, k8sCtx *signalprocessingv1alpha1.KubernetesContext, logger logr.Logger) bool {
+	hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
+	if err := r.List(ctx, hpaList, client.InNamespace(namespace)); err != nil {
+		logger.V(1).Info("Failed to list HPAs", "error", err)
+		return false
+	}
+
+	// Check if any HPA targets this workload
+	// BR-SP-101: Check both direct target and owner chain
+	for _, hpa := range hpaList.Items {
+		targetRef := hpa.Spec.ScaleTargetRef
+
+		// 1. Check if HPA directly targets the signal's target resource
+		if targetRef.Kind == targetKind && targetRef.Name == targetName {
+			return true
+		}
+
+		// 2. Check if HPA targets a resource in the owner chain
+		for _, owner := range k8sCtx.OwnerChain {
+			if owner.Kind == targetRef.Kind && owner.Name == targetRef.Name {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// hasNetworkPolicy checks if any NetworkPolicy applies to the namespace.
+func (r *SignalProcessingReconciler) hasNetworkPolicy(ctx context.Context, namespace string, logger logr.Logger) bool {
+	npList := &networkingv1.NetworkPolicyList{}
+	if err := r.List(ctx, npList, client.InNamespace(namespace)); err != nil {
+		logger.V(1).Info("Failed to list NetworkPolicies", "error", err)
+		return false
+	}
+	return len(npList.Items) > 0
+}
+
+// buildRecoveryContext extracts recovery context from the RemediationRequest.
+// BR-SP-003: Recovery Context Integration
+// DD-001: Recovery Context Enrichment
+func (r *SignalProcessingReconciler) buildRecoveryContext(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (*signalprocessingv1alpha1.RecoveryContext, error) {
+	// Get RemediationRequest reference
+	rrRef := sp.Spec.RemediationRequestRef
+	if rrRef.Name == "" {
+		return nil, nil // No RemediationRequest, no recovery context
+	}
+
+	// Determine namespace - use ref namespace or default to SP namespace
+	rrNamespace := rrRef.Namespace
+	if rrNamespace == "" {
+		rrNamespace = sp.Namespace
+	}
+
+	// Fetch RemediationRequest
+	rr := &remediationv1alpha1.RemediationRequest{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      rrRef.Name,
+		Namespace: rrNamespace,
+	}, rr); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.V(1).Info("RemediationRequest not found, skipping recovery context",
+				"name", rrRef.Name, "namespace", rrNamespace)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to fetch RemediationRequest: %w", err)
+	}
+
+	// Only build recovery context if this is a retry (RecoveryAttempts > 0)
+	if rr.Status.RecoveryAttempts == 0 {
+		logger.V(1).Info("First attempt, no recovery context needed")
+		return nil, nil
+	}
+
+	recoveryCtx := &signalprocessingv1alpha1.RecoveryContext{
+		AttemptCount:          int32(rr.Status.RecoveryAttempts),
+		PreviousRemediationID: rr.Name,
+	}
+
+	// Set failure reason if available
+	if rr.Status.FailureReason != nil && *rr.Status.FailureReason != "" {
+		recoveryCtx.LastFailureReason = *rr.Status.FailureReason
+	}
+
+	// Calculate time since first failure (using RR StartTime)
+	if rr.Status.StartTime != nil {
+		duration := time.Since(rr.Status.StartTime.Time)
+		recoveryCtx.TimeSinceFirstFailure = &metav1.Duration{Duration: duration}
+	}
+
+	logger.V(1).Info("Built recovery context",
+		"attemptCount", recoveryCtx.AttemptCount,
+		"previousId", recoveryCtx.PreviousRemediationID,
+		"lastFailureReason", recoveryCtx.LastFailureReason,
+	)
+
+	return recoveryCtx, nil
+}
+
+// classifyEnvironment determines the environment classification.
+// BR-SP-051: Primary from namespace labels (via Rego policy)
+// EnvClassifier is MANDATORY - fail loudly if not wired or fails.
+func (r *SignalProcessingReconciler) classifyEnvironment(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData, logger logr.Logger) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+	if r.EnvClassifier == nil {
+		return nil, fmt.Errorf("EnvClassifier is nil - this is a startup configuration error")
+	}
+
+	result, err := r.EnvClassifier.Classify(ctx, k8sCtx, signal)
+	if err != nil {
+		logger.Error(err, "EnvClassifier failed")
+		return nil, fmt.Errorf("environment classification failed: %w", err)
+	}
+
+	return result, nil
+}
+
+// assignPriority determines the priority based on environment and severity.
+// BR-SP-070: Rego-based assignment
+// PriorityAssigner is MANDATORY - fail loudly if not wired or fails.
+func (r *SignalProcessingReconciler) assignPriority(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, signal *signalprocessingv1alpha1.SignalData, logger logr.Logger) (*signalprocessingv1alpha1.PriorityAssignment, error) {
+	if r.PriorityAssigner == nil {
+		return nil, fmt.Errorf("PriorityAssigner is nil - this is a startup configuration error")
+	}
+
+	result, err := r.PriorityAssigner.Assign(ctx, k8sCtx, envClass, signal)
+	if err != nil {
+		logger.Error(err, "PriorityAssigner failed")
+		return nil, fmt.Errorf("priority assignment failed: %w", err)
+	}
+
+	return result, nil
+}
+
+// classifyBusiness performs business classification.
+// BR-SP-080, BR-SP-081: Business Classification
+func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, logger logr.Logger) *signalprocessingv1alpha1.BusinessClassification {
+	result := &signalprocessingv1alpha1.BusinessClassification{
+		Criticality:    "medium",
+		SLARequirement: "bronze",
+	}
+
+	// Extract business unit from labels
+	if k8sCtx != nil && k8sCtx.Namespace != nil {
+		// Check for explicit business-unit label first
+		if bu, ok := k8sCtx.Namespace.Labels["kubernaut.ai/business-unit"]; ok {
+			result.BusinessUnit = bu
+		} else if team, ok := k8sCtx.Namespace.Labels["kubernaut.ai/team"]; ok {
+			// Fall back to team label as business unit (BR-SP-002)
+			result.BusinessUnit = team
+		}
+		if owner, ok := k8sCtx.Namespace.Labels["kubernaut.ai/service-owner"]; ok {
+			result.ServiceOwner = owner
+		}
+	}
+
+	// Determine criticality based on environment
+	if envClass != nil {
+		switch envClass.Environment {
+		case "production", "prod":
+			result.Criticality = "high"
+			result.SLARequirement = "gold"
+		case "staging", "stage":
+			result.Criticality = "medium"
+			result.SLARequirement = "silver"
+		case "development", "dev":
+			result.Criticality = "low"
+			result.SLARequirement = "bronze"
+		}
+	}
+
+	return result
+}
+
+// ========================================
+// REGO ENGINE HELPERS (BR-SP-102)
+// ========================================
+
+// buildRegoKubernetesContext builds a KubernetesContext for Rego evaluation.
+// Uses sharedtypes to match Rego Engine expectations.
+func (r *SignalProcessingReconciler) buildRegoKubernetesContext(k8sCtx *signalprocessingv1alpha1.KubernetesContext) *sharedtypes.KubernetesContext {
+	if k8sCtx == nil {
+		return &sharedtypes.KubernetesContext{}
+	}
+
+	result := &sharedtypes.KubernetesContext{}
+
+	// Set namespace information
+	if k8sCtx.Namespace != nil {
+		result.Namespace = k8sCtx.Namespace.Name
+		result.NamespaceLabels = k8sCtx.Namespace.Labels
+		result.NamespaceAnnotations = k8sCtx.Namespace.Annotations // BR-SP-101: For GitOps detection
+	}
+
+	// Convert Pod details if available
+	if k8sCtx.Pod != nil {
+		result.PodDetails = &sharedtypes.PodDetails{
+			Labels:      k8sCtx.Pod.Labels,
+			Annotations: k8sCtx.Pod.Annotations,
+			Phase:       k8sCtx.Pod.Phase,
+		}
+	}
+
+	// Convert Deployment details if available
+	if k8sCtx.Deployment != nil {
+		result.DeploymentDetails = &sharedtypes.DeploymentDetails{
+			Labels:   k8sCtx.Deployment.Labels,
+			Replicas: k8sCtx.Deployment.Replicas,
+		}
+	}
+
+	return result
+}
+
+// buildRegoKubernetesContextForDetection builds a KubernetesContext for LabelDetector.
+// BR-SP-101: Includes target resource information for HPA detection.
+func (r *SignalProcessingReconciler) buildRegoKubernetesContextForDetection(k8sCtx *signalprocessingv1alpha1.KubernetesContext, targetKind, targetName string) *sharedtypes.KubernetesContext {
+	result := r.buildRegoKubernetesContext(k8sCtx)
+
+	// BR-SP-101: For LabelDetector, populate deployment name for HPA detection
+	// If the signal target is a Deployment, use target name directly
+	if targetKind == "Deployment" && targetName != "" {
+		if result.DeploymentDetails == nil {
+			result.DeploymentDetails = &sharedtypes.DeploymentDetails{}
+		}
+		result.DeploymentDetails.Name = targetName
+	} else if result.DeploymentDetails != nil {
+		// Otherwise, try to extract from owner chain
+		for _, owner := range k8sCtx.OwnerChain {
+			if owner.Kind == "Deployment" {
+				result.DeploymentDetails.Name = owner.Name
+				break
+			}
+		}
+	}
+
+	return result
+}
+
+// SetupWithManager sets up the controller with the Manager.
+// Per SERVICE_MATURITY_REQUIREMENTS.md: Predicates filter events to reduce unnecessary reconciliations.
+func (r *SignalProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&signalprocessingv1alpha1.SignalProcessing{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		Named(fmt.Sprintf("signalprocessing-%s", "controller")).
+		Complete(r)
+}
+
+// ========================================
+// SHARED BACKOFF INTEGRATION (DD-SHARED-001)
+// Uses pkg/shared/backoff for exponential retry delays
+// with jitter to prevent thundering herd
+// ========================================
+
+// calculateBackoffDelay returns the exponential backoff duration for the current failure count.
+// Uses shared backoff library with ±10% jitter for anti-thundering herd.
+// DD-SHARED-001: Shared Exponential Backoff Library
+func (r *SignalProcessingReconciler) calculateBackoffDelay(failures int32) time.Duration {
+	return backoff.CalculateWithDefaults(failures)
+}
+
+// handleTransientError records a transient failure and returns a Result with backoff delay.
+// This implements exponential backoff with jitter for transient errors.
+// DD-SHARED-001: Shared Exponential Backoff Library
+//
+// Use this for transient errors that may succeed on retry:
+// - K8s API timeouts
+// - Network issues
+// - Temporary service unavailability
+//
+// Do NOT use for:
+// - Fatal errors (invalid input, business logic errors)
+// - Permanent failures (resource deleted, RBAC denied)
+func (r *SignalProcessingReconciler) handleTransientError(
+	ctx context.Context,
+	sp *signalprocessingv1alpha1.SignalProcessing,
+	err error,
+	logger logr.Logger,
+) (ctrl.Result, error) {
+	// Increment consecutive failures
+	sp.Status.ConsecutiveFailures++
+	sp.Status.LastFailureTime = &metav1.Time{Time: time.Now()}
+
+	// Calculate backoff delay
+	delay := r.calculateBackoffDelay(sp.Status.ConsecutiveFailures)
+
+	logger.V(1).Info("Transient error, scheduling retry with backoff",
+		"error", err,
+		"consecutiveFailures", sp.Status.ConsecutiveFailures,
+		"backoffDelay", delay,
+	)
+
+	// ========================================
+	// DD-PERF-001: ATOMIC STATUS UPDATE
+	// Consolidate: ConsecutiveFailures + LastFailureTime + Error → 1 API call
+	// ========================================
+	consecutiveFailures := sp.Status.ConsecutiveFailures
+	lastFailureTime := sp.Status.LastFailureTime
+	errorMsg := err.Error()
+
+	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+		sp.Status.ConsecutiveFailures = consecutiveFailures
+		sp.Status.LastFailureTime = lastFailureTime
+		sp.Status.Error = errorMsg
+		return nil
+	})
+	if updateErr != nil {
+		logger.Error(updateErr, "Failed to update failure count")
+		// Return the original error to let controller-runtime handle it
+		return ctrl.Result{}, err
+	}
+
+	// Return with explicit backoff delay instead of immediate requeue
+	return ctrl.Result{RequeueAfter: delay}, nil
+}
+
+// resetConsecutiveFailures resets the failure counter on successful operation.
+// Call this after successful phase transitions.
+// DD-SHARED-001: Shared Exponential Backoff Library
+// DD-PERF-001: Atomic status updates
+func (r *SignalProcessingReconciler) resetConsecutiveFailures(
+	ctx context.Context,
+	sp *signalprocessingv1alpha1.SignalProcessing,
+	logger logr.Logger,
+) error {
+	if sp.Status.ConsecutiveFailures == 0 {
+		return nil // Already reset, skip update
+	}
+
+	// ========================================
+	// DD-PERF-001: ATOMIC STATUS UPDATE
+	// Consolidate: ConsecutiveFailures + Error → 1 API call
+	// ========================================
+	return r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+		sp.Status.ConsecutiveFailures = 0
+		sp.Status.Error = ""
+		return nil
+	})
+}
+
+// isTransientError determines if an error is transient and should trigger backoff retry.
+// Transient errors are temporary and may succeed on retry.
+// DD-SHARED-001: Shared Exponential Backoff Library
+func isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// K8s API transient errors
+	if apierrors.IsTimeout(err) ||
+		apierrors.IsServerTimeout(err) ||
+		apierrors.IsTooManyRequests(err) ||
+		apierrors.IsServiceUnavailable(err) {
+		return true
+	}
+
+	// Context deadline/cancellation (often network issues)
+	if err == context.DeadlineExceeded || err == context.Canceled {
+		return true
+	}
+
+	return false
+}
+
+// ========================================
+// ADR-032 COMPLIANT AUDIT FUNCTIONS
+// ========================================
+// ADR-032 §2: "No Audit Loss" - Audit writes are MANDATORY, not best-effort
+// Services MUST NOT implement "graceful degradation" that silently skips audit
+// Services MUST return error if audit client is nil
+
+// recordPhaseTransitionAudit records a phase transition audit event.
+// ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
+func (r *SignalProcessingReconciler) recordPhaseTransitionAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, oldPhase, newPhase string) error {
+	if r.AuditClient == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+	r.AuditClient.RecordPhaseTransition(ctx, sp, oldPhase, newPhase)
+	return nil
+}
+
+// recordEnrichmentCompleteAudit records an enrichment completion audit event.
+// ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
+// RF-SP-003: Now tracks actual enrichment duration for audit metrics.
+func (r *SignalProcessingReconciler) recordEnrichmentCompleteAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, k8sCtx *signalprocessingv1alpha1.KubernetesContext, durationMs int) error {
+	if r.AuditClient == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+	// Create a temporary SP with enriched context for audit
+	auditSP := sp.DeepCopy()
+	auditSP.Status.KubernetesContext = k8sCtx
+	r.AuditClient.RecordEnrichmentComplete(ctx, auditSP, durationMs)
+	return nil
+}
+
+// recordCompletionAudit records the final signal processed and classification decision audit events.
+// ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
+// AUDIT-06: Now also emits business.classified event for granular audit trail.
+func (r *SignalProcessingReconciler) recordCompletionAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) error {
+	if r.AuditClient == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+	r.AuditClient.RecordSignalProcessed(ctx, sp)
+	r.AuditClient.RecordClassificationDecision(ctx, sp)
+	// AUDIT-06: Emit dedicated business classification event (per integration-test-plan.md v1.1.0)
+	r.AuditClient.RecordBusinessClassification(ctx, sp)
+	return nil
+}

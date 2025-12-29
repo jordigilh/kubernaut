@@ -2,9 +2,22 @@
 
 **Service**: Dynamic Toolset Service
 **Service Type**: Stateless HTTP API + Kubernetes Controller
-**Version**: 1.0
-**Last Updated**: November 8, 2025
-**Status**: Production-Ready
+**Version**: V2.0 DEFERRED
+**Last Updated**: December 7, 2025
+**Status**: 🚫 **DEFERRED TO V2.0** - See [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md)
+
+---
+
+## ⚠️ **V2.0 DEFERRAL NOTICE**
+
+All business requirements for this service are **DEFERRED to V2.0** per Design Decision [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md).
+
+**Rationale**: V1.x only requires Prometheus integration, which HolmesGPT-API already handles with built-in service discovery logic. When V2.0 expands HolmesGPT-API to identify multiple observability services (Grafana, Jaeger, Elasticsearch, custom services), this service will provide clear architectural value for centralized multi-service discovery.
+
+**Status**:
+- ✅ Implementation **COMPLETE** and code **PRESERVED** for V2.0
+- ❌ Business requirements **NOT ACTIVE** in V1.x scope
+- ✅ Will **RETURN TO ACTIVE** status in V2.0 planning
 
 ---
 
@@ -45,11 +58,13 @@ The **Dynamic Toolset Service** is a stateless HTTP API with Kubernetes controll
 
 ### 📊 Summary
 
-**Total Business Requirements**: 11 umbrella BRs (26 granular sub-BRs)
+**⚠️ V2.0 SCOPE**: All business requirements below are **DEFERRED to V2.0** per [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md).
+
+**Total Business Requirements**: 11 umbrella BRs (26 granular sub-BRs) - **ALL V2.0 SCOPE**
 **Categories**: 7
-**Priority Breakdown**:
-- P0 (Critical): 8 BRs (BR-TOOLSET-021, 022, 025, 026, 027, 028, 031, 040)
-- P1 (High): 3 BRs (BR-TOOLSET-033, 039, 043)
+**V2.0 Priority Breakdown**:
+- P0 (Critical - V2.0): 8 BRs (BR-TOOLSET-021, 022, 025, 026, 027, 028, 031, 040)
+- P1 (High - V2.0): 3 BRs (BR-TOOLSET-033, 039, 043)
 
 **Test Coverage**:
 - Unit: 202 test specs (95% confidence) - includes 8 Content-Type validation tests

@@ -300,7 +300,7 @@ The Notification Controller has successfully completed all 12 implementation day
 
 ```bash
 # Install CRD
-kubectl apply -f config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+kubectl apply -f config/crd/bases/kubernaut.ai_notificationrequests.yaml
 
 # Deploy controller
 kubectl apply -k deploy/notification/
@@ -431,7 +431,7 @@ kubernaut/
    └─> ./scripts/build-notification-controller.sh --kind
 
 2. Install CRD
-   └─> kubectl apply -f config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+   └─> kubectl apply -f config/crd/bases/kubernaut.ai_notificationrequests.yaml
 
 3. Deploy Controller
    └─> kubectl apply -k deploy/notification/

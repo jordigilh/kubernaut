@@ -1,14 +1,44 @@
-# Data Storage Service - Implementation Plan V5.5
+# Data Storage Service - Implementation Plan V5.6
 
-**Version**: 5.5 - Integration Test Coverage Gap Documentation
-**Date**: 2025-11-08 (Updated)
+**Version**: 5.6 - Template Compliance Update (V3.0 Alignment)
+**Date**: 2025-12-07 (Updated)
 **Timeline**: 16.0 days (128 hours) + 1 hour remediation + 13 hours integration tests (Day 20 - NOT YET IMPLEMENTED) ← **V5.2 (128h) + V5.3 triage (1h) + V5.4 remediation (1h) + V5.5 Day 20 (13h deferred)**
 **Status**: ✅ **DAYS 12-19 COMPLETE** | ⏸️ **DAY 20 DEFERRED TO POST-V1.0** (99% completeness, production-ready for V1.0)
-**Based On**: V5.4 + Day 20 Integration Test Gap Documentation
+**Based On**: V5.5 + SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md V3.0 Alignment
+**Template Compliance**: 100% (up from 80% in V5.5)
 
 ---
 
 ## 📋 **CHANGELOG**
+
+### **v5.6** (2025-12-07) - Template V3.0 Compliance Update ✅
+
+**Purpose**: Align implementation plan with authoritative SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md V3.0 structure.
+
+**Gaps Resolved**:
+1. **GAP-1**: Cross-Team Validation Section - References existing `docs/handoff/` documents
+2. **GAP-2**: Risk Assessment Matrix - Formalized risk tracking with day-linked mitigation
+3. **GAP-3**: Files Affected Section - Complete inventory of created/modified files
+4. **GAP-4**: Enhancement Application Checklist - Retroactive triage of implemented enhancements
+5. **GAP-5**: Pre-Implementation ADR/DD Validation Checklist - All references verified
+6. **GAP-6**: Logging Framework Decision Matrix - Per DD-005 v2.0 authoritative standard
+
+**Code Triage Results (GAP-4)**:
+
+| Enhancement | Status | Evidence |
+|-------------|--------|----------|
+| Error Handling (RFC 7807) | ✅ Implemented | `pkg/datastorage/validation/errors.go` |
+| Retry w/ Exponential Backoff | ✅ Implemented | `pkg/datastorage/embedding/client.go:211` |
+| Circuit Breaker Pattern | ⏸️ Not Needed | Graceful degradation used instead |
+| Graceful Degradation | ✅ Implemented | `dualwrite/coordinator.go:179` |
+| DD-007 Graceful Shutdown | ✅ Implemented | `server/server.go:378` |
+| DLQ (Dead Letter Queue) | ✅ Implemented | `pkg/datastorage/dlq/client.go` |
+
+**Template Compliance**: 80% → **100%** (all required sections present)
+
+**Production Readiness**: ✅ **UNCHANGED** - Ready for V1.0 deployment
+
+---
 
 ### **v5.5** (2025-11-08) - Integration Test Coverage Gap + E2E Test Layer Documentation ⏸️
 
@@ -965,6 +995,235 @@ Data Storage → PostgreSQL (with pgvector extension)
 - ✅ Test package naming convention specified (GAP-07)
 - ✅ Schema propagation timing handled (GAP-06)
 - ✅ Partition table detection pattern (from Context API)
+
+---
+
+## 🤝 **Cross-Team Validation** ⭐ V5.6 NEW (Template V3.0 Compliance)
+
+**Purpose**: Document validated cross-team dependencies for Data Storage service.
+
+**Validation Status**: ✅ **VALIDATED** (All dependencies confirmed via existing handoff docs)
+
+### **Cross-Team Validation Status**
+
+| Team | Validation Topic | Status | Record |
+|------|-----------------|--------|--------|
+| HolmesGPT-API | Workflow catalog integration, `failedDetections` schema | ✅ Complete | [QUESTIONS_FOR_DATA_STORAGE_TEAM.md](../../../../handoff/QUESTIONS_FOR_DATA_STORAGE_TEAM.md) |
+| AI Analysis | `podSecurityLevel` removal, schema changes | ✅ Complete | [NOTICE_PODSECURITYLEVEL_REMOVED.md](../../../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md) |
+| AI Analysis | Workflow retrieval API (BR-STORAGE-039) | ✅ Complete | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
+| All Services | Audit trail API (ADR-032, ADR-034) | ✅ Complete | ADR-032, ADR-034 (authoritative) |
+| All Services | Semantic search API (embedding service) | ✅ Complete | DD-EMBEDDING-001 (authoritative) |
+
+### **Upstream Dependencies** (Data Storage CONSUMES)
+
+| Dependency | Contract | Status |
+|------------|----------|--------|
+| Embedding Service | `POST /embeddings` → `[]float32` (1536 dims) | ✅ Validated |
+| Redis | DLQ storage, embedding cache | ✅ Validated |
+| PostgreSQL | Audit storage, workflow catalog | ✅ Validated |
+
+### **Downstream Dependencies** (Data Storage PRODUCES)
+
+| Consumer | Contract | Status |
+|----------|----------|--------|
+| HolmesGPT-API | `GET /api/v1/workflows/{id}` → full workflow spec | ✅ BR-STORAGE-039 |
+| AI Analysis | `POST /api/v1/workflows/search` → semantic search | ✅ BR-STORAGE-040 |
+| All Controllers | `POST /api/v1/audit` → audit event storage | ✅ ADR-032, ADR-038 |
+| Effectiveness Monitor | `GET /api/v1/aggregations/*` → success metrics | ✅ ADR-033 |
+
+---
+
+## ⚠️ **Risk Assessment Matrix** ⭐ V5.6 NEW (Template V3.0 Compliance)
+
+**Purpose**: Formalized risk tracking with day-linked mitigation status.
+
+### **Risk Assessment**
+
+| Risk # | Risk | Probability | Impact | Mitigation | Status |
+|--------|------|-------------|--------|------------|--------|
+| R1 | Embedding service unavailable | Medium | Medium | Graceful degradation (skip embedding) | ✅ Implemented |
+| R2 | PostgreSQL connection failure | Low | Critical | DLQ fallback + retry | ✅ Implemented |
+| R3 | Redis DLQ unavailable | Low | High | Fail-open with error logging | ✅ Implemented |
+| R4 | Schema migration failure | Low | Critical | Goose rollback + staging validation | ✅ Validated |
+| R5 | High cardinality metrics | Medium | Medium | DD-005 cardinality limits | ✅ Implemented |
+
+### **Risk Mitigation Status Tracking**
+
+| Risk # | Action Required | Day | Status |
+|--------|-----------------|-----|--------|
+| R1 | Implement `WriteWithFallback()` in `dualwrite/coordinator.go` | Day 5 | ✅ Complete |
+| R2 | Implement DLQ client in `pkg/datastorage/dlq/client.go` | Day 5 | ✅ Complete |
+| R3 | Add DLQ error handling in `audit_handlers.go` | Day 6 | ✅ Complete |
+| R4 | Configure Goose migrations with rollback support | Day 0.1 | ✅ Complete |
+| R5 | Apply DD-005 metric naming in `pkg/datastorage/metrics/` | Day 7 | ✅ Complete |
+
+---
+
+## 📋 **Files Affected Section** ⭐ V5.6 NEW (Template V3.0 Compliance)
+
+### **New Files Created** (Summary)
+
+| File | Purpose | Day |
+|------|---------|-----|
+| `pkg/datastorage/models/*.go` | Data models (workflow, audit, notification) | Day 1 |
+| `pkg/datastorage/repository/*.go` | Database access layer | Day 2-3 |
+| `pkg/datastorage/server/*.go` | HTTP handlers and server | Day 6-7 |
+| `pkg/datastorage/embedding/*.go` | Embedding service integration | Day 4 |
+| `pkg/datastorage/dualwrite/*.go` | Write coordination with fallback | Day 5 |
+| `pkg/datastorage/dlq/*.go` | Dead Letter Queue client | Day 5 |
+| `pkg/datastorage/validation/*.go` | Input validation (RFC 7807) | Day 3 |
+| `pkg/datastorage/metrics/*.go` | Prometheus metrics | Day 7 |
+| `test/unit/datastorage/*.go` | Unit tests (~580 specs) | Day 8-9 |
+| `test/integration/datastorage/*.go` | Integration tests (~163 specs) | Day 9-10 |
+| `test/e2e/datastorage/*.go` | E2E tests (~13 specs) | Day 10 |
+| `migrations/0*.sql` | Database migrations | Day 0.1, Day 2 |
+
+### **Modified Files**
+
+| File | Changes | Day |
+|------|---------|-----|
+| `cmd/datastorage/main.go` | Service initialization, DI wiring | Day 7 |
+| `docs/services/stateless/data-storage/openapi/*.yaml` | OpenAPI spec updates | Day 11 |
+| `config/data-storage.yaml` | ADR-030 configuration | Day 0.3 |
+
+---
+
+## 🔄 **Enhancement Application Checklist** ⭐ V5.6 NEW (Template V3.0 Compliance)
+
+**Purpose**: Track which patterns and enhancements have been applied.
+
+### **Enhancement Tracking** (Retroactive Triage)
+
+| Enhancement | Applied To | Status | Evidence |
+|-------------|------------|--------|----------|
+| **Error Handling (RFC 7807)** | Days 3, 6-7 | ✅ Complete | `pkg/datastorage/validation/errors.go` |
+| **Retry with Exponential Backoff** | Day 4 | ✅ Complete | `pkg/datastorage/embedding/client.go:211` - `embedWithRetry()` |
+| **Circuit Breaker Pattern** | N/A | ⏸️ Not Needed | Graceful degradation used instead |
+| **Graceful Degradation** | Day 5 | ✅ Complete | `dualwrite/coordinator.go:179`, `embedding/client.go:55` |
+| **DD-007 Graceful Shutdown** | Day 6 | ✅ Complete | `server/server.go:378` - 4-step pattern |
+| **Metrics Cardinality Audit** | Day 7 | ✅ Complete | `pkg/datastorage/metrics/metrics.go` |
+| **Integration Test Anti-Flaky** | Day 9-10 | ✅ Complete | `Eventually()` patterns in tests |
+| **DLQ (Dead Letter Queue)** | Day 5 | ✅ Complete | `pkg/datastorage/dlq/client.go` |
+| **Production Runbooks** | Day 12 | ✅ Complete | `docs/services/stateless/data-storage/operations/` |
+
+### **Circuit Breaker Exclusion Rationale**
+
+Data Storage uses **retry with graceful degradation** instead of circuit breaker because:
+- Embedding service failures → graceful degradation (skip embedding, continue operation)
+- Database failures → DLQ fallback (async retry)
+- No high-frequency external API calls requiring circuit breaker state management
+
+---
+
+## 📝 **Pre-Implementation ADR/DD Validation Checklist** ⭐ V5.6 NEW (Template V3.0 Compliance)
+
+**Purpose**: Verify all referenced ADRs/DDs exist and were reviewed before implementation.
+
+### **Universal Standards** (All Services)
+
+- [x] **DD-004**: RFC 7807 Error Responses ✅ Verified
+- [x] **DD-005**: Observability Standards (Metrics + Logging) ✅ Verified
+- [x] **DD-007**: Kubernetes-Aware Graceful Shutdown ✅ Verified
+- [x] **DD-014**: Binary Version Logging Standard ✅ Verified
+- [x] **ADR-015**: Alert-to-Signal Naming Migration ✅ Verified
+
+### **Audit Standards** (Data Storage is P0 Audit Service)
+
+- [x] **DD-AUDIT-003**: Service Audit Trace Requirements ✅ Verified
+- [x] **ADR-032**: Data Access Layer Isolation ✅ Verified
+- [x] **ADR-034**: Unified Audit Table Design ✅ Verified
+- [x] **ADR-038**: Async Buffered Audit Ingestion ✅ Verified
+
+### **API Design Standards** (HTTP Service)
+
+- [x] **DD-API-001**: HTTP Header vs JSON Body Pattern ✅ Verified
+- [x] **ADR-030**: Service Configuration Management ✅ Verified
+- [x] **ADR-031**: OpenAPI Specification Standard ✅ Verified
+
+### **Testing Standards**
+
+- [x] **DD-TEST-001**: Port Allocation Strategy ✅ Verified
+- [x] **ADR-016**: Service-Specific Integration Test Infrastructure ✅ Verified
+
+### **Data Storage Specific**
+
+- [x] **DD-009**: Audit Write Error Recovery (DLQ) ✅ Verified
+- [x] **ADR-033**: Remediation Playbook Catalog ✅ Verified
+- [x] **DD-EMBEDDING-001**: Embedding Service Implementation ✅ Verified
+
+**Sign-off**: All ADRs/DDs verified during V5.6 template compliance triage (2025-12-07)
+
+---
+
+## 📝 **Logging Framework Decision Matrix** ⭐ V5.6 NEW (Per DD-005 v2.0)
+
+**Authority**: [DD-005-OBSERVABILITY-STANDARDS.md](../../../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md) v2.0
+
+### **Unified Logging Interface**
+
+| Service Type | Primary Logger | How to Create | Usage in Data Storage |
+|--------------|----------------|---------------|----------------------|
+| **Stateless HTTP Service** | `logr.Logger` | `zapr.NewLogger(zapLogger)` | ✅ Used throughout |
+
+### **Implementation Pattern**
+
+```go
+import (
+    "github.com/go-logr/logr"
+    "github.com/go-logr/zapr"
+    "go.uber.org/zap"
+)
+
+func main() {
+    // Create zap logger (for performance)
+    zapLogger, _ := zap.NewProduction()
+    defer zapLogger.Sync()
+
+    // Convert to logr interface (for consistency)
+    logger := zapr.NewLogger(zapLogger)
+
+    // Pass to components
+    server := datastorage.NewServer(cfg, logger)
+    repository := datastorage.NewRepository(db, logger.WithName("repository"))
+}
+```
+
+### **Log Levels** (DD-005 Verbosity)
+
+| Level | logr Verbosity | Use Case | Example |
+|-------|----------------|----------|---------|
+| **INFO** | V(0) | Normal operational events | `logger.Info("Request received", "endpoint", path)` |
+| **DEBUG** | V(1) | Detailed debugging | `logger.V(1).Info("Parsing query", "filters", filters)` |
+| **ERROR** | N/A | Error conditions | `logger.Error(err, "Database query failed")` |
+
+### **Standard Fields** (Mandatory per DD-005)
+
+```go
+logger.Info("Request processed",
+    "request_id", requestID,      // Request tracing
+    "source_ip", sourceIP,        // Security auditing
+    "endpoint", r.URL.Path,       // HTTP endpoint
+    "method", r.Method,           // HTTP method
+    "duration_ms", durationMs,    // Performance tracking
+)
+```
+
+### **Log Sanitization** (Mandatory per DD-005)
+
+Sensitive data MUST be redacted before logging:
+- `password`, `passwd`, `pwd` → `[REDACTED]`
+- `token`, `api_key`, `secret` → `[REDACTED]`
+- `authorization`, `bearer` → `[REDACTED]`
+
+### **Data Storage Logging Compliance**
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| Uses `logr.Logger` interface | ✅ | 577 logging calls in `pkg/datastorage/` |
+| Standard fields (request_id, endpoint) | ✅ | `server/server.go`, `server/handlers.go` |
+| Error logging with context | ✅ | `logger.Error(err, "message", "key", value)` |
+| Verbosity levels (V=0, V=1) | ✅ | `logger.V(1).Info()` for debug |
+| Log sanitization | ✅ | `middleware/log_sanitization.go` |
 
 ---
 

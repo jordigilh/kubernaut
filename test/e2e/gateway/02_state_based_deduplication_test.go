@@ -19,7 +19,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -27,9 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -47,7 +46,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 		k8sClient     client.Client
@@ -55,7 +54,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "deduplication"))
+		testLogger = logger.WithValues("test", "deduplication")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -65,7 +64,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
 		testNamespace = fmt.Sprintf("dedup-%d-%d", processID, time.Now().UnixNano())
-		testLogger.Info("Creating test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
 		ns := &corev1.Namespace{
@@ -74,7 +73,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		k8sClient = getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
@@ -83,8 +82,8 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
+				"namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -118,15 +117,28 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 
 		for i := 0; i < 5; i++ {
 			podName := fmt.Sprintf("dedup-pod-%d", i)
-			payload := createAlertPayload(alertName1, testNamespace, podName, "critical")
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payload),
-			)
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: alertName1,
+				Namespace: testNamespace,
+				PodName:   podName,
+				Severity:  "critical",
+				Annotations: map[string]string{
+					"summary":     fmt.Sprintf("Alert: %s on %s", alertName1, podName),
+					"description": "Test alert for deduplication validation",
+				},
+			})
+			resp, err := func() (*http.Response, error) {
+				req1, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+				if err != nil {
+					return nil, err
+				}
+				req1.Header.Set("Content-Type", "application/json")
+				req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req1)
+			}()
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
-			testLogger.Debug(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 5 alerts to trigger storm threshold")
 
@@ -134,16 +146,37 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		testLogger.Info("")
 		testLogger.Info("Step 2: Send duplicate alert (same fingerprint)")
 
-		// Wait briefly to ensure first alerts are processed
-		time.Sleep(500 * time.Millisecond)
+		// Wait for first alerts to be processed using Eventually
+		// Check that Gateway is ready to receive more alerts
+		Eventually(func() bool {
+			resp, err := httpClient.Get(gatewayURL + "/health")
+			if err != nil {
+				return false
+			}
+			resp.Body.Close()
+			return resp.StatusCode == http.StatusOK
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "Gateway should be healthy after processing alerts")
 
 		// Same alertname and pod = same fingerprint
-		payload1 := createAlertPayload(alertName1, testNamespace, "dedup-pod-0", "critical")
-		resp2, err := httpClient.Post(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			bytes.NewBuffer(payload1),
-		)
+		payload1 := createPrometheusWebhookPayload(PrometheusAlertPayload{
+			AlertName: alertName1,
+			Namespace: testNamespace,
+			PodName:   "dedup-pod-0",
+			Severity:  "critical",
+			Annotations: map[string]string{
+				"summary":     fmt.Sprintf("Alert: %s on %s", alertName1, "dedup-pod-0"),
+				"description": "Test alert for deduplication validation",
+			},
+		})
+		resp2, err := func() (*http.Response, error) {
+			req2, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload1))
+			if err != nil {
+				return nil, err
+			}
+			req2.Header.Set("Content-Type", "application/json")
+			req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			return httpClient.Do(req2)
+		}()
 		Expect(err).ToNot(HaveOccurred())
 		resp2.Body.Close()
 
@@ -159,15 +192,28 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 
 		for i := 0; i < 5; i++ {
 			podName := fmt.Sprintf("dedup2-pod-%d", i)
-			payload := createAlertPayload(alertName2, testNamespace, podName, "warning")
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payload),
-			)
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: alertName2,
+				Namespace: testNamespace,
+				PodName:   podName,
+				Severity:  "warning",
+				Annotations: map[string]string{
+					"summary":     fmt.Sprintf("Alert: %s on %s", alertName2, podName),
+					"description": "Test alert for deduplication validation",
+				},
+			})
+			resp, err := func() (*http.Response, error) {
+				req3, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+				if err != nil {
+					return nil, err
+				}
+				req3.Header.Set("Content-Type", "application/json")
+				req3.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req3)
+			}()
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
-			testLogger.Debug(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 5 alerts with different alertname")
 
@@ -181,16 +227,16 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to create K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to create K8s client (unknown error)")
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			crdCount = len(crdList.Items)
@@ -217,27 +263,4 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 	})
 })
 
-// createAlertPayload creates a Prometheus AlertManager webhook payload
-func createAlertPayload(alertName, namespace, podName, severity string) []byte {
-	payload := map[string]interface{}{
-		"alerts": []map[string]interface{}{
-			{
-				"status": "firing",
-				"labels": map[string]interface{}{
-					"alertname": alertName,
-					"severity":  severity,
-					"namespace": namespace,
-					"pod":       podName,
-				},
-				"annotations": map[string]interface{}{
-					"summary":     fmt.Sprintf("Alert: %s on %s", alertName, podName),
-					"description": "Test alert for deduplication validation",
-				},
-				"startsAt": time.Now().Format(time.RFC3339),
-			},
-		},
-	}
-
-	payloadBytes, _ := json.Marshal(payload)
-	return payloadBytes
-}
+// NOTE: Removed local createAlertPayload() - now using shared createPrometheusWebhookPayload() from deduplication_helpers.go

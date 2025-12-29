@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -36,6 +52,9 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Seri
 	})
 
 	BeforeEach(func() {
+		// Serial tests MUST use public schema (HTTP API writes to public schema)
+		usePublicSchema()
+
 		// Create unique notification_id to avoid conflicts
 		// Use a fixed timestamp that's definitely in the past (2024-01-01)
 		fixedPastTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -122,14 +141,17 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Seri
 			var errorResp validation.RFC7807Problem
 			err := json.NewDecoder(resp.Body).Decode(&errorResp)
 			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
-			Expect(errorResp.Type).To(Equal("https://kubernaut.io/errors/validation-error"),
-				"RFC 7807 type field should identify error category")
-			Expect(errorResp.Title).To(Equal("Validation Error"),
-				"RFC 7807 title should be human-readable")
+			// BR-STORAGE-034: OpenAPI middleware uses standardized RFC 7807 format
+			Expect(errorResp.Type).To(Equal("https://kubernaut.ai/problems/validation-error"),
+				"RFC 7807 type field should identify error category (OpenAPI middleware format)")
+		// BR-STORAGE-034: OpenAPI middleware uses standardized RFC 7807 format
+		Expect(errorResp.Title).To(Equal("Validation Error"),
+			"RFC 7807 title should be human-readable (OpenAPI middleware format)")
 			Expect(errorResp.Status).To(Equal(400),
 				"RFC 7807 status should match HTTP status")
-			Expect(errorResp.Extensions["field_errors"]).ToNot(BeNil(),
-				"Validation errors should include field_errors extension")
+			// BR-STORAGE-034: OpenAPI middleware provides error details in "detail" field
+			Expect(errorResp.Detail).ToNot(BeEmpty(),
+				"Validation errors should include detail message (OpenAPI middleware format)")
 
 			// ✅ CORRECTNESS TEST: No data persisted
 			var count int
@@ -154,7 +176,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Seri
 			var errorResp validation.RFC7807Problem
 			err := json.NewDecoder(resp2.Body).Decode(&errorResp)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(errorResp.Type).To(Equal("https://kubernaut.io/errors/conflict"))
+			Expect(errorResp.Type).To(Equal("https://kubernaut.ai/problems/conflict"))
 			Expect(errorResp.Title).To(Equal("Resource Conflict"))
 			Expect(errorResp.Status).To(Equal(409))
 			Expect(errorResp.Extensions["resource"]).To(Equal("notification_audit"))
@@ -196,7 +218,17 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Seri
 			}
 
 			// Wait for PostgreSQL to be fully stopped
-			time.Sleep(2 * time.Second)
+			// Per TESTING_GUIDELINES.md: Use Eventually() to verify PostgreSQL is down
+			Eventually(func() bool {
+				// Check if container is in stopped state
+				checkCmd := exec.Command("podman", "inspect", postgresContainer, "--format", "{{.State.Status}}")
+				output, err := checkCmd.CombinedOutput()
+				if err != nil {
+					return false // Container not found or other error
+				}
+				status := string(bytes.TrimSpace(output))
+				return status == "exited" || status == "stopped"
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "PostgreSQL container should be stopped")
 
 			// POST should still succeed with 202 Accepted (async DLQ write)
 			resp := postAudit(client, validAudit)

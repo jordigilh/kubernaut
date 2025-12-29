@@ -1,9 +1,18 @@
 # HolmesGPT REST API Wrapper - Business Requirements
 
-**Document Version**: 1.0
-**Date**: January 2025
+**Document Version**: 1.1
+**Date**: November 2025
 **Status**: Business Requirements Specification
 **Module**: HolmesGPT REST API Wrapper (`pkg/ai/holmesgpt/api-server/`)
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.1 | 2025-11-30 | Added BR-HAPI-250-252 (MCP Workflow Catalog Integration) |
+| 1.0 | 2025-01-15 | Initial version |
 
 ---
 
@@ -105,6 +114,27 @@ graph TB
 - **BR-HAPI-POSTEXEC-003**: MUST provide feedback on action effectiveness
 - **BR-HAPI-POSTEXEC-004**: MUST identify patterns for future improvement
 - **BR-HAPI-POSTEXEC-005**: MUST support learning from execution outcomes
+
+#### 2.1.8 MCP Workflow Catalog Integration (v1)
+
+> **Added**: v1.1 (2025-11-30) - MCP tool integration for workflow selection per DD-WORKFLOW-002
+
+- **BR-HAPI-250**: MUST integrate with Data Storage MCP tool for workflow catalog search
+  - **MCP Tool**: `search_workflow_catalog` exposed by Data Storage service
+  - **Query Parameters**: `signal_type`, `severity`, `environment`, `priority`, `detected_labels`, `custom_labels`
+  - **Response**: `workflow_id` (UUID), `container_image` (OCI reference), `title`, `description`, `confidence`
+  - **Reference**: DD-WORKFLOW-002 v3.3, DD-LLM-001
+- **BR-HAPI-251**: MUST resolve `containerImage` from workflow catalog during MCP search
+  - **Resolution**: HolmesGPT-API returns `containerImage` directly (not just `workflowId`)
+  - **Rationale**: Eliminates need for RO to call Data Storage for resolution
+  - **Contract**: AIAnalysis receives ready-to-use `containerImage` in response
+  - **Reference**: DD-CONTRACT-001 v1.2
+- **BR-HAPI-252**: MUST pass DetectedLabels and CustomLabels to MCP workflow search
+  - **DetectedLabels**: Auto-detected cluster characteristics (gitOpsTool, pdbProtected, etc.)
+  - **CustomLabels**: Customer-defined labels from Rego policies
+  - **Filtering**: Data Storage uses labels for workflow pre-filtering
+  - **Context**: Labels also expressed in natural language for LLM context
+  - **Reference**: DD-WORKFLOW-001 v1.8
 
 ### 2.2 Management Endpoints
 
@@ -508,7 +538,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: holmesgpt-api
-        image: registry.kubernaut.io/holmesgpt-api:1.0.0
+        image: registry.kubernaut.ai/holmesgpt-api:1.0.0
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

@@ -2,12 +2,12 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/remediation.kubernaut.io_remediationrequests.yaml
-- bases/remediationprocessing.kubernaut.io_remediationprocessings.yaml
+- bases/remediation.kubernaut.ai_remediationrequests.yaml
+- bases/signalprocessing.kubernaut.ai_signalprocessings.yaml
 - bases/aianalysis.kubernaut.io_aianalyses.yaml
 - bases/workflowexecution.kubernaut.io_workflowexecutions.yaml
 - bases/kubernetesexecution.kubernaut.io_kubernetesexecutions.yaml
-- bases/remediationorchestrator.kubernaut.io_remediationorchestrators.yaml
+- bases/remediationorchestrator.kubernaut.ai_remediationorchestrators.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

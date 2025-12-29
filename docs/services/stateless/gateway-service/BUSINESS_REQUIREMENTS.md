@@ -1,10 +1,20 @@
 # Gateway Service - Business Requirements
 
-**Version**: v1.1
-**Last Updated**: November 11, 2025
-**Service Type**: Stateless HTTP API Service
+**Version**: v1.5
+**Last Updated**: 2025-12-07
+**Status**: ✅ APPROVED
+**Owner**: Gateway Team
 **Total BRs**: 74 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-180)
-**Changelog**: 5 BRs deprecated and moved to Signal Processing Service (BR-GATEWAY-007, 014, 015, 016, 017) - see DD-CATEGORIZATION-001
+
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.5 | 2025-12-07 | BR-GATEWAY-038: Rate limiting code REMOVED (middleware + tests). Proxy delegation complete. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
+> | v1.4 | 2025-12-07 | BR-GATEWAY-038 (Rate Limiting): Delegated to Ingress/Route proxy. Gateway middleware DEPRECATED. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
+> | v1.3 | 2025-12-06 | Classification code REMOVED from Gateway (not placeholder). Updated BR-007, BR-014-017 to reflect file deletions. | [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md) |
+> | v1.2 | 2025-12-03 | Added BR-GATEWAY-TARGET-RESOURCE-VALIDATION for resource info validation | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) |
+> | v1.1 | 2025-11-11 | 5 BRs deprecated (007, 014-017) - moved to Signal Processing | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+> | v1.0 | 2025-10-04 | Initial business requirements | - |
 
 ---
 
@@ -65,35 +75,33 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/middleware/timestamp_validation.go`
 **Tests**: `test/unit/gateway/middleware/timestamp_validation_test.go`
 
-### **BR-GATEWAY-007: Signal Priority Classification** ⚠️ **DEPRECATED - Moved to Signal Processing**
-**Description**: ~~Gateway must classify signals into P0/P1/P2/P3 priorities based on severity~~ **DEPRECATED**: Priority classification moved to Signal Processing Service (see DD-CATEGORIZATION-001). Gateway now sets `priority: "pending"` placeholder value.
+### **BR-GATEWAY-007: Signal Priority Classification** ⚠️ **DEPRECATED - REMOVED (2025-12-06)**
+**Description**: ~~Gateway must classify signals into P0/P1/P2/P3 priorities based on severity~~ **REMOVED**: Priority classification completely removed from Gateway (2025-12-06). Signal Processing Service now owns this functionality.
 **Priority**: P0 (Critical)
-**Test Coverage**: ✅ Unit + Integration (will be migrated to Signal Processing)
-**Implementation**: `pkg/gateway/processing/priority_classification.go` (to be removed)
-**Tests**: `test/unit/gateway/priority_classification_test.go`, `test/integration/gateway/priority_classification_test.go` (to be migrated)
+**Test Coverage**: ❌ N/A - Code removed from Gateway
+**Implementation**: ~~`pkg/gateway/processing/priority_classification.go`~~ **DELETED** (2025-12-06)
+**Tests**: ~~`test/unit/gateway/priority_classification_test.go`~~ **DELETED** (2025-12-06)
 **Migration Target**: Signal Processing Service (BR-SP-070 to BR-SP-072)
 **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+**Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
-### **BR-GATEWAY-008: Storm Detection**
-**Description**: Gateway must detect alert storms (>10 alerts/minute) and aggregate them
-**Priority**: P0 (Critical)
-**Test Coverage**: ✅ Unit + Integration + E2E
-**Implementation**: `pkg/gateway/processing/storm_detector.go`
-**Tests**: `test/unit/gateway/storm_detection_test.go`, `test/integration/gateway/storm_detection_test.go`, `test/e2e/gateway/01_storm_window_ttl_test.go`
+### **BR-GATEWAY-008: Storm Detection** ❌ **REMOVED**
+**Status**: ❌ **REMOVED** (December 13, 2025)
+**Reason**: Redundant with deduplication (`occurrenceCount`), no downstream consumers, no added business value
+**Removal Reference**: [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md)
+**Original Description**: Gateway must detect alert storms (>10 alerts/minute) and aggregate them
 
-### **BR-GATEWAY-009: Concurrent Storm Detection**
-**Description**: Gateway must handle concurrent alert bursts without race conditions
-**Priority**: P0 (Critical)
-**Test Coverage**: ✅ E2E
-**Implementation**: `pkg/gateway/processing/storm_detector.go`
-**Tests**: `test/e2e/gateway/04_concurrent_storm_test.go`
+### **BR-GATEWAY-009: Concurrent Storm Detection** ❌ **REMOVED**
+**Status**: ❌ **REMOVED** (December 13, 2025)
+**Reason**: Part of storm detection feature removal
+**Removal Reference**: [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md)
+**Original Description**: Gateway must handle concurrent alert bursts without race conditions
 
-### **BR-GATEWAY-010: Storm State Recovery**
-**Description**: Gateway must recover storm state from Redis after restart
-**Priority**: P1 (High)
-**Test Coverage**: ✅ E2E
-**Implementation**: `pkg/gateway/processing/storm_detector.go`
-**Tests**: `test/e2e/gateway/06_gateway_restart_test.go`
+### **BR-GATEWAY-010: Storm State Recovery** ❌ **REMOVED**
+**Status**: ❌ **REMOVED** (December 13, 2025)
+**Reason**: Part of storm detection feature removal (Redis deprecated per DD-GATEWAY-011)
+**Removal Reference**: [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md)
+**Original Description**: Gateway must recover storm state from Redis after restart
 
 ### **BR-GATEWAY-011: Deduplication**
 **Description**: Gateway must deduplicate identical signals within TTL window
@@ -116,41 +124,45 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/processing/deduplication.go`
 **Tests**: `test/unit/gateway/deduplication_test.go`
 
-### **BR-GATEWAY-014: Signal Enrichment** ⚠️ **DEPRECATED - Moved to Signal Processing**
-**Description**: ~~Gateway must enrich signals with environment classification (prod/staging/dev)~~ **DEPRECATED**: Environment classification moved to Signal Processing Service (see DD-CATEGORIZATION-001). Gateway now sets `environment: "pending"` placeholder value.
+### **BR-GATEWAY-014: Signal Enrichment** ⚠️ **DEPRECATED - REMOVED (2025-12-06)**
+**Description**: ~~Gateway must enrich signals with environment classification (prod/staging/dev)~~ **REMOVED**: Environment classification completely removed from Gateway (2025-12-06). Signal Processing Service now owns this functionality.
 **Priority**: P1 (High)
-**Test Coverage**: ❌ Missing (will be implemented in Signal Processing)
-**Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
-**Tests**: None (to be implemented in Signal Processing)
+**Test Coverage**: ❌ N/A - Code removed from Gateway
+**Implementation**: ~~`pkg/gateway/processing/environment_classification.go`~~ **DELETED** (2025-12-06)
+**Tests**: N/A - Implemented in Signal Processing
 **Migration Target**: Signal Processing Service (BR-SP-051 to BR-SP-053)
 **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+**Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
-### **BR-GATEWAY-015: Environment Classification - Explicit Labels** ⚠️ **DEPRECATED - Moved to Signal Processing**
-**Description**: ~~Gateway must classify environment from explicit `environment` label~~ **DEPRECATED**: Environment classification moved to Signal Processing Service (see DD-CATEGORIZATION-001).
+### **BR-GATEWAY-015: Environment Classification - Explicit Labels** ⚠️ **DEPRECATED - REMOVED (2025-12-06)**
+**Description**: ~~Gateway must classify environment from explicit `environment` label~~ **REMOVED**: Environment classification completely removed from Gateway (2025-12-06).
 **Priority**: P1 (High)
-**Test Coverage**: ✅ Unit + Integration (will be migrated to Signal Processing)
-**Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
-**Tests**: `test/unit/gateway/processing/environment_classification_test.go`, `test/integration/gateway/environment_classification_test.go` (to be migrated)
+**Test Coverage**: ❌ N/A - Code removed from Gateway
+**Implementation**: ~~`pkg/gateway/processing/environment_classification.go`~~ **DELETED** (2025-12-06)
+**Tests**: ~~`test/unit/gateway/processing/environment_classification_test.go`~~ **DELETED** (2025-12-06)
 **Migration Target**: Signal Processing Service (BR-SP-051)
 **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+**Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
-### **BR-GATEWAY-016: Environment Classification - Namespace Pattern** ⚠️ **DEPRECATED - Moved to Signal Processing**
-**Description**: ~~Gateway must classify environment from namespace patterns (prod-*, staging-*, dev-*)~~ **DEPRECATED**: Environment classification moved to Signal Processing Service (see DD-CATEGORIZATION-001).
+### **BR-GATEWAY-016: Environment Classification - Namespace Pattern** ⚠️ **DEPRECATED - REMOVED (2025-12-06)**
+**Description**: ~~Gateway must classify environment from namespace patterns (prod-*, staging-*, dev-*)~~ **REMOVED**: Environment classification completely removed from Gateway (2025-12-06).
 **Priority**: P1 (High)
-**Test Coverage**: ✅ Unit (will be migrated to Signal Processing)
-**Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
-**Tests**: `test/unit/gateway/processing/environment_classification_test.go` (to be migrated)
+**Test Coverage**: ❌ N/A - Code removed from Gateway
+**Implementation**: ~~`pkg/gateway/processing/environment_classification.go`~~ **DELETED** (2025-12-06)
+**Tests**: ~~`test/unit/gateway/processing/environment_classification_test.go`~~ **DELETED** (2025-12-06)
 **Migration Target**: Signal Processing Service (BR-SP-052)
 **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+**Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
-### **BR-GATEWAY-017: Environment Classification - Fallback** ⚠️ **DEPRECATED - Moved to Signal Processing**
-**Description**: ~~Gateway must use fallback environment (unknown) when classification fails~~ **DEPRECATED**: Environment classification moved to Signal Processing Service (see DD-CATEGORIZATION-001).
+### **BR-GATEWAY-017: Environment Classification - Fallback** ⚠️ **DEPRECATED - REMOVED (2025-12-06)**
+**Description**: ~~Gateway must use fallback environment (unknown) when classification fails~~ **REMOVED**: Environment classification completely removed from Gateway (2025-12-06).
 **Priority**: P2 (Medium)
-**Test Coverage**: ✅ Unit (will be migrated to Signal Processing)
-**Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
-**Tests**: `test/unit/gateway/processing/environment_classification_test.go` (to be migrated)
+**Test Coverage**: ❌ N/A - Code removed from Gateway
+**Implementation**: ~~`pkg/gateway/processing/environment_classification.go`~~ **DELETED** (2025-12-06)
+**Tests**: ~~`test/unit/gateway/processing/environment_classification_test.go`~~ **DELETED** (2025-12-06)
 **Migration Target**: Signal Processing Service (BR-SP-053)
 **Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+**Removal Reference**: [NOTICE_GATEWAY_CLASSIFICATION_REMOVAL](../../../handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md)
 
 ### **BR-GATEWAY-018: CRD Metadata Generation**
 **Description**: Gateway must generate RemediationRequest CRD metadata (labels, annotations)
@@ -200,15 +212,15 @@ This document provides a comprehensive list of all business requirements for the
 **Description**: Gateway must log all incoming HTTP requests with sanitized data
 **Priority**: P1 (High)
 **Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/middleware/log_sanitization.go`
-**Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
+**Implementation**: `pkg/shared/sanitization/sanitizer.go` (shared library)
+**Tests**: `test/unit/shared/sanitization/sanitizer_test.go`
 
 ### **BR-GATEWAY-025: HTTP Response Logging**
 **Description**: Gateway must log all HTTP responses with status codes and duration
 **Priority**: P1 (High)
 **Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/middleware/log_sanitization.go`
-**Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
+**Implementation**: `pkg/shared/sanitization/sanitizer.go` (shared library)
+**Tests**: `test/unit/shared/sanitization/sanitizer_test.go`
 
 ### **BR-GATEWAY-027: Signal Source Service Identification**
 **Description**: Gateway adapters must provide monitoring system name (not adapter name) for LLM tool selection
@@ -295,14 +307,28 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/middleware/auth.go`
 **Tests**: None
 
-### **BR-GATEWAY-038: Rate Limiting**
+### **BR-GATEWAY-038: Rate Limiting** ✅ DELEGATED TO PROXY
 **Description**: Gateway must enforce rate limits (1000 req/min per client)
 **Priority**: P1 (High)
-**Test Coverage**: ✅ Unit (8 tests)
-**Implementation**: `pkg/gateway/middleware/ratelimit.go`
-**Tests**: `test/unit/gateway/middleware/ratelimit_test.go`
-**Related BRs**: Covered via VULN-GATEWAY-003, BR-GATEWAY-071 (20 refs), BR-GATEWAY-072 (3 refs)
-**Note**: Tests reference sub-BRs for granular coverage tracking
+**Test Coverage**: ✅ Delegated to Ingress/Route Proxy (no Gateway tests needed)
+**Implementation**: ❌ REMOVED - `pkg/gateway/middleware/ratelimit.go` deleted (ADR-048)
+**Tests**: ❌ REMOVED - `test/unit/gateway/middleware/ratelimit_test.go` deleted
+**Related BRs**: Covered via VULN-GATEWAY-003
+**Architectural Decision**: [ADR-048 - Rate Limiting Proxy Delegation](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md)
+
+> **✅ IMPLEMENTATION COMPLETE (2025-12-07)**
+>
+> Rate limiting is now delegated to the infrastructure layer:
+> - **Kubernetes**: Nginx Ingress annotations (`nginx.ingress.kubernetes.io/limit-rps`)
+> - **OpenShift**: HAProxy Router annotations (`haproxy.router.openshift.io/rate-limit-*`)
+>
+> **Files Deleted**:
+> - `pkg/gateway/middleware/ratelimit.go`
+> - `test/unit/gateway/middleware/ratelimit_test.go`
+> - `test/e2e/gateway/15_rate_limiting_under_load_test.go`
+>
+> **Rationale**: Global cluster-wide enforcement, zero Redis dependency, crash-proof.
+> See [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) for details.
 
 ### **BR-GATEWAY-039: Security Headers**
 **Description**: Gateway must add security headers (X-Content-Type-Options, X-Frame-Options, etc.)
@@ -330,9 +356,9 @@ This document provides a comprehensive list of all business requirements for the
 ### **BR-GATEWAY-042: Log Sanitization**
 **Description**: Gateway must sanitize sensitive data (tokens, passwords) from logs
 **Priority**: P0 (Critical)
-**Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/middleware/log_sanitization.go`
-**Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
+**Test Coverage**: ✅ Unit (shared library)
+**Implementation**: `pkg/shared/sanitization/sanitizer.go` (DD-005 compliant)
+**Tests**: `test/unit/shared/sanitization/sanitizer_test.go`
 
 ### **BR-GATEWAY-043: Input Validation**
 **Description**: Gateway must validate all input payloads against schema
@@ -430,13 +456,12 @@ This document provides a comprehensive list of all business requirements for the
 **Related BRs**: Covered via BR-GATEWAY-102 in observability tests
 **Note**: Test uses BR-102 numbering for observability suite consistency
 
-### **BR-GATEWAY-070: Storm Detection Metrics**
-**Description**: Gateway must expose storm detection count and aggregation metrics
-**Priority**: P1 (High)
-**Test Coverage**: ✅ E2E (storm behavior validation)
-**Implementation**: `pkg/gateway/metrics/metrics.go`
-**Tests**: `test/e2e/gateway/01_storm_window_ttl_test.go`, `test/e2e/gateway/04_concurrent_storm_test.go`
-**Note**: Storm metrics validated through E2E storm detection tests
+### **BR-GATEWAY-070: Storm Detection Metrics** ❌ **REMOVED**
+**Status**: ❌ **REMOVED** (December 13, 2025)
+**Reason**: Part of storm detection feature removal
+**Removal Reference**: [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md)
+**Migration**: Use `occurrenceCount >= 5` in Prometheus queries to identify persistent signals
+**Original Description**: Gateway must expose storm detection count and aggregation metrics
 
 ### **BR-GATEWAY-071: Health Check Endpoint**
 **Description**: Gateway must expose `/health` endpoint for liveness probe
@@ -470,8 +495,8 @@ This document provides a comprehensive list of all business requirements for the
 **Description**: Gateway must use structured logging (JSON format) with zap logger
 **Priority**: P0 (Critical)
 **Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/server.go`
-**Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
+**Implementation**: `pkg/gateway/server.go`, `pkg/shared/sanitization/sanitizer.go`
+**Tests**: `test/unit/shared/sanitization/sanitizer_test.go`
 
 ### **BR-GATEWAY-076: Log Levels**
 **Description**: Gateway must support configurable log levels (debug, info, warn, error)
@@ -535,7 +560,7 @@ This document provides a comprehensive list of all business requirements for the
 **Test Coverage**: ⏳ Deferred (v2.0)
 **Implementation**: None (intentionally not implemented for v1.0)
 **Tests**: None (intentional - feature deferred to v2.0)
-**Rationale**: Gateway has no external service dependencies requiring circuit breaker. Redis uses fail-open strategy (rate limiting), K8s API uses retry logic (BR-111-114). Circuit breaker will be added if external AI service integration is introduced in v2.0.
+**Rationale**: Gateway has no external service dependencies requiring circuit breaker. Rate limiting delegated to proxy (ADR-048). K8s API uses retry logic (BR-111-114). Circuit breaker will be added if external AI service integration is introduced in v2.0.
 
 ### **BR-GATEWAY-101: Error Handling**
 **Description**: Gateway must handle all errors gracefully and return RFC7807 problem details
@@ -607,7 +632,7 @@ This document provides a comprehensive list of all business requirements for the
 **Test Coverage**: ⏳ Deferred (v2.0)
 **Implementation**: None (intentionally not implemented for v1.0)
 **Tests**: None (intentional - feature deferred to v2.0)
-**Rationale**: Rate limiting (BR-038) provides sufficient protection. Per-IP rate limiting prevents overload. Fail-fast on Redis unavailable. No need for additional load shedding. Will be added if Gateway becomes a bottleneck in production.
+**Rationale**: Rate limiting (BR-038 via proxy - ADR-048) provides sufficient protection. Cluster-wide rate limiting prevents overload. No Redis dependency. No need for additional load shedding. Will be added if Gateway becomes a bottleneck in production.
 
 ### **BR-GATEWAY-111: K8s API Retry Configuration**
 **Description**: Gateway must support configurable retry behavior for K8s API errors
@@ -721,7 +746,7 @@ This document provides a comprehensive list of all business requirements for the
 ## 📚 **Related Documents**
 
 - [API Specification](api-specification.md) - Gateway API endpoints and contracts
-- [Implementation Plan v2.26](implementation/IMPLEMENTATION_PLAN_V2.26.md) - Implementation roadmap
+- [Implementation Plan v2.28](implementation/IMPLEMENTATION_PLAN_V2.28.md) - Implementation roadmap
 - [Test Coverage Analysis](../../../GATEWAY_TEST_COVERAGE_BY_BR_TRIAGE.md) - Test distribution analysis
 - [Missing BR Analysis](../../../GATEWAY_MISSING_BR_ANALYSIS.md) - Gap analysis
 

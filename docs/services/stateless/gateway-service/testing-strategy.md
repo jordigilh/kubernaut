@@ -1,8 +1,11 @@
 # Gateway Service - Testing Strategy
 
-**Version**: v1.0
-**Last Updated**: October 4, 2025
-**Status**: ✅ Design Complete
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.2 | 2025-12-03 | Updated integration test infrastructure (envtest for most, Kind for E2E) | Test infrastructure fixes |
+> | v1.1 | 2025-11-27 | Added resource validation tests (BR-GATEWAY-TARGET-RESOURCE-VALIDATION) | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) |
+> | v1.0 | 2025-10-04 | Initial testing strategy | - |
 
 ---
 
@@ -46,7 +49,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 Following Kubernaut's defense-in-depth testing strategy:
 
-- **Unit Tests (70%+)**: HTTP handlers, adapters, deduplication, storm detection, classification
+- **Unit Tests (70%+)**: HTTP handlers, adapters, deduplication with occurrence tracking
 - **Integration Tests (>50%)**: Redis integration, CRD creation, end-to-end webhook flow
 - **E2E Tests (<10%)**: Prometheus → Gateway → RemediationRequest → Completion
 
@@ -109,7 +112,7 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter", func() {
 | **Kubernetes API** | FAKE K8s CLIENT | Compile-time safety |
 | **HTTP Server** | REAL | Test actual handlers |
 | **Adapters** | REAL | Core business logic |
-| **Processing** | REAL | Deduplication, storm detection |
+| **Processing** | REAL | Deduplication with occurrence tracking |
 
 ### Key Test Scenarios
 
@@ -125,10 +128,10 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter", func() {
 - Expired fingerprint (>5min) → new alert
 - Redis failure → graceful degradation
 
-**BR-GATEWAY-011 to BR-GATEWAY-015: Storm Detection**
-- >10 alerts/min → rate-based storm
-- >5 similar alerts → pattern-based storm
-- Below thresholds → no storm
+**BR-GATEWAY-011: Deduplication with Occurrence Tracking** (DD-GATEWAY-011)
+- Duplicate signals → increment occurrenceCount
+- Status-based persistence in CRD
+- Terminal phases → no deduplication
 
 **BR-GATEWAY-051 to BR-GATEWAY-052: Environment Classification**
 - Namespace label exists → use label
@@ -229,7 +232,7 @@ var _ = Describe("BR-GATEWAY-020: Redis Integration", func() {
 
 **BR-GATEWAY-021: CRD Creation**
 - Alert → RemediationRequest CRD created in K8s
-- Storm → CRD with storm metadata
+- Duplicate → Update status.deduplication.occurrenceCount
 - CRD labels populated correctly
 
 **BR-GATEWAY-022: End-to-End Webhook Flow**
@@ -309,8 +312,8 @@ echo "POST http://gateway:8080/api/v1/alerts/prometheus" | \
 | BR Category | Coverage | Test Type |
 |-------------|----------|-----------|
 | **BR-GATEWAY-001 to BR-GATEWAY-010** | Webhook handling | Unit + Integration |
-| **BR-GATEWAY-011 to BR-GATEWAY-015** | Storm detection | Unit |
-| **BR-GATEWAY-016 to BR-GATEWAY-020** | Deduplication | Unit + Integration |
+| **BR-GATEWAY-011** | Deduplication with occurrence tracking | Unit + Integration |
+| **BR-GATEWAY-016 to BR-GATEWAY-020** | Additional deduplication scenarios | Unit + Integration |
 | **BR-GATEWAY-051 to BR-GATEWAY-053** | Environment classification | Unit + Integration |
 | **BR-GATEWAY-071 to BR-GATEWAY-072** | (Environment field enables GitOps) | Integration |
 
@@ -368,14 +371,13 @@ flowchart TD
 ### Test at Unit Level WHEN
 
 - ✅ Scenario can be tested with **mock Redis** (miniredis for in-memory deduplication)
-- ✅ Focus is on **HTTP handler logic** (parsing, validation, classification, storm detection)
+- ✅ Focus is on **HTTP handler logic** (parsing, validation, classification)
 - ✅ Setup is **straightforward** (< 15 lines of mock configuration)
 - ✅ Test remains **readable and maintainable** with mocking
 
 **Gateway Service Unit Test Examples**:
 - Alert parsing (Prometheus webhook → NormalizedSignal)
 - Input validation (missing fields, invalid JSON)
-- Storm detection algorithms (rate-based, pattern-based thresholds)
 - Environment classification rules (label precedence, ConfigMap lookup)
 - Priority calculation (environment + severity mapping)
 - Fingerprint generation (alert uniqueness logic)
@@ -394,8 +396,7 @@ flowchart TD
 - Complete webhook flow (HTTP → parse → deduplicate → CRD creation)
 - Real Redis deduplication (fingerprint storage, TTL expiration, count increment)
 - CRD creation with K8s API (RemediationRequest with labels and metadata)
-- HA multi-instance coordination (2 gateway pods sharing Redis)
-- Storm metadata propagation (CRD fields populated from storm detection)
+- HA multi-instance coordination (2 gateway pods sharing K8s CRD Status)
 - Real environment classification (K8s ConfigMap and namespace label lookup)
 
 ---
@@ -443,20 +444,23 @@ mockRedis.On("Expire", "alert:fingerprint:abc123", 5*time.Minute).Return(redis.N
 **Gateway Service Example**:
 ```go
 // ✅ READABLE: Clear HTTP handler test with miniredis
-It("should detect storm based on rate threshold", func() {
-    // Simple setup with miniredis
-    redisClient := testutil.NewMockRedis()
-    stormDetector := processing.NewStormDetector(redisClient)
+It("should track occurrence count for duplicate signals", func() {
+    // Simple setup with fake K8s client
+    k8sClient := testutil.NewFakeK8sClient()
+    updater := processing.NewStatusUpdater(k8sClient)
 
-    // Send 11 alerts in 1 minute
-    for i := 0; i < 11; i++ {
-        alert := testutil.NewAlert("HighMemoryUsage")
-        stormDetector.CheckStorm(ctx, alert)
+    // Create existing RR
+    existingRR := testutil.NewRemediationRequest("test-rr", "test-ns")
+    Expect(k8sClient.Create(ctx, existingRR)).To(Succeed())
+
+    // Send duplicate signals
+    for i := 0; i < 5; i++ {
+        err := updater.UpdateDeduplicationStatus(ctx, existingRR)
+        Expect(err).ToNot(HaveOccurred())
     }
 
-    // Verify storm detected
-    Expect(stormDetector.IsStorm("HighMemoryUsage")).To(BeTrue())
-    Expect(stormDetector.StormType()).To(Equal("rate-based"))
+    // Verify occurrence count tracked
+    Expect(existingRR.Status.Deduplication.OccurrenceCount).To(Equal(int32(5)))
 })
 ```
 
@@ -485,7 +489,7 @@ Expect(response.RemediationRequestRef).To(MatchRegexp(`^remediation-[a-z0-9]+$`)
 - **Redis/K8s Operations** → Integration test with real services
 
 **Gateway Service Decision**:
-- **Unit**: Parsing, validation, classification, storm detection algorithms (HTTP logic)
+- **Unit**: Parsing, validation, classification (HTTP logic)
 - **Integration**: Deduplication persistence, CRD creation, multi-instance coordination (infrastructure)
 
 ---
@@ -512,7 +516,7 @@ Expect(response.RemediationRequestRef).To(MatchRegexp(`^remediation-[a-z0-9]+$`)
 |---|---|---|
 | **Alert Sources** | Prometheus, Kubernetes Events, Custom webhooks (3 sources) | Test distinct parsers |
 | **Deduplication Windows** | 5min, 15min, 1hour (3 windows) | Test time-based logic |
-| **Storm Types** | rate-based (>10/min), pattern-based (>5 similar), none (3 types) | Test detection algorithms |
+| **Deduplication Phases** | Pending, Processing, Blocked (dedup), Completed, Failed, Cancelled (no dedup) | Test phase-based logic |
 | **Environment Sources** | namespace label, ConfigMap, alert label, unknown (4 sources) | Test classification precedence |
 
 **Total Possible Combinations**: 3 × 3 × 3 × 4 = 108 combinations
@@ -523,7 +527,7 @@ Expect(response.RemediationRequestRef).To(MatchRegexp(`^remediation-[a-z0-9]+$`)
 
 ### ✅ DO: Test Distinct HTTP Behaviors Using DescribeTable
 
-**BEST PRACTICE**: Use Ginkgo's `DescribeTable` for environment classification and storm detection testing.
+**BEST PRACTICE**: Use Ginkgo's `DescribeTable` for environment classification and deduplication phase testing.
 
 ```go
 // ✅ GOOD: Tests distinct environment classification using data table
@@ -613,7 +617,7 @@ Ask these 4 questions:
    - ❌ NO: 100-character alert name (unrealistic)
 
 3. **Would this test catch an HTTP processing bug the other tests wouldn't?**
-   - ✅ YES: Storm detection threshold boundary (exactly 10 alerts/min)
+   - ✅ YES: Deduplication phase boundary (Pending vs Completed)
    - ❌ NO: Testing 20 different namespace names with same classification
 
 4. **Is this testing HTTP behavior or implementation variation?**
@@ -626,80 +630,51 @@ Ask these 4 questions:
 
 ### Gateway Service Test Coverage Example with DescribeTable
 
-**BR-GATEWAY-013: Storm Detection (6 distinct detection scenarios)**
+**BR-GATEWAY-011: Deduplication with Occurrence Tracking**
 
 ```go
-Describe("BR-GATEWAY-013: Storm Detection", func() {
-    // ANALYSIS: 10 alert rates × 5 pattern counts × 3 time windows = 150 combinations
-    // REQUIREMENT ANALYSIS: Only 6 distinct storm detection behaviors per BR-GATEWAY-013
-    // TEST STRATEGY: Use DescribeTable for 6 storm scenarios + 2 edge cases
+Describe("BR-GATEWAY-011: Deduplication", func() {
+    // REQUIREMENT: Track duplicate signals via status.deduplication.occurrenceCount
+    // TEST STRATEGY: Use DescribeTable for different deduplication scenarios
 
-    DescribeTable("Storm detection based on rate and pattern thresholds",
-        func(alertRate int, timeWindow time.Duration, patternCount int, expectedStorm bool, expectedType string) {
-            // Single test function for all storm detection
-            detector := processing.NewStormDetector(mockRedis)
-            alert := testutil.NewAlert("HighMemoryUsage")
-
-            // Simulate alert rate within time window
-            for i := 0; i < alertRate; i++ {
-                detector.RecordAlert(ctx, alert)
-                time.Sleep(timeWindow / time.Duration(alertRate))
+    DescribeTable("Deduplication based on signal fingerprint and phase",
+        func(phase string, shouldDeduplicate bool, expectedCount int32) {
+            // Create existing RemediationRequest
+            existingRR := testutil.NewRemediationRequest("test-rr", testNamespace)
+            existingRR.Status.OverallPhase = phase
+            existingRR.Status.Deduplication = &remediationv1alpha1.DeduplicationStatus{
+                OccurrenceCount: expectedCount - 1,
             }
+            Expect(k8sClient.Create(ctx, existingRR)).To(Succeed())
 
-            result := detector.CheckStorm(ctx, alert)
+            // Test deduplication check
+            checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
+            shouldDedup, rr, err := checker.ShouldDeduplicate(ctx, testNamespace, "test-fingerprint")
 
-            if expectedStorm {
-                Expect(result.IsStorm).To(BeTrue())
-                Expect(result.StormType).To(Equal(expectedType))
-            } else {
-                Expect(result.IsStorm).To(BeFalse())
+            Expect(err).ToNot(HaveOccurred())
+            Expect(shouldDedup).To(Equal(shouldDeduplicate))
+            if shouldDeduplicate {
+                Expect(rr.Status.Deduplication.OccurrenceCount).To(Equal(expectedCount))
             }
         },
-        // Scenario 1: Rate-based storm (>10 alerts/min)
-        Entry("11 alerts in 1 minute triggers rate-based storm",
-            11, 1*time.Minute, 0, true, "rate-based"),
+        // Active phases - should deduplicate
+        Entry("Pending phase allows deduplication", "Pending", true, int32(2)),
+        Entry("Processing phase allows deduplication", "Processing", true, int32(3)),
+        Entry("Blocked phase allows deduplication", "Blocked", true, int32(4)),
 
-        // Scenario 2: Below rate threshold (no storm)
-        Entry("9 alerts in 1 minute does not trigger storm",
-            9, 1*time.Minute, 0, false, ""),
-
-        // Scenario 3: Pattern-based storm (>5 similar alerts)
-        Entry("6 similar alerts triggers pattern-based storm",
-            6, 5*time.Minute, 6, true, "pattern-based"),
-
-        // Scenario 4: Below pattern threshold (no storm)
-        Entry("4 similar alerts does not trigger storm",
-            4, 5*time.Minute, 4, false, ""),
-
-        // Scenario 5: Rate threshold exactly met (boundary)
-        Entry("exactly 10 alerts in 1 minute does not trigger storm",
-            10, 1*time.Minute, 0, false, ""),
-
-        // Scenario 6: Pattern threshold exactly met (boundary)
-        Entry("exactly 5 similar alerts does not trigger storm",
-            5, 5*time.Minute, 5, false, ""),
-
-        // Edge case 1: Very high rate (>100/min) still detected
-        Entry("150 alerts in 1 minute triggers rate-based storm",
-            150, 1*time.Minute, 0, true, "rate-based"),
-
-        // Edge case 2: Rate just above threshold
-        Entry("11 alerts in 1 minute triggers storm at threshold boundary",
-            11, 1*time.Minute, 0, true, "rate-based"),
+        // Terminal phases - should NOT deduplicate
+        Entry("Completed phase prevents deduplication", "Completed", false, int32(1)),
+        Entry("Failed phase prevents deduplication", "Failed", false, int32(1)),
+        Entry("Cancelled phase prevents deduplication", "Cancelled", false, int32(1)),
     )
-
-    // Result: 8 Entry() lines cover 6 storm detection scenarios + 2 edge cases
-    // NOT testing all 150 combinations - only distinct threshold behaviors
-    // Coverage: 100% of storm detection requirements
-    // Maintenance: Change detection logic once, all scenarios adapt
 })
 ```
 
-**Benefits for Gateway HTTP Testing**:
-- ✅ **8 storm scenarios tested in ~12 lines** (vs. ~200 lines with separate Its)
-- ✅ **Single detection engine** - changes apply to all scenarios
-- ✅ **Clear threshold matrix** - detection rules immediately visible
-- ✅ **Easy to add thresholds** - new Entry for new storm types
+**Benefits for Gateway Deduplication Testing**:
+- ✅ **6 phase scenarios tested in ~15 lines** (vs. ~150 lines with separate Its)
+- ✅ **Single deduplication engine** - changes apply to all scenarios
+- ✅ **Clear phase matrix** - deduplication rules immediately visible
+- ✅ **Easy to add phases** - new Entry for new phase types
 - ✅ **90% less maintenance** for complex threshold testing
 
 ---

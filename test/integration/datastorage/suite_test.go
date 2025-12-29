@@ -1,12 +1,26 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,18 +28,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
 	"github.com/jmoiron/sqlx"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // ========================================
@@ -59,7 +73,7 @@ var (
 	redisClient       *redis.Client
 	repo              *repository.NotificationAuditRepository
 	dlqClient         *dlq.Client
-	logger            *zap.Logger
+	logger            logr.Logger
 	ctx               context.Context
 	cancel            context.CancelFunc
 	postgresContainer = "datastorage-postgres-test"
@@ -68,10 +82,6 @@ var (
 	datastorageURL    string
 	configDir         string // ADR-030: Directory for config and secret files
 	schemaName        string // Schema name for this parallel process (for isolation)
-
-	// BR-STORAGE-014: Embedding service integration
-	embeddingServer *httptest.Server // Mock embedding service
-	embeddingClient embedding.Client
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -96,7 +106,7 @@ func generateTestUUID() uuid.UUID {
 // 2. Copy table structure from public schema (without data)
 // 3. Set search_path to use this schema
 //
-// Note: Extensions (pgvector, uuid-ossp) are database-wide and already created in public schema
+// Note: Extensions (uuid-ossp) are database-wide and already created in public schema
 func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 	schemaName := fmt.Sprintf("test_process_%d", processNum)
 
@@ -254,6 +264,14 @@ func preflightCheck() error {
 // cleanupContainers removes any existing test containers and networks
 // This is called both in preflight and after tests to ensure clean state
 func cleanupContainers() {
+	// Allow skipping cleanup for debugging (DS team investigation)
+	if os.Getenv("KEEP_CONTAINERS_ON_FAILURE") != "" {
+		GinkgoWriter.Println("⚠️  Skipping cleanup (KEEP_CONTAINERS_ON_FAILURE=1 set for debugging)")
+		GinkgoWriter.Printf("   To inspect: podman ps -a | grep datastorage\n")
+		GinkgoWriter.Printf("   Logs: podman logs datastorage-service-test\n")
+		return
+	}
+
 	GinkgoWriter.Println("🧹 Cleaning up test infrastructure...")
 
 	// Stop and remove integration test containers
@@ -307,8 +325,19 @@ func cleanupContainers() {
 		}
 	}
 
-	// Wait a moment for cleanup to complete
-	time.Sleep(2 * time.Second)
+	// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
+	Eventually(func() error {
+		// Verify cleanup by checking container is gone
+		cmd := exec.Command("podman", "ps", "-a", "--format", "{{.Names}}")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(output), "datastorage-postgres-test") {
+			return fmt.Errorf("Container still exists")
+		}
+		return nil
+	}, 10*time.Second, 1*time.Second).Should(Succeed(), "Cleanup should complete")
 
 	GinkgoWriter.Println("✅ Cleanup complete")
 }
@@ -344,7 +373,7 @@ var _ = SynchronizedBeforeSuite(
 			createNetwork()
 		}
 
-		// 2. Start PostgreSQL with pgvector
+		// 2. Start PostgreSQL
 		GinkgoWriter.Println("📦 Starting PostgreSQL container...")
 		startPostgreSQL()
 
@@ -415,10 +444,12 @@ var _ = SynchronizedBeforeSuite(
 
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// Setup logger
+		// Setup logger (DD-005 v2.0: logr.Logger migration)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
+
+		// Declare err for use in subsequent operations
 		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		_ = err // Suppress unused warning until used
 
 		// Parse service URL from process 1
 		datastorageURL = string(data)
@@ -445,39 +476,8 @@ var _ = SynchronizedBeforeSuite(
 		// Create repository and DLQ client instances
 		GinkgoWriter.Printf("🏗️  [Process %d] Creating repository and DLQ client...\n", processNum)
 		repo = repository.NewNotificationAuditRepository(db.DB, logger) // Use db.DB to get *sql.DB from sqlx
-		dlqClient, err = dlq.NewClient(redisClient, logger)
+		dlqClient, err = dlq.NewClient(redisClient, logger, 10000)      // Gap 3.3: Pass max length for capacity monitoring
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
-
-		// BR-STORAGE-014: Create mock embedding service for integration tests
-		GinkgoWriter.Printf("🏗️  [Process %d] Creating mock embedding service...\n", processNum)
-		embeddingServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Mock 768-dimensional embedding response
-			mockEmbedding := make([]float32, 768)
-			for i := range mockEmbedding {
-				mockEmbedding[i] = float32(i) * 0.001 // Generate deterministic values
-			}
-
-			resp := map[string]interface{}{
-				"embedding":  mockEmbedding,
-				"dimensions": 768,
-				"model":      "all-mpnet-base-v2",
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
-		}))
-
-		// Create Redis cache for embeddings
-		redisOpts := &redis.Options{
-			Addr: fmt.Sprintf("%s:%s", os.Getenv("REDIS_HOST"), os.Getenv("REDIS_PORT")),
-		}
-		redisSharedClient := rediscache.NewClient(redisOpts, logger)
-		embeddingCache := rediscache.NewCache[[]float32](redisSharedClient, "embeddings", 24*time.Hour)
-
-		// Create embedding client
-		embeddingClient = embedding.NewClient(embeddingServer.URL, embeddingCache, logger)
-		GinkgoWriter.Printf("✅ [Process %d] Mock embedding service ready at %s\n", processNum, embeddingServer.URL)
 
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests in schema: %s\n", processNum, schemaName)
 	},
@@ -523,15 +523,20 @@ var _ = AfterSuite(func() {
 		redisClient.Close()
 	}
 
-	// Clean up mock embedding server
-	if embeddingServer != nil {
-		embeddingServer.Close()
-		GinkgoWriter.Printf("🧹 [Process %d] Closed mock embedding server\n", processNum)
-	}
-
 	// Use centralized cleanup function (only process 1)
 	if processNum == 1 {
 		cleanupContainers()
+
+		// DD-TEST-001 v1.1: Clean up infrastructure images to prevent disk space issues
+		GinkgoWriter.Println("🧹 DD-TEST-001 v1.1: Cleaning up infrastructure images...")
+		pruneCmd := exec.Command("podman", "image", "prune", "-f",
+			"--filter", "label=datastorage-test=true")
+		pruneOutput, pruneErr := pruneCmd.CombinedOutput()
+		if pruneErr != nil {
+			GinkgoWriter.Printf("⚠️  Failed to prune infrastructure images: %v\n%s\n", pruneErr, pruneOutput)
+		} else {
+			GinkgoWriter.Println("✅ Infrastructure images pruned (saves ~500MB-1GB)")
+		}
 	}
 
 	// Post-cleanup verification
@@ -577,7 +582,7 @@ func createNetwork() {
 	GinkgoWriter.Println("✅ Podman network created")
 }
 
-// startPostgreSQL starts PostgreSQL container with pgvector
+// startPostgreSQL starts PostgreSQL container
 // When POSTGRES_HOST is set (e.g., in Docker Compose), skip container creation
 func startPostgreSQL() {
 	// Check if running in Docker Compose environment
@@ -612,9 +617,21 @@ func startPostgreSQL() {
 	exec.Command("podman", "stop", postgresContainer).Run()
 	exec.Command("podman", "rm", postgresContainer).Run()
 
-	// Start PostgreSQL with pgvector
+	// Force remove any existing container to ensure fresh state
+	// This prevents data contamination from previous test runs
+	GinkgoWriter.Println("🧹 Removing any existing PostgreSQL container...")
+	exec.Command("podman", "rm", "-f", postgresContainer).Run()
+	// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
+	Eventually(func() bool {
+		cmd := exec.Command("podman", "ps", "-a", "--filter", fmt.Sprintf("name=%s", postgresContainer), "--format", "{{.Names}}")
+		output, _ := cmd.CombinedOutput()
+		return !strings.Contains(string(output), postgresContainer)
+	}, 5*time.Second, 500*time.Millisecond).Should(BeTrue(), "Container should be removed")
+
+	// Start PostgreSQL
 	// Use --network=datastorage-test for container-to-container communication
 	// Increase max_connections for parallel test execution (default is 100)
+	GinkgoWriter.Println("🔧 Starting fresh PostgreSQL container...")
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", postgresContainer,
 		"--network", "datastorage-test",
@@ -622,7 +639,7 @@ func startPostgreSQL() {
 		"-e", "POSTGRES_DB=action_history",
 		"-e", "POSTGRES_USER=slm_user",
 		"-e", "POSTGRES_PASSWORD=test_password",
-		"quay.io/jordigilh/pgvector:pg16",
+		"postgres:16-alpine",
 		"-c", "max_connections=200")
 
 	output, err := cmd.CombinedOutput()
@@ -632,8 +649,8 @@ func startPostgreSQL() {
 	}
 
 	// Wait for PostgreSQL ready
+	// Per TESTING_GUIDELINES.md: Eventually() handles waiting, no time.Sleep() needed
 	GinkgoWriter.Println("⏳ Waiting for PostgreSQL to be ready...")
-	time.Sleep(3 * time.Second)
 
 	Eventually(func() error {
 		testCmd := exec.Command("podman", "exec", postgresContainer, "pg_isready", "-U", "slm_user")
@@ -692,8 +709,8 @@ func startRedis() {
 	}
 
 	// Wait for Redis ready
+	// Per TESTING_GUIDELINES.md: Eventually() handles waiting, no time.Sleep() needed
 	GinkgoWriter.Println("⏳ Waiting for Redis to be ready...")
-	time.Sleep(2 * time.Second)
 
 	Eventually(func() error {
 		testCmd := exec.Command("podman", "exec", redisContainer, "redis-cli", "ping")
@@ -799,33 +816,17 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	_, err := targetDB.ExecContext(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	Expect(err).ToNot(HaveOccurred())
 
-	// 2. Enable pgvector extension BEFORE migrations
-	GinkgoWriter.Println("  🔌 Enabling pgvector extension...")
-	_, err = targetDB.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
-	Expect(err).ToNot(HaveOccurred())
+	// 2. Auto-discover ALL migrations from filesystem (no manual sync required!)
+	// This prevents test failures when DataStorage team adds new migrations
+	// Reference: docs/handoff/MIGRATION_SYNC_PREVENTION_STRATEGY.md
+	GinkgoWriter.Println("  📜 Auto-discovering migrations from filesystem...")
+	migrationsDir := "../../../migrations"
+	migrations, err := infrastructure.DiscoverMigrations(migrationsDir)
+	Expect(err).ToNot(HaveOccurred(), "Migration discovery should succeed")
 
-	// 3. Apply ALL migrations in order (mirrors production)
-	GinkgoWriter.Println("  📜 Applying all migrations in order...")
-	migrations := []string{
-		"001_initial_schema.sql",
-		"002_fix_partitioning.sql",
-		"003_stored_procedures.sql",
-		"004_add_effectiveness_assessment_due.sql",
-		"005_vector_schema.sql",
-		"006_effectiveness_assessment.sql",
-		"009_update_vector_dimensions.sql",
-		"007_add_context_column.sql",
-		"008_context_api_compatibility.sql",
-		"010_audit_write_api_phase1.sql",
-		"011_rename_alert_to_signal.sql",
-		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
-		"013_create_audit_events_table.sql",        // ADR-034: Unified audit events table
-		"015_create_workflow_catalog_table.sql",    // BR-STORAGE-012/013/014: Workflow catalog with semantic search
-		"016_update_embedding_dimensions.sql",      // BR-STORAGE-014: Update to 768 dimensions (all-mpnet-base-v2)
-		"999_add_nov_2025_partition.sql",           // Legacy partition for resource_action_traces
-		"1000_create_audit_events_partitions.sql",  // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
-	}
+	GinkgoWriter.Printf("  📋 Found %d migrations to apply (auto-discovered)\n", len(migrations))
 
+	// 3. Apply each migration in order
 	for _, migration := range migrations {
 		GinkgoWriter.Printf("  📜 Applying %s...\n", migration)
 		migrationPath := "../../../migrations/" + migration
@@ -856,121 +857,20 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 
 	GinkgoWriter.Println("  ✅ All migrations applied successfully")
 
-	// 4. Wait for schema propagation (Context API lesson)
+	// 4. Create dynamic partitions for current month (prevents time-based test failures)
+	GinkgoWriter.Println("  📅 Creating dynamic partitions for current month...")
+	createDynamicPartitions(ctx, targetDB)
+
+	// 5. Wait for schema propagation (Context API lesson)
 	// PostgreSQL needs time to propagate schema changes to new connections
+	// Per TESTING_GUIDELINES.md: Use Eventually() to verify schema propagation
 	GinkgoWriter.Println("  ⏳ Waiting for schema propagation...")
-	time.Sleep(500 * time.Millisecond)
+	Eventually(func() error {
+		// Verify schema exists by attempting a simple query
+		_, err := targetDB.ExecContext(ctx, "SELECT 1")
+		return err
+	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
-}
-
-// applyMigrationsWithPropagation handles PostgreSQL schema propagation timing
-// Context API Lesson: Schema changes not immediately visible to new connections
-func applyMigrationsWithPropagation() {
-	// 1. Drop and recreate schema for clean state
-	GinkgoWriter.Println("  🗑️  Dropping existing schema...")
-	_, err := db.ExecContext(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-	Expect(err).ToNot(HaveOccurred())
-
-	// 2. Enable pgvector extension BEFORE migrations
-	GinkgoWriter.Println("  🔌 Enabling pgvector extension...")
-	_, err = db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
-	Expect(err).ToNot(HaveOccurred())
-
-	// 3. Apply ALL migrations in order (mirrors production)
-	GinkgoWriter.Println("  📜 Applying all migrations in order...")
-	migrations := []string{
-		"001_initial_schema.sql",
-		"002_fix_partitioning.sql",
-		"003_stored_procedures.sql",
-		"004_add_effectiveness_assessment_due.sql",
-		"005_vector_schema.sql",
-		"006_effectiveness_assessment.sql",
-		"009_update_vector_dimensions.sql",
-		"007_add_context_column.sql",
-		"008_context_api_compatibility.sql",
-		"010_audit_write_api_phase1.sql",
-		"011_rename_alert_to_signal.sql",
-		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
-		"013_create_audit_events_table.sql",        // ADR-034: Unified audit events table
-		"999_add_nov_2025_partition.sql",           // Legacy partition for resource_action_traces
-		"1000_create_audit_events_partitions.sql",  // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
-	}
-
-	for _, migration := range migrations {
-		GinkgoWriter.Printf("  📜 Applying %s...\n", migration)
-		migrationPath := "../../../migrations/" + migration
-		content, err := os.ReadFile(migrationPath)
-		if err != nil {
-			GinkgoWriter.Printf("  ❌ Migration file not found: %v\n", err)
-			Fail(fmt.Sprintf("Migration file %s not found: %v", migration, err))
-		}
-
-		// Remove CONCURRENTLY keyword for test environment
-		// CONCURRENTLY cannot run inside a transaction block
-		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
-
-		// Extract only the UP migration (ignore DOWN section)
-		// Goose migrations have "-- +goose Up" and "-- +goose Down" markers
-		if strings.Contains(migrationSQL, "-- +goose Down") {
-			// Split at the DOWN marker and only use the UP part
-			parts := strings.Split(migrationSQL, "-- +goose Down")
-			migrationSQL = parts[0]
-		}
-
-		_, err = db.ExecContext(ctx, migrationSQL)
-		if err != nil {
-			GinkgoWriter.Printf("  ❌ Migration %s failed: %v\n", migration, err)
-			Fail(fmt.Sprintf("Migration %s failed: %v", migration, err))
-		}
-	}
-	GinkgoWriter.Println("  ✅ All migrations applied successfully")
-
-	// 4. Grant permissions to test user
-	GinkgoWriter.Println("  🔐 Granting permissions...")
-	_, err = db.ExecContext(ctx, `
-		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
-		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
-		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
-	`)
-	Expect(err).ToNot(HaveOccurred())
-
-	// 5. ⚠️ CRITICAL: Wait for schema propagation
-	// Context API Lesson: 7+ hours debugging without this
-	GinkgoWriter.Println("  ⏳ Waiting for PostgreSQL schema propagation (2s)...")
-	time.Sleep(2 * time.Second)
-
-	// 6. Verify schema using pg_class (handles partitioned tables)
-	// Context API Lesson: information_schema.tables doesn't show partitioned tables
-	GinkgoWriter.Println("  ✅ Verifying schema...")
-
-	// Verify resource_action_traces exists
-	verifySQL := `
-		SELECT COUNT(*)
-		FROM pg_class c
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public'
-		  AND c.relkind IN ('r', 'p')  -- 'r' = regular, 'p' = partitioned
-		  AND c.relname = 'resource_action_traces';
-	`
-	var count int
-	err = db.QueryRowContext(ctx, verifySQL).Scan(&count)
-	Expect(err).ToNot(HaveOccurred())
-	Expect(count).To(Equal(1), "Expected resource_action_traces table to exist")
-
-	// Verify notification_audit exists
-	verifySQL2 := `
-		SELECT COUNT(*)
-		FROM pg_class c
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public'
-		  AND c.relkind IN ('r', 'p')  -- 'r' = regular, 'p' = partitioned
-		  AND c.relname = 'notification_audit';
-	`
-	err = db.QueryRowContext(ctx, verifySQL2).Scan(&count)
-	Expect(err).ToNot(HaveOccurred())
-	Expect(count).To(Equal(1), "Expected notification_audit table to exist")
-
-	GinkgoWriter.Println("  ✅ Schema verification complete!")
 }
 
 // createConfigFiles creates ADR-030 compliant config and secret files
@@ -1039,7 +939,7 @@ logging:
 `, dbHost, dbPort, redisHost, redisPort)
 
 	configPath := filepath.Join(configDir, "config.yaml")
-	err = os.WriteFile(configPath, []byte(configYAML), 0644)
+	err = os.WriteFile(configPath, []byte(configYAML), 0666) // World-readable for Podman mount (macOS compatibility)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Create database secrets file
@@ -1048,13 +948,17 @@ username: slm_user
 password: test_password
 `
 	dbSecretsPath := filepath.Join(configDir, "db-secrets.yaml")
-	err = os.WriteFile(dbSecretsPath, []byte(dbSecretsYAML), 0644)
+	err = os.WriteFile(dbSecretsPath, []byte(dbSecretsYAML), 0666) // World-readable for Podman mount (macOS compatibility)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Create Redis secrets file
 	redisSecretsYAML := `password: ""` // Redis without auth in test
 	redisSecretsPath := filepath.Join(configDir, "redis-secrets.yaml")
-	err = os.WriteFile(redisSecretsPath, []byte(redisSecretsYAML), 0644)
+	err = os.WriteFile(redisSecretsPath, []byte(redisSecretsYAML), 0666) // World-readable for Podman mount (macOS compatibility)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Set directory permissions for Podman mount (macOS compatibility)
+	err = os.Chmod(configDir, 0777)
 	Expect(err).ToNot(HaveOccurred())
 
 	GinkgoWriter.Printf("  ✅ Config files created in %s\n", configDir)
@@ -1091,6 +995,8 @@ func startDataStorageService() {
 	exec.Command("podman", "rm", serviceContainer).Run()
 
 	// Mount config files (ADR-030)
+	// Note: On macOS with Podman, :Z flag doesn't apply (SELinux is Linux-only)
+	// Instead, ensure files have world-readable permissions before mounting
 	configMount := fmt.Sprintf("%s/config.yaml:/etc/datastorage/config.yaml:ro", configDir)
 	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", configDir)
 
@@ -1137,4 +1043,61 @@ func waitForServiceReady() {
 	}
 
 	GinkgoWriter.Printf("  ✅ Data Storage Service ready at %s\n", datastorageURL)
+}
+
+// DBExecutor is an interface that both *sql.DB and *sqlx.DB satisfy
+// Used for dynamic partition creation in tests
+type DBExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
+
+// createDynamicPartitions creates partitions for the current month and next month
+// This ensures tests don't fail due to time-based partition issues
+// DD-TEST-001: Dynamic partition creation for time-independent tests
+func createDynamicPartitions(ctx context.Context, targetDB DBExecutor) {
+	now := time.Now()
+
+	// Create partitions for current month and next 2 months
+	for i := 0; i < 3; i++ {
+		month := now.AddDate(0, i, 0)
+		year := month.Year()
+		monthNum := int(month.Month())
+
+		// Calculate partition boundaries
+		startDate := time.Date(year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC)
+		endDate := startDate.AddDate(0, 1, 0)
+
+		partitionName := fmt.Sprintf("resource_action_traces_y%dm%02d", year, monthNum)
+		startStr := startDate.Format("2006-01-02")
+		endStr := endDate.Format("2006-01-02")
+
+		// Check if partition already exists
+		var exists bool
+		checkQuery := `SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1)`
+		err := targetDB.QueryRowContext(ctx, checkQuery, partitionName).Scan(&exists)
+		if err != nil {
+			GinkgoWriter.Printf("  ⚠️  Failed to check partition %s: %v\n", partitionName, err)
+			continue
+		}
+
+		if exists {
+			GinkgoWriter.Printf("  ✅ Partition %s already exists\n", partitionName)
+			continue
+		}
+
+		// Create partition
+		createQuery := fmt.Sprintf(`
+			CREATE TABLE %s
+			PARTITION OF resource_action_traces
+			FOR VALUES FROM ('%s') TO ('%s')
+		`, partitionName, startStr, endStr)
+
+		_, err = targetDB.ExecContext(ctx, createQuery)
+		if err != nil {
+			GinkgoWriter.Printf("  ⚠️  Failed to create partition %s: %v\n", partitionName, err)
+		} else {
+			GinkgoWriter.Printf("  ✅ Created partition %s (%s to %s)\n", partitionName, startStr, endStr)
+		}
+	}
 }

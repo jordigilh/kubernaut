@@ -1,9 +1,9 @@
 # Notification Service - Testing Strategy
 
-**Version**: 3.0
-**Last Updated**: November 23, 2025
-**Service Type**: CRD Controller with ADR-034 Audit Integration + File-Based E2E Validation
-**Status**: ✅ PRODUCTION-READY (133 tests, 100% passing)
+**Version**: v1.6.0
+**Last Updated**: December 28, 2025
+**Service Type**: CRD Controller with ADR-034 Audit Integration + File-Based E2E Validation + OpenAPI Client
+**Status**: ✅ PRODUCTION-READY (358 tests: 225U+112I+21E2E, 100% passing)
 
 ---
 
@@ -47,23 +47,26 @@ mailhogContainer := testcontainers.GenericContainer{
 
 Comprehensive testing strategy for the Notification Service following APDC-Enhanced TDD methodology and defense-in-depth testing pyramid.
 
-### **Current Test Status** (v3.0)
+### **Current Test Status** (v1.6.0)
 
-| Test Type | Count | Status | Coverage |
+| Test Type | Specs | Status | Coverage |
 |-----------|-------|--------|----------|
-| **Unit Tests** | 117 | ✅ 100% passing | 70%+ code coverage |
-| **Integration Tests** | 9 | ✅ 100% passing | Audit (4) + TLS (5) |
-| **E2E Tests** | 7 | ✅ 100% passing | Audit (2) + File Delivery (5) |
-| **TOTAL** | **133** | **✅ 100% passing** | **Complete BR coverage** |
+| **Unit Tests** | 225 | ✅ 100% passing | 70%+ code coverage |
+| **Integration Tests** | 112 | ✅ 100% passing | Audit (4) + TLS (5) + Performance (9) + Multi-channel (94) |
+| **E2E Tests** | 21 | ✅ 100% passing | 6 test files (Audit + Lifecycle + Fanout + Retry) |
+| **TOTAL** | **358 tests** | **✅ 100% passing** | **Complete BR coverage** |
 
 **Key Achievements**:
 - ✅ BR-NOT-062: Unified Audit Table (4 integration + 2 E2E tests)
 - ✅ BR-NOT-063: Graceful Degradation (DLQ fallback validated)
 - ✅ BR-NOT-058: TLS Security (5 integration tests)
-- ✅ **DD-NOT-002**: File-Based E2E Message Validation (5 E2E tests)
-- ✅ ADR-034 Compliance: Full validation framework
+- ✅ **DD-NOT-002**: File-Based E2E Message Validation (21 E2E tests across 6 files)
+- ✅ **DD-E2E-002**: OpenAPI Audit Client Integration (ActorId filtering, pointer/enum handling)
+- ✅ **DD-E2E-001**: DataStorage NodePort 30090 isolation (5s readiness + health check)
+- ✅ **DD-E2E-003**: Retry logic validation (BR-NOT-052 compliance)
+- ✅ ADR-034 Compliance: Full validation framework with OpenAPI client
 - ✅ Fire-and-forget pattern: Proven non-blocking (<1ms overhead)
-- ✅ **NEW**: Complete message correctness validation (BR-NOT-053, BR-NOT-054, BR-NOT-056)
+- ✅ Complete message correctness validation (BR-NOT-053, BR-NOT-054, BR-NOT-056)
 
 ---
 
@@ -1420,6 +1423,6 @@ Describe("Integration: SMTP Delivery", func() {
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 6, 2025
+**Last Updated**: December 7, 2025
 **Status**: ✅ Complete Specification
 

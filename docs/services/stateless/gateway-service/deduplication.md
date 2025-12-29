@@ -457,7 +457,7 @@ type StormMetadata struct {
 When storm detected, Gateway creates **single RemediationRequest CRD** with storm metadata:
 
 ```yaml
-apiVersion: remediation.kubernaut.io/v1
+apiVersion: remediation.kubernaut.ai/v1
 kind: RemediationRequest
 metadata:
   name: remediation-storm-xyz

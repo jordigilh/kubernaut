@@ -23,10 +23,10 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: kubernaut.io
-  group: remediationprocessing
-  kind: RemediationProcessing
-  path: github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1
+  domain: kubernaut.ai
+  group: signalprocessing
+  kind: SignalProcessing
+  path: github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -45,23 +45,5 @@ resources:
   group: workflowexecution
   kind: WorkflowExecution
   path: github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: kubernaut.io
-  group: kubernetesexecution
-  kind: KubernetesExecution
-  path: github.com/jordigilh/kubernaut/api/kubernetesexecution/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: kubernaut.io
-  group: remediationorchestrator
-  kind: RemediationOrchestrator
-  path: github.com/jordigilh/kubernaut/api/remediationorchestrator/v1alpha1
   version: v1alpha1
 version: "3"

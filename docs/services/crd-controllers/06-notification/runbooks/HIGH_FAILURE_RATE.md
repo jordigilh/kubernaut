@@ -279,7 +279,7 @@ kubectl rollout status deployment/notification-controller -n kubernaut-system
 
 # Create test notification
 kubectl apply -f - <<EOF
-apiVersion: notification.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: NotificationRequest
 metadata:
   name: test-notification-$(date +%s)

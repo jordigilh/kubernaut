@@ -328,7 +328,7 @@ Provide action-specific validation that's more detailed than workflow-level chec
 **Example**:
 ```yaml
 # KubernetesExecution with action preconditions
-apiVersion: execution.kubernaut.io/v1alpha1
+apiVersion: execution.kubernaut.ai/v1alpha1
 kind: KubernetesExecution
 metadata:
   name: scale-web-app-step-2
@@ -415,7 +415,7 @@ Kubernetes Jobs can succeed even if the desired outcome wasn't achieved (e.g., `
 **Example**:
 ```yaml
 # KubernetesExecution with action postconditions
-apiVersion: execution.kubernaut.io/v1alpha1
+apiVersion: execution.kubernaut.ai/v1alpha1
 kind: KubernetesExecution
 metadata:
   name: scale-web-app-step-2

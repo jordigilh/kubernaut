@@ -527,17 +527,20 @@ This taxonomy must be included in the LLM prompt (ADR-041) as a dedicated sectio
 
 **Prompt Length**: ~500-600 words (acceptable for Claude 4.5 Haiku)
 
-### 8.2 DD-WORKFLOW-001 Updates Required
+### 8.2 DD-WORKFLOW-001 v1.8 Alignment
 
-**CRITICAL**: DD-WORKFLOW-001 must be updated to add `signal_type` and `severity` as mandatory workflow labels.
+**STATUS**: ✅ DD-WORKFLOW-001 v1.8 is now the authoritative source (snake_case API fields).
 
-**Current**: 7 mandatory labels (environment, priority, risk_tolerance, business_category, signal_type, severity, component)
+**Current (v1.4)**:
+- **5 mandatory labels**: `signal_type`, `severity`, `component`, `environment`, `priority`
+- **DetectedLabels**: Auto-detected (GitOps, PDB, HPA, etc.) - no config required
+- **CustomLabels**: Customer-defined via Rego (pass-through, Kubernaut doesn't validate)
 
-**Issue**: `signal_type` and `severity` are listed but not used as search filters in DD-STORAGE-008
-
-**Required Change**: Clarify that `signal_type` and `severity` are used for BOTH:
-1. Exact label filtering in MCP search
-2. Workflow description keywords for semantic matching
+**Label Usage**:
+- `signal_type` and `severity` are used for BOTH:
+  1. Exact label filtering in MCP search
+  2. Workflow description keywords for semantic matching
+- DetectedLabels/CustomLabels passed through to Data Storage for workflow filtering
 
 **Workflow Description Format**:
 ```

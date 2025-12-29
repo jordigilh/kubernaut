@@ -93,16 +93,12 @@ func InFlightRequests(metrics *gatewayMetrics.Metrics) func(next http.Handler) h
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Nil-safe: If metrics disabled, pass through
 			if metrics == nil {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			// Increment in-flight counter
-			metrics.HTTPRequestsInFlight.Inc()
-			defer metrics.HTTPRequestsInFlight.Dec()
-
-			// Process request
 			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Process request
+		next.ServeHTTP(w, r)
 		})
 	}
 }

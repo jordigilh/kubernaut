@@ -21,24 +21,24 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
 // ========================================
 // AGGREGATION METHODS (BR-STORAGE-030)
 // TDD GREEN Phase: Minimal stub implementations
-// TODO: REFACTOR phase will add real PostgreSQL aggregation SQL
+// V1.0: Mock aggregations (real PostgreSQL aggregations deferred to V1.1)
 // ========================================
 
 // AggregateSuccessRate calculates success rate for a workflow
 // BR-STORAGE-031: Success rate aggregation
-// TDD REFACTOR Phase: Real PostgreSQL aggregation with exact count calculations
-func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interface{}, error) {
-	d.logger.Debug("DBAdapter.AggregateSuccessRate called",
-		zap.String("workflow_id", workflowID),
+// V1.0: Refactored to use structured types (eliminates map[string]interface{})
+func (d *DBAdapter) AggregateSuccessRate(workflowID string) (*models.SuccessRateAggregationResponse, error) {
+	d.logger.V(1).Info("DBAdapter.AggregateSuccessRate called",
+		"workflow_id", workflowID,
 	)
 
-	// REFACTOR: Real PostgreSQL aggregation query with CASE statements
+	// Real PostgreSQL aggregation query with CASE statements
 	// ✅ Behavior + Correctness: Returns exact counts from database
 	// Query by action_id (workflow_id) as per schema design
 	// ✅ Edge Case: COALESCE handles NULL from SUM() when no rows match
@@ -57,9 +57,8 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interfac
 
 	rows, err := d.db.Query(sqlQuery, workflowID)
 	if err != nil {
-		d.logger.Error("Failed to execute success rate aggregation",
-			zap.Error(err),
-			zap.String("workflow_id", workflowID),
+		d.logger.Error(err, "Failed to execute success rate aggregation",
+			"workflow_id", workflowID,
 		)
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
@@ -68,12 +67,12 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interfac
 	// Parse aggregation results
 	if !rows.Next() {
 		// No rows found - return zero counts
-		return map[string]interface{}{
-			"workflow_id":   workflowID,
-			"total_count":   0,
-			"success_count": 0,
-			"failure_count": 0,
-			"success_rate":  0.0,
+		return &models.SuccessRateAggregationResponse{
+			WorkflowID:   workflowID,
+			TotalCount:   0,
+			SuccessCount: 0,
+			FailureCount: 0,
+			SuccessRate:  0.0,
 		}, nil
 	}
 
@@ -81,37 +80,36 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interfac
 	var successRate float64
 
 	if err := rows.Scan(&totalCount, &successCount, &failureCount, &successRate); err != nil {
-		d.logger.Error("Failed to scan aggregation results",
-			zap.Error(err),
-			zap.String("workflow_id", workflowID),
+		d.logger.Error(err, "Failed to scan aggregation results",
+			"workflow_id", workflowID,
 		)
 		return nil, fmt.Errorf("result scan error: %w", err)
 	}
 
 	d.logger.Info("Success rate aggregation completed",
-		zap.String("workflow_id", workflowID),
-		zap.Int("total_count", totalCount),
-		zap.Int("success_count", successCount),
-		zap.Float64("success_rate", successRate),
+		"workflow_id", workflowID,
+		"total_count", totalCount,
+		"success_count", successCount,
+		"success_rate", successRate,
 	)
 
-	// ✅ CORRECTNESS: Return exact database counts
-	return map[string]interface{}{
-		"workflow_id":   workflowID,
-		"total_count":   totalCount,
-		"success_count": successCount,
-		"failure_count": failureCount,
-		"success_rate":  successRate,
+	// ✅ CORRECTNESS: Return exact database counts with type safety
+	return &models.SuccessRateAggregationResponse{
+		WorkflowID:   workflowID,
+		TotalCount:   totalCount,
+		SuccessCount: successCount,
+		FailureCount: failureCount,
+		SuccessRate:  successRate,
 	}, nil
 }
 
 // AggregateByNamespace groups incidents by namespace
 // BR-STORAGE-032: Namespace grouping aggregation
-// TDD REFACTOR Phase: Real PostgreSQL GROUP BY with ordering
-func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
-	d.logger.Debug("DBAdapter.AggregateByNamespace called")
+// V1.0: Refactored to use structured types (eliminates map[string]interface{})
+func (d *DBAdapter) AggregateByNamespace() (*models.NamespaceAggregationResponse, error) {
+	d.logger.V(1).Info("DBAdapter.AggregateByNamespace called")
 
-	// REFACTOR: Real PostgreSQL GROUP BY query with descending order
+	// Real PostgreSQL GROUP BY query with descending order
 	// ✅ Behavior + Correctness: Returns exact counts per namespace
 	// Note: resource_action_traces uses cluster_name column (schema compatibility)
 	// Filter out empty/null namespaces for cleaner aggregation results
@@ -127,24 +125,20 @@ func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
 
 	rows, err := d.db.Query(sqlQuery)
 	if err != nil {
-		d.logger.Error("Failed to execute namespace aggregation",
-			zap.Error(err),
-		)
+		d.logger.Error(err, "Failed to execute namespace aggregation")
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	// Parse aggregation results
-	aggregations := []map[string]interface{}{}
+	aggregations := []models.NamespaceAggregationItem{}
 
 	for rows.Next() {
 		var namespace sql.NullString
 		var count int
 
 		if err := rows.Scan(&namespace, &count); err != nil {
-			d.logger.Error("Failed to scan namespace aggregation row",
-				zap.Error(err),
-			)
+			d.logger.Error(err, "Failed to scan namespace aggregation row")
 			return nil, fmt.Errorf("result scan error: %w", err)
 		}
 
@@ -154,29 +148,29 @@ func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
 			namespaceValue = namespace.String
 		}
 
-		aggregations = append(aggregations, map[string]interface{}{
-			"namespace": namespaceValue,
-			"count":     count,
+		aggregations = append(aggregations, models.NamespaceAggregationItem{
+			Namespace: namespaceValue,
+			Count:     count,
 		})
 	}
 
 	d.logger.Info("Namespace aggregation completed",
-		zap.Int("namespace_count", len(aggregations)),
+		"namespace_count", len(aggregations),
 	)
 
-	// ✅ CORRECTNESS: Return exact database GROUP BY results
-	return map[string]interface{}{
-		"aggregations": aggregations,
+	// ✅ CORRECTNESS: Return exact database GROUP BY results with type safety
+	return &models.NamespaceAggregationResponse{
+		Aggregations: aggregations,
 	}, nil
 }
 
 // AggregateBySeverity groups incidents by severity
 // BR-STORAGE-033: Severity distribution aggregation
-// TDD REFACTOR Phase: Real PostgreSQL GROUP BY with custom severity ordering
-func (d *DBAdapter) AggregateBySeverity() (map[string]interface{}, error) {
-	d.logger.Debug("DBAdapter.AggregateBySeverity called")
+// V1.0: Refactored to use structured types (eliminates map[string]interface{})
+func (d *DBAdapter) AggregateBySeverity() (*models.SeverityAggregationResponse, error) {
+	d.logger.V(1).Info("DBAdapter.AggregateBySeverity called")
 
-	// REFACTOR: Real PostgreSQL GROUP BY with CASE-based severity ordering
+	// Real PostgreSQL GROUP BY with CASE-based severity ordering
 	// ✅ Behavior + Correctness: Returns exact counts per severity level
 	// Filter out empty/null severities for cleaner aggregation results
 	sqlQuery := `
@@ -198,49 +192,45 @@ func (d *DBAdapter) AggregateBySeverity() (map[string]interface{}, error) {
 
 	rows, err := d.db.Query(sqlQuery)
 	if err != nil {
-		d.logger.Error("Failed to execute severity aggregation",
-			zap.Error(err),
-		)
+		d.logger.Error(err, "Failed to execute severity aggregation")
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	// Parse aggregation results
-	aggregations := []map[string]interface{}{}
+	aggregations := []models.SeverityAggregationItem{}
 
 	for rows.Next() {
 		var severity string
 		var count int
 
 		if err := rows.Scan(&severity, &count); err != nil {
-			d.logger.Error("Failed to scan severity aggregation row",
-				zap.Error(err),
-			)
+			d.logger.Error(err, "Failed to scan severity aggregation row")
 			return nil, fmt.Errorf("result scan error: %w", err)
 		}
 
-		aggregations = append(aggregations, map[string]interface{}{
-			"severity": severity,
-			"count":    count,
+		aggregations = append(aggregations, models.SeverityAggregationItem{
+			Severity: severity,
+			Count:    count,
 		})
 	}
 
 	d.logger.Info("Severity aggregation completed",
-		zap.Int("severity_levels", len(aggregations)),
+		"severity_levels", len(aggregations),
 	)
 
-	// ✅ CORRECTNESS: Return exact database GROUP BY results
-	return map[string]interface{}{
-		"aggregations": aggregations,
+	// ✅ CORRECTNESS: Return exact database GROUP BY results with type safety
+	return &models.SeverityAggregationResponse{
+		Aggregations: aggregations,
 	}, nil
 }
 
 // AggregateIncidentTrend returns incident counts over time
 // BR-STORAGE-034: Incident trend aggregation
-// TDD REFACTOR Phase: Real PostgreSQL time-series aggregation with interval filtering
-func (d *DBAdapter) AggregateIncidentTrend(period string) (map[string]interface{}, error) {
-	d.logger.Debug("DBAdapter.AggregateIncidentTrend called",
-		zap.String("period", period),
+// V1.0: Refactored to use structured types (eliminates map[string]interface{})
+func (d *DBAdapter) AggregateIncidentTrend(period string) (*models.TrendAggregationResponse, error) {
+	d.logger.V(1).Info("DBAdapter.AggregateIncidentTrend called",
+		"period", period,
 	)
 
 	// Convert period to PostgreSQL interval
@@ -256,7 +246,7 @@ func (d *DBAdapter) AggregateIncidentTrend(period string) (map[string]interface{
 		intervalStr = "7 days" // Fallback to 7 days
 	}
 
-	// REFACTOR: Real PostgreSQL time-series aggregation
+	// Real PostgreSQL time-series aggregation
 	// ✅ Behavior + Correctness: Returns exact daily counts within time period
 	sqlQuery := `
 		SELECT
@@ -270,42 +260,39 @@ func (d *DBAdapter) AggregateIncidentTrend(period string) (map[string]interface{
 
 	rows, err := d.db.Query(sqlQuery)
 	if err != nil {
-		d.logger.Error("Failed to execute incident trend aggregation",
-			zap.Error(err),
-			zap.String("period", period),
+		d.logger.Error(err, "Failed to execute incident trend aggregation",
+			"period", period,
 		)
 		return nil, fmt.Errorf("database aggregation error: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	// Parse aggregation results
-	dataPoints := []map[string]interface{}{}
+	dataPoints := []models.TrendDataPoint{}
 
 	for rows.Next() {
 		var date time.Time
 		var count int
 
 		if err := rows.Scan(&date, &count); err != nil {
-			d.logger.Error("Failed to scan trend aggregation row",
-				zap.Error(err),
-			)
+			d.logger.Error(err, "Failed to scan trend aggregation row")
 			return nil, fmt.Errorf("result scan error: %w", err)
 		}
 
-		dataPoints = append(dataPoints, map[string]interface{}{
-			"date":  date.Format("2006-01-02"), // ISO 8601 date format
-			"count": count,
+		dataPoints = append(dataPoints, models.TrendDataPoint{
+			Date:  date.Format("2006-01-02"), // ISO 8601 date format
+			Count: count,
 		})
 	}
 
 	d.logger.Info("Incident trend aggregation completed",
-		zap.String("period", period),
-		zap.Int("data_points", len(dataPoints)),
+		"period", period,
+		"data_points", len(dataPoints),
 	)
 
-	// ✅ CORRECTNESS: Return exact database time-series aggregation
-	return map[string]interface{}{
-		"period":      period,
-		"data_points": dataPoints,
+	// ✅ CORRECTNESS: Return exact database time-series aggregation with type safety
+	return &models.TrendAggregationResponse{
+		Period:     period,
+		DataPoints: dataPoints,
 	}, nil
 }

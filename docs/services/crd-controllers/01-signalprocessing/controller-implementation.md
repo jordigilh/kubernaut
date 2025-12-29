@@ -1,10 +1,21 @@
 ## Controller Implementation
 
-**Location**: `internal/controller/alertprocessing_controller.go`
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added OwnerChain, DetectedLabels, CustomLabels per DD-WORKFLOW-001 v1.8 | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
+> | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, RBAC updated | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
+> | v1.1 | 2025-11-27 | Rename: RemediationProcessing* → SignalProcessing* | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.1 | 2025-11-27 | Context API deprecated: Recovery context from spec.failureData | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
+> | v1.1 | 2025-11-27 | Categorization phase added | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+> | v1.1 | 2025-11-27 | Data access via Data Storage Service REST API | [ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md) |
+> | v1.0 | 2025-01-15 | Initial controller implementation | - |
+
+**Location**: `internal/controller/signalprocessing/signalprocessing_controller.go`
 
 ### Controller Configuration
 
-**Critical Patterns from [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)**:
+**Critical Patterns from [KUBERNAUT_CRD_ARCHITECTURE.md](../../../architecture/KUBERNAUT_CRD_ARCHITECTURE.md)**:
 1. **Owner References**: SignalProcessing CRD owned by RemediationRequest for cascade deletion
 2. **Finalizers**: Cleanup coordination before deletion
 3. **Watch Optimization**: Status updates trigger RemediationRequest reconciliation
@@ -30,143 +41,162 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
     "sigs.k8s.io/controller-runtime/pkg/log"
 
-    remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1"
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
-    aianalysisv1 "github.com/jordigilh/kubernaut/api/ai/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
 )
 
 const (
     // Finalizer for cleanup coordination
-    alertProcessingFinalizer = "signalprocessing.kubernaut.io/finalizer"
+    signalProcessingFinalizer = "signalprocessing.kubernaut.io/finalizer"
 
     // Timeout configuration
     defaultPhaseTimeout = 5 * time.Minute  // Max time per phase
 )
 
-// RemediationProcessingReconciler reconciles an RemediationProcessing object
-type RemediationProcessingReconciler struct {
+// SignalProcessingReconciler reconciles a SignalProcessing object
+// Renamed from RemediationProcessingReconciler per DD-SIGNAL-PROCESSING-001
+// Updated per DD-WORKFLOW-001 v1.8: Added label detection and owner chain
+type SignalProcessingReconciler struct {
     client.Client
-    Scheme          *runtime.Scheme
-    Recorder        record.EventRecorder     // Event emission for visibility
-    ContextService  ContextService           // Stateless HTTP call to Context Service
-    ContextAPIClient ContextAPIClient        // NEW: Context API client for recovery context (Alternative 2)
-    Classifier      *EnvironmentClassifier   // In-process classification
+    Scheme             *runtime.Scheme
+    Recorder           record.EventRecorder         // Event emission for visibility
+    EnrichmentService  EnrichmentService            // Stateless HTTP call for K8s context enrichment
+    Classifier         *EnvironmentClassifier       // In-process classification
+    Categorizer        *PriorityCategorizer         // Priority assignment (DD-CATEGORIZATION-001)
+    DataStorageClient  DataStorageClient            // Audit trail via REST API (ADR-032)
+    LabelDetector      *LabelDetector               // NEW: Auto-detect cluster characteristics (V1.0)
+    RegoEngine         *RegoEngine                  // NEW: Rego policy evaluation for CustomLabels (V1.0)
 }
 
-// ContextAPIClient interface for querying Context API recovery context
-// See: docs/services/stateless/context-api/api-specification.md
-// See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Alternative 2)
-type ContextAPIClient interface {
-    GetRemediationContext(ctx context.Context, remediationRequestID string) (*ContextAPIResponse, error)
+// EnrichmentService interface for Kubernetes context enrichment
+type EnrichmentService interface {
+    GetContext(ctx context.Context, signal kubernautv1alpha1.Signal) (*kubernautv1alpha1.EnrichmentResults, error)
 }
 
-// ContextAPIResponse from Context API recovery endpoint
-type ContextAPIResponse struct {
-    RemediationRequestID string                `json:"remediationRequestId"`
-    CurrentAttempt       int                   `json:"currentAttempt"`
-    ContextQuality       string                `json:"contextQuality"`
-    PreviousFailures     []PreviousFailureData `json:"previousFailures"`
-    RelatedAlerts        []RelatedAlertData    `json:"relatedAlerts"`
-    HistoricalPatterns   []HistoricalPatternData `json:"historicalPatterns"`
-    SuccessfulStrategies []SuccessfulStrategyData `json:"successfulStrategies"`
+// ========================================
+// LABEL DETECTION INTERFACES (DD-WORKFLOW-001 v1.8)
+// ========================================
+
+// LabelDetector auto-detects cluster characteristics (V1.0)
+// Detects: GitOps, PDB, HPA, StatefulSet, Helm, NetworkPolicy, PSS, ServiceMesh
+type LabelDetector interface {
+    DetectLabels(ctx context.Context, k8sCtx *kubernautv1alpha1.KubernetesContext) *kubernautv1alpha1.DetectedLabels
 }
 
-// Context API data structures (mirrors API response)
-type PreviousFailureData struct {
-    WorkflowRef      string            `json:"workflowRef"`
-    AttemptNumber    int               `json:"attemptNumber"`
-    FailedStep       int               `json:"failedStep"`
-    Action           string            `json:"action"`
-    ErrorType        string            `json:"errorType"`
-    FailureReason    string            `json:"failureReason"`
-    Duration         string            `json:"duration"`
-    Timestamp        string            `json:"timestamp"`
-    ClusterState     map[string]string `json:"clusterState"`
-    ResourceSnapshot map[string]string `json:"resourceSnapshot"`
+// RegoEngine evaluates customer Rego policies for CustomLabels (V1.0)
+// Policy source: ConfigMap `signal-processing-policies` in `kubernaut-system`
+// Security: Wrapped with security policy that strips 5 mandatory labels
+type RegoEngine interface {
+    EvaluatePolicy(ctx context.Context, input *RegoInput) (map[string][]string, error)
 }
 
-type RelatedAlertData struct {
-    AlertFingerprint string  `json:"alertFingerprint"`
-    AlertName        string  `json:"alertName"`
-    Correlation      float64 `json:"correlation"`
-    Timestamp        string  `json:"timestamp"`
+// RegoInput contains all data available to customer Rego policies
+// See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
+type RegoInput struct {
+    Namespace         NamespaceContext           `json:"namespace"`
+    Pod               PodContext                 `json:"pod,omitempty"`
+    Deployment        DeploymentContext          `json:"deployment,omitempty"`
+    Node              NodeContext                `json:"node,omitempty"`
+    Signal            SignalContext              `json:"signal"`
+    SignalLabels      map[string]string          `json:"signal_labels,omitempty"`      // From RemediationRequest
+    SignalAnnotations map[string]string          `json:"signal_annotations,omitempty"` // From RemediationRequest
+    DetectedLabels    map[string]interface{}     `json:"detected_labels,omitempty"`    // Boolean fields only when true
 }
 
-type HistoricalPatternData struct {
-    Pattern             string  `json:"pattern"`
-    Occurrences         int     `json:"occurrences"`
-    SuccessRate         float64 `json:"successRate"`
-    AverageRecoveryTime string  `json:"averageRecoveryTime"`
+// OwnerChainEntry represents a single entry in K8s ownership chain
+// Used by HolmesGPT-API for DetectedLabels validation
+// See: DD-WORKFLOW-001 v1.8
+type OwnerChainEntry struct {
+    Namespace string `json:"namespace,omitempty"` // Empty for cluster-scoped (e.g., Node)
+    Kind      string `json:"kind"`                // ReplicaSet, Deployment, StatefulSet, DaemonSet
+    Name      string `json:"name"`
 }
 
-type SuccessfulStrategyData struct {
-    Strategy     string  `json:"strategy"`
-    Description  string  `json:"description"`
-    SuccessCount int     `json:"successCount"`
-    LastUsed     string  `json:"lastUsed"`
-    Confidence   float64 `json:"confidence"`
+// DataStorageClient interface for audit trail persistence
+// See: ADR-032 - Data Access Layer Isolation
+type DataStorageClient interface {
+    CreateAuditRecord(ctx context.Context, audit *SignalProcessingAudit) error
 }
+
+// SignalProcessingAudit for audit trail persistence
+type SignalProcessingAudit struct {
+    SignalFingerprint    string                                       `json:"signalFingerprint"`
+    ProcessingStartTime  time.Time                                    `json:"processingStartTime"`
+    ProcessingEndTime    time.Time                                    `json:"processingEndTime"`
+    EnrichmentResult     *signalprocessingv1.EnrichmentResults        `json:"enrichmentResult"`
+    ClassificationResult *signalprocessingv1.EnvironmentClassification `json:"classificationResult"`
+    Categorization       *signalprocessingv1.Categorization           `json:"categorization"`
+    DegradedMode         bool                                         `json:"degradedMode"`
+    IsRecoveryAttempt    bool                                         `json:"isRecoveryAttempt"`
+}
+
+// ========================================
+// ARCHITECTURAL NOTE: Context API DEPRECATED
+// ========================================
+//
+// Per DD-CONTEXT-006, Signal Processing NO LONGER queries Context API for recovery context.
+// Recovery context is now embedded by Remediation Orchestrator in spec.failureData.
+//
+// See: docs/architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md
+// See: docs/architecture/decisions/DD-001-recovery-context-enrichment.md (updated)
 
 // ========================================
 // ARCHITECTURAL NOTE: Remediation Orchestrator Pattern
 // ========================================
 //
-// This controller (RemediationProcessing) updates ONLY its own status.
+// This controller (SignalProcessing) updates ONLY its own status.
 // The RemediationRequest Controller (Remediation Orchestrator) watches this CRD and aggregates status.
 //
 // DO NOT update RemediationRequest.status from this controller.
 // The watch-based coordination pattern handles all status aggregation automatically.
 //
 // See: docs/services/crd-controllers/05-remediationorchestrator/overview.md
-// See: docs/services/crd-controllers/CENTRAL_CONTROLLER_VIOLATION_ANALYSIS.md
 
-//+kubebuilder:rbac:groups=kubernaut.io,resources=alertprocessings,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=kubernaut.io,resources=alertprocessings/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=kubernaut.io,resources=alertprocessings/finalizers,verbs=update
-//+kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses,verbs=create
-//+kubebuilder:rbac:groups=kubernaut.io,resources=alertremediations,verbs=get;list;watch
+//+kubebuilder:rbac:groups=kubernaut.io,resources=signalprocessings,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubernaut.io,resources=signalprocessings/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=kubernaut.io,resources=signalprocessings/finalizers,verbs=update
+//+kubebuilder:rbac:groups=kubernaut.io,resources=remediationrequests,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
-func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     log := log.FromContext(ctx)
 
     // Fetch SignalProcessing CRD
-    var alertProcessing processingv1.RemediationProcessing
-    if err := r.Get(ctx, req.NamespacedName, &alertProcessing); err != nil {
+    var signalProcessing signalprocessingv1.SignalProcessing
+    if err := r.Get(ctx, req.NamespacedName, &signalProcessing); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
     // Handle deletion with finalizer
-    if !alertProcessing.DeletionTimestamp.IsZero() {
-        return r.reconcileDelete(ctx, &alertProcessing)
+    if !signalProcessing.DeletionTimestamp.IsZero() {
+        return r.reconcileDelete(ctx, &signalProcessing)
     }
 
     // Add finalizer if not present
-    if !controllerutil.ContainsFinalizer(&alertProcessing, alertProcessingFinalizer) {
-        controllerutil.AddFinalizer(&alertProcessing, alertProcessingFinalizer)
-        if err := r.Update(ctx, &alertProcessing); err != nil {
+    if !controllerutil.ContainsFinalizer(&signalProcessing, signalProcessingFinalizer) {
+        controllerutil.AddFinalizer(&signalProcessing, signalProcessingFinalizer)
+        if err := r.Update(ctx, &signalProcessing); err != nil {
             return ctrl.Result{}, err
         }
     }
 
     // Set owner reference to RemediationRequest (for cascade deletion)
-    if err := r.ensureOwnerReference(ctx, &alertProcessing); err != nil {
+    if err := r.ensureOwnerReference(ctx, &signalProcessing); err != nil {
         log.Error(err, "Failed to set owner reference")
-        r.Recorder.Event(&alertProcessing, "Warning", "OwnerReferenceFailed",
+        r.Recorder.Event(&signalProcessing, "Warning", "OwnerReferenceFailed",
             fmt.Sprintf("Failed to set owner reference: %v", err))
         return ctrl.Result{RequeueAfter: time.Second * 30}, err
     }
 
     // Check for phase timeout (5 minutes per phase default)
-    if r.isPhaseTimedOut(&alertProcessing) {
-        return r.handlePhaseTimeout(ctx, &alertProcessing)
+    if r.isPhaseTimedOut(&signalProcessing) {
+        return r.handlePhaseTimeout(ctx, &signalProcessing)
     }
 
     // Initialize phase if empty
-    if alertProcessing.Status.Phase == "" {
-        alertProcessing.Status.Phase = "enriching"
-        alertProcessing.Status.PhaseStartTime = &metav1.Time{Time: time.Now()}
-        if err := r.Status().Update(ctx, &alertProcessing); err != nil {
+    if signalProcessing.Status.Phase == "" {
+        signalProcessing.Status.Phase = "enriching"
+        signalProcessing.Status.PhaseStartTime = &metav1.Time{Time: time.Now()}
+        if err := r.Status().Update(ctx, &signalProcessing); err != nil {
             return ctrl.Result{}, err
         }
     }
@@ -175,20 +205,20 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
     var result ctrl.Result
     var err error
 
-    switch alertProcessing.Status.Phase {
+    switch signalProcessing.Status.Phase {
     case "enriching":
-        result, err = r.reconcileEnriching(ctx, &alertProcessing)
+        result, err = r.reconcileEnriching(ctx, &signalProcessing)
     case "classifying":
-        result, err = r.reconcileClassifying(ctx, &alertProcessing)
-    case "routing":
-        result, err = r.reconcileRouting(ctx, &alertProcessing)
+        result, err = r.reconcileClassifying(ctx, &signalProcessing)
+    case "categorizing":
+        result, err = r.reconcileCategorizing(ctx, &signalProcessing)
     case "completed":
         // Terminal state - use optimized requeue strategy
-        return r.determineRequeueStrategy(&alertProcessing), nil
+        return r.determineRequeueStrategy(&signalProcessing), nil
     default:
-        log.Error(nil, "Unknown phase", "phase", alertProcessing.Status.Phase)
-        r.Recorder.Event(&alertProcessing, "Warning", "UnknownPhase",
-            fmt.Sprintf("Unknown phase: %s", alertProcessing.Status.Phase))
+        log.Error(nil, "Unknown phase", "phase", signalProcessing.Status.Phase)
+        r.Recorder.Event(&signalProcessing, "Warning", "UnknownPhase",
+            fmt.Sprintf("Unknown phase: %s", signalProcessing.Status.Phase))
         return ctrl.Result{RequeueAfter: time.Second * 30}, nil
     }
 
@@ -199,28 +229,28 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
 }
 
 // ensureOwnerReference sets RemediationRequest as owner for cascade deletion
-func (r *RemediationProcessingReconciler) ensureOwnerReference(ctx context.Context, ap *processingv1.RemediationProcessing) error {
+func (r *SignalProcessingReconciler) ensureOwnerReference(ctx context.Context, sp *signalprocessingv1.SignalProcessing) error {
     // Skip if owner reference already set
-    if len(ap.OwnerReferences) > 0 {
+    if len(sp.OwnerReferences) > 0 {
         return nil
     }
 
     // Fetch RemediationRequest to set as owner
-    var alertRemediation remediationv1.RemediationRequest
+    var remediationRequest remediationv1.RemediationRequest
     if err := r.Get(ctx, client.ObjectKey{
-        Name:      ap.Spec.RemediationRequestRef.Name,
-        Namespace: ap.Spec.RemediationRequestRef.Namespace,
-    }, &alertRemediation); err != nil {
+        Name:      sp.Spec.RemediationRequestRef.Name,
+        Namespace: sp.Spec.RemediationRequestRef.Namespace,
+    }, &remediationRequest); err != nil {
         return fmt.Errorf("failed to get RemediationRequest for owner reference: %w", err)
     }
 
     // Set owner reference
-    if err := controllerutil.SetControllerReference(&alertRemediation, ap, r.Scheme); err != nil {
+    if err := controllerutil.SetControllerReference(&remediationRequest, sp, r.Scheme); err != nil {
         return fmt.Errorf("failed to set controller reference: %w", err)
     }
 
     // Update with owner reference
-    if err := r.Update(ctx, ap); err != nil {
+    if err := r.Update(ctx, sp); err != nil {
         return fmt.Errorf("failed to update with owner reference: %w", err)
     }
 
@@ -228,85 +258,86 @@ func (r *RemediationProcessingReconciler) ensureOwnerReference(ctx context.Conte
 }
 
 // isPhaseTimedOut checks if current phase has exceeded timeout
-func (r *RemediationProcessingReconciler) isPhaseTimedOut(ap *processingv1.RemediationProcessing) bool {
-    if ap.Status.PhaseStartTime == nil {
+func (r *SignalProcessingReconciler) isPhaseTimedOut(sp *signalprocessingv1.SignalProcessing) bool {
+    if sp.Status.PhaseStartTime == nil {
         return false
     }
 
     // Don't timeout completed phase
-    if ap.Status.Phase == "completed" {
+    if sp.Status.Phase == "completed" {
         return false
     }
 
-    elapsed := time.Since(ap.Status.PhaseStartTime.Time)
+    elapsed := time.Since(sp.Status.PhaseStartTime.Time)
     return elapsed > defaultPhaseTimeout
 }
 
 // handlePhaseTimeout handles phase timeout escalation
-func (r *RemediationProcessingReconciler) handlePhaseTimeout(ctx context.Context, ap *processingv1.RemediationProcessing) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) handlePhaseTimeout(ctx context.Context, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {
     log := log.FromContext(ctx)
 
-    elapsed := time.Since(ap.Status.PhaseStartTime.Time)
+    elapsed := time.Since(sp.Status.PhaseStartTime.Time)
     log.Error(nil, "Phase timeout exceeded",
-        "phase", ap.Status.Phase,
+        "phase", sp.Status.Phase,
         "elapsed", elapsed,
         "timeout", defaultPhaseTimeout)
 
     // Emit timeout event
-    r.Recorder.Event(ap, "Warning", "PhaseTimeout",
+    r.Recorder.Event(sp, "Warning", "PhaseTimeout",
         fmt.Sprintf("Phase %s exceeded timeout of %s (elapsed: %s)",
-            ap.Status.Phase, defaultPhaseTimeout, elapsed))
+            sp.Status.Phase, defaultPhaseTimeout, elapsed))
 
     // Add timeout condition
     timeoutCondition := metav1.Condition{
         Type:    "PhaseTimeout",
         Status:  metav1.ConditionTrue,
         Reason:  "TimeoutExceeded",
-        Message: fmt.Sprintf("Phase %s exceeded %s timeout", ap.Status.Phase, defaultPhaseTimeout),
+        Message: fmt.Sprintf("Phase %s exceeded %s timeout", sp.Status.Phase, defaultPhaseTimeout),
         LastTransitionTime: metav1.Now(),
     }
-    apimeta.SetStatusCondition(&ap.Status.Conditions, timeoutCondition)
+    apimeta.SetStatusCondition(&sp.Status.Conditions, timeoutCondition)
 
     // Record timeout metric
-    ErrorsTotal.WithLabelValues("phase_timeout", ap.Status.Phase).Inc()
+    ErrorsTotal.WithLabelValues("phase_timeout", sp.Status.Phase).Inc()
 
     // Update status
-    if err := r.Status().Update(ctx, ap); err != nil {
+    if err := r.Status().Update(ctx, sp); err != nil {
         return ctrl.Result{}, err
     }
 
     // Move to next phase or fail based on phase
-    switch ap.Status.Phase {
+    switch sp.Status.Phase {
     case "enriching":
         // Use degraded mode - continue with basic context
-        ap.Status.Phase = "classifying"
-        ap.Status.PhaseStartTime = &metav1.Time{Time: time.Now()}
-        r.Recorder.Event(ap, "Normal", "DegradedMode",
+        sp.Status.Phase = "classifying"
+        sp.Status.PhaseStartTime = &metav1.Time{Time: time.Now()}
+        r.Recorder.Event(sp, "Normal", "DegradedMode",
             "Enrichment timeout - continuing with basic context")
     case "classifying":
         // Use default environment classification
-        ap.Status.EnvironmentClassification = r.getDefaultClassification(ap)
-        ap.Status.Phase = "routing"
-        ap.Status.PhaseStartTime = &metav1.Time{Time: time.Now()}
-        r.Recorder.Event(ap, "Normal", "DefaultClassification",
+        sp.Status.EnvironmentClassification = r.getDefaultClassification(sp)
+        sp.Status.Phase = "categorizing"
+        sp.Status.PhaseStartTime = &metav1.Time{Time: time.Now()}
+        r.Recorder.Event(sp, "Normal", "DefaultClassification",
             "Classification timeout - using default environment")
-    case "routing":
-        // Routing timeout is critical - emit error event
-        r.Recorder.Event(ap, "Warning", "RoutingFailed",
-            "Routing phase timeout - manual intervention required")
-        return ctrl.Result{RequeueAfter: time.Minute * 2}, fmt.Errorf("routing timeout")
+    case "categorizing":
+        // Use default priority
+        sp.Status.Categorization = r.getDefaultCategorization(sp)
+        sp.Status.Phase = "completed"
+        r.Recorder.Event(sp, "Normal", "DefaultPriority",
+            "Categorization timeout - using default priority")
     }
 
-    return ctrl.Result{Requeue: true}, r.Status().Update(ctx, ap)
+    return ctrl.Result{Requeue: true}, r.Status().Update(ctx, sp)
 }
 
 // determineRequeueStrategy provides optimized requeue based on phase
-func (r *RemediationProcessingReconciler) determineRequeueStrategy(ap *processingv1.RemediationProcessing) ctrl.Result {
-    switch ap.Status.Phase {
+func (r *SignalProcessingReconciler) determineRequeueStrategy(sp *signalprocessingv1.SignalProcessing) ctrl.Result {
+    switch sp.Status.Phase {
     case "completed":
         // Terminal state - no requeue needed (watch handles updates)
         return ctrl.Result{}
-    case "enriching", "classifying", "routing":
+    case "enriching", "classifying", "categorizing":
         // Active phases - short requeue for progress
         return ctrl.Result{RequeueAfter: time.Second * 10}
     default:
@@ -316,26 +347,26 @@ func (r *RemediationProcessingReconciler) determineRequeueStrategy(ap *processin
 }
 
 // reconcileDelete handles cleanup before deletion
-func (r *RemediationProcessingReconciler) reconcileDelete(ctx context.Context, ap *processingv1.RemediationProcessing) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) reconcileDelete(ctx context.Context, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {
     log := log.FromContext(ctx)
 
-    if !controllerutil.ContainsFinalizer(ap, alertProcessingFinalizer) {
+    if !controllerutil.ContainsFinalizer(sp, signalProcessingFinalizer) {
         return ctrl.Result{}, nil
     }
 
-    log.Info("Cleaning up RemediationProcessing resources", "name", ap.Name)
+    log.Info("Cleaning up SignalProcessing resources", "name", sp.Name)
 
     // Perform cleanup tasks
-    // - Audit data should already be persisted
-    // - No additional cleanup needed (AIAnalysis CRD creation is idempotent)
+    // - Audit data should already be persisted via Data Storage Service
+    // - No additional cleanup needed
 
     // Emit deletion event
-    r.Recorder.Event(ap, "Normal", "Cleanup",
-        "RemediationProcessing cleanup completed before deletion")
+    r.Recorder.Event(sp, "Normal", "Cleanup",
+        "SignalProcessing cleanup completed before deletion")
 
     // Remove finalizer
-    controllerutil.RemoveFinalizer(ap, alertProcessingFinalizer)
-    if err := r.Update(ctx, ap); err != nil {
+    controllerutil.RemoveFinalizer(sp, signalProcessingFinalizer)
+    if err := r.Update(ctx, sp); err != nil {
         return ctrl.Result{}, err
     }
 
@@ -343,100 +374,143 @@ func (r *RemediationProcessingReconciler) reconcileDelete(ctx context.Context, a
 }
 
 // getDefaultClassification provides fallback classification on timeout
-func (r *RemediationProcessingReconciler) getDefaultClassification(ap *processingv1.RemediationProcessing) processingv1.EnvironmentClassification {
+func (r *SignalProcessingReconciler) getDefaultClassification(sp *signalprocessingv1.SignalProcessing) signalprocessingv1.EnvironmentClassification {
     // Use namespace prefix or labels as fallback
     environment := "unknown"
-    if strings.HasPrefix(ap.Spec.Alert.Namespace, "prod") {
+    if strings.HasPrefix(sp.Spec.Signal.Namespace, "prod") {
         environment = "production"
-    } else if strings.HasPrefix(ap.Spec.Alert.Namespace, "stag") {
+    } else if strings.HasPrefix(sp.Spec.Signal.Namespace, "stag") {
         environment = "staging"
-    } else if strings.HasPrefix(ap.Spec.Alert.Namespace, "dev") {
+    } else if strings.HasPrefix(sp.Spec.Signal.Namespace, "dev") {
         environment = "development"
     }
 
-    return processingv1.EnvironmentClassification{
-        Environment:      environment,
-        Confidence:       0.5, // Low confidence fallback
-        BusinessPriority: "P2",
-        SLARequirement:   "30m",
+    return signalprocessingv1.EnvironmentClassification{
+        Environment:         environment,
+        Confidence:          0.5, // Low confidence fallback
+        BusinessCriticality: "medium",
+        SLARequirement:      "30m",
     }
 }
 
-func (r *RemediationProcessingReconciler) reconcileEnriching(ctx context.Context, ap *processingv1.RemediationProcessing) (ctrl.Result, error) {
+// getDefaultCategorization provides fallback priority on timeout
+func (r *SignalProcessingReconciler) getDefaultCategorization(sp *signalprocessingv1.SignalProcessing) signalprocessingv1.Categorization {
+    return signalprocessingv1.Categorization{
+        Priority:             "P2",
+        PriorityScore:        50,
+        CategorizationSource: "default",
+        CategorizationTime:   metav1.Now(),
+    }
+}
+
+func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {
     log := log.FromContext(ctx)
 
-    isRecovery := ap.Spec.IsRecoveryAttempt
+    isRecovery := sp.Spec.IsRecoveryAttempt
     if isRecovery {
         log.Info("Enriching RECOVERY attempt with context",
-            "fingerprint", ap.Spec.Signal.Fingerprint,
-            "attemptNumber", ap.Spec.RecoveryAttemptNumber,
+            "fingerprint", sp.Spec.Signal.Fingerprint,
+            "attemptNumber", sp.Spec.RecoveryAttemptNumber,
             "failedWorkflow", func() string {
-                if ap.Spec.FailedWorkflowRef != nil {
-                    return ap.Spec.FailedWorkflowRef.Name
+                if sp.Spec.FailedWorkflowRef != nil {
+                    return sp.Spec.FailedWorkflowRef.Name
                 }
                 return "unknown"
             }())
     } else {
-        log.Info("Enriching alert with context", "fingerprint", ap.Spec.Signal.Fingerprint)
+        log.Info("Enriching signal with context", "fingerprint", sp.Spec.Signal.Fingerprint)
     }
 
-    // Call Context Service for monitoring/business enrichment (ALWAYS - gets FRESH data)
-    enrichmentResults, err := r.ContextService.GetContext(ctx, ap.Spec.Alert)
+    // Call enrichment service for K8s context (ALWAYS - gets FRESH data)
+    enrichmentResults, err := r.EnrichmentService.GetContext(ctx, sp.Spec.Signal)
     if err != nil {
         log.Error(err, "Failed to get context")
         return ctrl.Result{RequeueAfter: time.Second * 30}, err
     }
 
     // Update status with enrichment results
-    ap.Status.EnrichmentResults = enrichmentResults
+    sp.Status.EnrichmentResults = *enrichmentResults
 
     // ========================================
-    // RECOVERY CONTEXT ENRICHMENT (Alternative 2)
-    // 📋 Design Decision: DD-001 | ✅ Approved Design | Confidence: 95%
-    // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
-    // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Version 1.2)
-    // See: BR-WF-RECOVERY-011
-    //
-    // WHY Alternative 2?
-    // - ✅ Temporal consistency: All contexts (monitoring + business + recovery) at same timestamp
-    // - ✅ Fresh contexts: Recovery gets CURRENT cluster state, not stale from initial attempt
-    // - ✅ Immutable audit trail: Each SignalProcessing CRD is complete snapshot
-    // - ✅ Self-contained CRDs: AIAnalysis reads from spec only (no API calls)
+    // OWNER CHAIN (DD-WORKFLOW-001 v1.8)
+    // Traverse K8s ownerReferences for DetectedLabels validation
+    // HolmesGPT-API uses this to validate RCA resource relationship
     // ========================================
 
-    if isRecovery {
-        log.Info("Recovery attempt detected - querying Context API for historical context",
-            "attemptNumber", ap.Spec.RecoveryAttemptNumber,
-            "remediationRequestID", ap.Spec.RemediationRequestRef.Name)
-
-        // Query Context API for recovery context
-        recoveryCtx, err := r.enrichRecoveryContext(ctx, ap)
-        if err != nil {
-            // Graceful degradation: Use fallback context
-            log.Warn("Context API unavailable, using fallback recovery context",
-                "error", err,
-                "attemptNumber", ap.Spec.RecoveryAttemptNumber)
-
-            r.Recorder.Event(ap, "Warning", "ContextAPIUnavailable",
-                fmt.Sprintf("Context API query failed: %v. Using fallback context from workflow history.", err))
-
-            recoveryCtx = r.buildFallbackRecoveryContext(ap)
-        }
-
-        // Add recovery context to enrichment results
-        ap.Status.EnrichmentResults.RecoveryContext = recoveryCtx
-
-        log.Info("Recovery context enrichment completed",
-            "contextQuality", recoveryCtx.ContextQuality,
-            "previousFailuresCount", len(recoveryCtx.PreviousFailures),
-            "relatedAlertsCount", len(recoveryCtx.RelatedAlerts),
-            "historicalPatternsCount", len(recoveryCtx.HistoricalPatterns),
-            "successfulStrategiesCount", len(recoveryCtx.SuccessfulStrategies))
+    ownerChain, err := r.buildOwnerChain(ctx, sp.Status.EnrichmentResults.KubernetesContext)
+    if err != nil {
+        log.Error(err, "Failed to build owner chain (non-fatal)")
+        // Continue - owner chain is used for validation, not blocking
+    } else {
+        sp.Status.EnrichmentResults.OwnerChain = ownerChain
+        log.Info("Owner chain built",
+            "length", len(ownerChain),
+            "chain", formatOwnerChain(ownerChain))
     }
 
-    ap.Status.Phase = "classifying"
+    // ========================================
+    // LABEL DETECTION (DD-WORKFLOW-001 v1.8, HANDOFF v3.2)
+    // Step 1: DetectedLabels (auto-detection, no config needed)
+    // Step 2: CustomLabels (Rego policy evaluation)
+    // ========================================
 
-    if err := r.Status().Update(ctx, ap); err != nil {
+    // Step 1: Auto-detect cluster characteristics (V1.0)
+    detectedLabels := r.LabelDetector.DetectLabels(ctx, sp.Status.EnrichmentResults.KubernetesContext)
+    sp.Status.EnrichmentResults.DetectedLabels = detectedLabels
+    log.Info("DetectedLabels populated",
+        "gitOpsManaged", detectedLabels.GitOpsManaged,
+        "gitOpsTool", detectedLabels.GitOpsTool,
+        "pdbProtected", detectedLabels.PDBProtected)
+
+    // Step 2: Evaluate Rego policy for CustomLabels (V1.0)
+    // Requires ConfigMap `signal-processing-policies` in `kubernaut-system`
+    if r.RegoEngine != nil {
+        regoInput := r.buildRegoInput(ctx, sp, detectedLabels)
+        customLabels, err := r.RegoEngine.EvaluatePolicy(ctx, regoInput)
+        if err != nil {
+            log.Error(err, "Failed to evaluate Rego policy (non-fatal)")
+            // Continue - CustomLabels are optional, use empty map
+            customLabels = make(map[string][]string)
+        }
+        sp.Status.EnrichmentResults.CustomLabels = customLabels
+        log.Info("CustomLabels populated via Rego",
+            "labelCount", len(customLabels),
+            "subdomains", getSubdomains(customLabels))
+    }
+
+    // ========================================
+    // RECOVERY CONTEXT FROM EMBEDDED DATA
+    // 📋 Context API DEPRECATED per DD-CONTEXT-006
+    // Recovery context is now embedded by Remediation Orchestrator in spec.failureData
+    // See: docs/architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md
+    // ========================================
+
+    if isRecovery && sp.Spec.FailureData != nil {
+        log.Info("Recovery attempt detected - reading embedded failure data",
+            "attemptNumber", sp.Spec.RecoveryAttemptNumber,
+            "failedWorkflow", sp.Spec.FailureData.WorkflowRef)
+
+        // Build recovery context from embedded failure data
+        recoveryCtx := r.buildRecoveryContextFromFailureData(sp)
+        sp.Status.EnrichmentResults.RecoveryContext = recoveryCtx
+
+        log.Info("Recovery context built from embedded failure data",
+            "contextQuality", recoveryCtx.ContextQuality,
+            "failedStep", sp.Spec.FailureData.FailedStep,
+            "errorType", sp.Spec.FailureData.ErrorType)
+    } else if isRecovery {
+        // Recovery attempt but no failure data - use degraded context
+        log.Warn("Recovery attempt but no failureData embedded - using degraded context",
+            "attemptNumber", sp.Spec.RecoveryAttemptNumber)
+
+        recoveryCtx := r.buildDegradedRecoveryContext(sp)
+        sp.Status.EnrichmentResults.RecoveryContext = recoveryCtx
+    }
+
+    sp.Status.Phase = "classifying"
+    sp.Status.PhaseStartTime = &metav1.Time{Time: time.Now()}
+
+    if err := r.Status().Update(ctx, sp); err != nil {
         return ctrl.Result{RequeueAfter: time.Second * 15}, err
     }
 
@@ -444,22 +518,237 @@ func (r *RemediationProcessingReconciler) reconcileEnriching(ctx context.Context
     return ctrl.Result{Requeue: true}, nil
 }
 
-func (r *RemediationProcessingReconciler) reconcileClassifying(ctx context.Context, ap *processingv1.RemediationProcessing) (ctrl.Result, error) {
+// ========================================
+// OWNER CHAIN FUNCTIONS (DD-WORKFLOW-001 v1.8)
+// ========================================
+
+// buildOwnerChain traverses K8s ownerReferences to build the ownership chain
+// Algorithm: Follow first `controller: true` ownerReference at each level
+// Example: Pod → ReplicaSet → Deployment
+func (r *SignalProcessingReconciler) buildOwnerChain(
+    ctx context.Context,
+    k8sCtx *signalprocessingv1.KubernetesContext,
+) ([]OwnerChainEntry, error) {
+    if k8sCtx == nil || k8sCtx.PodDetails == nil {
+        return nil, nil
+    }
+
+    var chain []OwnerChainEntry
+    currentNamespace := k8sCtx.Namespace
+    currentKind := "Pod"
+    currentName := k8sCtx.PodDetails.Name
+
+    // Add the source resource as first entry
+    chain = append(chain, OwnerChainEntry{
+        Namespace: currentNamespace,
+        Kind:      currentKind,
+        Name:      currentName,
+    })
+
+    // Traverse ownerReferences (max 10 levels to prevent infinite loops)
+    for i := 0; i < 10; i++ {
+        ownerRef, err := r.getControllerOwner(ctx, currentNamespace, currentKind, currentName)
+        if err != nil || ownerRef == nil {
+            break // No more owners
+        }
+
+        // Determine namespace for owner
+        // Namespaced resources inherit namespace; cluster-scoped resources have empty namespace
+        ownerNamespace := currentNamespace
+        if isClusterScoped(ownerRef.Kind) {
+            ownerNamespace = ""
+        }
+
+        chain = append(chain, OwnerChainEntry{
+            Namespace: ownerNamespace,
+            Kind:      ownerRef.Kind,
+            Name:      ownerRef.Name,
+        })
+
+        // Move to next level
+        currentNamespace = ownerNamespace
+        currentKind = ownerRef.Kind
+        currentName = ownerRef.Name
+    }
+
+    return chain, nil
+}
+
+// getControllerOwner finds the first ownerReference with controller: true
+func (r *SignalProcessingReconciler) getControllerOwner(
+    ctx context.Context,
+    namespace, kind, name string,
+) (*metav1.OwnerReference, error) {
+    // Get the resource and extract its ownerReferences
+    // Implementation depends on resource kind
+    // Return the first ownerReference where controller == true
+    // ...
+    return nil, nil // Placeholder
+}
+
+// isClusterScoped returns true for cluster-scoped resource kinds
+func isClusterScoped(kind string) bool {
+    clusterScoped := map[string]bool{
+        "Node":                  true,
+        "PersistentVolume":      true,
+        "ClusterRole":           true,
+        "ClusterRoleBinding":    true,
+        "Namespace":             true,
+    }
+    return clusterScoped[kind]
+}
+
+// formatOwnerChain returns a human-readable chain representation
+func formatOwnerChain(chain []OwnerChainEntry) string {
+    if len(chain) == 0 {
+        return "(empty)"
+    }
+    parts := make([]string, len(chain))
+    for i, entry := range chain {
+        if entry.Namespace != "" {
+            parts[i] = fmt.Sprintf("%s/%s/%s", entry.Namespace, entry.Kind, entry.Name)
+        } else {
+            parts[i] = fmt.Sprintf("%s/%s", entry.Kind, entry.Name)
+        }
+    }
+    return strings.Join(parts, " → ")
+}
+
+// ========================================
+// REGO INPUT BUILDER (DD-WORKFLOW-001 v1.8)
+// ========================================
+
+// buildRegoInput constructs the input object for Rego policy evaluation
+// See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2 for input schema
+func (r *SignalProcessingReconciler) buildRegoInput(
+    ctx context.Context,
+    sp *signalprocessingv1.SignalProcessing,
+    detectedLabels *signalprocessingv1.DetectedLabels,
+) *RegoInput {
+    k8sCtx := sp.Status.EnrichmentResults.KubernetesContext
+
+    input := &RegoInput{
+        Signal: SignalContext{
+            Type:     sp.Spec.Signal.Type,
+            Severity: sp.Spec.Signal.Severity,
+            Source:   sp.Spec.Signal.Source,
+        },
+    }
+
+    // Namespace context
+    if k8sCtx != nil {
+        input.Namespace = NamespaceContext{
+            Name:        k8sCtx.Namespace,
+            Labels:      k8sCtx.NamespaceLabels,
+            Annotations: k8sCtx.NamespaceAnnotations,
+        }
+    }
+
+    // Pod context
+    if k8sCtx != nil && k8sCtx.PodDetails != nil {
+        input.Pod = PodContext{
+            Name:        k8sCtx.PodDetails.Name,
+            Labels:      k8sCtx.PodDetails.Labels,
+            Annotations: k8sCtx.PodDetails.Annotations,
+        }
+    }
+
+    // Deployment context
+    if k8sCtx != nil && k8sCtx.DeploymentDetails != nil {
+        input.Deployment = DeploymentContext{
+            Name:        k8sCtx.DeploymentDetails.Name,
+            Replicas:    k8sCtx.DeploymentDetails.Replicas,
+            Labels:      k8sCtx.DeploymentDetails.Labels,
+            Annotations: k8sCtx.DeploymentDetails.Annotations,
+        }
+    }
+
+    // Node context
+    if k8sCtx != nil && k8sCtx.NodeDetails != nil {
+        input.Node = NodeContext{
+            Name:   k8sCtx.NodeDetails.Name,
+            Labels: k8sCtx.NodeDetails.Labels,
+        }
+    }
+
+    // DetectedLabels - CONVENTION: Only include booleans when true
+    // See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
+    input.DetectedLabels = buildDetectedLabelsForRego(detectedLabels)
+
+    // Signal labels/annotations from RemediationRequest (via Gateway)
+    input.SignalLabels = sp.Spec.Signal.Labels
+    input.SignalAnnotations = sp.Spec.Signal.Annotations
+
+    return input
+}
+
+// buildDetectedLabelsForRego converts DetectedLabels to Rego input format
+// CONVENTION: Boolean fields only included when true, omit when false
+func buildDetectedLabelsForRego(dl *signalprocessingv1.DetectedLabels) map[string]interface{} {
+    if dl == nil {
+        return nil
+    }
+
+    result := make(map[string]interface{})
+
+    // Only include booleans when true
+    if dl.GitOpsManaged {
+        result["gitOpsManaged"] = true
+        result["gitOpsTool"] = dl.GitOpsTool
+    }
+    if dl.PDBProtected {
+        result["pdbProtected"] = true
+    }
+    if dl.HPAEnabled {
+        result["hpaEnabled"] = true
+    }
+    if dl.Stateful {
+        result["stateful"] = true
+    }
+    if dl.HelmManaged {
+        result["helmManaged"] = true
+    }
+    if dl.NetworkIsolated {
+        result["networkIsolated"] = true
+    }
+
+    // Always include non-empty strings
+    if dl.PodSecurityLevel != "" {
+        result["podSecurityLevel"] = dl.PodSecurityLevel
+    }
+    if dl.ServiceMesh != "" {
+        result["serviceMesh"] = dl.ServiceMesh
+    }
+
+    return result
+}
+
+// getSubdomains extracts subdomain keys from CustomLabels for logging
+func getSubdomains(customLabels map[string][]string) []string {
+    keys := make([]string, 0, len(customLabels))
+    for k := range customLabels {
+        keys = append(keys, k)
+    }
+    return keys
+}
+
+func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {
     log := log.FromContext(ctx)
-    log.Info("Classifying environment", "namespace", ap.Spec.Alert.Namespace)
+    log.Info("Classifying environment", "namespace", sp.Spec.Signal.Namespace)
 
     // Perform environment classification (in-process)
-    classification, err := r.Classifier.ClassifyEnvironment(ctx, ap.Spec.Alert, ap.Status.EnrichmentResults)
+    classification, err := r.Classifier.ClassifyEnvironment(ctx, sp.Spec.Signal, sp.Status.EnrichmentResults)
     if err != nil {
         log.Error(err, "Failed to classify environment")
         return ctrl.Result{RequeueAfter: time.Second * 30}, err
     }
 
     // Update status with classification
-    ap.Status.EnvironmentClassification = classification
-    ap.Status.Phase = "routing"
+    sp.Status.EnvironmentClassification = classification
+    sp.Status.Phase = "categorizing"
+    sp.Status.PhaseStartTime = &metav1.Time{Time: time.Now()}
 
-    if err := r.Status().Update(ctx, ap); err != nil {
+    if err := r.Status().Update(ctx, sp); err != nil {
         return ctrl.Result{RequeueAfter: time.Second * 15}, err
     }
 
@@ -467,182 +756,158 @@ func (r *RemediationProcessingReconciler) reconcileClassifying(ctx context.Conte
     return ctrl.Result{Requeue: true}, nil
 }
 
-func (r *RemediationProcessingReconciler) reconcileRouting(ctx context.Context, ap *processingv1.RemediationProcessing) (ctrl.Result, error) {
+// reconcileCategorizing assigns priority based on enriched K8s context
+// Added per DD-CATEGORIZATION-001: all categorization consolidated in Signal Processing
+func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, sp *signalprocessingv1.SignalProcessing) (ctrl.Result, error) {
     log := log.FromContext(ctx)
+    log.Info("Categorizing priority", "namespace", sp.Spec.Signal.Namespace)
 
-    // Create AIAnalysis CRD for next service
-    aiAnalysis := &aianalysisv1.AIAnalysis{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("ai-analysis-%s", ap.Spec.Signal.Fingerprint),
-            Namespace: ap.Namespace,
-        },
-        Spec: aianalysisv1.AIAnalysisSpec{
-            RemediationRequestRef: ap.Spec.RemediationRequestRef,
-            AnalysisRequest:     buildAnalysisRequest(ap.Status.EnrichmentResults, ap.Status.EnvironmentClassification),
-        },
+    // Perform priority categorization based on enriched context (DD-CATEGORIZATION-001)
+    categorization, err := r.Categorizer.AssignPriority(ctx, sp.Spec.Signal, sp.Status.EnrichmentResults, sp.Status.EnvironmentClassification)
+    if err != nil {
+        log.Error(err, "Failed to categorize priority")
+        return ctrl.Result{RequeueAfter: time.Second * 30}, err
     }
 
-    if err := r.Create(ctx, aiAnalysis); err != nil && !errors.IsAlreadyExists(err) {
-        log.Error(err, "Failed to create AIAnalysis CRD")
-        return ctrl.Result{RequeueAfter: time.Second * 15}, err
+    // Update status with categorization
+    sp.Status.Categorization = categorization
+
+    // Set routing decision
+    sp.Status.RoutingDecision = signalprocessingv1.RoutingDecision{
+        NextService: "ai-analysis",
+        RoutingKey:  sp.Spec.Signal.Fingerprint,
+        Priority:    categorization.PriorityScore / 10, // Convert to 0-10 scale
     }
 
     // Mark as completed
-    ap.Status.Phase = "completed"
-    ap.Status.ProcessingTime = time.Since(ap.CreationTimestamp.Time).String()
+    sp.Status.Phase = "completed"
+    sp.Status.ProcessingTime = time.Since(sp.CreationTimestamp.Time).String()
 
-    if err := r.Status().Update(ctx, ap); err != nil {
+    if err := r.Status().Update(ctx, sp); err != nil {
         return ctrl.Result{RequeueAfter: time.Second * 15}, err
     }
 
-    log.Info("Alert processing completed", "fingerprint", ap.Spec.Signal.Fingerprint, "duration", ap.Status.ProcessingTime)
+    // Persist audit trail via Data Storage Service (ADR-032)
+    if err := r.persistAuditTrail(ctx, sp); err != nil {
+        log.Error(err, "Failed to persist audit trail")
+        // Don't fail the reconciliation - audit is secondary
+        r.Recorder.Event(sp, "Warning", "AuditFailed",
+            fmt.Sprintf("Failed to persist audit trail: %v", err))
+    }
+
+    log.Info("Signal processing completed",
+        "fingerprint", sp.Spec.Signal.Fingerprint,
+        "duration", sp.Status.ProcessingTime,
+        "priority", categorization.Priority)
 
     // Terminal state - no requeue
     return ctrl.Result{}, nil
 }
 
 // ========================================
-// RECOVERY CONTEXT ENRICHMENT FUNCTIONS (Alternative 2)
-// 📋 Design Decision: DD-001 | ✅ Approved Design
-// See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+// RECOVERY CONTEXT FUNCTIONS
+// Recovery context now built from embedded spec.failureData (not Context API)
+// Per DD-CONTEXT-006: Context API deprecated
 // ========================================
 
-// enrichRecoveryContext queries Context API for historical failure context
-// See: docs/services/stateless/context-api/api-specification.md (Recovery Context API)
-// See: BR-WF-RECOVERY-011
-func (r *RemediationProcessingReconciler) enrichRecoveryContext(
-    ctx context.Context,
-    ap *processingv1.RemediationProcessing,
-) (*processingv1.RecoveryContext, error) {
+// buildRecoveryContextFromFailureData creates recovery context from embedded failure data
+func (r *SignalProcessingReconciler) buildRecoveryContextFromFailureData(
+    sp *signalprocessingv1.SignalProcessing,
+) *signalprocessingv1.RecoveryContext {
 
-    // Query Context API
-    contextResp, err := r.ContextAPIClient.GetRemediationContext(
-        ctx,
-        ap.Spec.RemediationRequestRef.Name,
-    )
+    failureData := sp.Spec.FailureData
 
-    if err != nil {
-        return nil, fmt.Errorf("Context API query failed: %w", err)
+    return &signalprocessingv1.RecoveryContext{
+        ContextQuality: "complete",
+        PreviousFailure: &signalprocessingv1.PreviousFailure{
+            WorkflowRef:   failureData.WorkflowRef,
+            AttemptNumber: failureData.AttemptNumber,
+            FailedStep:    failureData.FailedStep,
+            Action:        failureData.Action,
+            ErrorType:     failureData.ErrorType,
+            FailureReason: failureData.FailureReason,
+            Duration:      failureData.Duration,
+            Timestamp:     failureData.FailedAt,
+            ResourceState: failureData.ResourceState,
+        },
+        ProcessedAt: metav1.Now(),
     }
-
-    // Convert Context API response to CRD RecoveryContext format
-    return convertToRecoveryContext(contextResp), nil
 }
 
-// buildFallbackRecoveryContext creates minimal recovery context when Context API unavailable
-// Extracts what we know from the RemediationProcessing spec (graceful degradation)
-func (r *RemediationProcessingReconciler) buildFallbackRecoveryContext(
-    ap *processingv1.RemediationProcessing,
-) *processingv1.RecoveryContext {
+// buildDegradedRecoveryContext creates minimal recovery context when no failure data available
+func (r *SignalProcessingReconciler) buildDegradedRecoveryContext(
+    sp *signalprocessingv1.SignalProcessing,
+) *signalprocessingv1.RecoveryContext {
 
-    // Build minimal context from what we know
-    var previousFailures []processingv1.PreviousFailure
+    var previousFailure *signalprocessingv1.PreviousFailure
 
-    if ap.Spec.FailedWorkflowRef != nil && ap.Spec.FailedStep != nil {
-        previousFailures = append(previousFailures, processingv1.PreviousFailure{
-            WorkflowRef:   ap.Spec.FailedWorkflowRef.Name,
-            AttemptNumber: ap.Spec.RecoveryAttemptNumber - 1,
-            FailedStep:    *ap.Spec.FailedStep,
+    if sp.Spec.FailedWorkflowRef != nil && sp.Spec.FailedStep != nil {
+        previousFailure = &signalprocessingv1.PreviousFailure{
+            WorkflowRef:   sp.Spec.FailedWorkflowRef.Name,
+            AttemptNumber: sp.Spec.RecoveryAttemptNumber - 1,
+            FailedStep:    *sp.Spec.FailedStep,
             FailureReason: func() string {
-                if ap.Spec.FailureReason != nil {
-                    return *ap.Spec.FailureReason
+                if sp.Spec.FailureReason != nil {
+                    return *sp.Spec.FailureReason
                 }
                 return "unknown"
             }(),
             Timestamp: metav1.Now(),
-        })
-    }
-
-    return &processingv1.RecoveryContext{
-        ContextQuality:       "degraded", // Indicates fallback was used
-        PreviousFailures:     previousFailures,
-        RelatedAlerts:        []processingv1.RelatedSignal{},        // Empty - no data available
-        HistoricalPatterns:   []processingv1.HistoricalPattern{},   // Empty - no data available
-        SuccessfulStrategies: []processingv1.SuccessfulStrategy{}, // Empty - no data available
-        RetrievedAt:          metav1.Now(),
-    }
-}
-
-// convertToRecoveryContext converts Context API response to CRD RecoveryContext format
-func convertToRecoveryContext(resp *ContextAPIResponse) *processingv1.RecoveryContext {
-    return &processingv1.RecoveryContext{
-        ContextQuality:       resp.ContextQuality,
-        PreviousFailures:     convertPreviousFailures(resp.PreviousFailures),
-        RelatedAlerts:        convertRelatedAlerts(resp.RelatedAlerts),
-        HistoricalPatterns:   convertHistoricalPatterns(resp.HistoricalPatterns),
-        SuccessfulStrategies: convertSuccessfulStrategies(resp.SuccessfulStrategies),
-        RetrievedAt:          metav1.Now(),
-    }
-}
-
-func convertPreviousFailures(data []PreviousFailureData) []processingv1.PreviousFailure {
-    result := make([]processingv1.PreviousFailure, len(data))
-    for i, f := range data {
-        timestamp, _ := time.Parse(time.RFC3339, f.Timestamp)
-        result[i] = processingv1.PreviousFailure{
-            WorkflowRef:      f.WorkflowRef,
-            AttemptNumber:    f.AttemptNumber,
-            FailedStep:       f.FailedStep,
-            Action:           f.Action,
-            ErrorType:        f.ErrorType,
-            FailureReason:    f.FailureReason,
-            Duration:         f.Duration,
-            Timestamp:        metav1.NewTime(timestamp),
-            ClusterState:     f.ClusterState,
-            ResourceSnapshot: f.ResourceSnapshot,
         }
     }
-    return result
-}
 
-func convertRelatedAlerts(data []RelatedAlertData) []processingv1.RelatedSignal {
-    result := make([]processingv1.RelatedSignal, len(data))
-    for i, a := range data {
-        timestamp, _ := time.Parse(time.RFC3339, a.Timestamp)
-        result[i] = processingv1.RelatedSignal{
-            AlertFingerprint: a.AlertFingerprint,
-            AlertName:        a.AlertName,
-            Correlation:      a.Correlation,
-            Timestamp:        metav1.NewTime(timestamp),
-        }
+    return &signalprocessingv1.RecoveryContext{
+        ContextQuality:  "degraded", // Indicates minimal context available
+        PreviousFailure: previousFailure,
+        ProcessedAt:     metav1.Now(),
     }
-    return result
 }
 
-func convertHistoricalPatterns(data []HistoricalPatternData) []processingv1.HistoricalPattern {
-    result := make([]processingv1.HistoricalPattern, len(data))
-    for i, p := range data {
-        result[i] = processingv1.HistoricalPattern{
-            Pattern:             p.Pattern,
-            Occurrences:         p.Occurrences,
-            SuccessRate:         p.SuccessRate,
-            AverageRecoveryTime: p.AverageRecoveryTime,
-        }
+// persistAuditTrail sends audit record to Data Storage Service (ADR-032)
+func (r *SignalProcessingReconciler) persistAuditTrail(ctx context.Context, sp *signalprocessingv1.SignalProcessing) error {
+    audit := &SignalProcessingAudit{
+        SignalFingerprint:    sp.Spec.Signal.Fingerprint,
+        ProcessingStartTime:  sp.CreationTimestamp.Time,
+        ProcessingEndTime:    time.Now(),
+        EnrichmentResult:     &sp.Status.EnrichmentResults,
+        ClassificationResult: &sp.Status.EnvironmentClassification,
+        Categorization:       &sp.Status.Categorization,
+        DegradedMode:         sp.Status.EnrichmentResults.EnrichmentQuality < 0.8,
+        IsRecoveryAttempt:    sp.Spec.IsRecoveryAttempt,
     }
-    return result
+
+    return r.DataStorageClient.CreateAuditRecord(ctx, audit)
 }
 
-func convertSuccessfulStrategies(data []SuccessfulStrategyData) []processingv1.SuccessfulStrategy {
-    result := make([]processingv1.SuccessfulStrategy, len(data))
-    for i, s := range data {
-        lastUsed, _ := time.Parse(time.RFC3339, s.LastUsed)
-        result[i] = processingv1.SuccessfulStrategy{
-            Strategy:     s.Strategy,
-            Description:  s.Description,
-            SuccessCount: s.SuccessCount,
-            LastUsed:     metav1.NewTime(lastUsed),
-            Confidence:   s.Confidence,
-        }
-    }
-    return result
-}
-
-func (r *RemediationProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *SignalProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
-        For(&processingv1.RemediationProcessing{}).
+        For(&signalprocessingv1.SignalProcessing{}).
         Complete(r)
 }
 ```
 
 ---
+
+## Key Changes from Previous Implementation
+
+### Service Rename (DD-SIGNAL-PROCESSING-001)
+- `RemediationProcessingReconciler` → `SignalProcessingReconciler`
+- `processingv1.RemediationProcessing` → `signalprocessingv1.SignalProcessing`
+- Finalizer: `alertprocessing.kubernaut.io/finalizer` → `signalprocessing.kubernaut.io/finalizer`
+
+### Context API Deprecated (DD-CONTEXT-006)
+- Removed: `ContextAPIClient` field and interface
+- Removed: `enrichRecoveryContext()` function that queried Context API
+- Added: `buildRecoveryContextFromFailureData()` - reads from `spec.failureData`
+- Added: `buildDegradedRecoveryContext()` - fallback when no failure data
+
+### Categorization Phase Added (DD-CATEGORIZATION-001)
+- Added: `reconcileCategorizing()` phase
+- Added: `Categorizer *PriorityCategorizer` field
+- Phase flow: `enriching` → `classifying` → `categorizing` → `completed`
+
+### Data Access Layer (ADR-032)
+- Added: `DataStorageClient` field for audit trail
+- Added: `persistAuditTrail()` - sends audit to Data Storage Service REST API
+- Removed: Direct PostgreSQL access
 

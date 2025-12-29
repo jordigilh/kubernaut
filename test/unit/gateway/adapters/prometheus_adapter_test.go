@@ -287,9 +287,9 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// - NOT "prometheus-adapter" (internal implementation detail)
 
 			adapter := adapters.NewPrometheusAdapter()
-			
+
 			sourceName := adapter.GetSourceService()
-			
+
 			Expect(sourceName).To(Equal("prometheus"),
 				"BR-GATEWAY-027: Must return monitoring system name, not adapter name")
 			Expect(sourceName).NotTo(Equal("prometheus-adapter"),
@@ -301,9 +301,9 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// Used for: metrics labels, logging, signal classification
 
 			adapter := adapters.NewPrometheusAdapter()
-			
+
 			sourceType := adapter.GetSourceType()
-			
+
 			Expect(sourceType).To(Equal("prometheus-alert"),
 				"Must return signal type for classification")
 		})
@@ -328,7 +328,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// Signal.Source must match GetSourceService()
 			Expect(signal.Source).To(Equal(adapter.GetSourceService()),
 				"BR-GATEWAY-027: Parse() must use GetSourceService() method")
-			
+
 			// Signal.SourceType must match GetSourceType()
 			Expect(signal.SourceType).To(Equal(adapter.GetSourceType()),
 				"Parse() must use GetSourceType() method")

@@ -1,32 +1,53 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 // Test entry point moved to notification_audit_validator_test.go to avoid "Rerunning Suite" error
 
+// ========================================
+// SANITIZE STRING UNIT TESTS (P2-1 Regression)
+// 📋 Business Requirements:
+//   - BR-STORAGE-011: Input Sanitization (data preservation)
+//   - BR-STORAGE-021: SQL Injection Protection
+//
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 	var (
 		validator *validation.Validator
-		logger    *zap.Logger
+		logger    logr.Logger
 	)
 
 	BeforeEach(func() {
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 		validator = validation.NewValidator(logger)
 	})
 
 	AfterEach(func() {
-		if logger != nil {
-			_ = logger.Sync()
-		}
+		kubelog.Sync(logger)
 	})
 
 	// ========================================
@@ -43,6 +64,8 @@ var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 
 	Context("Data Preservation - SQL Keywords in Legitimate Strings", func() {
 		// BR-STORAGE-011: Input sanitization should preserve legitimate data
+		// BEHAVIOR: Sanitizer preserves legitimate data containing SQL keywords
+		// CORRECTNESS: SQL keywords in namespace/alert names are NOT stripped
 
 		DescribeTable("should preserve legitimate strings containing SQL keywords",
 			func(input, expected string) {

@@ -90,19 +90,20 @@ func (c *Client) UpdateRemediationRequest(ctx context.Context, rr *remediationv1
 
 // ListRemediationRequestsByFingerprint lists RemediationRequests matching a fingerprint
 //
-// This method queries Kubernetes API for CRDs with matching label:
-//
-//	kubernaut.io/signal-fingerprint: <fingerprint>
+// BR-GATEWAY-185 v1.1: Uses field selector on spec.signalFingerprint instead of labels
+// - Labels are mutable and truncated to 63 chars (data loss risk)
+// - spec.signalFingerprint is immutable and supports full 64-char SHA256
 //
 // Use case: Deduplication check (find existing RemediationRequest for same alert)
 //
-// CRITICAL: Uses direct API calls (bypasses controller-runtime cache) to prevent race conditions
-// in multi-pod deployments. Without this, multiple Gateway pods can have stale cache state,
-// leading to duplicate CRD creation attempts and incorrect storm detection.
+// ARCHITECTURE: Uses cached client with field index for O(1) lookups
+// The cache is synced across all pods, providing consistent view of CRD state.
+// Multi-pod deployments: Each pod's cache watches the K8s API for changes,
+// ensuring eventual consistency with minimal latency.
 //
 // Parameters:
 // - ctx: Context for cancellation and timeout
-// - fingerprint: Signal fingerprint (SHA256 hash)
+// - fingerprint: Signal fingerprint (full 64-char SHA256 hash)
 //
 // Returns:
 // - *RemediationRequestList: List of matching CRDs (may be empty)
@@ -110,27 +111,11 @@ func (c *Client) UpdateRemediationRequest(ctx context.Context, rr *remediationv1
 func (c *Client) ListRemediationRequestsByFingerprint(ctx context.Context, fingerprint string) (*remediationv1alpha1.RemediationRequestList, error) {
 	var list remediationv1alpha1.RemediationRequestList
 
-	// Kubernetes label values must be ≤63 characters
-	// SHA256 fingerprints are 64 chars, so truncate to 63
-	fingerprintLabel := fingerprint
-	if len(fingerprintLabel) > 63 {
-		fingerprintLabel = fingerprintLabel[:63]
-	}
-
-	// PRODUCTION FIX: Force direct API call to prevent cache staleness
-	// Critical for multi-pod deployments where cache can be inconsistent between pods.
-	// client.MatchingFields{} forces controller-runtime to bypass its cache and query
-	// the API server directly, ensuring all pods see the same CRD state.
-	//
-	// Without this:
-	// - Pod 1 queries cache: No CRD found → Creates CRD
-	// - Pod 2 queries cache: No CRD found → Attempts to create duplicate CRD (conflict)
-	// - Storm detection fails due to inconsistent cache state between pods
+	// BR-GATEWAY-185 v1.1: Use field selector on spec.signalFingerprint
+	// NO truncation - uses full 64-char SHA256 fingerprint
+	// Field index is set up in server.go:NewServerWithMetrics
 	err := c.client.List(ctx, &list,
-		client.MatchingLabels{
-			"kubernaut.io/signal-fingerprint": fingerprintLabel,
-		},
-		client.MatchingFields{}, // Forces direct API call, bypasses cache
+		client.MatchingFields{"spec.signalFingerprint": fingerprint},
 	)
 
 	return &list, err

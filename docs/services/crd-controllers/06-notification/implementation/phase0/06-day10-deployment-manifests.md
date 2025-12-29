@@ -206,7 +206,7 @@ labels:
 2. **Deploy to KIND**:
    ```bash
    # Install NotificationRequest CRD
-   kubectl apply -f config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+   kubectl apply -f config/crd/bases/kubernaut.ai_notificationrequests.yaml
 
    # Deploy controller
    kubectl apply -k deploy/notification/

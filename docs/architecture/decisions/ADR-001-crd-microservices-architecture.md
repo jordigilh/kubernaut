@@ -371,6 +371,34 @@ Built-in Capabilities:
    - Who created, modified, deleted each CRD
 ```
 
+#### **6. CRD Spec Immutability (Design Principle)**
+```
+Design Principle: Default CRD Specs to Immutable
+
+Rationale:
+  Most kubernaut CRDs represent immutable events (notifications, workflow executions)
+  rather than mutable resources (deployments, configmaps). Immutable specs prevent:
+
+  ✅ Race conditions during reconciliation
+  ✅ Status-spec inconsistency bugs
+  ✅ Audit trail gaps (spec matches what was executed)
+  ✅ Controller complexity (no observedGeneration tracking needed)
+
+Implementation Pattern:
+  // Add to CRD type definition
+  // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation"
+  type MyCustomResourceSpec struct { ... }
+
+When to Use Selective Mutability:
+  - Enable/disable toggle fields (e.g., spec.paused: bool)
+  - User-controlled cancellation flags (e.g., spec.cancelled: bool)
+  - Feature flags for runtime behavior changes
+
+Per-CRD Immutability Decisions:
+  See service-specific design decisions (e.g., DD-NOT-005) for CRD-level rationale.
+  Each CRD controller team decides immutability based on business semantics.
+```
+
 ---
 
 ### **Negative Consequences**

@@ -44,7 +44,7 @@ SELECT * FROM inserted_actions;
 -- Insert resource action traces using action_history_id references
 INSERT INTO resource_action_traces (
     action_id, action_history_id, action_timestamp,
-    alert_name, alert_fingerprint, alert_severity, alert_labels,
+    signal_name, signal_fingerprint, signal_severity, signal_labels,
     cluster_name, environment,
     action_type, action_parameters, execution_status,
     execution_start_time, execution_end_time, execution_duration_ms,

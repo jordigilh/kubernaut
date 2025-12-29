@@ -1,0 +1,10 @@
+logging:
+  level: "INFO"
+
+llm:
+  provider: "mock"
+  model: "mock/test-model"
+  endpoint: "http://localhost:11434"
+
+data_storage:
+  url: "http://aianalysis_datastorage_1:8080"

@@ -1,65 +1,58 @@
 ## Current State & Migration Path
 
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.2 | 2025-11-28 | Gateway migration scope added, CRD location fixed (kubernaut.io/v1alpha1), implementation effort updated | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+> | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.1 | 2025-11-27 | Terminology: Alert → Signal | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
+> | v1.1 | 2025-11-27 | Package path: pkg/signalprocessing/ | - |
+> | v1.0 | 2025-01-15 | Initial migration analysis | - |
+
 ---
 
-## ⚠️ NAMING DEPRECATION NOTICE
+## ⚠️ NAMING MIGRATION COMPLETE
 
-**ALERT PREFIX DEPRECATED**: This document contains type definitions using **"Alert" prefix** (e.g., `AlertService`, `AlertProcessorService`, `ProcessAlert()`), which is **DEPRECATED** and being migrated to **"Signal" prefix** to reflect multi-signal architecture.
+**"Alert" prefix MIGRATED to "Signal"** per [ADR-015: Alert to Signal Naming Migration](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md).
 
-**Why Deprecated**: Kubernaut processes multiple signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch alarms), not just alerts. The "Alert" prefix creates semantic confusion.
+**Why Migrated**: Kubernaut processes multiple signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch alarms), not just alerts. The "Signal" prefix reflects multi-signal architecture.
 
-**Migration Decision**: [ADR-015: Alert to Signal Naming Migration](../../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
+**Service Renamed**: `RemediationProcessing` → `SignalProcessing` per [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md).
 
 **Current Naming Standards**:
-- `AlertService` → **`SignalProcessorService`**
+- `AlertService` → **`SignalProcessingService`**
 - `ProcessAlert()` → **`ProcessSignal()`**
 - `AlertContext` → **`SignalContext`**
 - `AlertMetrics` → **`SignalProcessingMetrics`**
-
-**⚠️ When implementing**: Use Signal-prefixed names. The Alert-prefixed types shown below are **for migration reference only** and will be replaced in Phase 1 of the migration (see ADR-015).
+- `RemediationProcessing` → **`SignalProcessing`**
+- `RemediationProcessingReconciler` → **`SignalProcessingReconciler`**
 
 ---
 
-### Existing Business Logic (Verified)
+### Existing Business Logic (To Be Created)
 
-**Current Location**: `pkg/alert/` (1,103 lines of reusable code)
-**Target Location**: `pkg/remediationprocessing/` (after migration)
+**Target Location**: `pkg/signalprocessing/`
 
 ```
-pkg/alert/ → pkg/remediationprocessing/
-├── service.go (109 lines)          ✅ AlertService → AlertProcessorService interface
-├── implementation.go (282 lines)   ✅ Complete 4-step processing pipeline
-└── components.go (712 lines)       ✅ All business logic components
+pkg/signalprocessing/
+├── service.go               ✅ SignalProcessingService interface
+├── implementation.go        ✅ Complete 4-step processing pipeline
+├── components.go            ✅ All business logic components
+└── types.go                 ✅ Type-safe result types
 ```
 
-**Existing Tests** (Verified - to be migrated):
-- `test/unit/alert/` → `test/unit/remediationprocessing/` - Unit tests with Ginkgo/Gomega
-- `test/integration/alert_processing/` → `test/integration/remediationprocessing/` - Integration tests
+**Target Tests**:
+- `test/unit/signalprocessing/` - Unit tests with Ginkgo/Gomega
+- `test/integration/signalprocessing/` - Integration tests
+- `test/e2e/signalprocessing/` - E2E tests
 
-### Business Logic Components (Highly Reusable)
+### Business Logic Components
 
-**AlertService Interface** - `pkg/alert/service.go:13-38` (to be migrated to `pkg/remediationprocessing/service.go`)
+**SignalProcessingService Interface** - `pkg/signalprocessing/service.go`
 
-⚠️ **CURRENT IMPLEMENTATION** (uses map[string]interface{} anti-pattern):
 ```go
-type AlertService interface {
-    ProcessAlert(ctx context.Context, alert types.Alert) (*ProcessResult, error)
-    ValidateAlert(alert types.Alert) map[string]interface{}
-    RouteAlert(ctx context.Context, alert types.Alert) map[string]interface{}
-    EnrichAlert(ctx context.Context, alert types.Alert) map[string]interface{}
-    PersistAlert(ctx context.Context, alert types.Alert) map[string]interface{}
-    GetAlertHistory(namespace string, duration time.Duration) map[string]interface{}
-    GetAlertMetrics() map[string]interface{}
-    Health() map[string]interface{}
-}
-```
-
-**Note**: `GetDeduplicationStats()` removed - deduplication is Gateway Service responsibility (BR-WH-008).
-
-✅ **RECOMMENDED REFACTOR** (structured types for type safety):
-```go
-// pkg/remediationprocessing/service.go
-package alertprocessor
+// pkg/signalprocessing/service.go
+package signalprocessing
 
 import (
     "context"
@@ -67,241 +60,199 @@ import (
     "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// AlertProcessorService defines alert processing operations
-// Business Requirements: BR-SP-001 to BR-SP-050
-type AlertProcessorService interface {
+// SignalProcessingService defines signal processing operations
+// Business Requirements: BR-SP-001 to BR-SP-075
+type SignalProcessingService interface {
     // Core processing
-    ProcessAlert(ctx context.Context, alert types.Alert) (*ProcessResult, error)
+    ProcessSignal(ctx context.Context, signal types.Signal) (*ProcessResult, error)
 
     // Validation
-    ValidateAlert(alert types.Alert) (*ValidationResult, error)
-
-    // Routing
-    RouteAlert(ctx context.Context, alert types.Alert) (*RoutingResult, error)
+    ValidateSignal(signal types.Signal) (*ValidationResult, error)
 
     // Enrichment
-    EnrichAlert(ctx context.Context, alert types.Alert) (*EnrichmentResult, error)
+    EnrichSignal(ctx context.Context, signal types.Signal) (*EnrichmentResult, error)
 
-    // Persistence
-    PersistAlert(ctx context.Context, alert types.Alert) (*PersistenceResult, error)
-    GetAlertHistory(namespace string, duration time.Duration) (*AlertHistoryResult, error)
+    // Classification
+    ClassifyEnvironment(ctx context.Context, signal types.Signal, enrichment *EnrichmentResult) (*ClassificationResult, error)
+
+    // Categorization (DD-CATEGORIZATION-001)
+    CategorizeSignal(ctx context.Context, signal types.Signal, enrichment *EnrichmentResult, classification *ClassificationResult) (*CategorizationResult, error)
+
+    // Persistence (via Data Storage Service - ADR-032)
+    PersistAudit(ctx context.Context, signal types.Signal, result *ProcessResult) (*PersistenceResult, error)
 
     // Metrics and Health
-    GetAlertMetrics() (*AlertMetrics, error)
+    GetMetrics() (*SignalProcessingMetrics, error)
     Health() (*HealthStatus, error)
 }
 
-// Supporting structured types (create in pkg/remediationprocessing/types.go)
+// Supporting structured types (in pkg/signalprocessing/types.go)
 type ValidationResult struct {
     Valid  bool     `json:"valid"`
     Errors []string `json:"errors,omitempty"`
 }
 
-type RoutingResult struct {
-    Routed      bool   `json:"routed"`
-    Destination string `json:"destination,omitempty"`
-    RouteType   string `json:"route_type"`
-    Priority    string `json:"priority,omitempty"`
-    Reason      string `json:"reason,omitempty"`
-}
-
 type EnrichmentResult struct {
-    Status              string                 `json:"enrichment_status"`
-    AIAnalysis          *AIAnalysisResult      `json:"ai_analysis,omitempty"`
-    Metadata            map[string]string      `json:"metadata,omitempty"`
-    EnrichmentTimestamp time.Time              `json:"enrichment_timestamp"`
+    KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
+    HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
+    RecoveryContext   *RecoveryContext   `json:"recoveryContext,omitempty"`
+    EnrichmentQuality float64            `json:"enrichmentQuality"`
+    EnrichedAt        time.Time          `json:"enrichedAt"`
 }
 
-type AIAnalysisResult struct {
-    Confidence float64           `json:"confidence"`
-    Analysis   string            `json:"analysis"`
-    Metadata   map[string]string `json:"metadata,omitempty"`
+type ClassificationResult struct {
+    Environment         string  `json:"environment"`
+    Confidence          float64 `json:"confidence"`
+    BusinessCriticality string  `json:"businessCriticality"`
+    SLARequirement      string  `json:"slaRequirement"`
+    ClassifiedAt        time.Time `json:"classifiedAt"`
+}
+
+type CategorizationResult struct {
+    Priority             string              `json:"priority"`
+    PriorityScore        int                 `json:"priorityScore"`
+    CategorizationSource string              `json:"categorizationSource"`
+    Factors              []CategorizationFactor `json:"factors,omitempty"`
+    CategorizedAt        time.Time           `json:"categorizedAt"`
+}
+
+type CategorizationFactor struct {
+    Factor       string  `json:"factor"`
+    Value        string  `json:"value"`
+    Weight       float64 `json:"weight"`
+    Contribution int     `json:"contribution"`
 }
 
 type PersistenceResult struct {
     Persisted bool      `json:"persisted"`
-    AlertID   string    `json:"alert_id,omitempty"`
+    AuditID   string    `json:"auditId,omitempty"`
     Timestamp time.Time `json:"timestamp"`
 }
 
-type AlertHistoryResult struct {
-    Alerts      []types.Alert `json:"alerts"`
-    TotalCount  int           `json:"total_count"`
-    Namespace   string        `json:"namespace"`
-    Duration    time.Duration `json:"duration"`
-    RetrievedAt time.Time     `json:"retrieved_at"`
-}
-
-type AlertMetrics struct {
-    AlertsIngested  int       `json:"alerts_ingested"`
-    AlertsValidated int       `json:"alerts_validated"`
-    AlertsRouted    int       `json:"alerts_routed"`
-    AlertsEnriched  int       `json:"alerts_enriched"`
-    ProcessingRate  float64   `json:"processing_rate"` // alerts per minute
-    SuccessRate     float64   `json:"success_rate"`
-    LastUpdated     time.Time `json:"last_updated"`
+type SignalProcessingMetrics struct {
+    SignalsIngested   int       `json:"signalsIngested"`
+    SignalsValidated  int       `json:"signalsValidated"`
+    SignalsEnriched   int       `json:"signalsEnriched"`
+    SignalsClassified int       `json:"signalsClassified"`
+    SignalsCategorized int      `json:"signalsCategorized"`
+    ProcessingRate    float64   `json:"processingRate"` // signals per minute
+    SuccessRate       float64   `json:"successRate"`
+    LastUpdated       time.Time `json:"lastUpdated"`
 }
 
 type HealthStatus struct {
-    Status        string           `json:"status"` // "healthy", "degraded", "unhealthy"
-    Service       string           `json:"service"`
-    AIIntegration bool             `json:"ai_integration"`
-    Components    *ComponentHealth `json:"components"`
+    Status     string           `json:"status"` // "healthy", "degraded", "unhealthy"
+    Service    string           `json:"service"`
+    Components *ComponentHealth `json:"components"`
 }
 
 type ComponentHealth struct {
-    Processor    bool `json:"processor"`
-    Enricher     bool `json:"enricher"`
-    Router       bool `json:"router"`
-    Validator    bool `json:"validator"`
-    Persister    bool `json:"persister"`
+    Enricher    bool `json:"enricher"`
+    Classifier  bool `json:"classifier"`
+    Categorizer bool `json:"categorizer"`
+    Validator   bool `json:"validator"`
+    DataStorage bool `json:"dataStorage"`
 }
 ```
 
-**Migration Notes**:
-- **Package Rename**: `pkg/alert/` → `pkg/remediationprocessing/` (4 hours)
-- **Interface Rename**: `AlertService` → `AlertProcessorService`
-- **Type Safety Refactor**: `map[string]interface{}` → 7 structured types (violates coding standards)
-- **Deduplication Removal**: `DeduplicationStats` removed - Gateway Service responsibility (BR-WH-008)
-- **Strategy**: Parallel implementation to avoid breaking changes
-- **Total Effort**: 1-2 days for complete migration
-
-**4-Step Processing Pipeline** - `pkg/alert/implementation.go:75-118` (to be migrated to `pkg/remediationprocessing/`)
-```go
-func (s *ServiceImpl) ProcessAlert(ctx context.Context, alert types.Alert) (*ProcessResult, error) {
-    // Step 1: Validate alert
-    validation := s.ValidateAlert(alert)
-
-    // Note: Deduplication handled by Gateway Service (BR-WH-008)
-    // Remediation Processor receives only non-duplicate alerts
-
-    // Step 2: Enrich alert with context
-    enrichment := s.EnrichAlert(ctx, alert)
-
-    // Step 3: Route alert to appropriate handler
-    routing := s.RouteAlert(ctx, alert)
-
-    // Step 4: Persist alert to storage
-    persistence := s.PersistAlert(ctx, alert)
-}
-```
-
-**Business Components** - `pkg/alert/components.go` (to be migrated to `pkg/remediationprocessing/components.go`)
-- `AlertProcessorImpl` - Core processing logic (85% reusable)
-- `AlertEnricherImpl` - AI-based enrichment (90% reusable)
-- `AlertRouterImpl` - Routing and filtering (85% reusable)
-- `AlertValidatorImpl` - Validation logic (95% reusable)
-- `AlertPersisterImpl` - Persistence logic (75% reusable)
-
-**Note**: `AlertDeduplicatorImpl` exists in current `pkg/alert/components.go` but belongs in Gateway Service (BR-WH-008). Fingerprint generation logic is reusable, but duplicate detection and escalation are Gateway responsibilities.
+**Notes**:
+- **Deduplication removed**: Handled by Gateway Service (BR-WH-008)
+- **Context API removed**: Deprecated per DD-CONTEXT-006
+- **Categorization added**: Consolidated from Gateway per DD-CATEGORIZATION-001
+- **Data access**: Via Data Storage Service REST API per ADR-032
 
 ### Migration to CRD Controller
 
-**Synchronous Pipeline → Asynchronous Reconciliation Phases**
+**Pipeline → Asynchronous Reconciliation Phases**
 
 ```go
-// EXISTING: Synchronous 4-step pipeline (deduplication removed)
-func (s *ServiceImpl) ProcessAlert(ctx, alert) (*ProcessResult, error) {
-    validation := s.ValidateAlert(alert)          // Step 1
-    // Deduplication handled by Gateway Service (BR-WH-008)
-    enrichment := s.EnrichAlert(ctx, alert)       // Step 2
-    routing := s.RouteAlert(ctx, alert)           // Step 3
-    persistence := s.PersistAlert(ctx, alert)     // Step 4
-    return result, nil
-}
-
 // MIGRATED: Asynchronous CRD reconciliation
-func (r *RemediationProcessingReconciler) Reconcile(ctx, req) (ctrl.Result, error) {
-    // SignalProcessing CRD only created for non-duplicate alerts
+func (r *SignalProcessingReconciler) Reconcile(ctx, req) (ctrl.Result, error) {
+    // SignalProcessing CRD only created for non-duplicate signals
     // Gateway Service handles duplicate detection and escalation
 
-    switch alertProcessing.Status.Phase {
+    switch signalProcessing.Status.Phase {
     case "enriching":
-        // Reuse: AlertEnricherImpl.Enrich() business logic
-        enrichment := r.enricher.Enrich(ctx, alert)
-        alertProcessing.Status.EnrichmentResults = enrichment
-        alertProcessing.Status.Phase = "classifying"
-        return ctrl.Result{Requeue: true}, r.Status().Update(ctx, alertProcessing)
+        // Enrich with K8s context
+        enrichment := r.enricher.Enrich(ctx, signal)
+        signalProcessing.Status.EnrichmentResults = enrichment
+
+        // If recovery attempt, read embedded failure data (DD-CONTEXT-006)
+        if signalProcessing.Spec.IsRecoveryAttempt && signalProcessing.Spec.FailureData != nil {
+            recoveryCtx := r.buildRecoveryContextFromFailureData(signalProcessing)
+            signalProcessing.Status.EnrichmentResults.RecoveryContext = recoveryCtx
+        }
+
+        signalProcessing.Status.Phase = "classifying"
+        return ctrl.Result{Requeue: true}, r.Status().Update(ctx, signalProcessing)
 
     case "classifying":
-        // Reuse: Environment classification logic
-        classification := r.classifier.Classify(ctx, alert, enrichment)
-        alertProcessing.Status.EnvironmentClassification = classification
-        alertProcessing.Status.Phase = "routing"
-        return ctrl.Result{Requeue: true}, r.Status().Update(ctx, alertProcessing)
+        // Classify environment
+        classification := r.classifier.Classify(ctx, signal, enrichment)
+        signalProcessing.Status.EnvironmentClassification = classification
+        signalProcessing.Status.Phase = "categorizing"
+        return ctrl.Result{Requeue: true}, r.Status().Update(ctx, signalProcessing)
 
-    case "routing":
-        // Reuse: AlertRouterImpl.Route() business logic
-        routing := r.router.Route(ctx, alert, classification)
+    case "categorizing":
+        // Assign priority (DD-CATEGORIZATION-001)
+        categorization := r.categorizer.AssignPriority(ctx, signal, enrichment, classification)
+        signalProcessing.Status.Categorization = categorization
 
-        // CRD-specific: Create AIAnalysis CRD
-        aiAnalysis := &aianalysisv1.AIAnalysis{
-            Spec: buildAnalysisRequest(enrichment, classification),
-        }
-        r.Create(ctx, aiAnalysis)
-
-        alertProcessing.Status.Phase = "completed"
-        return ctrl.Result{}, r.Status().Update(ctx, alertProcessing)
+        signalProcessing.Status.Phase = "completed"
+        return ctrl.Result{}, r.Status().Update(ctx, signalProcessing)
     }
 }
 ```
 
-### Component Reuse Mapping
+### Component Mapping
 
-| Existing Component | CRD Controller Usage | Reusability | Migration Effort | Notes |
-|-------------------|---------------------|-------------|-----------------|-------|
-| **AlertValidatorImpl** | Pre-enrichment validation | 95% | Minimal | ✅ Return `*ValidationResult` instead of map |
-| **AlertEnricherImpl** | Enriching phase logic | 90% | Low | ✅ Return `*EnrichmentResult` with structured AI analysis |
-| **Environment Classifier** | Classifying phase logic | 85% | Low | ✅ Integrate with CRD status updates |
-| **AlertRouterImpl** | Routing phase logic | 85% | Medium | ✅ Return `*RoutingResult`, add CRD creation |
-| **AlertPersisterImpl** | Audit storage integration | 75% | Medium | ✅ Return `*PersistenceResult` with proper error handling |
-| **Config/AIConfig** | Controller configuration | 80% | Low | ✅ Adapt for CRD reconciler |
+| Component | CRD Controller Usage | Responsibility |
+|-----------|---------------------|----------------|
+| **SignalEnricher** | Enriching phase logic | K8s context gathering |
+| **EnvironmentClassifier** | Classifying phase logic | Environment tier classification |
+| **PriorityCategorizer** | Categorizing phase logic | Priority assignment (DD-CATEGORIZATION-001) |
+| **RecoveryContextBuilder** | Enriching phase (recovery) | Build context from spec.failureData |
+| **DataStorageClient** | Audit persistence | REST API calls to Data Storage Service (ADR-032) |
 
-**Removed from Remediation Processor**: `AlertDeduplicatorImpl` - Moved to Gateway Service (BR-WH-008)
-
-**Interface Refactoring Required**:
-- **Package Migration**: `pkg/alert/` → `pkg/remediationprocessing/`
-- **Interface Rename**: `AlertService` → `AlertProcessorService`
-- Replace all `map[string]interface{}` return types with 7 structured types
-- Add proper error returns to all methods (except ProcessAlert which already has error)
-- Create `pkg/remediationprocessing/types.go` for all result type definitions
-- Remove `GetDeduplicationStats()` method (Gateway Service responsibility)
-- Estimated effort: 1-2 days for complete type safety migration + package rename
+**Removed from Signal Processing**:
+- `AlertDeduplicatorImpl` - Moved to Gateway Service (BR-WH-008)
+- `ContextAPIClient` - Removed, Context API deprecated (DD-CONTEXT-006)
 
 ### Implementation Gap Analysis
 
-**What Exists (Verified)**:
-- ✅ Complete business logic (1,103 lines)
-- ✅ AlertService interface and implementation
-- ✅ 5 core component implementations (AlertDeduplicatorImpl excluded - Gateway Service)
-- ✅ Configuration structures
-- ✅ Unit and integration tests
-- ✅ 4-step processing pipeline (deduplication removed)
+**What Needs to be Created**:
+- ✅ SignalProcessing CRD schema (`api/kubernaut.io/v1alpha1/signalprocessing_types.go`)
+- ✅ SignalProcessingReconciler controller (`internal/controller/signalprocessing/`)
+- ✅ Business logic package (`pkg/signalprocessing/`)
+- ✅ CRD lifecycle management (owner refs, finalizers)
+- ✅ Watch-based status coordination
+- ✅ Phase timeout detection
+- ✅ Event emission for visibility
+- ✅ Data Storage Service client for audit (ADR-032)
 
-**What's Missing (CRD V1 Requirements)**:
-- ❌ SignalProcessing CRD schema (need to create)
-- ❌ RemediationProcessingReconciler controller (need to create)
-- ❌ CRD lifecycle management (owner refs, finalizers)
-- ❌ Watch-based status coordination
-- ❌ Phase timeout detection
-- ❌ Event emission for visibility
+### Gateway Code Migration (DD-CATEGORIZATION-001)
 
-**Code Quality Issues to Address**:
-- ⚠️ **Package Migration & Type Safety Refactor**: Current implementation needs modernization
-  - **Package Rename**: `pkg/alert/` → `pkg/remediationprocessing/` (~4 hours)
-  - **Interface Rename**: `AlertService` → `AlertProcessorService`
-  - Violates coding standards (`.cursor/rules/00-project-guidelines.mdc`) - uses `map[string]interface{}` anti-pattern
-  - Replace with 7 structured types (`*ValidationResult`, `*RoutingResult`, `*EnrichmentResult`, `*PersistenceResult`, `*AlertHistoryResult`, `*AlertMetrics`, `*HealthStatus`)
-  - Remove `GetDeduplicationStats()` method (Gateway Service responsibility - BR-WH-008)
-  - Add proper error handling to all methods
-  - Create `pkg/remediationprocessing/types.go` for result type definitions
-  - Estimated effort: 1-2 days (can be done in parallel with CRD work)
+**What Needs to be Migrated from Gateway**:
 
-**Estimated Migration Effort**: 5-7 days
-- Day 1: Type safety refactor (structured types + error handling)
-- Day 2: CRD schema + controller skeleton
-- Day 3-4: Business logic integration into reconciliation phases
-- Day 5: Testing and refinement
-- Day 6: Integration with type-safe interfaces
-- Day 7: Documentation and deployment
+| Source (Gateway) | Target (Signal Processing) | Description |
+|------------------|---------------------------|-------------|
+| `pkg/gateway/processing/classification.go` | `pkg/signalprocessing/classification.go` | Environment classification logic |
+| `pkg/gateway/processing/priority.go` | `pkg/signalprocessing/priority.go` | Priority engine logic |
+| `config.app/gateway/policies/priority.rego` | `config.app/signalprocessing/policies/priority.rego` | Rego policy rules |
+| `test/unit/gateway/processing/environment_classification_test.go` | `test/unit/signalprocessing/classifier_test.go` | Unit tests |
+| `test/unit/gateway/priority_classification_test.go` | `test/unit/signalprocessing/categorizer_test.go` | Unit tests |
 
+**Gateway Files to Update** (remove classification):
+- `pkg/gateway/server.go` - Remove classifier/categorizer instantiation
+- `pkg/gateway/processing/crd_creator.go` - Pass through raw values
+- `pkg/gateway/config/config.go` - Remove classification config
+
+**See**: [IMPLEMENTATION_PLAN_V1.11.md - Gateway Migration Section](./IMPLEMENTATION_PLAN_V1.11.md)
+
+**Estimated Implementation Effort**: 11-12 days
+- Days 1-2: CRD schema + controller skeleton
+- Days 3-4: Gateway code migration
+- Days 5-6: Core business logic implementation
+- Days 7-8: Categorization phase and integration
+- Days 9-10: Unit and integration testing (parallel execution)
+- Days 11-12: E2E testing and documentation

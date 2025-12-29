@@ -26,10 +26,13 @@ import (
 // This struct represents the unified format for all signal types (Prometheus alerts,
 // Kubernetes events, etc.) after adapter-specific parsing. It contains only the
 // data needed for Gateway's processing pipeline (deduplication, storm detection,
-// classification, priority assignment, and CRD creation).
+// and CRD creation).
+//
+// Note: Classification and priority assignment removed from Gateway (2025-12-06).
+// Signal Processing service now owns these per DD-CATEGORIZATION-001.
 //
 // Design Decision: Minimal fields for fast processing (target: <50ms p95 latency).
-// Downstream services (RemediationProcessing, AIAnalysis) enrich with additional context.
+// Downstream services (SignalProcessing, AIAnalysis) enrich with additional context.
 type NormalizedSignal struct {
 	// Fingerprint is the unique identifier for deduplication
 	// Format: SHA256 hash of "alertname:namespace:kind:name"
@@ -42,11 +45,11 @@ type NormalizedSignal struct {
 
 	// Severity indicates signal criticality
 	// Valid values: "critical", "warning", "info"
-	// Used for priority assignment (critical + prod → P0)
+	// Passed to Signal Processing for priority assignment
 	Severity string
 
 	// Namespace is the Kubernetes namespace where the signal originated
-	// Used for environment classification (prod/staging/dev)
+	// Passed to Signal Processing for environment classification
 	Namespace string
 
 	// Resource identifies the Kubernetes resource affected by the signal
@@ -80,27 +83,6 @@ type NormalizedSignal struct {
 	// RawPayload is the original unprocessed signal payload
 	// Stored as []byte in RemediationRequest.Spec.OriginalPayload for audit trail
 	RawPayload json.RawMessage
-
-	// Storm Detection Fields (populated by Gateway after storm detection)
-	// These fields are set by the server.go ProcessSignal() method after calling StormDetector.Check()
-
-	// IsStorm indicates if this signal is part of a detected alert storm
-	IsStorm bool
-
-	// StormType indicates the storm detection method
-	// Values: "rate" (frequency-based) or "pattern" (similar alerts)
-	StormType string
-
-	// StormWindow is the time window for storm detection (e.g., "5m", "1m")
-	StormWindow string
-
-	// AlertCount is the number of alerts in the detected storm
-	AlertCount int
-
-	// AffectedResources is a list of affected resources in an aggregated storm
-	// Only populated for aggregated storm signals (after aggregation window completes)
-	// Format: []string{"namespace:Pod:name", "namespace:Pod:name2", ...}
-	AffectedResources []string
 }
 
 // ResourceIdentifier identifies the Kubernetes resource affected by a signal

@@ -130,7 +130,7 @@ When an operator **rejects** an AI-generated remediation recommendation (medium 
 
 **CRD Schema**:
 ```yaml
-apiVersion: remediation.kubernaut.io/v1alpha1
+apiVersion: remediation.kubernaut.ai/v1alpha1
 kind: RemediationRequest
 spec:
   # ... existing fields ...
@@ -164,7 +164,7 @@ spec:
 
 **CRD Schema**:
 ```yaml
-apiVersion: remediation.kubernaut.io/v1alpha1
+apiVersion: remediation.kubernaut.ai/v1alpha1
 kind: RemediationRequest
 spec:
   # ... existing fields ...

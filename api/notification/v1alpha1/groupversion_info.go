@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package v1alpha1 contains API Schema definitions for the notification v1alpha1 API group
 // +kubebuilder:object:generate=true
-// +groupName=notification.kubernaut.ai
+// +groupName=kubernaut.ai
 package v1alpha1
 
 import (
@@ -26,7 +26,8 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects
-	GroupVersion = schema.GroupVersion{Group: "notification.kubernaut.ai", Version: "v1alpha1"}
+	// DD-CRD-001: Using single API group kubernaut.ai for all CRDs
+	GroupVersion = schema.GroupVersion{Group: "kubernaut.ai", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

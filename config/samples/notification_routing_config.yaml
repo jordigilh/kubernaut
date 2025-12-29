@@ -1,0 +1,215 @@
+# Notification Routing Configuration - Label-Based Routing
+#
+# BR-NOT-065: Channel Routing Based on Labels
+# BR-NOT-066: Alertmanager-Compatible Configuration Format
+# DD-WE-004: WorkflowExecution Exponential Backoff Skip Reasons
+# BR-HAPI-200: Investigation Outcome Reporting
+#
+# This configuration demonstrates routing based on:
+# - WorkflowExecution skip reasons (DD-WE-004)
+# - HolmesGPT-API investigation outcomes (BR-HAPI-200)
+#
+# Use as a ConfigMap for the Notification Controller.
+#
+# Usage:
+#   kubectl create configmap notification-routing-config \
+#     --from-file=routing.yaml=notification_routing_config.yaml \
+#     -n kubernaut-system
+#
+# Cross-Team References:
+#   - NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md (Q7, Q8)
+#   - NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md
+#   - Labels set by RemediationOrchestrator (mandatory per BR-NOT-065)
+#
+# Last Updated: 2025-12-07
+
+# Global routing configuration (Alertmanager-compatible format)
+route:
+  # Group notifications by these labels to reduce alert noise
+  group_by:
+    - kubernaut.ai/environment
+    - kubernaut.ai/skip-reason
+    - kubernaut.ai/investigation-outcome
+    - kubernaut.ai/remediation-request
+
+  # Wait time before sending first notification for a group
+  group_wait: 30s
+
+  # Time to wait before sending notification about new alerts in a group
+  group_interval: 5m
+
+  # Time to wait before re-sending a notification
+  repeat_interval: 4h
+
+  # Child routes - evaluated in order, first match wins
+  routes:
+    # =================================================================
+    # CRITICAL: PreviousExecutionFailed (DD-WE-004)
+    # =================================================================
+    # Workflow ran and FAILED during execution.
+    # Cluster state is UNKNOWN - manual intervention required.
+    # Route to PagerDuty for immediate 24/7 alerting.
+    #
+    - match:
+        kubernaut.ai/skip-reason: PreviousExecutionFailed
+      receiver: pagerduty-oncall-critical
+      # Override group settings for critical alerts
+      group_wait: 0s  # Send immediately
+      repeat_interval: 15m  # Remind every 15 minutes
+
+    # =================================================================
+    # HIGH: ExhaustedRetries (DD-WE-004)
+    # =================================================================
+    # 5+ pre-execution failures - infrastructure issues.
+    # Cluster state is KNOWN (unchanged) - team awareness required.
+    # Route to Slack #ops for team awareness.
+    #
+    - match:
+        kubernaut.ai/skip-reason: ExhaustedRetries
+      receiver: slack-ops-high
+      group_wait: 1m
+      repeat_interval: 1h
+
+    # =================================================================
+    # LOW: Temporary Conditions (DD-WE-004)
+    # =================================================================
+    # ResourceBusy: Another WFE is running on target (auto-resolves)
+    # RecentlyRemediated: Cooldown/backoff period active (auto-resolves)
+    # Route to console only (bulk notifications per BR-ORCH-034).
+    #
+    - match:
+        kubernaut.ai/skip-reason: ResourceBusy
+      receiver: console-only-bulk
+      group_wait: 5m
+      group_interval: 30m
+
+    - match:
+        kubernaut.ai/skip-reason: RecentlyRemediated
+      receiver: console-only-bulk
+      group_wait: 5m
+      group_interval: 30m
+
+    # =================================================================
+    # SKIP: Resolved (BR-HAPI-200)
+    # =================================================================
+    # Alert self-resolved during HolmesGPT investigation.
+    # No human action required - prevent alert fatigue.
+    # Route to silent receiver (no delivery).
+    #
+    - match:
+        kubernaut.ai/investigation-outcome: resolved
+      receiver: silent-noop
+      # No need to repeat - alert is already resolved
+      repeat_interval: 168h  # 1 week (effectively disable repeats)
+
+    # =================================================================
+    # OPS: Investigation Inconclusive (BR-HAPI-200)
+    # =================================================================
+    # HolmesGPT could not determine root cause.
+    # Human review required to understand the alert.
+    # Route to Slack #ops for triage.
+    #
+    - match:
+        kubernaut.ai/investigation-outcome: inconclusive
+      receiver: slack-ops-inconclusive
+      group_wait: 1m
+      repeat_interval: 2h
+
+    # =================================================================
+    # Production Critical (any notification type)
+    # =================================================================
+    # Catch-all for production environment critical notifications
+    # that don't match specific skip-reason rules.
+    #
+    - match:
+        kubernaut.ai/environment: production
+        kubernaut.ai/severity: critical
+      receiver: pagerduty-oncall-critical
+
+    # =================================================================
+    # Production High (escalation type)
+    # =================================================================
+    # Escalation notifications in production go to Slack ops.
+    #
+    - match:
+        kubernaut.ai/environment: production
+        kubernaut.ai/notification-type: escalation
+      receiver: slack-ops-high
+
+    # =================================================================
+    # Staging/Development (low priority)
+    # =================================================================
+    # Non-production notifications go to Slack #dev
+    #
+    - match:
+        kubernaut.ai/environment: staging
+      receiver: slack-dev-low
+
+    - match:
+        kubernaut.ai/environment: development
+      receiver: slack-dev-low
+
+    - match:
+        kubernaut.ai/environment: test
+      receiver: slack-dev-low
+
+  # Default fallback receiver (when no routes match)
+  receiver: slack-default
+
+# Receiver definitions
+receivers:
+  # ===================================================================
+  # SILENT: No delivery (BR-HAPI-200 resolved alerts)
+  # ===================================================================
+  # Used for alerts that self-resolved during investigation.
+  # Prevents alert fatigue by not delivering notifications.
+  - name: silent-noop
+    # No delivery configs = silent/no-op
+
+  # ===================================================================
+  # OPS: Slack for inconclusive investigations (BR-HAPI-200)
+  # ===================================================================
+  - name: slack-ops-inconclusive
+    slack_configs:
+      - channel: '#kubernaut-ops-triage'
+        # Note: actual Slack config would include webhook URL
+
+  # ===================================================================
+  # CRITICAL: PagerDuty for 24/7 on-call alerting
+  # ===================================================================
+  - name: pagerduty-oncall-critical
+    pagerduty_configs:
+      - service_key: ${PAGERDUTY_CRITICAL_SERVICE_KEY}
+        severity: critical
+        # Note: actual PagerDuty config would include more fields
+
+  # ===================================================================
+  # HIGH: Slack #ops for team awareness
+  # ===================================================================
+  - name: slack-ops-high
+    slack_configs:
+      - channel: '#kubernaut-ops'
+        # Note: actual Slack config would include webhook URL
+
+  # ===================================================================
+  # LOW: Console only for bulk notifications
+  # ===================================================================
+  - name: console-only-bulk
+    console_configs:
+      - enabled: true
+
+  # ===================================================================
+  # MEDIUM: Slack for dev environments
+  # ===================================================================
+  - name: slack-dev-low
+    slack_configs:
+      - channel: '#kubernaut-dev'
+
+  # ===================================================================
+  # DEFAULT: Slack fallback
+  # ===================================================================
+  - name: slack-default
+    slack_configs:
+      - channel: '#kubernaut-alerts'
+
+

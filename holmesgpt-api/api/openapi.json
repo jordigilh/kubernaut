@@ -1,0 +1,1382 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HolmesGPT API Service",
+    "description": "Minimal internal service wrapper around HolmesGPT SDK",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/recovery/analyze": {
+      "post": {
+        "tags": [
+          "Recovery Analysis"
+        ],
+        "summary": "Recovery Analyze Endpoint",
+        "description": "Analyze failed action and provide recovery strategies\n\nBusiness Requirement: BR-HAPI-001 (Recovery analysis endpoint)\nDesign Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK\n\nCalled by: AIAnalysis Controller (for recovery attempts after workflow failure)",
+        "operationId": "recovery_analyze_endpoint_api_v1_recovery_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incident/analyze": {
+      "post": {
+        "tags": [
+          "Incident Analysis"
+        ],
+        "summary": "Incident Analyze Endpoint",
+        "description": "Analyze initial incident and provide RCA + workflow selection\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis endpoint)\nBusiness Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)\n\nCalled by: AIAnalysis Controller (for initial incident RCA and workflow selection)",
+        "operationId": "incident_analyze_endpoint_api_v1_incident_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "description": "Liveness probe endpoint\n\nBusiness Requirement: BR-HAPI-126 (Health check endpoint)",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness Check",
+        "description": "Readiness probe endpoint\n\nBusiness Requirements:\n- BR-HAPI-127 (Readiness check endpoint)\n- BR-HAPI-201 (Graceful shutdown with DD-007 pattern)\n\nTDD GREEN Phase: Check shutdown flag first\nREFACTOR phase: Real dependency health checks",
+        "operationId": "readiness_check_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Get Config",
+        "description": "Get service configuration (sanitized)\n\nBusiness Requirement: BR-HAPI-128 (Configuration endpoint)",
+        "operationId": "get_config_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AlternativeWorkflow": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id",
+            "description": "Workflow identifier"
+          },
+          "container_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Image",
+            "description": "OCI image reference"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Confidence score for this alternative"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale",
+            "description": "Why this alternative was considered but not selected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "confidence",
+          "rationale"
+        ],
+        "title": "AlternativeWorkflow",
+        "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- \u2705 Purpose: Help operator make an informed decision\n- \u2705 Content: Pros/cons of alternative approaches\n- \u274c NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
+      },
+      "DetectedLabels": {
+        "properties": {
+          "failedDetections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Faileddetections",
+            "description": "Field names where detection failed. Consumer should ignore values of these fields. Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh"
+          },
+          "gitOpsManaged": {
+            "type": "boolean",
+            "title": "Gitopsmanaged",
+            "description": "Whether namespace is managed by GitOps",
+            "default": false
+          },
+          "gitOpsTool": {
+            "type": "string",
+            "title": "Gitopstool",
+            "description": "GitOps tool: 'argocd', 'flux', or ''",
+            "default": ""
+          },
+          "pdbProtected": {
+            "type": "boolean",
+            "title": "Pdbprotected",
+            "description": "Whether PodDisruptionBudget protects this workload",
+            "default": false
+          },
+          "hpaEnabled": {
+            "type": "boolean",
+            "title": "Hpaenabled",
+            "description": "Whether HorizontalPodAutoscaler is active",
+            "default": false
+          },
+          "stateful": {
+            "type": "boolean",
+            "title": "Stateful",
+            "description": "Whether this is a stateful workload (StatefulSet or has PVCs)",
+            "default": false
+          },
+          "helmManaged": {
+            "type": "boolean",
+            "title": "Helmmanaged",
+            "description": "Whether resource is managed by Helm",
+            "default": false
+          },
+          "networkIsolated": {
+            "type": "boolean",
+            "title": "Networkisolated",
+            "description": "Whether NetworkPolicy restricts traffic",
+            "default": false
+          },
+          "serviceMesh": {
+            "type": "string",
+            "title": "Servicemesh",
+            "description": "Service mesh: 'istio', 'linkerd', ''",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "DetectedLabels",
+        "description": "Auto-detected cluster characteristics from SignalProcessing.\n\nThese labels are used for:\n1. LLM context (natural language) - help LLM understand cluster environment\n2. MCP workflow filtering - filter workflows to only compatible ones\n\nDesign Decision: DD-WORKFLOW-001 v2.2, DD-RECOVERY-003\n\nChanges:\n- v2.1: Added `failedDetections` field to track which detections failed\n- v2.2: Removed `podSecurityLevel` (PSP deprecated, PSS is namespace-level)\n\nConsumer logic: if field is in failedDetections, ignore its value"
+      },
+      "EnrichmentResults": {
+        "properties": {
+          "kubernetesContext": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kubernetescontext",
+            "description": "Kubernetes resource context"
+          },
+          "detectedLabels": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetectedLabels"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Auto-detected cluster characteristics"
+          },
+          "customLabels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customlabels",
+            "description": "Custom labels from SignalProcessing (subdomain \u2192 values). Auto-appended to workflow search per DD-HAPI-001."
+          },
+          "enrichmentQuality": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Enrichmentquality",
+            "description": "Quality score of enrichment (0-1)",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "EnrichmentResults",
+        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, auto-detected labels, and custom labels\nthat are used for workflow filtering and LLM context.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
+      },
+      "ExecutionFailure": {
+        "properties": {
+          "failed_step_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Step Index",
+            "description": "0-indexed step that failed"
+          },
+          "failed_step_name": {
+            "type": "string",
+            "title": "Failed Step Name",
+            "description": "Name of the failed step"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "Kubernetes reason code (e.g., 'OOMKilled', 'DeadlineExceeded'). NOT natural language."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable error message (for logging/debugging)"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code",
+            "description": "Exit code if applicable"
+          },
+          "failed_at": {
+            "type": "string",
+            "title": "Failed At",
+            "description": "ISO timestamp of failure"
+          },
+          "execution_time": {
+            "type": "string",
+            "title": "Execution Time",
+            "description": "Duration before failure (e.g., '2m34s')"
+          }
+        },
+        "type": "object",
+        "required": [
+          "failed_step_index",
+          "failed_step_name",
+          "reason",
+          "message",
+          "failed_at",
+          "execution_time"
+        ],
+        "title": "ExecutionFailure",
+        "description": "Structured failure information using Kubernetes reason codes.\n\nCRITICAL: The 'reason' field uses canonical Kubernetes reason codes as the API contract.\nThis is NOT natural language - it's a structured enum-like value.\n\nValid reason codes include:\n- Resource: OOMKilled, InsufficientCPU, InsufficientMemory, Evicted\n- Scheduling: FailedScheduling, Unschedulable\n- Image: ImagePullBackOff, ErrImagePull, InvalidImageName\n- Execution: DeadlineExceeded, BackoffLimitExceeded, Error\n- Permission: Unauthorized, Forbidden\n- Volume: FailedMount, FailedAttachVolume\n- Node: NodeNotReady, NodeUnreachable\n- Network: NetworkNotReady"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HumanReviewReason": {
+        "type": "string",
+        "enum": [
+          "workflow_not_found",
+          "image_mismatch",
+          "parameter_validation_failed",
+          "no_matching_workflows",
+          "low_confidence",
+          "llm_parsing_error",
+          "investigation_inconclusive"
+        ],
+        "title": "HumanReviewReason",
+        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirements: BR-HAPI-197, BR-HAPI-200\nDesign Decision: DD-HAPI-002 v1.2\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings."
+      },
+      "IncidentRequest": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id",
+            "description": "Unique incident identifier"
+          },
+          "remediation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Remediation Id",
+            "description": "Remediation request ID for audit correlation (e.g., 'req-2025-11-27-abc123'). MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or workflow matching."
+          },
+          "signal_type": {
+            "type": "string",
+            "title": "Signal Type",
+            "description": "Canonical signal type"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity",
+            "description": "Signal severity"
+          },
+          "signal_source": {
+            "type": "string",
+            "title": "Signal Source",
+            "description": "Monitoring system"
+          },
+          "resource_namespace": {
+            "type": "string",
+            "title": "Resource Namespace",
+            "description": "Kubernetes namespace"
+          },
+          "resource_kind": {
+            "type": "string",
+            "title": "Resource Kind",
+            "description": "Kubernetes resource kind"
+          },
+          "resource_name": {
+            "type": "string",
+            "title": "Resource Name",
+            "description": "Resource name"
+          },
+          "error_message": {
+            "type": "string",
+            "title": "Error Message",
+            "description": "Error message"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Additional description"
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment",
+            "description": "Deployment environment"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "description": "Business priority"
+          },
+          "risk_tolerance": {
+            "type": "string",
+            "title": "Risk Tolerance",
+            "description": "Risk tolerance"
+          },
+          "business_category": {
+            "type": "string",
+            "title": "Business Category",
+            "description": "Business category"
+          },
+          "cluster_name": {
+            "type": "string",
+            "title": "Cluster Name",
+            "description": "Kubernetes cluster name"
+          },
+          "is_duplicate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Duplicate",
+            "description": "Duplicate signal",
+            "default": false
+          },
+          "occurrence_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurrence Count",
+            "description": "Occurrence count",
+            "default": 0
+          },
+          "deduplication_window_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deduplication Window Minutes",
+            "description": "Dedup window"
+          },
+          "is_storm": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Storm",
+            "description": "Storm detected",
+            "default": false
+          },
+          "storm_signal_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storm Signal Count",
+            "description": "Storm signal count",
+            "default": 0
+          },
+          "storm_window_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storm Window Minutes",
+            "description": "Storm window"
+          },
+          "storm_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storm Type",
+            "description": "Storm type"
+          },
+          "affected_resources": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affected Resources",
+            "description": "Affected resources"
+          },
+          "firing_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firing Time",
+            "description": "Firing time"
+          },
+          "received_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Time",
+            "description": "Received time"
+          },
+          "first_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen",
+            "description": "First seen"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen",
+            "description": "Last seen"
+          },
+          "signal_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Labels",
+            "description": "Signal labels"
+          },
+          "enrichment_results": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnrichmentResults"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Enriched context from SignalProcessing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "remediation_id",
+          "signal_type",
+          "severity",
+          "signal_source",
+          "resource_namespace",
+          "resource_kind",
+          "resource_name",
+          "error_message",
+          "environment",
+          "priority",
+          "risk_tolerance",
+          "business_category",
+          "cluster_name"
+        ],
+        "title": "IncidentRequest",
+        "description": "Request model for initial incident analysis endpoint\n\nBusiness Requirements:\n- BR-HAPI-002: Incident analysis request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-RECOVERY-003\n- enrichment_results contains DetectedLabels for workflow filtering"
+      },
+      "IncidentResponse": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id",
+            "description": "Incident identifier from request"
+          },
+          "analysis": {
+            "type": "string",
+            "title": "Analysis",
+            "description": "Natural language analysis from LLM"
+          },
+          "root_cause_analysis": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Root Cause Analysis",
+            "description": "Structured RCA with summary, severity, contributing_factors"
+          },
+          "selected_workflow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Workflow",
+            "description": "Selected workflow with workflow_id, containerImage, confidence, parameters"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Overall confidence in analysis"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO timestamp of analysis completion"
+          },
+          "needs_human_review": {
+            "type": "boolean",
+            "title": "Needs Human Review",
+            "description": "True when AI analysis could not produce a reliable result. Reasons include: workflow validation failures after retries, LLM parsing errors, no suitable workflow found, or other AI reliability issues. When true, AIAnalysis should NOT create WorkflowExecution - requires human intervention. Check 'human_review_reason' for structured reason or 'warnings' for details.",
+            "default": false
+          },
+          "human_review_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HumanReviewReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Structured reason when needs_human_review=true. Use this for reliable subReason mapping instead of parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error"
+          },
+          "target_in_owner_chain": {
+            "type": "boolean",
+            "title": "Target In Owner Chain",
+            "description": "Whether RCA-identified target resource was found in OwnerChain. If false, DetectedLabels may be from different scope than affected resource.",
+            "default": true
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)"
+          },
+          "alternative_workflows": {
+            "items": {
+              "$ref": "#/components/schemas/AlternativeWorkflow"
+            },
+            "type": "array",
+            "title": "Alternative Workflows",
+            "description": "Other workflows considered but not selected. For operator context and audit trail only - NOT for automatic fallback execution. Helps operators understand AI reasoning."
+          },
+          "validation_attempts_history": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationAttempt"
+            },
+            "type": "array",
+            "title": "Validation Attempts History",
+            "description": "History of all validation attempts during LLM self-correction. Each attempt records workflow_id, validation result, and any errors. Empty if validation passed on first attempt or no workflow was selected."
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "analysis",
+          "root_cause_analysis",
+          "confidence",
+          "timestamp"
+        ],
+        "title": "IncidentResponse",
+        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nFields added per AIAnalysis team requests:\n- target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)"
+      },
+      "OriginalRCA": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "Brief RCA summary from initial investigation"
+          },
+          "signal_type": {
+            "type": "string",
+            "title": "Signal Type",
+            "description": "Signal type determined by original RCA (e.g., 'OOMKilled')"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity",
+            "description": "Severity determined by original RCA"
+          },
+          "contributing_factors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Contributing Factors",
+            "description": "Factors that contributed to the issue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "signal_type",
+          "severity"
+        ],
+        "title": "OriginalRCA",
+        "description": "Summary of the original root cause analysis from initial AIAnalysis"
+      },
+      "PreviousExecution": {
+        "properties": {
+          "workflow_execution_ref": {
+            "type": "string",
+            "title": "Workflow Execution Ref",
+            "description": "Name of failed WorkflowExecution CRD"
+          },
+          "original_rca": {
+            "$ref": "#/components/schemas/OriginalRCA",
+            "description": "RCA from initial AIAnalysis"
+          },
+          "selected_workflow": {
+            "$ref": "#/components/schemas/SelectedWorkflowSummary",
+            "description": "Workflow that was executed"
+          },
+          "failure": {
+            "$ref": "#/components/schemas/ExecutionFailure",
+            "description": "Structured failure details"
+          },
+          "natural_language_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Natural Language Summary",
+            "description": "WE-generated LLM-friendly failure description. Includes workflow name, failure step, exit code, and human-readable context. Used by LLM to understand what went wrong and avoid similar approaches."
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_execution_ref",
+          "original_rca",
+          "selected_workflow",
+          "failure"
+        ],
+        "title": "PreviousExecution",
+        "description": "Complete context about the previous execution attempt that failed.\n\nBusiness Requirement: BR-HAPI-192 (Recovery Context Consumption)\n- natural_language_summary is WE-generated LLM-friendly failure description\n- Provides context for better recovery workflow selection"
+      },
+      "RecoveryRequest": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id",
+            "description": "Unique incident identifier"
+          },
+          "remediation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Remediation Id",
+            "description": "Remediation request ID for audit correlation (e.g., 'req-2025-11-27-abc123'). MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or workflow matching."
+          },
+          "is_recovery_attempt": {
+            "type": "boolean",
+            "title": "Is Recovery Attempt",
+            "description": "True if this is a recovery attempt after failed workflow",
+            "default": false
+          },
+          "recovery_attempt_number": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Attempt Number",
+            "description": "Which recovery attempt this is (1, 2, 3...)"
+          },
+          "previous_execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreviousExecution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Context from previous failed attempt"
+          },
+          "enrichment_results": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrichment Results",
+            "description": "Enriched context including DetectedLabels for workflow filtering"
+          },
+          "signal_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Type",
+            "description": "Current signal type (may have changed)"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity",
+            "description": "Current severity"
+          },
+          "resource_namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Namespace",
+            "description": "Kubernetes namespace"
+          },
+          "resource_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Kind",
+            "description": "Kubernetes resource kind"
+          },
+          "resource_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Name",
+            "description": "Kubernetes resource name"
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment",
+            "description": "Environment classification",
+            "default": "unknown"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "description": "Priority level",
+            "default": "P2"
+          },
+          "risk_tolerance": {
+            "type": "string",
+            "title": "Risk Tolerance",
+            "description": "Risk tolerance",
+            "default": "medium"
+          },
+          "business_category": {
+            "type": "string",
+            "title": "Business Category",
+            "description": "Business category",
+            "default": "standard"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message",
+            "description": "Current error message"
+          },
+          "cluster_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Name",
+            "description": "Cluster name"
+          },
+          "signal_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal Source",
+            "description": "Signal source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "remediation_id"
+        ],
+        "title": "RecoveryRequest",
+        "description": "Request model for recovery analysis endpoint\n\nBusiness Requirements:\n- BR-HAPI-001: Recovery request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-RECOVERY-002, DD-RECOVERY-003\n- Structured PreviousExecution for recovery attempts\n- is_recovery_attempt and recovery_attempt_number for tracking\n- enrichment_results for DetectedLabels workflow filtering",
+        "example": {
+          "business_category": "critical",
+          "enrichment_results": {
+            "detectedLabels": {},
+            "kubernetesContext": {}
+          },
+          "environment": "production",
+          "incident_id": "inc-001",
+          "is_recovery_attempt": true,
+          "previous_execution": {
+            "failure": {
+              "execution_time": "2m34s",
+              "exit_code": 137,
+              "failed_at": "2025-11-29T10:30:00Z",
+              "failed_step_index": 2,
+              "failed_step_name": "scale_deployment",
+              "message": "Container exceeded memory limit during scale operation",
+              "reason": "OOMKilled"
+            },
+            "original_rca": {
+              "contributing_factors": [
+                "memory leak",
+                "insufficient limits"
+              ],
+              "severity": "high",
+              "signal_type": "OOMKilled",
+              "summary": "Memory exhaustion causing OOMKilled in production pod"
+            },
+            "selected_workflow": {
+              "container_image": "kubernaut/workflow-scale:v1.0.0",
+              "parameters": {
+                "TARGET_REPLICAS": "5"
+              },
+              "rationale": "Scaling out to distribute memory load",
+              "version": "1.0.0",
+              "workflow_id": "scale-horizontal-v1"
+            },
+            "workflow_execution_ref": "req-2025-11-29-abc123-we-1"
+          },
+          "priority": "P1",
+          "recovery_attempt_number": 2,
+          "remediation_id": "req-2025-11-29-abc123",
+          "resource_kind": "Deployment",
+          "resource_name": "api-server",
+          "resource_namespace": "production",
+          "risk_tolerance": "medium",
+          "severity": "high",
+          "signal_type": "OOMKilled"
+        }
+      },
+      "RecoveryResponse": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id",
+            "description": "Incident identifier from request"
+          },
+          "can_recover": {
+            "type": "boolean",
+            "title": "Can Recover",
+            "description": "Whether recovery is possible"
+          },
+          "strategies": {
+            "items": {
+              "$ref": "#/components/schemas/RecoveryStrategy"
+            },
+            "type": "array",
+            "title": "Strategies",
+            "description": "Recommended recovery strategies"
+          },
+          "primary_recommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Recommendation",
+            "description": "Primary recovery action type"
+          },
+          "analysis_confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Analysis Confidence",
+            "description": "Overall confidence"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "Warnings about recovery"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Additional metadata"
+          },
+          "selected_workflow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Workflow",
+            "description": "Selected workflow for recovery attempt (BR-AI-080)"
+          },
+          "recovery_analysis": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Analysis",
+            "description": "Recovery-specific analysis including previous attempt assessment (BR-AI-081)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "can_recover",
+          "analysis_confidence"
+        ],
+        "title": "RecoveryResponse",
+        "description": "Response model for recovery analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Recovery response schema)\nBusiness Requirement: BR-AI-080 (Recovery attempt support)\nBusiness Requirement: BR-AI-081 (Previous execution context handling)",
+        "example": {
+          "analysis_confidence": 0.85,
+          "can_recover": true,
+          "incident_id": "inc-001",
+          "metadata": {
+            "analysis_time_ms": 1500
+          },
+          "primary_recommendation": "scale_down_gradual",
+          "strategies": [
+            {
+              "action_type": "scale_down_gradual",
+              "confidence": 0.9,
+              "estimated_risk": "low",
+              "prerequisites": [
+                "verify_resource_availability"
+              ],
+              "rationale": "Gradually reduce load to allow recovery"
+            }
+          ],
+          "warnings": [
+            "High cluster load may affect other services"
+          ]
+        }
+      },
+      "RecoveryStrategy": {
+        "properties": {
+          "action_type": {
+            "type": "string",
+            "title": "Action Type",
+            "description": "Type of recovery action"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Confidence in strategy"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale",
+            "description": "Why this strategy is recommended"
+          },
+          "estimated_risk": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Estimated Risk",
+            "description": "Risk level"
+          },
+          "prerequisites": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Prerequisites",
+            "description": "Prerequisites for execution"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_type",
+          "confidence",
+          "rationale",
+          "estimated_risk"
+        ],
+        "title": "RecoveryStrategy",
+        "description": "Individual recovery strategy option"
+      },
+      "SelectedWorkflowSummary": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id",
+            "description": "Workflow identifier that was executed"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Workflow version"
+          },
+          "container_image": {
+            "type": "string",
+            "title": "Container Image",
+            "description": "Container image used for execution"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Parameters",
+            "description": "Parameters passed to workflow"
+          },
+          "rationale": {
+            "type": "string",
+            "title": "Rationale",
+            "description": "Why this workflow was originally selected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "version",
+          "container_image",
+          "rationale"
+        ],
+        "title": "SelectedWorkflowSummary",
+        "description": "Summary of the workflow that was executed and failed"
+      },
+      "ValidationAttempt": {
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Attempt",
+            "description": "Attempt number (1-indexed)"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id",
+            "description": "Workflow ID being validated (if any)"
+          },
+          "is_valid": {
+            "type": "boolean",
+            "title": "Is Valid",
+            "description": "Whether validation passed"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "Validation errors (empty if valid)"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO timestamp of validation attempt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt",
+          "is_valid",
+          "timestamp"
+        ],
+        "title": "ValidationAttempt",
+        "description": "Record of a single validation attempt during LLM self-correction.\n\nBusiness Requirement: BR-HAPI-197 (needs_human_review field)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\n\nUsed for:\n1. Operator notification - natural language description of why validation failed\n2. Audit trail - complete history of all validation attempts\n3. Debugging - understand LLM behavior when workflows fail"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

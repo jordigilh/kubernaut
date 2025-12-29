@@ -50,7 +50,7 @@
 || **v2.20** | Oct 29, 2025 | **HTTP Server & Observability BR Formalization**: Formalized 20 new Business Requirements (BR-036 to BR-045 for HTTP Server, BR-101 to BR-110 for Observability) with detailed acceptance criteria. **Motivation**: Original plan had BR range conflicts (Health & Observability claimed BR-016 to BR-025, but those were already assigned to Signal Ingestion). Gap analysis identified 25% confidence loss due to undefined BRs. **Changes**: (1) Created `BR_DEFINITIONS_HTTP_OBSERVABILITY.md` with formal BR definitions; (2) Resolved BR range conflict by moving Observability to BR-101 to BR-110; (3) Updated BR count from 40 to 50 BRs; (4) Updated test count from 110 to 161 tests (+51 tests: 25 HTTP Server + 26 Observability); (5) Added detailed acceptance criteria for each BR; (6) Documented business outcomes for observability metrics. **HTTP Server BRs**: Server startup (BR-036), ReadTimeout (BR-037), WriteTimeout (BR-038), IdleTimeout (BR-039), Graceful shutdown (BR-040), RFC 7807 errors (BR-041), Content-Type validation (BR-042), Method validation (BR-043), Body size limits (BR-044), Concurrent handling (BR-045). **Observability BRs**: Prometheus endpoint (BR-101), Alert metrics (BR-102), CRD metrics (BR-103), HTTP duration (BR-104), Redis duration (BR-105), Redis health (BR-106), Redis pool (BR-107), In-flight requests (BR-108), Structured logging (BR-109), Health endpoints (BR-110). **Impact**: +51 tests, +10 BRs, resolves 25% confidence gap. **Confidence**: 100% (formal BR definitions approved). **Status**: ⚠️ SUPERSEDED |
 || **v2.21** | Oct 29, 2025 | **Test Gap Analysis & Future Test Tier Documentation**: Comprehensive analysis of missing edge cases and combination scenarios across all test tiers (Unit, Integration, Defense-in-Depth, E2E, Chaos, Load). **Motivation**: After achieving 100% active test pass rate (50/50 integration tests, 115/115 unit tests), identified 19 pending tests that belonged in future test tiers (E2E, Chaos, Load) rather than integration tier. **Changes**: (1) Created comprehensive `TEST_GAP_ANALYSIS.md` (485 lines) categorizing all missing scenarios by tier; (2) Removed 12 pending tests from integration tier that belonged in other tiers (5 Chaos, 5 E2E, 2 Load); (3) Created tier-specific README documentation in `test/chaos/gateway/`, `test/e2e/gateway/`, `test/load/gateway/` with detailed use cases; (4) Documented 7 remaining business logic issues (storm detection, HTTP status codes) for immediate implementation; (5) Added Priority 1 Critical Business Outcome Gaps section with 15 high-priority tests. **Test Gap Summary**: Unit (8 gaps: error propagation, concurrent operations, edge cases), Integration (12 gaps: adapter interactions, Redis patterns, K8s scenarios), Defense-in-Depth (6 gaps: BR coverage at multiple levels), E2E (10 gaps: complete workflows, multi-component scenarios), Chaos (8 gaps: failure injection, resilience), Load (6 gaps: performance under stress). **Business Logic Issues**: Storm detection aggregation (BR-013), HTTP status codes for storm/dedup (BR-016), Redis state persistence (BR-077), Redis failover (chaos tier), health endpoint validation (BR-110). **Impact**: Clear roadmap for future test implementation, 100% active test pass rate maintained, business logic issues prioritized. **Confidence**: 100% (comprehensive gap analysis, clear prioritization). **Status**: ⚠️ SUPERSEDED |
 || **v2.22** | Oct 31, 2025 | **Priority 1 Test Gaps Implementation Complete**: Successfully implemented all 21 Priority 1 tests identified in v2.21 test gap analysis, achieving production-ready status. **Implementation**: (1) **Unit Tests** (5 tests): Edge case validation (`test/unit/gateway/edge_cases_test.go`) - empty fingerprint, empty alert name, invalid/valid severity, cluster-scoped alerts; (2) **Integration Tests** (16 tests): Adapter interaction patterns (5 tests), Redis state persistence (3 tests), Kubernetes API interaction (4 tests), Storm detection state machine (4 tests); (3) **Infrastructure Improvements**: Changed fallback namespace from `default` to `kubernaut-system` for cluster-scoped signals with proper labeling. **Test Results**: Unit tests 120/121 passing (99.2%), Integration tests 113/114 passing (99.1%), Total 233/235 passing (99.1%). **Business Requirements Validated**: BR-001 (Prometheus webhook, 8 tests), BR-002 (K8s Events, 2 tests), BR-003 (Deduplication, 2 tests), BR-005 (Environment, 1 test), BR-008 (Fingerprint, 2 tests), BR-011 (CRD creation, 4 tests), BR-013 (Storm detection, 2 tests), BR-016 (Storm aggregation, 3 tests), BR-077 (Redis persistence, 1 test). **Defense-in-Depth**: Unit tests validate pure business logic, integration tests validate real infrastructure (Kind cluster + Redis). **Documentation**: Created `GATEWAY_PRIORITY1_TESTS_COMPLETE.md` (264 lines) with comprehensive summary, `FALLBACK_NAMESPACE_CHANGE_IMPACT.md` for infrastructure improvements. **Remaining Work**: 1 failing integration test (namespace fallback label validation), 7 pending tests (deferred to appropriate tiers), 10 skipped tests (outdated/moved to other tiers). **Confidence**: 90% (production-ready with minor fixes needed). **Status**: ⚠️ SUPERSEDED |
-|| **v2.23** | Oct 31, 2025 | **Documentation Complete - DD-GATEWAY-005 Added**: Comprehensive documentation of fallback namespace strategy and Gateway specifications updated. **Design Decision**: Created [DD-GATEWAY-005](../../architecture/decisions/DD-GATEWAY-007-fallback-namespace-strategy.md) documenting fallback namespace strategy - analyzed 3 alternatives, approved `kubernaut-system` fallback with labels (95% confidence). **Key Decision**: Fallback namespace changed from `default` to `kubernaut-system` for cluster-scoped signals (NodeNotReady, ClusterMemoryPressure, etc.). **Labels Added**: `kubernaut.io/origin-namespace` (preserves original namespace for audit), `kubernaut.io/cluster-scoped` (indicates cluster-level issue). **Rationale**: (1) Infrastructure consistency (kubernaut-system is proper home for Kubernaut infrastructure), (2) Audit trail (labels preserve origin namespace), (3) Cluster-scoped support (handles cluster-level alerts gracefully), (4) RBAC alignment (operators already have access). **Specification Updates**: Updated `api-specification.md` with namespace fallback strategy section, cluster-scoped signal handling, label schema, kubectl query examples. **Documentation**: DD-GATEWAY-005 (comprehensive design decision), API specification updates, DESIGN_DECISIONS.md index updated. **Test Status**: All Priority 1 tests passing (21/21), namespace fallback test passing with correct labels. **Confidence**: 95% (production-ready with complete documentation). **Status**: ⚠️ SUPERSEDED |
+|| **v2.23** | Oct 31, 2025 | **Documentation Complete - DD-GATEWAY-005 Added**: Comprehensive documentation of fallback namespace strategy and Gateway specifications updated. **Design Decision**: Created [DD-GATEWAY-005](../../architecture/decisions/DD-GATEWAY-007-fallback-namespace-strategy.md) documenting fallback namespace strategy - analyzed 3 alternatives, approved `kubernaut-system` fallback with labels (95% confidence). **Key Decision**: Fallback namespace changed from `default` to `kubernaut-system` for cluster-scoped signals (NodeNotReady, ClusterMemoryPressure, etc.). **Labels Added**: `kubernaut.ai/origin-namespace` (preserves original namespace for audit), `kubernaut.ai/cluster-scoped` (indicates cluster-level issue). **Rationale**: (1) Infrastructure consistency (kubernaut-system is proper home for Kubernaut infrastructure), (2) Audit trail (labels preserve origin namespace), (3) Cluster-scoped support (handles cluster-level alerts gracefully), (4) RBAC alignment (operators already have access). **Specification Updates**: Updated `api-specification.md` with namespace fallback strategy section, cluster-scoped signal handling, label schema, kubectl query examples. **Documentation**: DD-GATEWAY-005 (comprehensive design decision), API specification updates, DESIGN_DECISIONS.md index updated. **Test Status**: All Priority 1 tests passing (21/21), namespace fallback test passing with correct labels. **Confidence**: 95% (production-ready with complete documentation). **Status**: ⚠️ SUPERSEDED |
 || **v2.24** | Nov 6, 2025 | **E2E Edge Cases + Production-Like Infrastructure**: Comprehensive E2E testing strategy documented with 14 edge case tests and production-like infrastructure (Kind + Redis HA). **Motivation**: After achieving 99.1% unit+integration test pass rate (233/235 tests), identified critical gap in E2E testing - current E2E tests (4 existing in `test/e2e/gateway/README.md`) only cover happy path scenarios (30% of production), missing 70% of failure scenarios (service unavailability, Redis failover, K8s API throttling, concurrent load). **E2E Edge Cases**: Documented 14 comprehensive E2E tests across 4 categories: (1) **P0 Critical** (6 tests, 10-14h): Storm Window TTL Expiration, Redis Sentinel Failover During Storm, K8s API Rate Limiting (429), Concurrent Storm Detection (Race Conditions), CRD Name Length Limit (>253 chars), Gateway Restart During Storm (State Recovery); (2) **P1 High** (4 tests, 6-8h): Redis Connection Pool Exhaustion, K8s API Slow Response (10+ seconds), Redis Memory Pressure (Near OOM), Cascading Failures (Redis + K8s API Down); (3) **P2 Medium** (4 tests, 4-6h): AlertManager Retry Behavior, Large Alert Payloads (>1MB), Clock Skew (Alert Timestamps), UTF-8/Unicode in Alert Names. **Infrastructure**: Production-like setup with Kind cluster (3 nodes: control-plane + 2 workers), Redis Sentinel HA (1 master + 2 replicas + 3 Sentinels), Prometheus AlertManager, optional Toxiproxy for network chaos. **Load Testing Strategy**: Hybrid approach with 3 lightweight load tests in E2E suite (~5 min, validates correctness under moderate load) + 5 heavy load tests in dedicated suite (~60 min, validates scalability under extreme load). **Configuration**: Created `test/e2e/gateway/kind-cluster-config.yaml` with 3-node cluster, port mappings (8080 Gateway HTTP, 9090 Metrics, 26379 Redis Sentinel, 9093 AlertManager), API server rate limiting enabled. **Documentation**: Created comprehensive analysis documents in `docs/services/stateless/gateway-service/e2e-testing/`: (1) `GATEWAY_E2E_EDGE_CASES_TRIAGE.md` (15,790 bytes) - detailed 14-test breakdown with business risk, test scenarios, expected outcomes, production impact; (2) `GATEWAY_E2E_INFRASTRUCTURE_ASSESSMENT.md` (19,354 bytes) - infrastructure architecture, hybrid load testing rationale, confidence assessment, cost-benefit analysis; (3) `GATEWAY_E2E_SUMMARY.md` (4,397 bytes) - executive summary with quick reference. **Confidence Improvement**: 95% → 98% (+3%) with P0 edge cases, 98% → 99.5% (+1.5%) with complete E2E+load coverage. **Timeline**: Phase 1 (Infrastructure 4-6h) + Phase 2 (P0 Tests 10-14h) + Phase 3 (E2E Load 2-3h) + Phase 4 (Dedicated Load 8-12h, optional) = 24-37 hours total. **Rationale**: E2E tests are ONLY way to validate cross-component integration under real failure conditions (Redis failover, K8s API throttling, concurrent load) that can't be replicated in integration tests. Missing E2E coverage represents 30-50% of production requests (alert storms, infrastructure failures, concurrent load) that were previously untested. **Status**: ✅ **CURRENT** - E2E edge cases documented, ready for implementation. |
 
 ---
@@ -2464,10 +2464,10 @@ func (s *StormAggregator) CreateAggregatedCRD(
 			Name:      crdName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				"kubernaut.io/storm":         "true",
-				"kubernaut.io/storm-pattern": sanitizeName(alertName),
-				"kubernaut.io/priority":      priority,
-				"kubernaut.io/environment":   environment,
+				"kubernaut.ai/storm":         "true",
+				"kubernaut.ai/storm-pattern": sanitizeName(alertName),
+				"kubernaut.ai/priority":      priority,
+				"kubernaut.ai/environment":   environment,
 			},
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
@@ -2523,8 +2523,8 @@ func (s *StormAggregator) GetStormCRD(ctx context.Context, namespace, alertName 
 	err := s.k8sClient.List(ctx, rrList,
 		client.InNamespace(namespace),
 		client.MatchingLabels{
-			"kubernaut.io/storm":         "true",
-			"kubernaut.io/storm-pattern": sanitizeName(alertName),
+			"kubernaut.ai/storm":         "true",
+			"kubernaut.ai/storm-pattern": sanitizeName(alertName),
 		})
 
 	if err != nil {
@@ -2785,7 +2785,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation Integration", func() {
 		// Find storm CRD
 		var stormCRD *remediationv1alpha1.RemediationRequest
 		for i := range crds {
-			if crds[i].Labels["kubernaut.io/storm"] == "true" {
+			if crds[i].Labels["kubernaut.ai/storm"] == "true" {
 				stormCRD = &crds[i]
 				break
 			}
@@ -2896,7 +2896,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation Integration", func() {
 // Helper functions
 func findStormCRD(crds []remediationv1alpha1.RemediationRequest) *remediationv1alpha1.RemediationRequest {
 	for i := range crds {
-		if crds[i].Labels["kubernaut.io/storm"] == "true" {
+		if crds[i].Labels["kubernaut.ai/storm"] == "true" {
 			return &crds[i]
 		}
 	}
@@ -2906,7 +2906,7 @@ func findStormCRD(crds []remediationv1alpha1.RemediationRequest) *remediationv1a
 func filterStormCRDs(crds []remediationv1alpha1.RemediationRequest) []remediationv1alpha1.RemediationRequest {
 	result := []remediationv1alpha1.RemediationRequest{}
 	for _, crd := range crds {
-		if crd.Labels["kubernaut.io/storm"] == "true" {
+		if crd.Labels["kubernaut.ai/storm"] == "true" {
 			result = append(result, crd)
 		}
 	}
@@ -3144,7 +3144,7 @@ Signal → Adapter → Environment Classifier → Priority Engine → Remediatio
 **Key Deliverables**:
 - `pkg/gateway/middleware/ratelimit.go` - Redis-based rate limiting
 - `pkg/gateway/middleware/security_headers.go` - CORS, CSP, HSTS headers
-- `pkg/gateway/middleware/log_sanitization.go` - Sensitive data redaction
+- `pkg/shared/sanitization/sanitizer.go` - Sensitive data redaction (shared library)
 - `pkg/gateway/middleware/timestamp.go` - Replay attack prevention
 - `pkg/gateway/middleware/http_metrics.go` - Prometheus metrics
 - `pkg/gateway/middleware/ip_extractor.go` - Source IP extraction
@@ -3696,15 +3696,15 @@ curl -X POST http://gateway-service.kubernaut-system.svc.cluster.local:8080/api/
 
 **CRD Created** (in Kubernetes):
 ```yaml
-apiVersion: remediation.kubernaut.io/v1
+apiVersion: remediation.kubernaut.ai/v1
 kind: RemediationRequest
 metadata:
   name: remediation-highmemoryusage-a3f8b2
   namespace: prod-payment-service
   labels:
-    kubernaut.io/environment: production
-    kubernaut.io/priority: P1
-    kubernaut.io/source: prometheus
+    kubernaut.ai/environment: production
+    kubernaut.ai/priority: P1
+    kubernaut.ai/source: prometheus
 spec:
   alertName: HighMemoryUsage
   severity: critical
@@ -3840,14 +3840,14 @@ done
 
 **CRD Created** (single aggregated CRD):
 ```yaml
-apiVersion: remediation.kubernaut.io/v1
+apiVersion: remediation.kubernaut.ai/v1
 kind: RemediationRequest
 metadata:
   name: remediation-storm-highcpuusage-abc123
   namespace: prod-api
   labels:
-    kubernaut.io/storm: "true"
-    kubernaut.io/storm-pattern: highcpuusage
+    kubernaut.ai/storm: "true"
+    kubernaut.ai/storm-pattern: highcpuusage
 spec:
   alertName: HighCPUUsage
   severity: critical
@@ -4081,9 +4081,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 			Name:      generateCRDName(signal),
 			Namespace: signal.Namespace,
 			Labels: map[string]string{
-				"kubernaut.io/environment": signal.Environment,
-				"kubernaut.io/priority":    signal.Priority,
-				"kubernaut.io/source":      signal.SourceType,
+				"kubernaut.ai/environment": signal.Environment,
+				"kubernaut.ai/priority":    signal.Priority,
+				"kubernaut.ai/source":      signal.SourceType,
 			},
 		},
 		Spec: remediationv1.RemediationRequestSpec{
@@ -4192,7 +4192,7 @@ RemediationOrchestrator (Watch)
 ```bash
 # 1. Create test RemediationRequest CRD
 kubectl apply -f - <<EOF
-apiVersion: remediation.kubernaut.io/v1
+apiVersion: remediation.kubernaut.ai/v1
 kind: RemediationRequest
 metadata:
   name: test-remediation

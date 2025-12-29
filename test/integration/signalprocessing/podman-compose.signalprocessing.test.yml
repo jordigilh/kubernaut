@@ -1,0 +1,118 @@
+# SignalProcessing Integration Test Infrastructure
+# Port Allocation per DD-TEST-001: Port Allocation Strategy
+#
+# Service Ports (SignalProcessing-specific):
+#   PostgreSQL:       15436 → 5432  (RO uses 15435, so SP uses 15436)
+#   Redis:            16382 → 6379  (RO uses 16381, so SP uses 16382)
+#   Data Storage API: 18094 → 8080
+#
+# These ports are dedicated to SignalProcessing integration tests to prevent
+# collisions with other services running tests in parallel.
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: signalprocessing_postgres_test
+    environment:
+      POSTGRES_USER: kubernaut
+      POSTGRES_PASSWORD: kubernaut-test-password
+      POSTGRES_DB: kubernaut
+    ports:
+      - "15436:5432"  # SignalProcessing integration test PostgreSQL port
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kubernaut -d kubernaut"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - signalprocessing_test_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: signalprocessing_redis_test
+    ports:
+      - "16382:6379"  # SignalProcessing integration test Redis port
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - signalprocessing_test_network
+
+  datastorage:
+    build:
+      context: ../../..
+      dockerfile: docker/data-storage.Dockerfile
+    image: localhost/kubernaut-datastorage:e2e-test
+    container_name: signalprocessing_datastorage_test
+    environment:
+      CONFIG_PATH: /etc/datastorage/config.yaml
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: kubernaut
+      POSTGRES_PASSWORD: kubernaut-test-password
+      POSTGRES_DB: kubernaut
+      REDIS_ADDR: redis:6379
+      PORT: 8080
+    ports:
+      - "18094:8080"  # SignalProcessing integration test DataStorage API port
+    volumes:
+      - ./config:/etc/datastorage:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - signalprocessing_test_network
+
+  # Database migrations (runs once and exits)
+  # Uses postgres image with psql (avoids goose image pull issues)
+  # Extracts only "Up" section from goose-formatted migrations
+  migrate:
+    image: postgres:16-alpine
+    container_name: signalprocessing_migrations
+    volumes:
+      - ../../../migrations:/migrations:ro
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: kubernaut
+      PGPASSWORD: kubernaut-test-password
+      PGDATABASE: kubernaut
+    # Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Waiting for PostgreSQL..."
+        until pg_isready -h postgres -U kubernaut; do sleep 1; done
+        echo "Applying migrations (Up sections only)..."
+        find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
+          echo "Applying $$f..."
+          sed -n '1,/^-- +goose Down/p' "$$f" | grep -v '^-- +goose Down' | psql
+        done
+        echo "Migrations complete!"
+    networks:
+      - signalprocessing_test_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  signalprocessing_test_network:
+    name: signalprocessing_test_network
+    driver: bridge
+

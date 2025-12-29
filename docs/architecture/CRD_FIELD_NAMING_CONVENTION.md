@@ -470,7 +470,7 @@ type AIAnalysisStatus struct {
 
     // Investigation details
     InvestigationID   string `json:"investigationId,omitempty"`   // HolmesGPT investigation ID
-    TokensUsed        int    `json:"tokensUsed,omitempty"`        // LLM tokens consumed
+    // NOTE: TokensUsed REMOVED - HAPI owns LLM cost observability (use InvestigationID to correlate)
     InvestigationTime int64  `json:"investigationTime,omitempty"` // Duration in seconds
 
     // Conditions

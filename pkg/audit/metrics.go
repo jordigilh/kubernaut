@@ -100,6 +100,37 @@ var (
 		},
 		[]string{"service"},
 	)
+
+	// auditBufferCapacity tracks the maximum buffer capacity (from config).
+	//
+	// DD-AUDIT-004: Buffer Sizing Strategy for Burst Traffic
+	// This gauge is set once at initialization and represents the configured buffer size.
+	// Use with audit_buffer_size to calculate buffer utilization percentage.
+	//
+	// Query: audit_buffer_size / audit_buffer_capacity
+	auditBufferCapacity = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "audit_buffer_capacity",
+			Help: "Maximum buffer capacity (configured buffer size)",
+		},
+		[]string{"service"},
+	)
+
+	// auditBufferUtilization tracks the current buffer utilization ratio (0.0-1.0).
+	//
+	// DD-AUDIT-004: Buffer Sizing Strategy for Burst Traffic
+	// This gauge shows the current buffer utilization as a ratio (0.0 = empty, 1.0 = full).
+	// Alert on >0.8 (80% utilization) to detect buffer saturation before events are dropped.
+	//
+	// Alert threshold: >0.8 (80% utilization)
+	// Critical threshold: >0.95 (95% utilization)
+	auditBufferUtilization = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "audit_buffer_utilization_ratio",
+			Help: "Current buffer utilization ratio (0.0-1.0)",
+		},
+		[]string{"service"},
+	)
 )
 
 // MetricsLabels contains the labels for audit metrics.
@@ -134,6 +165,24 @@ func (m MetricsLabels) RecordBatchFailed() {
 // SetBufferSize sets the current buffer size gauge.
 func (m MetricsLabels) SetBufferSize(size int) {
 	auditBufferSize.WithLabelValues(m.Service).Set(float64(size))
+}
+
+// SetBufferCapacity sets the maximum buffer capacity gauge (called once at initialization).
+//
+// DD-AUDIT-004: Buffer Sizing Strategy for Burst Traffic
+func (m MetricsLabels) SetBufferCapacity(capacity int) {
+	auditBufferCapacity.WithLabelValues(m.Service).Set(float64(capacity))
+}
+
+// SetBufferUtilization sets the buffer utilization ratio gauge.
+//
+// DD-AUDIT-004: Buffer Sizing Strategy for Burst Traffic
+// Utilization is calculated as current_size / max_capacity (0.0-1.0)
+func (m MetricsLabels) SetBufferUtilization(currentSize, maxCapacity int) {
+	if maxCapacity > 0 {
+		utilization := float64(currentSize) / float64(maxCapacity)
+		auditBufferUtilization.WithLabelValues(m.Service).Set(utilization)
+	}
 }
 
 // ObserveWriteDuration records the duration of a write operation.

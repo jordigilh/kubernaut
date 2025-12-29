@@ -17,15 +17,9 @@ limitations under the License.
 package client
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"strconv"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Config holds the configuration for the Data Storage HTTP client
@@ -44,14 +38,14 @@ type Config struct {
 }
 
 // DataStorageClient is a high-level wrapper around the auto-generated OpenAPI client
-// It provides a cleaner API with parsed responses and proper error handling
+// It provides a cleaner API with structured types and proper error handling
 type DataStorageClient struct {
-	client ClientInterface
+	client ClientWithResponsesInterface
 	config Config
 }
 
 // NewDataStorageClient creates a new Data Storage HTTP client
-func NewDataStorageClient(cfg Config) *DataStorageClient {
+func NewDataStorageClient(cfg Config) (*DataStorageClient, error) {
 	// Validate and set defaults
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 5 * time.Second
@@ -76,173 +70,35 @@ func NewDataStorageClient(cfg Config) *DataStorageClient {
 	// Create the auto-generated client
 	generatedClient, err := NewClientWithResponses(cfg.BaseURL, WithHTTPClient(httpClient))
 	if err != nil {
-		panic(fmt.Sprintf("failed to create Data Storage client: %v", err))
+		return nil, fmt.Errorf("failed to create Data Storage client: %w", err)
 	}
 
 	return &DataStorageClient{
 		client: generatedClient,
 		config: cfg,
-	}
-}
-
-// IncidentsResult holds incidents with pagination metadata
-type IncidentsResult struct {
-	Incidents []Incident
-	Total     int
-}
-
-// ListIncidents retrieves a list of incidents from the Data Storage Service
-// filters can include: alert_name, severity, action_type, namespace, limit, offset
-func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[string]string) (*IncidentsResult, error) {
-	// Build query parameters from filters
-	params := &ListIncidentsParams{}
-
-	if alertName, ok := filters["alert_name"]; ok {
-		params.AlertName = &alertName
-	}
-	if severity, ok := filters["severity"]; ok {
-		sev := ListIncidentsParamsSeverity(severity)
-		params.Severity = &sev
-	}
-	if actionType, ok := filters["action_type"]; ok {
-		params.ActionType = &actionType
-	}
-	if namespace, ok := filters["namespace"]; ok {
-		params.Namespace = &namespace
-	}
-	if limitStr, ok := filters["limit"]; ok {
-		if limitInt, err := strconv.Atoi(limitStr); err == nil {
-			params.Limit = &limitInt
-		}
-	}
-	if offsetStr, ok := filters["offset"]; ok {
-		if offsetInt, err := strconv.Atoi(offsetStr); err == nil {
-			params.Offset = &offsetInt
-		}
-	}
-	if namespace, ok := filters["namespace"]; ok {
-		params.Namespace = &namespace
-	}
-
-	// Add request ID for tracing
-	requestID := uuid.New().String()
-	reqEditor := func(ctx context.Context, req *http.Request) error {
-		req.Header.Set("X-Request-ID", requestID)
-		req.Header.Set("User-Agent", "kubernaut-context-api/1.0")
-		return nil
-	}
-
-	// Make the request
-	resp, err := c.client.ListIncidents(ctx, params, reqEditor)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list incidents: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			// Log error but don't fail the request since we already have the data
-			fmt.Printf("failed to close response body: %v\n", err)
-		}
-	}()
-
-	// Check for errors
-	if resp.StatusCode >= 400 {
-		return nil, c.parseError(resp)
-	}
-
-	// Parse response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	var listResp IncidentListResponse
-	if err := json.Unmarshal(body, &listResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	// Extract total from pagination
-	total := int(listResp.Pagination.Total)
-
-	return &IncidentsResult{
-		Incidents: listResp.Data,
-		Total:     total,
 	}, nil
 }
 
-// GetIncidentByID retrieves a single incident by ID from the Data Storage Service
-func (c *DataStorageClient) GetIncidentByID(ctx context.Context, id int) (*Incident, error) {
-	// Add request ID for tracing
-	requestID := uuid.New().String()
-	reqEditor := func(ctx context.Context, req *http.Request) error {
-		req.Header.Set("X-Request-ID", requestID)
-		req.Header.Set("User-Agent", "kubernaut-context-api/1.0")
-		return nil
-	}
-
-	// Make the request
-	resp, err := c.client.GetIncidentByID(ctx, int64(id), reqEditor)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get incident: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			// Log error but don't fail the request since we already have the data
-			fmt.Printf("failed to close response body: %v\n", err)
-		}
-	}()
-
-	// Check for errors
-	if resp.StatusCode == 404 {
-		return nil, nil // Not found, return nil incident
-	}
-	if resp.StatusCode >= 400 {
-		return nil, c.parseError(resp)
-	}
-
-	// Parse response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	var incident Incident
-	if err := json.Unmarshal(body, &incident); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return &incident, nil
+// CreateAuditEventResult holds the result of creating an audit event
+// Commented out as CreateAuditEvent method is not implemented
+/*
+type CreateAuditEventResult struct {
+	EventID   uuid.UUID
+	CreatedAt time.Time
 }
+*/
 
-// parseError parses an RFC 7807 error response
-func (c *DataStorageClient) parseError(resp *http.Response) error {
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("HTTP %d: failed to read error body: %w", resp.StatusCode, err)
-	}
-
-	// Try to parse as RFC 7807 error
-	var rfc7807Err RFC7807Error
-	if err := json.Unmarshal(body, &rfc7807Err); err == nil && rfc7807Err.Title != "" {
-		// Return structured RFC 7807 error
-		// Note: We return fmt.Errorf to satisfy the error interface
-		// The structured error is preserved in rfc7807Err for consumers who need it
-		detail := stringValue(rfc7807Err.Detail)
-		instance := stringValue(rfc7807Err.Instance)
-		return fmt.Errorf("RFC 7807 Error: %s - %s (status: %d, instance: %s)",
-			rfc7807Err.Title, detail, resp.StatusCode, instance)
-	}
-
-	// Fallback to generic error
-	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+// CreateAuditEvent creates a single audit event using structured types
+//
+// V1.0: Commented out due to type mismatches (use batch endpoint instead)
+// Temporarily commented out to unblock development. Use batch endpoint instead via:
+// pkg/datastorage/audit.NewOpenAPIAuditClient which uses PostApiV1AuditEventsBatchWithResponse
+/*
+func (c *DataStorageClient) CreateAuditEvent(ctx context.Context, event *audit.AuditEvent) (*CreateAuditEventResult, error) {
+	// ... implementation commented out due to compilation errors ...
+	return nil, fmt.Errorf("not implemented - use audit batch endpoint instead")
 }
-
-// stringValue safely dereferences a string pointer
-func stringValue(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
+*/
 
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {

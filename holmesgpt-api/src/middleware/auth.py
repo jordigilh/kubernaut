@@ -103,10 +103,12 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         Returns None in dev mode or if file doesn't exist.
         """
+        # Guard clause: Skip in dev mode
         if self.dev_mode:
             logger.info({"event": "skipping_sa_token_load", "reason": "dev_mode"})
             return None
 
+        # Guard clause: Check file existence
         token_path = Path(K8S_SA_TOKEN_PATH)
         if not token_path.exists():
             logger.warning({
@@ -116,6 +118,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             })
             return None
 
+        # Load token from file
         try:
             with open(token_path, "r") as f:
                 token = f.read().strip()
@@ -204,16 +207,17 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         """
         auth_header = request.headers.get("Authorization", "")
 
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            return await self._validate_k8s_token(token)
+        # Guard clause: Early return for missing/invalid auth header
+        if not auth_header.startswith("Bearer "):
+            record_auth_failure("no_credentials", request.url.path)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No valid authentication credentials provided"
+            )
 
-        # Record missing credentials
-        record_auth_failure("no_credentials", request.url.path)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No valid authentication credentials provided"
-        )
+        # Extract and validate token
+        token = auth_header[7:]
+        return await self._validate_k8s_token(token)
 
     async def _validate_k8s_token(self, token: str) -> User:
         """

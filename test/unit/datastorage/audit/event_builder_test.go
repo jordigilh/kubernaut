@@ -1,5 +1,18 @@
-// Copyright 2025 Jordi Gil.
-// SPDX-License-Identifier: Apache-2.0
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package audit
 
@@ -32,10 +45,13 @@ func TestAuditEventBuilder(t *testing.T) {
 // - BR-STORAGE-033-002: Type-safe event building API
 // - BR-STORAGE-033-003: Consistent field naming across services
 //
+// Testing Principle: Behavior + Correctness
 // ========================================
 
 var _ = Describe("BaseEventBuilder", func() {
 	Context("BR-STORAGE-033-001: Standardized event_data JSONB structure", func() {
+		// BEHAVIOR: Builder creates event with correct version field
+		// CORRECTNESS: Version is exactly "1.0"
 		It("should create event with version 1.0", func() {
 			// TDD RED: This test will FAIL until we implement BaseEventBuilder
 			builder := audit.NewEventBuilder("test-service", "test.event")
@@ -258,4 +274,3 @@ var _ = Describe("BaseEventBuilder", func() {
 		})
 	})
 })
-

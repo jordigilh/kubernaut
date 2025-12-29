@@ -1,0 +1,42 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  # Expose Notification Controller metrics via NodePort to host machine
+  # This eliminates kubectl port-forward instability for E2E tests
+  # Using 8081 on host (gateway uses 8080) - proven port pattern
+  extraPortMappings:
+  - containerPort: 30186  # Notification metrics NodePort (per DD-TEST-001)
+    hostPort: 9186        # Port on host machine (localhost:9186)
+    protocol: TCP
+  - containerPort: 30090  # Data Storage NodePort for audit E2E tests
+    hostPort: 30090       # Port on host machine (localhost:30090)
+    protocol: TCP
+  # Mount host directory for E2E file delivery validation
+  # This allows tests to directly read files written by FileService
+  # Note: hostPath is set dynamically by CreateNotificationCluster:
+  #   - Linux/CI: /tmp/kubernaut-e2e-notifications (direct access)
+  #   - macOS: $HOME/.kubernaut/e2e-notifications (Podman VM limitation)
+  # extraMounts is added programmatically in infrastructure/notification.go
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel E2E testing
+        # Default max-requests-inflight: 400
+        # Default max-mutating-requests-inflight: 200
+        # With 4 parallel test processes × 100 concurrent notifications = 400 QPS
+        # These limits provide 2x headroom for test stability
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        # Default kube-api-qps: 20, kube-api-burst: 30
+        # Higher limits prevent CRD creation delays during parallel testing
+        kube-api-qps: "100"
+        kube-api-burst: "200"
+- role: worker
+
+

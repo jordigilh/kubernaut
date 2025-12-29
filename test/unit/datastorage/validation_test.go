@@ -20,23 +20,29 @@ import (
 	"strings"
 	"time"
 
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
+// ========================================
+// INPUT VALIDATION UNIT TESTS
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("BR-STORAGE-010: Input Validation", func() {
 	var validator *validation.Validator
 
 	BeforeEach(func() {
-		logger, _ := zap.NewDevelopment()
+		logger := kubelog.NewLogger(kubelog.DevelopmentOptions())
 		validator = validation.NewValidator(logger)
 	})
 
 	// ⭐ TABLE-DRIVEN: Validation test cases
+	// BEHAVIOR: Validator accepts valid audit records and rejects invalid ones
+	// CORRECTNESS: Required fields must be present, invalid values are rejected
 	DescribeTable("should validate RemediationAudit records",
 		func(audit *models.RemediationAudit, shouldPass bool, expectedErrorContains string) {
 			err := validator.ValidateRemediationAudit(audit)

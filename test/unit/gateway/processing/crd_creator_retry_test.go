@@ -22,10 +22,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -51,6 +51,25 @@ import (
 // - Real K8s semantics with in-memory storage
 // - Error simulation via interceptor.Funcs
 
+// newTestSignal creates a valid NormalizedSignal with required resource info for testing
+// V1.0 requires resource Kind and Name (per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+func newTestSignal(fingerprint, alertName string) *types.NormalizedSignal {
+	return &types.NormalizedSignal{
+		Fingerprint: fingerprint,
+		AlertName:   alertName,
+		Severity:    "critical",
+		Namespace:   "production",
+		Resource: types.ResourceIdentifier{
+			Kind:      "Pod",
+			Name:      "test-pod-" + fingerprint,
+			Namespace: "production",
+		},
+		Labels: map[string]string{
+			"alertname": alertName,
+		},
+	}
+}
+
 var _ = Describe("CRDCreator Retry Logic", func() {
 	var (
 		creator     *processing.CRDCreator
@@ -58,7 +77,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 		scheme      *runtime.Scheme
 		metricsReg  *prometheus.Registry
 		metricsInst *metrics.Metrics
-		logger      *zap.Logger
+		logger      logr.Logger
 		retryConfig *config.RetrySettings
 		ctx         context.Context
 		cancel      context.CancelFunc
@@ -75,7 +94,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 		metricsInst = metrics.NewMetricsWithRegistry(metricsReg)
 
 		// Create logger
-		logger = zap.NewNop()
+		logger = logr.Discard()
 
 		// Setup scheme for fake client (ADR-004)
 		scheme = runtime.NewScheme()
@@ -133,19 +152,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-429",
-				AlertName:   "TestAlert429",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlert429",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-429", "TestAlert429")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -184,19 +195,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-503",
-				AlertName:   "TestAlert503",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlert503",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-503", "TestAlert503")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -228,19 +231,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-503-fail",
-				AlertName:   "TestAlert503Fail",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlert503Fail",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-503-fail", "TestAlert503Fail")
 
 			// Execute: Create CRD with retry (should fail)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Failure after max retries
 			Expect(err).To(HaveOccurred())
@@ -252,7 +247,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			Expect(errors.As(err, &retryErr)).To(BeTrue(), "Error should be wrapped as RetryError")
 			Expect(retryErr.Attempt).To(Equal(3))
 			Expect(retryErr.MaxAttempts).To(Equal(3))
-			Expect(retryErr.ErrorCode).To(Equal(503))
+			Expect(retryErr.ErrorType).To(ContainSubstring("service_unavailable"))
 		})
 	})
 
@@ -284,19 +279,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-504",
-				AlertName:   "TestAlert504",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlert504",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-504", "TestAlert504")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -331,19 +318,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-timeout",
-				AlertName:   "TestAlertTimeout",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlertTimeout",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-timeout", "TestAlertTimeout")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -375,19 +354,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-400",
-				AlertName:   "TestAlert400",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlert400",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-400", "TestAlert400")
 
 			// Execute: Create CRD (should fail immediately)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
@@ -408,7 +379,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 						callCount.Add(1)
 						return apierrors.NewForbidden(
-							schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+							schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationrequests"},
 							"test-rr",
 							errors.New("insufficient permissions"),
 						)
@@ -422,19 +393,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-403",
-				AlertName:   "TestAlert403",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlert403",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-403", "TestAlert403")
 
 			// Execute: Create CRD (should fail immediately)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
@@ -469,19 +432,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-422",
-				AlertName:   "TestAlert422",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlert422",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-422", "TestAlert422")
 
 			// Execute: Create CRD (should fail immediately)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Immediate failure (no retry)
 			Expect(err).To(HaveOccurred())
@@ -504,7 +459,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 					Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 						callCount.Add(1)
 						return apierrors.NewAlreadyExists(
-							schema.GroupResource{Group: "remediation.kubernaut.io", Resource: "remediationrequests"},
+							schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationrequests"},
 							"test-rr",
 						)
 					},
@@ -517,19 +472,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-409",
-				AlertName:   "TestAlert409",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlert409",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-409", "TestAlert409")
 
 			// Execute: Create CRD (should fail immediately but gracefully)
-			_, _ = creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			_, _ = creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Immediate failure (no retry), but CRD is fetched
 			// Note: The actual implementation fetches the existing CRD, so this test
@@ -566,19 +513,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-connrefused",
-				AlertName:   "TestAlertConnRefused",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlertConnRefused",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-connrefused", "TestAlertConnRefused")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -613,19 +552,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-connreset",
-				AlertName:   "TestAlertConnReset",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlertConnReset",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-connreset", "TestAlertConnReset")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -667,19 +598,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with custom retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", customRetryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-backoff-cap",
-				AlertName:   "TestAlertBackoffCap",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlertBackoffCap",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-backoff-cap", "TestAlertBackoffCap")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -720,19 +643,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with custom retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", customRetryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-initial-backoff",
-				AlertName:   "TestAlertInitialBackoff",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlertInitialBackoff",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-initial-backoff", "TestAlertInitialBackoff")
 
 			// Execute: Create CRD with retry
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
@@ -773,19 +688,12 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-ctx-cancel",
-				AlertName:   "TestAlertCtxCancel",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlertCtxCancel",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-ctx-cancel", "TestAlertCtxCancel")
 
 			// Execute: Create CRD with retry (context will be cancelled)
-			rr, err := creator.CreateRemediationRequest(cancelCtx, signal, "prod", "P0")
+			// Note: environment/priority parameters removed (2025-12-06) - SP owns classification
+			rr, err := creator.CreateRemediationRequest(cancelCtx, signal)
 
 			// Verify: Failure due to context cancellation (no retry)
 			Expect(err).To(HaveOccurred())
@@ -820,19 +728,12 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with retry config
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", retryConfig)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-ctx-deadline",
-				AlertName:   "TestAlertCtxDeadline",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlertCtxDeadline",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-ctx-deadline", "TestAlertCtxDeadline")
 
 			// Execute: Create CRD with retry (context will timeout during backoff)
-			rr, err := creator.CreateRemediationRequest(deadlineCtx, signal, "prod", "P0")
+			// Note: environment/priority parameters removed (2025-12-06) - SP owns classification
+			rr, err := creator.CreateRemediationRequest(deadlineCtx, signal)
 
 			// Verify: Failure due to context deadline
 			Expect(err).To(HaveOccurred())
@@ -869,19 +770,11 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create CRD creator with nil retry config (should use defaults)
 			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, "test-namespace", nil)
 
-			// Create test signal
-			signal := &types.NormalizedSignal{
-				Fingerprint: "test-fingerprint-default-config",
-				AlertName:   "TestAlertDefaultConfig",
-				Severity:    "critical",
-				Namespace:   "production",
-				Labels: map[string]string{
-					"alertname": "TestAlertDefaultConfig",
-				},
-			}
+			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
+			signal := newTestSignal("test-fingerprint-default-config", "TestAlertDefaultConfig")
 
 			// Execute: Create CRD with retry (using default config)
-			rr, err := creator.CreateRemediationRequest(ctx, signal, "prod", "P0")
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success after retry (default config allows retries)
 			Expect(err).ToNot(HaveOccurred())
@@ -890,7 +783,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 		})
 
 		It("should validate MaxAttempts >= 1", func() {
-			// BR-GATEWAY-111: Config validation (GAP 7: Config Validation)
+			// BR-GATEWAY-111: Config validation (GAP-8: Enhanced Config Validation)
 			// MaxAttempts must be at least 1
 
 			// Setup: Invalid retry config with MaxAttempts = 0
@@ -903,9 +796,10 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Execute: Validate config
 			err := invalidConfig.Validate()
 
-			// Verify: Validation fails
+			// Verify: Validation fails with structured error (GAP-8)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("retry.max_attempts must be >= 1"))
+			Expect(err.Error()).To(ContainSubstring("processing.retry.max_attempts"))
+			Expect(err.Error()).To(ContainSubstring("must be >= 1"))
 		})
 
 		It("should validate MaxBackoff >= InitialBackoff", func() {

@@ -1,8 +1,17 @@
 # [Service Name] Service - CRD Implementation Template
 
-**Version**: 1.0
-**Last Updated**: [Date]
+**Version**: 1.1
+**Last Updated**: 2025-11-30
 **Based On**: Remediation Processor, AI Analysis, and RemediationRequest specifications
+
+---
+
+## 📋 Changelog
+
+| Version | Date | Changes | Reference |
+|---------|------|---------|-----------|
+| 1.1 | 2025-11-30 | **Added**: Document classification (COMMON PATTERN vs SERVICE-SPECIFIC); Added `BR_MAPPING.md` to standard structure; Added service-specific file guidelines and examples | [DD-006](../../architecture/decisions/DD-006-controller-scaffolding-strategy.md) |
+| 1.0 | 2025-10-15 | Initial template structure | - |
 
 ---
 
@@ -12,7 +21,7 @@
 
 ### **⚠️ IMPORTANT: New Directory Structure (v1.0+)**
 
-**As of 2025-01-15**, all service specifications use a **directory-per-service** structure instead of monolithic documents.
+**As of 2025-11-30**, all service specifications use a **directory-per-service** structure instead of monolithic documents.
 
 **Modern Approach** (Recommended ✅):
 ```
@@ -24,15 +33,36 @@ docs/services/crd-controllers/
     ├── controller-implementation.md
     ├── reconciliation-phases.md
     ├── finalizers-lifecycle.md
-    ├── testing-strategy.md     (Common pattern)
-    ├── security-configuration.md (Common pattern)
-    ├── observability-logging.md (Common pattern)
-    ├── metrics-slos.md         (Common pattern)
+    ├── testing-strategy.md     (COMMON PATTERN)
+    ├── security-configuration.md (COMMON PATTERN)
+    ├── observability-logging.md (COMMON PATTERN)
+    ├── metrics-slos.md         (COMMON PATTERN)
     ├── database-integration.md
     ├── integration-points.md
     ├── migration-current-state.md
-    └── implementation-checklist.md
+    ├── implementation-checklist.md
+    ├── BR_MAPPING.md           (COMMON PATTERN)
+    └── [domain-specific].md    (SERVICE-SPECIFIC - see below)
 ```
+
+### **Document Classification** (per DD-006)
+
+| Classification | Description | When to Use |
+|----------------|-------------|-------------|
+| **COMMON PATTERN** | Standard files present in ALL CRD services. Structure is templated; content is service-specific. | Files listed above without SERVICE-SPECIFIC tag |
+| **SERVICE-SPECIFIC** | Domain-specific documents unique to this service. Not all services will have these. | When service has unique domain requirements not covered by common patterns |
+
+**SERVICE-SPECIFIC Examples**:
+- **AIAnalysis**: `REGO_POLICY_EXAMPLES.md` (approval policies), `ai-holmesgpt-approval.md`
+- **WorkflowExecution**: `tekton-pipeline-spec.md`, `workflow-parameters.md`
+- **Notification**: `notification-channels.md`, `template-engine.md`
+- **SignalProcessing**: `label-extraction.md`, `enrichment-pipeline.md`
+
+**Guidelines for SERVICE-SPECIFIC files**:
+1. Name files descriptively to indicate domain
+2. Mark with `(SERVICE-SPECIFIC)` in README.md file organization section
+3. Reference from appropriate common pattern files (e.g., link from `overview.md`)
+4. Document in DD if pattern may apply to future services
 
 **Legacy Approach** (Archived 📦):
 ```
@@ -2058,7 +2088,7 @@ Before finalizing the service specification, verify:
 
 ---
 
-**Template Version**: 1.0
-**Last Updated**: January 2025
+**Template Version**: 1.1
+**Last Updated**: November 2025
 **Maintained By**: Kubernaut Architecture Team
 

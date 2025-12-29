@@ -651,11 +651,11 @@ type AIAnalysisReconciler struct {
 	PolicyEngine      *policy.Engine
 }
 
-//+kubebuilder:rbac:groups=aianalysis.kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=aianalysis.kubernaut.ai,resources=aianalyses/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=aianalysis.kubernaut.ai,resources=aianalyses/finalizers,verbs=update
-//+kubebuilder:rbac:groups=aianalysis.kubernaut.ai,resources=aiapprovalrequests,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=workflowexecution.kubernaut.ai,resources=workflowexecutions,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=aiapprovalrequests,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=workflowexecutions,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
@@ -1372,7 +1372,7 @@ func main() {
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "aianalysis.kubernaut.ai",
+		LeaderElectionID:       "kubernaut.ai",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -1445,8 +1445,8 @@ func main() {
 make manifests
 
 # Verify CRDs generated
-ls -la config/crd/bases/aianalysis.kubernaut.ai_aianalyses.yaml
-ls -la config/crd/bases/aianalysis.kubernaut.ai_aiapprovalrequests.yaml
+ls -la config/crd/bases/kubernaut.ai_aianalyses.yaml
+ls -la config/crd/bases/kubernaut.ai_aiapprovalrequests.yaml
 ```
 
 **Validation**:
@@ -4494,12 +4494,12 @@ var (
 **Question 2**: What data does AIApprovalRequest contain?
 **Analysis**:
 ```yaml
-apiVersion: aianalysis.kubernaut.io/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: AIApprovalRequest
 metadata:
   name: aianalysis-sample-approval-12345
   ownerReferences:
-    - apiVersion: aianalysis.kubernaut.io/v1alpha1
+    - apiVersion: kubernaut.ai/v1alpha1
       kind: AIAnalysis
       name: aianalysis-sample
       controller: true
@@ -4761,11 +4761,11 @@ func (b *RequestBuilder) BuildApprovalRequest(ai *aianalysisv1alpha1.AIAnalysis)
 			Name:      fmt.Sprintf("%s-approval-%d", ai.Name, time.Now().Unix()),
 			Namespace: ai.Namespace,
 			Labels: map[string]string{
-				"aianalysis.kubernaut.io/name": ai.Name,
+				"kubernaut.ai/name": ai.Name,
 				"app.kubernetes.io/component":  "approval-workflow",
 			},
 			Annotations: map[string]string{
-				"aianalysis.kubernaut.io/alert-name": ai.Spec.AlertName,
+				"kubernaut.ai/alert-name": ai.Spec.AlertName,
 			},
 		},
 		Spec: aianalysisv1alpha1.AIApprovalRequestSpec{
@@ -5056,7 +5056,7 @@ func (r *AIAnalysisReconciler) findExistingApprovalRequest(ctx context.Context, 
 	approvalReqList := &aianalysisv1alpha1.AIApprovalRequestList{}
 	err := r.List(ctx, approvalReqList,
 		client.InNamespace(ai.Namespace),
-		client.MatchingLabels{"aianalysis.kubernaut.io/name": ai.Name})
+		client.MatchingLabels{"kubernaut.ai/name": ai.Name})
 
 	if err != nil {
 		log.Error(err, "Failed to list AIApprovalRequests")

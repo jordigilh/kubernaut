@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -194,7 +210,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 			auditEvent = &auditpkg.AuditEvent{
 				EventID:        generateTestUUID(),
 				EventVersion:   "1.0",
-				EventTimestamp: time.Now().UTC(),
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
 				EventType:      "workflow.completed",
 				EventCategory:  "workflow",
 				EventAction:    "completed",
@@ -298,7 +314,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 			auditEvent := &auditpkg.AuditEvent{
 				EventID:        generateTestUUID(),
 				EventVersion:   "1.0",
-				EventTimestamp: time.Now().UTC(),
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
 				EventType:      "workflow.completed",
 				EventCategory:  "workflow",
 				EventAction:    "completed",
@@ -349,6 +365,231 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 			err = json.Unmarshal([]byte(notificationStream[0].Values["message"].(string)), &notifMsg)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(notifMsg.Type).To(Equal("notification_audit"))
+		})
+	})
+
+	// ============================================================================
+	// GAP-8: DLQ Consumer Methods (DD-009)
+	// Authority: DD-009 (Audit Write Error Recovery - Dead Letter Queue Pattern)
+	// Business Requirement: BR-AUDIT-001 (Complete audit trail with no data loss)
+	// ============================================================================
+	Describe("DLQ Consumer Methods (GAP-8)", func() {
+		var (
+			consumerGroup string
+			consumerName  string
+		)
+
+		BeforeEach(func() {
+			// Clean up DLQ streams and consumer groups
+			streamKey := "audit:dlq:events"
+			redisClient.Del(ctx, streamKey)
+
+			// Generate unique consumer group for each test
+			consumerGroup = fmt.Sprintf("test-consumer-group-%d", time.Now().UnixNano())
+			consumerName = "test-consumer-1"
+		})
+
+		// GAP-8: ReadMessages - Read messages from DLQ using consumer groups
+		Describe("ReadMessages", func() {
+			It("should read messages from DLQ stream using XREADGROUP", func() {
+				// ARRANGE: Enqueue a message first
+				auditEvent := &auditpkg.AuditEvent{
+					EventID:        generateTestUUID(),
+					EventVersion:   "1.0",
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					EventType:      "workflow.completed",
+					EventCategory:  "workflow",
+					EventAction:    "completed",
+					EventOutcome:   "success",
+					ActorType:      "service",
+					ActorID:        "workflow-service",
+					ResourceType:   "Workflow",
+					ResourceID:     "wf-read-test",
+					CorrelationID:  "remediation-read-test",
+					EventData:      []byte(`{"duration_ms":5000}`),
+				}
+				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
+				Expect(err).ToNot(HaveOccurred())
+
+				// ACT: Read messages
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+				Expect(messages).To(HaveLen(1))
+				Expect(messages[0].ID).ToNot(BeEmpty())
+				Expect(messages[0].AuditMessage.Type).To(Equal("audit_event"))
+				Expect(messages[0].AuditMessage.CorrelationID()).To(Equal("remediation-read-test"))
+			})
+
+			It("should return empty slice when DLQ is empty", func() {
+				// ACT: Read from empty DLQ
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 1*time.Second)
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+				Expect(messages).To(BeEmpty())
+			})
+
+			It("should support reading multiple messages in batch", func() {
+				// ARRANGE: Enqueue 3 messages
+				for i := 0; i < 3; i++ {
+					auditEvent := &auditpkg.AuditEvent{
+						EventID:        generateTestUUID(),
+						EventVersion:   "1.0",
+						EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+						EventType:      "workflow.completed",
+						EventCategory:  "workflow",
+						EventAction:    "completed",
+						EventOutcome:   "success",
+						ActorType:      "service",
+						ActorID:        "workflow-service",
+						ResourceType:   "Workflow",
+						ResourceID:     fmt.Sprintf("wf-batch-%d", i),
+						CorrelationID:  fmt.Sprintf("remediation-batch-%d", i),
+						EventData:      []byte(`{"batch":true}`),
+					}
+					err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("batch error %d", i))
+					Expect(err).ToNot(HaveOccurred())
+				}
+
+				// ACT: Read all messages
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+				Expect(messages).To(HaveLen(3))
+			})
+		})
+
+		// GAP-8: AckMessage - Acknowledge processed messages
+		Describe("AckMessage", func() {
+			It("should acknowledge message so it's not re-read", func() {
+				// ARRANGE: Enqueue and read a message
+				auditEvent := &auditpkg.AuditEvent{
+					EventID:        generateTestUUID(),
+					EventVersion:   "1.0",
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					EventType:      "workflow.completed",
+					EventCategory:  "workflow",
+					EventAction:    "completed",
+					EventOutcome:   "success",
+					ActorType:      "service",
+					ActorID:        "workflow-service",
+					ResourceType:   "Workflow",
+					ResourceID:     "wf-ack-test",
+					CorrelationID:  "remediation-ack-test",
+					EventData:      []byte(`{"ack":true}`),
+				}
+				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("ack test error"))
+				Expect(err).ToNot(HaveOccurred())
+
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(messages).To(HaveLen(1))
+
+				// ACT: Acknowledge the message
+				err = dlqClient.AckMessage(ctx, "events", consumerGroup, messages[0].ID)
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify: Reading again should return no messages (pending list empty)
+				pendingMessages, err := dlqClient.GetPendingMessages(ctx, "events", consumerGroup)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(pendingMessages).To(Equal(int64(0)))
+			})
+		})
+
+		// GAP-8: MoveToDeadLetter - Move failed messages after max retries
+		Describe("MoveToDeadLetter", func() {
+			It("should move message to dead letter stream", func() {
+				// ARRANGE: Enqueue and read a message
+				auditEvent := &auditpkg.AuditEvent{
+					EventID:        generateTestUUID(),
+					EventVersion:   "1.0",
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					EventType:      "workflow.failed",
+					EventCategory:  "workflow",
+					EventAction:    "failed",
+					EventOutcome:   "failure",
+					ActorType:      "service",
+					ActorID:        "workflow-service",
+					ResourceType:   "Workflow",
+					ResourceID:     "wf-dead-letter-test",
+					CorrelationID:  "remediation-dead-letter-test",
+					EventData:      []byte(`{"dead_letter":true}`),
+				}
+				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("permanent failure"))
+				Expect(err).ToNot(HaveOccurred())
+
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(messages).To(HaveLen(1))
+
+				// ACT: Move to dead letter
+				err = dlqClient.MoveToDeadLetter(ctx, "events", messages[0])
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify: Message should be in dead letter stream
+				deadLetterKey := "audit:dead-letter:events"
+				deadLetterLength, err := redisClient.XLen(ctx, deadLetterKey).Result()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(deadLetterLength).To(Equal(int64(1)))
+
+				// Verify: Original message should be removed from DLQ
+				dlqLength, err := dlqClient.GetDLQDepth(ctx, "events")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(dlqLength).To(Equal(int64(0)))
+			})
+		})
+
+		// GAP-8: IncrementRetryCount - Update retry count on message
+		Describe("IncrementRetryCount", func() {
+			It("should increment retry count on message", func() {
+				// ARRANGE: Enqueue a message
+				auditEvent := &auditpkg.AuditEvent{
+					EventID:        generateTestUUID(),
+					EventVersion:   "1.0",
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					EventType:      "workflow.retrying",
+					EventCategory:  "workflow",
+					EventAction:    "retrying",
+					EventOutcome:   "pending",
+					ActorType:      "service",
+					ActorID:        "workflow-service",
+					ResourceType:   "Workflow",
+					ResourceID:     "wf-retry-count-test",
+					CorrelationID:  "remediation-retry-count-test",
+					EventData:      []byte(`{"retry_count_test":true}`),
+				}
+				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("retry error"))
+				Expect(err).ToNot(HaveOccurred())
+
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(messages).To(HaveLen(1))
+				Expect(messages[0].AuditMessage.RetryCount).To(Equal(0))
+
+				// ACT: Increment retry count
+				err = dlqClient.IncrementRetryCount(ctx, "events", messages[0], fmt.Errorf("retry attempt 1 failed"))
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+
+				// Re-read and verify retry count
+				// First, ack the original to remove from pending
+				_ = dlqClient.AckMessage(ctx, "events", consumerGroup, messages[0].ID)
+
+				// Read again with new consumer group
+				newConsumerGroup := fmt.Sprintf("test-consumer-group-verify-%d", time.Now().UnixNano())
+				updatedMessages, err := dlqClient.ReadMessages(ctx, "events", newConsumerGroup, consumerName, 2*time.Second)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedMessages).To(HaveLen(1))
+				Expect(updatedMessages[0].AuditMessage.RetryCount).To(Equal(1))
+			})
 		})
 	})
 })

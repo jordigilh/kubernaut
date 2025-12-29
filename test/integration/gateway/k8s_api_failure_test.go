@@ -19,10 +19,12 @@ package gateway
 import (
 	"context"
 	"errors"
-	"os"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
 	// DD-GATEWAY-004: kubernetes import removed - no longer needed
@@ -30,6 +32,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
+	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -63,21 +66,19 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 	var (
 		ctx              context.Context
 		crdCreator       *processing.CRDCreator
-		logger           *zap.Logger
+		logger           logr.Logger
 		failingK8sClient *ErrorInjectableK8sClient
 		testSignal       *types.NormalizedSignal
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		zapLogger := zap.NewNop()
+		logger = zapr.NewLogger(zapLogger)
 
-		// Check if running in CI without K8s
-		if os.Getenv("SKIP_K8S_INTEGRATION") == "true" {
-			Skip("K8s integration tests skipped (SKIP_K8S_INTEGRATION=true)")
-		}
-
-		// Create failing K8s client
+		// Create failing K8s client (simulates K8s API unavailable)
+		// This test is fully self-contained with ErrorInjectableK8sClient
+		// and doesn't require real Kubernetes infrastructure
 		failingK8sClient = &ErrorInjectableK8sClient{
 			failCreate: true,
 			errorMsg:   "connection refused: Kubernetes API server unreachable",
@@ -86,9 +87,13 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 		// Wrap failing client in k8s.Client
 		wrappedK8sClient := k8s.NewClient(failingK8sClient)
 
-		// Create CRD creator with failing client
+		// Create isolated metrics registry per test to avoid collisions
+		testRegistry := prometheus.NewRegistry()
+		testMetrics := metrics.NewMetricsWithRegistry(testRegistry)
+
+		// Create CRD creator with failing client (DD-005: uses logr.Logger)
 		retryConfig := config.DefaultRetrySettings()
-		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, nil, "default", &retryConfig)
+		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, testMetrics, "default", &retryConfig)
 
 		// Test signal
 		testSignal = &types.NormalizedSignal{
@@ -109,7 +114,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// BUSINESS SCENARIO: Kubernetes API down during CRD creation
 			// Expected: Error returned, caller (webhook handler) returns 500
 
-			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
 			// BUSINESS OUTCOME: K8s API failure detected
 			Expect(err).To(HaveOccurred(),
@@ -129,15 +134,15 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// Expected: Each attempt fails gracefully, Gateway remains operational
 
 			// Attempt 1: Failure
-			_, err1 := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err1 := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 			Expect(err1).To(HaveOccurred())
 
 			// Attempt 2: Failure
-			_, err2 := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err2 := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 			Expect(err2).To(HaveOccurred())
 
 			// Attempt 3: Failure
-			_, err3 := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err3 := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 			Expect(err3).To(HaveOccurred())
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -150,7 +155,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// BR-GATEWAY-019: Operational visibility during failures
 			// Expected: Error messages contain K8s-specific details
 
-			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("connection refused"),
@@ -170,13 +175,13 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			// Simulate K8s API down
 			failingK8sClient.failCreate = true
-			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 			Expect(err).To(HaveOccurred(),
 				"First attempt fails when K8s API down")
 
 			// Simulate K8s API recovery
 			failingK8sClient.failCreate = false
-			rr, err := crdCreator.CreateRemediationRequest(ctx, testSignal, "P0", "production")
+			rr, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
 			Expect(err).NotTo(HaveOccurred(),
 				"Second attempt succeeds when K8s API recovers")
@@ -207,7 +212,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				},
 			}
 			failingK8sClient.failCreate = true
-			_, err1 := crdCreator.CreateRemediationRequest(ctx, signal1, "P0", "production")
+			_, err1 := crdCreator.CreateRemediationRequest(ctx, signal1) // environment/priority removed - SP owns classification
 			Expect(err1).To(HaveOccurred(),
 				"First signal fails when K8s API down")
 
@@ -222,7 +227,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				},
 			}
 			failingK8sClient.failCreate = false
-			_, err2 := crdCreator.CreateRemediationRequest(ctx, signal2, "P1", "staging")
+			_, err2 := crdCreator.CreateRemediationRequest(ctx, signal2) // environment/priority removed - SP owns classification
 			Expect(err2).NotTo(HaveOccurred(),
 				"Second signal succeeds when K8s API recovers")
 
@@ -271,33 +276,14 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				// Even for K8s API failure tests, we need these services
 				// Use miniredis or real Redis for testing
 				redisClient := SetupRedisTestClient(ctx)
-				if redisClient == nil || redisClient.Client == nil {
 					Skip("Redis not available - required for Gateway startup")
 				}
 
 				// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
-				err = redisClient.Client.FlushDB(ctx).Err()
-				Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
 				// Verify Redis is clean
-				keys, err := redisClient.Client.Keys(ctx, "*").Result()
 				Expect(err).ToNot(HaveOccurred())
-				Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 
-			dedupService := processing.NewDeduplicationService(redisClient.Client, 5*time.Second, logger)
-			stormDetector := processing.NewStormDetector(redisClient.Client, logger)
-			// Use bufferThreshold=1 for immediate window creation in tests
-			stormAggregator := processing.NewStormAggregatorWithConfig(
-				redisClient.Client,
-				1,                    // bufferThreshold: 1 alert triggers window creation
-				60*time.Second,       // inactivityTimeout: 1 minute
-				5*time.Minute,        // maxWindowDuration: 5 minutes
-				1000,                 // defaultMaxSize: 1000 alerts per namespace
-				5000,                 // globalMaxSize: 5000 alerts total
-				nil,                  // perNamespaceLimits: none
-				0.95,                 // samplingThreshold: 95% utilization
-				0.5,                  // samplingRate: 50% when sampling enabled
-			)
 
 				// DD-GATEWAY-004: K8s clientset no longer needed - authentication removed
 				// Phase 2 Fix: Create custom Prometheus registry per test to prevent
@@ -313,7 +299,6 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					dedupService,       // REQUIRED v2.9
 					stormDetector,      // REQUIRED v2.9
 					stormAggregator,    // REQUIRED v2.11
-					redisClient.Client, // REQUIRED v2.11 (rate limiting)
 					logger,
 					serverConfig,
 					metricsRegistry, // Phase 2 Fix: Custom registry per test for isolation

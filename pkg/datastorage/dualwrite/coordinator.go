@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -30,7 +30,7 @@ import (
 
 const (
 	// RequiredEmbeddingDimension is the required embedding vector dimension
-	RequiredEmbeddingDimension = 384
+	RequiredEmbeddingDimension = 768 // Per migration 016
 )
 
 // Coordinator orchestrates dual-write operations to PostgreSQL and Vector DB.
@@ -38,11 +38,11 @@ const (
 type Coordinator struct {
 	db       DB
 	vectorDB VectorDBClient
-	logger   *zap.Logger
+	logger   logr.Logger
 }
 
 // NewCoordinator creates a new dual-write coordinator.
-func NewCoordinator(db DB, vectorDB VectorDBClient, logger *zap.Logger) *Coordinator {
+func NewCoordinator(db DB, vectorDB VectorDBClient, logger logr.Logger) *Coordinator {
 	return &Coordinator{
 		db:       db,
 		vectorDB: vectorDB,
@@ -76,10 +76,10 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 		return nil, fmt.Errorf("embedding dimension must be %d, got %d", RequiredEmbeddingDimension, len(embedding))
 	}
 
-	c.logger.Debug("starting dual-write operation",
-		zap.String("name", audit.Name),
-		zap.String("namespace", audit.Namespace),
-		zap.Int("embedding_dimension", len(embedding)))
+	c.logger.V(1).Info("starting dual-write operation",
+		"name", audit.Name,
+		"namespace", audit.Namespace,
+		"embedding_dimension", len(embedding))
 
 	// Begin PostgreSQL transaction with context
 	// BR-STORAGE-016: Use BeginTx for context propagation (cancellation, timeout)
@@ -93,9 +93,8 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 			metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
 		}
 
-		c.logger.Error("failed to begin transaction",
-			zap.Error(err),
-			zap.String("name", audit.Name))
+		c.logger.Error(err, "failed to begin transaction",
+			"name", audit.Name)
 		return nil, fmt.Errorf("begin transaction failed: %w", err)
 	}
 
@@ -104,9 +103,8 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	defer func() {
 		if shouldRollback {
 			if rbErr := tx.Rollback(); rbErr != nil {
-				c.logger.Error("failed to rollback transaction",
-					zap.Error(rbErr),
-					zap.String("name", audit.Name))
+				c.logger.Error(rbErr, "failed to rollback transaction",
+					"name", audit.Name)
 			}
 		}
 	}()
@@ -115,45 +113,42 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	pgID, err := c.writeToPostgreSQL(tx, audit, embedding)
 	if err != nil {
 		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
-		c.logger.Error("failed to write to PostgreSQL",
-			zap.Error(err),
-			zap.String("name", audit.Name))
+		c.logger.Error(err, "failed to write to PostgreSQL",
+			"name", audit.Name)
 		return nil, fmt.Errorf("postgresql write failed: %w", err)
 	}
 
-	c.logger.Debug("wrote to PostgreSQL",
-		zap.Int64("postgresql_id", pgID),
-		zap.String("name", audit.Name))
+	c.logger.V(1).Info("wrote to PostgreSQL",
+		"postgresql_id", pgID,
+		"name", audit.Name)
 
 	// Write to Vector DB (if available)
 	if c.vectorDB != nil {
 		metadata := buildMetadata(audit)
 		if err := c.vectorDB.Insert(ctx, pgID, embedding, metadata); err != nil {
 			metrics.DualWriteFailure.WithLabelValues(metrics.ReasonVectorDBFailure).Inc()
-			c.logger.Error("failed to write to Vector DB, rolling back",
-				zap.Error(err),
-				zap.Int64("postgresql_id", pgID),
-				zap.String("name", audit.Name))
+			c.logger.Error(err, "failed to write to Vector DB, rolling back",
+				"postgresql_id", pgID,
+				"name", audit.Name)
 			// Wrap with typed error for reliable error detection
 			return nil, WrapVectorDBError(err, "Insert")
 		}
 
-		c.logger.Debug("wrote to Vector DB",
-			zap.Int64("postgresql_id", pgID),
-			zap.String("name", audit.Name))
+		c.logger.V(1).Info("wrote to Vector DB",
+			"postgresql_id", pgID,
+			"name", audit.Name)
 	} else {
-		c.logger.Warn("Vector DB not configured, skipping vector write",
-			zap.Int64("postgresql_id", pgID),
-			zap.String("name", audit.Name))
+		c.logger.Info("Vector DB not configured, skipping vector write",
+			"postgresql_id", pgID,
+			"name", audit.Name)
 	}
 
 	// Commit PostgreSQL transaction
 	if err := tx.Commit(); err != nil {
 		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonTransactionRollback).Inc()
-		c.logger.Error("failed to commit transaction",
-			zap.Error(err),
-			zap.Int64("postgresql_id", pgID),
-			zap.String("name", audit.Name))
+		c.logger.Error(err, "failed to commit transaction",
+			"postgresql_id", pgID,
+			"name", audit.Name)
 		// Rollback will be called by defer
 		return nil, fmt.Errorf("commit failed: %w", err)
 	}
@@ -167,10 +162,10 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess).Inc()
 
 	c.logger.Info("dual-write completed successfully",
-		zap.Int64("postgresql_id", pgID),
-		zap.String("name", audit.Name),
-		zap.String("namespace", audit.Namespace),
-		zap.Duration("duration", time.Since(start)))
+		"postgresql_id", pgID,
+		"name", audit.Name,
+		"namespace", audit.Namespace,
+		"duration", time.Since(start))
 
 	return &WriteResult{
 		PostgreSQLID:      pgID,
@@ -194,9 +189,9 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 		return nil, fmt.Errorf("embedding dimension must be %d, got %d", RequiredEmbeddingDimension, len(embedding))
 	}
 
-	c.logger.Debug("starting dual-write with fallback",
-		zap.String("name", audit.Name),
-		zap.String("namespace", audit.Namespace))
+	c.logger.V(1).Info("starting dual-write with fallback",
+		"name", audit.Name,
+		"namespace", audit.Namespace)
 
 	// Try normal dual-write first
 	result, err := c.Write(ctx, audit, embedding)
@@ -207,9 +202,8 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 	// Check if error is Vector DB related (using typed errors)
 	if !IsVectorDBError(err) {
 		// PostgreSQL error - cannot fall back
-		c.logger.Error("PostgreSQL error, cannot fall back",
-			zap.Error(err),
-			zap.String("name", audit.Name))
+		c.logger.Error(err, "PostgreSQL error, cannot fall back",
+			"name", audit.Name)
 		return nil, err
 	}
 
@@ -217,16 +211,15 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 	// BR-STORAGE-015: Graceful degradation tracking
 	metrics.FallbackModeTotal.Inc()
 
-	c.logger.Warn("Vector DB unavailable, falling back to PostgreSQL-only",
-		zap.Error(err),
-		zap.String("name", audit.Name))
+	c.logger.Info("Vector DB unavailable, falling back to PostgreSQL-only",
+		"error", err.Error(),
+		"name", audit.Name)
 
 	pgID, pgErr := c.writePostgreSQLOnly(ctx, audit, embedding)
 	if pgErr != nil {
 		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
-		c.logger.Error("PostgreSQL-only write failed",
-			zap.Error(pgErr),
-			zap.String("name", audit.Name))
+		c.logger.Error(pgErr, "PostgreSQL-only write failed",
+			"name", audit.Name)
 		return nil, fmt.Errorf("postgresql-only write failed: %w", pgErr)
 	}
 
@@ -235,8 +228,8 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 	metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess).Inc()
 
 	c.logger.Info("completed with PostgreSQL-only fallback",
-		zap.Int64("postgresql_id", pgID),
-		zap.String("name", audit.Name))
+		"postgresql_id", pgID,
+		"name", audit.Name)
 
 	return &WriteResult{
 		PostgreSQLID:      pgID,

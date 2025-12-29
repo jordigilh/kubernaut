@@ -1,0 +1,358 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package handlers provides phase-specific handlers for AIAnalysis reconciliation.
+package handlers
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+)
+
+// P1.3 Refactoring: RegoEvaluatorInterface and AnalyzingAuditClientInterface moved to interfaces.go
+
+// AnalyzingHandler handles the Analyzing phase.
+// BR-AI-012: Evaluate Rego approval policies
+// BR-AI-014: Graceful degradation for policy failures
+// BR-AI-019: Populate ApprovalContext if approval required
+//
+// Per reconciliation-phases.md v2.0: Analyzing transitions directly to Completed.
+// The Recommending phase was removed in v1.8 as workflow data is captured in Investigating.
+type AnalyzingHandler struct {
+	log         logr.Logger
+	evaluator   RegoEvaluatorInterface
+	metrics     *metrics.Metrics              // DD-METRICS-001: Injected metrics
+	auditClient AnalyzingAuditClientInterface // DD-AUDIT-003: Injected audit client
+}
+
+// NewAnalyzingHandler creates a new AnalyzingHandler.
+func NewAnalyzingHandler(evaluator RegoEvaluatorInterface, log logr.Logger, m *metrics.Metrics, auditClient AnalyzingAuditClientInterface) *AnalyzingHandler {
+	if m == nil {
+		panic("metrics cannot be nil: metrics are mandatory for observability")
+	}
+	return &AnalyzingHandler{
+		evaluator:   evaluator,
+		metrics:     m,
+		auditClient: auditClient,
+		log:         log.WithName("analyzing-handler"),
+	}
+}
+
+// Name returns the handler name.
+func (h *AnalyzingHandler) Name() string {
+	return "analyzing"
+}
+
+// Handle processes the Analyzing phase.
+// BR-AI-012: Evaluate Rego policies to determine approval requirement.
+// BR-AI-014: If evaluation fails, default to approvalRequired=true (safe default).
+// BR-AI-018: Validate workflow exists in status (from InvestigatingHandler).
+// BR-AI-019: Populate ApprovalContext if approval is required.
+//
+// Per reconciliation-phases.md v2.0: Transitions directly to Completed (no Recommending phase).
+func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+	h.log.Info("Processing Analyzing phase", "name", analysis.Name)
+
+	// BR-AI-018: Validate workflow exists (captured by InvestigatingHandler)
+	if analysis.Status.SelectedWorkflow == nil {
+		h.log.Error(nil, "No workflow selected - investigation may have failed", "name", analysis.Name)
+		analysis.Status.Phase = aianalysis.PhaseFailed
+		analysis.Status.Message = "No workflow selected - investigation may have failed"
+		analysis.Status.Reason = "NoWorkflowSelected"
+
+		// BR-HAPI-197: Track failure metrics
+		h.metrics.RecordFailure("NoWorkflowSelected", "InvestigationFailed") // P2.3: Use convenience method
+
+		// Set AnalysisComplete=False condition
+		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
+		return ctrl.Result{}, nil
+	}
+
+	// Build policy input from analysis
+	input := h.buildPolicyInput(analysis)
+
+	// Evaluate Rego policy - track duration for audit
+	regoStartTime := metav1.Now()
+	result, err := h.evaluator.Evaluate(ctx, input)
+	regoDuration := metav1.Now().Sub(regoStartTime.Time).Milliseconds()
+
+	if err != nil {
+		// This shouldn't happen - evaluator should handle errors gracefully
+		// But if it does, use safe defaults
+		h.log.Error(err, "Rego evaluation returned error, using safe default")
+
+		// Record Rego evaluation failure metric
+		h.metrics.RecordRegoEvaluation("error", true)
+
+		// DD-AUDIT-003: Record Rego evaluation audit event
+		if h.auditClient != nil {
+			h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
+		}
+
+		analysis.Status.Phase = aianalysis.PhaseFailed
+		analysis.Status.Message = "Rego evaluation failed unexpectedly"
+		analysis.Status.Reason = "RegoEvaluationError"
+
+		// BR-HAPI-197: Track failure metrics
+		h.metrics.RecordFailure("RegoEvaluationError", "PolicyEvaluationFailed") // P2.3: Use convenience method
+
+		// Set AnalysisComplete=False condition
+		aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
+		return ctrl.Result{}, nil
+	}
+
+	// Record Rego evaluation metric
+	outcome := "approved"
+	if result.ApprovalRequired {
+		outcome = "requires_approval"
+	}
+	h.metrics.RecordRegoEvaluation(outcome, result.Degraded)
+
+	// DD-AUDIT-003: Record Rego evaluation audit event
+	if h.auditClient != nil {
+		h.auditClient.RecordRegoEvaluation(ctx, analysis, outcome, result.Degraded, int(regoDuration), result.Reason)
+	}
+
+	// Store evaluation results in status
+	analysis.Status.ApprovalRequired = result.ApprovalRequired
+	analysis.Status.ApprovalReason = result.Reason
+	analysis.Status.DegradedMode = result.Degraded
+
+	h.log.Info("Rego evaluation complete",
+		"approvalRequired", result.ApprovalRequired,
+		"degraded", result.Degraded,
+		"reason", result.Reason,
+	)
+
+	// BR-AI-019: Populate ApprovalContext if approval is required
+	if result.ApprovalRequired {
+		h.populateApprovalContext(analysis, result)
+		// Set ApprovalRequired condition
+		aianalysis.SetApprovalRequired(analysis, true, aianalysis.ReasonPolicyRequiresApproval, result.Reason)
+
+		// Record approval decision metric
+		environment := getEnvironment(analysis)
+		h.metrics.RecordApprovalDecision("requires_approval", environment)
+
+		// DD-AUDIT-003: Record approval decision audit event
+		if h.auditClient != nil {
+			h.auditClient.RecordApprovalDecision(ctx, analysis, "requires_approval", result.Reason)
+		}
+	} else {
+		// Set ApprovalRequired=False condition (auto-approved)
+		aianalysis.SetApprovalRequired(analysis, false, "AutoApproved", "Policy evaluation does not require manual approval")
+
+		// Record approval decision metric
+		environment := getEnvironment(analysis)
+		h.metrics.RecordApprovalDecision("auto_approved", environment)
+
+		// DD-AUDIT-003: Record approval decision audit event
+		if h.auditClient != nil {
+			h.auditClient.RecordApprovalDecision(ctx, analysis, "auto_approved", "Policy evaluation does not require manual approval")
+		}
+	}
+
+	// Set WorkflowResolved condition (we already validated workflow exists above)
+	aianalysis.SetWorkflowResolved(analysis, true, aianalysis.ReasonWorkflowSelected,
+		"Workflow "+analysis.Status.SelectedWorkflow.WorkflowID+" selected with confidence "+
+			formatConfidence(analysis.Status.SelectedWorkflow.Confidence))
+
+	// Set AnalysisComplete condition
+	aianalysis.SetAnalysisComplete(analysis, true, "Rego policy evaluation completed successfully")
+
+	// Transition directly to Completed (per reconciliation-phases.md v2.0)
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Message = "Analysis complete"
+
+	h.log.Info("Analysis completed",
+		"name", analysis.Name,
+		"approvalRequired", result.ApprovalRequired,
+	)
+
+	return ctrl.Result{}, nil // Final phase - no requeue
+}
+
+// populateApprovalContext populates the ApprovalContext for approval notifications.
+// BR-AI-019: Rich context for approval notification
+func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnalysis, result *rego.PolicyResult) {
+	if analysis.Status.ApprovalContext == nil {
+		analysis.Status.ApprovalContext = &aianalysisv1.ApprovalContext{}
+	}
+
+	ctx := analysis.Status.ApprovalContext
+	ctx.Reason = result.Reason
+	ctx.WhyApprovalRequired = result.Reason
+
+	// Get confidence from SelectedWorkflow
+	if analysis.Status.SelectedWorkflow != nil {
+		ctx.ConfidenceScore = analysis.Status.SelectedWorkflow.Confidence
+
+		// Set confidence level based on score
+		switch {
+		case ctx.ConfidenceScore >= 0.8:
+			ctx.ConfidenceLevel = "high"
+		case ctx.ConfidenceScore >= 0.6:
+			ctx.ConfidenceLevel = "medium"
+		default:
+			ctx.ConfidenceLevel = "low"
+		}
+
+		// Populate RecommendedActions from SelectedWorkflow
+		ctx.RecommendedActions = []aianalysisv1.RecommendedAction{
+			{
+				Action:    analysis.Status.SelectedWorkflow.WorkflowID,
+				Rationale: analysis.Status.SelectedWorkflow.Rationale,
+			},
+		}
+	}
+
+	// Include investigation summary from RCA
+	if analysis.Status.RootCauseAnalysis != nil {
+		ctx.InvestigationSummary = analysis.Status.RootCauseAnalysis.Summary
+
+		// Populate EvidenceCollected from contributing factors
+		if len(analysis.Status.RootCauseAnalysis.ContributingFactors) > 0 {
+			ctx.EvidenceCollected = analysis.Status.RootCauseAnalysis.ContributingFactors
+		}
+	}
+
+	// Populate AlternativesConsidered from AlternativeWorkflows
+	if len(analysis.Status.AlternativeWorkflows) > 0 {
+		ctx.AlternativesConsidered = make([]aianalysisv1.AlternativeApproach, 0, len(analysis.Status.AlternativeWorkflows))
+		for _, alt := range analysis.Status.AlternativeWorkflows {
+			ctx.AlternativesConsidered = append(ctx.AlternativesConsidered, aianalysisv1.AlternativeApproach{
+				Approach: alt.WorkflowID,
+				ProsCons: alt.Rationale,
+			})
+		}
+	}
+
+	// Populate PolicyEvaluation with Rego details
+	ctx.PolicyEvaluation = &aianalysisv1.PolicyEvaluation{
+		PolicyName: "aianalysis.approval",
+		Decision:   "manual_review_required",
+	}
+	if result.Degraded {
+		ctx.PolicyEvaluation.Decision = "degraded_mode"
+	}
+}
+
+// buildPolicyInput constructs the Rego policy input from AIAnalysis.
+// BR-AI-012: Build input from status fields populated by InvestigatingHandler.
+// Per IMPLEMENTATION_PLAN_V1.0.md lines 1756-1785 (ApprovalInput schema)
+func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *rego.PolicyInput {
+	input := &rego.PolicyInput{
+		// Signal context (from Spec.AnalysisRequest.SignalContext)
+		SignalType:       analysis.Spec.AnalysisRequest.SignalContext.SignalType,
+		Severity:         analysis.Spec.AnalysisRequest.SignalContext.Severity,
+		Environment:      analysis.Spec.AnalysisRequest.SignalContext.Environment,
+		BusinessPriority: analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority,
+
+		// Target resource
+		TargetResource: rego.TargetResourceInput{
+			Kind:      analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Kind,
+			Name:      analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Name,
+			Namespace: analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace,
+		},
+
+		// HolmesGPT-API response data
+		Warnings: analysis.Status.Warnings,
+
+		// Recovery context (from Spec)
+		IsRecoveryAttempt:     analysis.Spec.IsRecoveryAttempt,
+		RecoveryAttemptNumber: analysis.Spec.RecoveryAttemptNumber,
+	}
+
+	// Get confidence from SelectedWorkflow (populated by InvestigatingHandler)
+	if analysis.Status.SelectedWorkflow != nil {
+		input.Confidence = analysis.Status.SelectedWorkflow.Confidence
+	}
+
+	// Get TargetInOwnerChain from status (populated by InvestigatingHandler)
+	if analysis.Status.TargetInOwnerChain != nil {
+		input.TargetInOwnerChain = *analysis.Status.TargetInOwnerChain
+	}
+
+	// Populate DetectedLabels from EnrichmentResults (per DD-WORKFLOW-001 v2.2)
+	// Convert typed struct to map for Rego policy evaluation
+	// Path: analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
+	input.DetectedLabels = h.buildDetectedLabelsMap(analysis)
+
+	// Populate FailedDetections from DetectedLabels (per DD-WORKFLOW-001 v2.2)
+	if analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels != nil {
+		input.FailedDetections = analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels.FailedDetections
+	}
+
+	// Populate CustomLabels from EnrichmentResults
+	if analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels != nil {
+		input.CustomLabels = analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels
+	} else {
+		input.CustomLabels = make(map[string][]string)
+	}
+
+	return input
+}
+
+// formatConfidence formats a confidence score as a percentage string.
+func formatConfidence(confidence float64) string {
+	return fmt.Sprintf("%.0f%%", confidence*100)
+}
+
+// getEnvironment extracts environment from analysis request
+func getEnvironment(analysis *aianalysisv1.AIAnalysis) string {
+	return analysis.Spec.AnalysisRequest.SignalContext.Environment
+}
+
+// buildDetectedLabelsMap converts the typed DetectedLabels struct to a map for Rego.
+// Per DD-WORKFLOW-001 v2.2: DetectedLabels uses snake_case field names in JSON.
+// Rego policies access these as input.detected_labels.git_ops_managed, etc.
+func (h *AnalyzingHandler) buildDetectedLabelsMap(analysis *aianalysisv1.AIAnalysis) map[string]interface{} {
+	labels := make(map[string]interface{})
+
+	dl := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
+	if dl == nil {
+		return labels
+	}
+
+	// GitOps management (per DD-WORKFLOW-001 v2.2)
+	labels["git_ops_managed"] = dl.GitOpsManaged
+	labels["git_ops_tool"] = dl.GitOpsTool
+
+	// Workload protection
+	labels["pdb_protected"] = dl.PDBProtected
+	labels["hpa_enabled"] = dl.HPAEnabled
+
+	// Workload characteristics
+	labels["stateful"] = dl.Stateful
+	labels["helm_managed"] = dl.HelmManaged
+
+	// Security posture
+	labels["network_isolated"] = dl.NetworkIsolated
+	labels["service_mesh"] = dl.ServiceMesh
+
+	return labels
+}

@@ -18,11 +18,15 @@ limitations under the License.
 Post-Execution Analysis Endpoint Tests
 
 Business Requirements: BR-HAPI-051 to 115 (Post-Execution Analysis)
+
+NOTE: DD-017 defers PostExec endpoint to V1.1 (Effectiveness Monitor not in V1.0)
+Endpoint tests are skipped; internal logic preserved in src/extensions/postexec.py
 """
 
 import pytest
 
 
+@pytest.mark.xfail(reason="DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0", run=False)
 class TestPostExecEndpoint:
     """Tests for /api/v1/postexec/analyze endpoint"""
 

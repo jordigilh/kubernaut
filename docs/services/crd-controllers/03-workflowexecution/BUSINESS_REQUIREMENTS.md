@@ -1,0 +1,629 @@
+# WorkflowExecution Service - Business Requirements
+
+**Service**: WorkflowExecution Controller
+**Service Type**: CRD Controller
+**CRD**: WorkflowExecution
+**CRD API Group**: `kubernaut.ai/v1alpha1`
+**Controller**: WorkflowExecutionReconciler
+**Version**: 3.7 (DS Batch Endpoint Complete - Full Audit Integration)
+**Last Updated**: December 10, 2025
+**Status**: Ready for Implementation
+
+---
+
+## 📋 Overview
+
+The **WorkflowExecution Service** is a Kubernetes CRD controller that delegates workflow execution to specialized engines (Tekton, Argo, etc.) via OCI bundle references. It creates execution resources (e.g., Tekton PipelineRun) and monitors their completion status.
+
+### Architecture Principle: Engine-Agnostic Execution
+
+Kubernaut is **NOT** a workflow execution engine. We:
+- ✅ **Store** workflow OCI bundles (via Data Storage / Workflow Catalog)
+- ✅ **Reference** workflows from AI recommendations
+- ✅ **Delegate** execution to specialized engines
+- ✅ **Monitor** execution status and outcomes
+- ❌ **DO NOT** orchestrate steps, handle rollback, or transform workflows
+
+### Service Responsibilities
+
+1. **PipelineRun Creation**: Create Tekton PipelineRun from OCI bundle reference
+2. **Parameter Passing**: Pass LLM-selected parameters to execution engine
+3. **Status Monitoring**: Watch execution status and update CRD
+4. **Audit Trail**: Emit events and metrics for execution lifecycle
+
+---
+
+## 🎯 Business Requirements
+
+### Category 1: Execution Delegation
+
+#### BR-WE-001: Create PipelineRun from OCI Bundle
+
+**Description**: WorkflowExecution Controller MUST create a Tekton PipelineRun using the bundle resolver to reference the OCI image specified in `spec.workflowRef.containerImage`.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Engine-agnostic execution requires delegating to specialized engines. Tekton's bundle resolver allows direct execution from OCI bundles without transformation.
+
+**Implementation**:
+- Use Tekton bundle resolver: `resolver: bundles`
+- Pass container image directly: `params: [{name: bundle, value: <containerImage>}]`
+- No transformation or parsing of workflow contents
+- Set owner reference for cascade deletion
+
+**Acceptance Criteria**:
+- ✅ PipelineRun created with bundle resolver
+- ✅ Container image passed directly from spec
+- ✅ Owner reference set to WorkflowExecution
+- ✅ PipelineRun created within 5 seconds of CRD creation
+
+**Test Coverage**:
+- Unit: PipelineRun building logic
+- Integration: PipelineRun creation with EnvTest
+- E2E: Full execution with Kind + Tekton
+
+**Related DDs**: DD-CONTRACT-001 (Contract Alignment)
+
+---
+
+#### BR-WE-002: Pass Parameters to Execution Engine
+
+**Description**: WorkflowExecution Controller MUST pass all parameters from `spec.parameters` to the Tekton PipelineRun params, preserving UPPER_SNAKE_CASE naming per DD-WORKFLOW-003.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Parameters from LLM selection (via AIAnalysis) must be passed unchanged to the execution engine. The workflow definition in the OCI bundle expects these parameters.
+
+**Implementation**:
+- Convert `map[string]string` to `[]tektonv1.Param`
+- Preserve parameter names exactly (UPPER_SNAKE_CASE)
+- No validation of parameter values (engine validates)
+- Log parameters for audit trail
+
+**Acceptance Criteria**:
+- ✅ All parameters from spec present in PipelineRun
+- ✅ Parameter names preserved exactly
+- ✅ Parameter values passed as strings
+- ✅ Empty parameters map handled gracefully
+
+**Test Coverage**:
+- Unit: Parameter conversion logic
+- Integration: Parameters in created PipelineRun
+- E2E: Parameters received by workflow tasks
+
+**Related DDs**: DD-WORKFLOW-003 (Parameterized Actions)
+
+---
+
+### Category 2: Status Management
+
+#### BR-WE-003: Monitor Execution Status
+
+**Description**: WorkflowExecution Controller MUST watch the created PipelineRun status and update WorkflowExecution status accordingly (Pending → Running → Completed/Failed).
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: The controller's primary responsibility is to track execution status for the RemediationOrchestrator and audit trail. Status must accurately reflect execution engine's state.
+
+**Implementation**:
+- Watch PipelineRun via owner reference
+- Map Tekton conditions to WorkflowExecution phase:
+  - PipelineRun running → Phase: Running
+  - PipelineRun succeeded → Phase: Completed, Outcome: Success
+  - PipelineRun failed → Phase: Failed, Outcome: Failed
+- Update status within 10 seconds of PipelineRun completion
+
+**Acceptance Criteria**:
+- ✅ Phase transitions match PipelineRun status
+- ✅ Outcome reflects success/failure accurately
+- ✅ CompletionTime set when execution finishes
+- ✅ Message populated from Tekton condition
+
+**Test Coverage**:
+- Unit: Status mapping logic
+- Integration: Status updates during reconciliation
+- E2E: Full status lifecycle
+
+---
+
+#### BR-WE-004: Cascade Deletion of PipelineRun
+
+**Description**: WorkflowExecution Controller MUST ensure PipelineRun is deleted when WorkflowExecution is deleted, preventing orphaned resources.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Kubernetes garbage collection should automatically clean up PipelineRun when WorkflowExecution is deleted, preventing orphaned resources.
+
+**Implementation**:
+
+> **Note**: Due to Kubernetes technical limitations, **cross-namespace owner references are not supported**. WorkflowExecutions live in user namespaces (e.g., `default`), while PipelineRuns are created in `kubernaut-workflows` namespace per DD-WE-002. Therefore, we use **finalizers** instead of owner references.
+
+- Add finalizer `kubernaut.ai/workflowexecution-cleanup` on WFE creation
+- On WFE deletion, `ReconcileDelete()` runs:
+  1. Find PipelineRun by deterministic name (DD-WE-003)
+  2. Delete PipelineRun explicitly
+  3. Remove finalizer
+  4. WFE deletion completes
+- **Same outcome achieved**: No orphaned PipelineRuns
+
+**Why NOT Owner References**:
+- Kubernetes explicitly disallows cross-namespace owner references
+- From Kubernetes documentation: "A namespaced owner must exist in the same namespace as the dependent"
+- DD-WE-002 requires dedicated execution namespace for RBAC isolation
+
+**Acceptance Criteria**:
+- ✅ Finalizer set on WorkflowExecution creation
+- ✅ PipelineRun deleted when WorkflowExecution deleted
+- ✅ No orphaned PipelineRuns
+- ✅ Finalizer removed after cleanup completes
+
+**Test Coverage**:
+- Unit: Finalizer addition, deletion handling
+- Integration: Cascade deletion verification
+- E2E: Cleanup after test
+
+**Related DDs**: DD-WE-002 (Dedicated Execution Namespace)
+
+---
+
+### Category 3: Observability
+
+#### BR-WE-005: Audit Events for Execution Lifecycle
+
+**Description**: WorkflowExecution Controller MUST emit audit events for key lifecycle transitions (created, running, completed, failed) to support compliance and debugging.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Complete audit trail enables compliance reporting, debugging, and analytics. Events correlate with RemediationRequest for end-to-end tracing.
+
+**Implementation**:
+- Emit Kubernetes events on phase transitions
+- Write audit records to Data Storage (per ADR-034)
+- Include correlation_id from RemediationRequest
+- Include workflow_id and execution details
+
+**Implemented Event Types** (per ADR-034 pattern `<service>.<category>.<action>`):
+| Event Type | Trigger | EventOutcome |
+|------------|---------|--------------|
+| `workflowexecution.workflow.started` | Phase → Running | `success` |
+| `workflowexecution.workflow.completed` | Phase → Completed | `success` |
+| `workflowexecution.workflow.failed` | Phase → Failed | `failure` |
+| `workflowexecution.workflow.skipped` | Phase → Skipped | `skipped` |
+
+**Note**: DD-AUDIT-003 originally specified `execution.*` prefix. Our implementation uses `workflowexecution.*` prefix to follow ADR-034's `<service>.<category>.<action>` pattern, which is the authoritative standard for event type naming.
+
+**Acceptance Criteria**:
+- ✅ Events emitted for all phase transitions
+- ✅ Audit records written to Data Storage
+- ✅ Events correlatable via remediation_id
+- ✅ Event details include workflow_id, outcome, duration
+
+**Test Coverage**:
+- Unit: Event emission logic
+- Integration: Events recorded in K8s
+- E2E: Audit trail verification
+
+**Related ADRs**: ADR-034 (Unified Audit Table)
+
+---
+
+### Category 4: Error Handling
+
+#### BR-WE-006: ServiceAccount Configuration
+
+**Description**: WorkflowExecution Controller MUST support optional ServiceAccountName configuration for PipelineRun execution.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Workflows may require specific RBAC permissions. ServiceAccount configuration enables secure execution with appropriate permissions.
+
+**Implementation**:
+- Read from `spec.executionConfig.serviceAccountName`
+- Set in PipelineRun `taskRunTemplate.serviceAccountName`
+- Default to "default" if not specified
+
+**Acceptance Criteria**:
+- ✅ ServiceAccountName propagated to PipelineRun
+- ✅ Default used when not specified
+- ✅ Workflow execution uses specified SA
+
+**Test Coverage**:
+- Unit: SA configuration logic
+- Integration: SA in created PipelineRun
+
+---
+
+#### BR-WE-007: Handle Externally Deleted PipelineRun
+
+**Description**: WorkflowExecution Controller MUST gracefully handle PipelineRun deletion by external actors (operators, garbage collection) and mark WorkflowExecution as Failed.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: External deletion is a valid scenario (operator intervention, timeout cleanup). Controller must detect and report this clearly.
+
+**Implementation**:
+- Check for NotFound error when getting PipelineRun
+- Mark WorkflowExecution as Failed with clear message
+- Include deletion timestamp if available
+
+**Acceptance Criteria**:
+- ✅ NotFound handled without panic
+- ✅ WorkflowExecution marked Failed
+- ✅ Message indicates external deletion
+- ✅ No retry loop on deleted PipelineRun
+
+**Test Coverage**:
+- Unit: NotFound handling
+- Integration: Simulated external deletion
+
+---
+
+#### BR-WE-008: Prometheus Metrics for Execution Outcomes
+
+**Description**: WorkflowExecution Controller MUST expose Prometheus metrics for execution outcomes (success/failure counts, duration histograms) on port 9090.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Metrics enable SLO tracking, alerting, and capacity planning. Essential for production observability.
+
+**Implementation**:
+- `workflowexecution_total{outcome}` - Counter for execution outcomes
+- `workflowexecution_duration_seconds{outcome}` - Histogram for execution duration
+- `workflowexecution_pipelinerun_creation_total` - Counter for PR creation
+- `workflowexecution_skip_total{reason}` - Counter for skipped executions (DD-WE-001 visibility)
+- Expose on `:9090/metrics`
+
+**Note**: `workflow_id` label removed from core metrics to prevent high cardinality.
+Label `reason` for skip_total: `ResourceBusy`, `RecentlyRemediated`.
+
+**Acceptance Criteria**:
+- ✅ Metrics exposed on /metrics endpoint
+- ✅ Metrics updated on execution completion
+- ✅ Labels include outcome and workflow_id
+- ✅ Duration histogram with appropriate buckets
+
+**Test Coverage**:
+- Unit: Metrics recording logic
+- Integration: Prometheus scrape validation
+
+---
+
+### Category 5: Resource Safety (V1.0)
+
+#### BR-WE-009: Resource Locking - Prevent Parallel Execution
+
+**Description**: WorkflowExecution Controller MUST prevent parallel workflow execution on the same target resource. Only ONE workflow can remediate a resource at any given time, regardless of workflow type.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Parallel workflows on the same resource can cause conflicts, unpredictable state, and cascading failures. Two different workflows (e.g., `increase-memory` and `restart-pods`) targeting the same deployment could interfere with each other.
+
+**Implementation**:
+- Before creating PipelineRun, check for other Running/Pending WorkflowExecutions on same `targetResource`
+- If found, set Phase=Skipped with Reason=ResourceBusy
+- Include `conflictingWorkflow` details in `skipDetails`
+- Emit audit event and notification
+- No PipelineRun created for skipped executions
+
+**Acceptance Criteria**:
+- ✅ Only one workflow runs on a target resource at a time
+- ✅ Second workflow is Skipped (not queued or failed)
+- ✅ `skipDetails.conflictingWorkflow` populated with blocking workflow info
+- ✅ Audit trail records skipped execution with reason
+- ✅ Different targets can run in parallel
+
+**Test Coverage**:
+- Unit: Resource lock checking logic
+- Integration: Concurrent WorkflowExecution creation
+- E2E: Parallel signals targeting same resource
+
+**Related DDs**: DD-CONTRACT-001 v1.4 (Resource Locking)
+
+---
+
+#### BR-WE-010: Cooldown - Prevent Redundant Sequential Execution
+
+**Description**: WorkflowExecution Controller MUST prevent the same workflow from executing on the same target within a cooldown period (default: 5 minutes). This prevents redundant remediations from duplicate signals.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Multiple signals can resolve to the same root cause and workflow (e.g., 10 pod evictions due to node DiskPressure all trigger `node-disk-cleanup`). Only one execution should occur; subsequent identical requests should be skipped.
+
+**Implementation**:
+- After resource lock check, check for recent Completed/Failed WorkflowExecutions with same `workflowId` + `targetResource`
+- If found within cooldown period, set Phase=Skipped with Reason=RecentlyRemediated
+- Include `recentRemediation` details in `skipDetails`
+- Different workflows on same target ARE allowed (only same workflow+target blocked)
+- Cooldown period configurable via controller config
+
+**Acceptance Criteria**:
+- ✅ Same workflow+target skipped within cooldown period
+- ✅ Different workflow on same target is allowed
+- ✅ `skipDetails.recentRemediation` populated with previous execution info
+- ✅ `cooldownRemaining` indicates time until next execution allowed
+- ✅ Audit trail records skipped execution with reason
+
+**Test Coverage**:
+- Unit: Cooldown checking logic
+- Integration: Rapid sequential WorkflowExecution creation
+- E2E: Storm scenario with duplicate signals
+
+**Related DDs**: DD-CONTRACT-001 v1.4 (Resource Locking), DD-GATEWAY-008 (Storm Aggregation)
+
+---
+
+#### BR-WE-011: Target Resource Identification
+
+**Description**: WorkflowExecution MUST include `spec.targetResource` field identifying the Kubernetes resource being remediated. Format: `namespace/kind/name` for namespaced resources, `kind/name` for cluster-scoped.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Resource locking requires identifying the target resource. The `targetResource` field provides a canonical key for lock checking and audit trail.
+
+**Implementation**:
+- `spec.targetResource` is required field
+- Format: `namespace/kind/name` (e.g., `payment/deployment/payment-api`)
+- For cluster-scoped: `kind/name` (e.g., `node/worker-node-1`)
+- Populated by RemediationOrchestrator from signal context
+- Used as cache key for resource locking
+
+**Acceptance Criteria**:
+- ✅ `targetResource` is required in CRD validation
+- ✅ Format enforced via validation webhook
+- ✅ Used for resource lock comparisons
+- ✅ Included in audit trail
+
+**Test Coverage**:
+- Unit: Target resource parsing and comparison
+- Integration: CRD validation
+
+**Related DDs**: DD-CONTRACT-001 v1.4
+
+---
+
+#### BR-WE-012: Exponential Backoff Cooldown (Pre-Execution Failures Only)
+
+**Description**: WorkflowExecution Controller MUST implement exponential backoff for the cooldown period after consecutive **pre-execution failures** (`wasExecutionFailure: false`). This prevents remediation storms when infrastructure issues cause repeated failures. **Execution failures** (`wasExecutionFailure: true`) are NOT retried - they require manual intervention.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**:
+- **Pre-execution failures** (validation, image pull, quota, Tekton unavailable): Transient infrastructure issues that may resolve with time. Exponential backoff prevents storms while allowing recovery.
+- **Execution failures** (workflow ran and failed): Non-idempotent actions may have occurred. Retrying is dangerous and could worsen the situation.
+
+**Implementation** (Updated V1.0 - DD-RO-002 Phase 3 Complete):
+
+**Routing State** (RemediationOrchestrator - AUTHORITATIVE):
+- Track `ConsecutiveFailureCount` in `RemediationRequest.Status` (per fingerprint)
+- Calculate cooldown: `min(BaseCooldown × 2^(failures-1), MaxCooldown)`
+- Store `NextAllowedExecution` timestamp in RR.Status for persistence
+- RO makes ALL routing decisions BEFORE creating WorkflowExecution
+- After `MaxConsecutiveFailures` reached → RR marked Skipped with `ExhaustedRetries`
+- Reset counter to 0 on successful remediation completion
+
+**Execution State** (WorkflowExecution):
+- Categorize failure type: `WasExecutionFailure` (true/false)
+- Pre-execution failures: validation, image pull, quota, Tekton unavailable
+- Execution failures: workflow ran and failed (non-idempotent actions occurred)
+
+**Deprecated Fields** (V1.0 - Will be removed in V2.0):
+- ~~`WFE.Status.ConsecutiveFailures`~~ → Use `RR.Status.ConsecutiveFailureCount`
+- ~~`WFE.Status.NextAllowedExecution`~~ → Use `RR.Status.NextAllowedExecution`
+
+**Architecture**: Per DD-RO-002, RO owns routing decisions, WE is a pure executor.
+
+**Default Values**: Base=30s (1min for RO), Max=15min, MaxConsecutiveFailures=5
+
+**Acceptance Criteria**:
+- ✅ First pre-execution failure triggers 1-minute cooldown
+- ✅ Consecutive pre-execution failures double cooldown (capped at 10 min)
+- ✅ After 5 consecutive pre-execution failures, WFE marked Skipped with `ExhaustedRetries`
+- ✅ Success resets failure counter to 0
+- ✅ **Execution failures block ALL future retries** with `PreviousExecutionFailed`
+- ✅ Backoff state survives controller restart (stored in CRD status)
+- ✅ `workflowexecution_backoff_skip_total` metric exposed
+- ✅ `workflowexecution_consecutive_failures` gauge exposed
+
+**Test Coverage** (Updated V1.0 - DD-RO-002 Phase 3):
+
+**RO Tests** (Routing Logic - AUTHORITATIVE):
+- Unit: 34 passing tests in `pkg/remediationorchestrator/routing/blocking_test.go`
+  - Backoff calculation (shared utility: `pkg/shared/backoff/backoff_test.go`)
+  - Counter increment/reset per fingerprint
+  - MaxConsecutiveFailures enforcement
+- Integration: Routing prevention tests
+  - Multi-failure progression
+  - Reset on success
+  - Execution failure blocking (`PreviousExecutionFailed`)
+- E2E: End-to-end routing decisions
+
+**WE Tests** (Execution Logic Only):
+- Unit: Failure categorization (`WasExecutionFailure` distinction)
+- Integration: PipelineRun lifecycle, phase transitions
+- E2E: Real Tekton integration
+
+**Migration Complete**: BR-WE-012 routing tests removed from WE (Dec 19, 2025)
+- Deleted: `test/unit/workflowexecution/consecutive_failures_test.go` (14 tests, ~400 lines)
+- Deleted: BR-WE-012 section from `test/integration/workflowexecution/reconciler_test.go` (8 tests, ~337 lines)
+- Deleted: `test/e2e/workflowexecution/03_backoff_cooldown_test.go` (2 tests, ~150 lines)
+
+**Related DDs**:
+- DD-RO-002 (Centralized Routing Responsibility) - Phase 3 COMPLETE
+- DD-WE-004 (Exponential Backoff Cooldown) - Routing moved to RO
+- DD-WE-001 (Resource Locking)
+
+**Cross-Team Agreements**: WE→RO-003 (QUESTIONS_FROM_WORKFLOW_ENGINE_TEAM.md)
+
+**Migration Documentation**:
+- [WE_PHASE_3_MIGRATION_COMPLETE_DEC_19_2025.md](../../../handoff/WE_PHASE_3_MIGRATION_COMPLETE_DEC_19_2025.md)
+- [FIELD_OWNERSHIP_TRIAGE_DEC_19_2025.md](../../../handoff/FIELD_OWNERSHIP_TRIAGE_DEC_19_2025.md)
+- [WE_ROUTING_MIGRATION_FINAL_SUMMARY_DEC_19_2025.md](../../../handoff/WE_ROUTING_MIGRATION_FINAL_SUMMARY_DEC_19_2025.md)
+
+---
+
+## 🔮 v1.1 Planned Requirements
+
+### Category: Operational Safety Enhancements
+
+#### BR-WE-013: Audit-Tracked Execution Block Clearing (v1.0 - SOC2 Compliance)
+
+**Description**: WorkflowExecution Controller MUST provide a mechanism for operators to clear `PreviousExecutionFailed` blocks that tracks WHO cleared the block and records the action in the audit trail.
+
+**Priority**: **P0 (CRITICAL)** - SOC2 Type II Compliance Requirement
+**Target Version**: **v1.0** (elevated from v1.1 due to SOC2 mandate)
+**SOC2 Requirements**: CC7.3 (Immutability), CC7.4 (Completeness), CC8.1 (Attribution), CC4.2 (Change Tracking)
+
+**Rationale**: When a workflow execution fails (`wasExecutionFailure: true`), subsequent executions are blocked to prevent cascading failures from non-idempotent operations. Operators need a way to clear this block after manual investigation, but the clearing action must be auditable for accountability.
+
+**SOC2 Compliance Context**: The v1.0 workaround (deleting WorkflowExecution CRDs) violates SOC2 audit trail immutability requirements. SOC 2 Type II certification was user-approved as a v1.0 requirement (December 18, 2025), elevating BR-WE-013 to P0.
+
+**v1.0 Limitation Without BR-WE-013**: Operators must delete the failed WorkflowExecution CRD to clear the block. This:
+- ❌ Violates SOC2 CC7.3 (Immutability) - audit trail deleted
+- ❌ Violates SOC2 CC7.4 (Completeness) - gaps in execution history
+- ❌ Violates SOC2 CC8.1 (Attribution) - no record of who cleared the block
+- ❌ Violates SOC2 CC4.2 (Change Tracking) - no audit of clearing action
+
+**🔐 Official Implementation (v1.0)**: **Shared Kubernetes Admission Webhook** ⭐ **AUTHORITATIVE**
+
+This is the **officially supported mechanism** for BR-WE-013:
+
+1. **Shared Webhook Service**: `kubernaut-auth-webhook` (reusable across multiple CRDs)
+2. **Mutating Webhook**: `/authenticate/workflowexecution` handler
+3. **User Workflow**:
+   - Operator updates `status.blockClearanceRequest` with reason
+   - Webhook intercepts request, validates user via K8s auth context
+   - Webhook populates `status.blockClearance` with authenticated identity
+4. **Authentication**: Real user identity from Kubernetes authentication context
+5. **Authorization**: K8s RBAC enforces who can clear blocks
+
+**Note**: This webhook is **shared** with other services requiring user authentication (e.g., RemediationApprovalRequest approval decisions). See [SHARED_AUTHENTICATION_WEBHOOK_TRIAGE_DEC_19_2025.md](../../../handoff/SHARED_AUTHENTICATION_WEBHOOK_TRIAGE_DEC_19_2025.md) for architectural details.
+
+**Why Admission Webhook (Authoritative Decision)**:
+- ✅ **SOC2 Compliant**: Real user authentication from K8s auth context
+- ✅ **K8s-Native**: No additional services required
+- ✅ **RBAC Integration**: Existing K8s authorization model
+- ✅ **Audit Trail**: Complete chain from request → authentication → clearance
+
+**Why NOT Other Approaches**:
+- ❌ **Annotations**: Cannot capture authenticated user identity (anyone can write)
+- ❌ **Custom API Endpoint**: Requires new HTTP service (operational overhead)
+- ❌ **Direct Status Update**: No authentication layer
+
+**Implementation Requirements**:
+- ✅ Mutating webhook validates and populates authenticated user identity
+- ✅ `BlockClearanceRequest` in status (operator input)
+- ✅ `BlockClearance` in status (webhook output with authenticated user)
+- ✅ Audit event: `workflowexecution.block.cleared`
+- ✅ RBAC: `update` permission on `workflowexecutions/status` required
+
+**Acceptance Criteria** (v1.0):
+- ✅ Operator can clear `PreviousExecutionFailed` block without deleting WFE
+- ✅ Clearing action includes **authenticated** operator identity (from K8s auth context)
+- ✅ Clearing action recorded in audit trail with reason
+- ✅ Failed WFE preserved in cluster for audit (SOC2 CC7.3)
+- ✅ Clear action requires explicit acknowledgment (not accidental)
+- ✅ SOC2 CC8.1 (Attribution) requirement met
+
+**Test Coverage** (v1.0):
+- Unit: Webhook logic, identity extraction from K8s auth context
+- Integration: Audit trail recording, WFE preservation, webhook validation
+- E2E: Full clear workflow with authenticated user and audit validation
+
+**Related BRs**: BR-WE-012 (Exponential Backoff), BR-WE-005 (Audit Trail)
+**Origin**: DD-WE-004 Q3 response, elevated to P0 by SOC2 compliance mandate
+**References**:
+- [BR_WE_013_BLOCK_CLEARANCE_ADDENDUM_V1.0.md](./implementation/BR_WE_013_BLOCK_CLEARANCE_ADDENDUM_V1.0.md) - Implementation plan
+- [WE_BR_WE_013_SOC2_COMPLIANCE_TRIAGE_DEC_19_2025.md](../../../handoff/WE_BR_WE_013_SOC2_COMPLIANCE_TRIAGE_DEC_19_2025.md) - SOC2 analysis
+- ⭐ [SHARED_AUTHENTICATION_WEBHOOK_TRIAGE_DEC_19_2025.md](../../../handoff/SHARED_AUTHENTICATION_WEBHOOK_TRIAGE_DEC_19_2025.md) - **Shared webhook architecture** (AUTHORITATIVE)
+
+---
+
+## 📊 Test Coverage Summary
+
+### Target Coverage
+
+| Test Tier | Target | Focus |
+|-----------|--------|-------|
+| **Unit** | 70%+ | PipelineRun building, status mapping, edge cases |
+| **Integration** | 50%+ | EnvTest with Tekton CRDs, reconciliation cycle |
+| **E2E** | 15% | Kind + Tekton, full execution |
+
+### BR Coverage Matrix
+
+**Last Updated**: 2025-12-10 (DS Batch Endpoint Complete - All audit tests PASS)
+
+| BR ID | Unit | Integration | E2E | Total | Notes |
+|-------|------|-------------|-----|-------|-------|
+| BR-WE-001 | ✅ | ✅ | ✅ | 100% | |
+| BR-WE-002 | ✅ | ✅ | ✅ | 100% | |
+| BR-WE-003 | ✅ | ✅ | ✅ | 100% | |
+| BR-WE-004 | ✅ | ✅ | ✅ | 100% | |
+| BR-WE-005 | ✅ | ✅ | ✅ | 100% | DS batch endpoint complete (2025-12-10). Full audit integration verified. |
+| BR-WE-006 | ✅ | ✅ | ⬜ | 80% | |
+| BR-WE-007 | ✅ | ✅ | ✅ | 100% | |
+| BR-WE-008 | ✅ | ✅ | ✅ | 100% | |
+| BR-WE-009 | ✅ | ✅ | ✅ | 100% | |
+| BR-WE-010 | ✅ | ✅ | ✅ | 100% | |
+| BR-WE-011 | ✅ | ✅ | ✅ | 90% | |
+| BR-WE-012 | ✅ | ✅ | ⬜ | 67% | |
+| BR-WE-013 | - | - | - | v1.1 | |
+
+**Legend**:
+- ✅ = Fully compliant with authoritative documentation
+- 🔴 = Test exists but FAILS (waiting for DS batch endpoint fix)
+- ⚠️ = Partial compliance (uses mock instead of real service per TESTING_GUIDELINES)
+- ⏳ = Pending external dependency (Data Storage batch endpoint)
+- ⬜ = Not implemented
+
+**Summary**: 11/12 BRs have full Unit + Integration coverage. **BR-WE-005 tests now exist** for both Integration (using real DS via podman-compose) and E2E (verifying PostgreSQL persistence). These tests **WILL FAIL** until the Data Storage team implements the batch endpoint (see `NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md`). Once DS is fixed, BR-WE-005 coverage will be 100%.
+
+**Overall**: ~94% current (100% once DS batch endpoint is fixed)
+
+---
+
+## 🔗 Related Documentation
+
+- [WorkflowExecution Overview](./overview.md)
+- [CRD Schema](./crd-schema.md)
+- [Implementation Plan v3.0](./implementation/IMPLEMENTATION_PLAN_V3.0.md)
+- [DD-CONTRACT-001: AIAnalysis ↔ WorkflowExecution Alignment](../../../architecture/decisions/DD-CONTRACT-001-aianalysis-workflowexecution-alignment.md)
+- [ADR-043: Workflow Schema Definition](../../../architecture/decisions/ADR-043-workflow-schema-definition-standard.md)
+- [DD-WORKFLOW-003: Parameterized Actions](../../../architecture/decisions/DD-WORKFLOW-003-parameterized-actions.md)
+
+---
+
+## 📝 Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 2.1 | 2025-12-01 | **Resource Locking Safety**: Added BR-WE-009 (parallel prevention), BR-WE-010 (cooldown), BR-WE-011 (target identification). New `targetResource` spec field. New `Skipped` phase. See DD-WE-001 for design decision. |
+| 2.0 | 2025-11-28 | **SIMPLIFIED**: Engine-agnostic architecture. Reduced from 38 BRs to 8 BRs. Removed step orchestration, validation framework, rollback handling. |
+| 1.0 | 2025-10-13 | ❌ SUPERSEDED - Complex step orchestration with 38 BRs |
+
+---
+
+**Document Version**: 3.8
+**Last Updated**: December 19, 2025
+**Maintained By**: Kubernaut Architecture Team
+**Status**: Ready for Implementation (v1.0), Planned (v1.1)
+**Phase 3 Migration**: ✅ COMPLETE - WE is now a pure executor (DD-RO-002)
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 3.8 | 2025-12-19 | **DD-RO-002 Phase 3 Complete**: BR-WE-012 routing logic migrated to RO. Deprecated `WFE.Status.ConsecutiveFailures` and `WFE.Status.NextAllowedExecution` (use `RR.Status` fields). WE is now a pure executor. Removed 887 lines (24 tests): `consecutive_failures_test.go`, BR-WE-012 integration tests, `03_backoff_cooldown_test.go`. See [WE_PHASE_3_MIGRATION_COMPLETE_DEC_19_2025.md](../../../handoff/WE_PHASE_3_MIGRATION_COMPLETE_DEC_19_2025.md). |
+| 3.7 | 2025-12-10 | **DS Batch Endpoint Complete**: BR-WE-005 audit coverage now 100%. Integration and E2E tests unblocked. See `NOTICE_DATASTORAGE_BATCH_AUDIT_ENDPOINT_COMPLETE.md`. |
+| 3.6 | 2025-12-09 | **DD-WE-001 Compliance Fix**: Fixed `CheckCooldown()` to allow different workflows on same target within cooldown (per DD-WE-001 line 140). **BR-WE-004 Documentation Fix**: Updated to explain finalizer approach - cross-namespace owner references not supported by Kubernetes. |
+| 3.5 | 2025-12-09 | **BR-WE-005 Audit Types**: Added clarification that `workflowexecution.*` prefix aligns with ADR-034 pattern. |
+| 3.4 | 2025-12-09 | **BR-WE-005 Tests Added**: Added integration tests with real DS (`audit_datastorage_test.go`) and E2E audit persistence verification (`02_observability_test.go`). Tests will **FAIL** until DS batch endpoint is fixed. Once fixed, BR-WE-005 coverage → 100%. |
+| 3.3 | 2025-12-08 | **BR-WE-005 Audit Triage**: Corrected BR Coverage Matrix. Production code now initializes AuditStore (DD-AUDIT-003 compliant). Integration tests flagged as using mock instead of real DS (per TESTING_GUIDELINES.md). E2E audit persistence BLOCKED by DS batch endpoint. See `NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md`. |
+| 3.2 | 2025-12-06 | **v1.1 Planning**: Added BR-WE-013 (Audit-Tracked Block Clearing) for v1.1. Deferred from v1.0 - annotations lack audit trail for identity tracking. |
+| 3.1 | 2025-12-06 | **Exponential Backoff**: Added BR-WE-012 for exponential backoff cooldown. New `ConsecutiveFailures` and `NextAllowedExecution` status fields. New `ExhaustedRetries` skip reason. New metrics. See DD-WE-004. |
+| 3.0 | 2025-12-02 | **Standardization**: Changed BR prefix from `BR-WF-*` to `BR-WE-*` per [00-core-development-methodology.mdc](../../../.cursor/rules/00-core-development-methodology.mdc). API group updated to `kubernaut.ai/v1alpha1`. |
+| 2.1 | 2025-12-01 | **Resource Locking Safety**: Added BR-WE-009 to BR-WE-011. New `targetResource` spec field. New `Skipped` phase. |
+| 2.0 | 2025-11-28 | **SIMPLIFIED**: Engine-agnostic architecture. Reduced from 38 BRs to 8 BRs. |
+| 1.0 | 2025-10-13 | ❌ SUPERSEDED - Complex step orchestration with 38 BRs |
+

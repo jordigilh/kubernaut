@@ -33,12 +33,18 @@ import os
 import signal
 import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import centralized logging configuration
 from src.config import setup_logging
+
+# Import hot-reload ConfigManager (BR-HAPI-199, DD-HAPI-004)
+from src.config.hot_reload import ConfigManager
+
+# Import config models
+from src.models.config_models import AppConfig
 
 logger = logging.getLogger(__name__)
 
@@ -97,103 +103,115 @@ signal.signal(signal.SIGINT, handle_shutdown_signal)
 logger.info("Signal handlers registered for graceful shutdown (SIGTERM, SIGINT)")
 
 
-def load_config() -> Dict[str, Any]:
+def load_config() -> AppConfig:
     """
     Load service configuration from YAML file
 
-    Design Decision: DD-HOLMESGPT-012 - Configuration as mounted ConfigMap
-    - Reads config from /etc/holmesgpt/config.yaml (mounted ConfigMap)
-    - Falls back to default development configuration if file not found
-    - Cleaner than environment variables - no deployment changes for config updates
+    ADR-030: Configuration Management Standard with Exception
+    - External Interface: -config flag (consistent with Go services)
+    - Internal Implementation: CONFIG_FILE env var (uvicorn limitation)
 
-    Environment variable overrides:
-    - CONFIG_FILE: Override config file path (default: /etc/holmesgpt/config.yaml)
-    - LLM_CREDENTIALS_PATH: Path to LLM provider credentials (generic, any provider)
-    - GOOGLE_APPLICATION_CREDENTIALS: Legacy/auto-set for Google Cloud compatibility
+    EXCEPTION RATIONALE:
+    Uvicorn does NOT support custom command-line flags. Test proof:
+      $ uvicorn src.main:app --custom-flag value
+      Error: No such option: --custom-flag
+
+    Solution: entrypoint.sh parses -config flag and exports CONFIG_FILE env var.
+    See: docs/architecture/decisions/ADR-030-EXCEPTION-HAPI-ENV-VAR.md
+
+    User Experience (identical to Go services):
+    - Gateway:  args: ["-config", "/etc/gateway/config.yaml"]
+    - HAPI:     args: ["-config", "/etc/holmesgpt/config.yaml"]
     """
+    import os
+
+    # ADR-030 EXCEPTION: Read from env var (set by entrypoint.sh from -config flag)
     config_file = os.getenv("CONFIG_FILE", "/etc/holmesgpt/config.yaml")
     config_path = Path(config_file)
 
-    # Default development configuration
-    default_config = {
-        "service_name": "holmesgpt-api",
-        "version": "1.0.0",
-        "log_level": "INFO",
-        "dev_mode": True,
-        "auth_enabled": False,
-        "api_host": "0.0.0.0",
-        "api_port": 8080,
-        "llm": {
-            "provider": "ollama",
-            "model": "llama2",
-            "endpoint": "http://localhost:11434",
-            "max_retries": 3,
-            "timeout_seconds": 60,
-            "max_tokens_per_request": 4096,
-            "temperature": 0.7,
-        },
-        "context_api": {
-            "url": "http://localhost:8091",
-            "timeout_seconds": 10,
-            "max_retries": 2,
-        },
-        "kubernetes": {
-            "service_host": "kubernetes.default.svc",
-            "service_port": 443,
-            "token_reviewer_enabled": True,
-        },
-        "public_endpoints": ["/health", "/ready", "/metrics"],
-        "metrics": {
-            "enabled": True,
-            "endpoint": "/metrics",
-            "scrape_interval": "30s",
-        },
-    }
+    # ADR-030: Config file is MANDATORY - fail fast if not found
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Configuration file not found: {config_path}\n"
+            f"ADR-030 requires YAML ConfigMap to be mounted.\n"
+            f"Ensure ConfigMap is mounted at /etc/holmesgpt/ or use -config flag."
+        )
 
-    # Load config from file if it exists
-    if config_path.exists():
-        try:
-            logger.info(f"Loading configuration from {config_file}")
-            with open(config_path, 'r') as f:
-                file_config = yaml.safe_load(f)
+    # Load configuration from YAML file
+    try:
+        logger.info(f"Loading configuration from {config_file}")
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
 
-            # Merge file config with defaults (file config takes precedence)
-            config = {**default_config, **file_config}
+        if not config:
+            raise ValueError("Configuration file is empty")
 
-            # Ensure nested dicts are properly merged
-            for key in ["llm", "context_api", "kubernetes", "metrics"]:
-                if key in file_config:
-                    config[key] = {**default_config.get(key, {}), **file_config[key]}
+        # ADR-030: Business-critical settings from YAML, everything else hardcoded
 
-            logger.info({
-                "event": "config_loaded",
-                "source": "file",
-                "path": config_file,
-                "llm_provider": config.get("llm", {}).get("provider"),
-                "auth_enabled": config.get("auth_enabled"),
-            })
-            return config
+        # Hardcoded defaults (no business value in configuration)
+        defaults = {
+            "service_name": "holmesgpt-api",
+            "version": "1.0.0",
+            "dev_mode": False,
+            "auth_enabled": False,
+            "api_host": "0.0.0.0",
+            "api_port": 8080,
+            "llm": {
+                "max_retries": 3,
+                "timeout_seconds": 60,
+                "max_tokens_per_request": 4096,
+                "temperature": 0.7,
+            },
+            "context_api": {
+                "url": "http://localhost:8091",
+                "timeout_seconds": 10,
+                "max_retries": 2,
+            },
+            "kubernetes": {
+                "service_host": "kubernetes.default.svc",
+                "service_port": 443,
+                "token_reviewer_enabled": True,
+            },
+            "public_endpoints": ["/health", "/ready", "/metrics"],
+            "metrics": {
+                "enabled": True,
+                "endpoint": "/metrics",
+                "scrape_interval": "30s",
+            },
+        }
 
-        except Exception as e:
-            logger.error({
-                "event": "config_load_failed",
-                "error": str(e),
-                "path": config_file,
-                "fallback": "using_defaults"
-            })
-            # Fall through to return default config
-    else:
-        logger.warning({
-            "event": "config_file_not_found",
+        # Merge YAML config with defaults (YAML takes precedence)
+        for key in ["llm", "logging", "data_storage"]:
+            if key in config:
+                if key in defaults and isinstance(defaults[key], dict):
+                    defaults[key].update(config[key])
+                else:
+                    defaults[key] = config[key]
+
+        config = {**defaults, **config}
+
+        # Map legacy log_level to nested logging.level (backward compat)
+        if "log_level" not in config and "logging" in config:
+            config["log_level"] = config["logging"].get("level", "INFO")
+        elif "log_level" in config:
+            config.setdefault("logging", {})["level"] = config["log_level"]
+
+        logger.info({
+            "event": "config_loaded",
+            "source": "yaml_file",
             "path": config_file,
-            "fallback": "using_defaults"
+            "llm_provider": config.get("llm", {}).get("provider"),
         })
 
-    # Add service metadata to default config
-    default_config["service_name"] = "holmesgpt-api"
-    default_config["version"] = "1.0.0"
+        return config
 
-    return default_config
+    except Exception as e:
+        logger.error({
+            "event": "config_load_failed",
+            "error": str(e),
+            "path": config_file,
+        })
+        raise
 
 
 # Load configuration
@@ -203,6 +221,50 @@ config = load_config()
 # This must be called after config is loaded but before any logging occurs
 setup_logging(config)
 logger.info(f"holmesgpt-api starting with log level: {config.get('log_level', 'INFO')}")
+
+# ========================================
+# HOT-RELOAD CONFIG MANAGER (BR-HAPI-199)
+# ========================================
+# ConfigManager provides hot-reload capability for config changes
+# without pod restart. Falls back to static config if file not found.
+
+config_manager: Optional[ConfigManager] = None
+HOT_RELOAD_ENABLED = os.getenv("HOT_RELOAD_ENABLED", "true").lower() == "true"
+
+def init_config_manager() -> Optional[ConfigManager]:
+    """
+    Initialize ConfigManager for hot-reload support.
+
+    BR-HAPI-199: ConfigMap Hot-Reload
+    DD-HAPI-004: ConfigMap Hot-Reload Design
+
+    Returns None if config file doesn't exist or hot-reload is disabled.
+    """
+    if not HOT_RELOAD_ENABLED:
+        logger.info("Hot-reload disabled via HOT_RELOAD_ENABLED=false")
+        return None
+
+    config_file = os.getenv("CONFIG_FILE", "/etc/holmesgpt/config.yaml")
+    config_path = Path(config_file)
+
+    if not config_path.exists():
+        logger.warning(f"Config file not found: {config_file}, hot-reload disabled")
+        return None
+
+    try:
+        manager = ConfigManager(config_file, logger, enable_hot_reload=True)
+        manager.start()
+        logger.info({
+            "event": "config_manager_started",
+            "br": "BR-HAPI-199",
+            "dd": "DD-HAPI-004",
+            "path": config_file,
+            "hot_reload": True,
+        })
+        return manager
+    except Exception as e:
+        logger.error(f"Failed to start ConfigManager: {e}, using static config")
+        return None
 
 # Create FastAPI application
 app = FastAPI(
@@ -238,15 +300,14 @@ add_rfc7807_exception_handlers(app)
 logger.info("RFC 7807 exception handlers enabled (BR-HAPI-200)")
 
 # Register extension routers
+# All configuration is now via environment variables (LLM_ENDPOINT, LLM_MODEL, LLM_PROVIDER)
+# No router.config anti-pattern - tests use mock LLM server instead
 app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])
 app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
-app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
+# DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not available in V1.0
+# Logic preserved in src/extensions/postexec.py for V1.1
+# app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
 app.include_router(health.router, tags=["Health"])
-
-# Pass config to extensions
-recovery.router.config = config
-postexec.router.config = config
-health.router.config = config
 
 
 # ========================================
@@ -267,16 +328,68 @@ async def metrics():
 
 @app.on_event("startup")
 async def startup_event():
+    global config_manager
+
     logger.info(f"Starting {config.get('service_name', 'holmesgpt-api')} v{config.get('version', '1.0.0')}")
     logger.info(f"LLM Provider: {config.get('llm', {}).get('provider', 'unknown')}")
     logger.info(f"Dev mode: {config.get('dev_mode', False)}")
     logger.info(f"Auth enabled: {config.get('auth_enabled', False)}")
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # MANDATORY: Validate audit initialization (ADR-032 §2)
+    # Per ADR-032 §3: HAPI is P0 service - audit is MANDATORY for LLM interactions
+    # Service MUST crash if audit cannot be initialized (ADR-032 §2)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    from src.audit.factory import get_audit_store
+    try:
+        audit_store = get_audit_store()  # Will crash (sys.exit(1)) if init fails
+        logger.info({
+            "event": "audit_store_initialized",
+            "status": "mandatory_per_adr_032",
+            "classification": "P0",
+            "adr": "ADR-032 §2",
+        })
+    except Exception as e:
+        # This should never be reached (get_audit_store calls sys.exit(1))
+        # But included for completeness
+        logger.error(
+            f"FATAL: Audit initialization failed - service cannot start per ADR-032 §2: {e}",
+            extra={"adr": "ADR-032 §2"}
+        )
+        import sys
+        sys.exit(1)  # Crash immediately - Kubernetes will restart pod
+
+    # Initialize ConfigManager for hot-reload (BR-HAPI-199)
+    config_manager = init_config_manager()
+    if config_manager:
+        app.state.config_manager = config_manager
+        logger.info({
+            "event": "hot_reload_enabled",
+            "br": "BR-HAPI-199",
+            "fields": ["llm.model", "llm.provider", "llm.endpoint", "toolsets", "log_level"],
+        })
+    else:
+        app.state.config_manager = None
+        logger.info("Hot-reload not available, using static configuration")
+
     logger.info("Service started successfully")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    global config_manager
+
     logger.info("Service shutting down")
+
+    # Stop ConfigManager (BR-HAPI-199)
+    if config_manager:
+        config_manager.stop()
+        logger.info({
+            "event": "config_manager_stopped",
+            "br": "BR-HAPI-199",
+            "reload_count": config_manager.reload_count,
+            "error_count": config_manager.error_count,
+        })
 
 
 if __name__ == "__main__":

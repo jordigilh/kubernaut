@@ -26,6 +26,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/yaml"
 )
 
 // ========================================
@@ -75,7 +76,8 @@ var _ DeliveryService = (*FileDeliveryService)(nil)
 // Files are named: notification-{name}-{timestamp}.json
 //
 // Example:
-//   service := NewFileDeliveryService("/tmp/kubernaut-e2e-notifications")
+//
+//	service := NewFileDeliveryService("/tmp/kubernaut-e2e-notifications")
 func NewFileDeliveryService(outputDir string) *FileDeliveryService {
 	return &FileDeliveryService{
 		outputDir: outputDir,
@@ -85,13 +87,18 @@ func NewFileDeliveryService(outputDir string) *FileDeliveryService {
 // Deliver writes the notification to a JSON file for E2E test validation.
 //
 // File Format:
-//   - Filename: notification-{name}-{timestamp}.json
-//   - Content: Complete NotificationRequest as JSON (pretty-printed)
+//   - Filename: notification-{name}-{timestamp}.{format}
+//   - Content: Complete NotificationRequest as JSON or YAML (pretty-printed)
 //   - Timestamp: Microsecond precision to prevent collisions
+//
+// TDD GREEN Enhancement:
+//   - Uses FileDeliveryConfig from CRD if specified
+//   - Falls back to constructor outputDir if FileDeliveryConfig not specified
+//   - Supports JSON and YAML formats
 //
 // Error Handling (V3.0):
 //   - Directory creation failures: Return error (test environment issue)
-//   - JSON marshaling failures: Return error (should never happen)
+//   - JSON/YAML marshaling failures: Return error (should never happen)
 //   - File write failures: Return error (permissions, disk space, etc.)
 //   - All errors are logged with structured logging
 //
@@ -103,61 +110,128 @@ func NewFileDeliveryService(outputDir string) *FileDeliveryService {
 func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	log := ctrl.LoggerFrom(ctx)
 
+	// TDD GREEN: Use FileDeliveryConfig from CRD if specified, otherwise use constructor outputDir
+	outputDir := s.outputDir
+	format := "json" // Default format
+
+	if notification.Spec.FileDeliveryConfig != nil {
+		outputDir = notification.Spec.FileDeliveryConfig.OutputDirectory
+		if notification.Spec.FileDeliveryConfig.Format != "" {
+			format = notification.Spec.FileDeliveryConfig.Format
+		}
+	}
+
 	// Ensure output directory exists
-	if err := os.MkdirAll(s.outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		log.Error(err, "Failed to create file output directory",
-			"outputDir", s.outputDir,
+			"outputDir", outputDir,
 			"notification", notification.Name,
 			"namespace", notification.Namespace)
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Generate filename with timestamp (prevents overwrites)
-	filename := s.generateFilename(notification)
-	filePath := filepath.Join(s.outputDir, filename)
+	// Generate filename with timestamp and format (prevents overwrites)
+	filename := s.generateFilenameWithFormat(notification, format)
+	filePath := filepath.Join(outputDir, filename)
 
 	log.Info("Delivering notification to file",
 		"notification", notification.Name,
 		"namespace", notification.Namespace,
 		"filename", filename,
-		"outputDir", s.outputDir)
+		"outputDir", outputDir,
+		"format", format)
 
-	// Marshal notification to JSON (pretty-printed for readability)
-	data, err := json.MarshalIndent(notification, "", "  ")
-	if err != nil {
-		log.Error(err, "Failed to marshal notification to JSON",
-			"notification", notification.Name,
-			"namespace", notification.Namespace)
-		return fmt.Errorf("failed to marshal notification: %w", err)
+	// TDD REFACTOR: Marshal notification to specified format (pretty-printed for readability)
+	var data []byte
+	var err error
+
+	switch format {
+	case "json":
+		data, err = json.MarshalIndent(notification, "", "  ")
+		if err != nil {
+			log.Error(err, "Failed to marshal notification to JSON",
+				"notification", notification.Name,
+				"namespace", notification.Namespace)
+			return fmt.Errorf("failed to marshal notification to JSON: %w", err)
+		}
+	case "yaml":
+		// TDD REFACTOR: YAML support added
+		data, err = yaml.Marshal(notification)
+		if err != nil {
+			log.Error(err, "Failed to marshal notification to YAML",
+				"notification", notification.Name,
+				"namespace", notification.Namespace)
+			return fmt.Errorf("failed to marshal notification to YAML: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported file format: %s (supported: json, yaml)", format)
 	}
 
-	// Write to file
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		log.Error(err, "Failed to write notification file",
+	// TDD REFACTOR: Atomic file write (write to temp, then rename)
+	// This prevents partial writes if the process crashes during write
+	tempFile := filePath + ".tmp"
+
+	// Write to temporary file first
+	if err := os.WriteFile(tempFile, data, 0644); err != nil {
+		log.Error(err, "Failed to write temporary notification file",
 			"notification", notification.Name,
 			"namespace", notification.Namespace,
+			"tempFile", tempFile)
+		// NT-BUG-006: Wrap file system errors as retryable (permission denied, disk full, etc.)
+		// These are temporary errors that may resolve after directory permissions are fixed
+		return NewRetryableError(fmt.Errorf("failed to write temporary file: %w", err))
+	}
+
+	// Atomically rename temp file to final file
+	if err := os.Rename(tempFile, filePath); err != nil {
+		log.Error(err, "Failed to rename temporary file to final file",
+			"notification", notification.Name,
+			"namespace", notification.Namespace,
+			"tempFile", tempFile,
 			"filePath", filePath)
-		return fmt.Errorf("failed to write notification file: %w", err)
+		// Clean up temp file on error
+		os.Remove(tempFile)
+		// NT-BUG-006: Wrap rename errors as retryable (permission denied, etc.)
+		return NewRetryableError(fmt.Errorf("failed to rename temporary file: %w", err))
 	}
 
 	log.Info("Notification delivered successfully to file",
 		"notification", notification.Name,
 		"namespace", notification.Namespace,
 		"filePath", filePath,
-		"filesize", len(data))
+		"filesize", len(data),
+		"format", format)
 
 	return nil
 }
 
-// generateFilename creates a unique filename for the notification.
+// generateFilename creates a unique filename for the notification (legacy method).
 //
 // Format: notification-{name}-{timestamp}.json
 // Example: notification-critical-alert-20251123-143022.123456.json
 //
 // Timestamp includes microseconds to prevent collisions in high-throughput scenarios.
 // This ensures thread-safe concurrent delivery without overwrites.
+//
+// DEPRECATED: Use generateFilenameWithFormat instead
 func (s *FileDeliveryService) generateFilename(notification *notificationv1alpha1.NotificationRequest) string {
 	timestamp := time.Now().Format("20060102-150405.000000")
 	return fmt.Sprintf("notification-%s-%s.json", notification.Name, timestamp)
 }
 
+// generateFilenameWithFormat creates a unique filename for the notification with specified format.
+//
+// Format: notification-{name}-{timestamp}.{format}
+// Example: notification-critical-alert-20251123-143022.123456.json
+//
+// TDD GREEN: Minimal implementation
+// - Supports json and yaml formats
+// - Timestamp includes microseconds to prevent collisions
+//
+// Parameters:
+//   - notification: The notification request
+//   - format: File format (json or yaml)
+func (s *FileDeliveryService) generateFilenameWithFormat(notification *notificationv1alpha1.NotificationRequest, format string) string {
+	timestamp := time.Now().Format("20060102-150405.000000")
+	return fmt.Sprintf("notification-%s-%s.%s", notification.Name, timestamp, format)
+}

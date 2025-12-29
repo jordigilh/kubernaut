@@ -37,49 +37,32 @@
 
 ## Business Requirements Coverage
 
-**RemediationOrchestrator** implements end-to-end CRD lifecycle orchestration for alert remediation:
+**RemediationOrchestrator** implements end-to-end CRD lifecycle orchestration for alert remediation.
 
-### V1 Scope: Remediation Orchestration (BR-AR-001 to BR-AR-067)
+### V1 Defined Business Requirements (11 BRs)
 
-**Range**: BR-AR-001 to BR-AR-180
-**V1 Active**: BR-AR-001 to BR-AR-067 (25 BRs total)
-**V2 Reserved**: BR-AR-068 to BR-AR-180 (multi-cluster orchestration, advanced coordination)
+**Authoritative BR Files**: See `docs/requirements/BR-ORCH-*.md`
 
-**V1 Business Requirements Breakdown**:
+| Category | BRs | Description | BR File |
+|----------|-----|-------------|---------|
+| **Approval** | BR-ORCH-001 | Approval notification creation | [BR-ORCH-001](../../../requirements/BR-ORCH-001-approval-notification-creation.md) |
+| **Workflow** | BR-ORCH-025, BR-ORCH-026 | Workflow data pass-through, approval orchestration | [BR-ORCH-025-026](../../../requirements/BR-ORCH-025-026-workflow-approval-orchestration.md) |
+| **Timeout** | BR-ORCH-027, BR-ORCH-028 | Global and per-phase timeout management | [BR-ORCH-027-028](../../../requirements/BR-ORCH-027-028-timeout-management.md) |
+| **Notification** | BR-ORCH-029, BR-ORCH-030, BR-ORCH-031 | Notification handling, status tracking, cascade cleanup | [BR-ORCH-029-031](../../../requirements/BR-ORCH-029-031-notification-handling.md) |
+| **Deduplication** | BR-ORCH-032, BR-ORCH-033, BR-ORCH-034 | WE Skipped phase, duplicate tracking, bulk notification | [BR-ORCH-032-034](../../../requirements/BR-ORCH-032-034-resource-lock-deduplication.md) |
 
-#### Core Orchestration (BR-AR-001 to BR-AR-060)
-**Count**: 18 BRs
-**Focus**: CRD lifecycle coordination, status aggregation, and event-driven phase transitions
-
-**Primary Functions**:
+**Core Functions** (covered by above BRs):
 - RemediationRequest CRD creation and ownership management
-- Sequential service CRD creation (RemediationProcessing → AIAnalysis → WorkflowExecution)
+- Sequential service CRD creation (SignalProcessing → AIAnalysis → WorkflowExecution)
 - Watch-based status aggregation from service CRDs
 - Data snapshot pattern implementation (copy status → next spec)
 - Owner reference management for cascade deletion
 - 24-hour retention and automatic cleanup
 - Event coordination and phase transitions
 
-#### CRD Monitoring (BR-AR-061 to BR-AR-067)
-**Count**: 7 BRs (migrated from BR-ALERT-*)
-**Focus**: CRD lifecycle monitoring, timeout detection, and escalation
+### V2 Future Requirements (Not Yet Defined)
 
-**Migrated BRs**:
-- BR-AR-061: CRD lifecycle monitoring (was BR-ALERT-021)
-- BR-AR-062: Status aggregation across CRDs (was BR-ALERT-024)
-- BR-AR-063: Event coordination between controllers (was BR-ALERT-025)
-- BR-AR-064: Cross-controller integration (was BR-ALERT-026)
-- BR-AR-065: Workflow orchestration (was BR-ALERT-027)
-- BR-AR-066: Remediation completion tracking (was BR-ALERT-028)
-- BR-AR-067: Reserved for future expansion
-
-**Note on BR-ALERT-006**: Originally shared with RemediationProcessor. Primary owner is RemediationProcessor (BR-SP-062) as it handles alert-level timeout/escalation logic. RemediationOrchestrator references BR-SP-062 when needed.
-
-**Rationale**: BR-ALERT-* was shared between RemediationProcessor and RemediationOrchestrator. To follow single-prefix-per-service pattern, all RemediationOrchestrator BRs were migrated to BR-AR-*.
-
-### V2 Expansion (BR-AR-068 to BR-AR-180)
-
-**Reserved for Future**:
+**Planned for V2** (BRs will be defined when V2 scope is finalized):
 - Parallel remediation workflows for complex multi-issue scenarios
 - Cross-alert correlation and batch remediation coordination
 - ML-based timeout prediction and adaptive phase management
@@ -98,7 +81,7 @@
 - **Endpoint**: `/metrics`
 - **Format**: Prometheus text format
 - **Authentication**: Kubernetes TokenReviewer API (validates ServiceAccount tokens)
-  - **See**: [METRICS_AUTHENTICATION.md](../METRICS_AUTHENTICATION.md) for complete implementation examples
+  - **See**: [004-metrics-authentication.md](../../../architecture/decisions/004-metrics-authentication.md) for complete implementation examples
 
 ### ServiceAccount
 - **Name**: `remediation-orchestrator-sa`
@@ -342,13 +325,13 @@ Gateway Service → RemediationRequest CRD (this controller)
 - Multi-cluster remediation coordination
 
 ### Business Requirements Coverage
-- **BR-SP-062 (RemediationProcessor)**: Timeout management with escalation
-- **BR-AR-061**: Alert lifecycle state tracking
-- **BR-AR-062**: Remediation workflow orchestration
-- **BR-AR-063**: State persistence across restarts
-- **BR-AR-064**: Automatic failure recovery
-- **BR-AR-065**: 24-hour retention window
-- **BR-AR-066**: Cascade deletion of service CRDs
+- **BR-ORCH-001**: Approval notification creation
+- **BR-ORCH-025, BR-ORCH-026**: Workflow data pass-through, approval orchestration
+- **BR-ORCH-027, BR-ORCH-028**: Global and per-phase timeout management
+- **BR-ORCH-029-031**: Notification handling, status tracking, cascade cleanup
+- **BR-ORCH-032-034**: WE Skipped phase handling, duplicate tracking, bulk notification
+
+**See**: [BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md) for detailed requirement specifications.
 
 ### Implementation Status
 - **CRD Schema**: Complete design with spec/status types

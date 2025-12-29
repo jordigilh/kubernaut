@@ -1,6 +1,6 @@
 # ADR-027: Multi-Architecture Container Build Strategy with Red Hat UBI Base Images
 # Build Stage: Red Hat UBI9 Go Toolset 1.24 (matches go.mod: go 1.24.6)
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
 USER root
 

@@ -19,11 +19,9 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,38 +52,36 @@ type ServerSettings struct {
 
 // MiddlewareSettings contains middleware configuration.
 // Single Responsibility: Request processing middleware
+//
+// Note: RateLimitSettings removed (2025-12-07)
+// Rate limiting now delegated to Ingress/Route proxy per ADR-048.
+// See: docs/architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md
 type MiddlewareSettings struct {
-	RateLimit RateLimitSettings `yaml:"rate_limit"`
-}
-
-// RateLimitSettings contains rate limiting configuration.
-type RateLimitSettings struct {
-	RequestsPerMinute int `yaml:"requests_per_minute"` // Default: 100
-	Burst             int `yaml:"burst"`               // Default: 10
+	// Empty - rate limiting delegated to proxy (ADR-048)
+	// Future middleware config can be added here
 }
 
 // InfrastructureSettings contains external dependency configuration.
 // Single Responsibility: Infrastructure connections
 type InfrastructureSettings struct {
-	// Redis uses the shared Redis configuration from pkg/cache/redis (DD-CACHE-001)
-	Redis *rediscache.Options `yaml:"redis"`
+	// DD-GATEWAY-012: Redis REMOVED - Gateway is now 100% Kubernetes-native
+	// Deduplication and storm tracking now use RR status (DD-GATEWAY-011)
+
+	// DD-AUDIT-003: Data Storage URL for audit event emission (P0 requirement)
+	// Example: "http://data-storage-service:8080"
+	DataStorageURL string `yaml:"data_storage_url"`
 }
 
 // ProcessingSettings contains business logic configuration.
 // Single Responsibility: Signal processing behavior
+//
+// Note: Environment and Priority settings removed (2025-12-06)
+// Environment/Priority classification now owned by Signal Processing per DD-CATEGORIZATION-001.
+// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type ProcessingSettings struct {
 	Deduplication DeduplicationSettings `yaml:"deduplication"`
-	Storm         StormSettings         `yaml:"storm"`
-	Environment   EnvironmentSettings   `yaml:"environment"`
-	Priority      PrioritySettings      `yaml:"priority"`
 	CRD           CRDSettings           `yaml:"crd"`
 	Retry         RetrySettings         `yaml:"retry"` // BR-GATEWAY-111: K8s API retry configuration
-}
-
-// PrioritySettings contains priority assignment configuration.
-type PrioritySettings struct {
-	// PolicyPath is the path to the Rego policy file for priority assignment
-	PolicyPath string `yaml:"policy_path"`
 }
 
 // DeduplicationSettings contains deduplication configuration.
@@ -96,53 +92,8 @@ type DeduplicationSettings struct {
 	TTL time.Duration `yaml:"ttl"` // Default: 5m
 }
 
-// StormSettings contains storm detection configuration.
-type StormSettings struct {
-	// ===== EXISTING FIELDS (keep as-is) =====
-	// Rate threshold for rate-based storm detection
-	// For testing: set to 2-3 for early storm detection in tests
-	// For production: use default (0) for 10 alerts/minute
-	RateThreshold int `yaml:"rate_threshold"` // Default: 10 alerts/minute
-
-	// Pattern threshold for pattern-based storm detection
-	// For testing: set to 2-3 for early storm detection in tests
-	// For production: use default (0) for 5 similar alerts
-	PatternThreshold int `yaml:"pattern_threshold"` // Default: 5 similar alerts
-
-	// Aggregation window for storm aggregation
-	// For testing: set to 5*time.Second for fast integration tests
-	// For production: use default (0) for 1-minute windows
-	AggregationWindow time.Duration `yaml:"aggregation_window"` // Default: 1m
-
-	// ===== NEW FIELDS for DD-GATEWAY-008 =====
-	// Buffered first-alert configuration
-	BufferThreshold int `yaml:"buffer_threshold"` // Alerts before creating window (default: 5)
-
-	// Sliding window configuration
-	InactivityTimeout time.Duration `yaml:"inactivity_timeout"`  // Sliding window timeout (default: 60s)
-	MaxWindowDuration time.Duration `yaml:"max_window_duration"` // Max window duration (default: 5m)
-
-	// Multi-tenant isolation configuration
-	DefaultMaxSize     int            `yaml:"default_max_size"`     // Default namespace buffer size (default: 1000)
-	GlobalMaxSize      int            `yaml:"global_max_size"`      // Global buffer limit (default: 5000)
-	PerNamespaceLimits map[string]int `yaml:"per_namespace_limits"` // Per-namespace overrides
-
-	// Overflow handling configuration
-	SamplingThreshold float64 `yaml:"sampling_threshold"` // Utilization to trigger sampling (default: 0.95)
-	SamplingRate      float64 `yaml:"sampling_rate"`      // Sample rate when threshold reached (default: 0.5)
-}
-
-// EnvironmentSettings contains environment classification configuration.
-type EnvironmentSettings struct {
-	// Cache TTL for namespace label cache
-	// For testing: set to 5*time.Second for fast cache expiry in tests
-	// For production: use default (0) for 30-second TTL
-	CacheTTL time.Duration `yaml:"cache_ttl"` // Default: 30s
-
-	// ConfigMap for environment overrides
-	ConfigMapNamespace string `yaml:"configmap_namespace"` // Default: "kubernaut-system"
-	ConfigMapName      string `yaml:"configmap_name"`      // Default: "kubernaut-environment-overrides"
-}
+// Note: EnvironmentSettings struct removed (2025-12-06)
+// Environment classification now owned by Signal Processing per DD-CATEGORIZATION-001
 
 // CRDSettings contains CRD creation configuration.
 type CRDSettings struct {
@@ -192,20 +143,79 @@ func DefaultRetrySettings() RetrySettings {
 }
 
 // Validate checks if retry settings are valid.
-// GAP 8: Configuration Validation (Reliability-First Design)
+// GAP-8: Enhanced Configuration Validation (Reliability-First Design)
+// Provides comprehensive validation with actionable error messages using structured errors
 func (r *RetrySettings) Validate() error {
-	// MaxAttempts validation
+	// MaxAttempts validation with reasonable range
 	if r.MaxAttempts < 1 {
-		return fmt.Errorf("retry.max_attempts must be >= 1, got %d", r.MaxAttempts)
+		err := NewConfigError(
+			"processing.retry.max_attempts",
+			fmt.Sprintf("%d", r.MaxAttempts),
+			"must be >= 1",
+			"Use 3-5 for production (recommended: 3)",
+		)
+		err.Impact = "Retry logic will not function properly"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		return err
+	}
+	if r.MaxAttempts > 10 {
+		err := NewConfigError(
+			"processing.retry.max_attempts",
+			fmt.Sprintf("%d", r.MaxAttempts),
+			"exceeds recommended maximum (10)",
+			"Reduce to 3-5 to avoid excessive retry delays",
+		)
+		err.Impact = "May cause slow request processing during failures"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		return err
 	}
 
-	// Backoff duration validation
+	// Initial backoff validation
 	if r.InitialBackoff < 0 {
-		return fmt.Errorf("retry.initial_backoff must be >= 0, got %v", r.InitialBackoff)
+		err := NewConfigError(
+			"processing.retry.initial_backoff",
+			r.InitialBackoff.String(),
+			"must be >= 0",
+			"Use 100ms-500ms (recommended: 100ms)",
+		)
+		err.Impact = "Negative backoff is invalid"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		return err
 	}
+	if r.InitialBackoff > 5*time.Second {
+		err := NewConfigError(
+			"processing.retry.initial_backoff",
+			r.InitialBackoff.String(),
+			"exceeds recommended maximum (5s)",
+			"Reduce to 100ms-500ms for faster failure detection",
+		)
+		err.Impact = "High initial backoff may cause slow failure detection"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		return err
+	}
+
+	// Max backoff validation
 	if r.MaxBackoff < r.InitialBackoff {
-		return fmt.Errorf("retry.max_backoff (%v) must be >= initial_backoff (%v)",
-			r.MaxBackoff, r.InitialBackoff)
+		err := NewConfigError(
+			"processing.retry.max_backoff",
+			fmt.Sprintf("%v (initial: %v)", r.MaxBackoff, r.InitialBackoff),
+			"must be >= initial_backoff",
+			fmt.Sprintf("Set max_backoff to at least %v", r.InitialBackoff),
+		)
+		err.Impact = "Invalid exponential backoff configuration"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		return err
+	}
+	if r.MaxBackoff > 30*time.Second {
+		err := NewConfigError(
+			"processing.retry.max_backoff",
+			r.MaxBackoff.String(),
+			"exceeds recommended maximum (30s)",
+			"Reduce to 5s (recommended) to avoid long request delays",
+		)
+		err.Impact = "Excessive backoff may cause long request delays"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#retry"
+		return err
 	}
 
 	return nil
@@ -273,27 +283,15 @@ func (c *ServerConfig) LoadFromEnv() {
 		c.Server.ListenAddr = addr
 	}
 
-	// Redis settings
-	if redisAddr := os.Getenv("GATEWAY_REDIS_ADDR"); redisAddr != "" {
-		c.Infrastructure.Redis.Addr = redisAddr
-	}
-
-	if redisPassword := os.Getenv("GATEWAY_REDIS_PASSWORD"); redisPassword != "" {
-		c.Infrastructure.Redis.Password = redisPassword
-	}
-
-	if redisDBStr := os.Getenv("GATEWAY_REDIS_DB"); redisDBStr != "" {
-		if redisDB, err := strconv.Atoi(redisDBStr); err == nil {
-			c.Infrastructure.Redis.DB = redisDB
-		}
+	// DD-GATEWAY-012: Redis settings REMOVED
+	// DD-AUDIT-003: Data Storage URL for audit integration
+	if dsURL := os.Getenv("GATEWAY_DATA_STORAGE_URL"); dsURL != "" {
+		c.Infrastructure.DataStorageURL = dsURL
 	}
 
 	// Middleware settings
-	if rpmStr := os.Getenv("GATEWAY_RATE_LIMIT_RPM"); rpmStr != "" {
-		if rpm, err := strconv.Atoi(rpmStr); err == nil {
-			c.Middleware.RateLimit.RequestsPerMinute = rpm
-		}
-	}
+	// Rate limiting removed (ADR-048) - delegated to proxy
+	// No environment variables needed for middleware
 
 	// Processing settings
 	if dedupTTLStr := os.Getenv("GATEWAY_DEDUP_TTL"); dedupTTLStr != "" {
@@ -303,40 +301,118 @@ func (c *ServerConfig) LoadFromEnv() {
 	}
 }
 
-// Validate checks if the configuration is valid
+// Validate checks if the configuration is valid.
+// GAP-8: Enhanced Configuration Validation (Production-Ready)
+// Provides comprehensive validation with actionable error messages using structured errors
 func (c *ServerConfig) Validate() error {
-	// Server validation
+	// Server validation with comprehensive timeout checks
 	if c.Server.ListenAddr == "" {
-		return fmt.Errorf("server.listen_addr required")
+		err := NewConfigError(
+			"server.listen_addr",
+			"(empty)",
+			"is required",
+			"Use ':8080' or '0.0.0.0:8080'",
+		)
+		err.Impact = "Gateway server will fail to start"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		return err
 	}
 
-	// Infrastructure validation
-	if c.Infrastructure.Redis == nil {
-		return fmt.Errorf("infrastructure.redis required")
+	// Server timeout validation (prevent misconfiguration)
+	if c.Server.ReadTimeout > 0 && c.Server.ReadTimeout < 5*time.Second {
+		err := NewConfigError(
+			"server.read_timeout",
+			c.Server.ReadTimeout.String(),
+			"is too low (< 5s)",
+			"Use 30s (recommended) to prevent webhook timeouts",
+		)
+		err.Impact = "Webhook requests may timeout prematurely"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		return err
 	}
-	if c.Infrastructure.Redis.Addr == "" {
-		return fmt.Errorf("infrastructure.redis address required")
+	if c.Server.WriteTimeout > 0 && c.Server.WriteTimeout < 5*time.Second {
+		err := NewConfigError(
+			"server.write_timeout",
+			c.Server.WriteTimeout.String(),
+			"is too low (< 5s)",
+			"Use 30s (recommended) to prevent response failures",
+		)
+		err.Impact = "Response writes may fail prematurely"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		return err
 	}
+	if c.Server.IdleTimeout > 0 && c.Server.IdleTimeout < 30*time.Second {
+		err := NewConfigError(
+			"server.idle_timeout",
+			c.Server.IdleTimeout.String(),
+			"is too low (< 30s)",
+			"Use 120s (recommended) to reduce connection churn",
+		)
+		err.Impact = "May increase connection establishment overhead"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
+		return err
+	}
+
+	// Deduplication TTL validation (enhanced with structured errors)
+	if c.Processing.Deduplication.TTL < 0 {
+		err := NewConfigError(
+			"processing.deduplication.ttl",
+			c.Processing.Deduplication.TTL.String(),
+			"must be >= 0",
+			"Use 5m for production (recommended), minimum 10s",
+		)
+		err.Impact = "Negative TTL is invalid"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
+		return err
+	}
+	if c.Processing.Deduplication.TTL > 0 && c.Processing.Deduplication.TTL < 10*time.Second {
+		err := NewConfigError(
+			"processing.deduplication.ttl",
+			c.Processing.Deduplication.TTL.String(),
+			"below minimum threshold (< 10s)",
+			"Use 5m for production, minimum 10s",
+		)
+		err.Impact = "May cause duplicate RemediationRequest CRDs"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
+		return err
+	}
+	if c.Processing.Deduplication.TTL > 24*time.Hour {
+		err := NewConfigError(
+			"processing.deduplication.ttl",
+			c.Processing.Deduplication.TTL.String(),
+			"exceeds recommended maximum (24h)",
+			"Use 5m for production (recommended)",
+		)
+		err.Impact = "May cause excessive memory usage for fingerprint storage"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
+		return err
+	}
+
+	// CRD settings validation
+	if c.Processing.CRD.FallbackNamespace == "" {
+		err := NewConfigError(
+			"processing.crd.fallback_namespace",
+			"(empty)",
+			"is empty after defaults",
+			"This should never happen - auto-detected from pod namespace",
+		)
+		err.Impact = "Cluster-scoped signals cannot be processed"
+		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#crd"
+		return err
+	}
+
+	// DD-GATEWAY-012: Redis validation REMOVED (no longer required)
+	// DD-AUDIT-003: Data Storage URL is OPTIONAL (graceful degradation if not configured)
+	// Audit events will be dropped with warning if DataStorageURL is not set
+	// Note: No validation for DataStorageURL format - URL parsing errors will be caught at runtime
 
 	// Middleware validation
-	if c.Middleware.RateLimit.RequestsPerMinute < 0 {
-		return fmt.Errorf("middleware.rate_limit.requests_per_minute must be positive")
-	}
-	if c.Middleware.RateLimit.Burst < 0 {
-		return fmt.Errorf("middleware.rate_limit.burst must be non-negative")
-	}
+	// Rate limiting removed (ADR-048) - delegated to proxy
+	// No validation needed for middleware
 
-	// Processing validation
-	if c.Processing.Storm.RateThreshold < 0 {
-		return fmt.Errorf("processing.storm.rate_threshold must be positive")
-	}
-	if c.Processing.Storm.PatternThreshold < 0 {
-		return fmt.Errorf("processing.storm.pattern_threshold must be positive")
-	}
-
-	// Retry validation (GAP 8: Configuration Validation)
+	// Retry validation (GAP-8: Enhanced Configuration Validation)
 	if err := c.Processing.Retry.Validate(); err != nil {
-		return fmt.Errorf("retry configuration invalid: %w", err)
+		return err // Already a structured ConfigError
 	}
 
 	return nil

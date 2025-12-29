@@ -19,19 +19,26 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -43,8 +50,11 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
-	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
+	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
+	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -61,13 +71,77 @@ var (
 	mockSlackServer *httptest.Server
 	slackWebhookURL string
 	slackRequests   []SlackWebhookRequest
+	slackRequestsMu sync.Mutex // Thread-safe access for parallel test execution (4 procs)
+
+	// Audit store for testing controller audit emission (Defense-in-Depth Layer 4)
+	realAuditStore audit.AuditStore // REAL audit store (DD-AUDIT-003 mandate compliance)
 )
 
 // SlackWebhookRequest captures mock Slack webhook calls
+// Includes TestID for correlation in parallel test execution (4 procs)
 type SlackWebhookRequest struct {
 	Timestamp time.Time
 	Body      []byte
 	Headers   http.Header
+	TestID    string // Correlation ID for filtering requests per-test in parallel execution
+}
+
+// cleanupPodmanComposeInfrastructure removes containers and images from integration tests
+// DD-TEST-001 v1.1: Prevents disk space exhaustion from stale containers/images
+func cleanupPodmanComposeInfrastructure() {
+	GinkgoWriter.Println("🗑️  DD-TEST-001 v1.1: Cleaning up podman-compose infrastructure...")
+
+	// Get project name from podman-compose file (defaults to directory name)
+	projectName := "notification"
+
+	// Containers to remove (prefixed with project name)
+	containers := []string{
+		fmt.Sprintf("%s-datastorage-1", projectName),
+		fmt.Sprintf("%s_datastorage_1", projectName), // Alternative naming
+		fmt.Sprintf("%s-postgres-1", projectName),
+		fmt.Sprintf("%s_postgres_1", projectName),
+		fmt.Sprintf("%s-redis-1", projectName),
+		fmt.Sprintf("%s_redis_1", projectName),
+	}
+
+	// Remove containers
+	for _, container := range containers {
+		cmd := exec.Command("podman", "rm", "-f", container)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Ignore error if container doesn't exist
+			if !contains(string(output), "no such container") {
+				GinkgoWriter.Printf("   ⚠️  Failed to remove container %s: %v\n", container, err)
+			}
+		} else {
+			GinkgoWriter.Printf("   ✅ Container removed: %s\n", container)
+		}
+	}
+
+	// Prune dangling images from podman-compose builds
+	pruneCmd := exec.Command("podman", "image", "prune", "-f")
+	pruneOutput, pruneErr := pruneCmd.CombinedOutput()
+	if pruneErr != nil {
+		GinkgoWriter.Printf("   ⚠️  Failed to prune dangling images: %v (output: %s)\n", pruneErr, string(pruneOutput))
+	} else {
+		GinkgoWriter.Println("   ✅ Dangling images pruned")
+	}
+
+	GinkgoWriter.Println("✅ DD-TEST-001 v1.1: podman-compose cleanup complete")
+}
+
+// contains checks if a string contains a substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsInner(s, substr)))
+}
+
+func containsInner(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNotificationIntegration(t *testing.T) {
@@ -117,15 +191,10 @@ var _ = BeforeSuite(func() {
 	err = k8sClient.Create(ctx, notifNs)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Create default namespace for tests
-	defaultNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "default",
-		},
-	}
-	_ = k8sClient.Create(ctx, defaultNs) // May already exist
-
-	GinkgoWriter.Println("✅ Namespaces created: kubernaut-notifications, default")
+	// DD-TEST-002: No shared "default" namespace - each test creates its own unique namespace
+	// This enables parallel execution with -procs=4 (3x speed improvement)
+	GinkgoWriter.Println("✅ Namespace created: kubernaut-notifications (controller)")
+	GinkgoWriter.Println("📦 Test namespaces will be created per-test (DD-TEST-002 compliance)")
 
 	By("Deploying mock Slack webhook server")
 	deployMockSlackServer()
@@ -154,13 +223,91 @@ var _ = BeforeSuite(func() {
 	// Create sanitizer
 	sanitizer := sanitization.NewSanitizer()
 
-	// Create controller with all dependencies
+	// Create audit helpers for controller audit emission (BR-NOT-062)
+	auditHelpers := notification.NewAuditHelpers("notification-controller")
+
+	// Create REAL audit store using Data Storage service (DD-AUDIT-003 mandate)
+	// Per 03-testing-strategy.mdc: Integration tests MUST use real services (no mocks)
+	// Requires infrastructure: test/integration/notification/podman-compose.notification.test.yml
+	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
+	if dataStorageURL == "" {
+		dataStorageURL = "http://localhost:18110" // NT integration port
+	}
+
+	// Check if Data Storage is available (MANDATORY for integration tests)
+	// DS TEAM PATTERN: Use Eventually() with 30s timeout instead of immediate check
+	// Rationale: Cold start on macOS Podman can take 15-20s (per DS team testing)
+	// Reference: docs/handoff/SHARED_RO_DS_INTEGRATION_DEBUG_DEC_20_2025.md:392-412
+	Eventually(func() int {
+		// Use 127.0.0.1 instead of localhost (DS team recommendation)
+		resp, err := http.Get(dataStorageURL + "/health")
+		if err != nil {
+			GinkgoWriter.Printf("  DataStorage health check failed: %v\n", err)
+			return 0
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}, "30s", "1s").Should(Equal(http.StatusOK),
+		"❌ REQUIRED: Data Storage not available at %s\n"+
+			"Per DD-AUDIT-003: Audit infrastructure is MANDATORY\n"+
+			"Per 03-testing-strategy.mdc: Integration tests MUST use real services (no mocks)\n\n"+
+			"To run these tests, start infrastructure:\n"+
+			"  cd test/integration/notification\n"+
+			"  ./setup-infrastructure.sh\n\n"+
+			"Verify with: curl %s/health\n\n"+
+			"DS Team Note: 30s timeout needed for macOS Podman cold start (15-20s)", dataStorageURL, dataStorageURL)
+
+	// Create Data Storage client with OpenAPI generated client (DD-API-001)
+	dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 5*time.Second)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
+
+	// Create REAL buffered audit store
+	realAuditStore, err = audit.NewBufferedStore(
+		dsClient,
+		audit.DefaultConfig(),
+		"notification-controller",
+		ctrl.Log.WithName("audit"),
+	)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create real audit store")
+
+	// Pattern 1: Create Metrics recorder (DD-METRICS-001)
+	metricsRecorder := notificationmetrics.NewPrometheusRecorder()
+	GinkgoWriter.Println("  ✅ Metrics recorder initialized (Pattern 1)")
+
+	// Pattern 2: Create Status Manager for centralized status updates
+	statusManager := notificationstatus.NewManager(k8sManager.GetClient())
+	GinkgoWriter.Println("  ✅ Status Manager initialized (Pattern 2)")
+
+	// DD-NOT-007: Registration Pattern (MANDATORY)
+	// Pattern 3: Create Delivery Orchestrator with NO channel parameters
+	deliveryOrchestrator := delivery.NewOrchestrator(
+		sanitizer,
+		metricsRecorder,
+		statusManager,
+		ctrl.Log.WithName("delivery-orchestrator"),
+	)
+
+	// DD-NOT-007: Register only channels needed for integration tests
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
+	// Note: fileService and logService NOT registered (E2E only)
+
+	GinkgoWriter.Println("  ✅ Delivery Orchestrator initialized (DD-NOT-007 Registration Pattern)")
+
+	// Create controller with all dependencies including REAL audit (Defense-in-Depth Layer 4)
+	// Patterns 1-3: Metrics, StatusManager, DeliveryOrchestrator wired in
 	err = (&notification.NotificationRequestReconciler{
-		Client:         k8sManager.GetClient(),
-		Scheme:         k8sManager.GetScheme(),
-		ConsoleService: consoleService,
-		SlackService:   slackService,
-		Sanitizer:      sanitizer,
+		Client:               k8sManager.GetClient(),
+		Scheme:               k8sManager.GetScheme(),
+		ConsoleService:       consoleService,
+		SlackService:         slackService,
+		Sanitizer:            sanitizer,
+		AuditStore:           realAuditStore, // ✅ REAL audit store (mandate compliance)
+		AuditHelpers:         auditHelpers,
+		Metrics:              metricsRecorder,                                           // Pattern 1: Metrics (DD-METRICS-001)
+		Recorder:             k8sManager.GetEventRecorderFor("notification-controller"), // Pattern 1: EventRecorder
+		StatusManager:        statusManager,                                             // Pattern 2: Status Manager
+		DeliveryOrchestrator: deliveryOrchestrator,                                      // Pattern 3: Delivery Orchestrator
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -171,8 +318,18 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
 
-	// Wait for manager to be ready
-	time.Sleep(2 * time.Second)
+	// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
+	// Wait for manager cache to sync and be ready to handle requests
+	By("Waiting for controller manager to be ready")
+	Eventually(func() error {
+		// Verify manager is ready by checking if we can list CRDs
+		list := &notificationv1alpha1.NotificationRequestList{}
+		return k8sClient.List(ctx, list)
+	}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
+		"Controller manager cache should sync within 10 seconds")
+
+	// Note: Metrics server uses dynamic port allocation (":0") to prevent conflicts
+	// Port discovery is not exposed by controller-runtime Manager interface
 
 	GinkgoWriter.Println("✅ Notification integration test environment ready!")
 	GinkgoWriter.Println("")
@@ -187,10 +344,25 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	By("Tearing down the test environment")
 
+	// Close REAL audit store to flush remaining events (DD-AUDIT-003)
+	if realAuditStore != nil {
+		By("Flushing and closing real audit store")
+		err := realAuditStore.Close()
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Warning: Failed to close audit store: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Real audit store closed (all events flushed)")
+		}
+	}
+
 	if mockSlackServer != nil {
 		mockSlackServer.Close()
 		GinkgoWriter.Println("✅ Mock Slack server stopped")
 	}
+
+	// DD-TEST-001 v1.1: Clean up podman-compose infrastructure
+	By("Cleaning up podman-compose integration test infrastructure")
+	cleanupPodmanComposeInfrastructure()
 
 	cancel()
 
@@ -198,6 +370,57 @@ var _ = AfterSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	GinkgoWriter.Println("✅ Cleanup complete")
+})
+
+// DD-TEST-002 Compliance: Unique namespace per test for parallel execution
+// This enables -procs=4 parallel execution (3x speed improvement)
+var (
+	testNamespace string // Unique per test - enables parallel execution
+)
+
+var _ = BeforeEach(func() {
+	// DD-TEST-002: Create unique namespace per test (enables parallel execution)
+	// Format: test-<8-char-uuid> for readability and uniqueness
+	testNamespace = fmt.Sprintf("test-%s", uuid.New().String()[:8])
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNamespace,
+		},
+	}
+
+	Expect(k8sClient.Create(ctx, ns)).To(Succeed(),
+		"Should create unique test namespace for isolation (DD-TEST-002)")
+
+	GinkgoWriter.Printf("📦 Test namespace created: %s (DD-TEST-002 compliance)\n", testNamespace)
+})
+
+var _ = AfterEach(func() {
+	// DD-TEST-002: Clean up namespace and ALL resources (instant cleanup)
+	// This is MUCH faster than deleting individual notifications
+	if testNamespace != "" {
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNamespace,
+			},
+		}
+
+		err := k8sClient.Delete(ctx, ns)
+		if err != nil && !apierrors.IsNotFound(err) {
+			GinkgoWriter.Printf("⚠️  Failed to delete namespace %s: %v\n", testNamespace, err)
+		} else {
+			GinkgoWriter.Printf("🗑️  Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
+		}
+	}
+
+	// NT-TEST-002 Fix: Reset mock Slack server state after each test
+	// Prevents test pollution when tests configure failure modes
+	if ConfigureFailureMode != nil {
+		// Reset to success mode (none, 0 failures, 503 status code)
+		ConfigureFailureMode("none", 0, http.StatusServiceUnavailable)
+	}
+	// Also clear request history for clean slate
+	resetSlackRequests()
 })
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
@@ -224,8 +447,11 @@ func getFirstFoundEnvTestBinaryDir() string {
 }
 
 // deployMockSlackServer creates an HTTP server that simulates Slack webhook
+// Thread-safe for parallel test execution (4 procs) - uses mutex for slackRequests
 func deployMockSlackServer() {
+	slackRequestsMu.Lock()
 	slackRequests = make([]SlackWebhookRequest, 0)
+	slackRequestsMu.Unlock()
 
 	// Variable to control mock behavior for testing failure scenarios
 	var (
@@ -273,14 +499,46 @@ func deployMockSlackServer() {
 			return
 		}
 
-		// Record successful request
+		// Handle special failure modes for edge case testing
+		if failureMode == "malformed-json" {
+			GinkgoWriter.Println("⚠️  Mock Slack webhook returning malformed JSON")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{invalid json response}"))
+			return
+		}
+
+		if failureMode == "empty-response" {
+			GinkgoWriter.Println("⚠️  Mock Slack webhook returning empty response body")
+			w.WriteHeader(http.StatusOK)
+			// Don't write anything - empty body
+			return
+		}
+
+		// Extract test correlation ID from webhook payload (for parallel test isolation)
+		// Slack webhook format uses blocks array with nested text
+		testID := "unknown"
+		if blocks, ok := payload["blocks"].([]interface{}); ok && len(blocks) > 0 {
+			if firstBlock, ok := blocks[0].(map[string]interface{}); ok {
+				if textObj, ok := firstBlock["text"].(map[string]interface{}); ok {
+					if text, ok := textObj["text"].(string); ok {
+						testID = text // Extract subject from first block (contains unique test identifier)
+					}
+				}
+			}
+		}
+
+		// Record successful request (thread-safe for parallel tests)
+		slackRequestsMu.Lock()
 		slackRequests = append(slackRequests, SlackWebhookRequest{
 			Timestamp: time.Now(),
 			Body:      body,
 			Headers:   r.Header.Clone(),
+			TestID:    testID, // For filtering in parallel execution
 		})
+		requestCount := len(slackRequests)
+		slackRequestsMu.Unlock()
 
-		GinkgoWriter.Printf("✅ Mock Slack webhook received request #%d\n", len(slackRequests))
+		GinkgoWriter.Printf("✅ Mock Slack webhook received request #%d\n", requestCount)
 		GinkgoWriter.Printf("   Content-Type: %s\n", r.Header.Get("Content-Type"))
 
 		// Simulate Slack webhook response
@@ -307,6 +565,251 @@ func deployMockSlackServer() {
 // ConfigureFailureMode is set by deployMockSlackServer to allow tests to configure failure behavior
 var ConfigureFailureMode func(mode string, count int, statusCode int)
 
+// MockSlackServer represents a per-test mock Slack webhook server
+// CRITICAL: Each test gets its own isolated mock server to prevent test pollution
+type MockSlackServer struct {
+	Server          *httptest.Server
+	WebhookURL      string
+	Requests        []SlackWebhookRequest
+	RequestsMu      sync.Mutex
+	FailureMode     string // "none", "always", "first-N"
+	FailureCount    int    // How many times to fail before succeeding
+	CurrentFailures int    // Counter for failures
+	FailureStatus   int    // HTTP status code to return on failure
+}
+
+// createMockSlackServer creates an isolated mock Slack webhook server for a single test
+// Returns server instance with dedicated request tracking (prevents test pollution)
+func createMockSlackServer() *MockSlackServer {
+	mock := &MockSlackServer{
+		Requests:      make([]SlackWebhookRequest, 0),
+		FailureMode:   "none",
+		FailureStatus: http.StatusServiceUnavailable,
+	}
+
+	mock.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read request body
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			GinkgoWriter.Printf("❌ Failed to read Slack webhook body: %v\n", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		// Validate JSON
+		var payload map[string]interface{}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			GinkgoWriter.Printf("❌ Invalid JSON in Slack webhook: %v\n", err)
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("invalid_payload"))
+			return
+		}
+
+		// Check failure mode for testing retry logic
+		mock.RequestsMu.Lock()
+		mode := mock.FailureMode
+		failCount := mock.FailureCount
+		currentFail := mock.CurrentFailures
+		failStatus := mock.FailureStatus
+		mock.RequestsMu.Unlock()
+
+		if mode == "always" {
+			GinkgoWriter.Printf("⚠️  Mock Slack webhook configured to always fail (%d)\n", failStatus)
+			w.WriteHeader(failStatus)
+			_, _ = w.Write([]byte("service_unavailable"))
+			return
+		}
+
+		if mode == "first-N" && currentFail < failCount {
+			mock.RequestsMu.Lock()
+			mock.CurrentFailures++
+			current := mock.CurrentFailures
+			mock.RequestsMu.Unlock()
+
+			GinkgoWriter.Printf("⚠️  Mock Slack webhook failure %d/%d (%d)\n", current, failCount, failStatus)
+			w.WriteHeader(failStatus)
+			_, _ = w.Write([]byte("service_unavailable"))
+			return
+		}
+
+		// Extract test correlation ID from webhook payload
+		testID := "unknown"
+		if blocks, ok := payload["blocks"].([]interface{}); ok && len(blocks) > 0 {
+			if firstBlock, ok := blocks[0].(map[string]interface{}); ok {
+				if textObj, ok := firstBlock["text"].(map[string]interface{}); ok {
+					if text, ok := textObj["text"].(string); ok {
+						testID = text
+					}
+				}
+			}
+		}
+
+		// Record successful request (thread-safe, per-test isolated)
+		mock.RequestsMu.Lock()
+		mock.Requests = append(mock.Requests, SlackWebhookRequest{
+			Timestamp: time.Now(),
+			Body:      body,
+			Headers:   r.Header.Clone(),
+			TestID:    testID,
+		})
+		requestCount := len(mock.Requests)
+		mock.RequestsMu.Unlock()
+
+		GinkgoWriter.Printf("✅ Mock Slack webhook received request #%d (testID: %s)\n", requestCount, testID)
+
+		// Simulate Slack webhook response
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+
+	mock.WebhookURL = mock.Server.URL
+	return mock
+}
+
+// ConfigureFailure sets failure behavior for MockSlackServer
+func (m *MockSlackServer) ConfigureFailure(mode string, count int, statusCode int) {
+	m.RequestsMu.Lock()
+	defer m.RequestsMu.Unlock()
+
+	m.FailureMode = mode
+	m.FailureCount = count
+	m.CurrentFailures = 0
+	m.FailureStatus = statusCode
+
+	GinkgoWriter.Printf("🔧 Mock Slack server configured: mode=%s, count=%d, statusCode=%d\n", mode, count, statusCode)
+}
+
+// GetRequests returns a copy of all recorded requests (thread-safe)
+func (m *MockSlackServer) GetRequests() []SlackWebhookRequest {
+	m.RequestsMu.Lock()
+	defer m.RequestsMu.Unlock()
+
+	copy := make([]SlackWebhookRequest, len(m.Requests))
+	for i, req := range m.Requests {
+		copy[i] = req
+	}
+	return copy
+}
+
+// Reset clears all recorded requests and resets failure mode
+func (m *MockSlackServer) Reset() {
+	m.RequestsMu.Lock()
+	defer m.RequestsMu.Unlock()
+
+	m.Requests = make([]SlackWebhookRequest, 0)
+	m.FailureMode = "none"
+	m.CurrentFailures = 0
+}
+
+// getSlackRequestsCopy returns a thread-safe copy of slackRequests for parallel test execution
+// Filters by testIdentifier (substring match on TestID) for test isolation in parallel runs
+func getSlackRequestsCopy(testIdentifier string) []SlackWebhookRequest {
+	slackRequestsMu.Lock()
+	defer slackRequestsMu.Unlock()
+
+	// Filter requests for this specific test
+	var filtered []SlackWebhookRequest
+	for _, req := range slackRequests {
+		// Match by substring in TestID (which contains the notification subject/body)
+		if testIdentifier == "" || len(req.TestID) == 0 {
+			// No filtering - return all (backward compat)
+			filtered = append(filtered, req)
+		} else {
+			// Filter by test identifier
+			bodyStr := string(req.Body)
+			if len(req.TestID) > 0 && (req.TestID == testIdentifier ||
+				containsSubstring(req.TestID, testIdentifier) ||
+				containsSubstring(bodyStr, testIdentifier)) {
+				filtered = append(filtered, req)
+			}
+		}
+	}
+	return filtered
+}
+
+// containsSubstring is a helper for case-sensitive substring matching
+func containsSubstring(s, substr string) bool {
+	return len(substr) > 0 && len(s) >= len(substr) &&
+		(s == substr || stringContains(s, substr))
+}
+
+func stringContains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// waitForReconciliationComplete waits for controller to fully complete reconciliation
+// CRITICAL: Prevents "not found" errors when tests delete CRDs before controller finishes
+func waitForReconciliationComplete(ctx context.Context, client client.Client, name, namespace string, expectedPhase notificationv1alpha1.NotificationPhase, timeout time.Duration) error {
+	return wait.PollImmediate(500*time.Millisecond, timeout, func() (bool, error) {
+		notif := &notificationv1alpha1.NotificationRequest{}
+		err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, notif)
+		if err != nil {
+			return false, err
+		}
+
+		// Check phase matches AND CompletionTime is set (controller finished)
+		if notif.Status.Phase == expectedPhase && notif.Status.CompletionTime != nil {
+			return true, nil
+		}
+
+		// For non-terminal phases, just check phase
+		if expectedPhase == notificationv1alpha1.NotificationPhasePending ||
+			expectedPhase == notificationv1alpha1.NotificationPhaseSending {
+			return notif.Status.Phase == expectedPhase, nil
+		}
+
+		return false, nil
+	})
+}
+
+// deleteAndWait deletes a NotificationRequest and waits for it to be fully removed
+// CRITICAL: Prevents test pollution by ensuring complete cleanup before next test
+func deleteAndWait(ctx context.Context, client client.Client, notif *notificationv1alpha1.NotificationRequest, timeout time.Duration) error {
+	// Delete the CRD
+	if err := client.Delete(ctx, notif); err != nil {
+		return err
+	}
+
+	// Wait for deletion to complete
+	return wait.PollImmediate(100*time.Millisecond, timeout, func() (bool, error) {
+		err := client.Get(ctx, types.NamespacedName{
+			Name:      notif.Name,
+			Namespace: notif.Namespace,
+		}, &notificationv1alpha1.NotificationRequest{})
+
+		if err != nil {
+			// Object not found = deletion complete
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			// Other error
+			return false, err
+		}
+
+		// Still exists, keep waiting
+		return false, nil
+	})
+}
+
+// getSlackRequestCount returns the count of Slack requests (thread-safe)
+func getSlackRequestCount() int {
+	slackRequestsMu.Lock()
+	defer slackRequestsMu.Unlock()
+	return len(slackRequests)
+}
+
+// resetSlackRequests clears the slackRequests slice (thread-safe for parallel tests)
+func resetSlackRequests() {
+	slackRequestsMu.Lock()
+	defer slackRequestsMu.Unlock()
+	slackRequests = make([]SlackWebhookRequest, 0)
+}
+
 // createSlackWebhookSecret creates the Secret containing Slack webhook URL
 func createSlackWebhookSecret() {
 	secret := &corev1.Secret{
@@ -322,8 +825,16 @@ func createSlackWebhookSecret() {
 	// Delete existing secret if it exists (idempotent)
 	_ = k8sClient.Delete(ctx, secret)
 
-	// Wait a moment for deletion to complete
-	time.Sleep(100 * time.Millisecond)
+	// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
+	// Verify deletion completed before creating new secret
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      secret.Name,
+			Namespace: secret.Namespace,
+		}, &corev1.Secret{})
+		return apierrors.IsNotFound(err)
+	}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(),
+		"Secret deletion should complete within 5 seconds")
 
 	// Create new secret
 	err := k8sClient.Create(ctx, secret)

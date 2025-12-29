@@ -19,17 +19,20 @@ This document defines the **initial prompt** that will be used to test the AIAna
 
 ### What We Know
 
-1. **Signal Processing** enriches alerts with 7 mandatory labels (DD-PLAYBOOK-001)
+1. **Signal Processing** enriches alerts with:
+   - **5 mandatory labels** (DD-WORKFLOW-001 v1.8): `signal_type`, `severity`, `component`, `environment`, `priority`
+   - **DetectedLabels**: Auto-detected cluster characteristics (GitOps, PDB, HPA, etc.)
+   - **CustomLabels**: Customer-defined via Rego policies (pass-through, not validated by Kubernaut)
 2. **AIAnalysis Controller** creates AIAnalysis CRD and calls HolmesGPT API
 3. **HolmesGPT API** orchestrates LLM (Claude 3.5 Sonnet) investigation
-4. **MCP Tools** available: `search_playbook_catalog`, `get_playbook_details`
-5. **LLM Output**: Natural language with playbook selection and reasoning
+4. **MCP Tools** available: `search_workflow_catalog`, `get_workflow_details`
+5. **LLM Output**: Natural language with workflow selection and reasoning
 
 ### What We Need to Test
 
-1. Does the LLM understand the 7 mandatory labels and their hints?
-2. Does the LLM correctly use MCP tools to search playbooks?
-3. Does the LLM provide clear reasoning for playbook selection?
+1. Does the LLM understand the 5 mandatory labels and DetectedLabels context?
+2. Does the LLM correctly use MCP tools to search workflows with label filters?
+3. Does the LLM provide clear reasoning for workflow selection?
 4. Does the LLM handle edge cases (false positives, misdiagnosed alerts)?
 
 ---
@@ -304,9 +307,9 @@ business_category_hints = {
 
 ## 🔗 Related Documents
 
-- [DD-PLAYBOOK-001](../../architecture/decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) - Mandatory label schema
-- [DD-PLAYBOOK-002](../../architecture/decisions/DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md) - MCP architecture
-- [BR-AI-001 to BR-AI-050](../../requirements/02_AI_MACHINE_LEARNING.md) - AI Analysis BRs
+- [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) - Mandatory label schema (DetectedLabels)
+- [DD-WORKFLOW-002](../../../architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md) - Workflow Catalog Architecture
+- [BR_MAPPING.md](./BR_MAPPING.md) - 31 V1.0 Business Requirements (BR-AI-001 to BR-AI-033, BR-AI-075-076, BR-AI-080-083)
 - [HolmesGPT API BRs](../stateless/holmesgpt-api/BUSINESS_REQUIREMENTS.md) - HolmesGPT API BRs
 
 ---

@@ -1,0 +1,144 @@
+# AIAnalysis Integration Test Infrastructure
+# Port Allocation per DD-TEST-001: Port Allocation Strategy
+#
+# Service Ports (AIAnalysis-specific):
+#   PostgreSQL:       15438 → 5432
+#   Redis:            16384 → 6379
+#   Data Storage API: 18095 → 8080
+#   HolmesGPT API:    18120 → 8080
+#
+# These ports are dedicated to AIAnalysis integration tests to prevent
+# collisions with other services running tests in parallel.
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aianalysis_postgres_test
+    environment:
+      POSTGRES_USER: slm_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: action_history
+    ports:
+      - "15438:5432"  # AIAnalysis integration test PostgreSQL port
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slm_user -d action_history"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aianalysis_test_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: aianalysis_redis_test
+    ports:
+      - "16384:6379"  # AIAnalysis integration test Redis port
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - aianalysis_test_network
+
+  datastorage:
+    image: kubernaut/datastorage:latest
+    container_name: aianalysis_datastorage_test
+    build:
+      context: ../../../
+      dockerfile: cmd/datastorage/Dockerfile
+    environment:
+      CONFIG_PATH: /etc/datastorage/config.yaml
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: kubernaut
+      POSTGRES_PASSWORD: kubernaut-test-password
+      POSTGRES_DB: kubernaut
+      REDIS_ADDR: redis:6379
+      PORT: 8080
+    ports:
+      - "18095:8080"  # AIAnalysis integration test DataStorage API port
+    volumes:
+      - ./config:/etc/datastorage:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - aianalysis_test_network
+
+  holmesgpt-api:
+    image: kubernaut/holmesgpt-api:latest
+    container_name: aianalysis_holmesgpt_test
+    build:
+      context: ../../..
+      dockerfile: holmesgpt-api/Dockerfile
+    environment:
+      # Mock LLM mode for integration tests (no real LLM calls)
+      MOCK_LLM_MODE: "true"
+      # DataStorage connection
+      DATASTORAGE_URL: http://datastorage:8080
+      PORT: 8080
+    ports:
+      - "18120:8080"  # AIAnalysis integration test HolmesGPT API port
+    depends_on:
+      datastorage:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aianalysis_test_network
+
+  # Database migrations (runs once and exits)
+  # Uses postgres image with psql (avoids goose image pull issues)
+  # Extracts only "Up" section from goose-formatted migrations
+  migrate:
+    image: postgres:16-alpine
+    container_name: aianalysis_migrations
+    volumes:
+      - ../../../migrations:/migrations:ro
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: slm_user
+      PGPASSWORD: test_password
+      PGDATABASE: action_history
+    # Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Waiting for PostgreSQL..."
+        until pg_isready -h postgres -U slm_user; do sleep 1; done
+        echo "Applying migrations (Up sections only)..."
+        find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
+          echo "Applying $$f..."
+          sed -n '1,/^-- +goose Down/p' "$$f" | grep -v '^-- +goose Down' | psql
+        done
+        echo "Migrations complete!"
+    networks:
+      - aianalysis_test_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  aianalysis_test_network:
+    name: aianalysis_test_network
+    driver: bridge
+

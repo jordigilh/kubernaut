@@ -22,9 +22,10 @@ import (
 	"net/http/httptest"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-logr/logr"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -36,7 +37,7 @@ import (
 // 📋 Authority: IMPLEMENTATION_PLAN_V5.3.md Day 14.1
 // 📋 Business Requirements:
 //    - BR-STORAGE-031-01: Incident-Type Success Rate API
-//    - BR-STORAGE-031-02: Playbook Success Rate API
+//    - BR-STORAGE-031-02: Workflow Success Rate API
 // 📋 Testing Principle: Behavior + Correctness
 // ========================================
 //
@@ -56,7 +57,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		rec     *httptest.ResponseRecorder
 		mockDB  sqlmock.Sqlmock
 		repo    *repository.ActionTraceRepository
-		logger  *zap.Logger
+		logger  logr.Logger
 	)
 
 	BeforeEach(func() {
@@ -65,7 +66,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		Expect(err).ToNot(HaveOccurred())
 		mockDB = mock
 
-		logger = zap.NewNop()
+		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 		repo = repository.NewActionTraceRepository(db, logger)
 
 		// Create handler with mock repository
@@ -243,23 +244,23 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	})
 
 	// ========================================
-	// BR-STORAGE-031-02: Playbook Success Rate Handler
+	// BR-STORAGE-031-02: Workflow Success Rate Handler
 	// BEHAVIOR: Parse query params, call repository, return JSON
 	// CORRECTNESS: Exact HTTP status codes and response structure
 	// ========================================
 	Describe("GET /api/v1/success-rate/workflow", func() {
 		Context("with valid query parameters", func() {
-			It("should return 200 OK with playbook success rate data", func() {
+			It("should return 200 OK with workflow success rate data", func() {
 				// Mock expectation for this test
-				rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
+				rows := sqlmock.NewRows([]string{"workflow_id", "workflow_version", "total_executions", "successful_executions", "failed_executions"}).
 					AddRow("restart-pod-v1", "", 100, 90, 10)
-				mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+				mockDB.ExpectQuery(`SELECT\s+workflow_id`).
 					WillReturnRows(rows)
 
 				// ARRANGE: Create HTTP request with valid params
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/workflow?playbook_id=restart-pod-v1&time_range=7d&min_samples=5",
+					"/api/v1/success-rate/workflow?workflow_id=restart-pod-v1&time_range=7d&min_samples=5",
 					nil,
 				)
 
@@ -277,8 +278,8 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Response should be valid JSON")
 
 				// CORRECTNESS: Validate response structure
-				Expect(response.PlaybookID).To(Equal("restart-pod-v1"),
-					"Response should contain requested playbook ID")
+				Expect(response.WorkflowID).To(Equal("restart-pod-v1"),
+					"Response should contain requested workflow ID")
 				Expect(response.TimeRange).To(Equal("7d"),
 					"Response should contain requested time range")
 				Expect(response.SuccessRate).To(BeNumerically(">=", 0.0),
@@ -293,17 +294,17 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Confidence should be one of the valid values")
 			})
 
-			It("should accept optional playbook_version parameter", func() {
+			It("should accept optional workflow_version parameter", func() {
 				// Mock expectation for this test
-				rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
+				rows := sqlmock.NewRows([]string{"workflow_id", "workflow_version", "total_executions", "successful_executions", "failed_executions"}).
 					AddRow("restart-pod-v1", "1.2.3", 100, 90, 10)
-				mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+				mockDB.ExpectQuery(`SELECT\s+workflow_id`).
 					WillReturnRows(rows)
 
-				// ARRANGE: Request with playbook_version
+				// ARRANGE: Request with workflow_version
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/workflow?playbook_id=restart-pod-v1&playbook_version=1.2.3&time_range=7d",
+					"/api/v1/success-rate/workflow?workflow_id=restart-pod-v1&workflow_version=1.2.3&time_range=7d",
 					nil,
 				)
 
@@ -317,14 +318,14 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				var response models.WorkflowSuccessRateResponse
 				err := json.NewDecoder(rec.Body).Decode(&response)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.PlaybookVersion).To(Equal("1.2.3"),
-					"Response should include playbook version when specified")
+				Expect(response.WorkflowVersion).To(Equal("1.2.3"),
+					"Response should include workflow version when specified")
 			})
 		})
 
 		Context("with missing required parameters", func() {
-			It("should return 400 Bad Request when playbook_id is missing", func() {
-				// ARRANGE: Request without playbook_id param
+			It("should return 400 Bad Request when workflow_id is missing", func() {
+				// ARRANGE: Request without workflow_id param
 				req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/workflow?time_range=7d",
@@ -336,7 +337,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// ASSERT: HTTP 400 Bad Request
 				Expect(rec.Code).To(Equal(http.StatusBadRequest),
-					"Handler should return 400 when playbook_id is missing")
+					"Handler should return 400 when workflow_id is missing")
 
 				// CORRECTNESS: RFC 7807 error response
 				Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
@@ -348,7 +349,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// ARRANGE: Request with invalid time_range
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/workflow?playbook_id=restart-pod-v1&time_range=invalid",
+					"/api/v1/success-rate/workflow?workflow_id=restart-pod-v1&time_range=invalid",
 					nil,
 				)
 
@@ -586,48 +587,48 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		})
 
 		// ========================================
-		// EDGE CASES: Playbook Endpoint
+		// EDGE CASES: Workflow Endpoint
 		// ========================================
-		Context("playbook endpoint edge cases", func() {
-			It("should handle playbook_id with special characters", func() {
+		Context("workflow endpoint edge cases", func() {
+			It("should handle workflow_id with special characters", func() {
 				// Mock expectation for this test
-				rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
+				rows := sqlmock.NewRows([]string{"workflow_id", "workflow_version", "total_executions", "successful_executions", "failed_executions"}).
 					AddRow("pod-oom-recovery_v2.0", "v1.2", 100, 90, 10)
-				mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+				mockDB.ExpectQuery(`SELECT\s+workflow_id`).
 					WillReturnRows(rows)
 
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/workflow?playbook_id=pod-oom-recovery_v2.0&playbook_version=v1.2&time_range=7d",
+					"/api/v1/success-rate/workflow?workflow_id=pod-oom-recovery_v2.0&workflow_version=v1.2&time_range=7d",
 					nil,
 				)
 
 				handler.HandleGetSuccessRateByWorkflow(rec, req)
 
 				Expect(rec.Code).To(Equal(http.StatusOK),
-					"Special characters in playbook_id should be accepted")
+					"Special characters in workflow_id should be accepted")
 
 				var response models.WorkflowSuccessRateResponse
 				json.NewDecoder(rec.Body).Decode(&response)
-				Expect(response.PlaybookID).To(Equal("pod-oom-recovery_v2.0"),
-					"Playbook ID with special characters should be preserved")
+				Expect(response.WorkflowID).To(Equal("pod-oom-recovery_v2.0"),
+					"Workflow ID with special characters should be preserved")
 			})
 
-			It("should handle semantic version formats for playbook_version", func() {
+			It("should handle semantic version formats for workflow_version", func() {
 				// BEHAVIOR: Various semantic version formats should be accepted
 				validVersions := []string{"v1.0", "v1.2.3", "v2.0.0-alpha", "v1.0.0+build123"}
 
 				for _, version := range validVersions {
 					// Mock expectation for each version
-					rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
-						AddRow("test-playbook", version, 100, 90, 10)
-					mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+					rows := sqlmock.NewRows([]string{"workflow_id", "workflow_version", "total_executions", "successful_executions", "failed_executions"}).
+						AddRow("test-workflow", version, 100, 90, 10)
+					mockDB.ExpectQuery(`SELECT\s+workflow_id`).
 						WillReturnRows(rows)
 
 					rec = httptest.NewRecorder() // Reset recorder for each test
 					req = httptest.NewRequest(
 						http.MethodGet,
-						"/api/v1/success-rate/workflow?playbook_id=test-playbook&playbook_version="+version+"&time_range=7d",
+						"/api/v1/success-rate/workflow?workflow_id=test-workflow&workflow_version="+version+"&time_range=7d",
 						nil,
 					)
 
@@ -638,17 +639,17 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				}
 			})
 
-			It("should handle playbook_version with URL-encoded plus sign", func() {
+			It("should handle workflow_version with URL-encoded plus sign", func() {
 				// Mock expectation for this test
-				rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
-					AddRow("test-playbook", "v1.0.0+build123", 100, 90, 10)
-				mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+				rows := sqlmock.NewRows([]string{"workflow_id", "workflow_version", "total_executions", "successful_executions", "failed_executions"}).
+					AddRow("test-workflow", "v1.0.0+build123", 100, 90, 10)
+				mockDB.ExpectQuery(`SELECT\s+workflow_id`).
 					WillReturnRows(rows)
 
 				// BEHAVIOR: URL-encoded + in version (e.g., v1.0.0+build) should be decoded
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/workflow?playbook_id=test-playbook&playbook_version=v1.0.0%2Bbuild123&time_range=7d",
+					"/api/v1/success-rate/workflow?workflow_id=test-workflow&workflow_version=v1.0.0%2Bbuild123&time_range=7d",
 					nil,
 				)
 
@@ -659,8 +660,8 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				var response models.WorkflowSuccessRateResponse
 				json.NewDecoder(rec.Body).Decode(&response)
-				Expect(response.PlaybookVersion).To(Equal("v1.0.0+build123"),
-					"Playbook version with + should be URL-decoded")
+				Expect(response.WorkflowVersion).To(Equal("v1.0.0+build123"),
+					"Workflow version with + should be URL-decoded")
 			})
 		})
 	})
@@ -681,7 +682,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// ARRANGE: Create HTTP request with all dimensions
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=7d&min_samples=5",
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&workflow_id=pod-oom-recovery&workflow_version=v1.2&action_type=increase_memory&time_range=7d&min_samples=5",
 					nil,
 				)
 
@@ -700,8 +701,8 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// CORRECTNESS: Validate response structure
 				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
-				Expect(response.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
-				Expect(response.Dimensions.PlaybookVersion).To(Equal("v1.2"))
+				Expect(response.Dimensions.WorkflowID).To(Equal("pod-oom-recovery"))
+				Expect(response.Dimensions.WorkflowVersion).To(Equal("v1.2"))
 				Expect(response.Dimensions.ActionType).To(Equal("increase_memory"))
 				Expect(response.TimeRange).To(Equal("7d"))
 
@@ -709,7 +710,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 			})
 		})
 
-		Context("with partial dimensions (incident_type + playbook only)", func() {
+		Context("with partial dimensions (incident_type + workflow only)", func() {
 			It("should return 200 OK with aggregated data across all action_types", func() {
 				// ARRANGE: Mock database response
 				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
@@ -720,7 +721,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// ARRANGE: Create HTTP request with partial dimensions
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=7d",
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&workflow_id=pod-oom-recovery&workflow_version=v1.2&time_range=7d",
 					nil,
 				)
 
@@ -730,11 +731,11 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// ASSERT: HTTP 200 OK
 				Expect(rec.Code).To(Equal(http.StatusOK))
 
-				// ASSERT: Response has incident_type + playbook, no action_type
+				// ASSERT: Response has incident_type + workflow, no action_type
 				var response models.MultiDimensionalSuccessRateResponse
 				json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
-				Expect(response.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
+				Expect(response.Dimensions.WorkflowID).To(Equal("pod-oom-recovery"))
 				Expect(response.Dimensions.ActionType).To(BeEmpty())
 
 				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
@@ -742,11 +743,11 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		})
 
 		Context("validation errors", func() {
-			It("should return 400 Bad Request when playbook_version is specified without playbook_id", func() {
+			It("should return 400 Bad Request when workflow_version is specified without workflow_id", func() {
 				// ARRANGE: Create HTTP request with invalid params
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_version=v1.2",
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&workflow_version=v1.2",
 					nil,
 				)
 
@@ -760,8 +761,8 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// CORRECTNESS: RFC 7807 error format
 				var problem map[string]interface{}
 				json.Unmarshal(rec.Body.Bytes(), &problem)
-				Expect(problem["type"]).To(Equal("https://api.kubernaut.io/problems/validation-error"))
-				Expect(problem["detail"]).To(ContainSubstring("playbook_version requires playbook_id"))
+				Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
+				Expect(problem["detail"]).To(ContainSubstring("workflow_version requires workflow_id"))
 			})
 
 			It("should return 400 Bad Request when no dimensions are specified", func() {
@@ -782,7 +783,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// CORRECTNESS: Error message explains the issue
 				var problem map[string]interface{}
 				json.Unmarshal(rec.Body.Bytes(), &problem)
-				Expect(problem["type"]).To(Equal("https://api.kubernaut.io/problems/validation-error"))
+				Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
 				Expect(problem["detail"]).To(ContainSubstring("at least one dimension filter"))
 			})
 
@@ -965,7 +966,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// BEHAVIOR: Parameter order should not affect response
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/multi-dimensional?time_range=7d&action_type=increase_memory&playbook_version=v1.2&incident_type=pod-oom-killer&playbook_id=pod-oom-recovery",
+					"/api/v1/success-rate/multi-dimensional?time_range=7d&action_type=increase_memory&workflow_version=v1.2&incident_type=pod-oom-killer&workflow_id=pod-oom-recovery",
 					nil,
 				)
 
@@ -977,8 +978,8 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				var response models.MultiDimensionalSuccessRateResponse
 				json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
-				Expect(response.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
-				Expect(response.Dimensions.PlaybookVersion).To(Equal("v1.2"))
+				Expect(response.Dimensions.WorkflowID).To(Equal("pod-oom-recovery"))
+				Expect(response.Dimensions.WorkflowVersion).To(Equal("v1.2"))
 				Expect(response.Dimensions.ActionType).To(Equal("increase_memory"))
 
 				Expect(mockDB.ExpectationsWereMet()).To(Succeed())

@@ -17,174 +17,167 @@ limitations under the License.
 package processing
 
 import (
-	"errors"
 	"fmt"
-	"net/http"
-	"strings"
-
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"time"
 )
 
-// RetryError wraps an error with retry context for better debugging.
-// GAP 10: Error Wrapping
-// BR-GATEWAY-112: Error Classification
-type RetryError struct {
-	Attempt      int    // Current attempt number (1-based)
-	MaxAttempts  int    // Maximum retry attempts configured
-	OriginalErr  error  // The original error that caused retry exhaustion
-	ErrorType    string // "retryable" or "non-retryable"
-	ErrorCode    int    // HTTP status code (if applicable)
-	ErrorMessage string // Human-readable error message
+// OperationError provides rich context for processing errors with timing, correlation, and retry information.
+// GAP-10: Enhanced Error Wrapping
+//
+// This structured error type helps operators quickly diagnose issues by providing:
+// - Operation: Operation name (e.g., "create_remediation_request")
+// - Phase: Processing phase (e.g., "deduplication", "crd_creation")
+// - Fingerprint: Signal fingerprint (serves as correlation ID)
+// - Namespace: Target namespace
+// - Attempts: Number of retry attempts
+// - Duration: Total operation duration
+// - StartTime: Operation start time
+// - CorrelationID: Request correlation ID (typically RR name)
+// - Underlying: Wrapped underlying error
+//
+// Example:
+//
+//	err := NewOperationError(
+//	    "create_remediation_request",
+//	    "crd_creation",
+//	    "abc123",
+//	    "default",
+//	    "rr-pod-crash-abc123",
+//	    3,
+//	    startTime,
+//	    kubernetesErr,
+//	)
+type OperationError struct {
+	Operation     string        // Operation name (e.g., "create_remediation_request")
+	Phase         string        // Processing phase (e.g., "deduplication", "crd_creation")
+	Fingerprint   string        // Signal fingerprint (correlation ID)
+	Namespace     string        // Target namespace
+	Attempts      int           // Number of retry attempts
+	Duration      time.Duration // Total operation duration
+	StartTime     time.Time     // Operation start time
+	CorrelationID string        // Request correlation ID (RR name)
+	Underlying    error         // Wrapped underlying error
 }
 
-// Error implements the error interface.
-func (e *RetryError) Error() string {
-	if e.ErrorCode > 0 {
-		return fmt.Sprintf("retry exhausted after %d/%d attempts (error type: %s, HTTP %d): %s",
-			e.Attempt, e.MaxAttempts, e.ErrorType, e.ErrorCode, e.ErrorMessage)
+// Error implements the error interface with rich, actionable error messages.
+// Format:
+//
+//	{operation} failed: phase={phase}, fingerprint={fingerprint}, namespace={namespace},
+//	attempts={attempts}, duration={duration}, correlation={correlationID}: {underlying}
+func (e *OperationError) Error() string {
+	return fmt.Sprintf(
+		"%s failed: phase=%s, fingerprint=%s, namespace=%s, attempts=%d, duration=%s, correlation=%s: %v",
+		e.Operation, e.Phase, e.Fingerprint, e.Namespace,
+		e.Attempts, e.Duration, e.CorrelationID, e.Underlying,
+	)
+}
+
+// Unwrap returns the underlying error for error chain unwrapping.
+// This enables errors.Is() and errors.As() to work with OperationError.
+func (e *OperationError) Unwrap() error {
+	return e.Underlying
+}
+
+// NewOperationError creates a new operation error with automatic duration calculation.
+// Duration is calculated as time.Since(startTime).
+func NewOperationError(operation, phase, fingerprint, namespace, correlationID string, attempts int, startTime time.Time, err error) *OperationError {
+	return &OperationError{
+		Operation:     operation,
+		Phase:         phase,
+		Fingerprint:   fingerprint,
+		Namespace:     namespace,
+		Attempts:      attempts,
+		Duration:      time.Since(startTime),
+		StartTime:     startTime,
+		CorrelationID: correlationID,
+		Underlying:    err,
 	}
-	return fmt.Sprintf("retry exhausted after %d/%d attempts (error type: %s): %s",
-		e.Attempt, e.MaxAttempts, e.ErrorType, e.ErrorMessage)
 }
 
-// Unwrap returns the original error for error chain inspection.
+// CRDCreationError is a specialized error for CRD creation failures.
+// Extends OperationError with CRD-specific fields.
+type CRDCreationError struct {
+	*OperationError
+	CRDName    string // RemediationRequest name
+	SignalType string // Signal type (alert/event)
+	AlertName  string // Alert name (if applicable)
+}
+
+// NewCRDCreationError creates a CRD creation error with full context.
+// Automatically sets operation to "create_remediation_request" and phase to "crd_creation".
+func NewCRDCreationError(fingerprint, namespace, crdName, signalType, alertName string, attempts int, startTime time.Time, err error) *CRDCreationError {
+	return &CRDCreationError{
+		OperationError: NewOperationError(
+			"create_remediation_request",
+			"crd_creation",
+			fingerprint,
+			namespace,
+			crdName, // Use CRD name as correlation ID
+			attempts,
+			startTime,
+			err,
+		),
+		CRDName:    crdName,
+		SignalType: signalType,
+		AlertName:  alertName,
+	}
+}
+
+// Error extends OperationError.Error() with CRD-specific fields.
+func (e *CRDCreationError) Error() string {
+	baseErr := e.OperationError.Error()
+	return fmt.Sprintf("%s, crd_name=%s, signal_type=%s, alert_name=%s",
+		baseErr, e.CRDName, e.SignalType, e.AlertName)
+}
+
+// DeduplicationError is a specialized error for deduplication failures.
+// Extends OperationError with deduplication-specific fields.
+type DeduplicationError struct {
+	*OperationError
+	DedupeStatus string // Deduplication status (new/duplicate/unknown)
+}
+
+// NewDeduplicationError creates a deduplication error with full context.
+// Automatically sets operation to "check_deduplication" and phase to "deduplication".
+func NewDeduplicationError(fingerprint, namespace, dedupeStatus string, attempts int, startTime time.Time, err error) *DeduplicationError {
+	return &DeduplicationError{
+		OperationError: NewOperationError(
+			"check_deduplication",
+			"deduplication",
+			fingerprint,
+			namespace,
+			fingerprint, // Use fingerprint as correlation ID
+			attempts,
+			startTime,
+			err,
+		),
+		DedupeStatus: dedupeStatus,
+	}
+}
+
+// Error extends OperationError.Error() with deduplication-specific fields.
+func (e *DeduplicationError) Error() string {
+	baseErr := e.OperationError.Error()
+	return fmt.Sprintf("%s, dedupe_status=%s", baseErr, e.DedupeStatus)
+}
+
+// RetryError wraps errors from retry operations with retry context.
+// This is used by createCRDWithRetry to provide rich context about retry attempts.
+type RetryError struct {
+	Attempt     int    // Final attempt number (1-based)
+	MaxAttempts int    // Maximum retry attempts configured
+	OriginalErr error  // Original underlying error
+	ErrorType   string // Error type classification (e.g., "transient", "timeout")
+	IsRetryable bool   // Whether error was retryable
+}
+
+// Error implements the error interface for RetryError.
+func (e *RetryError) Error() string {
+	return fmt.Sprintf("operation failed after %d/%d attempts (error_type=%s, retryable=%t): %v",
+		e.Attempt, e.MaxAttempts, e.ErrorType, e.IsRetryable, e.OriginalErr)
+}
+
+// Unwrap returns the underlying error for error chain unwrapping.
 func (e *RetryError) Unwrap() error {
 	return e.OriginalErr
-}
-
-// IsRetryableError determines if a K8s API error should be retried.
-// BR-GATEWAY-112: Error Classification (retryable errors)
-// Reliability-First Design: Always retry transient errors
-//
-// Retryable errors are transient failures that may succeed on retry:
-// - HTTP 429: Too Many Requests (rate limiting) - ALWAYS RETRY
-// - HTTP 503: Service Unavailable (API server overload) - ALWAYS RETRY
-// - HTTP 504: Gateway Timeout (API server slow response) - ALWAYS RETRY
-// - Timeout errors: Network latency, deadline exceeded - ALWAYS RETRY
-// - Connection errors: Connection refused, connection reset - ALWAYS RETRY
-//
-// Returns true if the error should be retried (no configuration needed).
-func IsRetryableError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check for K8s API status errors
-	var statusErr *apierrors.StatusError
-	if errors.As(err, &statusErr) {
-		statusCode := statusErr.ErrStatus.Code
-
-		// HTTP 429 - Too Many Requests (rate limiting) - ALWAYS RETRY
-		if statusCode == http.StatusTooManyRequests {
-			return true
-		}
-
-		// HTTP 503 - Service Unavailable (API server overload) - ALWAYS RETRY
-		if statusCode == http.StatusServiceUnavailable {
-			return true
-		}
-
-		// HTTP 504 - Gateway Timeout (API server slow response) - ALWAYS RETRY
-		if statusCode == http.StatusGatewayTimeout {
-			return true
-		}
-	}
-
-	// Check for timeout errors (string matching as fallback) - ALWAYS RETRY
-	errStr := err.Error()
-	if strings.Contains(errStr, "timeout") ||
-		strings.Contains(errStr, "deadline exceeded") ||
-		strings.Contains(errStr, "context deadline exceeded") {
-		return true
-	}
-
-	// Check for temporary network errors - ALWAYS RETRY
-	// These are transient and may succeed on retry
-	if strings.Contains(errStr, "connection refused") ||
-		strings.Contains(errStr, "connection reset") ||
-		strings.Contains(errStr, "connection reset by peer") ||
-		strings.Contains(errStr, "broken pipe") {
-		return true
-	}
-
-	return false
-}
-
-// IsNonRetryableError determines if an error should never be retried.
-// BR-GATEWAY-112: Error Classification (non-retryable errors)
-//
-// Non-retryable errors are permanent failures that will not succeed on retry:
-// - HTTP 400: Bad Request (validation error - fix the request)
-// - HTTP 403: Forbidden (RBAC error - fix permissions)
-// - HTTP 422: Unprocessable Entity (schema validation - fix the CRD)
-// - HTTP 409: Conflict (already exists - idempotent, not an error)
-// - HTTP 404: Not Found (namespace doesn't exist - use fallback)
-//
-// Returns true if the error should NOT be retried.
-func IsNonRetryableError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	var statusErr *apierrors.StatusError
-	if errors.As(err, &statusErr) {
-		statusCode := statusErr.ErrStatus.Code
-
-		// HTTP 400 - Bad Request (validation error)
-		if statusCode == http.StatusBadRequest {
-			return true
-		}
-
-		// HTTP 403 - Forbidden (RBAC error)
-		if statusCode == http.StatusForbidden {
-			return true
-		}
-
-		// HTTP 422 - Unprocessable Entity (schema validation)
-		if statusCode == http.StatusUnprocessableEntity {
-			return true
-		}
-
-		// HTTP 409 - Conflict (already exists)
-		if statusCode == http.StatusConflict {
-			return true
-		}
-
-		// HTTP 404 - Not Found (namespace doesn't exist)
-		// Note: This is handled separately with fallback namespace logic
-		if statusCode == http.StatusNotFound {
-			return true
-		}
-	}
-
-	return false
-}
-
-// GetErrorCode extracts the HTTP status code from a K8s API error.
-// Returns 0 if the error is not a K8s API status error.
-func GetErrorCode(err error) int {
-	if err == nil {
-		return 0
-	}
-
-	var statusErr *apierrors.StatusError
-	if errors.As(err, &statusErr) {
-		return int(statusErr.ErrStatus.Code)
-	}
-
-	return 0
-}
-
-// GetErrorMessage extracts a human-readable error message.
-func GetErrorMessage(err error) string {
-	if err == nil {
-		return ""
-	}
-
-	var statusErr *apierrors.StatusError
-	if errors.As(err, &statusErr) {
-		return statusErr.ErrStatus.Message
-	}
-
-	return err.Error()
 }

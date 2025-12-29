@@ -386,7 +386,7 @@ This checklist validates that the Notification Controller is ready for productio
 
 2. **Deploy Controller**:
    ```bash
-   kubectl apply -f config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+   kubectl apply -f config/crd/bases/kubernaut.ai_notificationrequests.yaml
    kubectl apply -k deploy/notification/
    ```
 

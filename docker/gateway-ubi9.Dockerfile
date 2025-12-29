@@ -1,7 +1,7 @@
 # Gateway Service - Multi-Architecture Dockerfile using Red Hat UBI9
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
 # Build arguments for multi-architecture support
 ARG TARGETOS=linux
@@ -15,7 +15,8 @@ ARG BUILD_DATE=dev
 # Switch to root for package installation
 USER root
 
-# Install additional build dependencies if needed
+# Install additional build dependencies
+# Note: dnf update required for security compliance
 RUN dnf update -y && \
 	dnf install -y git ca-certificates tzdata && \
 	dnf clean all
@@ -29,20 +30,34 @@ WORKDIR /opt/app-root/src
 # Copy go mod files
 COPY --chown=1001:0 go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
-
 # Copy source code
 COPY --chown=1001:0 . .
+
+# GOFLAGS: Optional build flags (e.g., -cover for E2E coverage profiling per DD-TEST-007)
+ARG GOFLAGS=""
 
 # Build the gateway service binary
 # CGO_ENABLED=0 for static linking (no C dependencies)
 # GOOS and GOARCH from build args for multi-architecture support
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+# -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
+# When building with coverage (-cover), don't strip symbols (-s -w) as coverage needs them
+# ⚠️ CRITICAL (DD-TEST-007): Coverage builds must use simple go build (no -a, -installsuffix, -extldflags)
+RUN if [ "${GOFLAGS}" = "-cover" ]; then \
+	echo "Building with coverage instrumentation (no symbol stripping)..."; \
+	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOFLAGS="${GOFLAGS}" go build \
+	-mod=mod \
+	-ldflags="-X main.version=${APP_VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
+	-o gateway \
+	./cmd/gateway; \
+	else \
+	echo "Building production binary (with symbol stripping)..."; \
+	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+	-mod=mod \
 	-ldflags="-w -s -extldflags '-static' -X main.version=${APP_VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
 	-a -installsuffix cgo \
 	-o gateway \
-	./cmd/gateway
+	./cmd/gateway; \
+	fi
 
 # Final stage - Red Hat UBI9 minimal runtime image
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest

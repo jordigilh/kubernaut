@@ -18,28 +18,44 @@ package datastorage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"os/exec"
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Test suite for Data Storage E2E tests
 // This suite sets up a complete production-like environment:
-// - Kind cluster (2 nodes: 1 control-plane + 1 worker)
-// - PostgreSQL with pgvector (for audit events storage)
+// - Kind cluster (2 nodes: 1 control-plane + 1 worker) with NodePort exposure
+// - PostgreSQL 16 (V1.0 label-only, for audit events and workflow catalog)
 // - Redis (for DLQ fallback)
 // - Data Storage service (deployed to Kind cluster)
+//
+// ARCHITECTURE: Uses SHARED deployment pattern (like Gateway E2E tests)
+// - Services deployed ONCE in SynchronizedBeforeSuite
+// - All tests share the same infrastructure via NodePort (no port-forwarding)
+// - Eliminates kubectl port-forward instability
+// - Faster execution, no per-test deployment overhead
 //
 // E2E Test Coverage (10-15%):
 // - Scenario 1: Happy Path - Complete remediation audit trail
 // - Scenario 2: DLQ Fallback - Data Storage Service outage recovery
 // - Scenario 3: Query API - Timeline retrieval with filtering
+// - Scenario 4: Workflow Search - Hybrid weighted scoring
+// - Scenario 5: [REMOVED] Embedding Service (V1.0: label-only architecture)
+// - Scenario 6: Workflow Search Audit Trail - Audit event generation
 
 func TestDataStorageE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -49,14 +65,26 @@ func TestDataStorageE2E(t *testing.T) {
 var (
 	ctx    context.Context
 	cancel context.CancelFunc
-	logger *zap.Logger
+	logger logr.Logger
 
 	// Cluster configuration (shared across all tests)
 	clusterName    string
 	kubeconfigPath string
 
+	// Shared service URLs (NodePort - no port-forwarding needed)
+	// These are set in SynchronizedBeforeSuite and available to all tests
+	dataStorageURL string // http://localhost:28090 (NodePort 30081 mapped via Kind extraPortMappings per DD-TEST-001)
+	postgresURL    string // localhost:25433 (NodePort 30432 mapped via Kind extraPortMappings per DD-TEST-001)
+
+	// Shared namespace for all tests (services deployed ONCE)
+	sharedNamespace string = "datastorage-e2e"
+
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
+
+	// Coverage mode detection (DD-TEST-007: E2E Coverage Capture Standard)
+	coverageMode bool
+	coverDir     string = "./coverdata"
 )
 
 // Note: Helper functions (generateUniqueNamespace, createNamespace, deleteNamespace, etc.)
@@ -65,40 +93,83 @@ var (
 var _ = SynchronizedBeforeSuite(
 	// This function runs ONCE on process 1 only
 	func() []byte {
-		// Initialize logger for process 1
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		// Initialize context for process 1
+		ctx, cancel = context.WithCancel(context.Background())
+
+		// Initialize logger for process 1 (DD-005 v2.0: logr.Logger migration)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Data Storage E2E Test Suite - Cluster Setup (ONCE - Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("Creating Kind cluster for all E2E tests...")
+
+		// DD-TEST-007: E2E Coverage Capture Standard
+		// Detect if coverage mode is enabled via E2E_COVERAGE environment variable
+		coverageMode = os.Getenv("E2E_COVERAGE") == "true"
+		if coverageMode {
+			logger.Info("📊 DD-TEST-007: E2E Coverage mode ENABLED")
+			// Create coverage directory for Go 1.20+ binary profiling
+			if err := os.MkdirAll(coverDir, 0777); err != nil {
+				logger.Info("⚠️  Failed to create coverage directory", "error", err)
+			} else {
+				logger.Info("   ✅ Coverage directory created", "path", coverDir)
+				logger.Info("   💡 Coverage data will be extracted from Kind node after tests")
+			}
+		} else {
+			logger.Info("📊 DD-TEST-007: E2E Coverage mode DISABLED (set E2E_COVERAGE=true to enable)")
+		}
+
+		logger.Info("Creating Kind cluster with NodePort exposure...")
 		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
-		logger.Info("  • PostgreSQL with pgvector (audit events storage)")
+		logger.Info("  • NodePort exposure: Data Storage (30081→8081), PostgreSQL (30432→5432)")
+		logger.Info("  • PostgreSQL 16 (V1.0 label-only, audit events and workflow catalog)")
 		logger.Info("  • Redis (DLQ fallback)")
 		logger.Info("  • Data Storage Docker image (build + load)")
-		logger.Info("  • Kubeconfig: ~/.kube/kind-config-datastorage")
+		logger.Info("  • Kubeconfig: ~/.kube/datastorage-e2e-config")
 		logger.Info("")
-		logger.Info("Note: Each test will deploy services in a unique namespace")
+		logger.Info("Note: All tests share the same infrastructure via NodePort")
+		logger.Info("      No kubectl port-forward needed - eliminates instability")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Set cluster configuration
 		clusterName = "datastorage-e2e"
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
-		// Use unique kubeconfig path to avoid conflicts with other E2E tests
-		kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config-datastorage", homeDir)
+		// Use isolated kubeconfig path per TESTING_GUIDELINES.md section "Kubeconfig Isolation Policy"
+		// Convention: ~/.kube/{serviceName}-e2e-config (NEVER ~/.kube/config)
+		kubeconfigPath = fmt.Sprintf("%s/.kube/datastorage-e2e-config", homeDir)
 
-		// Create Kind cluster (ONCE for all tests)
-		err = infrastructure.CreateDataStorageCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		// Create infrastructure with parallel setup (ONCE for all tests)
+		// This uses parallel optimization: Build image | PostgreSQL | Redis run concurrently
+		// Saves ~1 minute per E2E run (~23% faster)
+		logger.Info("🚀 Setting up DataStorage E2E infrastructure (PARALLEL MODE)...")
+		logger.Info("   Expected: ~3.6 min (vs ~4.7 min sequential)")
+		// Generate unique image name per DD-TEST-001 compliant naming
+		dataStorageImage := infrastructure.GenerateInfraImageName("datastorage", "datastorage-e2e")
+		err = infrastructure.SetupDataStorageInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, dataStorageImage, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
+
+		// Wait for Data Storage HTTP endpoint to be responsive via NodePort
+		logger.Info("⏳ Waiting for Data Storage NodePort to be responsive...")
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		Eventually(func() error {
+			resp, err := httpClient.Get("http://localhost:28090/health/ready") // Per DD-TEST-001
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check returned status %d", resp.StatusCode)
+			}
+			return nil
+		}, 120*time.Second, 2*time.Second).Should(Succeed(), "Data Storage NodePort did not become responsive")
+		logger.Info("✅ Data Storage is ready via NodePort (localhost:8081)")
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
-		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
+		logger.Info("Cluster configuration", "cluster", clusterName, "kubeconfig", kubeconfigPath)
+		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "http://localhost:28090", "postgresql", "localhost:25433")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Return kubeconfig path to all processes
@@ -109,10 +180,8 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize context
 		ctx, cancel = context.WithCancel(context.Background())
 
-		// Initialize logger for this process
-		var err error
-		logger, err = zap.NewDevelopment()
-		Expect(err).ToNot(HaveOccurred())
+		// Initialize logger for this process (DD-005 v2.0: logr.Logger migration)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 		// Initialize failure tracking
 		anyTestFailed = false
@@ -121,56 +190,252 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath = string(data)
 		clusterName = "datastorage-e2e"
 
+		// Set shared URLs - NodePort or port-forward depending on Kind provider
+		// Per DD-TEST-001: DataStorage E2E uses ports 25433-28139
+		// Kind with Docker: extraPortMappings work (localhost:25433)
+		// Kind with Podman: extraPortMappings DON'T work, need port-forward
+		processID := GinkgoParallelProcess()
+
+		// Try NodePort first (works with Docker) - Per DD-TEST-001 lines 106-127
+		dataStorageURL = "http://localhost:28090"
+		postgresURL = "postgresql://slm_user:test_password@localhost:25433/action_history?sslmode=disable"
+
+		// Test if NodePort is accessible (check PostgreSQL connection)
+		testDB, err := sql.Open("pgx", postgresURL)
+		nodePortWorks := false
+		if err == nil {
+			if err := testDB.Ping(); err == nil {
+				nodePortWorks = true
+				logger.Info("✅ NodePort accessible (Docker provider)", "process", processID)
+			}
+			testDB.Close()
+		}
+
+		// If NodePort doesn't work, use kubectl port-forward (Podman)
+		if !nodePortWorks {
+			logger.Info("⚠️  NodePort not accessible (Podman provider) - starting port-forward", "process", processID)
+
+			// Start port-forward for PostgreSQL (background process)
+			// Use process-specific ports to avoid conflicts in parallel execution
+			// Per DD-TEST-001: Base ports 25433 (PostgreSQL), 28090 (DataStorage)
+			pgLocalPort := 25433 + (processID * 100)
+			dsLocalPort := 28090 + (processID * 100)
+
+			// PostgreSQL port-forward
+			go func() {
+				cmd := exec.Command("kubectl", "port-forward",
+					"--kubeconfig", kubeconfigPath,
+					"-n", "datastorage-e2e",
+					"svc/postgresql",
+					fmt.Sprintf("%d:5432", pgLocalPort))
+				if err := cmd.Run(); err != nil {
+					logger.Error(err, "PostgreSQL port-forward failed", "process", processID)
+				}
+			}()
+
+			// DataStorage port-forward
+			go func() {
+				cmd := exec.Command("kubectl", "port-forward",
+					"--kubeconfig", kubeconfigPath,
+					"-n", "datastorage-e2e",
+					"svc/datastorage",
+					fmt.Sprintf("%d:8080", dsLocalPort))
+				if err := cmd.Run(); err != nil {
+					logger.Error(err, "DataStorage port-forward failed", "process", processID)
+				}
+			}()
+
+			// Per TESTING_GUIDELINES.md: Use Eventually() to verify port-forward is ready
+			Eventually(func() bool {
+				// Test port is accessible
+				conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", dsLocalPort), 500*time.Millisecond)
+				if err != nil {
+					return false
+				}
+				conn.Close()
+				return true
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Port-forward should be established")
+
+			// Update URLs to use process-specific ports
+			dataStorageURL = fmt.Sprintf("http://localhost:%d", dsLocalPort)
+			postgresURL = fmt.Sprintf("postgresql://slm_user:test_password@localhost:%d/action_history?sslmode=disable", pgLocalPort)
+
+			logger.Info("✅ Port-forward established", "process", processID,
+				"dataStorageURL", dataStorageURL,
+				"postgresURL", postgresURL)
+		}
+
+		logger.Info("🔌 URLs configured",
+			"process", processID,
+			"dataStorageURL", dataStorageURL,
+			"postgresURL", postgresURL,
+			"method", map[bool]string{true: "NodePort", false: "port-forward"}[nodePortWorks])
+
 		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests
 		// All kubectl commands must use --kubeconfig flag explicitly
-		logger.Info(fmt.Sprintf("Process %d ready - Using kubeconfig: %s", GinkgoParallelProcess(), kubeconfigPath))
+		logger.Info("Process ready", "process", processID, "kubeconfig", kubeconfigPath)
 	},
 )
+
+// Track test failures for cluster cleanup decision
+var _ = ReportAfterEach(func(report SpecReport) {
+	if report.Failed() {
+		anyTestFailed = true
+	}
+})
 
 var _ = SynchronizedAfterSuite(
 	// This function runs on ALL processes (cleanup per-process resources)
 	func() {
+		processID := GinkgoParallelProcess()
+		logger.Info("Process cleanup complete",
+			"process", processID,
+			"hadFailures", anyTestFailed)
+
 		// Cancel context for this process
 		if cancel != nil {
 			cancel()
 		}
-		logger.Info(fmt.Sprintf("Process %d cleanup complete", GinkgoParallelProcess()))
+
+		// Sync logger for this process (DD-005 v2.0: use kubelog.Sync)
+		kubelog.Sync(logger)
 	},
 	// This function runs ONCE on process 1 only (cleanup shared resources)
 	func() {
+		// Re-initialize logger for final cleanup (DD-005 v2.0: logr.Logger migration)
+		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Data Storage E2E Test Suite - Cleanup (Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Check if we should keep the cluster for debugging
 		keepCluster := os.Getenv("KEEP_CLUSTER")
-		if keepCluster == "true" || anyTestFailed {
+		suiteReport := CurrentSpecReport()
+		suiteFailed := suiteReport.Failed() || anyTestFailed || keepCluster == "true"
+
+		// DD-TEST-007: E2E Coverage Capture Standard
+		// Extract coverage from Kind node before cluster deletion
+		if coverageMode {
+			logger.Info("📊 DD-TEST-007: Extracting E2E coverage data from Kind node...")
+			logger.Info("   Step 1: Scaling down DataStorage for graceful shutdown (flushes coverage)...")
+
+			// Scale deployment to 0 to trigger graceful shutdown (writes coverage data)
+			scaleCmd := exec.Command("kubectl", "scale", "deployment", "datastorage",
+				"--kubeconfig", kubeconfigPath,
+				"-n", sharedNamespace,
+				"--replicas=0")
+			if output, err := scaleCmd.CombinedOutput(); err != nil {
+				logger.Info("⚠️  Failed to scale down DataStorage", "error", err, "output", string(output))
+			} else {
+				logger.Info("   ✅ DataStorage scaled to 0")
+
+				// Wait for pod termination (coverage is written during graceful shutdown)
+				logger.Info("   Step 2: Waiting for graceful shutdown to complete...")
+				time.Sleep(10 * time.Second)
+
+				// DD-TEST-007: Extract coverage files from Kind node container
+				// Coverage files are written INSIDE the Kind node container at /coverdata/
+				// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
+				// We must use podman cp to extract them to the host
+				logger.Info("   Step 3: Extracting coverage files from Kind node container...")
+				kindNodeContainer := clusterName + "-worker"
+
+				// Use podman cp to copy coverage files from Kind node to host
+				cpCmd := exec.Command("podman", "cp",
+					kindNodeContainer+":/coverdata/.",
+					coverDir)
+				if cpOutput, cpErr := cpCmd.CombinedOutput(); cpErr != nil {
+					logger.Info("⚠️  Failed to extract coverage from Kind node",
+						"error", cpErr,
+						"output", string(cpOutput),
+						"container", kindNodeContainer)
+					logger.Info("   💡 Ensure GOCOVERDIR=/coverdata is set in deployment")
+				} else {
+					logger.Info("   ✅ Coverage files extracted from Kind node", "destination", coverDir)
+
+					// Generate coverage report
+					logger.Info("   Step 4: Generating E2E coverage report...")
+					percentCmd := exec.Command("go", "tool", "covdata", "percent", "-i="+coverDir)
+					if percentOutput, percentErr := percentCmd.CombinedOutput(); percentErr == nil {
+						logger.Info("   ✅ E2E Coverage Report:")
+						logger.Info(string(percentOutput))
+
+						// Convert to text format for HTML report
+						textfmtCmd := exec.Command("go", "tool", "covdata", "textfmt",
+							"-i="+coverDir,
+							"-o=e2e-coverage.txt")
+						if _, textErr := textfmtCmd.CombinedOutput(); textErr == nil {
+							logger.Info("   ✅ Coverage report saved: e2e-coverage.txt")
+
+							// Generate HTML report
+							htmlCmd := exec.Command("go", "tool", "cover",
+								"-html=e2e-coverage.txt",
+								"-o=e2e-coverage.html")
+							if _, htmlErr := htmlCmd.CombinedOutput(); htmlErr == nil {
+								logger.Info("   ✅ HTML report saved: e2e-coverage.html")
+							}
+						}
+					} else {
+						logger.Info("⚠️  Failed to generate coverage report",
+							"error", percentErr,
+							"output", string(percentOutput))
+						logger.Info("   💡 Check if coverage files are valid with: ls -la " + coverDir)
+					}
+				}
+			}
+		} else {
+			logger.Info("📊 DD-TEST-007: Coverage extraction skipped (E2E_COVERAGE not enabled)")
+			logger.Info("   💡 To collect E2E coverage: make test-e2e-datastorage-coverage")
+		}
+
+		if suiteFailed {
 			logger.Info("⚠️  Keeping cluster for debugging (KEEP_CLUSTER=true or test failed)")
-			logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
-			logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
-			logger.Info("")
-			logger.Info("To delete the cluster manually:")
-			logger.Info(fmt.Sprintf("  kind delete cluster --name %s", clusterName))
+			logger.Info("Cluster details for debugging",
+				"cluster", clusterName,
+				"kubeconfig", kubeconfigPath,
+				"dataStorageURL", dataStorageURL,
+				"postgresURL", postgresURL)
+			logger.Info("To delete the cluster manually: kind delete cluster --name " + clusterName)
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			return
 		}
 
 		// Delete Kind cluster
 		logger.Info("🗑️  Deleting Kind cluster...")
-		err := infrastructure.DeleteCluster(clusterName, GinkgoWriter)
-		if err != nil {
-			logger.Error("Failed to delete cluster", zap.Error(err))
+		if err := infrastructure.DeleteCluster(clusterName, GinkgoWriter); err != nil {
+			logger.Error(err, "Failed to delete cluster")
 		} else {
 			logger.Info("✅ Cluster deleted successfully")
 		}
 
+		// DD-TEST-001 v1.1: Clean up service images built for Kind
+		logger.Info("🧹 DD-TEST-001 v1.1: Cleaning up service images...")
+		imageTag := os.Getenv("IMAGE_TAG")
+		if imageTag != "" {
+			serviceName := "datastorage"
+			imageName := fmt.Sprintf("%s:%s", serviceName, imageTag)
+
+			pruneCmd := exec.Command("podman", "rmi", imageName)
+			pruneOutput, pruneErr := pruneCmd.CombinedOutput()
+			if pruneErr != nil {
+				logger.Info("⚠️  Failed to remove service image (may not exist)",
+					"image", imageName,
+					"error", pruneErr,
+					"output", string(pruneOutput))
+			} else {
+				logger.Info("✅ Service image removed", "image", imageName, "saved", "~200-500MB")
+			}
+		} else {
+			logger.Info("⚠️  IMAGE_TAG not set, skipping service image cleanup")
+		}
+
+		// Prune dangling images from Kind builds
+		logger.Info("🧹 Pruning dangling images from Kind builds...")
+		pruneDanglingCmd := exec.Command("podman", "image", "prune", "-f")
+		_, _ = pruneDanglingCmd.CombinedOutput()
+		logger.Info("✅ Dangling images pruned")
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )
-
-// AfterEach tracks test failures for cluster cleanup decision
-var _ = AfterEach(func() {
-	if CurrentSpecReport().Failed() {
-		anyTestFailed = true
-	}
-})

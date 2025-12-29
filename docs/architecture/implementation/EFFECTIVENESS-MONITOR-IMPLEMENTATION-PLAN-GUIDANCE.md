@@ -1,6 +1,16 @@
 # Effectiveness Monitor - Implementation Plan Creation Guidance
 
+> **⚠️ DEFERRED TO V1.1** (December 1, 2025)
+>
+> Effectiveness Monitor Service has been deferred to V1.1 per DD-017.
+> **Reason**: Year-end timeline constraints + requires 8+ weeks of remediation data
+> **V1.0 Focus**: Core remediation capabilities (8 services)
+> **V1.1 Timeline**: ~8 weeks post V1.0 GA (Q1 2026)
+>
+> See: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md`
+
 **Date**: November 2, 2025
+**Status**: ⏸️ **Deferred to V1.1** (see DD-017)
 **Purpose**: Comprehensive guidance for creating the Effectiveness Monitor implementation plan
 **Authoritative Sources**:
 - [Gateway Service Implementation Plan v2.23](../../services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) - **PRIMARY TEMPLATE** (7,945 lines, 95% confidence, production-ready)

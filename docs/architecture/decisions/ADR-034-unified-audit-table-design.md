@@ -2,8 +2,21 @@
 
 **Date**: 2025-11-08
 **Status**: ✅ Approved
+**Version**: 1.3
+**Last Updated**: 2025-12-18
 **Deciders**: Architecture Team
-**Consulted**: Gateway, Data Storage, Context API, AI Analysis teams
+**Consulted**: Gateway, Data Storage, Context API, AI Analysis, Notification, Signal Processing, Remediation Orchestrator teams
+
+---
+
+## 📋 **Version History**
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| **v1.0** | 2025-11-08 | Initial ADR: Unified audit table design with event sourcing pattern, 7 service audit requirements | Architecture Team |
+| **v1.1** | 2025-11-27 | Added Workflow Catalog Service (Phase 3, Item 4): `workflow.catalog.search_completed` event type with scoring breakdown for debugging workflow selection. Added DD-WORKFLOW-014 cross-reference. | Architecture Team |
+| **v1.2** | 2025-12-18 | **BREAKING**: Standardized `event_category` naming convention (service-level, not operation-level). Added complete list of valid categories. RemediationOrchestrator MUST consolidate to `"orchestration"` category. Discovered during NT Team DS API query investigation (DD-API-001). Cross-references DD-AUDIT-003. | Architecture Team |
+| **v1.3** | 2025-12-18 | Added "Authoritative Subdocuments" section establishing DD-AUDIT-004 (RR Reconstruction Field Mapping) as authoritative reference for BR-AUDIT-005 v2.0 (100% RR reconstruction from audit traces). Supports enterprise compliance (SOC 2, ISO 27001, NIST 800-53). | Architecture Team |
 
 ---
 
@@ -44,7 +57,7 @@ CREATE TABLE audit_events (
 
     -- Event Classification
     event_type VARCHAR(100) NOT NULL,        -- 'gateway.signal.received'
-    event_category VARCHAR(50) NOT NULL,     -- 'signal', 'remediation', 'workflow'
+    event_category VARCHAR(50) NOT NULL,     -- Service identifier: 'gateway', 'notification', 'analysis', 'signalprocessing', 'workflow', 'execution', 'orchestration' (see Event Category Naming Convention below)
     event_action VARCHAR(50) NOT NULL,       -- 'received', 'processed', 'executed'
     event_outcome VARCHAR(20) NOT NULL,      -- 'success', 'failure', 'pending'
 
@@ -102,6 +115,77 @@ CREATE TABLE audit_events (
         ON DELETE RESTRICT
 ) PARTITION BY RANGE (event_date);
 ```
+
+---
+
+### 1.1. Event Category Naming Convention (v1.2)
+
+**RULE**: `event_category` MUST match the **service name** that emits the event, not the operation type.
+
+**Rationale**:
+1. **Efficient Filtering**: Query all events from a specific service in one filter
+2. **Service Analytics**: Track event volume, success rates, and performance per service
+3. **Compliance Auditing**: Audit all operations from a specific service (e.g., "Show all notification deliveries")
+4. **Cost Attribution**: Identify high-volume services for optimization
+5. **Cross-Service Correlation**: Trace signal flow across service boundaries
+
+**Standard Categories** (Service-Level):
+
+| event_category | Service | Usage | Example Events |
+|---------------|---------|-------|----------------|
+| `gateway` | Gateway Service | Signal ingestion and CRD creation | `gateway.signal.received`, `gateway.crd.created`, `gateway.signal.deduplicated` |
+| `notification` | Notification Service | Alert notification delivery | `notification.message.sent`, `notification.delivery.failed`, `notification.message.acknowledged` |
+| `analysis` | AI Analysis Service | HolmesGPT integration and analysis | `aianalysis.investigation.started`, `aianalysis.recommendation.generated`, `aianalysis.analysis.completed` |
+| `signalprocessing` | Signal Processing Service | Signal enrichment and classification | `signalprocessing.enrichment.completed`, `signalprocessing.classification.decision`, `signalprocessing.phase.transition` |
+| `workflow` | Workflow Catalog Service | Workflow search and selection | `workflow.catalog.search_completed` (DD-WORKFLOW-014) |
+| `execution` | Remediation Execution Service | Tekton workflow execution | `execution.workflow.started`, `execution.action.executed`, `execution.workflow.completed` |
+| `orchestration` | Remediation Orchestrator Service | Remediation lifecycle orchestration | `orchestrator.lifecycle.started`, `orchestrator.phase.transitioned`, `orchestrator.approval.requested` |
+
+**Query Pattern**:
+```sql
+-- Get all Notification events for last 7 days
+SELECT * FROM audit_events
+WHERE event_category = 'notification'
+  AND event_timestamp > NOW() - INTERVAL '7 days'
+ORDER BY event_timestamp DESC;
+
+-- Count events per service (last 30 days)
+SELECT event_category, COUNT(*) as event_count
+FROM audit_events
+WHERE event_timestamp > NOW() - INTERVAL '30 days'
+GROUP BY event_category
+ORDER BY event_count DESC;
+
+-- Audit all AI analysis decisions for compliance
+SELECT * FROM audit_events
+WHERE event_category = 'analysis'
+  AND event_action = 'recommendation_generated'
+  AND event_timestamp BETWEEN '2025-01-01' AND '2025-12-31';
+```
+
+**Benefits**:
+- ✅ **One filter** to get all service events (not multiple `event_type` filters)
+- ✅ **Service-level SLOs**: Track notification delivery rates, AI success rates, etc.
+- ✅ **Operational visibility**: Quickly identify which service is high-volume or error-prone
+- ✅ **Compliance**: Generate service-specific audit reports for SOC 2, ISO 27001
+
+**Anti-Pattern** (Operation-Level Categories - FORBIDDEN):
+```go
+// ❌ WRONG: Using operation types as categories (RemediationOrchestrator v1.0-v1.1)
+audit.SetEventCategory(event, "lifecycle")  // Too granular
+audit.SetEventCategory(event, "phase")      // Too granular
+audit.SetEventCategory(event, "approval")   // Too granular
+
+// ✅ CORRECT: Use service name as category
+audit.SetEventCategory(event, "orchestration")  // Service-level
+// Then use event_action to differentiate: "started", "transitioned", "approval_requested"
+```
+
+**Migration Note**: RemediationOrchestrator is the **ONLY** service using operation-level categories. This violates the service-level convention and MUST be consolidated to `"orchestration"` for V1.0 release. See [RO Event Category Migration Notice](../../handoff/NOTICE_ADR_034_V1_2_RO_EVENT_CATEGORY_MIGRATION_DEC_18_2025.md).
+
+**Cross-Reference**: DD-AUDIT-003 (Service Audit Trace Requirements) - Defines which services MUST generate audit traces.
+
+---
 
 ### 2. Event Data Format: Hybrid Approach (Common Envelope + Service-Specific Payload)
 
@@ -363,7 +447,14 @@ CREATE TABLE audit_events (
      - `actor_type: "user"`, `actor_id: "operator@example.com"` → Manual approval/rejection
      - `actor_type: "service"`, `actor_id: "remediationapprovalrequest-controller"` → Timeout expiration
 
-4. **Remediation Orchestrator Service** (6 hours)
+4. **Workflow Catalog Service** (4 hours) - **NEW**
+   - `workflow.catalog.search_completed` (actor: holmesgpt-api)
+   - **Event Data**: Includes scoring breakdown (base_similarity, label_boost, label_penalty, confidence)
+   - **Event Category**: `workflow` (new category for workflow-related operations)
+   - **Use Cases**: Debugging workflow selection, tuning workflow definitions, compliance tracking
+   - **Authority**: DD-WORKFLOW-014 (Workflow Selection Audit Trail)
+
+5. **Remediation Orchestrator Service** (6 hours)
    - `remediationorchestrator.request.created`
    - `remediationorchestrator.phase.transitioned`
    - `remediationorchestrator.approval.requested` (creates RemediationApprovalRequest)
@@ -470,6 +561,32 @@ CREATE TABLE audit_events (
 
 ---
 
+## Authoritative Subdocuments
+
+This ADR establishes the following subdocument as authoritative for specific implementation aspects:
+
+### **DD-AUDIT-004: RR Reconstruction Field Mapping** (v1.0)
+
+**Document**: [DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md](./DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md)
+
+**Authority**: This subdocument is the **authoritative reference** for RemediationRequest CRD reconstruction from audit traces. All services MUST follow these field mappings when emitting audit events.
+
+**Purpose**: Defines the explicit mapping between RR CRD fields and audit event `event_data` JSONB fields for 100% reconstruction accuracy.
+
+**Scope**:
+- 8 critical fields mapped to specific audit events
+- Service and event type for each field
+- Reconstruction algorithm and validation rules
+- Storage impact analysis
+
+**Business Requirement**: [BR-AUDIT-005 v2.0](../../requirements/11_SECURITY_ACCESS_CONTROL.md) - Enterprise-Grade Audit Integrity and Compliance
+
+**Coverage**: 100% RR reconstruction (all `.spec` fields + system-managed `.status` fields)
+
+**Implementation Reference**: All services implementing RR reconstruction audit events MUST consult this subdocument for field naming, structure, and validation requirements.
+
+---
+
 ## Related Decisions
 
 - **ADR-032**: [Data Access Layer Isolation](./ADR-032-data-access-layer-isolation.md) - Mandates Data Storage Service for all DB access
@@ -478,6 +595,7 @@ CREATE TABLE audit_events (
 - **DD-AUDIT-001**: [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) - Defines who writes audit traces (distributed pattern)
 - **DD-AUDIT-002**: [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) - Implementation details for `pkg/audit/` shared library
 - **DD-AUDIT-003**: [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) - Defines which 8 of 11 services must generate audit traces
+- **DD-WORKFLOW-014**: [Workflow Selection Audit Trail](./DD-WORKFLOW-014-workflow-selection-audit-trail.md) - Defines workflow catalog search audit events with scoring breakdown
 - **DD-007**: [Graceful Shutdown Pattern](./DD-007-kubernetes-aware-graceful-shutdown.md) - 4-step Kubernetes-aware shutdown (ensures audit flush)
 
 ---

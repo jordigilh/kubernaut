@@ -469,7 +469,7 @@ tar xvzf tkn_0.33.0_Linux_x86_64.tar.gz -C /usr/local/bin/ tkn
 ### **WorkflowExecution CRD** (User-Defined)
 
 ```yaml
-apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: WorkflowExecution
 metadata:
   name: remediate-payment-oom
@@ -538,7 +538,7 @@ metadata:
   labels:
     kubernaut.io/workflow: remediate-payment-oom
   ownerReferences:
-    - apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+    - apiVersion: kubernaut.ai/v1alpha1
       kind: WorkflowExecution
       name: remediate-payment-oom
 spec:

@@ -1,0 +1,86 @@
+version: '3.8'
+
+# WorkflowExecution Integration Test Infrastructure
+# WE-specific ports to avoid conflicts with other services
+# Reference: Each service manages its own infrastructure
+
+services:
+  # Database migration service
+  # NOTE: Commented out - migrations run manually due to goose image availability
+  # TODO: Mirror goose:3.18.0 to quay.io/jordigilh/ to avoid rate limits
+  # migrate:
+  #   image: quay.io/jordigilh/goose:3.18.0
+  #   volumes:
+  #     - ../../../migrations:/migrations:ro
+  #   environment:
+  #     - GOOSE_DRIVER=postgres
+  #     - GOOSE_DBSTRING=postgres://slm_user:test_password@postgres:5432/action_history?sslmode=disable
+  #   command: ["-dir", "/migrations", "up"]
+  #   networks:
+  #     - we-test-network
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
+  # PostgreSQL for WE integration tests
+  # Port: 15443 (WE-specific, +10 from DS baseline 15433)
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: action_history
+      POSTGRES_USER: slm_user
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "15443:5432"
+    networks:
+      - we-test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slm_user -d action_history"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis for WE integration tests
+  # Port: 16389 (WE-specific, +10 from DS baseline 16379)
+  redis:
+    image: quay.io/jordigilh/redis:7-alpine
+    ports:
+      - "16389:6379"
+    networks:
+      - we-test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Data Storage Service for WE integration tests
+  # Port: 18100 (WE-specific, +10 from DS baseline 18090)
+  datastorage:
+    build:
+      context: ../../..
+      dockerfile: docker/data-storage.Dockerfile
+    environment:
+      - CONFIG_PATH=/etc/datastorage/config.yaml
+    ports:
+      - "18100:8080"
+      - "19100:9090"  # Metrics
+    volumes:
+      - ./config:/etc/datastorage:ro
+    networks:
+      - we-test-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+networks:
+  we-test-network:
+    driver: bridge

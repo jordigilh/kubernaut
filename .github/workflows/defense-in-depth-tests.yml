@@ -102,7 +102,7 @@ jobs:
       timeout: 20
       infrastructure: kind
 
-  # Slow Lane: Notification Service (5-15 min)
+  # Medium Lane: Notification Service (~45s - envtest only, no E2E)
   integration-notification:
     name: integration (notification)
     needs: unit
@@ -115,24 +115,27 @@ jobs:
     uses: ./.github/workflows/integration-test-template.yml
     with:
       service: notification
-      timeout: 20
-      infrastructure: kind
+      timeout: 10
+      infrastructure: none
 
-  # Slow Lane: Dynamic Toolset (5-15 min)
-  integration-toolset:
-    name: integration (dynamic-toolset)
+  # Slow Lane: WorkflowExecution Service (5-15 min)
+  # Requires: EnvTest (envtest-based integration tests)
+  integration-workflowexecution:
+    name: integration (workflowexecution)
     needs: unit
-    # Smart path detection: Only run if Toolset code changed
+    # Smart path detection: Only run if WorkflowExecution code changed
     if: |
       github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/toolset/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/toolset/') ||
-      contains(github.event.pull_request.changed_files, 'test/integration/toolset/')
+      contains(github.event.pull_request.changed_files, 'internal/controller/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'api/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'test/integration/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'test/unit/workflowexecution/')
     uses: ./.github/workflows/integration-test-template.yml
     with:
-      service: toolset
+      service: workflowexecution
       timeout: 15
-      infrastructure: kind
+      infrastructure: none  # EnvTest based - no Kind needed for integration
 
   # ========================================
   # TIER 3: E2E TESTS (~30 min)
@@ -176,20 +179,22 @@ jobs:
       timeout: 30
       skip_on_draft: true
 
-  e2e-toolset:
-    name: e2e (dynamic-toolset)
-    needs: [integration-toolset]
-    # Smart path detection: Only run if Toolset code changed
+  # WorkflowExecution E2E Tests (Kind + Tekton)
+  e2e-workflowexecution:
+    name: e2e (workflowexecution)
+    needs: [integration-workflowexecution]
+    # Smart path detection: Only run if WorkflowExecution code changed
     # Skip if integration tests were skipped
     if: |
-      needs.integration-toolset.result == 'success' &&
+      needs.integration-workflowexecution.result == 'success' &&
       (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/toolset/') ||
-       contains(github.event.pull_request.changed_files, 'cmd/toolset/') ||
-       contains(github.event.pull_request.changed_files, 'test/e2e/toolset/'))
+       contains(github.event.pull_request.changed_files, 'internal/controller/workflowexecution/') ||
+       contains(github.event.pull_request.changed_files, 'cmd/workflowexecution/') ||
+       contains(github.event.pull_request.changed_files, 'api/workflowexecution/') ||
+       contains(github.event.pull_request.changed_files, 'test/e2e/workflowexecution/'))
     uses: ./.github/workflows/e2e-test-template.yml
     with:
-      service: toolset
+      service: workflowexecution
       timeout: 30
       skip_on_draft: true
 
@@ -199,7 +204,7 @@ jobs:
   defense-in-depth-summary:
     name: defense-in-depth-summary
     runs-on: ubuntu-latest
-    needs: [unit, integration-holmesgpt, integration-datastorage, integration-gateway, integration-notification, integration-toolset, e2e-datastorage, e2e-gateway, e2e-toolset]
+    needs: [unit, integration-holmesgpt, integration-datastorage, integration-gateway, integration-notification, integration-workflowexecution, e2e-datastorage, e2e-gateway, e2e-workflowexecution]
     if: always()
     steps:
       - name: Defense-in-Depth Test Summary
@@ -212,16 +217,16 @@ jobs:
           echo "  Status: ${{ needs.unit.result }}"
           echo ""
           echo "Tier 2 - Integration Tests (>50% BRs):"
-          echo "  HolmesGPT API:     ${{ needs.integration-holmesgpt.result }}"
-          echo "  Data Storage:      ${{ needs.integration-datastorage.result }}"
-          echo "  Gateway Service:   ${{ needs.integration-gateway.result }}"
-          echo "  Notification:      ${{ needs.integration-notification.result }}"
-          echo "  Dynamic Toolset:   ${{ needs.integration-toolset.result }}"
+          echo "  HolmesGPT API:       ${{ needs.integration-holmesgpt.result }}"
+          echo "  Data Storage:        ${{ needs.integration-datastorage.result }}"
+          echo "  Gateway Service:     ${{ needs.integration-gateway.result }}"
+          echo "  Notification:        ${{ needs.integration-notification.result }}"
+          echo "  WorkflowExecution:   ${{ needs.integration-workflowexecution.result }}"
           echo ""
           echo "Tier 3 - E2E Tests (10-15% BRs):"
-          echo "  Data Storage:      ${{ needs.e2e-datastorage.result }}"
-          echo "  Gateway Service:   ${{ needs.e2e-gateway.result }}"
-          echo "  Dynamic Toolset:   ${{ needs.e2e-toolset.result }}"
+          echo "  Data Storage:        ${{ needs.e2e-datastorage.result }}"
+          echo "  Gateway Service:     ${{ needs.e2e-gateway.result }}"
+          echo "  WorkflowExecution:   ${{ needs.e2e-workflowexecution.result }}"
           echo ""
           echo "Smart Path Detection: ✅ Only affected services tested"
           echo "Draft PR Skip: ✅ E2E skipped for draft PRs"
@@ -240,7 +245,7 @@ jobs:
           fi
 
           # Integration tests: Check only if they ran
-          for service in holmesgpt datastorage gateway notification toolset; do
+          for service in holmesgpt datastorage gateway notification workflowexecution; do
             result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"integration-${service}\".result")
             if [ "$result" == "failure" ]; then
               echo "❌ Integration tests failed for ${service}"
@@ -249,7 +254,7 @@ jobs:
           done
 
           # E2E tests: Check only if they ran
-          for service in datastorage gateway toolset; do
+          for service in datastorage gateway workflowexecution; do
             result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"e2e-${service}\".result")
             if [ "$result" == "failure" ]; then
               echo "❌ E2E tests failed for ${service}"

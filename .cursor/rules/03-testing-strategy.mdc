@@ -32,10 +32,31 @@ See [00-ai-assistant-methodology-enforcement.mdc](mdc:.cursor/rules/00-ai-assist
 ## Defense-in-Depth Testing Approach
 Kubernaut implements a **defense-in-depth testing strategy** with **90% overall confidence** through extensive unit test coverage and strong integration testing for microservices coordination:
 
+### Coverage Targets: BR Coverage vs Code Coverage
+
+**Business Requirement (BR) Coverage** - OVERLAPPING:
+- **Unit**: 70%+ of ALL BRs
+- **Integration**: >50% of ALL BRs
+- **E2E**: <10% BR coverage
+- **Purpose**: Ensure ALL business requirements are implemented
+
+**Code Coverage** - CUMULATIVE (~100% combined):
+- **Unit**: 70%+ code coverage (algorithms, edge cases, error handling)
+- **Integration**: 50% code coverage (cross-component flows, CRD operations)
+- **E2E**: 50% code coverage (full stack, deployment wiring, real infrastructure)
+- **Purpose**: Same CODE tested at 2+ layers to catch bugs at multiple defense points
+
+**Empirical Validation**: DataStorage and SignalProcessing services demonstrate E2E tests achieve 50%+ code coverage due to full stack execution (main.go initialization, reconciliation loop, business logic, metrics, audit integration).
+
+**Key Insight**: With 70%/50%/50% code coverage targets, **50%+ of codebase is tested in ALL 3 tiers** - ensuring bugs must slip through multiple defense layers to reach production.
+
+---
+
 ### Unit Tests (70%+ - AT LEAST 70% of ALL BRs) - **MAXIMUM COVERAGE FOUNDATION LAYER**
 **Location**: [test/unit/](mdc:test/unit/)
 **Purpose**: **EXTENSIVE business logic validation covering ALL unit-testable business requirements**
-**Coverage Mandate**: **AT LEAST 70% of total business requirements, extended to 100% of unit-testable BRs**
+**BR Coverage Mandate**: **AT LEAST 70% of total business requirements, extended to 100% of unit-testable BRs**
+**Code Coverage Target**: **70%+ of codebase** (algorithms, edge cases, error handling)
 **Confidence**: 85-90%
 **Execution**: `make test`
 **Strategy**: **Use real business logic with mocks ONLY for external dependencies - MAXIMIZE unit test coverage**
@@ -89,7 +110,8 @@ Describe("BR-WORKFLOW-001: Intelligent Workflow Generation", func() {
 ### Integration Tests (>50% - 100+ BRs) - **CROSS-SERVICE INTERACTION LAYER**
 **Location**: [test/integration/](mdc:test/integration/)
 **Purpose**: **Cross-service behavior, data flow validation, and microservices coordination**
-**Coverage Mandate**: **>50% of total business requirements due to microservices architecture**
+**BR Coverage Mandate**: **>50% of total business requirements due to microservices architecture**
+**Code Coverage Target**: **50% of codebase** (cross-component flows, CRD operations, real K8s API)
 **Confidence**: 80-85%
 **Execution**: `make test-integration-kind` (Kind cluster) or `make test-integration-kind-ci` (CI with mocked LLM)
 **Strategy**: **Focus on cross-service flows, CRD coordination, and service-to-service integration with real business logic**
@@ -116,10 +138,11 @@ Describe("BR-INTEGRATION-001: Workflow Engine Integration", func() {
 })
 ```
 
-### E2E Tests (10-15% - 20-30 BRs) - **COMPLETE BUSINESS WORKFLOW LAYER**
+### E2E Tests (<10% BR Coverage - 20-30 BRs) - **COMPLETE BUSINESS WORKFLOW LAYER**
 **Location**: [test/e2e/](mdc:test/e2e/)
 **Purpose**: **Complete end-to-end business workflow validation across all services**
-**Coverage Mandate**: **10-15% of total business requirements for critical user journeys**
+**BR Coverage Mandate**: **<10% of total business requirements (critical user journeys only)**
+**Code Coverage Target**: **50% of codebase** (full stack: main.go, reconciliation, business logic, metrics, audit)
 **Confidence**: 90-95%
 **Execution**: `make test-e2e-ocp` (OpenShift) or `make test-e2e-kind` (Kind cluster)
 **Strategy**: **Complete business scenarios with minimal mocking, focusing on critical remediation workflows**

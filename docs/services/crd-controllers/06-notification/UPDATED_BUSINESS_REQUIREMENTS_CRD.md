@@ -311,7 +311,7 @@ kubectl annotate notificationrequest test-notification \
 
 **Implementation** (UPDATED):
 ```yaml
-apiVersion: notification.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: NotificationRequest
 metadata:
   name: escalation-remediation-001-timeout
@@ -477,7 +477,7 @@ spec:
 
 **Implementation**:
 ```yaml
-apiVersion: notification.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: NotificationRequest
 metadata:
   name: escalation-remediation-001
@@ -489,8 +489,8 @@ metadata:
     controller: true
     blockOwnerDeletion: true
   annotations:
-    notification.kubernaut.ai/retention-days: "7"
-    notification.kubernaut.ai/cleanup-after: "2025-10-19T10:30:00Z"
+    kubernaut.ai/retention-days: "7"
+    kubernaut.ai/cleanup-after: "2025-10-19T10:30:00Z"
 ```
 
 **Cleanup Logic**:

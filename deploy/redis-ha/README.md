@@ -1,8 +1,28 @@
-# Redis High Availability (HA) for Gateway Service
+# ⚠️ **DEPRECATED** - Redis High Availability (HA) for Gateway Service
 
-## Overview
+**Status**: ❌ **DEPRECATED as of V1.0**
+**Date**: December 10, 2025
+**Reason**: Gateway migrated to Kubernetes-native state management (DD-GATEWAY-012)
+**Authority**: [DD-GATEWAY-011 - Shared Status Deduplication](../../docs/architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md)
 
-This directory contains Redis HA deployment with Sentinel for the Gateway Service. Redis HA ensures that deduplication and storm detection services remain available even during Redis instance failures.
+---
+
+## 🚫 **Do Not Deploy - For Historical Reference Only**
+
+**Redis is no longer used by the Gateway service.** Deduplication and state management now use RemediationRequest CRD status fields (DD-GATEWAY-011).
+
+**Current Architecture** (V1.0):
+- ✅ **Deduplication**: `status.deduplication` field in RemediationRequest CRDs
+- ✅ **State Management**: Kubernetes-native (no external dependencies)
+- ✅ **High Availability**: Kubernetes provides built-in CRD persistence and replication
+
+**See**: [NOTICE_DD_GATEWAY_012_REDIS_REMOVAL_COMPLETE.md](../../docs/handoff/NOTICE_DD_GATEWAY_012_REDIS_REMOVAL_COMPLETE.md)
+
+---
+
+## 📚 **Historical Context** (Pre-V1.0 Architecture)
+
+This directory contains Redis HA deployment with Sentinel that was used by the Gateway Service before V1.0. Redis HA ensured that deduplication and storm detection services remained available during Redis instance failures.
 
 ## Business Requirements
 

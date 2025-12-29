@@ -25,6 +25,7 @@ import (
 	"os"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -99,13 +100,55 @@ func createPrometheusWebhookPayload(payload PrometheusAlertPayload) []byte {
 	return body
 }
 
+// createPrometheusWebhookPayloadWithTimestamp creates a realistic Prometheus webhook payload with a fixed timestamp
+// Used for deterministic fingerprinting in Test 11: Fingerprint Stability
+func createPrometheusWebhookPayloadWithTimestamp(payload PrometheusAlertPayload, startsAt string) []byte {
+	// Merge required labels with custom labels
+	labels := make(map[string]interface{})
+	labels["alertname"] = payload.AlertName
+	labels["namespace"] = payload.Namespace
+	labels["severity"] = payload.Severity
+	if payload.PodName != "" {
+		labels["pod"] = payload.PodName
+	}
+	// Add custom labels
+	for k, v := range payload.Labels {
+		labels[k] = v
+	}
+
+	alert := map[string]interface{}{
+		"receiver": "kubernaut",
+		"status":   "firing",
+		"alerts": []map[string]interface{}{
+			{
+				"status":      "firing",
+				"labels":      labels,
+				"annotations": payload.Annotations,
+				"startsAt":    startsAt, // Use provided timestamp instead of time.Now()
+				"endsAt":      "0001-01-01T00:00:00Z",
+			},
+		},
+		"groupLabels": map[string]string{
+			"alertname": payload.AlertName,
+		},
+		"commonLabels":      labels,
+		"commonAnnotations": payload.Annotations,
+	}
+
+	body, _ := json.Marshal(alert)
+	return body
+}
+
 // sendWebhookRequest sends an HTTP POST request to Gateway webhook endpoint
+// with mandatory X-Timestamp header for replay attack prevention
 func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse {
-	resp, err := http.Post(
-		gatewayURL+path,
-		"application/json",
-		bytes.NewReader(body),
-	)
+	req, err := http.NewRequest("POST", gatewayURL+path, bytes.NewReader(body))
+	Expect(err).ToNot(HaveOccurred(), "HTTP request creation should succeed")
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+	resp, err := http.DefaultClient.Do(req)
 	Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 	defer resp.Body.Close()
 
@@ -125,7 +168,7 @@ func getKubernetesClient() client.Client {
 	// Load kubeconfig from standard Kind location
 	homeDir, err := os.UserHomeDir()
 	Expect(err).ToNot(HaveOccurred(), "Failed to get home directory")
-	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-e2e-config", homeDir)
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred(), "Failed to load kubeconfig")
@@ -155,7 +198,7 @@ func getKubernetesClientSafe() client.Client {
 		lastK8sClientError = fmt.Errorf("failed to get home directory: %w", err)
 		return nil
 	}
-	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
+	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-e2e-config", homeDir)
 
 	// Check if kubeconfig file exists
 	if _, err := os.Stat(kubeconfigPath); err != nil {
@@ -188,4 +231,13 @@ func getKubernetesClientSafe() client.Client {
 // GetLastK8sClientError returns the last error from getKubernetesClientSafe
 func GetLastK8sClientError() error {
 	return lastK8sClientError
+}
+
+// GenerateUniqueNamespace generates a unique namespace name for E2E tests
+// Format: <prefix>-<process-id>-<timestamp>
+// This ensures test isolation when running in parallel
+func GenerateUniqueNamespace(prefix string) string {
+	processID := GinkgoParallelProcess()
+	timestamp := time.Now().UnixNano()
+	return fmt.Sprintf("%s-%d-%d", prefix, processID, timestamp)
 }

@@ -1,16 +1,182 @@
-# ADR-032: Data Access Layer Isolation
+# ADR-032: Data Access Layer Isolation & Mandatory Audit Requirements
 
 ## Status
 **✅ APPROVED**
-**Version**: 1.2
+**Version**: 1.3
 **Decision Date**: November 2, 2025
-**Last Reviewed**: November 2, 2025
+**Last Reviewed**: December 17, 2025
 **Confidence**: 100%
 **Authority Level**: **ARCHITECTURAL** - Supersedes all related Design Decisions
 
 ---
 
+## 🚨 **MANDATORY AUDIT REQUIREMENT** (AUTHORITATIVE)
+
+**THIS SECTION IS THE AUTHORITATIVE REFERENCE FOR ALL SERVICES**
+
+### **Audit Mandate (ADR-032 §1)**
+
+**REQUIREMENT**: Audit capabilities are **MANDATORY** first-class citizens in Kubernaut, **NOT optional features**.
+
+**Services MUST create audit entries for**:
+1. ✅ **Every remediation action** taken on Kubernetes resources (WorkflowExecution)
+2. ✅ **Every AI/ML decision** made during workflow generation (AIAnalysis)
+3. ✅ **Every workflow execution** (start, progress, completion, failure) (WorkflowExecution)
+4. ✅ **Every effectiveness assessment** calculated (EffectivenessMonitor)
+5. ✅ **Every alert/signal** processed and deduplicated (SignalProcessing, Gateway)
+6. ✅ **Every notification** delivered or failed (Notification)
+7. ✅ **Every orchestration** phase transition (RemediationOrchestrator)
+
+### **Audit Completeness Requirements (ADR-032 §2)**
+
+1. **No Audit Loss**: Audit writes are **MANDATORY**, not best-effort
+   - ❌ Services MUST NOT implement "graceful degradation" that silently skips audit
+   - ❌ Services MUST NOT implement fallback/recovery mechanisms when audit client is nil
+   - ❌ Services MUST NOT continue execution if audit client is not initialized
+   - ✅ Services MUST fail immediately (return error, fail request, terminate operation) if audit store is nil
+   - ✅ Services MUST crash at startup if audit store cannot be initialized (for P0 services)
+   - ✅ Services MUST log at ERROR level when audit is unavailable
+
+   **Rationale**: If audit is unavailable, the service is **misconfigured** and should not process business operations. Continuing without audit creates compliance gaps and violates the "No Audit Loss" mandate.
+
+2. **No Recovery Allowed**: Audit failures are FATAL configuration errors
+   - ❌ Services MUST NOT catch audit initialization errors and continue
+   - ❌ Services MUST NOT implement retry loops to "wait" for audit to become available
+   - ❌ Services MUST NOT queue requests while audit is unavailable
+   - ✅ Services MUST fail fast and exit(1) if audit cannot be initialized
+   - ✅ Kubernetes will restart the pod (correct behavior - pod is misconfigured)
+
+   **Rationale**: Audit unavailability is a **deployment/configuration error**, not a transient failure. The correct response is to crash and let Kubernetes orchestration detect the misconfiguration.
+
+3. **Write Verification**: Audit write failures must be detected and handled
+   - ✅ Services MUST log audit write failures at ERROR level
+   - ✅ Services MUST emit Prometheus metrics for audit write failures
+   - ✅ Services MUST retry transient audit write failures (3 attempts, exponential backoff)
+
+3. **Retry Logic**: Transient audit write failures must be retried
+   - ✅ Services MUST use shared `pkg/audit` library (implements retry logic per ADR-038)
+   - ✅ Services MUST NOT implement custom retry logic (use ADR-038 pattern)
+
+4. **Audit Monitoring**: Missing audit records must trigger alerts
+   - ✅ Prometheus metrics MUST track audit write success/failure rates
+   - ✅ Alerts MUST fire if audit write failure rate >1% (P1 alert)
+
+5. **Compliance**: Audit data retention must meet regulatory requirements (7+ years)
+   - ✅ Data Storage Service MUST enforce retention policy
+   - ✅ Audit records MUST be immutable (append-only, no updates/deletes)
+
+### **Service Classification (ADR-032 §3)**
+
+| Service | Audit Mandatory? | Crash on Init Failure? | Graceful Degradation? | Reference |
+|---------|------------------|------------------------|----------------------|-----------|
+| **SignalProcessing** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | cmd/signalprocessing/main.go:161 |
+| **RemediationOrchestrator** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | cmd/remediationorchestrator/main.go:126 |
+| **WorkflowExecution** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | cmd/workflowexecution/main.go:170 |
+| **Notification** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | cmd/notification/main.go:163 |
+| **AIAnalysis** | ⚠️ OPTIONAL | ❌ NO (P1) | ✅ YES (by design) | cmd/aianalysis/main.go:155 |
+| **DataStorage** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | pkg/datastorage/server/server.go:186 |
+| **Gateway** | 🟡 PLANNED | 🟡 PENDING | 🟡 PENDING | DD-AUDIT-003 |
+
+**P0 Services** (Business-Critical): **MUST crash** if audit cannot be initialized
+**P1 Services** (Operational Visibility): **MAY** continue without audit (log warning)
+
+### **Enforcement (ADR-032 §4)**
+
+**Code Pattern Requirements**:
+
+✅ **CORRECT** (Mandatory Pattern):
+```go
+// Audit is MANDATORY per ADR-032 - controller will crash if not configured
+auditStore, err := audit.NewBufferedStore(...)
+if err != nil {
+    setupLog.Error(err, "FATAL: failed to create audit store - audit is MANDATORY per ADR-032")
+    os.Exit(1)  // Crash on init failure
+}
+
+// Runtime nil check - returns error if nil (prevents silent audit loss)
+func (r *Reconciler) recordAudit(ctx context.Context, event AuditEvent) error {
+    if r.AuditStore == nil {
+        err := fmt.Errorf("AuditStore is nil - audit is MANDATORY per ADR-032")
+        logger.Error(err, "CRITICAL: Cannot record audit event")
+        return err  // Return error, don't skip silently
+    }
+    return r.AuditStore.StoreAudit(ctx, event)
+}
+```
+
+❌ **WRONG** (Violates ADR-032):
+```go
+// ❌ VIOLATION #1: Graceful degradation silently skips audit
+if r.AuditStore == nil {
+    logger.V(1).Info("AuditStore not configured, skipping audit")
+    return nil  // Violates ADR-032 §1 "No Audit Loss"
+}
+
+// ❌ VIOLATION #2: Fallback/recovery mechanism
+if r.AuditStore == nil {
+    logger.Warn("Audit not available, queueing for later")
+    r.pendingAudits = append(r.pendingAudits, event)
+    return nil  // Violates ADR-032 §2 "No Recovery Allowed"
+}
+
+// ❌ VIOLATION #3: Retry loop waiting for audit
+if r.AuditStore == nil {
+    for i := 0; i < 10; i++ {
+        time.Sleep(1 * time.Second)
+        if r.AuditStore != nil {
+            break  // Violates ADR-032 §2 "No Recovery Allowed"
+        }
+    }
+}
+
+// ❌ VIOLATION #4: Conditional processing based on audit availability
+if r.AuditStore != nil {
+    // Only process request if audit is available
+    return r.processRequest(ctx, req)
+}
+// Violates ADR-032 §2 - should crash at startup, not skip processing
+return fmt.Errorf("audit unavailable")
+```
+
+**Why These Are Wrong**:
+1. **Violation #1**: Creates compliance gap - operations succeed without audit trail
+2. **Violation #2**: Queuing implies audit is optional, violates mandatory requirement
+3. **Violation #3**: Masks configuration error, delays failure detection
+4. **Violation #4**: Business logic depends on audit state (should crash at startup)
+
+**Correct Behavior**: Service MUST crash at startup if audit cannot be initialized. No fallback, no recovery, no graceful degradation.
+
+**Reference Format**: When citing this requirement in code or documentation:
+```
+Per ADR-032 §1: Audit writes are MANDATORY, not best-effort
+Per ADR-032 §2: No fallback/recovery allowed - fail fast at startup
+```
+
+---
+
 ## Changelog
+
+### Version 1.3 (December 17, 2025) - MANDATORY AUDIT SECTION ADDED
+**Changes**:
+1. **Mandatory Audit Section**: Added prominent §1-4 sections at document start (authoritative reference)
+2. **Service Classification Table**: Documented which services MUST crash vs. MAY continue without audit
+3. **Enforcement Patterns**: Added correct vs. wrong code examples for audit initialization
+4. **Reference Format**: Standardized citation format (ADR-032 §1-4)
+5. **Violation Detection**: Clear guidance for identifying ADR-032 violations
+
+**Rationale**:
+- **Discoverability**: Audit mandate was buried in line 92-112, now at document start
+- **Enforceability**: Services violating mandatory audit can now be cited with specific section (ADR-032 §1)
+- **Compliance**: Clear distinction between P0 (MUST crash) vs P1 (MAY continue) services
+- **Code Review**: Reviewers can now cite ADR-032 §4 for code pattern violations
+
+**Impact**:
+- ✅ WorkflowExecution inconsistency can now be cited as "ADR-032 §1 violation"
+- ✅ Gateway missing audit can be cited as "ADR-032 §3 non-compliance"
+- ✅ All services have clear mandate to reference in code comments
+- ✅ Triage documents can cite specific ADR-032 sections
+
+**Confidence**: 100% (based on existing ADR-032 content, now reorganized for authority)
 
 ### Version 1.2 (November 2, 2025) - AUTHENTICATION & SECURITY SECTION ADDED
 **Changes**:

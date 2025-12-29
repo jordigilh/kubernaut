@@ -1,0 +1,18 @@
+database:
+  host: notification_postgres_1
+  port: 5432
+  user: slm_user
+  name: action_history
+  sslmode: disable
+  secretsFile: /etc/datastorage/db-secrets.yaml
+  usernameKey: username
+  passwordKey: password
+
+redis:
+  addr: notification_redis_1:6379
+  secretsFile: /etc/datastorage/redis-secrets.yaml
+  passwordKey: password
+
+server:
+  port: 8080
+  metrics_port: 9090

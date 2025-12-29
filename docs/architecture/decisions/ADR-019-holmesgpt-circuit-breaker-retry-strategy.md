@@ -1,8 +1,8 @@
 # ADR-019: HolmesGPT Circuit Breaker & Retry Strategy
 
-**Status**: ✅ **APPROVED**  
-**Date**: 2025-10-17  
-**Related**: ADR-018 (Approval Notification Integration)  
+**Status**: ✅ **APPROVED**
+**Date**: 2025-10-17
+**Related**: ADR-018 (Approval Notification Integration)
 **Confidence**: 90%
 
 ---
@@ -135,7 +135,7 @@ status:
 ```go
 type AIAnalysisStatus struct {
     // ... existing fields ...
-    
+
     // HolmesGPT retry tracking
     HolmesGPTRetryAttempts    int        `json:"holmesGPTRetryAttempts,omitempty"`
     HolmesGPTLastError        string     `json:"holmesGPTLastError,omitempty"`
@@ -186,14 +186,14 @@ import (
     "context"
     "fmt"
     "time"
-    
+
     aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
     ctrl "sigs.k8s.io/controller-runtime"
 )
 
 type AIAnalysisReconciler struct {
     // ... existing fields ...
-    
+
     // Retry configuration
     HolmesGPTRetryTimeout    time.Duration
     HolmesGPTInitialDelay    time.Duration
@@ -206,12 +206,12 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
     if err := r.Get(ctx, req.NamespacedName, aiAnalysis); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
-    
+
     // Handle "investigating" phase with HolmesGPT retry
     if aiAnalysis.Status.Phase == "investigating" {
         return r.handleInvestigating(ctx, aiAnalysis)
     }
-    
+
     return ctrl.Result{}, nil
 }
 
@@ -220,13 +220,13 @@ func (r *AIAnalysisReconciler) handleInvestigating(
     aiAnalysis *aianalysisv1.AIAnalysis,
 ) (ctrl.Result, error) {
     log := ctrl.LoggerFrom(ctx)
-    
+
     // Initialize retry tracking
     if aiAnalysis.Status.HolmesGPTRetryAttempts == 0 {
         aiAnalysis.Status.HolmesGPTRetryAttempts = 1
         aiAnalysis.Status.HolmesGPTLastAttemptTime = &metav1.Time{Time: time.Now()}
     }
-    
+
     // Check timeout
     startTime := aiAnalysis.Status.StartedAt.Time
     elapsed := time.Since(startTime)
@@ -236,7 +236,7 @@ func (r *AIAnalysisReconciler) handleInvestigating(
             "duration", elapsed)
         return r.failWithManualFallback(ctx, aiAnalysis)
     }
-    
+
     // Call HolmesGPT
     result, err := r.HolmesGPTClient.AnalyzeAlert(ctx, aiAnalysis.Spec)
     if err != nil {
@@ -244,13 +244,13 @@ func (r *AIAnalysisReconciler) handleInvestigating(
         aiAnalysis.Status.HolmesGPTRetryAttempts++
         aiAnalysis.Status.HolmesGPTLastError = err.Error()
         aiAnalysis.Status.HolmesGPTLastAttemptTime = &metav1.Time{Time: time.Now()}
-        
+
         // Calculate next retry delay (exponential backoff)
         nextDelay := r.calculateBackoff(aiAnalysis.Status.HolmesGPTRetryAttempts)
         aiAnalysis.Status.HolmesGPTNextRetryTime = &metav1.Time{
             Time: time.Now().Add(nextDelay),
         }
-        
+
         // Update status message
         aiAnalysis.Status.Message = fmt.Sprintf(
             "HolmesGPT retry (attempt %d, next in %s)",
@@ -258,7 +258,7 @@ func (r *AIAnalysisReconciler) handleInvestigating(
             nextDelay,
         )
         aiAnalysis.Status.Reason = "HolmesGPTRetrying"
-        
+
         // Update condition
         r.setCondition(aiAnalysis, metav1.Condition{
             Type:   "HolmesGPTAvailable",
@@ -269,30 +269,30 @@ func (r *AIAnalysisReconciler) handleInvestigating(
                 aiAnalysis.Status.HolmesGPTRetryAttempts,
             ),
         })
-        
+
         if err := r.Status().Update(ctx, aiAnalysis); err != nil {
             return ctrl.Result{}, err
         }
-        
+
         // Requeue with backoff delay
         log.Info("HolmesGPT retry scheduled",
             "attempt", aiAnalysis.Status.HolmesGPTRetryAttempts,
             "delay", nextDelay,
             "error", err.Error())
-        
+
         return ctrl.Result{RequeueAfter: nextDelay}, nil
     }
-    
+
     // Success - proceed to next phase
     aiAnalysis.Status.Phase = "analyzing"
     aiAnalysis.Status.RootCause = result.RootCause
     aiAnalysis.Status.Confidence = result.Confidence
     // ... populate other fields ...
-    
+
     // Clear retry tracking
     aiAnalysis.Status.HolmesGPTRetryAttempts = 0
     aiAnalysis.Status.HolmesGPTLastError = ""
-    
+
     // Update condition
     r.setCondition(aiAnalysis, metav1.Condition{
         Type:    "HolmesGPTAvailable",
@@ -300,7 +300,7 @@ func (r *AIAnalysisReconciler) handleInvestigating(
         Reason:  "Success",
         Message: "HolmesGPT-API analysis successful",
     })
-    
+
     return ctrl.Result{}, r.Status().Update(ctx, aiAnalysis)
 }
 
@@ -318,10 +318,10 @@ func (r *AIAnalysisReconciler) failWithManualFallback(
     aiAnalysis *aianalysisv1.AIAnalysis,
 ) (ctrl.Result, error) {
     log := ctrl.LoggerFrom(ctx)
-    
+
     // Calculate total retry duration
     elapsed := time.Since(aiAnalysis.Status.StartedAt.Time)
-    
+
     // Update status to failed
     aiAnalysis.Status.Phase = "failed"
     aiAnalysis.Status.Message = fmt.Sprintf(
@@ -331,7 +331,7 @@ func (r *AIAnalysisReconciler) failWithManualFallback(
     )
     aiAnalysis.Status.Reason = "HolmesGPTUnavailable"
     aiAnalysis.Status.HolmesGPTTotalRetryDuration = elapsed.Round(time.Second).String()
-    
+
     // Enable manual fallback
     aiAnalysis.Status.RequiresApproval = true
     aiAnalysis.Status.ApprovalContext = &aianalysisv1.ApprovalContext{
@@ -354,7 +354,7 @@ func (r *AIAnalysisReconciler) failWithManualFallback(
         },
         WhyApprovalRequired: "AI service unavailable - fallback to manual review",
     }
-    
+
     // Update condition
     r.setCondition(aiAnalysis, metav1.Condition{
         Type:    "HolmesGPTAvailable",
@@ -366,21 +366,21 @@ func (r *AIAnalysisReconciler) failWithManualFallback(
             aiAnalysis.Status.HolmesGPTRetryAttempts,
         ),
     })
-    
+
     if err := r.Status().Update(ctx, aiAnalysis); err != nil {
         return ctrl.Result{}, err
     }
-    
+
     // Create AIApprovalRequest for manual review
     if err := r.createManualApprovalRequest(ctx, aiAnalysis); err != nil {
         log.Error(err, "Failed to create manual approval request")
         return ctrl.Result{RequeueAfter: 30 * time.Second}, err
     }
-    
+
     log.Info("HolmesGPT unavailable - manual fallback triggered",
         "attempts", aiAnalysis.Status.HolmesGPTRetryAttempts,
         "duration", elapsed)
-    
+
     return ctrl.Result{}, nil
 }
 
@@ -403,7 +403,7 @@ func (r *AIAnalysisReconciler) createManualApprovalRequest(
             Timeout:       "30m", // Extended timeout for manual analysis
         },
     }
-    
+
     return r.Create(ctx, approvalRequest)
 }
 ```
@@ -426,8 +426,8 @@ holmesgpt_manual_fallback_total
 **Example Prometheus Queries**:
 ```promql
 # HolmesGPT success rate (last 5 minutes)
-rate(holmesgpt_requests_total{status="success"}[5m]) 
-  / 
+rate(holmesgpt_requests_total{status="success"}[5m])
+  /
 rate(holmesgpt_requests_total[5m])
 
 # Average retry attempts
@@ -454,7 +454,7 @@ groups:
         annotations:
           summary: "HolmesGPT-API failure rate >50% for 5 minutes"
           description: "HolmesGPT-API may be down. Manual fallback triggered for {{ $value }} remediations."
-      
+
       - alert: HolmesGPTHighRetryRate
         expr: rate(holmesgpt_retry_attempts_total[5m]) > 5
         for: 2m
@@ -573,16 +573,89 @@ groups:
 
 ---
 
-## References
+## Circuit Breaker Applicability Matrix ⭐ V1.1 NEW
 
-1. **ADR-018**: Approval Notification Integration
-2. **AIAnalysis Implementation Plan**: `docs/services/crd-controllers/02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.0.md`
-3. **Business Requirements**: BR-AI-061 to BR-AI-065
-4. **Exponential Backoff Algorithm**: Standard Kubernetes controller pattern
+**Purpose**: Clarify when circuit breaker IS vs IS NOT needed across Kubernaut services.
+
+### Applicability Decision Tree
+
+```
+Is the dependency EXTERNAL (outside Kubernaut cluster)?
+├── YES → Circuit breaker REQUIRED
+│         (Slack API, HolmesGPT, Email SMTP, external webhooks)
+└── NO (internal) → Is the dependency rate-limited by Kubernetes?
+    ├── YES → Circuit breaker NOT NEEDED
+    │         (K8s API returns 429, controller-runtime handles backpressure)
+    └── NO → Is the call fire-and-forget (ADR-038)?
+        ├── YES → Circuit breaker NOT NEEDED
+        │         (async audit writes don't block business operations)
+        └── NO → Circuit breaker OPTIONAL
+                  (evaluate based on failure impact)
+```
+
+### Service-by-Service Matrix
+
+| Service | Primary Dependencies | External? | Circuit Breaker | Rationale |
+|---------|---------------------|-----------|-----------------|-----------|
+| **AIAnalysis Controller** | HolmesGPT API | ✅ Yes | ✅ **REQUIRED** | External AI service can overload/timeout |
+| **Notification Controller** | Slack API, Email SMTP | ✅ Yes | ✅ **REQUIRED** | External notification services |
+| **Gateway** | External webhooks | ⚠️ Varies | ⚠️ **OPTIONAL** | Depends on webhook provider reliability |
+| **Signal Processing** | K8s API, Data Storage API | ❌ No | ❌ **NOT NEEDED** | Internal services, K8s rate limits apply |
+| **Remediation Orchestrator** | K8s API (CRD creation) | ❌ No | ❌ **NOT NEEDED** | K8s handles backpressure via 429 |
+| **Remediation Execution** | K8s API (Jobs/Tekton) | ❌ No | ❌ **NOT NEEDED** | K8s handles backpressure via 429 |
+| **Data Storage** | PostgreSQL | ❌ No | ❌ **NOT NEEDED** | Connection pool handles; internal DB |
+
+### Why CRD Controllers Don't Need Circuit Breaker
+
+**For services like Signal Processing that only interact with internal dependencies**:
+
+1. **K8s API has built-in rate limiting** - 429 responses handled via controller requeue
+2. **Controller-runtime manages work queue** - Natural backpressure mechanism
+3. **Data Storage uses fire-and-forget** (ADR-038) - Audit writes don't block reconciliation
+4. **No external service to protect** - Circuit breaker protects external APIs from overload
+
+### Retry Strategy Comparison
+
+| Service Type | Retry Pattern | Backoff | Max Attempts | Timeout |
+|--------------|---------------|---------|--------------|---------|
+| **External API (HolmesGPT)** | Exponential + jitter | 5s → 30s | 12 | 5 min |
+| **External API (Slack)** | Exponential + jitter | 5s → 30s | 5 | 2.5 min |
+| **CRD Controller (internal)** | K8s requeue | 30s → 480s | 5 | ~15 min |
+
+### CRD Controller Backoff Progression (Standard)
+
+For controllers like Signal Processing that use K8s requeue:
+
+| Attempt | Backoff (base) | With Jitter (±10%) | Cumulative Time |
+|---------|----------------|---------------------|-----------------|
+| 0 (initial fail) | 30s | 27s - 33s | ~30s |
+| 1 | 60s | 54s - 66s | ~90s |
+| 2 | 120s | 108s - 132s | ~210s |
+| 3 | 240s | 216s - 264s | ~450s |
+| 4+ | 480s (capped) | 432s - 528s | ~930s (~15.5 min) |
+
+**Total retry window**: ~15 minutes before permanent failure status
+
+### Cross-References
+
+- **ADR-038**: Async Buffered Audit Ingestion (fire-and-forget pattern)
+- **DD-007**: Kubernetes-Aware Graceful Shutdown
+- **Signal Processing Plan**: Uses K8s requeue, no circuit breaker
 
 ---
 
-**Document Owner**: Platform Architecture Team  
-**Last Updated**: 2025-10-17  
+## References
+
+1. **ADR-018**: Approval Notification Integration
+2. **ADR-038**: Async Buffered Audit Ingestion (fire-and-forget audit pattern)
+3. **AIAnalysis Implementation Plan**: `docs/services/crd-controllers/02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+4. **Business Requirements**: BR-AI-061 to BR-AI-065
+5. **Exponential Backoff Algorithm**: Standard Kubernetes controller pattern
+
+---
+
+**Document Owner**: Platform Architecture Team
+**Last Updated**: 2025-11-28
+**Version**: v1.1 (Added Circuit Breaker Applicability Matrix)
 **Next Review**: After V1.0 implementation complete
 

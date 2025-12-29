@@ -25,13 +25,10 @@ import (
 	"syscall"
 	"time"
 
-	goredis "github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
-
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
 var (
@@ -48,8 +45,6 @@ func main() {
 	configPath := flag.String("config", "config/gateway.yaml", "Path to configuration file")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	listenAddr := flag.String("listen", ":8080", "HTTP server listen address")
-	redisAddr := flag.String("redis", "localhost:6379", "Redis server address")
-	redisDB := flag.Int("redis-db", 0, "Redis database number")
 	flag.Parse()
 
 	if *showVersion {
@@ -57,53 +52,28 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Initialize logger
-	logger, err := zap.NewProduction()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		os.Exit(1)
-	}
-	defer func() {
-		_ = logger.Sync()
-	}()
+	// DD-005: Initialize logger using shared logging library (logr.Logger interface)
+	logger := kubelog.NewLogger(kubelog.Options{
+		Development: false,
+		Level:       0, // INFO
+		ServiceName: "gateway",
+	})
+	defer kubelog.Sync(logger)
 
-	logger.Info("Starting Gateway Service",
-		zap.String("version", version),
-		zap.String("git_commit", gitCommit),
-		zap.String("build_date", buildDate),
-		zap.String("config_path", *configPath),
-		zap.String("listen_addr", *listenAddr),
-		zap.String("redis_addr", *redisAddr))
-
-	// Initialize Redis client (DD-CACHE-001: Shared Redis Library)
-	// Uses pkg/cache/redis for connection management with graceful degradation
-	redisClient := rediscache.NewClient(&goredis.Options{
-		Addr:         *redisAddr,
-		DB:           *redisDB,
-		DialTimeout:  5 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-		PoolSize:     10,
-		MinIdleConns: 2,
-	}, logger)
-
-	// Test Redis connection (optional - Gateway can start without Redis)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := redisClient.EnsureConnection(ctx); err != nil {
-		logger.Warn("Redis unavailable at startup, will retry on first operation",
-			zap.Error(err),
-			zap.String("redis_addr", *redisAddr))
-	} else {
-		logger.Info("Connected to Redis", zap.String("redis_addr", *redisAddr))
-	}
+	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
+	logger.Info("Starting Gateway Service (Redis-free)",
+		"version", version,
+		"git_commit", gitCommit,
+		"build_date", buildDate,
+		"config_path", *configPath,
+		"listen_addr", *listenAddr)
 
 	// Load configuration from YAML file
 	serverCfg, err := config.LoadFromFile(*configPath)
 	if err != nil {
-		logger.Fatal("Failed to load configuration",
-			zap.String("config_path", *configPath),
-			zap.Error(err))
+		logger.Error(err, "Failed to load configuration",
+			"config_path", *configPath)
+		os.Exit(1)
 	}
 
 	// Override configuration with environment variables (e.g., secrets)
@@ -113,45 +83,42 @@ func main() {
 	if *listenAddr != ":8080" {
 		serverCfg.Server.ListenAddr = *listenAddr
 	}
-	if *redisAddr != "localhost:6379" {
-		serverCfg.Infrastructure.Redis.Addr = *redisAddr
-	}
-	if *redisDB != 0 {
-		serverCfg.Infrastructure.Redis.DB = *redisDB
-	}
 
 	// Validate configuration
 	if err := serverCfg.Validate(); err != nil {
-		logger.Fatal("Invalid configuration", zap.Error(err))
+		logger.Error(err, "Invalid configuration")
+		os.Exit(1)
 	}
 
 	logger.Info("Configuration loaded successfully",
-		zap.String("listen_addr", serverCfg.Server.ListenAddr),
-		zap.String("redis_addr", serverCfg.Infrastructure.Redis.Addr),
-		zap.Int("redis_db", serverCfg.Infrastructure.Redis.DB))
+		"listen_addr", serverCfg.Server.ListenAddr,
+		"data_storage_url", serverCfg.Infrastructure.DataStorageURL)
 
 	// Create Gateway server
-	srv, err := gateway.NewServer(serverCfg, logger)
+	srv, err := gateway.NewServer(serverCfg, logger.WithName("server"))
 	if err != nil {
-		logger.Fatal("Failed to create Gateway server", zap.Error(err))
+		logger.Error(err, "Failed to create Gateway server")
+		os.Exit(1)
 	}
 
 	// Register adapters (BR-GATEWAY-001, BR-GATEWAY-002)
 	// Prometheus AlertManager webhook adapter
 	prometheusAdapter := adapters.NewPrometheusAdapter()
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
-		logger.Fatal("Failed to register Prometheus adapter", zap.Error(err))
+		logger.Error(err, "Failed to register Prometheus adapter")
+		os.Exit(1)
 	}
 
 	// Kubernetes Event webhook adapter
 	k8sEventAdapter := adapters.NewKubernetesEventAdapter()
 	if err := srv.RegisterAdapter(k8sEventAdapter); err != nil {
-		logger.Fatal("Failed to register K8s Event adapter", zap.Error(err))
+		logger.Error(err, "Failed to register K8s Event adapter")
+		os.Exit(1)
 	}
 
 	logger.Info("Registered all adapters",
-		zap.Int("adapter_count", 2),
-		zap.Strings("adapters", []string{"prometheus", "kubernetes-event"}))
+		"adapter_count", 2,
+		"adapters", []string{"prometheus", "kubernetes-event"})
 
 	// Start server in goroutine
 	errChan := make(chan error, 1)
@@ -159,7 +126,7 @@ func main() {
 	defer serverCancel()
 
 	go func() {
-		logger.Info("Gateway server starting", zap.String("address", *listenAddr))
+		logger.Info("Gateway server starting", "address", *listenAddr)
 		if err := srv.Start(serverCtx); err != nil {
 			errChan <- err
 		}
@@ -172,24 +139,21 @@ func main() {
 	// Wait for shutdown signal or server error
 	select {
 	case err := <-errChan:
-		logger.Fatal("Gateway server failed", zap.Error(err))
+		logger.Error(err, "Gateway server failed")
+		os.Exit(1)
 	case sig := <-sigChan:
-		logger.Info("Shutdown signal received", zap.String("signal", sig.String()))
+		logger.Info("Shutdown signal received", "signal", sig.String())
 	}
 
 	// Graceful shutdown with 30-second timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
+	// DD-GATEWAY-012: Redis close REMOVED - Gateway is now Redis-free
 	logger.Info("Initiating graceful shutdown...")
 	if err := srv.Stop(shutdownCtx); err != nil {
-		logger.Error("Graceful shutdown failed", zap.Error(err))
+		logger.Error(err, "Graceful shutdown failed")
 		os.Exit(1)
-	}
-
-	// Close Redis connection
-	if err := redisClient.Close(); err != nil {
-		logger.Error("Failed to close Redis connection", zap.Error(err))
 	}
 
 	logger.Info("Gateway server shutdown complete")

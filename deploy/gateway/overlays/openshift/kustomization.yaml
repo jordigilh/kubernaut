@@ -14,10 +14,6 @@ patches:
     target:
       kind: Deployment
       name: gateway
-  - path: patches/remove-redis-security-context.yaml
-    target:
-      kind: Deployment
-      name: redis-gateway
 
 # OpenShift-specific annotations
 commonAnnotations:

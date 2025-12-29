@@ -1,381 +1,304 @@
-## Overview
+# AI Analysis Service - Overview
 
-**Purpose**: HolmesGPT-powered alert investigation, root cause analysis, and remediation recommendation generation with complete enrichment context.
-
-**Core Responsibilities**:
-1. **Read complete enrichment data from RemediationProcessing** (Alternative 2 - monitoring + business + recovery contexts)
-2. Trigger HolmesGPT investigation with enriched contexts (BR-AI-011)
-3. Perform contextual AI analysis of Kubernetes state (BR-AI-001)
-4. Identify root cause candidates with supporting evidence (BR-AI-012)
-5. Generate ranked remediation recommendations (BR-AI-006, BR-AI-007)
-6. **Leverage historical failure context for recovery attempts** (BR-WF-RECOVERY-011 - Alternative 2)
-7. Validate AI responses and detect hallucinations (BR-AI-021, BR-AI-023)
-8. **V1.0 Approval Notification Support** (ADR-018): Populates rich approval context (BR-AI-059) and tracks operator approval decisions (BR-AI-060) for RemediationOrchestrator notification triggering, reducing approval miss rate from 40-60% to <5%
-9. Create WorkflowExecution CRD for approved recommendations
-
-
-**V1 Scope - HolmesGPT with Complete Enrichment**:
-- Single AI provider: HolmesGPT (port 8080)
-- **Data source**: Complete enrichment from SignalProcessing CRD (Alternative 2)
-- **No API calls during reconciliation** (all contexts in CRD spec)
-- **Fresh contexts for recovery** (monitoring + business + recovery from Context API)
-- No multi-model orchestration
-- No LLM fallback chains
-- Focus on investigation and recommendation
-
-**Future V2 Enhancements** (Out of Scope):
-- Multi-provider AI support (OpenAI, Anthropic, etc.)
-- Ensemble decision-making across models
-- Advanced provider routing and fallback
+**Version**: v2.0
+**Last Updated**: 2025-11-30
+**Status**: ✅ Design Complete (V1.0 scope)
 
 ---
 
-## 📊 Visual Architecture
+## Changelog
 
-### Architecture Diagram (Alternative 2)
+| Version | Date | Changes | Reference |
+|---------|------|---------|-----------|
+| v2.0 | 2025-11-30 | **REGENERATED**: Complete rewrite for V1.0 scope; Fixed RemediationProcessing→SignalProcessing; Added DetectedLabels/CustomLabels/OwnerChain; Removed "Approving" phase; Updated ports per DD-TEST-001 | DD-WORKFLOW-001 v1.8, DD-RECOVERY-002 |
+| v1.1 | 2025-10-20 | Added V1.0 approval notification integration | ADR-018 |
+| v1.0 | 2025-10-15 | Initial design specification | - |
+
+---
+
+## Purpose
+
+**HolmesGPT-powered AI investigation, root cause analysis, and workflow selection** from the predefined workflow catalog.
+
+**Core Responsibilities**:
+1. **Receive enrichment data from SignalProcessing** (via Remediation Orchestrator)
+2. **Call HolmesGPT-API** for investigation and workflow recommendation
+3. **Evaluate Rego approval policies** for automated vs. manual approval
+4. **Track recovery attempts** with historical context for learning
+5. **Provide structured output** for WorkflowExecution creation
+
+---
+
+## V1.0 Scope
+
+### What AIAnalysis DOES (V1.0)
+
+| Capability | Description | Reference |
+|------------|-------------|-----------|
+| **HolmesGPT Integration** | Single AI provider via HolmesGPT-API service | BR-AI-001, BR-HAPI-001 |
+| **Workflow Selection** | Select from predefined workflow catalog via MCP tool | BR-AI-075, BR-HAPI-250 |
+| **Rego Approval Policies** | Auto-approve or flag for manual review | BR-AI-028 |
+| **Recovery Flow** | Track previous execution attempts, pass failure context | BR-AI-080-083 |
+| **DetectedLabels/CustomLabels** | Pass through to HolmesGPT-API for workflow filtering | DD-WORKFLOW-001 v1.8 |
+
+### What AIAnalysis Does NOT Do (V1.0)
+
+| Excluded Capability | Reason | Deferred To |
+|---------------------|--------|-------------|
+| Multi-provider AI (OpenAI, Anthropic) | HolmesGPT-API only for V1.0 | V2.0+ |
+| Dynamic workflow generation | Predefined catalog selection only | V2.0+ |
+| Circular dependency detection (Kahn's algorithm) | Not needed for predefined workflows | V2.0+ |
+| "Approving" phase | RO handles approval notification in V1.0 | V1.1 (RemediationApprovalRequest CRD) |
+
+---
+
+## Architecture Diagram (V1.0)
+
 ```mermaid
 graph TB
     subgraph "AI Analysis Service"
-        AIA[AIAnalysis CRD<br/>+ EnrichmentData]
+        AIA[AIAnalysis CRD<br/>+ EnrichmentResults]
         Controller[AIAnalysisReconciler]
-        HolmesAPI[HolmesGPT API Client]
-        RegoEngine[Rego Policy Engine]
-        HistoricalDB[Historical Success Rate]
+        RegoEngine[Rego Policy Engine<br/>Approval Policies]
     end
 
-    subgraph "External Services"
-        HolmesGPT[HolmesGPT-API Service<br/>Port 8080]
-        AR[RemediationRequest CRD<br/>Parent]
-        Notification[Notification Service<br/>Port 8080]
+    subgraph "Upstream (SignalProcessing)"
+        SP[SignalProcessing CRD<br/>DetectedLabels + CustomLabels<br/>+ OwnerChain]
     end
 
-    subgraph "Data Sources (Alternative 2)"
-        RP[SignalProcessing CRD<br/>Enrichment Source<br/>monitoring + business + recovery]
+    subgraph "Remediation Orchestrator"
+        RO[RemediationOrchestrator<br/>Creates AIAnalysis<br/>Copies EnrichmentResults]
     end
 
-    subgraph "Child CRDs"
-        Approval[AIApprovalRequest CRD]
+    subgraph "HolmesGPT-API"
+        HAPI[HolmesGPT-API Service<br/>Port 8090]
+        MCP[MCP Tool: search_workflow_catalog]
+        DataStorage[(Data Storage<br/>Workflow Catalog)]
     end
 
-    subgraph "Policy & Data"
-        CM[ConfigMap<br/>Rego Policies]
-        VectorDB[Vector DB<br/>Similarity Search]
+    subgraph "Downstream"
+        WE[WorkflowExecution CRD<br/>Created by RO]
+        Notification[Notification Service<br/>Approval Required]
     end
 
-    AR -->|Creates & Owns<br/>+ Copies Enrichment| AIA
-    RP -->|Enrichment Data<br/>Copied to Spec| AIA
+    SP -->|"status.enrichmentResults"| RO
+    RO -->|"Creates with<br/>EnrichmentResults copy"| AIA
     Controller -->|Watches| AIA
-    Controller -->|Read Enrichment<br/>from Spec| AIA
-    Controller -->|Investigate Alert<br/>with ALL contexts| HolmesAPI
-    HolmesAPI -->|AI Analysis| HolmesGPT
-    Controller -->|Load Policy| CM
-    Controller -->|Evaluate Policy| RegoEngine
-    Controller -->|Search Similar| VectorDB
-    Controller -->|Fallback Rate| HistoricalDB
-    Controller -->|Create & Own| Approval
-    Controller -->|Watch for Approval| Approval
-    Controller -->|Escalate if Rejected| Notification
-    Controller -->|Update Status| AIA
-    AIA -->|Triggers| AR
+    Controller -->|"POST /api/v1/investigate<br/>with DetectedLabels+CustomLabels"| HAPI
+    HAPI -->|"MCP tool call"| MCP
+    MCP -->|"Query with labels"| DataStorage
+    DataStorage -->|"workflowId + containerImage"| MCP
+    MCP -->|"Selected workflow"| HAPI
+    HAPI -->|"WorkflowRecommendation<br/>+ containerImage"| Controller
+    Controller -->|"Load policy"| RegoEngine
+    Controller -->|"Update status"| AIA
+    AIA -->|"status.phase=Completed"| RO
+    RO -->|"If approved"| WE
+    RO -->|"If approvalRequired"| Notification
 
     style AIA fill:#e1f5ff
     style Controller fill:#fff4e1
-    style AR fill:#ffe1e1
-    style Approval fill:#e1ffe1
-    style RP fill:#ffe1ff
-```
-
-**Key Changes (Alternative 2)**:
-- ✅ AIAnalysis CRD contains `EnrichmentData` in spec (from RemediationProcessing)
-- ✅ Remediation Orchestrator copies enrichment from RP to AIAnalysis
-- ✅ AIAnalysis Controller reads from spec (NO API calls)
-- ✅ HolmesGPT receives ALL contexts (monitoring + business + recovery)
-
-### Sequence Diagram - Approval Workflow
-```mermaid
-sequenceDiagram
-    participant AR as RemediationRequest
-    participant AIA as AIAnalysis CRD
-    participant Ctrl as AIAnalysis<br/>Reconciler
-    participant HG as HolmesGPT-API
-    participant Rego as Rego Engine
-    participant App as AIApprovalRequest<br/>CRD
-    participant Not as Notification<br/>Service
-
-    AR->>AIA: Create AIAnalysis CRD
-    activate AIA
-    AIA-->>Ctrl: Watch triggers reconciliation
-    activate Ctrl
-
-    Note over Ctrl: Phase: Investigating
-    Ctrl->>HG: POST /api/v1/investigate<br/>(alert + context)
-    activate HG
-    HG-->>Ctrl: Return analysis + recommendations<br/>(confidence >80%)
-    deactivate HG
-
-    Note over Ctrl: Phase: Approving
-    Ctrl->>Rego: Evaluate approval policy<br/>(action, environment, confidence)
-
-    alt Auto-Approve (non-production, high confidence)
-        Rego-->>Ctrl: AUTO_APPROVE
-        Ctrl->>AIA: Status.ApprovalStatus = "Approved"
-        Note over AIA: Skip to Ready
-    else Manual Approval Required
-        Rego-->>Ctrl: MANUAL_APPROVAL_REQUIRED
-        Ctrl->>App: Create AIApprovalRequest CRD
-        Ctrl-->>App: Watch for approval decision
-
-        alt Approved by Operator
-            App->>App: Status.Decision = "Approved"
-            App-->>Ctrl: Watch triggers reconciliation
-            Ctrl->>AIA: Status.ApprovalStatus = "Approved"
-        else Rejected by Operator
-            App->>App: Status.Decision = "Rejected"
-            App-->>Ctrl: Watch triggers reconciliation
-            Ctrl->>Not: Send escalation notification
-            Ctrl->>AIA: Status.ApprovalStatus = "Rejected"
-        end
-    end
-
-    Note over Ctrl: Phase: Ready
-    Ctrl->>AIA: Status.Phase = "Ready"
-    deactivate Ctrl
-    AIA-->>AR: Status change triggers parent
-    deactivate AIA
-
-    Note over AR: Create WorkflowExecution CRD
-```
-
-### State Machine - Reconciliation Phases
-```mermaid
-stateDiagram-v2
-    [*] --> Pending
-    Pending --> Validating: Reconcile triggered
-    Validating --> Investigating: Alert data valid
-    Investigating --> Approving: HolmesGPT analysis complete
-    Approving --> Approved: Auto-approve OR manual approve
-    Approving --> Rejected: Manual rejection
-    Approved --> Ready: Workflow definition prepared
-    Rejected --> Failed: Escalation sent
-    Ready --> [*]: RemediationRequest proceeds
-    Failed --> [*]: Manual intervention required
-
-    note right of Investigating
-        HolmesGPT AI analysis
-        Generate recommendations
-        Confidence >80%
-        Timeout: 60s
-    end note
-
-    note right of Approving
-        Rego policy evaluation
-        Check: action, environment,
-        confidence, historical success
-    end note
-
-    note right of Approved
-        Create WorkflowExecution
-        definition with steps
-    end note
+    style SP fill:#ffe1ff
+    style HAPI fill:#e1ffe1
 ```
 
 ---
 
-## Owner Reference Architecture
-
-**📚 Complete Architecture**: See [Owner Reference Architecture](../../../architecture/decisions/005-owner-reference-architecture.md) for comprehensive ownership hierarchy documentation.
-
-### **AIAnalysis Ownership** (Centralized Orchestration)
-
-**Owned By**: RemediationRequest (root CRD - central orchestrator)
-**Creates**: Nothing (RemediationRequest creates next CRDs)
+## Phase Transitions (V1.0)
 
 ```
-                RemediationRequest (root - central orchestrator)
-                        │
-        ┌───────────────┼───────────────┬───────────────┬───────────────┐
-        │ (owns)        │ (owns)        │ (owns)        │ (owns)        │ (owns)
-        ▼               ▼               ▼               ▼               ▼
-  RemediationProcessing  AIAnalysis  WorkflowExecution  KubernetesExecution  AIApprovalRequest
-   (Sibling 1)     (Sibling 2)    (Sibling 3)        (Sibling 4)       (Optional)
-                       ▲
-                       │
-                  This service
+Pending → Investigating → Analyzing → Completed
+    ↓          ↓              ↓            ↓
+(initial)  (HolmesGPT)    (Rego eval)  (terminal)
 ```
 
-### **Owner Reference Implementation**
+### Phase Breakdown
 
-```go
-// AIAnalysis is created by RemediationRequest controller with owner reference
-aiAnalysis := &aianalysisv1.AIAnalysis{
-    ObjectMeta: metav1.ObjectMeta{
-        Name:      fmt.Sprintf("%s-ai", remediation.Name),
-        Namespace: remediation.Namespace,
-        OwnerReferences: []metav1.OwnerReference{
-            *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
-        },
-    },
-    Spec: aianalysisv1.AIAnalysisSpec{
-        // ... spec fields ...
-    },
-}
-```
+| Phase | Duration | Actions | Transition Criteria |
+|-------|----------|---------|---------------------|
+| **Pending** | <1s | Validation, finalizer setup | Spec valid → Investigating |
+| **Investigating** | ≤60s | Call HolmesGPT-API, receive workflow recommendation | Response received → Analyzing |
+| **Analyzing** | ≤5s | Evaluate Rego approval policies, validate workflow exists | Policy evaluated → Completed |
+| **Completed** | Terminal | Update status with selectedWorkflow, approvalRequired flag | RO watches for completion |
 
-### **AIAnalysis Controller Responsibilities**
+### V1.0 Approval Flow
 
-**What AIAnalysis Controller Does**:
-- ✅ Process AI analysis using HolmesGPT
-- ✅ Generate remediation recommendations
-- ✅ Update status.phase to "completed"
+**No "Approving" Phase in V1.0**: The AIAnalysis controller sets `status.approvalRequired = true` and immediately transitions to Completed. The Remediation Orchestrator (RO) is responsible for:
+1. Watching `AIAnalysis.status.phase == "Completed"`
+2. Checking `status.approvalRequired`
+3. If `true`: Creating notification (Slack/Console) for operators
+4. If `false`: Creating WorkflowExecution CRD
 
-**What AIAnalysis Controller Does NOT Do**:
-- ❌ Create WorkflowExecution (RemediationRequest does this)
-- ❌ Create AIApprovalRequest (RemediationRequest does this)
-- ❌ Know about other services (decoupled design)
-
-### **Cascade Deletion Behavior**
-
-- ✅ **When RemediationRequest is deleted**: AIAnalysis is automatically deleted by Kubernetes (along with all sibling CRDs)
-- ✅ **Parallel Deletion**: All service CRDs deleted simultaneously (flat hierarchy benefit)
-- ✅ **No orphaned resources**: Simple 2-level ownership ensures complete cleanup
-
-### **Key Architectural Points**
-
-1. **All Service CRDs are Siblings**
-   - RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution, AIApprovalRequest
-   - All owned by RemediationRequest (level 2)
-   - No nested ownership chains
-
-2. **Centralized Orchestration**
-   - RemediationRequest watches AIAnalysis.status.phase
-   - When "completed", RemediationRequest creates WorkflowExecution
-   - AIAnalysis controller has NO knowledge of WorkflowExecution
-
-3. **No Circular Dependencies** (Impossible with 2-Level Design)
-   - RemediationRequest → AIAnalysis → (none) ✅
-   - Maximum depth: 2 levels
-   - Simple and predictable
-
-4. **Finalizer for Cleanup**
-   - AIAnalysis controller can implement finalizer for external resource cleanup (e.g., HolmesGPT session cleanup)
-   - Finalizer runs before Kubernetes cascade deletion
-   - See [Owner Reference Architecture](../../../architecture/decisions/005-owner-reference-architecture.md) for finalizer pattern
+**V1.1 Enhancement**: `RemediationApprovalRequest` CRD will introduce explicit approval workflow.
 
 ---
 
-## Business Requirements Coverage
+## Input Contract (from SignalProcessing via RO)
 
-**AIAnalysis** implements AI-powered investigation and root cause analysis for Kubernetes alerts:
+### EnrichmentResults (Copied to AIAnalysis.spec)
 
-### V1 Scope: HolmesGPT Analysis (BR-AI-001 to BR-AI-050)
+```yaml
+spec:
+  enrichmentResults:
+    kubernetesContext:
+      namespace: "production"
+      resourceKind: "Deployment"
+      resourceName: "payment-api"
+      # ... PodDetails, NodeDetails, etc.
 
-**Range**: BR-AI-001 to BR-AI-180
-**V1 Active**: BR-AI-001 to BR-AI-050 (40+ BRs)
-**V2 Reserved**: BR-AI-051 to BR-AI-180 (multi-provider AI, ensemble decision-making)
+    # Auto-detected labels (NO CONFIG NEEDED)
+    detectedLabels:
+      gitOpsTool: "argocd"       # or "flux", "" if none
+      pdbProtected: true
+      statefulWorkload: false
+      hpaEnabled: true
+      resourceQuotaConstrained: false
 
-**V1 Business Requirements Breakdown**:
+    # Customer-defined labels (via Rego policies in SignalProcessing)
+    customLabels:
+      constraint:
+        - "cost-constrained"
+        - "stateful-safe"
+      team:
+        - "name=payments"
+      region:
+        - "name=us-west-2"
 
-#### AI Investigation & Analysis (BR-AI-001 to BR-AI-025)
-**Count**: ~25 BRs
-**Focus**: HolmesGPT-powered alert investigation, root cause identification, and contextual analysis
+    # K8s ownership chain (for DetectedLabels validation)
+    ownerChain:
+      - namespace: "production"
+        kind: "ReplicaSet"
+        name: "payment-api-7d8f9c6b5"
+      - namespace: "production"
+        kind: "Deployment"
+        name: "payment-api"
 
-**Primary Functions**:
-- Trigger HolmesGPT investigation for enriched alerts (BR-AI-011)
-- Perform contextual AI analysis of Kubernetes state (BR-AI-001)
-- Identify root cause candidates with supporting evidence (BR-AI-012)
-- AI response validation and hallucination detection (BR-AI-021, BR-AI-023)
-- Evidence collection and correlation
-- Historical pattern matching
+    # NOTE: enrichmentQuality REMOVED (Dec 2025)
+```
 
-#### Remediation Recommendations (BR-AI-026 to BR-AI-040)
-**Count**: ~15 BRs
-**Focus**: AI-generated remediation recommendations with ranking and validation
+### Recovery Attempts (for Failed Workflow Recovery)
 
-**Primary Functions**:
-- Generate ranked remediation recommendations (BR-AI-006, BR-AI-007)
-- Validate recommendation safety and feasibility
-- Risk assessment for proposed actions
-- Success probability estimation
-- Historical success rate integration
-- Recommendation prioritization
+```yaml
+spec:
+  isRecoveryAttempt: true
+  recoveryAttemptNumber: 2
+  previousExecutions:
+    - workflowId: "wf-oom-restart-v1"
+      containerImage: "ghcr.io/kubernaut/workflows/oom-restart:v1.2.0"
+      failureReason: "Pod evicted during restart - node pressure"
+      failurePhase: "execution"
+      kubernetesReason: "Evicted"
+      attemptNumber: 1
+      executedAt: "2025-11-30T10:15:00Z"
+```
 
-#### Approval & Workflow Creation (BR-AI-041 to BR-AI-050)
-**Count**: ~5 BRs
-**Focus**: Human-in-the-loop approval and WorkflowExecution CRD creation
+---
 
-**Primary Functions**:
-- Create WorkflowExecution CRD for approved recommendations
-- Handle approval workflows (auto-approval, manual approval, timeout)
-- Rego policy evaluation for approval decisions
-- Approval notification and escalation
-- Workflow status tracking
+## Output Contract (to RO)
 
-### V2 Expansion (BR-AI-051 to BR-AI-180)
+### Selected Workflow (status.selectedWorkflow)
 
-**Reserved for Future**:
-- Multi-provider AI support (OpenAI, Anthropic, Claude, etc.)
-- Ensemble decision-making across multiple AI models
-- Advanced provider routing and fallback chains
-- Model-specific optimization strategies
-- Cross-model consensus building
-- Adaptive model selection based on alert type
+```yaml
+status:
+  phase: "Completed"
+
+  selectedWorkflow:
+    workflowId: "wf-memory-increase-v2"
+    containerImage: "ghcr.io/kubernaut/workflows/memory-increase:v2.1.0"
+    parameters:
+      targetDeployment: "payment-api"
+      memoryIncrease: "512Mi"
+      namespace: "production"
+    confidence: 0.87
+    reasoning: "Historical success rate 92% for similar OOM scenarios"
+
+  # V1.0: RO handles notification, not AIAnalysis
+  approvalRequired: true
+  approvalReason: "Confidence below 80% threshold (87% < 80%)"
+
+  investigationSummary: "OOMKilled due to memory leak in payment processing"
+```
 
 ---
 
 ## Service Configuration
 
-### Port Configuration
-- **Port 9090**: Metrics endpoint
-- **Port 8080**: Health probes (follows kube-apiserver pattern)
-- **Endpoint**: `/metrics`
-- **Format**: Prometheus text format
-- **Authentication**: Sidecar-based (deployment-time configuration)
-  - **See**: [DD-GATEWAY-006](../../../architecture/decisions/DD-GATEWAY-006-authentication-strategy.md) for layered security approach
+### Ports (per [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md))
 
-### Security Architecture (per DD-GATEWAY-006)
+| Port | Purpose | Endpoint | Auth |
+|------|---------|----------|------|
+| **8081** | Health probes | `/healthz`, `/readyz` | None (K8s probes) |
+| **9090** | Prometheus metrics | `/metrics` | Network Policy |
+| **8084** | Kind host port | extraPortMappings | E2E testing only |
 
-**Layer 1: Network Isolation (MANDATORY)**
-- Kubernetes Network Policies restrict Prometheus access to metrics endpoint
-- Namespace isolation with strict ingress rules
-- Service-level TLS for traffic encryption
+### External Dependencies
 
-**Layer 2: Transport Security (MANDATORY)**
-- TLS encryption for all traffic (Service TLS or reverse proxy)
-- Certificate management via cert-manager
-- Strong TLS 1.3 cipher suites
+| Service | Port | Purpose |
+|---------|------|---------|
+| HolmesGPT-API | 8090 | AI investigation, workflow selection |
+| Data Storage | 8085 | Workflow catalog (via MCP) |
 
-**Layer 3: Application Authentication (OPTIONAL, Deployment-Specific)**
-- Sidecar containers for custom authentication (Envoy/Istio)
-- Protocol flexibility: mTLS, OAuth2, API keys, or custom protocols
-- No in-code authentication middleware
+---
 
-### ServiceAccount
-- **Name**: `ai-analysis-sa`
-- **Namespace**: `kubernaut-system`
-- **Purpose**: Controller authorization for Kubernetes API operations (CRD management, RBAC)
-- **Note**: NOT used for metrics endpoint authentication (handled by Network Policies + optional sidecar)
+## Owner Reference Architecture
 
-### Notes
-- CRD controllers do not expose REST APIs
-- Health checks (`/healthz`, `/readyz`) are for Kubernetes liveness/readiness probes
-- Metrics endpoint security via Network Policies (mandatory) + optional sidecar authentication
-- No in-code authentication middleware per DD-GATEWAY-006
+**Owned By**: RemediationRequest (via Remediation Orchestrator)
+**Creates**: Nothing (RO creates WorkflowExecution)
+
+```
+RemediationRequest (root orchestrator)
+        │
+        ├── SignalProcessing (sibling 1)
+        ├── AIAnalysis (sibling 2) ← This service
+        └── WorkflowExecution (sibling 3, created after AIAnalysis completes)
+```
+
+### Cascade Deletion
+
+- ✅ When RemediationRequest deleted → AIAnalysis auto-deleted
+- ✅ Flat hierarchy (2 levels) → Simple cleanup
+- ✅ No orphaned resources
+
+---
+
+## Business Requirements Coverage (V1.0)
+
+**Total V1.0 BRs**: 31 (see [BR_MAPPING.md](./BR_MAPPING.md))
+
+| Category | Count | Key BRs |
+|----------|-------|---------|
+| **Investigation & Analysis** | 12 | BR-AI-001 to BR-AI-023 |
+| **Workflow Selection** | 2 | BR-AI-075, BR-AI-076 |
+| **Approval Policies** | 4 | BR-AI-028 to BR-AI-030 |
+| **Recovery Flow** | 4 | BR-AI-080 to BR-AI-083 |
+| **HolmesGPT-API Integration** | 5 | BR-HAPI-250 to BR-HAPI-252 |
+| **Validation & Hallucination** | 4 | BR-AI-023 (catalog validation) |
+
+---
+
+## Related Documents
+
+| Document | Purpose |
+|----------|---------|
+| [CRD Schema](./crd-schema.md) | Type definitions, validation |
+| [Controller Implementation](./controller-implementation.md) | Reconciler logic |
+| [Reconciliation Phases](./reconciliation-phases.md) | Phase details |
+| [Rego Policy Examples](./REGO_POLICY_EXAMPLES.md) | Approval policy input schema |
+| [BR Mapping](./BR_MAPPING.md) | Business requirements |
+| [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Label schema (authoritative) |
+| [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) | Recovery flow design |
 
 ---
 
 ## Summary
 
-**Service**: AI Analysis Service
-**Package**: `pkg/ai/analysis/` (idiomatic Go, nested under existing AI ecosystem)
-**CRD**: AIAnalysis (aianalysis.kubernaut.io/v1)
-**Controller**: AIAnalysisReconciler
-**Phases**: investigating → analyzing → recommending → completed
-**Integration**: HolmesGPT-API (8080), Data Storage (8080)
-**Testing**: Fake K8s client, 70% unit / 20% integration / 10% e2e
-**Metrics**: Prometheus (investigation, analysis, recommendation metrics)
-**Audit**: Dual system (CRD 24h + Database permanent)
-
-**Migration**: 23,468 lines of existing AI code to reuse
-**Effort**: 1 week implementation
-**Priority**: P0 - HIGH (critical path for alert remediation)
-
+| Aspect | Value |
+|--------|-------|
+| **Service** | AI Analysis Controller |
+| **CRD** | `kubernaut.ai/v1alpha1` |
+| **Package** | `internal/controller/aianalysis/` |
+| **Phases** | Pending → Investigating → Analyzing → Completed |
+| **Health Port** | 8081 (`/healthz`, `/readyz`) |
+| **Metrics Port** | 9090 (`/metrics`) |
+| **Testing** | 70% unit / 20% integration / 10% E2E |
+| **Priority** | P0 - HIGH (critical path for remediation) |

@@ -28,6 +28,10 @@ supabase>=2.5,<2.8  # Compatible with postgrest 0.16.8 (HolmesGPT requirement)
 postgrest==0.16.8   # Match HolmesGPT's pin exactly
 httpx<0.28,>=0.24   # Supabase stack requires <0.28
 
+# NOTE: urllib3 version is constrained by prometrix (from HolmesGPT SDK)
+# prometrix 0.2.5 requires urllib3<2.0.0, so we cannot use urllib3 2.x
+# If OpenAPI clients need urllib3 2.x, we'll need to address this separately
+
 # HolmesGPT SDK (from local copy) - Install AFTER supabase constraint
 # Using local copy from ../dependencies/holmesgpt/ for faster installation
 ../dependencies/holmesgpt/
@@ -47,6 +51,9 @@ python-json-logger>=2.0.7
 
 # YAML configuration parsing (for mounted ConfigMap)
 PyYAML>=6.0
+
+# File system watching for ConfigMap hot-reload (DD-HAPI-004, BR-HAPI-199)
+watchdog>=3.0.0,<4.0.0
 
 # LLM Provider SDKs (optional, install based on provider used)
 # Vertex AI (Google Cloud)

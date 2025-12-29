@@ -22,15 +22,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -44,7 +43,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 		k8sClient     client.Client
@@ -52,7 +51,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "k8s-event-ingestion"))
+		testLogger = logger.WithValues("test", "k8s-event-ingestion")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		// Unique namespace for parallel execution
@@ -67,12 +66,12 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace", zap.String("namespace", testNamespace))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -122,12 +121,13 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 			var resp *http.Response
 			Eventually(func() error {
-				var err error
-				resp, err = httpClient.Post(
-					gatewayURL+"/api/v1/signals/kubernetes-event",
-					"application/json",
-					bytes.NewBuffer(payloadBytes),
-				)
+				req, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/kubernetes-event", bytes.NewBuffer(payloadBytes))
+				if err != nil {
+					return err
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				resp, err = httpClient.Do(req)
 				return err
 			}, 10*time.Second, 1*time.Second).Should(Succeed())
 			resp.Body.Close()
@@ -136,7 +136,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
 				acceptedCount++
 			}
-			testLogger.Debug(fmt.Sprintf("  Event %d for pod %s: HTTP %d", i+1, podName, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  Event %d for pod %s: HTTP %d", i+1, podName, resp.StatusCode))
 		}
 
 		// BEHAVIOR: At least some events should be accepted
@@ -154,13 +154,13 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList = &remediationv1alpha1.RemediationRequestList{}
 			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			return len(crdList.Items)
@@ -180,23 +180,18 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 			"CRD namespace should match K8s Event namespace")
 		testLogger.Info(fmt.Sprintf("  ✅ CRD namespace correct: %s", crd.Namespace))
 
-		// CORRECTNESS: CRD has affected resources populated
-		Expect(len(crd.Spec.AffectedResources)).To(BeNumerically(">=", 1),
-			"CRD should have at least 1 affected resource from K8s Event")
-		testLogger.Info(fmt.Sprintf("  ✅ CRD has %d affected resources", len(crd.Spec.AffectedResources)))
+		// CORRECTNESS: CRD has target resource populated (from involvedObject)
+		Expect(crd.Spec.TargetResource.Name).ToNot(BeEmpty(),
+			"CRD should have target resource from K8s Event")
+		testLogger.Info(fmt.Sprintf("  ✅ CRD target resource: %s/%s/%s",
+			crd.Spec.TargetResource.Namespace,
+			crd.Spec.TargetResource.Kind,
+			crd.Spec.TargetResource.Name))
 
-		// CORRECTNESS: Affected resource contains Pod reference (from involvedObject)
-		// AffectedResources is []string with format "namespace:Kind:name"
-		foundPod := false
-		for _, res := range crd.Spec.AffectedResources {
-			if strings.Contains(res, "Pod") {
-				foundPod = true
-				testLogger.Info(fmt.Sprintf("  ✅ Found Pod resource: %s", res))
-				break
-			}
-		}
-		Expect(foundPod).To(BeTrue(),
-			"CRD should contain Pod resource from K8s Event involvedObject")
+		// CORRECTNESS: Target resource matches event involvedObject (Pod)
+		Expect(crd.Spec.TargetResource.Kind).To(Equal("Pod"),
+			"Target resource should be Pod from K8s Event involvedObject")
+		testLogger.Info(fmt.Sprintf("  ✅ Target resource kind: %s", crd.Spec.TargetResource.Kind))
 
 		testLogger.Info("")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

@@ -136,8 +136,8 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 		// Business Impact: Gateway stability and availability
 		// Defense: Payload validation and rejection
 		//
-		// NOTE: SQL injection and log injection protection are tested in:
-		// - test/unit/gateway/middleware/log_sanitization_test.go (actual redaction)
+		// NOTE: SQL injection and log injection protection are handled by:
+		// - pkg/shared/sanitization library (DD-005 compliant)
 		// - Integration tests (end-to-end protection validation)
 
 		Entry("null bytes in payload → should reject",

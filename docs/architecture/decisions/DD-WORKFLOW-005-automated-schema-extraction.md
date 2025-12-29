@@ -1,43 +1,100 @@
 # DD-WORKFLOW-005: Automated Schema Extraction from Workflow Containers
 
-**Date**: 2025-11-15  
-**Status**: Analysis - High Confidence Solutions (≥90%)  
-**Related**: DD-WORKFLOW-003, DD-WORKFLOW-004
+**Date**: 2025-11-15
+**Updated**: 2025-11-28
+**Version**: 2.0
+**Status**: ✅ **Updated - Aligned with ADR-043 and DD-NAMING-001**
+**Related**: DD-WORKFLOW-003, DD-WORKFLOW-004, ADR-043, DD-NAMING-001
+
+---
+
+## Changelog
+
+### Version 2.0 (2025-11-28)
+- **BREAKING**: Updated all references per ADR-043 and DD-NAMING-001
+  - `playbook-schema.json` → `workflow-schema.yaml`
+  - `playbook` → `workflow` (terminology alignment)
+  - `/playbooks` API → `/workflows` API
+  - `PlaybookRegistration` CRD → `WorkflowRegistration` CRD
+- Added cross-references to authoritative documents
+- Updated all code examples and YAML manifests
+
+### Version 1.0 (2025-11-15)
+- Initial analysis with three solution options
+- Recommended hybrid approach (Tekton EventListener + CronJob)
+
+---
+
+## 🔗 Authoritative References
+
+| Document | Authority |
+|----------|-----------|
+| **ADR-043** | Workflow Schema Definition Standard (`/workflow-schema.yaml`) |
+| **DD-NAMING-001** | "Workflow" terminology (deprecates "Playbook") |
+| **DD-WORKFLOW-011** | Tekton OCI Bundles structure |
 
 ---
 
 ## User's Requirement
 
-> "What the platform should do when a new workflow is added is to inspect this JSON file from the image itself and populate the parameter struct in the workflow stored struct."
+> "What the platform should do when a new workflow is added is to inspect this YAML file from the image itself and populate the parameter struct in the workflow stored struct."
 
 **Translation**: Automated schema extraction pipeline that:
 1. Detects new workflow container images
-2. Extracts `/playbook-schema.json` from container
+2. Extracts `/workflow-schema.yaml` from container (per ADR-043)
 3. Populates workflow catalog automatically
 
 ---
 
-## Solution 1: Tekton EventListener + Webhook (RECOMMENDED)
+## V1.0 Approach: Direct REST API Upload
 
+**Status**: ✅ **APPROVED FOR V1.0**
+
+For V1.0, workflows are registered manually via the Data Storage REST API:
+
+```bash
+# Register workflow via REST API
+curl -X POST http://data-storage:8080/api/v1/workflows \
+  -H "Content-Type: application/json" \
+  -d @workflow-schema.json
+```
+
+This is intentionally simple. V1.1 introduces proper automation via CRD controller.
+
+---
+
+## V1.1 Approach: WorkflowRegistration CRD Controller
+
+**Target Release**: V1.1
 **Confidence: 94%** ⭐⭐
+
+See **Solution 2** below for CRD-based automation.
+
+---
+
+## Historical Analysis: Tekton EventListener + Webhook
+
+**Note**: This analysis informed V1.1 planning. Keeping for reference.
+
+**Confidence: 94%**
 
 ### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. Operator Pushes Workflow Container                       │
-│    quay.io/kubernaut/playbook-oomkill:v1.0.0                │
-│    - Contains /playbook-schema.json                         │
-│    - Contains remediation script/playbook                   │
+│    quay.io/kubernaut/workflow-oomkill:v1.0.0                │
+│    - Contains /workflow-schema.yaml (per ADR-043)           │
+│    - Contains remediation script/workflow                   │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         │ Webhook notification
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 2. Quay.io Webhook → Tekton EventListener                   │
-│    POST /webhook/playbook-registry                          │
+│    POST /webhook/workflow-registry                          │
 │    {                                                        │
-│      "repository": "kubernaut/playbook-oomkill",            │
+│      "repository": "kubernaut/workflow-oomkill",            │
 │      "tag": "v1.0.0",                                       │
 │      "digest": "sha256:abc123..."                           │
 │    }                                                        │
@@ -49,8 +106,8 @@
 │ 3. Schema Extraction Pipeline (Tekton)                      │
 │                                                             │
 │    Task 1: Pull container image                            │
-│    Task 2: Extract /playbook-schema.json                   │
-│    Task 3: Validate schema (JSON Schema validation)        │
+│    Task 2: Extract /workflow-schema.yaml                   │
+│    Task 3: Validate schema (YAML + JSON Schema validation) │
 │    Task 4: Update workflow catalog (API call)              │
 │    Task 5: Notify operators (Slack/email)                  │
 └───────────────────────┬─────────────────────────────────────┘
@@ -58,11 +115,11 @@
                         │ API call
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. Workflow Catalog Service (Mock MCP)                      │
-│    POST /playbooks                                          │
+│ 4. Workflow Catalog Service (Data Storage)                  │
+│    POST /api/v1/workflows                                   │
 │    {                                                        │
 │      "workflow_id": "oomkill-cost-optimized",               │
-│      "container_image": "quay.io/.../playbook-oomkill:v1",  │
+│      "container_image": "quay.io/.../workflow-oomkill:v1",  │
 │      "parameters": [...extracted from container...],        │
 │      "labels": {...extracted from container...}             │
 │    }                                                        │
@@ -75,7 +132,7 @@
 
 ```bash
 # Configure webhook in Quay.io repository settings
-Webhook URL: https://kubernaut.example.com/webhook/playbook-registry
+Webhook URL: https://kubernaut.example.com/webhook/workflow-registry
 Events: ["push", "tag"]
 Filter: tags matching "v*"
 ```
@@ -86,18 +143,18 @@ Filter: tags matching "v*"
 apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener
 metadata:
-  name: playbook-registry-listener
+  name: workflow-registry-listener
   namespace: kubernaut-system
 spec:
   serviceAccountName: tekton-triggers-sa
   triggers:
-    - name: playbook-push-trigger
+    - name: workflow-push-trigger
       interceptors:
         - ref:
             name: "cel"
           params:
             - name: "filter"
-              value: "body.repository.startsWith('kubernaut/playbook-')"
+              value: "body.repository.startsWith('kubernaut/workflow-')"
         - ref:
             name: "cel"
           params:
@@ -110,9 +167,9 @@ spec:
                 - key: image_digest
                   expression: "body.digest"
       bindings:
-        - ref: playbook-extraction-binding
+        - ref: workflow-extraction-binding
       template:
-        ref: playbook-extraction-template
+        - ref: workflow-extraction-template
 ```
 
 #### Step 3: Tekton Pipeline
@@ -121,7 +178,7 @@ spec:
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: playbook-schema-extraction
+  name: workflow-schema-extraction
   namespace: kubernaut-system
 spec:
   params:
@@ -130,44 +187,44 @@ spec:
     - name: image-tag
       description: "Container image tag"
     - name: catalog-api-url
-      default: "http://mock-mcp-server.kubernaut-system.svc:8081"
-  
+      default: "http://data-storage.kubernaut-system.svc:8080"
+
   tasks:
     - name: extract-schema
       taskRef:
-        name: extract-playbook-schema
+        name: extract-workflow-schema
       params:
         - name: image
           value: "$(params.image-name):$(params.image-tag)"
-    
+
     - name: validate-schema
       taskRef:
-        name: validate-json-schema
+        name: validate-yaml-schema
       params:
-        - name: schema-json
-          value: "$(tasks.extract-schema.results.schema-json)"
+        - name: schema-yaml
+          value: "$(tasks.extract-schema.results.schema-yaml)"
       runAfter:
         - extract-schema
-    
+
     - name: update-catalog
       taskRef:
-        name: update-playbook-catalog
+        name: update-workflow-catalog
       params:
         - name: catalog-api-url
           value: "$(params.catalog-api-url)"
-        - name: schema-json
-          value: "$(tasks.extract-schema.results.schema-json)"
+        - name: schema-yaml
+          value: "$(tasks.extract-schema.results.schema-yaml)"
         - name: image
           value: "$(params.image-name):$(params.image-tag)"
       runAfter:
         - validate-schema
-    
+
     - name: notify-success
       taskRef:
         name: send-notification
       params:
         - name: message
-          value: "Playbook $(tasks.extract-schema.results.playbook-id) registered successfully"
+          value: "Workflow $(tasks.extract-schema.results.workflow-id) registered successfully"
       runAfter:
         - update-catalog
 ```
@@ -183,7 +240,7 @@ spec:
   params:
     - name: image
       description: "Container image to extract schema from"
-  
+
   results:
     - name: schema-json
       description: "Extracted schema as JSON string"
@@ -191,34 +248,34 @@ spec:
       description: "Playbook ID from schema"
     - name: version
       description: "Playbook version"
-  
+
   steps:
     - name: extract
       image: gcr.io/go-containerregistry/crane:latest
       script: |
         #!/bin/sh
         set -e
-        
+
         # Export container filesystem to temp directory
         crane export $(params.image) - | tar -xf - -C /workspace
-        
+
         # Verify schema file exists
         if [ ! -f /workspace/playbook-schema.json ]; then
           echo "ERROR: /playbook-schema.json not found in container"
           exit 1
         fi
-        
+
         # Extract schema
         cat /workspace/playbook-schema.json | tee $(results.schema-json.path)
-        
+
         # Extract workflow ID and version for results
         jq -r '.workflow_id' /workspace/playbook-schema.json > $(results.playbook-id.path)
         jq -r '.version' /workspace/playbook-schema.json > $(results.version.path)
-      
+
       volumeMounts:
         - name: workspace
           mountPath: /workspace
-  
+
   volumes:
     - name: workspace
       emptyDir: {}
@@ -236,20 +293,20 @@ spec:
     - name: catalog-api-url
     - name: schema-json
     - name: image
-  
+
   steps:
     - name: update
       image: curlimages/curl:latest
       script: |
         #!/bin/sh
         set -e
-        
+
         # Parse schema
         PLAYBOOK_ID=$(echo '$(params.schema-json)' | jq -r '.workflow_id')
         VERSION=$(echo '$(params.schema-json)' | jq -r '.version')
         PARAMETERS=$(echo '$(params.schema-json)' | jq -c '.parameters')
         LABELS=$(echo '$(params.schema-json)' | jq -c '.labels // {}')
-        
+
         # Create catalog entry
         CATALOG_ENTRY=$(jq -n \
           --arg id "$PLAYBOOK_ID" \
@@ -264,14 +321,14 @@ spec:
             parameters: $params,
             labels: $labels
           }')
-        
+
         # POST to catalog API
         curl -X POST \
           -H "Content-Type: application/json" \
           -d "$CATALOG_ENTRY" \
           "$(params.catalog-api-url)/playbooks" \
           --fail-with-body
-        
+
         echo "Playbook $PLAYBOOK_ID:$VERSION registered successfully"
 ```
 
@@ -284,109 +341,144 @@ spec:
 4. **Auditable** (99%): Tekton PipelineRun history
 5. **Kubernetes-native** (99%): Uses existing Tekton infrastructure
 
-#### ⚠️ Gap to 100% (6% risk)
+#### ⚠️ V1.1+ Risks (Not Applicable to V1.0)
 
-**Risk 1: Webhook Delivery Failure** (3% risk)
+**Note**: These risks apply to the automated Tekton EventListener approach planned for V1.1+.
+V1.0 uses manual REST API upload - see "V1.0 Approach" section above.
+
+**Risk 1: Webhook Delivery Failure** (V1.1+)
 - **Problem**: Webhook might fail (network, registry downtime)
-- **Impact**: Workflow not registered automatically
-- **Mitigation**:
-  ```yaml
-  # Add retry logic in EventListener
-  interceptors:
-    - webhook:
-        objectRef:
-          kind: Service
-          name: playbook-listener
-          apiVersion: v1
-          namespace: kubernaut-system
-      params:
-        - name: retry
-          value: "3"
-        - name: backoff
-          value: "exponential"
-  ```
-- **Mitigation 2**: Periodic reconciliation job (see Solution 3)
-- **Confidence after mitigation**: 97%
+- **Mitigation**: WorkflowRegistration CRD controller provides self-healing reconciliation
 
-**Risk 2: Schema Extraction Failure** (2% risk)
+**Risk 2: Schema Extraction Failure** (V1.1+)
 - **Problem**: Container might not have schema file
-- **Impact**: Pipeline fails, operator notified
-- **Mitigation**:
-  ```yaml
-  # Add validation in pipeline
-  - name: verify-schema-exists
-    script: |
-      if [ ! -f /playbook-schema.json ]; then
-        echo "ERROR: Schema file missing. Please add /playbook-schema.json to container."
-        echo "See documentation: https://docs.kubernaut.io/playbooks/schema"
-        exit 1
-      fi
-  ```
-- **Mitigation 2**: Pre-commit hook for operators (see below)
-- **Confidence after mitigation**: 99%
+- **Mitigation**: Controller validates schema presence before registration
 
-**Risk 3: Catalog API Unavailable** (1% risk)
-- **Problem**: Catalog service down during update
-- **Impact**: Pipeline fails, retries
-- **Mitigation**:
-  ```yaml
-  # Add retry with backoff in Task
-  - name: update-with-retry
-    retries: 3
-    script: |
-      for i in 1 2 3; do
-        if curl -X POST ...; then
-          exit 0
-        fi
-        sleep $((i * 5))
-      done
-      exit 1
-  ```
-- **Confidence after mitigation**: 99.5%
+**Risk 3: Data Storage API Unavailable** (V1.1+)
+- **Problem**: Data Storage service down during registration
+- **Mitigation**: Controller retries with exponential backoff
+
+**V1.0 Gap**: Data Storage service needs to validate incoming workflow schema payloads per ADR-043.
 
 ---
 
-## Solution 2: Kubernetes Operator (CRD-Based)
+## Solution 2: WorkflowRegistration CRD Controller - V1.1 Target
 
-**Confidence: 92%** ⭐
+**Confidence: 95%** ⭐⭐
+**Target Release**: V1.1
+
+### Design Principles
+
+| Principle | Rationale |
+|-----------|-----------|
+| **Schema immutable** | Audit traces reference exact workflow that ran |
+| **Only enable/disable mutable** | Operational control without changing definition |
+| **New version = new CR** | Clean audit trail, each version independently trackable |
+| **Status contains extracted schema** | Single source of truth (container), visibility via kubectl |
+
+### CRD Structure
+
+```yaml
+apiVersion: kubernaut.io/v1alpha1
+kind: WorkflowRegistration
+metadata:
+  name: oomkill-scale-down-v1-0-0  # Includes version for uniqueness
+  namespace: kubernaut-system
+spec:
+  # IMMUTABLE - set once, cannot be changed
+  containerImage: quay.io/kubernaut/workflow-oomkill:v1.0.0
+
+  # MUTABLE - operational control only
+  enabled: true  # Toggle to disable/enable workflow
+
+status:
+  phase: Ready  # Pending → Extracting → Validating → Ready / Disabled / Failed
+
+  # EXTRACTED from container's /workflow-schema.yaml
+  extractedSchema:
+    metadata:
+      workflow_id: oomkill-scale-down
+      version: "1.0.0"
+      description: Scale down deployment to reduce memory pressure
+    labels:
+      signal_type: OOMKilled
+      severity: critical
+      risk_tolerance: low
+    parameters:
+      - name: TARGET_RESOURCE_KIND
+        type: string
+        required: true
+        enum: [Deployment, StatefulSet]
+      - name: TARGET_RESOURCE_NAME
+        type: string
+        required: true
+
+  # Audit trail
+  extractedAt: "2025-11-28T10:00:00Z"
+  registeredAt: "2025-11-28T10:00:05Z"
+  containerDigest: "sha256:abc123..."
+```
+
+### Field Mutability
+
+| Field | Mutable | Notes |
+|-------|---------|-------|
+| `spec.containerImage` | ❌ No | Immutable - new version = new CR |
+| `spec.enabled` | ✅ Yes | Operational toggle only |
+| `status.*` | ✅ Yes | Controller-managed |
 
 ### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. Operator Creates PlaybookRegistration CRD                │
-│    kubectl apply -f -                                       │
-│    apiVersion: kubernaut.io/v1alpha1                        │
-│    kind: PlaybookRegistration                               │
-│    metadata:                                                │
-│      name: oomkill-cost-optimized                           │
+│ 1. Operator applies WorkflowRegistration                    │
 │    spec:                                                    │
-│      containerImage: quay.io/.../playbook-oomkill:v1.0.0    │
+│      containerImage: quay.io/.../workflow-oomkill:v1.0.0    │
+│      enabled: true                                          │
 └───────────────────────┬─────────────────────────────────────┘
                         │
-                        │ Watch event
+                        │ Watch event (Create)
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. Workflow Operator (Controller)                           │
-│    - Watches PlaybookRegistration CRs                       │
-│    - Pulls container image                                  │
-│    - Extracts /playbook-schema.json                         │
-│    - Validates schema                                       │
-│    - Updates catalog                                        │
-│    - Updates CR status                                      │
+│ 2. Controller: Extract Schema                               │
+│    - Pull container image (crane)                           │
+│    - Extract /workflow-schema.yaml (per ADR-043)            │
+│    - Validate schema                                        │
+│    - Store in status.extractedSchema                        │
 └───────────────────────┬─────────────────────────────────────┘
                         │
-                        │ Updates
+                        │ Register
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. PlaybookRegistration Status                              │
-│    status:                                                  │
-│      phase: "Ready"                                         │
-│      playbookId: "oomkill-cost-optimized"                   │
-│      version: "1.0.0"                                       │
-│      catalogRegistered: true                                │
-│      lastUpdated: "2025-11-15T10:00:00Z"                    │
+│ 3. Controller: Register with Data Storage                   │
+│    POST /api/v1/workflows                                   │
+│    - Send extracted schema                                  │
+│    - Update status.phase = Ready                            │
 └─────────────────────────────────────────────────────────────┘
+```
+
+### Controller Reconciliation
+
+| Event | Controller Action |
+|-------|-------------------|
+| **Create CR** | Extract schema → Register → status.phase = Ready |
+| **`enabled: false`** | Update Data Storage: workflow disabled |
+| **`enabled: true`** | Update Data Storage: workflow enabled |
+| **`containerImage` change** | ❌ Rejected by webhook (immutable) |
+| **Delete CR** | Deregister from Data Storage catalog |
+
+### Audit Trace Integrity
+
+```
+Remediation Event #12345
+├── Signal: OOMKilled in prod/my-app
+├── Workflow: oomkill-scale-down v1.0.0
+├── Parameters: {TARGET_REPLICAS: 2}
+└── Outcome: Success
+
+# Audit query 6 months later:
+kubectl get workflowregistration oomkill-scale-down-v1-0-0 -o yaml
+→ Guaranteed: same schema as execution time (immutable)
 ```
 
 ### Implementation
@@ -397,15 +489,15 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: playbookregistrations.kubernaut.io
+  name: workflowregistrations.kubernaut.io
 spec:
   group: kubernaut.io
   names:
-    kind: PlaybookRegistration
-    plural: playbookregistrations
-    singular: playbookregistration
+    kind: WorkflowRegistration
+    plural: workflowregistrations
+    singular: workflowregistration
     shortNames:
-      - pbr
+      - wfr
   scope: Namespaced
   versions:
     - name: v1alpha1
@@ -422,118 +514,163 @@ spec:
               properties:
                 containerImage:
                   type: string
-                  description: "Full container image reference"
-                autoUpdate:
+                  description: "OCI bundle reference (IMMUTABLE after creation)"
+                  x-kubernetes-validations:
+                    - rule: "self == oldSelf"
+                      message: "containerImage is immutable"
+                enabled:
                   type: boolean
                   default: true
-                  description: "Automatically update on image changes"
+                  description: "Enable/disable workflow (MUTABLE)"
             status:
               type: object
               properties:
                 phase:
                   type: string
-                  enum: ["Pending", "Extracting", "Validating", "Ready", "Failed"]
-                playbookId:
-                  type: string
-                version:
-                  type: string
-                catalogRegistered:
-                  type: boolean
-                lastUpdated:
+                  enum: ["Pending", "Extracting", "Validating", "Ready", "Disabled", "Failed"]
+                extractedSchema:
+                  type: object
+                  description: "Schema extracted from container's /workflow-schema.yaml"
+                  x-kubernetes-preserve-unknown-fields: true
+                extractedAt:
                   type: string
                   format: date-time
+                registeredAt:
+                  type: string
+                  format: date-time
+                containerDigest:
+                  type: string
+                  description: "SHA256 digest of container image"
                 message:
                   type: string
 ```
 
-#### Operator Controller (Go)
+#### Controller Implementation (Go)
 
 ```go
 package controller
 
 import (
     "context"
-    "encoding/json"
-    
+    "time"
+
     "github.com/google/go-containerregistry/pkg/crane"
-    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/v1alpha1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
+    "gopkg.in/yaml.v3"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type PlaybookRegistrationReconciler struct {
+type WorkflowRegistrationReconciler struct {
     client.Client
-    CatalogAPIURL string
+    DataStorageURL string
 }
 
-func (r *PlaybookRegistrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    var pbr kubernautv1alpha1.PlaybookRegistration
-    if err := r.Get(ctx, req.NamespacedName, &pbr); err != nil {
+func (r *WorkflowRegistrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    var wfr kubernautv1alpha1.WorkflowRegistration
+    if err := r.Get(ctx, req.NamespacedName, &wfr); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
-    
-    // Update status to Extracting
-    pbr.Status.Phase = "Extracting"
-    r.Status().Update(ctx, &pbr)
-    
-    // Extract schema from container
-    schema, err := r.extractSchema(pbr.Spec.ContainerImage)
+
+    // Handle enable/disable toggle (only mutable operation)
+    if wfr.Status.Phase == "Ready" || wfr.Status.Phase == "Disabled" {
+        return r.reconcileEnabledState(ctx, &wfr)
+    }
+
+    // First-time registration (schema extraction)
+    return r.reconcileNewRegistration(ctx, &wfr)
+}
+
+func (r *WorkflowRegistrationReconciler) reconcileNewRegistration(
+    ctx context.Context,
+    wfr *kubernautv1alpha1.WorkflowRegistration,
+) (ctrl.Result, error) {
+    // Phase 1: Extract schema from container
+    wfr.Status.Phase = "Extracting"
+    r.Status().Update(ctx, wfr)
+
+    schema, digest, err := r.extractSchema(wfr.Spec.ContainerImage)
     if err != nil {
-        pbr.Status.Phase = "Failed"
-        pbr.Status.Message = err.Error()
-        r.Status().Update(ctx, &pbr)
+        wfr.Status.Phase = "Failed"
+        wfr.Status.Message = err.Error()
+        r.Status().Update(ctx, wfr)
         return ctrl.Result{}, err
     }
-    
-    // Validate schema
-    pbr.Status.Phase = "Validating"
-    r.Status().Update(ctx, &pbr)
-    
+
+    // Phase 2: Validate schema per ADR-043
+    wfr.Status.Phase = "Validating"
+    r.Status().Update(ctx, wfr)
+
     if err := r.validateSchema(schema); err != nil {
-        pbr.Status.Phase = "Failed"
-        pbr.Status.Message = err.Error()
-        r.Status().Update(ctx, &pbr)
+        wfr.Status.Phase = "Failed"
+        wfr.Status.Message = err.Error()
+        r.Status().Update(ctx, wfr)
         return ctrl.Result{}, err
     }
-    
-    // Update catalog
-    if err := r.updateCatalog(schema, pbr.Spec.ContainerImage); err != nil {
-        pbr.Status.Phase = "Failed"
-        pbr.Status.Message = err.Error()
-        r.Status().Update(ctx, &pbr)
+
+    // Phase 3: Register with Data Storage
+    if err := r.registerWorkflow(ctx, schema, wfr.Spec.ContainerImage); err != nil {
+        wfr.Status.Phase = "Failed"
+        wfr.Status.Message = err.Error()
+        r.Status().Update(ctx, wfr)
         return ctrl.Result{}, err
     }
-    
-    // Update status to Ready
-    pbr.Status.Phase = "Ready"
-    pbr.Status.PlaybookId = schema.PlaybookID
-    pbr.Status.Version = schema.Version
-    pbr.Status.CatalogRegistered = true
-    pbr.Status.LastUpdated = metav1.Now()
-    r.Status().Update(ctx, &pbr)
-    
+
+    // Phase 4: Update status with extracted schema (for visibility)
+    now := metav1.Now()
+    wfr.Status.Phase = "Ready"
+    wfr.Status.ExtractedSchema = schema  // User can see via kubectl
+    wfr.Status.ExtractedAt = &now
+    wfr.Status.RegisteredAt = &now
+    wfr.Status.ContainerDigest = digest
+    wfr.Status.Message = ""
+    r.Status().Update(ctx, wfr)
+
     return ctrl.Result{}, nil
 }
 
-func (r *PlaybookRegistrationReconciler) extractSchema(image string) (*PlaybookSchema, error) {
-    // Export container filesystem
-    img, err := crane.Pull(image)
+func (r *WorkflowRegistrationReconciler) reconcileEnabledState(
+    ctx context.Context,
+    wfr *kubernautv1alpha1.WorkflowRegistration,
+) (ctrl.Result, error) {
+    // Only operation: toggle enabled/disabled
+    desiredPhase := "Ready"
+    if !wfr.Spec.Enabled {
+        desiredPhase = "Disabled"
+    }
+
+    if wfr.Status.Phase != desiredPhase {
+        // Update Data Storage with enabled state
+        if err := r.updateWorkflowEnabled(ctx, wfr); err != nil {
+            return ctrl.Result{}, err
+        }
+        wfr.Status.Phase = desiredPhase
+        r.Status().Update(ctx, wfr)
+    }
+
+    return ctrl.Result{}, nil
+}
+
+func (r *WorkflowRegistrationReconciler) extractSchema(image string) (*WorkflowSchema, string, error) {
+    // Get container digest for audit trail
+    digest, err := crane.Digest(image)
     if err != nil {
-        return nil, err
+        return nil, "", fmt.Errorf("failed to get digest: %w", err)
     }
-    
-    fs := mutate.Extract(img)
-    schemaFile, err := fs.Open("/playbook-schema.json")
+
+    // Extract /workflow-schema.yaml per ADR-043
+    schemaBytes, err := crane.FileContent(image, "/workflow-schema.yaml")
     if err != nil {
-        return nil, fmt.Errorf("schema file not found: %w", err)
+        return nil, "", fmt.Errorf("schema file not found (expected /workflow-schema.yaml per ADR-043): %w", err)
     }
-    defer schemaFile.Close()
-    
-    var schema PlaybookSchema
-    if err := json.NewDecoder(schemaFile).Decode(&schema); err != nil {
-        return nil, err
+
+    var schema WorkflowSchema
+    if err := yaml.Unmarshal(schemaBytes, &schema); err != nil {
+        return nil, "", fmt.Errorf("invalid schema YAML: %w", err)
     }
-    
-    return &schema, nil
+
+    return &schema, digest, nil
 }
 ```
 
@@ -701,154 +838,87 @@ spec:
 
 ---
 
+## Release Strategy
+
+### Product Context
+
+| Release | Purpose | Scope |
+|---------|---------|-------|
+| **V1.0** | PoC / Demo | Get early feedback before completing gaps |
+| **V1.1** | Production-Ready | Address feedback, complete automation |
+
+**Rationale**: Shipping V1.0 early enables feedback that may change V1.1 priorities and requirements. Over-engineering V1.0 risks wasted effort.
+
+---
+
 ## Comparison Matrix
 
-| Solution | Confidence | Real-time | Complexity | Kubernetes-Native | Recommended |
-|----------|-----------|-----------|------------|-------------------|-------------|
-| **Tekton EventListener** | **94%** | ✅ Yes | Medium | ✅ Yes | ⭐⭐ **PRIMARY** |
-| **Kubernetes Operator** | 92% | ✅ Yes | High | ✅ Yes | ⭐ **SECONDARY** |
-| **Periodic CronJob** | 90% | ❌ No (5min delay) | Low | ✅ Yes | **BACKUP** |
+| Version | Approach | Complexity | Status |
+|---------|----------|------------|--------|
+| **V1.0** | Direct REST API | ✅ Minimal | **APPROVED** |
+| **V1.1** | WorkflowRegistration CRD | Medium | **PLANNED** |
 
 ---
 
-## RECOMMENDED: Hybrid Approach (96% Confidence)
+## APPROVED: Phased Approach
 
-### Combine Solutions 1 + 3
+### V1.0: Manual REST API Registration
 
-**Architecture**:
-```
-Primary: Tekton EventListener (real-time, 94% confidence)
-   ↓
-Backup: Periodic CronJob (recovery, 90% confidence)
-   ↓
-Result: 96% confidence (primary handles 99% of cases, backup catches edge cases)
+```bash
+curl -X POST http://data-storage:8080/api/v1/workflows -d @workflow.json
 ```
 
-**Benefits**:
-- ✅ Real-time registration (webhook)
-- ✅ Self-healing (CronJob recovers from missed webhooks)
-- ✅ Simple (both solutions are straightforward)
-- ✅ Kubernetes-native (Tekton + CronJob)
+✅ Simple, works for demos, no automation overhead.
 
-**Implementation**:
-1. Deploy Tekton EventListener for real-time extraction
-2. Deploy CronJob (every 30 minutes) for reconciliation
-3. CronJob only processes images not in catalog (efficient)
+### V1.1: WorkflowRegistration CRD Controller
+
+Automates registration via Kubernetes-native CRD controller (see Solution 2 above).
+
+**V1.1 scope will be informed by V1.0 feedback.**
 
 ---
 
-## Mitigation Summary
+## V1.1 Enhancements (Deferred)
 
-### To Reach 98% Confidence
+The following enhancements are deferred to V1.1, pending V1.0 feedback:
 
-**1. Add Pre-Commit Hook for Operators** (Validates schema before push)
+### Schema Validation (V1.1)
+
 ```bash
 #!/bin/bash
-# .git/hooks/pre-commit for workflow repos
+# Pre-commit hook for workflow repos
+if [ -f workflow-schema.yaml ]; then
+    # Validate schema format per ADR-043
+    yq eval workflow-schema.yaml > /dev/null || exit 1
 
-if [ -f playbook-schema.json ]; then
-    # Validate schema format
-    jsonschema -i playbook-schema.json schema-definition.json
-    
     # Ensure schema is in Dockerfile
-    if ! grep -q "COPY playbook-schema.json /playbook-schema.json" Dockerfile; then
-        echo "ERROR: Dockerfile must COPY playbook-schema.json"
-        exit 1
-    fi
-else
-    echo "ERROR: playbook-schema.json is required"
-    exit 1
+    grep -q "COPY workflow-schema.yaml /workflow-schema.yaml" Dockerfile || exit 1
 fi
 ```
 
-**2. Add Schema Validation Service**
-```yaml
-# Dedicated validation service
-apiVersion: v1
-kind: Service
-metadata:
-  name: playbook-schema-validator
-spec:
-  ports:
-    - port: 8080
-  selector:
-    app: schema-validator
----
-# POST /validate endpoint
-# Returns: validation errors or success
-```
+### WorkflowRegistration CRD Controller (V1.1)
 
-**3. Add Monitoring & Alerting**
-```yaml
-# Prometheus alerts
-- alert: PlaybookRegistrationFailed
-  expr: tekton_pipelinerun_failed{pipeline="playbook-schema-extraction"} > 0
-  annotations:
-    summary: "Playbook registration failed"
-    
-- alert: SchemaExtractionLatency
-  expr: histogram_quantile(0.95, tekton_pipelinerun_duration_seconds) > 60
-  annotations:
-    summary: "Schema extraction taking >60s"
-```
-
-**4. Add Documentation & Examples**
-```
-docs/playbooks/
-├── schema-specification.md
-├── example-playbook/
-│   ├── Dockerfile
-│   ├── playbook-schema.json
-│   └── remediate.sh
-└── troubleshooting.md
-```
-
-### To Reach 99% Confidence
-
-**5. Add Integration Tests**
-```go
-func TestSchemaExtraction(t *testing.T) {
-    // Build test container with schema
-    // Push to test registry
-    // Trigger webhook
-    // Verify catalog updated
-    // Verify schema matches
-}
-```
-
-**6. Add Rollback Mechanism**
-```yaml
-# If schema extraction fails, rollback catalog
-- name: rollback-on-failure
-  when:
-    - input: $(tasks.update-catalog.status)
-      operator: in
-      values: ["Failed"]
-  taskRef:
-    name: rollback-catalog-update
-```
+See Solution 2 above for full implementation details.
 
 ---
 
 ## Final Recommendation
 
-### Primary: Tekton EventListener (94% → 98% with mitigations)
+### V1.0: Direct REST API (APPROVED)
 
-**Implementation Steps**:
-1. **Week 1**: Deploy Tekton EventListener + Pipeline
-2. **Week 2**: Configure Quay.io webhooks
-3. **Week 3**: Add validation and monitoring
-4. **Week 4**: Deploy CronJob backup reconciliation
+**Approach**: Manual workflow registration via Data Storage REST API
+**Effort**: Minimal
+**Purpose**: Enable early demos and feedback collection
 
-**Confidence**: 98% (with all mitigations)  
-**Risk**: Very Low  
-**Effort**: Medium (2-4 weeks)  
-**Maintenance**: Low (Tekton handles complexity)
+### V1.1: WorkflowRegistration CRD Controller (PLANNED)
+
+**Approach**: Kubernetes-native CRD controller for automated registration
+**Effort**: Medium (1-2 weeks)
+**Purpose**: Production-ready automation based on V1.0 feedback
 
 ---
 
-**Status**: Analysis Complete - High Confidence Solutions Provided  
-**Recommended**: Hybrid (Tekton EventListener + CronJob Backup)  
-**Confidence**: 96% → 98% with mitigations  
-**Risk**: Very Low  
-**Industry Alignment**: 99% (Tekton is CNCF standard)
+**Status**: ✅ Approved (V1.0 approach)
+**V1.0**: Direct REST API registration
+**V1.1**: WorkflowRegistration CRD controller (scope informed by V1.0 feedback)
+**Authority**: ADR-043 defines schema format (`/workflow-schema.yaml`)

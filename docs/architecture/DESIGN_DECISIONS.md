@@ -77,18 +77,32 @@
 | DD-GATEWAY-005 | Redis Cleanup on CRD Deletion | ✅ Approved | 2025-10-27 | [DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md](decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md) |
 | DD-GATEWAY-006 | Authentication Strategy | ✅ Approved | 2025-10-27 | [DD-GATEWAY-006-authentication-strategy.md](decisions/DD-GATEWAY-006-authentication-strategy.md) |
 | DD-GATEWAY-007 | Fallback Namespace Strategy | ✅ Approved | 2025-10-31 | [DD-GATEWAY-007-fallback-namespace-strategy.md](decisions/DD-GATEWAY-007-fallback-namespace-strategy.md) |
-| DD-GATEWAY-008 | Storm Aggregation First-Alert Handling (Alternative 2: Buffered Aggregation) | ✅ Approved | 2025-11-17 | [DD-GATEWAY-008-storm-aggregation-first-alert-handling.md](decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) |
+| DD-GATEWAY-008 | Storm Aggregation First-Alert Handling (Alternative 2: Buffered Aggregation) | ❌ Superseded | 2025-12-13 | [DD-GATEWAY-008-storm-aggregation-first-alert-handling.md](decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) |
 | DD-GATEWAY-009 | State-Based Deduplication Strategy (Alternative 3: Hybrid Redis Cache + CRD State) | ⏸️ Parked | 2025-11-17 | [DD-GATEWAY-009-state-based-deduplication.md](decisions/DD-GATEWAY-009-state-based-deduplication.md) |
 | DD-GATEWAY-010 | Adapter Naming Convention (SignalSource vs SignalType) | ✅ Approved | 2025-11-21 | [DD-GATEWAY-010-adapter-naming-convention.md](decisions/DD-GATEWAY-010-adapter-naming-convention.md) |
+| DD-GATEWAY-012 | Redis-free Storm Detection | ❌ Superseded | 2025-12-13 | Referenced in code but never formally documented; superseded by DD-GATEWAY-015 |
+| DD-GATEWAY-014 | Service-Level Circuit Breaker Deferral | ⏸️ Deferred | 2025-12-13 | [DD-GATEWAY-014-circuit-breaker-deferral.md](decisions/DD-GATEWAY-014-circuit-breaker-deferral.md) |
+| DD-GATEWAY-015 | Storm Detection Logic Removal | ✅ Implemented | 2025-12-13 | [DD-GATEWAY-015-storm-detection-removal.md](decisions/DD-GATEWAY-015-storm-detection-removal.md) |
 | DD-HOLMESGPT-005 | Test Strategy Validation | ✅ Validated | [Date] | [DD-HOLMESGPT-005-Test-Strategy-Validation.md](decisions/DD-HOLMESGPT-005-Test-Strategy-Validation.md) |
 | DD-HOLMESGPT-006 | Implementation Plan Quality Gate | ✅ Approved | [Date] | [DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md](decisions/DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md) |
 | DD-HOLMESGPT-007 | Service Boundaries Clarification | ✅ Approved | [Date] | [DD-HOLMESGPT-007-Service-Boundaries-Clarification.md](decisions/DD-HOLMESGPT-007-Service-Boundaries-Clarification.md) |
 | DD-HOLMESGPT-008 | Safety-Aware Investigation | ✅ Approved | [Date] | [DD-HOLMESGPT-008-Safety-Aware-Investigation.md](decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md) |
 | DD-HOLMESGPT-013 | Vendor Local SDK Copy | ✅ Approved | [Date] | [DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md](decisions/DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md) |
 | DD-HOLMESGPT-014 | MinimalDAL Stateless Architecture | ✅ Approved | [Date] | [DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md](decisions/DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md) |
+| DD-HAPI-001 | Custom Labels Auto-Append Architecture | ✅ Approved | 2025-11-30 | [DD-HAPI-001-custom-labels-auto-append.md](decisions/DD-HAPI-001-custom-labels-auto-append.md) |
+| DD-HAPI-002 | Workflow Parameter Validation Architecture | ✅ Approved | 2025-12-01 | [DD-HAPI-002-workflow-parameter-validation.md](decisions/DD-HAPI-002-workflow-parameter-validation.md) |
+| DD-HAPI-003 | Mandatory OpenAPI Client Usage | ✅ Approved | 2025-12-29 | [DD-HAPI-003-mandatory-openapi-client-usage.md](decisions/DD-HAPI-003-mandatory-openapi-client-usage.md) |
 | DD-EMBEDDING-001 | Embedding Service as MCP Playbook Catalog Server (Python Microservice) | ✅ Approved | 2025-11-14 | [DD-EMBEDDING-001-embedding-service-implementation.md](decisions/DD-EMBEDDING-001-embedding-service-implementation.md) |
 | DD-PLAYBOOK-001 | Mandatory Playbook Label Schema (7 Labels) | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-001-mandatory-label-schema.md](decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) |
 | DD-PLAYBOOK-002 | MCP Playbook Catalog Architecture | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md](decisions/DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md) |
+| DD-INFRA-001 | ConfigMap Hot-Reload Pattern (Shared Infrastructure) | ✅ Approved | 2025-12-06 | [DD-INFRA-001-configmap-hotreload-pattern.md](decisions/DD-INFRA-001-configmap-hotreload-pattern.md) |
+| DD-WE-001 | Resource Locking Safety (Prevent Parallel Workflows) | ✅ Approved | 2025-12-01 | [DD-WE-001-resource-locking-safety.md](decisions/DD-WE-001-resource-locking-safety.md) |
+| DD-WE-002 | Dedicated Execution Namespace | ✅ Approved | 2025-12-01 | [DD-WE-002-dedicated-execution-namespace.md](decisions/DD-WE-002-dedicated-execution-namespace.md) |
+| DD-WE-003 | Resource Lock Persistence (Deterministic PipelineRun Name) | ✅ Approved | 2025-12-01 | [DD-WE-003-resource-lock-persistence.md](decisions/DD-WE-003-resource-lock-persistence.md) |
+| DD-WE-004 | Exponential Backoff Cooldown | ✅ Approved | 2025-12-06 | [DD-WE-004-exponential-backoff-cooldown.md](decisions/DD-WE-004-exponential-backoff-cooldown.md) |
+| DD-PROD-001 | Production Readiness Checklist Standard | ✅ Approved | 2025-12-07 | [DD-PROD-001-production-readiness-checklist-standard.md](decisions/DD-PROD-001-production-readiness-checklist-standard.md) |
+| DD-LLM-003 | Mock-First Development Strategy for LLM Integration | ✅ Approved | 2025-12-11 | [DD-LLM-003-mock-first-development-strategy.md](decisions/DD-LLM-003-mock-first-development-strategy.md) |
+| DD-AIANALYSIS-004 | Storm Context NOT Exposed to LLM | ✅ Approved | 2025-12-13 | [DD-AIANALYSIS-004-storm-context-not-exposed.md](decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
@@ -115,5 +129,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: November 11, 2025
+**Last Updated**: December 13, 2025
 **Maintained By**: Kubernaut Architecture Team

@@ -1,5 +1,13 @@
 ## Observability & Logging
 
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added label detection logging patterns (OwnerChain, DetectedLabels, CustomLabels) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.2 | 2025-11-28 | API imports fixed (kubernaut.io/v1alpha1), terminology updated | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
+> | v1.1 | 2025-11-27 | Service rename: SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.0 | 2025-01-15 | Initial observability configuration | - |
+
 ### Structured Logging Patterns
 
 **Log Levels**:
@@ -11,6 +19,69 @@
 | **INFO** | Normal operations, state transitions | Phase transitions, enrichment completion |
 | **DEBUG** | Detailed flow for troubleshooting | Kubernetes API queries, enrichment logic details |
 
+### Label Detection Logging Patterns (DD-WORKFLOW-001 v1.8) ⭐ NEW
+
+**OwnerChain Logging**:
+```go
+// Success
+logger.Info("Owner chain built",
+    "length", len(ownerChain),
+    "chain", formatOwnerChain(ownerChain),  // "ns/Pod/web-app-xyz → ns/ReplicaSet/web-app-abc → ns/Deployment/web-app"
+    "signalprocessing", req.NamespacedName.String(),
+)
+
+// Error (non-fatal)
+logger.Error(err, "Owner chain build failed",
+    "namespace", namespace,
+    "kind", kind,
+    "name", name,
+)
+```
+
+**DetectedLabels Logging**:
+```go
+// Summary
+logger.Info("DetectedLabels populated",
+    "signalprocessing", req.NamespacedName.String(),
+    "gitOpsManaged", detectedLabels.GitOpsManaged,
+    "gitOpsTool", detectedLabels.GitOpsTool,
+    "pdbProtected", detectedLabels.PDBProtected,
+    "hpaEnabled", detectedLabels.HPAEnabled,
+    "labelCount", countNonZeroLabels(detectedLabels),
+)
+
+// Debug: Individual detection
+logger.V(1).Info("GitOps detection",
+    "annotations", podAnnotations,
+    "detected", detectedLabels.GitOpsManaged,
+    "tool", detectedLabels.GitOpsTool,
+)
+```
+
+**CustomLabels Rego Logging**:
+```go
+// Success
+logger.Info("CustomLabels from Rego",
+    "signalprocessing", req.NamespacedName.String(),
+    "subdomains", getSubdomains(customLabels),  // ["kubernaut.io", "constraint.kubernaut.io"]
+    "totalValues", countTotalValues(customLabels),
+)
+
+// Security wrapper block
+logger.Warn("Rego policy attempted to override system label",
+    "signalprocessing", req.NamespacedName.String(),
+    "blockedLabel", "kubernaut.io/signal-type",
+    "policySource", "signal-processing-policies",
+)
+
+// Error (non-fatal)
+logger.Error(err, "Rego evaluation failed",
+    "signalprocessing", req.NamespacedName.String(),
+    "configMapName", "signal-processing-policies",
+    "namespace", "kubernaut-system",
+)
+```
+
 **Structured Logging Implementation**:
 
 ```go
@@ -20,7 +91,7 @@ import (
     "context"
     "time"
 
-    alertprocessorv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
 
     "github.com/go-logr/logr"
     "k8s.io/apimachinery/pkg/runtime"
@@ -28,29 +99,29 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type RemediationProcessingReconciler struct {
+type SignalProcessingReconciler struct {
     client.Client
     Scheme *runtime.Scheme
     Log    logr.Logger
 }
 
-func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // Create request-scoped logger with correlation ID
     log := r.Log.WithValues(
-        "alertprocessing", req.NamespacedName,
+        "signalprocessing", req.NamespacedName,
         "correlationID", extractCorrelationID(ctx),
     )
 
-    var ap alertprocessorv1.RemediationProcessing
+    var sp kubernautv1alpha1.SignalProcessing
     if err := r.Get(ctx, req.NamespacedName, &ap); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
     // Log phase transitions
     oldPhase := ap.Status.Phase
-    log.Info("Reconciling RemediationProcessing",
+    log.Info("Reconciling SignalProcessing",
         "phase", ap.Status.Phase,
-        "fingerprint", ap.Spec.Alert.Fingerprint,
+        "fingerprint", sp.Spec.Signal.Fingerprint,
     )
 
     // Execute reconciliation logic with structured logging
@@ -76,13 +147,13 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
     return result, nil
 }
 
-func (r *RemediationProcessingReconciler) enrichAlert(
+func (r *SignalProcessingReconciler) enrichAlert(
     ctx context.Context,
-    ap *alertprocessorv1.RemediationProcessing,
+    ap *signalprocessingv1.SignalProcessing,
     log logr.Logger,
 ) error {
     log.V(1).Info("Starting alert enrichment",
-        "fingerprint", ap.Spec.Alert.Fingerprint,
+        "fingerprint", sp.Spec.Signal.Fingerprint,
         "namespace", ap.Spec.Alert.Annotations["namespace"],
     )
 
@@ -108,7 +179,7 @@ func (r *RemediationProcessingReconciler) enrichAlert(
     if err != nil {
         log.Warn("Context Service enrichment failed (using defaults)",
             "error", err,
-            "fingerprint", ap.Spec.Alert.Fingerprint,
+            "fingerprint", sp.Spec.Signal.Fingerprint,
         )
         // Continue without historical context
     } else {
@@ -127,7 +198,7 @@ func (r *RemediationProcessingReconciler) enrichAlert(
 }
 
 // Debug logging for troubleshooting
-func (r *RemediationProcessingReconciler) debugLogKubernetesQuery(
+func (r *SignalProcessingReconciler) debugLogKubernetesQuery(
     log logr.Logger,
     query string,
     result interface{},
@@ -143,7 +214,7 @@ func (r *RemediationProcessingReconciler) debugLogKubernetesQuery(
 
 **Log Correlation Example**:
 ```
-INFO    Reconciling RemediationProcessing    {"alertprocessing": "default/alert-processing-xyz", "correlationID": "abc-123-def", "phase": "enriching", "fingerprint": "abc123"}
+INFO    Reconciling SignalProcessing    {"alertprocessing": "default/alert-processing-xyz", "correlationID": "abc-123-def", "phase": "enriching", "fingerprint": "abc123"}
 INFO    Starting alert enrichment      {"alertprocessing": "default/alert-processing-xyz", "correlationID": "abc-123-def", "fingerprint": "abc123", "namespace": "production"}
 DEBUG   Kubernetes API query           {"alertprocessing": "default/alert-processing-xyz", "correlationID": "abc-123-def", "query": "get pod production/web-app-789", "duration": "15ms"}
 INFO    Alert enrichment completed     {"alertprocessing": "default/alert-processing-xyz", "correlationID": "abc-123-def", "degradedMode": false, "totalDuration": "234ms"}
@@ -162,7 +233,7 @@ package controller
 import (
     "context"
 
-    alertprocessorv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/kubernaut.io/v1alpha1"
 
     "go.opentelemetry.io/otel"
     "go.opentelemetry.io/otel/attribute"
@@ -170,10 +241,10 @@ import (
     "go.opentelemetry.io/otel/trace"
 )
 
-var tracer = otel.Tracer("alertprocessing-controller")
+var tracer = otel.Tracer("signalprocessing-controller")
 
-func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    ctx, span := tracer.Start(ctx, "RemediationProcessing.Reconcile",
+func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    ctx, span := tracer.Start(ctx, "SignalProcessing.Reconcile",
         trace.WithAttributes(
             attribute.String("alertprocessing.name", req.Name),
             attribute.String("alertprocessing.namespace", req.Namespace),
@@ -181,10 +252,10 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
     )
     defer span.End()
 
-    var ap alertprocessorv1.RemediationProcessing
+    var sp kubernautv1alpha1.SignalProcessing
     if err := r.Get(ctx, req.NamespacedName, &ap); err != nil {
         span.RecordError(err)
-        span.SetStatus(codes.Error, "Failed to get RemediationProcessing")
+        span.SetStatus(codes.Error, "Failed to get SignalProcessing")
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
@@ -208,11 +279,11 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
     return result, err
 }
 
-func (r *RemediationProcessingReconciler) enrichAlert(
+func (r *SignalProcessingReconciler) enrichAlert(
     ctx context.Context,
-    ap *alertprocessorv1.RemediationProcessing,
+    ap *signalprocessingv1.SignalProcessing,
 ) error {
-    ctx, span := tracer.Start(ctx, "RemediationProcessing.EnrichAlert")
+    ctx, span := tracer.Start(ctx, "SignalProcessing.EnrichAlert")
     defer span.End()
 
     // Kubernetes enrichment span
@@ -237,11 +308,11 @@ func (r *RemediationProcessingReconciler) enrichAlert(
     return nil
 }
 
-func (r *RemediationProcessingReconciler) enrichKubernetesContextWithTracing(
+func (r *SignalProcessingReconciler) enrichKubernetesContextWithTracing(
     ctx context.Context,
-    ap *alertprocessorv1.RemediationProcessing,
-) (*alertprocessorv1.KubernetesContext, error) {
-    ctx, span := tracer.Start(ctx, "RemediationProcessing.EnrichKubernetesContext",
+    ap *signalprocessingv1.SignalProcessing,
+) (*signalprocessingv1.KubernetesContext, error) {
+    ctx, span := tracer.Start(ctx, "SignalProcessing.EnrichKubernetesContext",
         trace.WithAttributes(
             attribute.String("namespace", ap.Spec.Alert.Annotations["namespace"]),
             attribute.String("resourceKind", ap.Spec.Alert.Annotations["kind"]),
@@ -267,7 +338,7 @@ func (r *RemediationProcessingReconciler) enrichKubernetesContextWithTracing(
         attribute.String("pod.annotations", fmt.Sprintf("%v", sanitizedAnnotations)),
     )
 
-    return &alertprocessorv1.KubernetesContext{
+    return &signalprocessingv1.KubernetesContext{
         ResourceKind: "Pod",
         ResourceName: pod.Name,
         // ... other fields
@@ -287,14 +358,14 @@ func sanitizeMapValues(m map[string]string) map[string]string {
 **Trace Visualization** (Jaeger):
 ```
 Trace ID: abc-123-def-456
-Span: RemediationProcessing.Reconcile (234ms)
-  ├─ Span: RemediationProcessing.EnrichAlert (180ms)
-  │   ├─ Span: RemediationProcessing.EnrichKubernetesContext (120ms)
+Span: SignalProcessing.Reconcile (234ms)
+  ├─ Span: SignalProcessing.EnrichAlert (180ms)
+  │   ├─ Span: SignalProcessing.EnrichKubernetesContext (120ms)
   │   │   ├─ Span: KubernetesAPI.GetPod (50ms)
   │   │   └─ Span: KubernetesAPI.GetDeployment (40ms)
   │   └─ Span: ContextService.GetHistoricalContext (60ms)
   │       └─ Span: HTTP.POST /context (55ms)
-  └─ Span: RemediationProcessing.ClassifyEnvironment (54ms)
+  └─ Span: SignalProcessing.ClassifyEnvironment (54ms)
 ```
 
 ---
@@ -324,7 +395,7 @@ func extractCorrelationID(ctx context.Context) string {
 }
 
 // Add correlation ID to outgoing requests
-func (r *RemediationProcessingReconciler) callContextService(
+func (r *SignalProcessingReconciler) callContextService(
     ctx context.Context,
     fingerprint string,
 ) (*ContextResponse, error) {
@@ -347,8 +418,8 @@ func (r *RemediationProcessingReconciler) callContextService(
 **Correlation Flow**:
 ```
 RemediationRequest (correlationID: abc-123)
-    ↓ (creates RemediationProcessing with correlationID in annotation)
-RemediationProcessing Controller (correlationID: abc-123)
+    ↓ (creates SignalProcessing with correlationID in annotation)
+SignalProcessing Controller (correlationID: abc-123)
     ↓ (HTTP header: X-Correlation-ID: abc-123)
 Context Service (correlationID: abc-123)
     ↓ (logs with correlationID: abc-123)
@@ -356,7 +427,7 @@ Context Service (correlationID: abc-123)
 
 **Query Logs by Correlation ID**:
 ```bash
-kubectl logs -n kubernaut-system deployment/alertprocessing-controller | grep "correlationID: abc-123"
+kubectl logs -n kubernaut-system deployment/signalprocessing-controller | grep "correlationID: abc-123"
 ```
 
 ---
@@ -369,7 +440,7 @@ kubectl logs -n kubernaut-system deployment/alertprocessing-controller | grep "c
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: alertprocessing-controller-config
+  name: signalprocessing-controller-config
   namespace: kubernaut-system
 data:
   log-level: "debug"  # error | warn | info | debug
@@ -440,16 +511,16 @@ func parseLogLevel(level string) zapcore.Level {
 
 ```bash
 # Enable debug logging at runtime (requires restart)
-kubectl set env deployment/alertprocessing-controller -n kubernaut-system LOG_LEVEL=debug
+kubectl set env deployment/signalprocessing-controller -n kubernaut-system LOG_LEVEL=debug
 
-# View debug logs for specific RemediationProcessing
-kubectl logs -n kubernaut-system deployment/alertprocessing-controller --tail=1000 | grep "alert-processing-xyz"
+# View debug logs for specific SignalProcessing
+kubectl logs -n kubernaut-system deployment/signalprocessing-controller --tail=1000 | grep "alert-processing-xyz"
 
 # View Kubernetes API queries (V(2) logs)
-kubectl logs -n kubernaut-system deployment/alertprocessing-controller --tail=1000 | grep "Kubernetes API query"
+kubectl logs -n kubernaut-system deployment/signalprocessing-controller --tail=1000 | grep "Kubernetes API query"
 
 # View Context Service calls
-kubectl logs -n kubernaut-system deployment/alertprocessing-controller --tail=1000 | grep "Context Service"
+kubectl logs -n kubernaut-system deployment/signalprocessing-controller --tail=1000 | grep "Context Service"
 ```
 
 ---
@@ -469,12 +540,12 @@ kubectl logs -n kubernaut-system deployment/alertprocessing-controller --tail=10
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: remediation-processor
+  name: signal-processing
   namespace: kubernaut-system
 spec:
   selector:
     matchLabels:
-      app: remediation-processor
+      app: signal-processing
   endpoints:
   - port: metrics
     path: /metrics
@@ -487,26 +558,26 @@ spec:
 ### Deployment Configuration
 
 ```yaml
-# deploy/remediation-processor-deployment.yaml
+# deploy/signal-processing-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: remediation-processor
+  name: signal-processing
   namespace: kubernaut-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: remediation-processor
+      app: signal-processing
   template:
     metadata:
       labels:
-        app: remediation-processor
+        app: signal-processing
     spec:
-      serviceAccountName: remediation-processor-sa
+      serviceAccountName: signal-processing-sa
       containers:
       - name: controller
-        image: kubernaut/remediation-processor:latest
+        image: kubernaut/signal-processing:latest
         ports:
         - containerPort: 9090
           name: metrics
@@ -524,17 +595,17 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 10
 ---
-# deploy/remediation-processor-service.yaml
+# deploy/signal-processing-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: remediation-processor
+  name: signal-processing
   namespace: kubernaut-system
   labels:
-    app: remediation-processor
+    app: signal-processing
 spec:
   selector:
-    app: remediation-processor
+    app: signal-processing
   ports:
   - name: metrics
     port: 9090
@@ -545,7 +616,7 @@ spec:
 ### Implementation Code
 
 ```go
-// cmd/remediationprocessor/main.go
+// cmd/signalprocessing/main.go
 package main
 
 import (
@@ -597,19 +668,19 @@ func main() {
         },
         HealthProbeBindAddress: probeAddr,  // Port 8080 for health checks
         LeaderElection:         enableLeaderElection,
-        LeaderElectionID:       "remediation-processor.kubernaut.io",
+        LeaderElectionID:       "signal-processing.kubernaut.io",
     })
     if err != nil {
         setupLog.Error(err, "unable to start manager")
         os.Exit(1)
     }
 
-    if err = (&remediationprocessor.RemediationProcessingReconciler{
+    if err = (&signalprocessing.SignalProcessingReconciler{
         Client: mgr.GetClient(),
         Scheme: mgr.GetScheme(),
-        Log:    ctrl.Log.WithName("controllers").WithName("RemediationProcessing"),
+        Log:    ctrl.Log.WithName("controllers").WithName("SignalProcessing"),
     }).SetupWithManager(mgr); err != nil {
-        setupLog.Error(err, "unable to create controller", "controller", "RemediationProcessing")
+        setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")
         os.Exit(1)
     }
 

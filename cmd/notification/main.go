@@ -18,10 +18,11 @@ package main
 
 import (
 	"flag"
-	"net/http"
+	"fmt"
 	"os"
 	"time"
 
+	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -34,8 +35,12 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	notificationconfig "github.com/jordigilh/kubernaut/pkg/notification/config"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
-	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
+	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
+	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -51,155 +56,291 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
-func main() {
-	var metricsAddr string
-	var enableLeaderElection bool
-	var probeAddr string
+// validateFileOutputDirectory validates that the file output directory exists and is writable.
+//
+// TDD GREEN: Startup validation (R2 approved)
+// Prevents runtime failures by validating directory at startup.
+//
+// Validation checks:
+// - Creates directory if it doesn't exist (mkdir -p behavior)
+// - Path is a directory (not a file)
+// - Directory is writable (creates and removes a test file)
+//
+// Returns error if validation fails.
+func validateFileOutputDirectory(dir string) error {
+	// Create directory if it doesn't exist (mkdir -p behavior)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
 
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
+	// Verify it's a directory (not a file)
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("failed to stat directory %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path is not a directory: %s", dir)
+	}
+
+	// Check it's writable (create temp file)
+	testFile := dir + "/.write-test"
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		return fmt.Errorf("directory not writable: %w", err)
+	}
+	os.Remove(testFile)
+
+	return nil
+}
+
+func main() {
+	// ========================================
+	// ADR-030: Configuration Management
+	// MANDATORY: Use -config flag with K8s env substitution
+	// ========================================
+	var configPath string
+	flag.StringVar(&configPath, "config",
+		"/etc/notification/config.yaml",
+		"Path to configuration file (ADR-030)")
+
 	opts := zap.Options{
 		Development: true,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
-		},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "notification.kubernaut.ai",
+	// ADR-030: Initialize kubelog logger first (for config error reporting)
+	// DD-005 v2.0: Use pkg/log shared library with logr interface
+	logger := kubelog.NewLogger(kubelog.Options{
+		Development: os.Getenv("ENV") != "production",
+		Level:       0, // INFO
+		ServiceName: "notification",
 	})
+	defer kubelog.Sync(logger)
+
+	logger.Info("Loading configuration from YAML file (ADR-030)",
+		"config_path", configPath)
+
+	// ADR-030: Load configuration from YAML file
+	cfg, err := notificationconfig.LoadFromFile(configPath)
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		logger.Error(err, "Failed to load configuration file (ADR-030)",
+			"config_path", configPath)
 		os.Exit(1)
 	}
 
-	// Initialize delivery services
-	consoleService := delivery.NewConsoleDeliveryService()
+	// ADR-030: Override with environment variables (secrets only)
+	cfg.LoadFromEnv()
 
-	// TODO: Slack webhook URL should come from Kubernetes Secret in production
-	// For now, we'll use an environment variable for development
-	slackWebhookURL := os.Getenv("SLACK_WEBHOOK_URL")
-	if slackWebhookURL == "" {
-		setupLog.Info("SLACK_WEBHOOK_URL not set, Slack delivery will be disabled")
+	// ADR-030: Validate configuration (fail-fast)
+	if err := cfg.Validate(); err != nil {
+		logger.Error(err, "Invalid configuration (ADR-030)")
+		os.Exit(1)
 	}
-	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
+
+	logger.Info("Configuration loaded successfully (ADR-030)",
+		"service", "notification",
+		"metrics_addr", cfg.Controller.MetricsAddr,
+		"health_probe_addr", cfg.Controller.HealthProbeAddr,
+		"data_storage_url", cfg.Infrastructure.DataStorageURL)
+
+	// Set controller-runtime logger (still needed for controller-runtime internals)
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// ADR-030: Use configuration values for controller manager
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: cfg.Controller.MetricsAddr,
+		},
+		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		LeaderElection:         cfg.Controller.LeaderElection,
+		LeaderElectionID:       cfg.Controller.LeaderElectionID,
+	})
+	if err != nil {
+		logger.Error(err, "Unable to start manager")
+		os.Exit(1)
+	}
 
 	// ========================================
-	// DD-NOT-002 V3.0: E2E File Delivery Service (Testing Infrastructure)
-	// Feature Flag: E2E_FILE_OUTPUT
+	// Initialize Delivery Services (ADR-030)
 	// ========================================
-	// FileService writes notifications to JSON files for E2E test validation.
-	// This is E2E testing infrastructure only and should NOT be used in production.
-	//
-	// SAFETY GUARANTEE (V3.0 Error Handling Philosophy):
-	// - FileService failures do NOT block production notifications
-	// - Controller checks `if r.FileService != nil` before delivery
-	// - Production deployments have FileService = nil (feature flag disabled)
-	//
-	// Usage:
-	//   export E2E_FILE_OUTPUT=/tmp/kubernaut-e2e-notifications
-	//   make test-e2e-notification-files
+
+	// Console delivery (always enabled)
+	consoleService := delivery.NewConsoleDeliveryService()
+	logger.Info("Console delivery service initialized",
+		"enabled", cfg.Delivery.Console.Enabled)
+
+	// Slack delivery (webhook URL from config after LoadFromEnv)
+	slackService := delivery.NewSlackDeliveryService(cfg.Delivery.Slack.WebhookURL)
+	if cfg.Delivery.Slack.WebhookURL == "" {
+		logger.Info("Slack webhook URL not configured, Slack delivery will be disabled")
+	} else {
+		logger.Info("Slack delivery service initialized")
+	}
+
+	// ========================================
+	// File Delivery Service (ADR-030 Configuration)
+	// DD-NOT-006: Production feature for audit trails
+	// ========================================
 	var fileService *delivery.FileDeliveryService
-	e2eFileOutput := os.Getenv("E2E_FILE_OUTPUT")
-	if e2eFileOutput != "" {
-		setupLog.Info("E2E file delivery enabled (testing infrastructure only)",
-			"outputDir", e2eFileOutput,
-			"feature", "DD-NOT-002")
-		fileService = delivery.NewFileDeliveryService(e2eFileOutput)
+	if cfg.Delivery.File.OutputDir != "" {
+		// Validate directory is writable at startup
+		if err := validateFileOutputDirectory(cfg.Delivery.File.OutputDir); err != nil {
+			logger.Error(err, "File output directory validation failed",
+				"directory", cfg.Delivery.File.OutputDir)
+			os.Exit(1)
+		}
+		fileService = delivery.NewFileDeliveryService(cfg.Delivery.File.OutputDir)
+		logger.Info("File delivery service initialized",
+			"output_dir", cfg.Delivery.File.OutputDir,
+			"format", cfg.Delivery.File.Format,
+			"timeout", cfg.Delivery.File.Timeout)
+	}
+
+	// ========================================
+	// Log Delivery Service (ADR-030 Configuration)
+	// DD-NOT-006: Production feature for observability
+	// BR-NOT-053: Structured log delivery to stdout
+	// ========================================
+	var logService *delivery.LogDeliveryService
+	if cfg.Delivery.Log.Enabled {
+		logService = delivery.NewLogDeliveryService()
+		logger.Info("Log delivery service initialized",
+			"enabled", cfg.Delivery.Log.Enabled,
+			"format", cfg.Delivery.Log.Format)
 	}
 
 	// Initialize data sanitization
 	sanitizer := sanitization.NewSanitizer()
 
 	// ========================================
-	// v1.1: Initialize Audit Store for ADR-034 Integration
+	// ADR-032: Audit Store for Data Storage Integration
 	// BR-NOT-062: Unified Audit Table Integration
 	// BR-NOT-063: Graceful Audit Degradation
-	// See: DD-NOT-001-ADR034-AUDIT-INTEGRATION-v2.0-FULL.md
+	// ADR-030: Configuration from YAML (data_storage_url)
 	// ========================================
 
-	// Get Data Storage Service URL from environment
-	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
-	if dataStorageURL == "" {
-		dataStorageURL = "http://datastorage-service.kubernaut.svc.cluster.local:8080"
-		setupLog.Info("DATA_STORAGE_URL not set, using default", "url", dataStorageURL)
-	}
-
-	// Create HTTP client for Data Storage Service
-	httpClient := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-	dataStorageClient := audit.NewHTTPDataStorageClient(dataStorageURL, httpClient)
-
-	// Create buffered audit store (fire-and-forget pattern, ADR-038)
-	auditConfig := audit.Config{
-		BufferSize:    10000,           // In-memory buffer size
-		BatchSize:     100,             // Batch size for Data Storage writes
-		FlushInterval: 5 * time.Second, // Flush interval
-		MaxRetries:    3,               // Max retry attempts for failed writes
-	}
-
-	// Create zap logger for audit store (requires *zap.Logger, not logr.Logger)
-	zapLogger, err := zaplog.NewProduction()
+	// Create Data Storage client with OpenAPI generated client (DD-API-001)
+	// ADR-030: Use data_storage_url from configuration (required by Validate)
+	dataStorageClient, err := audit.NewOpenAPIClientAdapter(
+		cfg.Infrastructure.DataStorageURL,
+		5*time.Second)
 	if err != nil {
-		setupLog.Error(err, "Failed to create zap logger for audit store")
+		logger.Error(err, "Failed to create Data Storage client",
+			"url", cfg.Infrastructure.DataStorageURL)
 		os.Exit(1)
 	}
-	auditLogger := zapLogger.Named("audit")
+
+	// Create buffered audit store (fire-and-forget pattern, ADR-038)
+	// DD-AUDIT-004: Use recommended config for LOW tier (500 events/day → 20K buffer)
+	auditConfig := audit.RecommendedConfig("notification")
+
+	// Create zap logger for audit store, then convert to logr.Logger via zapr adapter
+	// DD-005 v2.0: pkg/audit uses logr.Logger for unified logging interface
+	zapLogger, err := zaplog.NewProduction()
+	if err != nil {
+		logger.Error(err, "Failed to create zap logger for audit store")
+		os.Exit(1)
+	}
+	auditLogger := zapr.NewLogger(zapLogger.Named("audit"))
 
 	auditStore, err := audit.NewBufferedStore(dataStorageClient, auditConfig, "notification-controller", auditLogger)
 	if err != nil {
-		setupLog.Error(err, "Failed to create audit store")
+		logger.Error(err, "Failed to create audit store")
 		os.Exit(1)
 	}
 
 	// Create audit helpers
 	auditHelpers := notification.NewAuditHelpers("notification-controller")
 
-	setupLog.Info("Audit store initialized", "bufferSize", auditConfig.BufferSize, "batchSize", auditConfig.BatchSize)
+	logger.Info("Audit store initialized",
+		"buffer_size", auditConfig.BufferSize,
+		"batch_size", auditConfig.BatchSize)
 
-	// Setup controller with delivery services + sanitization + audit + E2E file service
+	// ========================================
+	// DD-METRICS-001: Metrics Dependency Injection
+	// See: docs/architecture/decisions/DD-METRICS-001-controller-metrics-wiring-pattern.md
+	// ========================================
+	// Create metrics recorder for dependency injection (DD-METRICS-001 compliance)
+	metricsRecorder := notificationmetrics.NewPrometheusRecorder()
+
+	// Initialize metrics with zero values to ensure they appear in Prometheus immediately
+	// This is critical for E2E metrics validation tests
+	metricsRecorder.UpdatePhaseCount("default", "Pending", 0)
+	metricsRecorder.RecordDeliveryAttempt("default", "console", "success")
+	metricsRecorder.RecordDeliveryDuration("default", "console", 0)
+	logger.Info("Notification metrics initialized (DD-METRICS-001 compliant)")
+
+	// ========================================
+	// Pattern 2: Status Manager (P1 - Quick Win)
+	// See: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §4
+	// ========================================
+	// Create status manager for centralized status updates with retry logic
+	// Replaces controller's custom updateStatusWithRetry() method (~100 lines saved)
+	statusManager := notificationstatus.NewManager(mgr.GetClient())
+	logger.Info("Status Manager initialized (Pattern 2 - P1)")
+
+	// ========================================
+	// Pattern 3: Delivery Orchestrator (P0 - High Impact)
+	// See: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §3
+	// ========================================
+	// DD-NOT-007: Registration Pattern (MANDATORY)
+	// Create delivery orchestrator with NO channel parameters
+	// Channels MUST be registered after construction
+	// ========================================
+	deliveryOrchestrator := delivery.NewOrchestrator(
+		sanitizer,
+		metricsRecorder,
+		statusManager,
+		ctrl.Log.WithName("delivery-orchestrator"),
+	)
+
+	// DD-NOT-007: Register all production channels
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
+
+	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
+	logger.Info("Registered channels",
+		"channels", []string{"console", "slack", "file", "log"})
+
+	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator
 	if err = (&notification.NotificationRequestReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		ConsoleService: consoleService,
-		SlackService:   slackService,
-		FileService:    fileService,  // NEW - E2E file delivery (DD-NOT-002)
-		Sanitizer:      sanitizer,
-		AuditStore:     auditStore,   // Audit store
-		AuditHelpers:   auditHelpers, // Audit helpers
+		Client:               mgr.GetClient(),
+		Scheme:               mgr.GetScheme(),
+		ConsoleService:       consoleService,
+		SlackService:         slackService,
+		FileService:          fileService,                                        // DD-NOT-006: File delivery
+		DeliveryOrchestrator: deliveryOrchestrator,                               // Pattern 3: Delivery Orchestrator (P0)
+		Sanitizer:            sanitizer,
+		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics
+		Recorder:             mgr.GetEventRecorderFor("notification-controller"), // P1: EventRecorder
+		AuditStore:           auditStore,                                         // ADR-032: Audit store
+		AuditHelpers:         auditHelpers,                                       // Audit helpers
+		StatusManager:        statusManager,                                      // Pattern 2: Status Manager (P1)
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NotificationRequest")
+		logger.Error(err, "Unable to create controller", "controller", "NotificationRequest")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
+		logger.Error(err, "Unable to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		logger.Error(err, "Unable to set up ready check")
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	logger.Info("Starting manager")
 
 	// Setup signal handler for graceful shutdown
 	ctx := ctrl.SetupSignalHandler()
 
 	if err := mgr.Start(ctx); err != nil {
-		setupLog.Error(err, "problem running manager")
+		logger.Error(err, "Problem running manager")
 		os.Exit(1)
 	}
 
@@ -207,10 +348,10 @@ func main() {
 	// Graceful Shutdown: Flush Audit Events (DD-007)
 	// BR-NOT-063: Graceful Audit Degradation
 	// ========================================
-	setupLog.Info("Shutting down notification controller, flushing remaining audit events")
+	logger.Info("Shutting down notification controller, flushing remaining audit events")
 	if err := auditStore.Close(); err != nil {
-		setupLog.Error(err, "Failed to close audit store gracefully")
+		logger.Error(err, "Failed to close audit store gracefully")
 		os.Exit(1)
 	}
-	setupLog.Info("Audit store closed successfully, all events flushed")
+	logger.Info("Audit store closed successfully, all events flushed")
 }

@@ -1,7 +1,29 @@
 ## Testing Strategy
 
-**Testing Framework Reference**: [.cursor/rules/03-testing-strategy.mdc](../../../.cursor/rules/03-testing-strategy.mdc)
-**Summary Document**: [TESTING_STRATEGY_SUMMARY.md](../TESTING_STRATEGY_SUMMARY.md)
+**Version**: v2.3
+**Last Updated**: 2025-12-09
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **v2.3** | 2025-12-09 | **TESTING_GUIDELINES Compliance Fixes**: Fixed integration coverage target (20% → >50%); Removed BR- prefixes from unit test examples; Updated E2E path to `test/e2e/aianalysis/`; Added integration test file table; Updated HolmesGPT focus to MockHolmesGPTClient per HAPI team |
+| **v2.2** | 2025-12-06 | **Day 6 Implementation Alignment**: Updated unit test coverage (70% → 87.6% achieved); Added edge case test patterns for ERROR_HANDLING_PHILOSOPHY.md; Updated test file list; Added confidence level classification tests |
+| v2.1 | 2025-12-04 | **TESTING_GUIDELINES Alignment**: Added Quality Gates, Success Metrics; Removed V1.1 deferred code (BR-AI-040, BR-AI-050); Fixed BR range references |
+| v2.0 | 2025-11-30 | Added TESTING_GUIDELINES.md reference; Updated port allocation per DD-TEST-001 |
+| v1.0 | 2025-10-15 | Initial specification |
+
+---
+
+## References
+
+| Document | Purpose |
+|----------|---------|
+| [TESTING_GUIDELINES.md](../../../development/business-requirements/TESTING_GUIDELINES.md) | **AUTHORITATIVE** - Testing methodology and standards |
+| [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc) | Testing framework rules |
+| [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) | Port allocation for E2E tests |
 
 ### Testing Pyramid
 
@@ -18,11 +40,33 @@ Following Kubernaut's defense-in-depth testing strategy:
 ### Unit Tests (Primary Coverage Layer)
 
 **Test Directory**: [test/unit/aianalysis/](../../../test/unit/aianalysis/)
-**Coverage Target**: 72% (core AI/ML controller logic: Rego policies, confidence scoring, approval workflows, CRD reconciliation)
+**Coverage Target**: 70%+ → **87.6% Achieved**
 **Confidence**: 85-90%
 **Execution**: `make test-unit-aianalysis`
+**Test Count**: 149 tests (8 test files)
 
 **Testing Strategy**: Use fake K8s client for compile-time API safety. Mock ONLY HolmesGPT HTTP API. Use REAL business logic (Rego policy engine, approval workflow).
+
+**Test Files (Day 6 Complete)**:
+| File | Focus | Tests |
+|------|-------|-------|
+| `controller_test.go` | CRD lifecycle, phase transitions | ~15 |
+| `investigating_handler_test.go` | HAPI integration, human review, retry | ~45 |
+| `analyzing_handler_test.go` | Rego evaluation, approval context | ~35 |
+| `rego_evaluator_test.go` | Policy evaluation, graceful degradation | ~15 |
+| `holmesgpt_client_test.go` | HTTP client, error handling | ~10 |
+| `metrics_test.go` | Prometheus metrics registration | ~8 |
+| `audit_client_test.go` | Audit event generation | ~8 |
+| `error_types_test.go` | Error categorization (ERROR_HANDLING_PHILOSOPHY.md) | ~13 |
+
+**Edge Case Coverage (Business Value)**:
+| Category | Coverage | Business Value |
+|----------|----------|----------------|
+| Error Types | 100% | Operators distinguish transient vs permanent failures |
+| Confidence Levels | 100% | Quick assessment of AI confidence (high/medium/low) |
+| Human Review Mapping | 100% | All 6 HAPI enum values + 11 warning fallbacks |
+| Retry Mechanism | 89% | Graceful handling of malformed annotations |
+| Validation History | 100% | Timestamp parsing with graceful fallback |
 
 **AI/ML-Specific Test Patterns**:
 
@@ -50,7 +94,9 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
+// ✅ CORRECT: Unit tests use function/component names, NOT BR- prefixes
+// BR- prefixes belong in E2E/Business Requirement tests only (per TESTING_GUIDELINES.md)
+var _ = Describe("AIAnalysis Controller", func() {
     var (
         fakeK8sClient       client.Client
         scheme              *runtime.Scheme
@@ -83,7 +129,8 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
         }
     })
 
-    Context("BR-AI-020: HolmesGPT Investigation Phase", func() {
+    // Unit test: validates implementation correctness
+    Context("HolmesGPT Investigation Phase", func() {
         It("should investigate alert and generate recommendations with confidence scores", func() {
             // Setup test AIAnalysis CRD
             aia := &aianalysisv1.AIAnalysis{
@@ -132,7 +179,7 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
                         },
                     },
                     ContextUsed: &holmesgpt.ContextMetadata{
-                        TokensUsed:        1250,
+                        // NOTE: TokensUsed removed from AIAnalysis - HAPI owns LLM cost observability
                         ProcessingTime:    "3.2s",
                         ModelVersion:      "gpt-4o-2024-05-13",
                     },
@@ -155,7 +202,8 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
         })
     })
 
-    Context("BR-AI-030: Rego Policy Evaluation for Auto-Approval", func() {
+    // Unit test: validates Rego policy logic (no BR- prefix)
+    Context("Rego Policy Evaluation for Auto-Approval", func() {
         DescribeTable("auto-approval policy decisions",
             func(environment string, action string, confidence float64, expectedDecision string) {
                 // Create AIAnalysis with investigation complete
@@ -185,76 +233,18 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
         )
     })
 
-    Context("BR-AI-040: AIApprovalRequest CRD Creation for Manual Approval", func() {
-        It("should create AIApprovalRequest CRD when manual approval required", func() {
-            // Setup AIAnalysis requiring manual approval
-            aia := testutil.NewTestAIAnalysis("aia-manual-approval")
-            aia.Spec.TargetingData.Environment = "production"
-            aia.Status.Phase = "Approving"
-            aia.Status.Recommendations = []aianalysisv1.Recommendation{
-                {Action: "restart-pod", Confidence: 0.92},
-            }
-            Expect(fakeK8sClient.Create(ctx, aia)).To(Succeed())
-
-            // Reconcile to create AIApprovalRequest
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(aia))
-            Expect(err).ToNot(HaveOccurred())
-
-            // Verify AIApprovalRequest created with owner reference
-            var approvalRequest approvalv1.AIApprovalRequest
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKey{
-                Name:      "aia-manual-approval-approval",
-                Namespace: "default",
-            }, &approvalRequest)).To(Succeed())
-
-            Expect(approvalRequest.OwnerReferences).To(HaveLen(1))
-            Expect(approvalRequest.OwnerReferences[0].Name).To(Equal("aia-manual-approval"))
-            Expect(approvalRequest.Spec.Recommendations).To(HaveLen(1))
-        })
-    })
-
-    Context("BR-AI-050: AIApprovalRequest Watch for Approval Decision", func() {
-        It("should transition to Ready when AIApprovalRequest approved", func() {
-            // Create AIAnalysis + AIApprovalRequest
-            aia := testutil.NewTestAIAnalysis("aia-watch-approval")
-            aia.Status.Phase = "Approving"
-            aia.Status.ApprovalStatus = "PendingApproval"
-            Expect(fakeK8sClient.Create(ctx, aia)).To(Succeed())
-
-            approvalRequest := &approvalv1.AIApprovalRequest{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "aia-watch-approval-approval",
-                    Namespace: "default",
-                    OwnerReferences: []metav1.OwnerReference{
-                        {
-                            APIVersion: aianalysisv1.GroupVersion.String(),
-                            Kind:       "AIAnalysis",
-                            Name:       "aia-watch-approval",
-                            UID:        aia.UID,
-                        },
-                    },
-                },
-                Spec: approvalv1.AIApprovalRequestSpec{},
-            }
-            Expect(fakeK8sClient.Create(ctx, approvalRequest)).To(Succeed())
-
-            // Simulate operator approval
-            approvalRequest.Status.Decision = "Approved"
-            approvalRequest.Status.ApprovedBy = "operator@example.com"
-            approvalRequest.Status.ApprovedAt = metav1.Now()
-            Expect(fakeK8sClient.Status().Update(ctx, approvalRequest)).To(Succeed())
-
-            // Reconcile to process approval
-            result, err := reconciler.Reconcile(ctx, testutil.NewReconcileRequest(aia))
-            Expect(err).ToNot(HaveOccurred())
-
-            // Verify AIAnalysis transitioned to Ready
-            var updatedAIA aianalysisv1.AIAnalysis
-            Expect(fakeK8sClient.Get(ctx, client.ObjectKeyFromObject(aia), &updatedAIA)).To(Succeed())
-            Expect(updatedAIA.Status.Phase).To(Equal("Ready"))
-            Expect(updatedAIA.Status.ApprovalStatus).To(Equal("Approved"))
-        })
-    })
+    // ═══════════════════════════════════════════════════════════════════════════
+    // V1.1 DEFERRED TESTS: AIApprovalRequest CRD
+    // ═══════════════════════════════════════════════════════════════════════════
+    // The following test scenarios are OUT OF V1.0 SCOPE per BR_MAPPING.md v1.3:
+    //   - BR-AI-040: AIApprovalRequest CRD Creation for Manual Approval
+    //   - BR-AI-050: AIApprovalRequest Watch for Approval Decision
+    //
+    // V1.0 Approach: Approval signaling to RO via status.approvalRequired flag
+    // V1.1 Scope: Will implement dedicated AIApprovalRequest CRD workflow
+    //
+    // Reference: docs/services/crd-controllers/02-aianalysis/BR_MAPPING.md
+    // ═══════════════════════════════════════════════════════════════════════════
 })
 ```
 
@@ -263,21 +253,33 @@ var _ = Describe("BR-AI-010: AI Analysis Controller", func() {
 ### Integration Tests (Cross-Component Validation)
 
 **Test Directory**: [test/integration/aianalysis/](../../../test/integration/aianalysis/)
-**Coverage Target**: 20%
+**Coverage Target**: >50% (microservices mandate per 03-testing-strategy.mdc)
 **Confidence**: 80-85%
 **Execution**: `make test-integration-aianalysis`
+**Current Status**: 34/43 tests passing (audit tests blocked by Data Storage batch endpoint)
 
 **Focus Areas**:
-- Real HolmesGPT API calls
-- Rego ConfigMap loading from Kubernetes
-- AIApprovalRequest CRD watch patterns
+- MockHolmesGPTClient for deterministic responses (per HAPI team guidance Dec 9, 2025)
+- CRD lifecycle with running controller (envtest)
+- Rego policy evaluation with mock evaluator
+- Metrics registration via registry inspection (DD-TEST-001)
+- Audit event generation (blocked by Data Storage batch endpoint)
+
+**Test Files**:
+| File | Tests | Focus |
+|------|-------|-------|
+| `reconciliation_test.go` | 4 | 4-phase flow, approval scenarios |
+| `holmesgpt_integration_test.go` | 12 | MockHolmesGPTClient scenarios |
+| `rego_integration_test.go` | 2 | Policy evaluation |
+| `metrics_integration_test.go` | 7 | Registry inspection |
+| `audit_integration_test.go` | 9 | Audit events (blocked) |
 
 ---
 
 ### E2E Tests (Complete Workflow Validation)
 
-**Test Directory**: [test/e2e/scenarios/](../../../test/e2e/scenarios/)
-**Coverage Target**: 10%
+**Test Directory**: [test/e2e/aianalysis/](../../../../test/e2e/aianalysis/)
+**Coverage Target**: 10-15%
 **Confidence**: 90-95%
 **Execution**: `make test-e2e-aianalysis`
 
@@ -472,7 +474,12 @@ Expect(aia.Status.Recommendations).To(HaveLen(3))
 
 ### AIAnalysis: Requirement-Driven Coverage
 
-**Business Requirement Analysis** (BR-AI-010 to BR-AI-050):
+**Business Requirement Analysis** (31 V1.0 BRs per BR_MAPPING.md v1.3):
+- BR-AI-001 to BR-AI-020: Core AI Investigation & Analysis (15 BRs)
+- BR-AI-021 to BR-AI-033: Quality Assurance + Data Management (8 BRs)
+- BR-AI-075 to BR-AI-076: Workflow Selection (2 BRs)
+- BR-AI-080 to BR-AI-083: Recovery Flow (4 BRs)
+- BR-AI-026 to BR-AI-030: Approval & Policy (5 BRs) — *Note: BR-AI-051-053 deferred to V2.0+*
 
 | AI Dimension | Realistic Values | Test Strategy |
 |---|---|---|
@@ -482,8 +489,8 @@ Expect(aia.Status.Recommendations).To(HaveLen(3))
 | **Investigation Depth** | quick, standard, deep | Test different HolmesGPT analysis levels |
 
 **Total Possible Combinations**: 10 × 4 × 3 × 3 = 360 combinations
-**Distinct Business Behaviors**: 15 behaviors (per BR-AI-010 to BR-AI-050)
-**Tests Needed**: ~25 tests (covering 15 distinct behaviors with boundaries)
+**Distinct Business Behaviors**: 31 behaviors (per BR_MAPPING.md v1.3)
+**Tests Needed**: ~41 unit tests (see Test Count Summary in implementation plan)
 
 ---
 
@@ -770,5 +777,110 @@ It("should handle HolmesGPT API timeouts gracefully", func() {
 // E2E test: Rego policy + approval + workflow execution (complete AI-driven flow)
 // Each level adds unique AI workflow value
 ```
+
+---
+
+## 🎯 Quality Gates (per TESTING_GUIDELINES.md)
+
+### Business Requirement Tests Must:
+- [ ] **Map to documented business requirements** (BR-AI-XXX IDs from [BR_MAPPING.md](./BR_MAPPING.md))
+- [ ] **Be understandable by non-technical stakeholders** (describe business outcome, not implementation)
+- [ ] **Measure business value** (accuracy, performance, cost reduction)
+- [ ] **Use realistic data and scenarios** (production-like alert fingerprints, confidence scores)
+- [ ] **Validate end-to-end outcomes** (investigation → recommendation → approval decision)
+- [ ] **Include business success criteria** (SLA compliance, auto-approval rate targets)
+
+### Unit Tests Must:
+- [ ] **Focus on implementation correctness** (Rego policy logic, confidence scoring)
+- [ ] **Execute quickly** (<10ms per test average)
+- [ ] **Have minimal external dependencies** (mock HolmesGPT API only)
+- [ ] **Test edge cases and error conditions** (timeout, malformed response, low confidence)
+- [ ] **Provide clear developer feedback** (specific assertion messages)
+- [ ] **Maintain high code coverage** (70%+ for core AI logic)
+
+### Integration Tests Must:
+- [ ] **Validate CRD lifecycle** (create → reconcile → status update)
+- [ ] **Test real Kubernetes API interactions** (with envtest or Kind)
+- [ ] **Cover cross-component coordination** (AIAnalysis ↔ SignalProcessing data flow)
+- [ ] **Use Eventually() for async operations** (30s timeout, 100ms poll)
+
+---
+
+## 📊 Success Metrics (per TESTING_GUIDELINES.md)
+
+### Target Metrics
+
+| Metric | Target | Achieved | Measurement Command |
+|--------|--------|----------|---------------------|
+| **Unit Test Execution** | <10ms average per test | ✅ ~5ms | `go test -v ./test/unit/aianalysis/... -json \| jq '.Elapsed'` |
+| **Unit Test Coverage** | 70%+ | **87.6%** ✅ | `go test ./test/unit/aianalysis/... -coverprofile=coverage.out -coverpkg=./pkg/aianalysis/...` |
+| **BR Test Ratio** | 90%+ tests validate BRs | ✅ ~95% | Manual audit: `grep -c "BR-" test/unit/aianalysis/*_test.go` |
+| **Integration Coverage** | >50% CRD operations | TBD (Day 7) | `make test-integration-aianalysis --coverage` |
+| **E2E Critical Paths** | 100% coverage | TBD (Day 8) | 3 scenarios: auto-approve, manual-approve, rejection |
+
+### AI-Specific Metrics
+
+| Metric | Target | Achieved | Purpose |
+|--------|--------|----------|---------|
+| **Rego Policy Coverage** | 100% of rules | ✅ 100% | All approval decision paths tested |
+| **Confidence Threshold Tests** | 3 boundary tests | ✅ 9 tests | 0.6, 0.79, 0.80, 0.90, 0.95 boundaries |
+| **HolmesGPT Mock Realism** | Production-like responses | ✅ | Token counts, latency simulation |
+| **FailedDetections Validation** | All 7 valid fields | ✅ | `gitOpsManaged`, `pdbProtected`, etc. |
+| **Human Review Enum Mapping** | All 6 values | ✅ 100% | BR-HAPI-197 enum-to-enum mapping |
+| **Error Type Coverage** | All 3 types | ✅ 100% | TransientError, PermanentError, ValidationError |
+
+### Edge Case Test Patterns (Day 6)
+
+**Error Handling Philosophy Coverage** (ERROR_HANDLING_PHILOSOPHY.md):
+
+```go
+// ✅ IMPLEMENTED: Error type identification tests
+Describe("Error Type Identification", func() {
+    It("should identify transient errors using errors.As", func() {
+        err := aianalysis.NewTransientError("timeout", nil)
+        var transientErr *aianalysis.TransientError
+        Expect(errors.As(err, &transientErr)).To(BeTrue())
+    })
+})
+```
+
+**Confidence Level Classification** (BR-AI-019):
+
+```go
+// ✅ IMPLEMENTED: DescribeTable for confidence boundaries
+DescribeTable("should populate ApprovalContext with correct confidence level",
+    func(confidenceScore float64, expectedLevel string) {
+        analysis.Status.SelectedWorkflow.Confidence = confidenceScore
+        _, err := handler.Handle(ctx, analysis)
+        Expect(analysis.Status.ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel))
+    },
+    Entry("0.80 → high (at threshold)", 0.80, "high"),
+    Entry("0.79 → medium (just below)", 0.79, "medium"),
+    Entry("0.60 → medium (at threshold)", 0.60, "medium"),
+    Entry("0.59 → low (just below)", 0.59, "low"),
+)
+```
+
+**Retry Mechanism Edge Cases** (BR-AI-021):
+
+```go
+// ✅ IMPLEMENTED: Malformed annotation handling
+It("should handle malformed retry count annotation (treats as 0)", func() {
+    analysis.Annotations = map[string]string{
+        "kubernaut.ai/retry-count": "not-a-number",
+    }
+    mockClient.WithAPIError(503, "Service Unavailable")
+    _, err := handler.Handle(ctx, analysis)
+    Expect(analysis.Annotations["kubernaut.ai/retry-count"]).To(Equal("1"))
+})
+```
+
+### Quality Indicators
+
+| Indicator | Good | Warning | Critical |
+|-----------|------|---------|----------|
+| **Test Flakiness** | <1% | 1-5% | >5% |
+| **Mock Complexity** | <30 lines | 30-50 lines | >50 lines (move to integration) |
+| **Test Readability** | Understood in 2 min | 2-5 min | >5 min (refactor needed) |
 
 ---

@@ -3,7 +3,7 @@
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
 
 # Build stage - Red Hat UBI9 Go 1.24 toolset
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
 # Switch to root for package installation
 USER root
@@ -22,20 +22,16 @@ WORKDIR /opt/app-root/src
 # Copy go mod files
 COPY --chown=1001:0 go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
-
-# Copy source code
-COPY --chown=1001:0 api/ api/
-COPY --chown=1001:0 cmd/notification/ cmd/notification/
-COPY --chown=1001:0 internal/controller/notification/ internal/controller/notification/
-COPY --chown=1001:0 pkg/notification/ pkg/notification/
+# Copy entire codebase (notification controller depends on multiple pkg/* packages)
+COPY --chown=1001:0 . .
 
 # Build the notification controller binary
+# -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
 # CGO_ENABLED=0 for static linking (no C dependencies)
 # GOOS=linux for Linux targets
 # GOARCH will be set automatically by podman's --platform flag
 RUN CGO_ENABLED=0 GOOS=linux go build \
+	-mod=mod \
 	-ldflags='-w -s -extldflags "-static"' \
 	-a -installsuffix cgo \
 	-o manager \

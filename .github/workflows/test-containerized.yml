@@ -15,13 +15,6 @@ on:
       - 'podman-compose.test.yml'
       - 'Makefile'
       - '.github/workflows/test-containerized.yml'
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - '**.excalidraw'
-      - '**.svg'
-      - '.cursor/**'
-      - '.gitignore'
   push:
     branches: [ main ]
     paths:
@@ -36,13 +29,6 @@ on:
       - 'podman-compose.test.yml'
       - 'Makefile'
       - '.github/workflows/test-containerized.yml'
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - '**.excalidraw'
-      - '**.svg'
-      - '.cursor/**'
-      - '.gitignore'
   workflow_dispatch:
 
 jobs:

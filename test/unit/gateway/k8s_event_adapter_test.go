@@ -356,9 +356,9 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			// - NOT "k8s-event-adapter" (internal implementation detail)
 
 			adapter := adapters.NewKubernetesEventAdapter()
-			
+
 			sourceName := adapter.GetSourceService()
-			
+
 			Expect(sourceName).To(Equal("kubernetes-events"),
 				"BR-GATEWAY-027: Must return monitoring system name, not adapter name")
 			Expect(sourceName).NotTo(Equal("k8s-event-adapter"),
@@ -370,9 +370,9 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			// Used for: metrics labels, logging, signal classification
 
 			adapter := adapters.NewKubernetesEventAdapter()
-			
+
 			sourceType := adapter.GetSourceType()
-			
+
 			Expect(sourceType).To(Equal("kubernetes-event"),
 				"Must return signal type for classification")
 		})
@@ -398,7 +398,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			// Signal.Source must match GetSourceService()
 			Expect(signal.Source).To(Equal(adapter.GetSourceService()),
 				"BR-GATEWAY-027: Parse() must use GetSourceService() method")
-			
+
 			// Signal.SourceType must match GetSourceType()
 			Expect(signal.SourceType).To(Equal(adapter.GetSourceType()),
 				"Parse() must use GetSourceType() method")

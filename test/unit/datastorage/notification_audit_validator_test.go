@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -854,7 +870,7 @@ var _ = Describe("ValidationError", func() {
 
 			problem := validationErr.ToRFC7807()
 
-			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/validation-error"))
 			Expect(problem.Title).To(Equal("Validation Error"))
 			Expect(problem.Status).To(Equal(http.StatusBadRequest))
 			Expect(problem.Detail).To(Equal("validation failed"))
@@ -874,7 +890,7 @@ var _ = Describe("RFC7807Problem", func() {
 			}
 			problem := validation.NewValidationErrorProblem("notification_audit", fieldErrors)
 
-			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/validation-error"))
 			Expect(problem.Title).To(Equal("Validation Error"))
 			Expect(problem.Status).To(Equal(http.StatusBadRequest))
 			Expect(problem.Detail).To(ContainSubstring("notification_audit"))
@@ -888,7 +904,7 @@ var _ = Describe("RFC7807Problem", func() {
 		It("should create not found problem", func() {
 			problem := validation.NewNotFoundProblem("notification_audit", "test-id-123")
 
-			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/not-found"))
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/not-found"))
 			Expect(problem.Title).To(Equal("Resource Not Found"))
 			Expect(problem.Status).To(Equal(http.StatusNotFound))
 			Expect(problem.Detail).To(ContainSubstring("test-id-123"))
@@ -902,7 +918,7 @@ var _ = Describe("RFC7807Problem", func() {
 		It("should create internal error problem", func() {
 			problem := validation.NewInternalErrorProblem("database connection failed")
 
-			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/internal-error"))
 			Expect(problem.Title).To(Equal("Internal Server Error"))
 			Expect(problem.Status).To(Equal(http.StatusInternalServerError))
 			Expect(problem.Detail).To(Equal("database connection failed"))
@@ -914,7 +930,7 @@ var _ = Describe("RFC7807Problem", func() {
 		It("should create service unavailable problem", func() {
 			problem := validation.NewServiceUnavailableProblem("database is down")
 
-			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/service-unavailable"))
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/service-unavailable"))
 			Expect(problem.Title).To(Equal("Service Unavailable"))
 			Expect(problem.Status).To(Equal(http.StatusServiceUnavailable))
 			Expect(problem.Detail).To(Equal("database is down"))
@@ -926,7 +942,7 @@ var _ = Describe("RFC7807Problem", func() {
 		It("should create conflict problem", func() {
 			problem := validation.NewConflictProblem("notification_audit", "notification_id", "test-id-123")
 
-			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/conflict"))
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/conflict"))
 			Expect(problem.Title).To(Equal("Resource Conflict"))
 			Expect(problem.Status).To(Equal(http.StatusConflict))
 			Expect(problem.Detail).To(ContainSubstring("test-id-123"))
@@ -940,7 +956,7 @@ var _ = Describe("RFC7807Problem", func() {
 	Context("JSON Marshaling", func() {
 		It("should marshal to RFC 7807 compliant JSON", func() {
 			problem := &validation.RFC7807Problem{
-				Type:     "https://kubernaut.io/errors/validation-error",
+				Type:     "https://kubernaut.ai/problems/validation-error",
 				Title:    "Validation Error",
 				Status:   http.StatusBadRequest,
 				Detail:   "validation failed",
@@ -961,7 +977,7 @@ var _ = Describe("RFC7807Problem", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify standard RFC 7807 fields (type-safe access)
-			Expect(result.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
+			Expect(result.Type).To(Equal("https://kubernaut.ai/problems/validation-error"))
 			Expect(result.Title).To(Equal("Validation Error"))
 			Expect(result.Status).To(Equal(400))
 			Expect(result.Detail).To(Equal("validation failed"))
@@ -979,7 +995,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 		It("should omit optional fields when empty", func() {
 			problem := &validation.RFC7807Problem{
-				Type:   "https://kubernaut.io/errors/internal-error",
+				Type:   "https://kubernaut.ai/problems/internal-error",
 				Title:  "Internal Server Error",
 				Status: http.StatusInternalServerError,
 			}
@@ -991,7 +1007,7 @@ var _ = Describe("RFC7807Problem", func() {
 			err = json.Unmarshal(jsonBytes, &result)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(result.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
+			Expect(result.Type).To(Equal("https://kubernaut.ai/problems/internal-error"))
 			Expect(result.Title).To(Equal("Internal Server Error"))
 			Expect(result.Status).To(Equal(500))
 			Expect(result.Detail).To(BeEmpty(), "Optional detail field should be empty")
@@ -1002,7 +1018,7 @@ var _ = Describe("RFC7807Problem", func() {
 	Context("Error Interface", func() {
 		It("should return error string", func() {
 			problem := &validation.RFC7807Problem{
-				Type:   "https://kubernaut.io/errors/validation-error",
+				Type:   "https://kubernaut.ai/problems/validation-error",
 				Title:  "Validation Error",
 				Status: http.StatusBadRequest,
 				Detail: "validation failed",

@@ -47,15 +47,19 @@ class TestRecoveryModels:
         """
         Business Requirement: Valid data acceptance
         Expected: Model accepts valid request data
+
+        Updated: DD-WORKFLOW-002 v2.2 - remediation_id is now mandatory
         """
         from src.models.recovery_models import RecoveryRequest
 
         request = RecoveryRequest(
             incident_id="inc-001",
+            remediation_id="req-2025-11-27-abc123",  # DD-WORKFLOW-002 v2.2: mandatory
             failed_action={"type": "scale"},
             failure_context={"error": "timeout"}
         )
         assert request.incident_id == "inc-001"
+        assert request.remediation_id == "req-2025-11-27-abc123"
 
     def test_recovery_strategy_validates_confidence_range(self):
         """
@@ -149,11 +153,14 @@ class TestModelSerialization:
         """
         Business Requirement: Model serialization
         Expected: Models can be converted to dictionaries
+
+        Updated: DD-WORKFLOW-002 v2.2 - remediation_id is now mandatory
         """
         from src.models.recovery_models import RecoveryRequest
 
         request = RecoveryRequest(
             incident_id="inc-001",
+            remediation_id="req-2025-11-27-abc123",  # DD-WORKFLOW-002 v2.2: mandatory
             failed_action={"type": "scale"},
             failure_context={"error": "timeout"}
         )
@@ -162,6 +169,7 @@ class TestModelSerialization:
         data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
         assert isinstance(data, dict)
         assert data["incident_id"] == "inc-001"
+        assert data["remediation_id"] == "req-2025-11-27-abc123"
 
     def test_postexec_response_serializes_to_dict(self):
         """

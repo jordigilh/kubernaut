@@ -2,9 +2,18 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: November 8, 2025
+**Last Reviewed**: December 17, 2025
+**Version**: 1.2
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 11 services
+
+**Recent Changes** (v1.2):
+- **Gateway**: Removed deprecated `gateway.signal.storm_detected` event (storm detection feature removed per DD-GATEWAY-015)
+- **Remediation Orchestrator**: Added `orchestrator.routing.blocked` event (routing decisions audit coverage)
+- **Remediation Orchestrator**: Added approval lifecycle events (requested, approved, rejected, expired)
+- **Remediation Orchestrator**: Added manual review event
+- **Remediation Orchestrator**: Updated expected volume: 1,000 → 1,200 events/day
+- **Data Storage**: Removed meta-auditing events per DD-AUDIT-002 V2.0.1 (audit writes no longer audited)
 
 ---
 
@@ -133,7 +142,6 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 |------------|-------------|----------|
 | `gateway.signal.received` | Signal received from external source | P0 |
 | `gateway.signal.deduplicated` | Duplicate signal detected | P0 |
-| `gateway.signal.storm_detected` | Storm detection triggered | P0 |
 | `gateway.crd.created` | RemediationRequest CRD created | P0 |
 | `gateway.crd.creation_failed` | CRD creation failed | P0 |
 
@@ -241,16 +249,23 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 | Event Type | Description | Priority |
 |------------|-------------|----------|
-| `data-storage.audit.write` | Audit event written to PostgreSQL | P0 |
-| `data-storage.audit.batch_written` | Audit batch written (from async buffer) | P0 |
-| `data-storage.audit.write_failed` | Audit write failed | P0 |
-| `data-storage.query.executed` | Query executed (internal monitoring) | P2 |
+| `datastorage.workflow.created` | Workflow added to catalog (business logic) | P0 |
+| `datastorage.workflow.updated` | Workflow mutable fields updated (including disable) | P0 |
 
-**Note**: Data Storage Service audits are **internal** (service health monitoring), not business operations.
+**Note**: Data Storage **NO LONGER** audits meta-operations (audit writes, DLQ fallback) per DD-AUDIT-002 V2.0.1 (December 14, 2025). These were redundant because:
+- **Successful writes**: Event in DB **IS** proof of success
+- **Failed writes**: DLQ already captures failures
+- **Operational visibility**: Maintained via Prometheus metrics (`audit_writes_total{status="success|failure|dlq"}`) and structured logs
 
-**Industry Precedent**: AWS RDS audit logs, Google Cloud SQL audit logs
+**What Data Storage DOES Audit**: Workflow catalog operations involve state changes and business decisions:
+- Workflow creation (sets `status="active"`, marks as latest version)
+- Workflow updates (mutable field changes, status transitions, disable operations)
 
-**Expected Volume**: 5,000 events/day, 150 MB/month
+**Industry Precedent**: AWS RDS audit logs, Google Cloud SQL audit logs (audit business operations, not CRUD operations)
+
+**Expected Volume**: 500 events/day, 15 MB/month (reduced from 5,000 events/day after meta-auditing removal)
+
+**Authority**: DD-AUDIT-002 V2.0.1, `pkg/datastorage/audit/workflow_catalog_event.go`
 
 ---
 
@@ -316,21 +331,32 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 **Rationale**:
 - ✅ **State Changes**: Coordinates lifecycle across 4 CRD controllers
 - ✅ **Debugging Value**: Useful for troubleshooting coordination issues
+- ✅ **Routing Decisions**: Tracks cooldown, duplicate detection, resource conflicts
 - ⚠️ **Not Business-Critical**: Orchestration is coordination (not core operation)
 - ⚠️ **Low Volume**: Only runs once per remediation
 
 **Audit Events**:
 
-| Event Type | Description | Priority |
-|------------|-------------|----------|
-| `orchestrator.lifecycle.started` | Remediation lifecycle started | P1 |
-| `orchestrator.phase.transitioned` | Phase transition (signal → AI → execution → notification) | P1 |
-| `orchestrator.lifecycle.completed` | Remediation lifecycle completed | P1 |
-| `orchestrator.crd.updated` | RemediationRequest CRD updated | P2 |
+| Event Type | Description | Priority | Outcome |
+|------------|-------------|----------|---------|
+| `orchestrator.lifecycle.started` | Remediation lifecycle started | P1 | success |
+| `orchestrator.phase.transitioned` | Phase transition (Pending → Processing → Analyzing → Executing) | P1 | success |
+| `orchestrator.lifecycle.completed` | Remediation lifecycle completed (success or failure) | P1 | success/failure |
+| `orchestrator.routing.blocked` | Routing blocked (cooldown, duplicate, resource busy, consecutive failures) | **P1** | **pending** |
+| `orchestrator.approval.requested` | Human approval requested for high-risk remediation | P1 | pending |
+| `orchestrator.approval.approved` | Human approval granted | P1 | success |
+| `orchestrator.approval.rejected` | Human approval rejected | P1 | failure |
+| `orchestrator.approval.expired` | Approval timeout exceeded | P1 | failure |
+| `orchestrator.remediation.manual_review` | Manual review required (non-approval escalation) | P2 | pending |
+
+**Routing Blocked Event Context** (NEW - Dec 17, 2025):
+- Captures: block reason, workflow ID, target resource, requeue timing, blocked duration
+- Use cases: cooldown enforcement, duplicate detection, resource conflict resolution, consecutive failure tracking
+- ADR-032 compliance: All phase transitions must be audited
 
 **Recommendation**: ✅ Generate audit traces for coordination visibility, but P1 priority (not P0).
 
-**Expected Volume**: 1,000 events/day, 30 MB/month
+**Expected Volume**: 1,200 events/day, 36 MB/month (updated for routing events)
 
 ---
 
@@ -556,10 +582,10 @@ context_api:
 | **Data Storage Service** | 5,000 | 150,000 | 150 MB |
 | **Effectiveness Monitor Service** | 500 | 15,000 | 15 MB |
 | **Signal Processing Controller** | 1,000 | 30,000 | 30 MB |
-| **Remediation Orchestrator Controller** | 1,000 | 30,000 | 30 MB |
-| **TOTAL** | **11,500** | **345,000** | **345 MB** |
+| **Remediation Orchestrator Controller** | 1,200 | 36,000 | 36 MB |
+| **TOTAL** | **11,700** | **351,000** | **351 MB** |
 
-**Storage Cost**: ~$0.35/month (PostgreSQL storage at $0.10/GB)
+**Storage Cost**: ~$0.35/month (PostgreSQL storage at $0.10/GB, 351 MB ≈ 0.35 GB)
 
 **Retention**: 90 days (default), 7 years (compliance)
 

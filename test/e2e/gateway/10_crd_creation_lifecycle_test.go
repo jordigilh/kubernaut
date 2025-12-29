@@ -19,7 +19,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -27,9 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -42,7 +41,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 		k8sClient     client.Client
@@ -50,7 +49,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "crd-lifecycle"))
+		testLogger = logger.WithValues("test", "crd-lifecycle")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		// Unique namespace for parallel execution
@@ -65,12 +64,12 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace", zap.String("namespace", testNamespace))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -100,30 +99,25 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 
 		// Send enough alerts to trigger storm threshold
 		for i := 0; i < 5; i++ {
-			payload := map[string]interface{}{
-				"alerts": []map[string]interface{}{
-					{
-						"status": "firing",
-						"labels": map[string]interface{}{
-							"alertname": alertName,
-							"severity":  severity,
-							"namespace": testNamespace,
-							"pod":       fmt.Sprintf("%s-%d", podName, i),
-						},
-						"annotations": map[string]interface{}{
-							"summary":     summary,
-							"description": description,
-						},
-						"startsAt": time.Now().Format(time.RFC3339),
-					},
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: alertName,
+				Namespace: testNamespace,
+				PodName:   fmt.Sprintf("%s-%d", podName, i),
+				Severity:  severity,
+				Annotations: map[string]string{
+					"summary":     summary,
+					"description": description,
 				},
-			}
-			payloadBytes, _ := json.Marshal(payload)
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payloadBytes),
-			)
+			})
+			resp, err := func() (*http.Response, error) {
+				req11, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+				if err != nil {
+					return nil, err
+				}
+				req11.Header.Set("Content-Type", "application/json")
+				req11.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req11)
+			}()
 			if err == nil {
 				resp.Body.Close()
 			}
@@ -139,13 +133,13 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList = &remediationv1alpha1.RemediationRequestList{}
 			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("Failed to list CRDs", zap.Error(err))
+				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
 			return len(crdList.Items)
@@ -175,10 +169,13 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 			"CRD should have labels")
 		testLogger.Info(fmt.Sprintf("  ✅ CRD has %d labels", len(crd.Labels)))
 
-		// Verify spec fields
-		Expect(crd.Spec.AffectedResources).ToNot(BeEmpty(),
-			"CRD should have affected resources")
-		testLogger.Info(fmt.Sprintf("  ✅ CRD has %d affected resources", len(crd.Spec.AffectedResources)))
+		// Verify spec fields - TargetResource (not AffectedResources, which was removed with storm detection)
+		Expect(crd.Spec.TargetResource.Name).ToNot(BeEmpty(),
+			"CRD should have target resource name")
+		testLogger.Info(fmt.Sprintf("  ✅ CRD target resource: %s/%s/%s",
+			crd.Spec.TargetResource.Namespace,
+			crd.Spec.TargetResource.Kind,
+			crd.Spec.TargetResource.Name))
 
 		// Verify fingerprint exists
 		Expect(crd.Spec.SignalFingerprint).ToNot(BeEmpty(),
@@ -193,7 +190,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		testLogger.Info(fmt.Sprintf("  ✅ CRD created in namespace: %s", crd.Namespace))
 		testLogger.Info(fmt.Sprintf("  ✅ CRD name: %s", crd.Name))
 		testLogger.Info(fmt.Sprintf("  ✅ Affected resources: %d", len(crd.Spec.AffectedResources)))
-		testLogger.Info(fmt.Sprintf("  ✅ Signal fingerprint present"))
+		testLogger.Info("  ✅ Signal fingerprint present")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 })

@@ -1,0 +1,46 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  # Expose WorkflowExecution Controller ports via NodePort to host machine
+  # Per DD-TEST-001 port allocation strategy
+  extraPortMappings:
+  - containerPort: 30085  # WorkflowExecution health/ready NodePort
+    hostPort: 8085        # Port on host machine (localhost:8085)
+    protocol: TCP
+  - containerPort: 30185  # WorkflowExecution metrics NodePort
+    hostPort: 9185        # Port on host machine (localhost:9185)
+    protocol: TCP
+  # Data Storage for BR-WE-005 audit events (per DD-TEST-001)
+  - containerPort: 30081  # Data Storage HTTP NodePort
+    hostPort: 8081        # Port on host machine (localhost:8081)
+    protocol: TCP
+  # DD-TEST-007: Mount coverage directory for E2E coverage collection
+  # Controller pods run on control-plane node, so coverage must be accessible here
+  extraMounts:
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel E2E testing
+        # Tekton creates many TaskRun/PipelineRun resources
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        kube-api-qps: "100"
+        kube-api-burst: "200"
+- role: worker
+  # Worker node for Tekton TaskRuns
+  # Tekton runs pipeline tasks as pods on worker nodes
+  extraMounts:
+  # DD-TEST-007: Mount coverage directory from host to Kind node for E2E coverage collection
+  # MUST match GOCOVERDIR env var and Kubernetes hostPath volume
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false

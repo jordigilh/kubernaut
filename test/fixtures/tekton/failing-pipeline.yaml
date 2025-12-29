@@ -1,0 +1,78 @@
+---
+# Intentionally Failing Pipeline for E2E Testing
+# This pipeline validates failure handling in the WorkflowExecution controller
+#
+# Usage:
+#   1. Bundle: tkn bundle push quay.io/jordigilh/test-workflows/failing:v1.0.0 -f failing-pipeline.yaml
+#   2. Create WorkflowExecution referencing this bundle
+#   3. Verify WFE transitions to Failed with proper FailureDetails
+#
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: workflow
+  labels:
+    kubernaut.ai/workflow-type: test
+    kubernaut.ai/version: v1.0.0
+spec:
+  description: |
+    An intentionally failing pipeline for testing WorkflowExecution failure handling.
+    The failure mode can be controlled via parameters.
+
+  params:
+    - name: TARGET_RESOURCE
+      type: string
+      description: "The target resource"
+      default: "test/deployment/failing"
+
+    - name: FAILURE_MODE
+      type: string
+      description: "How to fail: 'exit' (non-zero exit), 'timeout', 'oom' (simulated)"
+      default: "exit"
+
+    - name: FAILURE_MESSAGE
+      type: string
+      description: "Error message to include"
+      default: "Intentional test failure"
+
+  tasks:
+    - name: fail-task
+      taskSpec:
+        params:
+          - name: mode
+            type: string
+          - name: message
+            type: string
+        steps:
+          - name: fail
+            image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+            script: |
+              #!/bin/sh
+              echo "============================================"
+              echo "❌ Kubernaut Failure Test Pipeline"
+              echo "============================================"
+              echo ""
+              echo "Failure Mode: $(params.mode)"
+              echo "Message: $(params.message)"
+              echo ""
+
+              case "$(params.mode)" in
+                "exit")
+                  echo "Exiting with non-zero status..."
+                  exit 1
+                  ;;
+                "timeout")
+                  echo "Simulating timeout (sleeping forever)..."
+                  sleep 3600
+                  ;;
+                *)
+                  echo "Unknown failure mode, exiting..."
+                  exit 1
+                  ;;
+              esac
+      params:
+        - name: mode
+          value: $(params.FAILURE_MODE)
+        - name: message
+          value: $(params.FAILURE_MESSAGE)
+

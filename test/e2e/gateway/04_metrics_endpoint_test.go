@@ -19,7 +19,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,9 +28,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -47,7 +46,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 		k8sClient     client.Client
@@ -55,7 +54,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "metrics"))
+		testLogger = logger.WithValues("test", "metrics")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -65,7 +64,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
 		testNamespace = fmt.Sprintf("metrics-%d-%d", processID, time.Now().UnixNano())
-		testLogger.Info("Creating test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
 		ns := &corev1.Namespace{
@@ -74,7 +73,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		k8sClient = getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
@@ -83,8 +82,8 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
+				"namespace", testNamespace)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -147,33 +146,26 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("Step 3: Send alert and verify metrics update")
 
 		alertName := fmt.Sprintf("MetricsTest-%d", time.Now().UnixNano())
-		payload := map[string]interface{}{
-			"alerts": []map[string]interface{}{
-				{
-					"status": "firing",
-					"labels": map[string]interface{}{
-						"alertname": alertName,
-						"severity":  "warning",
-						"namespace": testNamespace,
-						"pod":       "metrics-test-pod",
-					},
-					"annotations": map[string]interface{}{
-						"summary":     "Metrics test alert",
-						"description": "Testing metrics update after alert processing",
-					},
-					"startsAt": time.Now().Format(time.RFC3339),
-				},
+		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+			AlertName: alertName,
+			Namespace: testNamespace,
+			Severity:  "warning",
+			PodName:   "metrics-test-pod",
+			Annotations: map[string]string{
+				"summary":     "Metrics test alert",
+				"description": "Testing metrics update after alert processing",
 			},
-		}
+		})
 
-		payloadBytes, err := json.Marshal(payload)
-		Expect(err).ToNot(HaveOccurred())
-
-		alertResp, err := httpClient.Post(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			bytes.NewBuffer(payloadBytes),
-		)
+		alertResp, err := func() (*http.Response, error) {
+			req5, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+			if err != nil {
+				return nil, err
+			}
+			req5.Header.Set("Content-Type", "application/json")
+			req5.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			return httpClient.Do(req5)
+		}()
 		Expect(err).ToNot(HaveOccurred())
 		alertResp.Body.Close()
 
@@ -185,16 +177,21 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("")
 		testLogger.Info("Step 4: Verify metrics updated after alert")
 
-		// Wait briefly for metrics to update
-		time.Sleep(1 * time.Second)
-
-		resp2, err := httpClient.Get(gatewayURL + "/metrics")
-		Expect(err).ToNot(HaveOccurred())
-		metricsBody2, err := io.ReadAll(resp2.Body)
-		resp2.Body.Close()
-		Expect(err).ToNot(HaveOccurred())
-
-		metricsOutput2 := string(metricsBody2)
+		// Wait for metrics to update using Eventually
+		var metricsOutput2 string
+		Eventually(func() bool {
+			resp2, err := httpClient.Get(gatewayURL + "/metrics")
+			if err != nil {
+				return false
+			}
+			metricsBody2, err := io.ReadAll(resp2.Body)
+			resp2.Body.Close()
+			if err != nil {
+				return false
+			}
+			metricsOutput2 = string(metricsBody2)
+			return len(metricsOutput2) > 0
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "Metrics should be available")
 
 		// Check for request-related metrics (should have incremented)
 		// Look for HTTP request metrics or gateway-specific request metrics
@@ -215,11 +212,15 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("Step 5: Send invalid request and check error tracking")
 
 		invalidPayload := []byte(`{"invalid": "payload"}`)
-		invalidResp, err := httpClient.Post(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			bytes.NewBuffer(invalidPayload),
-		)
+		invalidResp, err := func() (*http.Response, error) {
+			req6, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(invalidPayload))
+			if err != nil {
+				return nil, err
+			}
+			req6.Header.Set("Content-Type", "application/json")
+			req6.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			return httpClient.Do(req6)
+		}()
 		Expect(err).ToNot(HaveOccurred())
 		invalidResp.Body.Close()
 
@@ -259,4 +260,3 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 })
-
