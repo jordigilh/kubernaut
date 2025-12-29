@@ -1,3 +1,9 @@
+# Makefile - Consolidated Pattern-Based Build System
+# Last Consolidated: December 29, 2025
+# Total Targets: ~40 (down from 139)
+
+##@ Configuration
+
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 
@@ -12,81 +18,216 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
-# Be aware that the target commands are only tested with Docker which is
-# scaffolded by default. However, you might want to replace it to use other
-# tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
-# Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-.PHONY: all
-all: build
+# Service auto-discovery from cmd/ directory
+SERVICES := $(filter-out README.md, $(notdir $(wildcard cmd/*)))
+# Result: aianalysis datastorage gateway notification remediationorchestrator signalprocessing workflowexecution
+
+# Test configuration
+TEST_PROCS ?= 4
+TEST_TIMEOUT_UNIT ?= 5m
+TEST_TIMEOUT_INTEGRATION ?= 15m
+TEST_TIMEOUT_E2E ?= 30m
 
 ##@ General
 
-# The help target prints out all targets with their descriptions organized
-# beneath their categories. The categories are represented by '##@' and the
-# target descriptions by '##'. The awk command is responsible for reading the
-# entire set of makefiles included in this invocation, looking for lines of the
-# file as xyz: ## something, and then pretty-format the target and help. Then,
-# if there's a line with ##@ something, that gets pretty-printed as a category.
-# More info on the usage of ANSI control characters for terminal formatting:
-# https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
-# More info on the awk command:
-# http://linuxcommand.org/lc3_adv_awk.php
+.PHONY: all
+all: build-all
 
 .PHONY: help
-help: ## Display this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+help: ## Display this help
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "Available Services: $(SERVICES)"
+	@echo ""
+	@echo "Pattern-Based Targets:"
+	@echo "  test-unit-<service>          Run unit tests for any service"
+	@echo "  test-integration-<service>   Run integration tests for any service"
+	@echo "  test-e2e-<service>           Run E2E tests for any service"
+	@echo "  test-all-<service>           Run all test tiers for any service"
+	@echo "  build-<service>              Build service binary"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make test-unit-gateway"
+	@echo "  make test-integration-workflowexecution"
+	@echo "  make build-notification"
 
 ##@ Development
 
-##@ Gateway Integration Tests
+.PHONY: manifests
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
 
-.PHONY: test-gateway
-test-gateway: ## Run Gateway integration tests (envtest + Podman)
-	@echo "🧪 Running Gateway integration tests with 2 parallel processors (envtest + Podman)..."
-	@cd test/integration/gateway && ginkgo -v --procs=2
+.PHONY: generate
+generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/shared/types/..."
+	@echo "📋 Generating OpenAPI spec copies for embedding (DD-API-002)..."
+	@go generate ./pkg/datastorage/server/middleware/...
+	@go generate ./pkg/audit/...
+	@echo "📋 Generating HolmesGPT-API client (ogen)..."
+	@go generate ./pkg/holmesgpt/client/...
+	@echo "✅ Generation complete"
 
-##@ Notification Service Tests
+.PHONY: generate-holmesgpt-client
+generate-holmesgpt-client: ## Generate HolmesGPT-API client from OpenAPI spec
+	@echo "📋 Generating HolmesGPT-API client from holmesgpt-api/api/openapi.json..."
+	@go generate ./pkg/holmesgpt/client/...
+	@echo "✅ HolmesGPT-API client generated successfully"
 
-.PHONY: test-unit-notification
-test-unit-notification: ## Run Notification Service unit tests (4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service - Unit Tests"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@PROCS=4; \
-	echo "⚡ Running with $$PROCS parallel processes"; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	cd test/unit/notification && ginkgo -v --timeout=5m --procs=$$PROCS
+.PHONY: fmt
+fmt: ## Format code
+	@echo "Formatting Go code..."
+	go fmt ./api/... ./cmd/... ./internal/... ./pkg/...
 
-.PHONY: test-integration-notification
-test-integration-notification: clean-notification-test-ports ## Run Notification Service integration tests (4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service - Integration Tests"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🚀 Setting up infrastructure (DS team sequential pattern)..."
-	@cd test/integration/notification && ./setup-infrastructure.sh
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "✅ Infrastructure ready, running tests..."
-	@PROCS=4; \
-	echo "⚡ Running with $$PROCS parallel processes"; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	cd test/integration/notification && ginkgo -v --timeout=15m --procs=$$PROCS
+.PHONY: vet
+vet: ## Run go vet against code
+	go vet ./api/... ./cmd/... ./internal/... ./pkg/...
 
-.PHONY: test-integration-notification-cleanup
-test-integration-notification-cleanup: ## Clean up Notification Service integration test infrastructure
-	@echo "🧹 Cleaning up Notification integration infrastructure..."
-	@podman stop notification_postgres_1 notification_redis_1 notification_datastorage_1 2>/dev/null || true
-	@podman rm notification_postgres_1 notification_redis_1 notification_datastorage_1 2>/dev/null || true
-	@podman network rm notification_nt-test-network 2>/dev/null || true
+.PHONY: lint
+lint: golangci-lint ## Run golangci-lint
+	$(GOLANGCI_LINT) run ./...
+
+.PHONY: clean
+clean: ## Clean build artifacts
+	@echo "Cleaning Go artifacts..."
+	rm -rf bin/*
+	rm -f coverage.out coverage.html
 	@echo "✅ Cleanup complete"
 
-##@ Service-Specific Integration Tests
+##@ Pattern-Based Service Targets
+
+# Unit Tests
+.PHONY: test-unit-%
+test-unit-%: ## Run unit tests for specified service (e.g., make test-unit-gateway)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@ginkgo -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) ./test/unit/$*/...
+
+# Integration Tests
+.PHONY: test-integration-%
+test-integration-%: ## Run integration tests for specified service (e.g., make test-integration-gateway)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@if [ -f test/integration/$*/setup-infrastructure.sh ]; then \
+		echo "🚀 Setting up infrastructure..."; \
+		cd test/integration/$* && ./setup-infrastructure.sh; \
+		echo "✅ Infrastructure ready"; \
+	fi
+	@ginkgo -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) ./test/integration/$*/...
+
+# E2E Tests
+.PHONY: test-e2e-%
+test-e2e-%: ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@ginkgo -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/$*/...
+
+# All Tests for Service
+.PHONY: test-all-%
+test-all-%: ## Run all test tiers for specified service (e.g., make test-all-gateway)
+	@echo "═══════════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Running ALL $* Tests (3 tiers)"
+	@echo "═══════════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	$(MAKE) test-unit-$* || FAILED=$$((FAILED + 1)); \
+	$(MAKE) test-integration-$* || FAILED=$$((FAILED + 1)); \
+	$(MAKE) test-e2e-$* || FAILED=$$((FAILED + 1)); \
+	if [ $$FAILED -gt 0 ]; then \
+		echo "❌ $$FAILED test tier(s) failed"; \
+		exit 1; \
+	fi
+
+# Build Service Binary
+.PHONY: build-%
+build-%: ## Build specified service binary (e.g., make build-gateway)
+	@echo "🔨 Building $* service..."
+	@if [ "$*" = "datastorage" ]; then \
+		$(MAKE) generate; \
+	fi
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/$* ./cmd/$*
+	@echo "✅ Built: bin/$*"
+
+##@ Tier Aggregations
+
+.PHONY: test-tier-unit
+test-tier-unit: $(addprefix test-unit-,$(SERVICES)) ## Run unit tests for all services
+
+.PHONY: test-tier-integration
+test-tier-integration: $(addprefix test-integration-,$(SERVICES)) ## Run integration tests for all services
+
+.PHONY: test-tier-e2e
+test-tier-e2e: $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
+
+.PHONY: test-all-services
+test-all-services: $(addprefix test-all-,$(SERVICES)) ## Run all tests for all services
+
+.PHONY: build-all-services
+build-all-services: $(addprefix build-,$(SERVICES)) ## Build all Go services
+
+.PHONY: build-all
+build-all: build-all-services ## Build all services (alias)
+
+##@ Docker Pattern Targets
+
+.PHONY: docker-build-%
+docker-build-%: ## Build service container image (e.g., make docker-build-gateway)
+	@echo "🐳 Building Docker image for $*..."
+	@$(CONTAINER_TOOL) build -t $(IMG) -f cmd/$*/Dockerfile .
+
+.PHONY: docker-push-%
+docker-push-%: docker-build-% ## Push service container image
+	@echo "🐳 Pushing Docker image for $*..."
+	@$(CONTAINER_TOOL) push $(IMG)
+
+##@ Cleanup Pattern Targets
+
+.PHONY: clean-%-integration
+clean-%-integration: ## Clean integration test infrastructure for service
+	@echo "🧹 Cleaning $* integration infrastructure..."
+	@podman stop $*_postgres_1 $*_redis_1 $*_datastorage_1 2>/dev/null || true
+	@podman rm $*_postgres_1 $*_redis_1 $*_datastorage_1 2>/dev/null || true
+	@podman network rm $*_test-network 2>/dev/null || true
+	@echo "✅ Cleanup complete"
+
+.PHONY: clean-integration-all
+clean-integration-all: $(addprefix clean-,$(addsuffix -integration,$(SERVICES))) ## Clean all integration infrastructures
+
+.PHONY: clean-%-test-ports
+clean-%-test-ports: ## Kill processes on test ports for service
+	@echo "🧹 Cleaning test ports for $*..."
+	@lsof -ti:8080,8081,5432,6379 | xargs kill -9 2>/dev/null || true
+	@echo "✅ Test ports cleaned"
+
+##@ Coverage Pattern Targets
+
+.PHONY: test-coverage-%
+test-coverage-%: ## Run unit tests with coverage for service
+	@echo "📊 Running unit tests with coverage for $*..."
+	@cd test/unit/$* && \
+		go test -v -coverprofile=coverage.out -covermode=atomic ./... && \
+		go tool cover -html=coverage.out -o coverage.html
+	@echo "✅ Coverage report: test/unit/$*/coverage.html"
+
+##@ Special Cases - HolmesGPT (Python Service)
+
+.PHONY: build-holmesgpt-api
+build-holmesgpt-api: ## Build HolmesGPT API (Python service)
+	@echo "🐍 Building HolmesGPT API..."
+	@cd holmesgpt-api && pip install -e .
+
+.PHONY: test-holmesgpt-api
+test-holmesgpt-api: ## Run HolmesGPT API tests (Python)
+	@echo "🐍 Running HolmesGPT API tests..."
+	@cd holmesgpt-api && python3 -m pytest tests/ -v
 
 .PHONY: test-integration-holmesgpt
 test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API integration tests (Go infrastructure + Python tests, ~15 min)
@@ -124,7 +265,11 @@ test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API inte
 	echo "════════════════════════════════════════════════════════════════════════"; \
 	echo "🐍 Python Test Phase (DD-HAPI-005 client auto-regeneration)..."; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
-	cd holmesgpt-api && \
+	echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."; \
+	cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1; \
+	echo "✅ Client generated successfully"; \
+	echo ""; \
+	echo "🧪 Step 2: Run integration tests..."; \
 	export HAPI_INTEGRATION_PORT=18120 && \
 	export DS_INTEGRATION_PORT=18098 && \
 	export PG_INTEGRATION_PORT=15439 && \
@@ -152,6 +297,35 @@ test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API inte
 		exit $$TEST_RESULT; \
 	fi
 
+.PHONY: test-e2e-holmesgpt
+test-e2e-holmesgpt: ## Run HolmesGPT API E2E tests (Kind cluster + Python tests, ~10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Python Tests)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go-bootstrapped Kind infrastructure)"
+	@echo "🐍 Test Logic: Python (native for HAPI service)"
+	@echo "⏱️  Expected Duration: ~10 minutes"
+	@echo ""
+	@echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."
+	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1
+	@echo "✅ Client generated successfully"
+	@echo ""
+	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests)..."
+	@cd test/e2e/holmesgptapi && ginkgo -v --timeout=15m
+	@echo ""
+	@echo "✅ All HAPI E2E tests completed"
+
+.PHONY: test-all-holmesgpt
+test-all-holmesgpt: test-unit-holmesgpt test-integration-holmesgpt test-e2e-holmesgpt ## Run all HAPI test tiers (Unit + Integration + E2E)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "✅ All HAPI test tiers completed successfully!"
+	@echo "════════════════════════════════════════════════════════════════════════"
+
+.PHONY: test-unit-holmesgpt
+test-unit-holmesgpt: ## Run HolmesGPT API unit tests (Python pytest)
+	@echo "🧪 Running HAPI unit tests..."
+	@cd holmesgpt-api && python3 -m pytest tests/unit/ -v
+
 .PHONY: clean-holmesgpt-test-ports
 clean-holmesgpt-test-ports: ## Clean up any stale HAPI integration test containers
 	@echo "🧹 Cleaning up HAPI integration test containers..."
@@ -167,377 +341,18 @@ test-integration-holmesgpt-cleanup: clean-holmesgpt-test-ports ## Complete clean
 	@podman image prune -f --filter "label=test=holmesgptapi" 2>/dev/null || true
 	@echo "✅ Complete cleanup done (containers + images)"
 
-##@ HolmesGPT API E2E Tests (V1.0 Critical Service)
+.PHONY: run-holmesgpt-api
+run-holmesgpt-api: ## Run HolmesGPT API locally
+	@echo "🚀 Starting HolmesGPT API..."
+	@cd holmesgpt-api && python3 -m uvicorn app.main:app --reload
 
-.PHONY: test-e2e-holmesgpt-setup
-test-e2e-holmesgpt-setup: ## Set up infrastructure for HolmesGPT API E2E tests (Kind + Data Storage)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🏗️  HolmesGPT API E2E Infrastructure Setup"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "Setting up Kind cluster with Data Storage stack..."
-	@echo "  • Kind cluster: datastorage-e2e (2 nodes)"
-	@echo "  • Data Storage: http://localhost:8081 (NodePort 30081)"
-	@echo "  • PostgreSQL: localhost:5432 (NodePort 30432)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@go test -v -timeout 10m ./test/e2e/datastorage/... -run "^$$" -ginkgo.skip=".*" 2>&1 | head -100 || true
-	@echo "✅ Infrastructure setup triggered (check Kind cluster status)"
+##@ Legacy Aliases (Backward Compatibility)
 
-.PHONY: test-e2e-holmesgpt
-test-e2e-holmesgpt: ## Run HolmesGPT API E2E tests (requires Data Storage infrastructure, ~10 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API - E2E Test Suite (V1.0 Critical)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios:"
-	@echo "   • Workflow Catalog Integration"
-	@echo "   • Container Image Validation"
-	@echo "   • Audit Pipeline E2E"
-	@echo "   • Recovery Context Flow"
-	@echo ""
-	@echo "🏗️  Infrastructure: Uses existing Data Storage Kind cluster"
-	@echo "   Data Storage: http://localhost:8081"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "⚠️  Checking if Data Storage is available..."
-	@curl -s http://localhost:8081/health/ready > /dev/null 2>&1 || \
-		(echo "❌ Data Storage not available at localhost:8081" && \
-		 echo "   Run 'make test-e2e-datastorage' first to set up infrastructure" && \
-		 exit 1)
-	@echo "✅ Data Storage is ready"
-	@echo ""
-	@cd holmesgpt-api && \
-		pip install -q -r requirements.txt && \
-		pip install -q -r requirements-dev.txt 2>/dev/null || true && \
-		DATA_STORAGE_URL=http://localhost:8081 \
-		MOCK_LLM=true \
-		HAPI_USE_GO_INFRA=true \
-		pytest tests/e2e/ -v --tb=short -x
+.PHONY: test-gateway
+test-gateway: test-integration-gateway ## Legacy alias for Gateway integration tests
 
-.PHONY: test-e2e-holmesgpt-full
-test-e2e-holmesgpt-full: test-e2e-datastorage test-e2e-holmesgpt ## Run full HolmesGPT E2E (sets up infra + runs tests)
-	@echo "✅ HolmesGPT API E2E tests complete"
-
-.PHONY: clean-stale-datastorage-containers
-clean-stale-datastorage-containers: ## Clean stale datastorage containers only (safe for parallel test runs)
-	@echo "🧹 Cleaning stale datastorage containers..."
-	@# Only remove containers that exist but are not running (stale state)
-	@for container in datastorage-postgres datastorage-redis; do \
-		if podman ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^$$container$$"; then \
-			if ! podman ps --format '{{.Names}}' 2>/dev/null | grep -q "^$$container$$"; then \
-				echo "  🗑️  Removing stale container: $$container"; \
-				podman rm -f $$container 2>/dev/null || true; \
-			else \
-				echo "  ⚠️  Container $$container is running (skipping)"; \
-			fi; \
-		fi; \
-	done
-	@echo "✅ Stale container cleanup complete"
-
-.PHONY: clean-notification-test-ports
-clean-notification-test-ports: ## Clean stale gvproxy port bindings for Notification tests (macOS only)
-	@echo "🧹 Cleaning stale Notification test port bindings..."
-	@# Fixes "proxy already running" errors on macOS Podman machine
-	@# Only targets ports used by Notification integration tests (per DD-TEST-001):
-	@#   - 15433: PostgreSQL (podman-compose.test.yml)
-	@#   - 16379: Redis (podman-compose.test.yml)
-	@#   - 18090: Data Storage (podman-compose.test.yml)
-	@for port in 15433 16379 18090; do \
-		PID=$$(lsof -ti:$$port 2>/dev/null); \
-		if [ -n "$$PID" ]; then \
-			PROC=$$(ps -p $$PID -o comm= 2>/dev/null | xargs basename 2>/dev/null); \
-			if [ "$$PROC" = "gvproxy" ]; then \
-				echo "  🗑️  Killing stale gvproxy on port $$port (PID $$PID)"; \
-				kill -9 $$PID 2>/dev/null || true; \
-			else \
-				echo "  ℹ️  Port $$port in use by $$PROC (not stale gvproxy)"; \
-			fi; \
-		fi; \
-	done
-	@echo "✅ Port cleanup complete"
-
-.PHONY: test-integration-datastorage
-test-integration-datastorage: clean-stale-datastorage-containers ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~4 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Data Storage Integration Tests"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Infrastructure: Managed by test suite SynchronizedBeforeSuite"
-	@echo "   - PostgreSQL 16 container (port 15433)"
-	@echo "   - Redis container (port 16379)"
-	@echo "   - Network: datastorage-test"
-	@echo ""
-	@go test -p 4 ./test/integration/datastorage/... -v -timeout 10m
-
-.PHONY: test-integration-ai
-test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s)
-	@echo "🔧 Starting Redis cache..."
-	@podman run -d --name ai-redis -p 6379:6379 quay.io/jordigilh/redis:7-alpine > /dev/null 2>&1 || \
-		(echo "⚠️  Redis container already exists or failed to start" && \
-		 podman start ai-redis > /dev/null 2>&1) || true
-	@echo "⏳ Waiting for Redis to be ready..."
-	@sleep 2
-	@echo "✅ Redis ready"
-	@echo "🧪 Running AI Service integration tests..."
-	@TEST_RESULT=0; \
-	go test ./test/integration/ai/... -v -timeout 5m || TEST_RESULT=$$?; \
-	echo "🧹 Cleaning up Redis container..."; \
-	podman stop ai-redis > /dev/null 2>&1 || true; \
-	podman rm ai-redis > /dev/null 2>&1 || true; \
-	echo "✅ Cleanup complete"; \
-	exit $$TEST_RESULT
-
-.PHONY: test-integration-toolset
-test-integration-toolset: ## Run Dynamic Toolset integration tests (Kind bootstrapped via Go)
-	@echo "🧪 Running Dynamic Toolset integration tests..."
-	@go test ./test/integration/toolset/... -v -timeout 10m
-
-.PHONY: test-integration-gateway-service
-test-integration-gateway-service: test-gateway ## Run Gateway Service integration tests (alias for test-gateway)
-
-.PHONY: test-integration-service-all
-test-integration-service-all: ## Run ALL service-specific integration tests (sequential)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🚀 Running ALL Service-Specific Integration Tests"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "📊 Test Plan:"
-	@echo "  1. Data Storage (Podman: PostgreSQL + pgvector) - ~30s"
-	@echo "  2. AI Service (Podman: Redis) - ~15s"
-	@echo "  3. Dynamic Toolset (Kind bootstrapped via Go) - ~3-5min"
-	@echo "  4. Gateway Service (Kind bootstrapped via Go) - ~3-5min"
-	@echo "  5. Notification Service (Kind bootstrapped via Go) - ~3-5min"
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@FAILED=0; \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "1️⃣  Data Storage Service (Podman)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-integration-datastorage || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "2️⃣  AI Service (Podman)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-integration-ai || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "3️⃣  Dynamic Toolset Service (Kind)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-integration-toolset || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "4️⃣  Gateway Service (Kind)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-integration-gateway-service || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "5️⃣  Notification Service (Kind)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-integration-notification || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ ALL SERVICE-SPECIFIC INTEGRATION TESTS PASSED (5/5)"; \
-	else \
-		echo "❌ $$FAILED service(s) failed integration tests"; \
-	fi; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	exit $$FAILED
-
-##@ Data Storage Test Targets (4 parallel processes)
-
-.PHONY: test-unit-datastorage
-test-unit-datastorage: ## Run Data Storage unit tests (4 parallel processes)
-	@echo "🧪 Data Storage Unit Tests (4 parallel processes)..."
-	ginkgo --procs=4 --timeout=5m ./test/unit/datastorage/...
-
-.PHONY: test-integration-datastorage-ginkgo
-test-integration-datastorage-ginkgo: ## Run Data Storage integration tests (4 parallel processes, ginkgo)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Data Storage Integration Tests (4 processes)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🔧 Ensuring Podman network exists..."
-	@podman network create datastorage-test 2>/dev/null || true
-	@echo "🧪 Running tests..."
-	ginkgo --procs=4 --timeout=10m ./test/integration/datastorage/...
-
-.PHONY: test-e2e-datastorage-ginkgo
-test-e2e-datastorage-ginkgo: ## Run Data Storage E2E tests (4 parallel processes, ginkgo)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Data Storage E2E Tests (4 processes)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@cd test/e2e/datastorage && ginkgo --procs=4 --timeout=10m --label-filter="e2e"
-
-.PHONY: test-datastorage
-test-datastorage: ## Run ALL Data Storage tests (unit + integration + e2e, 4 parallel each)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Data Storage - Complete Test Suite (4 parallel processes)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	echo ""; \
-	echo "1️⃣  Unit Tests..."; \
-	$(MAKE) test-unit-datastorage || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests..."; \
-	$(MAKE) test-integration-datastorage-ginkgo || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests..."; \
-	$(MAKE) test-e2e-datastorage-ginkgo || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ Data Storage: ALL tests passed (3/3 tiers)"; \
-	else \
-		echo "❌ Data Storage: $$FAILED tier(s) failed"; \
-		exit 1; \
-	fi
-
-##@ Development (continued)
-
-.PHONY: scaffold-controller
-scaffold-controller: ## Interactive scaffolding for new CRD controller using production templates
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🛠️  CRD Controller Scaffolding"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "📚 Using Production Templates"
-	@echo "   Location: docs/templates/crd-controller-gap-remediation/"
-	@echo "   Guide: docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md"
-	@echo ""
-	@echo "✨ Templates Available:"
-	@echo "   • cmd-main-template.go.template - Main entry point"
-	@echo "   • config-template.go.template - Configuration package"
-	@echo "   • config-test-template.go.template - Config tests"
-	@echo "   • metrics-template.go.template - Prometheus metrics"
-	@echo "   • dockerfile-template - UBI9 multi-arch Dockerfile"
-	@echo "   • makefile-targets-template - Build targets"
-	@echo "   • configmap-template.yaml - K8s ConfigMap"
-	@echo ""
-	@read -p "Controller name (lowercase, no hyphens, e.g., remediationprocessor): " CONTROLLER_NAME; \
-	if [ -z "$$CONTROLLER_NAME" ]; then \
-		echo "❌ Error: Controller name is required"; \
-		exit 1; \
-	fi; \
-	echo ""; \
-	echo "📁 Creating directory structure for $$CONTROLLER_NAME..."; \
-	mkdir -p "cmd/$$CONTROLLER_NAME" && echo "   ✅ cmd/$$CONTROLLER_NAME"; \
-	mkdir -p "pkg/$$CONTROLLER_NAME/config" && echo "   ✅ pkg/$$CONTROLLER_NAME/config"; \
-	mkdir -p "pkg/$$CONTROLLER_NAME/metrics" && echo "   ✅ pkg/$$CONTROLLER_NAME/metrics"; \
-	mkdir -p "api/$$CONTROLLER_NAME/v1alpha1" && echo "   ✅ api/$$CONTROLLER_NAME/v1alpha1"; \
-	mkdir -p "internal/controller/$$CONTROLLER_NAME" && echo "   ✅ internal/controller/$$CONTROLLER_NAME"; \
-	echo ""; \
-	echo "✅ Directory structure created successfully!"; \
-	echo ""; \
-	echo "📝 Next Steps:"; \
-	echo "   1. Copy templates from docs/templates/crd-controller-gap-remediation/"; \
-	echo "      cp docs/templates/crd-controller-gap-remediation/cmd-main-template.go.template cmd/$$CONTROLLER_NAME/main.go"; \
-	echo "      cp docs/templates/crd-controller-gap-remediation/config-template.go.template pkg/$$CONTROLLER_NAME/config/config.go"; \
-	echo "      cp docs/templates/crd-controller-gap-remediation/config-test-template.go.template pkg/$$CONTROLLER_NAME/config/config_test.go"; \
-	echo "      cp docs/templates/crd-controller-gap-remediation/metrics-template.go.template pkg/$$CONTROLLER_NAME/metrics/metrics.go"; \
-	echo ""; \
-	echo "   2. Replace placeholders in copied files:"; \
-	echo "      - {{CONTROLLER_NAME}} → $$CONTROLLER_NAME"; \
-	echo "      - {{PACKAGE_PATH}} → github.com/jordigilh/kubernaut"; \
-	echo "      - {{CRD_GROUP}}/{{CRD_VERSION}}/{{CRD_KIND}} → your CRD details"; \
-	echo ""; \
-	echo "   3. Follow the Gap Remediation Guide:"; \
-	echo "      docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md"; \
-	echo ""; \
-	echo "   4. Add to Makefile build targets (see makefile-targets-template)"; \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"
-
-.PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
-
-.PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/shared/types/..."
-	@echo "📋 Generating OpenAPI spec copies for embedding (DD-API-002)..."
-	@go generate ./pkg/datastorage/server/middleware/...
-	@go generate ./pkg/audit/...
-	@echo "📋 Generating HolmesGPT-API client (ogen)..."
-	@go generate ./pkg/holmesgpt/client/...
-
-.PHONY: generate-holmesgpt-client
-generate-holmesgpt-client: ## Generate HolmesGPT-API client from OpenAPI spec
-	@echo "📋 Generating HolmesGPT-API client from holmesgpt-api/api/openapi.json..."
-	@go generate ./pkg/holmesgpt/client/...
-	@echo "✅ HolmesGPT-API client generated successfully"
-
-.PHONY: vet
-vet: ## Run go vet against code.
-	go vet ./api/... ./cmd/... ./internal/... ./pkg/...
-
-.PHONY: test-e2e
-test-e2e: manifests generate fmt vet ## Run e2e tests (Kind bootstrapped via Go)
-	@echo "🧪 Running e2e tests..."
-	@go test ./test/e2e/... -v -ginkgo.v
-
-.PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
-	$(GOLANGCI_LINT) run
-
-.PHONY: lint-fix
-lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
-	$(GOLANGCI_LINT) run --fix
-
-.PHONY: lint-config
-lint-config: golangci-lint ## Verify golangci-lint linter configuration
-	$(GOLANGCI_LINT) config verify
-
-##@ Build
-
-PLATFORMS ?= linux/amd64,linux/arm64
-
-.PHONY: docker-build
-docker-build: ## Build multi-architecture docker image (linux/amd64, linux/arm64)
-	@echo "🔨 Building multi-architecture image: ${IMG}"
-	@echo "   Platforms: $(PLATFORMS)"
-	$(CONTAINER_TOOL) build --platform=$(PLATFORMS) -t ${IMG} .
-	@echo "✅ Multi-arch image built: ${IMG}"
-
-.PHONY: docker-build-single
-docker-build-single: ## Build single-architecture image (host arch only, for debugging)
-	@echo "🔨 Building single-arch image for debugging: ${IMG}"
-	$(CONTAINER_TOOL) build -t ${IMG}-$(shell uname -m) .
-	@echo "✅ Single-arch image built: ${IMG}-$(shell uname -m)"
-
-.PHONY: docker-push
-docker-push: ## Push multi-architecture docker image to registry
-	@echo "📤 Pushing multi-arch image: ${IMG}"
-	$(CONTAINER_TOOL) manifest push ${IMG} docker://$(IMG) || $(CONTAINER_TOOL) push ${IMG}
-	@echo "✅ Image pushed: ${IMG}"
-
-
-.PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
-	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
-
-##@ Deployment
-
-ifndef ignore-not-found
-  ignore-not-found = false
-endif
-
-.PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
-
-.PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
-
-.PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
-
-.PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+.PHONY: test
+test: test-tier-unit ## Legacy alias: Run all unit tests
 
 ##@ Dependencies
 
@@ -547,8 +362,6 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 ## Tool Binaries
-KUBECTL ?= kubectl
-KIND ?= kind
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
@@ -557,37 +370,33 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
-#ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
-#ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.0
 
 .PHONY: kustomize
-kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
+kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary
 $(KUSTOMIZE): $(LOCALBIN)
 	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5,$(KUSTOMIZE_VERSION))
 
 .PHONY: controller-gen
-controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
+controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
 .PHONY: setup-envtest
-setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
-	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
-	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path || { \
-		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
-		exit 1; \
-	}
+setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory
+	@echo "📦 Setting up ENVTEST binaries..."
+	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path
+	@echo "✅ ENVTEST binaries installed in $(LOCALBIN)"
 
 .PHONY: envtest
-envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
+envtest: $(ENVTEST) ## Download setup-envtest locally if necessary
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
 
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
+golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
@@ -606,1560 +415,3 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
-
-##@ Microservices Build
-
-.PHONY: build-all-services
-build-all-services: build-gateway-service build-datastorage build-dynamictoolset build-notification ## Build all Go services
-
-.PHONY: build-microservices
-build-microservices: build-all-services ## Build all microservices (alias for build-all-services)
-
-.PHONY: build-gateway-service
-build-gateway-service: ## Build gateway service
-	@echo "🔨 Building gateway service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/gateway ./cmd/gateway
-
-.PHONY: build-datastorage
-build-datastorage: generate ## Build data storage service
-	@echo "📊 Building data storage service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/datastorage ./cmd/datastorage
-
-.PHONY: build-dynamictoolset
-build-dynamictoolset: ## Build dynamic toolset service
-	@echo "🔧 Building dynamic toolset service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/dynamictoolset ./cmd/dynamictoolset
-
-.PHONY: build-notification
-build-notification: ## Build notification service
-	@echo "📢 Building notification service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/notification ./cmd/notification
-
-.PHONY: test
-test: ## Run unit tests (Go only) - Auto-discovers all test directories
-	@echo "🧪 Running Unit Tests - Auto-Discovery"
-	@echo "======================================"
-	@echo ""
-	@echo "🔍 Discovering test packages in ./test/unit/..."
-	@echo ""
-	@for dir in $$(find ./test/unit -name "*_test.go" -type f | xargs -I {} dirname {} | sort -u); do \
-		package_name=$$(basename "$$dir"); \
-		echo "✅ Testing $$package_name ($$dir)..."; \
-		if ! go test -v "$$dir" -tags=unit --timeout=60s; then \
-			echo "❌ FAILED: $$package_name"; \
-			exit 1; \
-		fi; \
-		echo ""; \
-	done
-	@echo "🎉 ALL UNIT TESTS COMPLETED SUCCESSFULLY!"
-	@echo "========================================"
-	@echo ""
-	@total_dirs=$$(find ./test/unit -name "*_test.go" -type f | xargs -I {} dirname {} | sort -u | wc -l); \
-	echo "📊 Total Test Packages: $$total_dirs"
-	@echo "📋 All tests discovered automatically from ./test/unit/"
-
-
-
-
-.PHONY: test-coverage
-test-coverage: ## Run unit tests with coverage (Go only)
-	@echo "Running Go unit tests with coverage..."
-	go test -coverprofile=coverage.out ./... -tags="!integration,!e2e"
-	go tool cover -html=coverage.out -o coverage.html
-	@echo "Go coverage report generated: coverage.html"
-
-.PHONY: test-all
-test-all: validate-integration test test-integration test-e2e ## Run all tests (unit, integration, e2e)
-	@echo "All test suites completed"
-
-.PHONY: validate-maturity
-validate-maturity: ## Validate all services meet V1.0 maturity requirements
-	@echo "🔍 Validating service maturity requirements..."
-	./scripts/validate-service-maturity.sh
-
-.PHONY: validate-maturity-ci
-validate-maturity-ci: ## Validate maturity requirements (CI mode - fails on P0 violations)
-	@echo "🔍 Validating service maturity requirements (CI mode)..."
-	./scripts/validate-service-maturity.sh --ci
-
-.PHONY: test-ci
-test-ci: ## Run tests suitable for CI environment with mocked LLM
-	@echo "🚀 Running CI test suite with hybrid strategy..."
-	@echo "  ├── Unit tests: Real Go tests"
-	@echo "  ├── Integration tests: Real Kind + Real PostgreSQL + Mock LLM"
-	@echo "  └── Strategy: Kind for CI/CD, OCP for E2E"
-	make test
-	make test-integration-kind-ci
-	@echo "✅ CI tests completed successfully"
-
-.PHONY: fmt
-fmt: ## Format code
-	@echo "Formatting Go code..."
-	go fmt ./api/... ./cmd/... ./internal/... ./pkg/...
-
-.PHONY: clean
-clean: ## Clean build artifacts (Go only)
-	@echo "Cleaning Go artifacts..."
-	rm -rf bin/kubernaut bin/test-slm
-	rm -f coverage.out coverage.html
-	find test/ -name "*.test" -type f -delete 2>/dev/null || true
-
-.PHONY: clean-all
-clean-all: ## Clean all build artifacts including test binaries (Go only)
-	@echo "Cleaning all Go artifacts..."
-	rm -rf bin/
-	rm -f coverage.out coverage.html
-	find test/ -name "*.test" -type f -delete 2>/dev/null || true
-
-.PHONY: clean-podman
-clean-podman: ## Clean Podman dangling images (safe, recommended for regular use)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧹 Cleaning Podman Dangling Images"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "📊 Current disk usage:"
-	@podman system df || true
-	@echo ""
-	@echo "🗑️  Removing dangling images (untagged/intermediate layers)..."
-	@podman image prune -f
-	@echo ""
-	@echo "📊 Disk usage after cleanup:"
-	@podman system df || true
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "✅ Dangling images removed"
-	@echo ""
-	@echo "💡 For aggressive cleanup (all unused resources), run: make clean-podman-all"
-	@echo "════════════════════════════════════════════════════════════════════════"
-
-.PHONY: clean-podman-all
-clean-podman-all: ## Clean ALL unused Podman resources (containers, images, volumes, networks) - AGGRESSIVE
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧹 AGGRESSIVE Podman Cleanup - Removing ALL Unused Resources"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "⚠️  WARNING: This will remove:"
-	@echo "   - All stopped containers"
-	@echo "   - All unused images (not just dangling)"
-	@echo "   - All unused volumes"
-	@echo "   - All unused networks"
-	@echo ""
-	@echo "📊 Current disk usage:"
-	@podman system df || true
-	@echo ""
-	@echo "🗑️  Removing all unused resources..."
-	@podman system prune -a -f --volumes
-	@echo ""
-	@echo "📊 Disk usage after cleanup:"
-	@podman system df || true
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "✅ All unused Podman resources removed"
-	@echo "════════════════════════════════════════════════════════════════════════"
-
-##@ Test Environment Validation
-
-.PHONY: validate-env-notification
-validate-env-notification: ## Validate environment for Notification E2E tests
-	@test/scripts/validate-test-environment.sh \
-		--service "Notification" \
-		--ports "15432,16379,18090" \
-		--cluster-name "notification-e2e"
-
-.PHONY: validate-env-gateway
-validate-env-gateway: ## Validate environment for Gateway E2E tests
-	@test/scripts/validate-test-environment.sh \
-		--service "Gateway" \
-		--ports "15433,16380,18091" \
-		--cluster-name "gateway-e2e"
-
-.PHONY: validate-env-aianalysis
-validate-env-aianalysis: ## Validate environment for AIAnalysis E2E tests
-	@test/scripts/validate-test-environment.sh \
-		--service "AIAnalysis" \
-		--ports "18094,15434,16381" \
-		--cluster-name "aianalysis-e2e"
-
-.PHONY: validate-env-signalprocessing
-validate-env-signalprocessing: ## Validate environment for SignalProcessing E2E tests
-	@test/scripts/validate-test-environment.sh \
-		--service "SignalProcessing" \
-		--skip-port-check \
-		--cluster-name "signalprocessing-e2e"
-
-.PHONY: validate-env-workflowexecution
-validate-env-workflowexecution: ## Validate environment for WorkflowExecution E2E tests
-	@test/scripts/validate-test-environment.sh \
-		--service "WorkflowExecution" \
-		--ports "18090,15433,16379" \
-		--cluster-name "workflowexecution-e2e"
-
-.PHONY: validate-env-remediationorchestrator
-validate-env-remediationorchestrator: ## Validate environment for RemediationOrchestrator E2E tests
-	@test/scripts/validate-test-environment.sh \
-		--service "RemediationOrchestrator" \
-		--ports "18140,18141,15435,16381" \
-		--cluster-name "remediationorchestrator-e2e"
-
-.PHONY: validate-env-datastorage
-validate-env-datastorage: ## Validate environment for DataStorage E2E tests
-	@test/scripts/validate-test-environment.sh \
-		--service "DataStorage" \
-		--ports "5432,6379,8080" \
-		--min-disk-gb 15
-
-.PHONY: validate-env-holmesgpt
-validate-env-holmesgpt: ## Validate environment for HolmesGPT API E2E tests
-	@test/scripts/validate-test-environment.sh \
-		--service "HolmesGPT API" \
-		--ports "18098" \
-		--min-memory-gb 2 \
-		--skip-port-check
-
-.PHONY: validate-env-all
-validate-env-all: ## Validate environment for all E2E tests (shows aggregate requirements)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🔍 Validating Environment for ALL E2E Tests"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@test/scripts/validate-test-environment.sh \
-		--service "All E2E Tests" \
-		--ports "15432,15433,15434,15435,16379,16380,16381,18090,18091,18094,18098,18140,18141,5432,6379,8080" \
-		--min-disk-gb 30 \
-		--min-memory-gb 8
-
-##@ Microservices Container Build
-.PHONY: docker-build-microservices
-docker-build-microservices: docker-build-gateway-service docker-build-datastorage ## Build all microservice container images
-
-.PHONY: docker-build-gateway-service
-docker-build-gateway-service: ## Build gateway service container image (multi-arch UBI9)
-	@echo "🔨 Building multi-arch Gateway image (amd64 + arm64) - UBI9 per ADR-027"
-	podman build --platform linux/amd64,linux/arm64 \
-		-f docker/gateway-ubi9.Dockerfile \
-		-t $(REGISTRY)/kubernaut-gateway:$(VERSION) .
-	@echo "✅ Multi-arch UBI9 image built: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
-
-.PHONY: docker-build-gateway-ubi9
-docker-build-gateway-ubi9: docker-build-gateway-service ## Build gateway service UBI9 image (alias for docker-build-gateway-service)
-	@echo "🔗 Gateway service uses UBI9 by default"
-
-.PHONY: docker-build-gateway-single
-docker-build-gateway-single: ## Build single-arch debug image (current platform only)
-	@echo "🔨 Building single-arch Gateway image for debugging (host arch: $(shell uname -m))"
-	podman build -t $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m) \
-		-f docker/gateway-ubi9.Dockerfile .
-	@echo "✅ Debug image: $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m)"
-
-.PHONY: docker-push-microservices
-docker-push-microservices: docker-push-gateway-service ## Push all microservice container images
-
-.PHONY: docker-push-gateway-service
-docker-push-gateway-service: docker-build-gateway-service ## Push Gateway service multi-arch image
-	@echo "📤 Pushing multi-arch Gateway image..."
-	podman manifest push $(REGISTRY)/kubernaut-gateway:$(VERSION) docker://$(REGISTRY)/kubernaut-gateway:$(VERSION)
-	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
-
-# Data Storage container targets
-# LOCAL_PLATFORM auto-detects host architecture (arm64 on Apple Silicon, amd64 on Intel/AMD)
-LOCAL_PLATFORM := linux/$(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
-
-.PHONY: docker-build-datastorage
-docker-build-datastorage: ## Build Data Storage service for local architecture (auto-detects arm64/amd64)
-	@echo "🔨 Building Data Storage image for local arch: $(LOCAL_PLATFORM)"
-	podman build --platform $(LOCAL_PLATFORM) \
-		-f docker/data-storage.Dockerfile \
-		-t localhost/data-storage:integration .
-	@echo "✅ Image built: localhost/data-storage:integration ($(LOCAL_PLATFORM))"
-
-.PHONY: docker-build-datastorage-multi
-docker-build-datastorage-multi: ## Build Data Storage service multi-arch (amd64 + arm64)
-	@echo "🔨 Building multi-arch Data Storage image (amd64 + arm64)"
-	podman build --platform linux/amd64,linux/arm64 \
-		-f docker/data-storage.Dockerfile \
-		-t $(REGISTRY)/kubernaut-data-storage:$(VERSION) .
-	@echo "✅ Multi-arch image built: $(REGISTRY)/kubernaut-data-storage:$(VERSION)"
-
-.PHONY: docker-push-datastorage
-docker-push-datastorage: docker-build-datastorage-multi ## Push Data Storage service multi-arch image
-	@echo "📤 Pushing multi-arch Data Storage image..."
-	podman manifest push $(REGISTRY)/kubernaut-data-storage:$(VERSION) docker://$(REGISTRY)/kubernaut-data-storage:$(VERSION)
-	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-data-storage:$(VERSION)"
-
-.PHONY: docker-run
-docker-run: ## Run container locally
-	docker run --rm -p 8080:8080 -p 9090:9090 $(IMAGE_NAME):$(VERSION)
-
-##@ HolmesGPT API Service (Python)
-
-HOLMESGPT_IMAGE_NAME ?= kubernaut-holmesgpt-api
-HOLMESGPT_VERSION ?= latest
-HOLMESGPT_REGISTRY ?= quay.io/jordigilh
-
-.PHONY: build-holmesgpt-api
-build-holmesgpt-api: ## Build HolmesGPT API service container image (Python/FastAPI)
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "🐍 Building HolmesGPT API Service (Python/FastAPI)"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "Image: $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
-	@echo ""
-	podman build \
-		-f holmesgpt-api/Dockerfile \
-		-t $(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION) \
-		-t $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION) \
-		--label "build.date=$$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-		--label "build.version=$(HOLMESGPT_VERSION)" \
-		.
-	@echo ""
-	@echo "✅ Build complete!"
-	@echo "   Local: $(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
-	@echo "   Tagged: $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
-
-.PHONY: push-holmesgpt-api
-push-holmesgpt-api: ## Push HolmesGPT API service container image to quay.io/jordigilh
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "📤 Pushing HolmesGPT API Service to Registry"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "Registry: $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
-	@echo ""
-	podman push $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)
-	@echo ""
-	@echo "✅ Push complete!"
-	@echo "   Image: $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
-
-.PHONY: test-holmesgpt-api
-test-holmesgpt-api: ## Run HolmesGPT API service tests in container
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "🧪 Testing HolmesGPT API Service"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	podman run --rm $(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION) pytest -v
-
-.PHONY: run-holmesgpt-api
-run-holmesgpt-api: ## Run HolmesGPT API service locally (dev mode)
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "🚀 Running HolmesGPT API Service (Dev Mode)"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "Port: 8080"
-	@echo "Health: http://localhost:8080/health"
-	@echo "Docs: http://localhost:8080/docs"
-	@echo ""
-	podman run --rm -p 8080:8080 \
-		-e DEV_MODE=true \
-		-e AUTH_ENABLED=false \
-		$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)
-
-##@ Kubernetes
-.PHONY: k8s-namespace
-k8s-namespace: ## Create namespace
-
-##@ Per-Service Test Suites (All Tiers)
-
-.PHONY: test-gateway-all
-test-gateway-all: ## Run ALL Gateway tests (unit + integration + e2e)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Gateway Service - Complete Test Suite"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	echo ""; \
-	echo "1️⃣  Unit Tests..."; \
-	go test ./test/unit/gateway/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests..."; \
-	$(MAKE) test-gateway || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests (Kind cluster)..."; \
-	$(MAKE) test-e2e-gateway || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ Gateway: ALL tests passed (3/3 tiers)"; \
-	else \
-		echo "❌ Gateway: $$FAILED tier(s) failed"; \
-		exit 1; \
-	fi
-
-.PHONY: test-e2e-datastorage
-test-e2e-datastorage: ## Run Data Storage E2E tests (Kind cluster, ~5-8 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Data Storage Service - E2E Test Suite"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios:"
-	@echo "   1. Happy Path - Complete remediation audit trail"
-	@echo "   2. DLQ Fallback - Service outage recovery"
-	@echo "   3. Query API - Multi-filter timeline retrieval"
-	@echo ""
-	@echo "🏗️  Infrastructure: Kind cluster + PostgreSQL + Redis + Data Storage"
-	@echo "⏱️  Duration: ~5-8 minutes (serial), ~3-5 minutes (parallel)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@cd test/e2e/datastorage && E2E_COVERAGE=$(E2E_COVERAGE) ginkgo -v --procs=4 --label-filter="e2e"
-
-.PHONY: test-e2e-datastorage-coverage
-test-e2e-datastorage-coverage: ## Run Data Storage E2E tests with coverage collection (E2E_COVERAGE_COLLECTION.md)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Data Storage Service - E2E Coverage Collection"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Collecting coverage from:"
-	@echo "   • Binary profiling (Go 1.20+) during E2E execution"
-	@echo "   • Graceful shutdown triggers coverage data write"
-	@echo "   • Coverage directory: ./coverdata/"
-	@echo ""
-	@echo "🏗️  Building Docker image with coverage instrumentation..."
-	@echo "   Setting E2E_COVERAGE=true to enable GOFLAGS=-cover in Dockerfile"
-	@echo ""
-	@$(MAKE) E2E_COVERAGE=true test-e2e-datastorage
-	@echo ""
-	@echo "📊 Step 3: Generating coverage reports..."
-	@if [ -d "./coverdata" ] && [ -n "$$(ls -A ./coverdata 2>/dev/null)" ]; then \
-		echo "   Generating text coverage report..."; \
-		go tool covdata textfmt -i=./coverdata -o e2e-coverage.txt && \
-		echo "   ✅ Coverage report: e2e-coverage.txt"; \
-		echo ""; \
-		echo "   Generating HTML coverage report..."; \
-		go tool cover -html=e2e-coverage.txt -o e2e-coverage.html && \
-		echo "   ✅ HTML report: e2e-coverage.html"; \
-		echo ""; \
-		echo "📈 Coverage Summary:"; \
-		go tool covdata percent -i=./coverdata; \
-		echo ""; \
-		echo "💡 View HTML report: open e2e-coverage.html"; \
-	else \
-		echo "⚠️  No coverage data found in ./coverdata/"; \
-		echo "   This is expected if tests failed before graceful shutdown"; \
-	fi
-	@echo "════════════════════════════════════════════════════════════════════════"
-
-.PHONY: test-e2e-gateway
-test-e2e-gateway: ## Run Gateway Service E2E tests (Kind cluster, ~10-15 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Gateway Service - E2E Test Suite"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios:"
-	@echo "   1. Storm Window TTL - Time-based deduplication"
-	@echo "   2. K8s API Rate Limiting - Backpressure handling"
-	@echo "   3. State-based Deduplication - Hash-based filtering"
-	@echo "   4. Storm Buffering - Burst handling"
-	@echo ""
-	@echo "🏗️  Infrastructure: Kind cluster + Redis + Gateway Service"
-	@PROCS=4; \
-	echo "⚡ Note: E2E tests run with $$PROCS parallel processes (limited to avoid K8s API overload)"; \
-	echo "   All processes share Gateway NodePort (localhost:8080 → NodePort 30080)"; \
-	echo "   Each test uses unique namespace for isolation"; \
-	echo "   NodePort eliminates kubectl port-forward instability"; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	cd test/e2e/gateway && ginkgo -v --timeout=15m --procs=$$PROCS
-
-.PHONY: test-e2e-gateway-coverage
-test-e2e-gateway-coverage: ## Run Gateway E2E tests WITH COVERAGE CAPTURE (Go 1.20+)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Gateway Service - E2E Test Suite WITH COVERAGE"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Per DD-TEST-007: E2E Coverage Capture Standard"
-	@echo "📁 Coverage output: coverdata/"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🔧 COVERAGE_MODE=true will:"
-	@echo "   • Build Gateway with GOFLAGS=-cover"
-	@echo "   • Deploy Gateway with GOCOVERDIR=/coverdata"
-	@echo "   • Extract coverage on graceful shutdown"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@mkdir -p coverdata && chmod 777 coverdata
-	@echo "🧪 Running E2E tests with coverage mode..."
-	@cd test/e2e/gateway && COVERAGE_MODE=true ginkgo -v --timeout=15m --procs=4
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Coverage Report Summary:"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@if [ -d coverdata ] && [ "$$(ls -A coverdata 2>/dev/null)" ]; then \
-		go tool covdata percent -i=./coverdata; \
-		go tool covdata textfmt -i=./coverdata -o coverdata/e2e-coverage.txt; \
-		go tool cover -html=coverdata/e2e-coverage.txt -o coverdata/e2e-coverage.html; \
-		echo "✅ Coverage report: coverdata/e2e-coverage.html"; \
-	else \
-		echo "⚠️  No coverage data captured (Gateway may not have been exercised)"; \
-	fi
-
-.PHONY: test-e2e-toolset
-test-e2e-toolset: ## Run Dynamic Toolset E2E tests (Kind cluster, ~10-15 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Dynamic Toolset Service - E2E Test Suite"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios:"
-	@echo "   1. Discovery Lifecycle - Toolset registration and updates"
-	@echo "   2. ConfigMap Updates - Dynamic configuration changes"
-	@echo "   3. Namespace Filtering - Multi-tenant isolation"
-	@echo ""
-	@echo "🏗️  Infrastructure: Kind cluster + Dynamic Toolset Service"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@cd test/e2e/toolset && ginkgo -v --timeout=15m
-
-.PHONY: validate-e2e-notification-infrastructure
-validate-e2e-notification-infrastructure: ## Validate Notification E2E infrastructure prerequisites
-	@echo "🔍 Validating Notification E2E Infrastructure..."
-	@echo ""
-	@echo "Checking Kind cluster..."
-	@kubectl cluster-info --request-timeout=5s > /dev/null 2>&1 || \
-		(echo "❌ Kind cluster not accessible - run 'make kind-up' first" && exit 1)
-	@echo "✅ Kind cluster accessible"
-	@echo ""
-	@echo "Checking notification controller..."
-	@kubectl get deployment -n kubernaut-system notification-controller-manager > /dev/null 2>&1 || \
-		(echo "❌ Notification controller not deployed - deploy controllers first" && exit 1)
-	@echo "✅ Notification controller deployed"
-	@echo ""
-	@echo "Checking CRD registration..."
-	@kubectl get crd notificationrequests.kubernaut.io > /dev/null 2>&1 || \
-		(echo "❌ NotificationRequest CRD not registered - install CRDs first" && exit 1)
-	@echo "✅ NotificationRequest CRD registered"
-	@echo ""
-	@echo "Checking file delivery directory..."
-	@test -d /tmp/kubernaut-e2e-notifications || mkdir -p /tmp/kubernaut-e2e-notifications
-	@test -w /tmp/kubernaut-e2e-notifications || \
-		(echo "❌ /tmp/kubernaut-e2e-notifications not writable" && exit 1)
-	@echo "✅ File delivery directory writable (/tmp/kubernaut-e2e-notifications)"
-	@echo ""
-	@echo "Checking DataStorage service (for audit tests)..."
-	@kubectl get service -n kubernaut-system datastorage-service > /dev/null 2>&1 && \
-		echo "✅ DataStorage service deployed (audit E2E tests will run)" || \
-		echo "⚠️  DataStorage service not deployed (audit E2E tests may be skipped)"
-	@echo ""
-	@echo "✅ All E2E infrastructure prerequisites validated"
-
-.PHONY: test-e2e-notification
-test-e2e-notification: ## Run Notification Service E2E tests (Kind cluster, 4 parallel procs, ~10-15 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service - E2E Test Suite (Kind Cluster)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios:"
-	@echo "   1. Audit Lifecycle - Message sent/failed/acknowledged events"
-	@echo "   2. Audit Correlation - Remediation request tracing"
-	@echo "   3. File Delivery Validation - Complete message content"
-	@echo "   4. Metrics Validation - Prometheus metrics exposure"
-	@echo ""
-	@echo "🏗️  Infrastructure: Kind cluster + Notification Controller deployment"
-	@echo "📁 Output: FileService validates delivery to /tmp/kubernaut-e2e-notifications"
-	@echo "⚡ Parallel: 4 processes (per TESTING_GUIDELINES.md)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@PROCS=4; \
-	echo "Running E2E tests with $$PROCS parallel processes..."; \
-	cd test/e2e/notification && ginkgo -v --timeout=15m --procs=$$PROCS
-
-.PHONY: test-unit-signalprocessing
-test-unit-signalprocessing: ## Run SignalProcessing unit tests (4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 SignalProcessing Controller - Unit Tests (4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	ginkgo -v --timeout=5m --procs=4 ./test/unit/signalprocessing/...
-
-.PHONY: test-integration-signalprocessing
-test-integration-signalprocessing: ## Run SignalProcessing integration tests (envtest, 4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 SignalProcessing Controller - Integration Tests (ENVTEST + Podman)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🏗️  Infrastructure: ENVTEST + DataStorage + PostgreSQL + Redis"
-	@echo "⚡ Parallel execution (--procs=4 per DD-TEST-002)"
-	@echo "📋 DD-TEST-002: Universal standard for all Kubernaut services"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	ginkgo -v --timeout=10m --procs=4 ./test/integration/signalprocessing/...
-
-.PHONY: test-e2e-signalprocessing
-test-e2e-signalprocessing: ## Run SignalProcessing E2E tests (Kind cluster, 4 parallel procs, ~10-15 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 SignalProcessing Service - E2E Test Suite (Kind Cluster)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Business Requirements Tested:"
-	@echo "   • BR-SP-051: Environment classification from namespace labels"
-	@echo "   • BR-SP-070: Priority assignment (P0-P3)"
-	@echo "   • BR-SP-090: Audit trail persistence to DataStorage"
-	@echo "   • BR-SP-100: Owner chain traversal"
-	@echo "   • BR-SP-101: Detected labels (PDB, HPA)"
-	@echo "   • BR-SP-102: CustomLabels from Rego policies"
-	@echo ""
-	@echo "🏗️  Infrastructure: Kind cluster + DataStorage + PostgreSQL"
-	@echo "⚡ Parallel: 4 processes (per TESTING_GUIDELINES.md)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@PROCS=4; \
-	echo "Running E2E tests with $$PROCS parallel processes..."; \
-	cd test/e2e/signalprocessing && ginkgo -v --timeout=15m --procs=$$PROCS
-
-.PHONY: test-e2e-signalprocessing-coverage
-test-e2e-signalprocessing-coverage: ## Run SignalProcessing E2E tests WITH COVERAGE CAPTURE (Go 1.20+)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 SignalProcessing Service - E2E Test Suite WITH COVERAGE"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Per E2E_COVERAGE_COLLECTION.md: Go 1.20+ binary profiling"
-	@echo "📁 Coverage output: coverdata/"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🔧 COVERAGE_MODE=true will:"
-	@echo "   • Build SP controller with GOFLAGS=-cover"
-	@echo "   • Deploy controller with GOCOVERDIR=/coverdata"
-	@echo "   • Extract coverage on graceful shutdown"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@mkdir -p coverdata && chmod 777 coverdata
-	@echo "🧪 Running E2E tests with coverage mode..."
-	@cd test/e2e/signalprocessing && COVERAGE_MODE=true ginkgo -v --timeout=15m --procs=4
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Coverage Report Summary:"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@if [ -d coverdata ] && [ "$$(ls -A coverdata 2>/dev/null)" ]; then \
-		go tool covdata percent -i=./coverdata; \
-		go tool covdata textfmt -i=./coverdata -o coverdata/e2e-coverage.txt; \
-		go tool cover -html=coverdata/e2e-coverage.txt -o coverdata/e2e-coverage.html; \
-		echo "✅ Coverage report: coverdata/e2e-coverage.html"; \
-	else \
-		echo "⚠️  No coverage data captured (controller may not have been exercised)"; \
-	fi
-
-.PHONY: test-signalprocessing-all
-test-signalprocessing-all: ## Run ALL SignalProcessing tests (unit + integration + e2e)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 SignalProcessing Controller - Complete Test Suite (3 Tiers)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Per TESTING_GUIDELINES.md: Integration serial (procs=1 for stability)"
-	@echo "🏗️  E2E Infrastructure: Kind cluster + DataStorage + PostgreSQL + Redis"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	echo ""; \
-	echo "1️⃣  Unit Tests (4 parallel procs)..."; \
-	ginkgo -v --timeout=5m --procs=4 ./test/unit/signalprocessing/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests (4 parallel procs per DD-TEST-002)..."; \
-	ginkgo -v --timeout=10m --procs=4 ./test/integration/signalprocessing/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests (4 parallel procs)..."; \
-	cd test/e2e/signalprocessing && ginkgo -v --timeout=15m --procs=4 || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -ne 0 ]; then \
-		echo "❌ $$FAILED test tier(s) failed"; \
-		exit 1; \
-	else \
-		echo "✅ All SignalProcessing test tiers passed!"; \
-	fi
-
-.PHONY: test-e2e-datastorage-parallel
-test-e2e-datastorage-parallel: ## Run Data Storage E2E tests in parallel (3 processes, ~3-5 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Data Storage Service - E2E Test Suite (PARALLEL)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios (Parallel Execution):"
-	@echo "   Process 1: Happy Path"
-	@echo "   Process 2: DLQ Fallback"
-	@echo "   Process 3: Query API"
-	@echo ""
-	@echo "🏗️  Infrastructure: 3x (Kind cluster + PostgreSQL + Redis + Data Storage)"
-	@echo "⏱️  Duration: ~3-5 minutes (64% faster than serial)"
-	@echo "🔒 Isolation: Complete namespace isolation per process"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@cd test/e2e/datastorage && ginkgo -v --label-filter="e2e" --procs=3
-
-.PHONY: test-datastorage-all
-test-datastorage-all: ## Run ALL Data Storage tests (unit + integration + e2e)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Data Storage - Complete Test Suite (4 Tiers)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	echo ""; \
-	echo "1️⃣  Unit Tests..."; \
-	go test ./test/unit/datastorage/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests (Podman: PostgreSQL + Redis)..."; \
-	$(MAKE) test-integration-datastorage || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests (Kind cluster)..."; \
-	$(MAKE) test-e2e-datastorage || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "4️⃣  Performance Tests..."; \
-	go test ./test/performance/datastorage/... -v -bench=. -timeout=10m || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ Data Storage: ALL tests passed (4/4 tiers)"; \
-	else \
-		echo "❌ Data Storage: $$FAILED tier(s) failed"; \
-		exit 1; \
-	fi
-
-##@ Performance
-
-.PHONY: bench-datastorage
-bench-datastorage: ## Run Data Storage performance benchmarks
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "⚡ Data Storage Performance Benchmarks"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@go test ./test/performance/datastorage/... -bench=. -benchmem -timeout=10m \
-		| tee /tmp/bench-current.txt
-
-.PHONY: check-performance-baseline
-check-performance-baseline: bench-datastorage ## Run benchmarks and compare against baseline
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Performance Baseline Comparison"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@./scripts/compare-performance-baseline.sh /tmp/bench-current.txt .perf-baseline.json
-
-.PHONY: update-performance-baseline
-update-performance-baseline: bench-datastorage ## Update performance baseline with current results
-	@echo ""
-	@echo "⚠️  Updating performance baseline..."
-	@echo "   This should only be done after verifying performance improvements"
-	@echo "   or when intentionally accepting performance changes."
-	@echo ""
-	@read -p "Are you sure you want to update the baseline? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		echo "📝 Updating .perf-baseline.json..."; \
-		echo "   (Manual update required - extract values from /tmp/bench-current.txt)"; \
-		echo "   File: .perf-baseline.json"; \
-	else \
-		echo "❌ Baseline update cancelled"; \
-	fi
-
-.PHONY: test-toolset-all
-test-toolset-all: ## Run ALL Dynamic Toolset tests (unit + integration + e2e)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Dynamic Toolset - Complete Test Suite"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	echo ""; \
-	echo "1️⃣  Unit Tests..."; \
-	go test ./test/unit/toolset/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests..."; \
-	$(MAKE) test-integration-toolset || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests..."; \
-	go test ./test/e2e/toolset/... -v -ginkgo.v -timeout=15m || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ Dynamic Toolset: ALL tests passed (3/3 tiers)"; \
-	else \
-		echo "❌ Dynamic Toolset: $$FAILED tier(s) failed"; \
-		exit 1; \
-	fi
-
-.PHONY: test-notification-all
-test-notification-all: ## Run ALL Notification tests (unit + integration + e2e) with 4 parallel procs
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service - Complete Test Suite (3 Tiers)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
-	@echo "🏗️  E2E Infrastructure: Kind cluster (real Kubernetes deployment)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	PROCS=4; \
-	echo ""; \
-	echo "1️⃣  Unit Tests ($$PROCS parallel procs)..."; \
-	(cd test/unit/notification && ginkgo -v --timeout=5m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests ($$PROCS parallel procs)..."; \
-	(cd test/integration/notification && ginkgo -v --timeout=15m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests (Kind cluster, $$PROCS parallel procs)..."; \
-	(cd test/e2e/notification && ginkgo -v --timeout=15m --procs=$$PROCS) || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		echo "✅ Notification: ALL tests passed (3/3 tiers)"; \
-		echo "   • Unit Tests: 140/140 passed"; \
-		echo "   • Integration Tests: 97/97 passed"; \
-		echo "   • E2E Tests: 12/12 passed (Kind cluster)"; \
-		echo "   • Total: 249/249 passed (0 skipped, 0 failed)"; \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-	else \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		echo "❌ Notification: $$FAILED tier(s) failed"; \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		exit 1; \
-	fi
-
-.PHONY: test-holmesgpt-all
-test-holmesgpt-all: ## Run ALL HolmesGPT API tests (Python)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API - Complete Test Suite"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "Running Python test suite..."
-	@cd holmesgpt-api && pytest -v --cov=. --cov-report=term-missing
-	@echo ""
-	@echo "✅ HolmesGPT API: ALL tests passed"
-
-# ════════════════════════════════════════════════════════════════════════════════
-# WorkflowExecution Controller Tests
-# Per TESTING_GUIDELINES.md and 03-testing-strategy.mdc
-# ════════════════════════════════════════════════════════════════════════════════
-
-.PHONY: clean-podman-ports-workflowexecution
-clean-podman-ports-workflowexecution: ## Clean stale Podman ports for WE tests only (18090 DS, 15433 PG, 16379 Redis)
-	@echo "🧹 Cleaning stale Podman ports for WorkflowExecution tests..."
-	@# WE uses: 18090 (DS HTTP), 19090 (DS Metrics), 15433 (PostgreSQL), 16379 (Redis)
-	@# Only clean WE-specific ports - do NOT clean ports used by other services
-	@lsof -ti:18090 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:19090 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:15433 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:16379 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@# Remove WE-specific stale containers only
-	@podman rm -f kubernaut_datastorage_1 kubernaut_postgres_1 kubernaut_redis_1 2>/dev/null || true
-	@echo "✅ WE port cleanup complete"
-
-.PHONY: clean-podman-ports-remediationorchestrator
-clean-podman-ports-remediationorchestrator: ## Clean stale Podman ports for RO tests (15435 PG, 16381 Redis, 18140-18141 DS)
-	@echo "🧹 Cleaning stale Podman ports for RemediationOrchestrator tests..."
-	@# RO uses: 15435 (PostgreSQL), 16381 (Redis), 18140 (DS HTTP), 18141 (DS Metrics)
-	@# Per DD-TEST-001: RO-specific ports from documented ranges (15433-15442, 16379-16388)
-	@lsof -ti:15435 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:16381 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:18140 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -ti:18141 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@podman rm -f ro-postgres-integration ro-redis-integration ro-datastorage-integration 2>/dev/null || true
-	@echo "✅ RO port cleanup complete"
-
-.PHONY: clean-ro-integration
-clean-ro-integration: ## Clean up RO integration test infrastructure (containers + volumes)
-	@echo "🧹 Cleaning up RemediationOrchestrator integration infrastructure..."
-	@echo "   • Stopping containers (PostgreSQL, Redis, DataStorage)"
-	@echo "   • Removing volumes"
-	@podman-compose -f test/integration/remediationorchestrator/podman-compose.remediationorchestrator.test.yml \
-		-p remediationorchestrator-integration down -v 2>&1 | grep -v "no container with" || true
-	@echo "✅ RO integration infrastructure cleaned up"
-
-.PHONY: test-unit-workflowexecution
-test-unit-workflowexecution: ## Run WorkflowExecution unit tests (4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 WorkflowExecution Controller - Unit Tests (4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	ginkgo -v --timeout=5m --procs=4 ./test/unit/workflowexecution/...
-
-.PHONY: test-integration-workflowexecution
-test-integration-workflowexecution: ## Run WorkflowExecution integration tests (4 parallel procs, EnvTest)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 WorkflowExecution Controller - Integration Tests (4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	ginkgo -v --timeout=15m --procs=4 ./test/integration/workflowexecution/...
-
-.PHONY: test-e2e-workflowexecution
-test-e2e-workflowexecution: ## Run WorkflowExecution E2E tests (4 parallel procs, Kind + Tekton)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 WorkflowExecution Controller - E2E Tests (Kind + Tekton, 4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	ginkgo -v --timeout=15m --procs=4 ./test/e2e/workflowexecution/...
-
-.PHONY: test-e2e-workflowexecution-coverage
-test-e2e-workflowexecution-coverage: ## Run WorkflowExecution E2E tests with coverage (DD-TEST-007)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 WorkflowExecution Controller - E2E Tests with Coverage (DD-TEST-007)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "Building with coverage instrumentation (GOFLAGS=-cover)..."
-	@echo "Deploying with GOCOVERDIR=/coverdata..."
-	@echo "Target: 50%+ E2E coverage per TESTING_GUIDELINES.md 2.4.0"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	E2E_COVERAGE=true GOFLAGS=-cover ginkgo -v --timeout=15m --procs=4 ./test/e2e/workflowexecution/...
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Coverage Reports Generated:"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "  Text:  test/e2e/workflowexecution/e2e-coverage.txt"
-	@echo "  HTML:  test/e2e/workflowexecution/e2e-coverage.html"
-	@echo "  Data:  test/e2e/workflowexecution/coverdata/"
-	@echo "════════════════════════════════════════════════════════════════════════"
-
-.PHONY: test-workflowexecution-all
-test-workflowexecution-all: ## Run ALL WorkflowExecution tests (unit + integration + e2e, 4 parallel each)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 WorkflowExecution Controller - Complete Test Suite (3 Tiers)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
-	@echo "🏗️  E2E Infrastructure: Kind cluster + Tekton Pipelines"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	PROCS=4; \
-	echo ""; \
-	echo "1️⃣  Unit Tests ($$PROCS parallel procs)..."; \
-	ginkgo -v --timeout=5m --procs=$$PROCS ./test/unit/workflowexecution/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests ($$PROCS parallel procs)..."; \
-	ginkgo -v --timeout=15m --procs=$$PROCS ./test/integration/workflowexecution/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests (Kind + Tekton, $$PROCS parallel procs)..."; \
-	ginkgo -v --timeout=15m --procs=$$PROCS ./test/e2e/workflowexecution/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		echo "✅ WorkflowExecution: ALL tests passed (3/3 tiers)"; \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-	else \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		echo "❌ WorkflowExecution: $$FAILED tier(s) failed"; \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		exit 1; \
-	fi
-
-.PHONY: test-coverage-workflowexecution
-test-coverage-workflowexecution: ## Run WorkflowExecution unit tests with coverage report
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 WorkflowExecution Controller - Coverage Report"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	go test -cover -coverprofile=coverage-workflowexecution.out -coverpkg=./internal/controller/workflowexecution/... ./test/unit/workflowexecution/...
-	@echo ""
-	@echo "📊 Coverage Summary:"
-	@go tool cover -func=coverage-workflowexecution.out | tail -1
-	go tool cover -html=coverage-workflowexecution.out -o coverage-workflowexecution.html
-	@echo "📄 Full report: coverage-workflowexecution.html"
-
-.PHONY: build-workflowexecution
-build-workflowexecution: ## Build WorkflowExecution controller binary
-	go build -o bin/workflowexecution-controller ./cmd/workflowexecution
-
-# ════════════════════════════════════════════════════════════════════════════════
-# AIAnalysis Controller Targets (per 03-testing-strategy.mdc, DD-TEST-001)
-# ════════════════════════════════════════════════════════════════════════════════
-
-.PHONY: test-unit-aianalysis
-test-unit-aianalysis: ## Run AIAnalysis unit tests (4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 AIAnalysis Controller - Unit Tests (4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	ginkgo -v --timeout=5m --procs=4 ./test/unit/aianalysis/...
-
-.PHONY: test-integration-aianalysis
-test-integration-aianalysis: ## Run AIAnalysis integration tests (4 parallel procs, EnvTest + podman-compose)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 AIAnalysis Controller - Integration Tests (4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Infrastructure: envtest + podman-compose (Data Storage, HolmesGPT-API)"
-	@echo "📋 Ports: 15433 (PostgreSQL), 16379 (Redis), 18090 (Data Storage) per DD-TEST-001"
-	@echo ""
-	ginkgo -v --timeout=15m --procs=4 ./test/integration/aianalysis/...
-
-.PHONY: test-e2e-aianalysis-coverage
-test-e2e-aianalysis-coverage: ## Run AIAnalysis E2E tests with coverage collection (DD-TEST-007)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 AIAnalysis Controller - E2E Tests with Coverage (Kind cluster)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Per DD-TEST-007: Go 1.20+ binary profiling"
-	@echo "📋 Infrastructure: Kind cluster with real services (LLM mocked)"
-	@echo "📋 Coverage: GOCOVERDIR=/coverdata in pod spec"
-	@echo ""
-	@echo "   • Build AIAnalysis with GOFLAGS=-cover"
-	@echo "   • Mount /coverdata volume in pods"
-	@echo "   • Extract coverage after tests complete"
-	@echo ""
-	E2E_COVERAGE=true ginkgo -v --timeout=30m --procs=4 ./test/e2e/aianalysis/...
-
-.PHONY: test-e2e-aianalysis
-test-e2e-aianalysis: ## Run AIAnalysis E2E tests (4 parallel procs, Kind cluster)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 AIAnalysis Controller - E2E Tests (Kind cluster, 4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Infrastructure: Kind cluster with real services (LLM mocked)"
-	@echo "📋 NodePorts: 30084 (API), 30184 (Metrics), 30284 (Health) per DD-TEST-001"
-	@echo "📋 Kubeconfig: ~/.kube/aianalysis-e2e-config per TESTING_GUIDELINES.md"
-	@echo ""
-	ginkgo -v --timeout=30m --procs=4 ./test/e2e/aianalysis/...
-
-.PHONY: test-aianalysis-all
-test-aianalysis-all: ## Run ALL AIAnalysis tests (unit + integration + e2e, 4 parallel each)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 AIAnalysis Controller - Complete Test Suite (3 Tiers)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
-	@echo "🏗️  E2E Infrastructure: Kind cluster + Data Storage + HolmesGPT-API"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	PROCS=4; \
-	echo ""; \
-	echo "1️⃣  Unit Tests ($$PROCS parallel procs)..."; \
-	ginkgo -v --timeout=5m --procs=$$PROCS ./test/unit/aianalysis/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests ($$PROCS parallel procs)..."; \
-	ginkgo -v --timeout=15m --procs=$$PROCS ./test/integration/aianalysis/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests (Kind cluster, $$PROCS parallel procs)..."; \
-	ginkgo -v --timeout=30m --procs=$$PROCS ./test/e2e/aianalysis/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		echo "✅ AIAnalysis: ALL tests passed (3/3 tiers)"; \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-	else \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		echo "❌ AIAnalysis: $$FAILED tier(s) failed"; \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		exit 1; \
-	fi
-
-.PHONY: test-coverage-aianalysis
-test-coverage-aianalysis: ## Run AIAnalysis unit tests with coverage report
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 AIAnalysis Controller - Coverage Report"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	go test -cover -coverprofile=coverage-aianalysis.out -coverpkg=./pkg/aianalysis/... ./test/unit/aianalysis/...
-	@echo ""
-	@echo "📊 Coverage Summary:"
-	@go tool cover -func=coverage-aianalysis.out | tail -1
-	go tool cover -html=coverage-aianalysis.out -o coverage-aianalysis.html
-	@echo "📄 Full report: coverage-aianalysis.html"
-
-.PHONY: build-aianalysis
-build-aianalysis: ## Build AIAnalysis controller binary
-	go build -o bin/aianalysis-controller ./cmd/aianalysis
-
-.PHONY: docker-build-aianalysis
-docker-build-aianalysis: ## Build AIAnalysis controller container image (host arch)
-	@echo "🔨 Building AIAnalysis image for host arch: $(LOCAL_PLATFORM)"
-	podman build --platform $(LOCAL_PLATFORM) \
-		-f docker/aianalysis.Dockerfile \
-		-t localhost/aianalysis-controller:latest .
-	@echo "✅ Image built: localhost/aianalysis-controller:latest ($(LOCAL_PLATFORM))"
-
-.PHONY: test-all-services
-test-all-services: ## Run ALL tests for ALL services (sequential - use CI for parallel)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🚀 Complete Test Suite - All Services"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "⚠️  Note: Running sequentially. Use GitHub Actions for parallel execution."
-	@echo ""
-	@FAILED=0; \
-	$(MAKE) test-gateway-all || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	$(MAKE) test-datastorage-all || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	$(MAKE) test-toolset-all || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	$(MAKE) test-notification-all || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	$(MAKE) test-holmesgpt-all || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ ALL SERVICES: Complete test suite passed (5/5 services)"; \
-	else \
-		echo "❌ FAILED: $$FAILED service(s) failed tests"; \
-		exit 1; \
-	fi; \
-	echo "════════════════════════════════════════════════════════════════════════"
-
-##@ Containerized Testing
-
-.PHONY: test-container-build
-test-container-build: ## Build test runner container
-	@echo "🐳 Building test runner container..."
-	podman build -f docker/test-runner.Dockerfile -t kubernaut-test-runner:latest .
-
-.PHONY: test-container-unit
-test-container-unit: ## Run unit tests in container (no external dependencies)
-	@echo "🐳 Running unit tests in container (standalone, no external services)..."
-	podman run --rm \
-		-v $(PWD):/workspace:Z \
-		-w /workspace \
-		kubernaut-test-runner:latest \
-		make test
-
-.PHONY: test-container-integration
-test-container-integration: ## Run integration tests in container
-	@echo "🐳 Running integration tests in container..."
-	podman-compose -f podman-compose.test.yml run --rm \
-		-e POSTGRES_HOST=postgres \
-		-e POSTGRES_PORT=5432 \
-		-e REDIS_HOST=redis \
-		-e REDIS_PORT=6379 \
-		-e DATASTORAGE_URL=http://datastorage:8080 \
-		test-runner sh -c "make test-integration-datastorage && make test-integration-notification"
-
-.PHONY: test-container-e2e
-test-container-e2e: ## Run E2E tests in container
-	@echo "🐳 Running E2E tests in container..."
-	podman-compose -f podman-compose.test.yml run --rm \
-		-e KIND_EXPERIMENTAL_PROVIDER=podman \
-		-e POSTGRES_HOST=postgres \
-		-e POSTGRES_PORT=5432 \
-		-e REDIS_HOST=redis \
-		-e REDIS_PORT=6379 \
-		test-runner sh -c "cd test/e2e/gateway && go test -v -ginkgo.v -timeout=15m"
-
-.PHONY: test-container-all
-test-container-all: ## Run ALL tests in container
-	@echo "🐳 Running ALL tests in container..."
-	podman-compose -f podman-compose.test.yml run --rm \
-		-e POSTGRES_HOST=postgres \
-		-e POSTGRES_PORT=5432 \
-		-e REDIS_HOST=redis \
-		-e REDIS_PORT=6379 \
-		test-runner make test-all-services
-
-.PHONY: test-container-shell
-test-container-shell: ## Open shell in test container for debugging
-	@echo "🐳 Opening shell in test container..."
-	podman-compose -f podman-compose.test.yml run --rm \
-		-e POSTGRES_HOST=postgres \
-		-e POSTGRES_PORT=5432 \
-		-e REDIS_HOST=redis \
-		-e REDIS_PORT=6379 \
-		test-runner /bin/bash
-
-.PHONY: test-container-down
-test-container-down: ## Stop and remove all test containers
-	@echo "🐳 Stopping test containers..."
-	podman-compose -f podman-compose.test.yml down -v
-
-# ════════════════════════════════════════════════════════════════════════════════
-# Remediation Orchestrator Tests
-# Per TESTING_GUIDELINES.md and 03-testing-strategy.mdc
-# ════════════════════════════════════════════════════════════════════════════════
-
-.PHONY: test-unit-remediationorchestrator
-test-unit-remediationorchestrator: ## Run RemediationOrchestrator unit tests (4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 RemediationOrchestrator - Unit Tests (4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Coverage: BR-ORCH-025, BR-ORCH-026, BR-ORCH-031, BR-ORCH-036, BR-ORCH-037, BR-ORCH-038"
-	@echo ""
-	ginkgo -v --timeout=5m --procs=4 ./test/unit/remediationorchestrator/...
-
-################################################################################
-# Shared Utilities Tests
-################################################################################
-
-.PHONY: test-unit-shared
-test-unit-shared: ## Run Shared Utilities unit tests (4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Shared Utilities - Unit Tests (4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "Testing: backoff, conditions, hotreload, sanitization, types"
-	@echo "📋 Used by: WorkflowExecution, Notification, SignalProcessing, RO, DS, Gateway"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	ginkgo -v --procs=4 --timeout=5m --cover \
-		--coverprofile=coverage-shared-unit.out \
-		--output-dir=. \
-		./test/unit/shared/...
-	@echo ""
-	@echo "✅ Shared Utilities unit tests complete"
-	@echo "📊 Coverage: coverage-shared-unit.out"
-
-.PHONY: test-unit-shared-watch
-test-unit-shared-watch: ## Run Shared Utilities unit tests in watch mode
-	@echo "🔄 Watching Shared Utilities unit tests..."
-	ginkgo watch -v --procs=4 ./test/unit/shared/...
-
-################################################################################
-# RemediationOrchestrator Integration Tests
-################################################################################
-
-.PHONY: test-integration-remediationorchestrator
-test-integration-remediationorchestrator: setup-envtest ## Run RemediationOrchestrator integration tests (envtest, 4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 RemediationOrchestrator - Integration Tests (envtest, 4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Tests: Lifecycle, AIAnalysis→ManualReview, Approval Flow"
-	@echo "🏗️  Infrastructure: envtest (in-memory K8s API server)"
-	@echo "⏱️  Timeout: 20m (accounts for RAR finalizer processing + namespace cleanup)"
-	@echo ""
-	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
-		ginkgo -v --timeout=20m --procs=4 ./test/integration/remediationorchestrator/...
-
-.PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ## Run HolmesGPT API (HAPI) E2E tests (Kind cluster, ~6-9 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API (HAPI) - E2E Test Suite"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Test Scenarios:"
-	@echo "   • 18 Python pytest tests (Black-box HTTP API testing)"
-	@echo "   • Custom labels support (DD-HAPI-001)"
-	@echo "   • Mock LLM mode (BR-AI-001)"
-	@echo "   • Recovery endpoint validation (DD-003)"
-	@echo ""
-	@echo "🏗️  Infrastructure: Kind cluster + PostgreSQL + Redis + Data Storage + HAPI"
-	@echo "⏱️  Duration: ~6-9 minutes (sequential builds to avoid Python OOM)"
-	@echo "🐍  Test Framework: Python pytest (invoked from Go ginkgo)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@cd test/e2e/holmesgpt-api && ginkgo -v --procs=1 --label-filter="e2e"
-
-.PHONY: test-e2e-remediationorchestrator
-test-e2e-remediationorchestrator: ## Run RemediationOrchestrator E2E tests (Kind cluster, 4 parallel procs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 RemediationOrchestrator - E2E Tests (Kind Cluster, 4 parallel procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Tests: Full remediation lifecycle with all child controllers"
-	@echo "🏗️  Infrastructure: Kind cluster + SP + AI + WE + Notification services"
-	@echo "🔧 LLM: Mocked (per TESTING_GUIDELINES.md - cost constraint)"
-	@echo ""
-	@cd test/e2e/remediationorchestrator && ginkgo -v --timeout=15m --procs=4
-
-.PHONY: test-remediationorchestrator-all
-test-remediationorchestrator-all: ## Run ALL RemediationOrchestrator tests (unit + integration + e2e, 4 parallel each)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 RemediationOrchestrator - Complete Test Suite (3 Tiers)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Per TESTING_GUIDELINES.md: All tests run with 4 parallel processors"
-	@echo "📋 Business Requirements: BR-ORCH-025 through BR-ORCH-038"
-	@echo "🏗️  E2E Infrastructure: Kind cluster + All CRD Controllers"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	PROCS=4; \
-	echo ""; \
-	echo "1️⃣  Unit Tests ($$PROCS parallel procs)..."; \
-	ginkgo -v --timeout=5m --procs=$$PROCS ./test/unit/remediationorchestrator/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests (envtest, $$PROCS parallel procs)..."; \
-	$(MAKE) test-integration-remediationorchestrator || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests (Kind cluster, $$PROCS parallel procs)..."; \
-	ginkgo -v --timeout=15m --procs=$$PROCS ./test/e2e/remediationorchestrator/... 2>/dev/null || echo "   ⚠️  E2E tests not yet available (pending team service availability)"; \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		echo "✅ RemediationOrchestrator: ALL tests passed (3/3 tiers)"; \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-	else \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		echo "❌ RemediationOrchestrator: $$FAILED tier(s) failed"; \
-		echo "════════════════════════════════════════════════════════════════════════"; \
-		exit 1; \
-	fi
-
-.PHONY: test-coverage-remediationorchestrator
-test-coverage-remediationorchestrator: ## Run RemediationOrchestrator unit tests with coverage report
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 RemediationOrchestrator - Coverage Report"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	go test -cover -coverprofile=coverage-remediationorchestrator.out \
-		-coverpkg=./pkg/remediationorchestrator/...,./internal/controller/remediationorchestrator/... \
-		./test/unit/remediationorchestrator/...
-	@echo ""
-	@echo "📊 Coverage Summary:"
-	@go tool cover -func=coverage-remediationorchestrator.out | tail -1
-	go tool cover -html=coverage-remediationorchestrator.out -o coverage-remediationorchestrator.html
-	@echo "📄 Full report: coverage-remediationorchestrator.html"
-
-# ════════════════════════════════════════════════════════════════════════════════
-# UNIFIED TEST TARGETS - ALL 3 TIERS (Per TESTING_GUIDELINES.md)
-# ════════════════════════════════════════════════════════════════════════════════
-#
-# Test Tier Infrastructure Matrix (from TESTING_GUIDELINES.md):
-# ┌─────────────┬─────────────────┬───────────────────┬─────────────────────────┐
-# │ Test Tier   │ K8s Environment │ Services          │ Infrastructure          │
-# ├─────────────┼─────────────────┼───────────────────┼─────────────────────────┤
-# │ Unit        │ None            │ Mocked            │ None required           │
-# │ Integration │ envtest         │ Real (podman)     │ podman-compose.test.yml │
-# │ E2E         │ KIND cluster    │ Real (deployed)   │ KIND + Helm/manifests   │
-# └─────────────┴─────────────────┴───────────────────┴─────────────────────────┘
-#
-# LLM Policy: Mocked in ALL tiers (cost constraint)
-#
-# ════════════════════════════════════════════════════════════════════════════════
-
-##@ Unified Test Execution (All 3 Tiers)
-
-.PHONY: test-tier-unit
-test-tier-unit: ## Run ALL unit tests across all services (Tier 1 - fastest, ~2-5 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 TIER 1: UNIT TESTS - All Services"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Per TESTING_GUIDELINES.md:"
-	@echo "   • Purpose: Validate implementation correctness"
-	@echo "   • Focus: Function/method behavior, error handling, edge cases"
-	@echo "   • Dependencies: Mocked (minimal)"
-	@echo "   • Target: <100ms per test, 95%+ code coverage"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@FAILED=0; \
-	echo "0️⃣  Shared Utilities (backoff, conditions, hotreload)..."; \
-	ginkgo --procs=4 --timeout=5m ./test/unit/shared/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "1️⃣  Gateway..."; \
-	go test ./test/unit/gateway/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Data Storage..."; \
-	ginkgo --procs=4 --timeout=5m ./test/unit/datastorage/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  Notification..."; \
-	ginkgo --procs=4 --timeout=5m ./test/unit/notification/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "4️⃣  WorkflowExecution..."; \
-	ginkgo --procs=4 --timeout=5m ./test/unit/workflowexecution/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "5️⃣  RemediationOrchestrator..."; \
-	ginkgo --procs=4 --timeout=5m ./test/unit/remediationorchestrator/... || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "6️⃣  HolmesGPT API (Python)..."; \
-	(cd holmesgpt-api && pytest tests/unit/ -v --tb=short 2>/dev/null) || echo "   ⚠️  HolmesGPT unit tests not available"; \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ TIER 1 (UNIT): ALL tests passed"; \
-	else \
-		echo "❌ TIER 1 (UNIT): $$FAILED service(s) failed"; \
-		exit 1; \
-	fi; \
-	echo "════════════════════════════════════════════════════════════════════════"
-
-.PHONY: test-tier-integration
-test-tier-integration: setup-envtest ## Run ALL integration tests across all services (Tier 2 - medium, ~10-20 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 TIER 2: INTEGRATION TESTS - All Services"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Per TESTING_GUIDELINES.md:"
-	@echo "   • Purpose: Validate component interactions"
-	@echo "   • Focus: Cross-component workflows, K8s API interactions"
-	@echo "   • Dependencies: envtest + Podman (PostgreSQL, Redis)"
-	@echo "   • Infrastructure: podman-compose.test.yml"
-	@echo "   • LLM: Mocked (cost constraint)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@FAILED=0; \
-	echo "1️⃣  Data Storage (PostgreSQL via Podman)..."; \
-	$(MAKE) test-integration-datastorage || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  AI Service (Redis via Podman)..."; \
-	$(MAKE) test-integration-ai || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  Gateway (envtest)..."; \
-	$(MAKE) test-gateway || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "4️⃣  Notification (envtest)..."; \
-	$(MAKE) test-integration-notification || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "5️⃣  WorkflowExecution (envtest)..."; \
-	ginkgo -v --timeout=15m --procs=4 ./test/integration/workflowexecution/... 2>/dev/null || echo "   ⚠️  WE integration tests not available"; \
-	echo ""; \
-	echo "6️⃣  RemediationOrchestrator (envtest)..."; \
-	$(MAKE) test-integration-remediationorchestrator || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "7️⃣  Dynamic Toolset (Kind bootstrapped)..."; \
-	$(MAKE) test-integration-toolset || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "8️⃣  HolmesGPT API (Mock LLM)..."; \
-	$(MAKE) test-integration-holmesgpt || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ TIER 2 (INTEGRATION): ALL tests passed"; \
-	else \
-		echo "❌ TIER 2 (INTEGRATION): $$FAILED service(s) failed"; \
-		exit 1; \
-	fi; \
-	echo "════════════════════════════════════════════════════════════════════════"
-
-.PHONY: test-tier-e2e
-test-tier-e2e: ## Run ALL E2E tests across all services (Tier 3 - slowest, ~30-60 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 TIER 3: E2E TESTS - All Services"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Per TESTING_GUIDELINES.md:"
-	@echo "   • Purpose: Validate business value delivery"
-	@echo "   • Focus: End-to-end workflows, business SLAs"
-	@echo "   • Dependencies: Real (KIND cluster), Mock LLM only (cost)"
-	@echo "   • Infrastructure: KIND + Helm/manifests + NodePorts"
-	@echo "   • Policy: If Data Storage unavailable, tests FAIL (not skip)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@FAILED=0; \
-	echo "1️⃣  Data Storage E2E (Kind cluster)..."; \
-	$(MAKE) test-e2e-datastorage || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Gateway E2E (Kind cluster)..."; \
-	$(MAKE) test-e2e-gateway || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  Notification E2E (Kind cluster)..."; \
-	$(MAKE) test-e2e-notification || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "4️⃣  Dynamic Toolset E2E (Kind cluster)..."; \
-	$(MAKE) test-e2e-toolset || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "5️⃣  WorkflowExecution E2E (Kind + Tekton)..."; \
-	$(MAKE) test-e2e-workflowexecution 2>/dev/null || echo "   ⚠️  WE E2E tests not available"; \
-	echo ""; \
-	echo "6️⃣  RemediationOrchestrator E2E (Kind cluster)..."; \
-	$(MAKE) test-e2e-remediationorchestrator 2>/dev/null || echo "   ⚠️  RO E2E tests pending team service availability"; \
-	echo ""; \
-	echo "7️⃣  HolmesGPT API E2E (Kind + Data Storage)..."; \
-	$(MAKE) test-e2e-holmesgpt || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ TIER 3 (E2E): ALL tests passed"; \
-	else \
-		echo "❌ TIER 3 (E2E): $$FAILED service(s) failed"; \
-		exit 1; \
-	fi; \
-	echo "════════════════════════════════════════════════════════════════════════"
-
-.PHONY: test-all-tiers
-test-all-tiers: ## Run ALL 3 test tiers sequentially (Unit → Integration → E2E)
-	@echo "╔════════════════════════════════════════════════════════════════════════╗"
-	@echo "║  🚀 COMPLETE TEST SUITE - ALL 3 TIERS                                   ║"
-	@echo "║  Per TESTING_GUIDELINES.md                                              ║"
-	@echo "╚════════════════════════════════════════════════════════════════════════╝"
-	@echo ""
-	@echo "📊 Test Tier Infrastructure Matrix:"
-	@echo "┌─────────────┬─────────────────┬───────────────────┬─────────────────────────┐"
-	@echo "│ Test Tier   │ K8s Environment │ Services          │ Infrastructure          │"
-	@echo "├─────────────┼─────────────────┼───────────────────┼─────────────────────────┤"
-	@echo "│ Unit        │ None            │ Mocked            │ None required           │"
-	@echo "│ Integration │ envtest         │ Real (podman)     │ podman-compose.test.yml │"
-	@echo "│ E2E         │ KIND cluster    │ Real (deployed)   │ KIND + Helm/manifests   │"
-	@echo "└─────────────┴─────────────────┴───────────────────┴─────────────────────────┘"
-	@echo ""
-	@echo "🔧 LLM Policy: Mocked in ALL tiers (cost constraint)"
-	@echo ""
-	@TIER_FAILED=0; \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "TIER 1: UNIT TESTS (~2-5 min)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-tier-unit || TIER_FAILED=$$((TIER_FAILED + 1)); \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "TIER 2: INTEGRATION TESTS (~10-20 min)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-tier-integration || TIER_FAILED=$$((TIER_FAILED + 1)); \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "TIER 3: E2E TESTS (~30-60 min)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-tier-e2e || TIER_FAILED=$$((TIER_FAILED + 1)); \
-	echo ""; \
-	echo "╔════════════════════════════════════════════════════════════════════════╗"; \
-	if [ $$TIER_FAILED -eq 0 ]; then \
-		echo "║  ✅ COMPLETE TEST SUITE: ALL 3 TIERS PASSED                            ║"; \
-		echo "║                                                                          ║"; \
-		echo "║  Tier 1 (Unit):        ✅ PASSED                                        ║"; \
-		echo "║  Tier 2 (Integration): ✅ PASSED                                        ║"; \
-		echo "║  Tier 3 (E2E):         ✅ PASSED                                        ║"; \
-	else \
-		echo "║  ❌ COMPLETE TEST SUITE: $$TIER_FAILED TIER(S) FAILED                       ║"; \
-	fi; \
-	echo "╚════════════════════════════════════════════════════════════════════════╝"; \
-	exit $$TIER_FAILED
-
-.PHONY: test-quick
-test-quick: test-tier-unit ## Quick validation (Unit tests only) - ideal for development
-	@echo "✅ Quick validation complete (Unit tests only)"
-
-.PHONY: test-ci-full
-test-ci-full: test-tier-unit test-tier-integration ## CI validation (Unit + Integration) - ideal for CI/CD pipelines
-	@echo "✅ CI validation complete (Unit + Integration)"
-
-.PHONY: test-release
-test-release: test-all-tiers ## Release validation (All 3 tiers) - required before release
-	@echo "✅ Release validation complete (All 3 tiers)"
-
-##@ Test Help
-
-.PHONY: test-help
-test-help: ## Show testing targets organized by tier
-	@echo "╔════════════════════════════════════════════════════════════════════════╗"
-	@echo "║  🧪 KUBERNAUT TEST SUITE - Per TESTING_GUIDELINES.md                    ║"
-	@echo "╚════════════════════════════════════════════════════════════════════════╝"
-	@echo ""
-	@echo "📋 UNIFIED TIER TARGETS (Recommended)"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-tier-unit        Run ALL unit tests (~2-5 min)"
-	@echo "  make test-tier-integration Run ALL integration tests (~10-20 min)"
-	@echo "  make test-tier-e2e         Run ALL E2E tests (~30-60 min)"
-	@echo "  make test-all-tiers        Run ALL 3 tiers sequentially"
-	@echo ""
-	@echo "⚡ QUICK ACCESS"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-quick            Unit tests only (development)"
-	@echo "  make test-ci-full          Unit + Integration (CI/CD)"
-	@echo "  make test-release          All 3 tiers (release validation)"
-	@echo ""
-	@echo "🎯 PER-SERVICE TARGETS"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-remediationorchestrator-all  RO: Unit + Integration + E2E"
-	@echo "  make test-workflowexecution-all        WE: Unit + Integration + E2E"
-	@echo "  make test-notification-all             NOT: Unit + Integration + E2E"
-	@echo "  make test-gateway-all                  GW: Unit + Integration + E2E"
-	@echo "  make test-datastorage-all              DS: Unit + Integration + E2E"
-	@echo "  make test-holmesgpt-all                HAPI: Python tests"
-	@echo ""
-	@echo "📊 COVERAGE REPORTS"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-coverage-remediationorchestrator  RO coverage report"
-	@echo "  make test-coverage-workflowexecution        WE coverage report"
-	@echo "  make test-coverage                          Full coverage report"
-	@echo ""
-	@echo "🐳 CONTAINERIZED TESTING"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-container-unit        Unit tests in container"
-	@echo "  make test-container-integration Integration tests in container"
-	@echo "  make test-container-e2e         E2E tests in container"
-	@echo "  make test-container-all         All tests in container"
-	@echo ""
-
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "TIER 2: INTEGRATION TESTS (~10-20 min)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-tier-integration || TIER_FAILED=$$((TIER_FAILED + 1)); \
-	echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "TIER 3: E2E TESTS (~30-60 min)"; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	$(MAKE) test-tier-e2e || TIER_FAILED=$$((TIER_FAILED + 1)); \
-	echo ""; \
-	echo "╔════════════════════════════════════════════════════════════════════════╗"; \
-	if [ $$TIER_FAILED -eq 0 ]; then \
-		echo "║  ✅ COMPLETE TEST SUITE: ALL 3 TIERS PASSED                            ║"; \
-		echo "║                                                                          ║"; \
-		echo "║  Tier 1 (Unit):        ✅ PASSED                                        ║"; \
-		echo "║  Tier 2 (Integration): ✅ PASSED                                        ║"; \
-		echo "║  Tier 3 (E2E):         ✅ PASSED                                        ║"; \
-	else \
-		echo "║  ❌ COMPLETE TEST SUITE: $$TIER_FAILED TIER(S) FAILED                       ║"; \
-	fi; \
-	echo "╚════════════════════════════════════════════════════════════════════════╝"; \
-	exit $$TIER_FAILED
-
-.PHONY: test-quick
-test-quick: test-tier-unit ## Quick validation (Unit tests only) - ideal for development
-	@echo "✅ Quick validation complete (Unit tests only)"
-
-.PHONY: test-ci-full
-test-ci-full: test-tier-unit test-tier-integration ## CI validation (Unit + Integration) - ideal for CI/CD pipelines
-	@echo "✅ CI validation complete (Unit + Integration)"
-
-.PHONY: test-release
-test-release: test-all-tiers ## Release validation (All 3 tiers) - required before release
-	@echo "✅ Release validation complete (All 3 tiers)"
-
-##@ Test Help
-
-.PHONY: test-help
-test-help: ## Show testing targets organized by tier
-	@echo "╔════════════════════════════════════════════════════════════════════════╗"
-	@echo "║  🧪 KUBERNAUT TEST SUITE - Per TESTING_GUIDELINES.md                    ║"
-	@echo "╚════════════════════════════════════════════════════════════════════════╝"
-	@echo ""
-	@echo "📋 UNIFIED TIER TARGETS (Recommended)"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-tier-unit        Run ALL unit tests (~2-5 min)"
-	@echo "  make test-tier-integration Run ALL integration tests (~10-20 min)"
-	@echo "  make test-tier-e2e         Run ALL E2E tests (~30-60 min)"
-	@echo "  make test-all-tiers        Run ALL 3 tiers sequentially"
-	@echo ""
-	@echo "⚡ QUICK ACCESS"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-quick            Unit tests only (development)"
-	@echo "  make test-ci-full          Unit + Integration (CI/CD)"
-	@echo "  make test-release          All 3 tiers (release validation)"
-	@echo ""
-	@echo "🎯 PER-SERVICE TARGETS"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-remediationorchestrator-all  RO: Unit + Integration + E2E"
-	@echo "  make test-workflowexecution-all        WE: Unit + Integration + E2E"
-	@echo "  make test-notification-all             NOT: Unit + Integration + E2E"
-	@echo "  make test-gateway-all                  GW: Unit + Integration + E2E"
-	@echo "  make test-datastorage-all              DS: Unit + Integration + E2E"
-	@echo "  make test-holmesgpt-all                HAPI: Python tests"
-	@echo ""
-	@echo "📊 COVERAGE REPORTS"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-coverage-remediationorchestrator  RO coverage report"
-	@echo "  make test-coverage-workflowexecution        WE coverage report"
-	@echo "  make test-coverage                          Full coverage report"
-	@echo ""
-	@echo "🐳 CONTAINERIZED TESTING"
-	@echo "────────────────────────────────────────────────────────────────────────"
-	@echo "  make test-container-unit        Unit tests in container"
-	@echo "  make test-container-integration Integration tests in container"
-	@echo "  make test-container-e2e         E2E tests in container"
-	@echo "  make test-container-all         All tests in container"
-	@echo ""
