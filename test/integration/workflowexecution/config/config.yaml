@@ -1,23 +1,18 @@
 database:
-  host: host.containers.internal
-  port: 15441
+  host: workflowexecution_postgres_1
+  port: 5432
   user: slm_user
   name: action_history
-  ssl_mode: disable
+  sslmode: disable
   secretsFile: /etc/datastorage/db-secrets.yaml
   usernameKey: username
   passwordKey: password
 
 redis:
-  addr: host.containers.internal:16388
-  db: 0
+  addr: workflowexecution_redis_1:6379
   secretsFile: /etc/datastorage/redis-secrets.yaml
   passwordKey: password
 
 server:
   port: 8080
   metrics_port: 9090
-
-service:
-  name: data-storage
-  logLevel: debug
